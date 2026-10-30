@@ -12,6 +12,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -51,7 +52,7 @@ func TestTheEngineCopyIsTheKernelsDeploymentEngine(t *testing.T) {
 				opened++
 				// The pool's own block, read from the file: the copy is this pool's, not
 				// another pool's that the kernel was handed too.
-				_, dep, err := latencykernel.LoadBundle(path)
+				_, dep, err := blisschemas.LoadBundle(path)
 				if err != nil {
 					t.Fatal(err)
 				}

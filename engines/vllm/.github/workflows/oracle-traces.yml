@@ -71,6 +71,8 @@ jobs:
           mkdir -p oracle/out/scenarios-dp-async
           python -I oracle/run_dp.py vllm-source oracle/scenarios-dp-async oracle/out/scenarios-dp-async
           python -I oracle/run_connector.py vllm-source oracle/scenarios/connector oracle/out/scenarios-connector
+          mkdir -p oracle/out/scenarios-offloading
+          python -I oracle/run_offloading.py vllm-source oracle/scenarios/offloading oracle/out/scenarios-offloading
           # core/kv's block hashes: the generator refuses to write if any hash differs.
           python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
       - name: record the Go side's provenance

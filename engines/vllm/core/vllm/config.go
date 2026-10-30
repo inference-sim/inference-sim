@@ -73,6 +73,14 @@ type Config struct {
 	// num_gpu_blocks from memory: the start-up check then states vLLM's numbers in GiB
 	// (kv_cache_utils.py:1031-1040@5df63a72). Unstated, it states them in blocks.
 	KVAvailableBytes int64 `yaml:"kv_available_bytes,omitempty"`
+	// KVTransfer is the pool's kv_transfer_config for P/D: the connector and the pool's kv_role.
+	// The deployment states the connector (pd_transfer.connector) and the pool's role; a caller
+	// restates them here. Unstated is no connector.
+	KVTransfer *connectorConfig `yaml:"kv_transfer,omitempty"`
+	// KVOffload is the pool's KV offload connector and its CPU tier (offload.go). The deployment
+	// states it (offload: connector, tiers, eviction_policy); a caller restates it here with the
+	// bytes a block its memory model sizes. Unstated is no offload.
+	KVOffload *offloadConfig `yaml:"kv_offload,omitempty"`
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -99,6 +107,13 @@ type settings struct {
 	sched     sched.Config
 	queueSize int
 	v2Runner  bool
+	// connector is the pool's P/D connector, nil for none; pp is pipeline_parallel_size, which
+	// vLLM's NIXL worker checks it against.
+	connector *connectorConfig
+	pp        int
+	// offload is the pool's KV offload, nil for none; specMethod the drafter's method.
+	offload    *offloadConfig
+	specMethod string
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
@@ -158,7 +173,10 @@ func resolve(c Config) (settings, error) {
 	// checked against the blocks left beside the null block
 	// (vllm/v1/core/kv_cache_utils.py:2627-2647, 1003-1040@5df63a72). A request the cache could
 	// never hold would otherwise wait for ever.
-	if need := (maxLen + blockSize - 1) / blockSize; need > c.NumGPUBlocks-1 {
+	// A model stating its KV layers is checked over its KV cache groups instead, with vLLM's own
+	// message (checkKVLayersFit, check_enough_kv_cache_memory): a hybrid model's groups share the
+	// pool, so one full-attention group's need is not the whole of it.
+	if need := (maxLen + blockSize - 1) / blockSize; len(c.KVLayers) == 0 && need > c.NumGPUBlocks-1 {
 		return s, fmt.Errorf("vllm: num_gpu_blocks %d cannot hold one max_model_len %d sequence (%d blocks of %d "+
 			"beside the null block), which vLLM refuses at startup (vllm/v1/core/kv_cache_utils.py:2638-2647@5df63a72)",
 			c.NumGPUBlocks, maxLen, need, blockSize)
@@ -302,6 +320,23 @@ func resolve(c Config) (settings, error) {
 		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	s.connector, s.pp = c.KVTransfer, pp
+	s.offload, s.specMethod = c.KVOffload, method
+	if s.offload != nil && s.connector != nil {
+		// Both at once is vLLM's MultiConnector, which is not modelled.
+		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
+			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/14")
+	}
+	if s.connector != nil && c.DataParallelSize > 1 {
+		// The data-parallel group starts no transfers and holds no handoffs (DPGroup): a P/D pool
+		// at dp > 1 would never pull or release its KV.
+		return settings{}, fmt.Errorf("vllm: kv_transfer with data parallelism (dp %d) is not built yet: the "+
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/44")
+	}
+	if s.offload != nil && c.DataParallelSize > 1 {
+		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/14")
+	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
 	if s.dp.syncInterval == 0 {

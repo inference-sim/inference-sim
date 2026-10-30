@@ -1,0 +1,2292 @@
+{
+ "finished": {
+  "a": {
+   "output_tokens": 3,
+   "reason": "stop",
+   "step": 3
+  },
+  "b": {
+   "output_tokens": 4,
+   "reason": "stop",
+   "step": 8
+  },
+  "c": {
+   "output_tokens": 2,
+   "reason": "stop",
+   "step": 15
+  }
+ },
+ "provenance": {
+  "blis_vllm_commit": "4c8097731e44be7af46f3ed26f192d8cca872516",
+  "cpu_chunks": 16,
+  "lockfile_sha256": "54d4c6c9f165370faaddbc8e59fdb6a80bd9fb12550e725eb5610b5f9cf588c9",
+  "mock_version": "gpu-mock/4+420a44386aa4",
+  "mocks": [
+   "vllm.v1.outputs.ModelRunnerOutput",
+   "tests.v1.core.utils.create_scheduler",
+   "sampled token stream",
+   "vllm.v1.core.sched.scheduler.time",
+   "vllm.v1.metrics.stats.time",
+   "vllm.v1.engine.time",
+   "vllm.v1.outputs.DraftTokenIds",
+   "spec-decode acceptance",
+   "tests.v1.core.utils.VllmConfig",
+   "tests.v1.core.utils.SchedulerConfig",
+   "vllm.config.vllm.HAS_TRITON",
+   "KV event publisher",
+   "tests.v1.core.utils.KVCacheConfig",
+   "vllm.v1.executor.abstract.Executor",
+   "EngineCore construction",
+   "vllm.platforms.cpu async override",
+   "use_v2_model_runner (CPU wheel without Triton)",
+   "vllm.config.ParallelConfig.sync_dp_state",
+   "DP coordinator stats transport",
+   "DPLBAsyncMPClient construction",
+   "DPEngineCoreProc construction",
+   "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
+   "NIXL connector scheduler config",
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
+  ],
+  "model": "facebook/opt-125m",
+  "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "platform": "darwin-arm64",
+  "python": "3.12.12",
+  "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+  "scenario_sha256": "418d3ff92096ee29fde580600d50d490c070db1fb995fc19dc7db54d51246fa6",
+  "seed": null,
+  "tier": 4,
+  "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "vllm_distribution": "0.32.0+cpu",
+  "vllm_version": "0.32.0"
+ },
+ "steps": [
+  {
+   "aborted": [],
+   "blocks": {
+    "a": [
+     [
+      "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000",
+      1
+     ],
+     [
+      "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000",
+      1
+     ],
+     [
+      "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
+      1
+     ],
+     [
+      "33183cad707c05fa8e8fe03bb150f084b9e2e78db81598659df9cfbdac3cd21100000000",
+      1
+     ],
+     [
+      "67000592732f9d89b6652dd281fe09c04a8ffdfa69af722fe911b8eadf44d0ac00000000",
+      1
+     ],
+     [
+      "fc079aa10a562af2805e6ea09eb78dd80222c2e9e3b3811f1db79b3b7099805800000000",
+      1
+     ],
+     [
+      "89e1cf0f7036e5ac0c39b93a1ddc16bcde5ed1c96fc63a6484512c2af8242fbf00000000",
+      1
+     ],
+     [
+      "41afb42f00d8b198ce08b5549009fa175960dc533c3627a85935065c8daf0d6400000000",
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 5,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6153846153846154,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "a2621334354fadfa/0",
+       0,
+       -1
+      ],
+      [
+       "f816bd041daedc97/0",
+       1,
+       -1
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       -1
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       -1
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       -1
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       -1
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       -1
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       -1
+      ]
+     ],
+     "evictable": 0,
+     "free": 8
+    },
+    "flush": [],
+    "jobs": [
+     0
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      0,
+      "a",
+      [
+       0,
+       1,
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      [
+       [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+       ],
+       [
+        8
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 32
+   },
+   "step": 0,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "a": [
+     [
+      "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000",
+      1
+     ],
+     [
+      "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000",
+      1
+     ],
+     [
+      "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
+      1
+     ],
+     [
+      "33183cad707c05fa8e8fe03bb150f084b9e2e78db81598659df9cfbdac3cd21100000000",
+      1
+     ],
+     [
+      "67000592732f9d89b6652dd281fe09c04a8ffdfa69af722fe911b8eadf44d0ac00000000",
+      1
+     ],
+     [
+      "fc079aa10a562af2805e6ea09eb78dd80222c2e9e3b3811f1db79b3b7099805800000000",
+      1
+     ],
+     [
+      "89e1cf0f7036e5ac0c39b93a1ddc16bcde5ed1c96fc63a6484512c2af8242fbf00000000",
+      1
+     ],
+     [
+      "41afb42f00d8b198ce08b5549009fa175960dc533c3627a85935065c8daf0d6400000000",
+      1
+     ],
+     [
+      "ed2bc9ae96d26654a6abf021e1176769db34156ad335a05a75885eae8824d17300000000",
+      1
+     ],
+     [
+      "2948e4c1f3215f45fd2e7f1fc8c3e6132b7e2ab57e296e72127406e0448e5afd00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 2,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.8461538461538461,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "a2621334354fadfa/0",
+       0,
+       -1
+      ],
+      [
+       "f816bd041daedc97/0",
+       1,
+       -1
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       -1
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       -1
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       -1
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       -1
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       -1
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       -1
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       8,
+       -1
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       9,
+       -1
+      ]
+     ],
+     "evictable": 0,
+     "free": 6
+    },
+    "flush": [],
+    "jobs": [
+     0,
+     1
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      1,
+      "a",
+      [
+       8,
+       9
+      ],
+      [
+       [
+        9,
+        10
+       ],
+       [
+        2
+       ],
+       [
+        8
+       ]
+      ]
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 9
+   },
+   "step": 1,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "a": [
+     [
+      "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000",
+      1
+     ],
+     [
+      "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000",
+      1
+     ],
+     [
+      "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
+      1
+     ],
+     [
+      "33183cad707c05fa8e8fe03bb150f084b9e2e78db81598659df9cfbdac3cd21100000000",
+      1
+     ],
+     [
+      "67000592732f9d89b6652dd281fe09c04a8ffdfa69af722fe911b8eadf44d0ac00000000",
+      1
+     ],
+     [
+      "fc079aa10a562af2805e6ea09eb78dd80222c2e9e3b3811f1db79b3b7099805800000000",
+      1
+     ],
+     [
+      "89e1cf0f7036e5ac0c39b93a1ddc16bcde5ed1c96fc63a6484512c2af8242fbf00000000",
+      1
+     ],
+     [
+      "41afb42f00d8b198ce08b5549009fa175960dc533c3627a85935065c8daf0d6400000000",
+      1
+     ],
+     [
+      "ed2bc9ae96d26654a6abf021e1176769db34156ad335a05a75885eae8824d17300000000",
+      1
+     ],
+     [
+      "2948e4c1f3215f45fd2e7f1fc8c3e6132b7e2ab57e296e72127406e0448e5afd00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 2,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.8461538461538461,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     0
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "a2621334354fadfa/0",
+       0,
+       0
+      ],
+      [
+       "f816bd041daedc97/0",
+       1,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       8,
+       -1
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       9,
+       -1
+      ]
+     ],
+     "evictable": 8,
+     "free": 6
+    },
+    "flush": [],
+    "jobs": [
+     1
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "a"
+   ],
+   "scheduled": {
+    "a": 1
+   },
+   "step": 2,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "a"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     1
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "a2621334354fadfa/0",
+       0,
+       0
+      ],
+      [
+       "f816bd041daedc97/0",
+       1,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       8,
+       0
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       9,
+       0
+      ]
+     ],
+     "evictable": 10,
+     "free": 6
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "a": 1
+   },
+   "step": 3,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "b": [
+     [
+      "60d5582cb90052b5b8a63eedfaeb630343af8c3580b06762b4ce2730797d98cc00000000",
+      1
+     ],
+     [
+      "43d2c1d3a9318a534d2e456e25a22c38dd46eb1484f2d544c42ab363a8731d2300000000",
+      1
+     ],
+     [
+      "a04ff547ebb7e8c1027b23d7059b60507272dac9456498973cf80541786c39a500000000",
+      1
+     ],
+     [
+      "bd150221b72d1c7c6d58382bfb2a3e048ad0f9952f42d64d41d43761311fe8e400000000",
+      1
+     ],
+     [
+      "2cedd367c68687ce962d96c0a3fab11f2149d3126a43c2e2373a202f591f0eb700000000",
+      1
+     ],
+     [
+      "49dd1b1698d93e1094fc823e2eadf8d7595a72679f410a8bd7da814cbf1ac62000000000",
+      1
+     ],
+     [
+      "e63d186a934b68b30dacc0702a9b2baa57c413f9c933f8c1e1358915fc8129b000000000",
+      1
+     ],
+     [
+      "2380eb6cf7abeca78f767f273b084d5c93683913880b66ad0fe4796d2d3ce26c00000000",
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 5,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.6153846153846154,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "60d5582cb90052b5/0",
+       10,
+       -1
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       -1
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       -1
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       -1
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       -1
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       -1
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       -1
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       -1
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       9,
+       0
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       8,
+       0
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ]
+     ],
+     "evictable": 8,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     2
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      2,
+      "b",
+      [
+       10,
+       11,
+       12,
+       13,
+       14,
+       15,
+       1,
+       0
+      ],
+      [
+       [
+        11,
+        12,
+        13,
+        10,
+        9,
+        8,
+        7,
+        6
+       ],
+       [
+        8
+       ],
+       [
+        0
+       ]
+      ]
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "b"
+   ],
+   "scheduled": {
+    "b": 32
+   },
+   "step": 4,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "b": [
+     [
+      "60d5582cb90052b5b8a63eedfaeb630343af8c3580b06762b4ce2730797d98cc00000000",
+      1
+     ],
+     [
+      "43d2c1d3a9318a534d2e456e25a22c38dd46eb1484f2d544c42ab363a8731d2300000000",
+      1
+     ],
+     [
+      "a04ff547ebb7e8c1027b23d7059b60507272dac9456498973cf80541786c39a500000000",
+      1
+     ],
+     [
+      "bd150221b72d1c7c6d58382bfb2a3e048ad0f9952f42d64d41d43761311fe8e400000000",
+      1
+     ],
+     [
+      "2cedd367c68687ce962d96c0a3fab11f2149d3126a43c2e2373a202f591f0eb700000000",
+      1
+     ],
+     [
+      "49dd1b1698d93e1094fc823e2eadf8d7595a72679f410a8bd7da814cbf1ac62000000000",
+      1
+     ],
+     [
+      "e63d186a934b68b30dacc0702a9b2baa57c413f9c933f8c1e1358915fc8129b000000000",
+      1
+     ],
+     [
+      "2380eb6cf7abeca78f767f273b084d5c93683913880b66ad0fe4796d2d3ce26c00000000",
+      1
+     ],
+     [
+      "f9176b98bd47986ddb9012cde33a9ea255758590091215fb7b1d23b719d8686b00000000",
+      1
+     ],
+     [
+      "b961724ac6bdc49272a63592525f75c3fa1cd32abeff1c50931a18d5d62a146000000000",
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 3,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.7692307692307692,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "60d5582cb90052b5/0",
+       10,
+       -1
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       -1
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       -1
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       -1
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       -1
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       -1
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       -1
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       -1
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       -1
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       -1
+      ]
+     ],
+     "evictable": 6,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     2,
+     3
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      3,
+      "b",
+      [
+       8,
+       9
+      ],
+      [
+       [
+        5,
+        4
+       ],
+       [
+        2
+       ],
+       [
+        8
+       ]
+      ]
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "b"
+   ],
+   "scheduled": {
+    "b": 8
+   },
+   "step": 5,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "b": [
+     [
+      "60d5582cb90052b5b8a63eedfaeb630343af8c3580b06762b4ce2730797d98cc00000000",
+      1
+     ],
+     [
+      "43d2c1d3a9318a534d2e456e25a22c38dd46eb1484f2d544c42ab363a8731d2300000000",
+      1
+     ],
+     [
+      "a04ff547ebb7e8c1027b23d7059b60507272dac9456498973cf80541786c39a500000000",
+      1
+     ],
+     [
+      "bd150221b72d1c7c6d58382bfb2a3e048ad0f9952f42d64d41d43761311fe8e400000000",
+      1
+     ],
+     [
+      "2cedd367c68687ce962d96c0a3fab11f2149d3126a43c2e2373a202f591f0eb700000000",
+      1
+     ],
+     [
+      "49dd1b1698d93e1094fc823e2eadf8d7595a72679f410a8bd7da814cbf1ac62000000000",
+      1
+     ],
+     [
+      "e63d186a934b68b30dacc0702a9b2baa57c413f9c933f8c1e1358915fc8129b000000000",
+      1
+     ],
+     [
+      "2380eb6cf7abeca78f767f273b084d5c93683913880b66ad0fe4796d2d3ce26c00000000",
+      1
+     ],
+     [
+      "f9176b98bd47986ddb9012cde33a9ea255758590091215fb7b1d23b719d8686b00000000",
+      1
+     ],
+     [
+      "b961724ac6bdc49272a63592525f75c3fa1cd32abeff1c50931a18d5d62a146000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 2,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.8461538461538461,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     2
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       -1
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       -1
+      ]
+     ],
+     "evictable": 14,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     3
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "b"
+   ],
+   "scheduled": {
+    "b": 1
+   },
+   "step": 6,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "b": [
+     [
+      "60d5582cb90052b5b8a63eedfaeb630343af8c3580b06762b4ce2730797d98cc00000000",
+      1
+     ],
+     [
+      "43d2c1d3a9318a534d2e456e25a22c38dd46eb1484f2d544c42ab363a8731d2300000000",
+      1
+     ],
+     [
+      "a04ff547ebb7e8c1027b23d7059b60507272dac9456498973cf80541786c39a500000000",
+      1
+     ],
+     [
+      "bd150221b72d1c7c6d58382bfb2a3e048ad0f9952f42d64d41d43761311fe8e400000000",
+      1
+     ],
+     [
+      "2cedd367c68687ce962d96c0a3fab11f2149d3126a43c2e2373a202f591f0eb700000000",
+      1
+     ],
+     [
+      "49dd1b1698d93e1094fc823e2eadf8d7595a72679f410a8bd7da814cbf1ac62000000000",
+      1
+     ],
+     [
+      "e63d186a934b68b30dacc0702a9b2baa57c413f9c933f8c1e1358915fc8129b000000000",
+      1
+     ],
+     [
+      "2380eb6cf7abeca78f767f273b084d5c93683913880b66ad0fe4796d2d3ce26c00000000",
+      1
+     ],
+     [
+      "f9176b98bd47986ddb9012cde33a9ea255758590091215fb7b1d23b719d8686b00000000",
+      1
+     ],
+     [
+      "b961724ac6bdc49272a63592525f75c3fa1cd32abeff1c50931a18d5d62a146000000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 2,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.8461538461538461,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     3
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ]
+     ],
+     "evictable": 16,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "b"
+   ],
+   "scheduled": {
+    "b": 1
+   },
+   "step": 7,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "b"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ]
+     ],
+     "evictable": 16,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "b": 1
+   },
+   "step": 8,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ]
+     ],
+     "evictable": 16,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 9,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "idle": true,
+   "step": 10
+  },
+  {
+   "idle": true,
+   "step": 11
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 5,
+   "kv_fetch_stages": [
+    0,
+    1,
+    0
+   ],
+   "kv_holding_waiting": [
+    "c"
+   ],
+   "kv_usage": 0.6153846153846154,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "41afb42f00d8b198/0",
+       7,
+       1
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       1
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       1
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       1
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       1
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       1
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ]
+     ],
+     "evictable": 10,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     4
+    ],
+    "loads": [
+     [
+      4,
+      "c",
+      [
+       2,
+       3,
+       4,
+       5,
+       6,
+       7
+      ],
+      [
+       [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+       ],
+       [
+        6
+       ],
+       [
+        2
+       ]
+      ]
+     ]
+    ],
+    "pending_push": true,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 12,
+   "waiting_for_remote_kv": [
+    "c"
+   ]
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 5,
+   "kv_fetch_stages": [
+    0,
+    0,
+    1
+   ],
+   "kv_holding_waiting": [
+    "c"
+   ],
+   "kv_usage": 0.6153846153846154,
+   "num_requests": 1,
+   "num_running": 0,
+   "num_waiting": 1,
+   "offload": {
+    "completed": [
+     4
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "41afb42f00d8b198/0",
+       7,
+       0
+      ],
+      [
+       "89e1cf0f7036e5ac/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ]
+     ],
+     "evictable": 16,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [
+    "c"
+   ],
+   "running": [],
+   "scheduled": {},
+   "step": 13,
+   "waiting_for_remote_kv": [
+    "c"
+   ]
+  },
+  {
+   "aborted": [],
+   "blocks": {
+    "c": [
+     [
+      "a2621334354fadfa3a05ed55fb8af730a0b7460a013b214f49552e1f436c312b00000000",
+      1
+     ],
+     [
+      "f816bd041daedc975813ac0ba47f0613a1bc5543d2f00ac7125b3ef50cd2d7f300000000",
+      1
+     ],
+     [
+      "1916a3fa8902fa9eba23441de030b624de85f3e829b38ed4d02b15831ea6888f00000000",
+      1
+     ],
+     [
+      "33183cad707c05fa8e8fe03bb150f084b9e2e78db81598659df9cfbdac3cd21100000000",
+      1
+     ],
+     [
+      "67000592732f9d89b6652dd281fe09c04a8ffdfa69af722fe911b8eadf44d0ac00000000",
+      1
+     ],
+     [
+      "fc079aa10a562af2805e6ea09eb78dd80222c2e9e3b3811f1db79b3b7099805800000000",
+      1
+     ],
+     [
+      "89e1cf0f7036e5ac0c39b93a1ddc16bcde5ed1c96fc63a6484512c2af8242fbf00000000",
+      1
+     ],
+     [
+      "41afb42f00d8b198ce08b5549009fa175960dc533c3627a85935065c8daf0d6400000000",
+      1
+     ],
+     [
+      "ed2bc9ae96d26654a6abf021e1176769db34156ad335a05a75885eae8824d17300000000",
+      1
+     ],
+     [
+      "2948e4c1f3215f45fd2e7f1fc8c3e6132b7e2ab57e296e72127406e0448e5afd00000000",
+      1
+     ],
+     [
+      null,
+      1
+     ]
+    ]
+   },
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 2,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.8461538461538461,
+   "num_requests": 1,
+   "num_running": 1,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       6,
+       -1
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       7,
+       -1
+      ]
+     ],
+     "evictable": 14,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     5
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": [
+     [
+      5,
+      "c",
+      [
+       6,
+       7
+      ],
+      [
+       [
+        9,
+        10
+       ],
+       [
+        2
+       ],
+       [
+        8
+       ]
+      ]
+     ]
+    ]
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [
+    "c"
+   ],
+   "scheduled": {
+    "c": 10
+   },
+   "step": 14,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [
+    "c"
+   ],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [],
+    "cpu": {
+     "chunks": [
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ],
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       6,
+       -1
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       7,
+       -1
+      ]
+     ],
+     "evictable": 14,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [
+     5
+    ],
+    "loads": [],
+    "pending_push": true,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {
+    "c": 1
+   },
+   "step": 15,
+   "waiting_for_remote_kv": []
+  },
+  {
+   "aborted": [],
+   "blocks": {},
+   "delay_freed": [],
+   "finished": [],
+   "free_blocks": 13,
+   "kv_fetch_stages": [
+    0,
+    0,
+    0
+   ],
+   "kv_holding_waiting": [],
+   "kv_usage": 0.0,
+   "num_requests": 0,
+   "num_running": 0,
+   "num_waiting": 0,
+   "offload": {
+    "completed": [
+     5
+    ],
+    "cpu": {
+     "chunks": [
+      [
+       "b961724ac6bdc492/0",
+       9,
+       0
+      ],
+      [
+       "f9176b98bd47986d/0",
+       8,
+       0
+      ],
+      [
+       "2380eb6cf7abeca7/0",
+       0,
+       0
+      ],
+      [
+       "e63d186a934b68b3/0",
+       1,
+       0
+      ],
+      [
+       "49dd1b1698d93e10/0",
+       15,
+       0
+      ],
+      [
+       "2cedd367c68687ce/0",
+       14,
+       0
+      ],
+      [
+       "bd150221b72d1c7c/0",
+       13,
+       0
+      ],
+      [
+       "a04ff547ebb7e8c1/0",
+       12,
+       0
+      ],
+      [
+       "43d2c1d3a9318a53/0",
+       11,
+       0
+      ],
+      [
+       "60d5582cb90052b5/0",
+       10,
+       0
+      ],
+      [
+       "2948e4c1f3215f45/0",
+       7,
+       0
+      ],
+      [
+       "ed2bc9ae96d26654/0",
+       6,
+       0
+      ],
+      [
+       "fc079aa10a562af2/0",
+       5,
+       0
+      ],
+      [
+       "67000592732f9d89/0",
+       4,
+       0
+      ],
+      [
+       "33183cad707c05fa/0",
+       3,
+       0
+      ],
+      [
+       "1916a3fa8902fa9e/0",
+       2,
+       0
+      ]
+     ],
+     "evictable": 16,
+     "free": 0
+    },
+    "flush": [],
+    "jobs": [],
+    "loads": [],
+    "pending_push": false,
+    "stores": []
+   },
+   "preempted": [],
+   "recv_landed": [],
+   "running": [],
+   "scheduled": {},
+   "step": 16,
+   "waiting_for_remote_kv": []
+  }
+ ]
+}

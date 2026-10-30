@@ -79,6 +79,8 @@ type Core struct {
 	// Throttle reports whether this step defers prefills (_should_throttle_prefills,
 	// core.py:652-655 and 2318-2325); nil never throttles.
 	Throttle func() bool
+	// aborts are the client aborts queued for the next applied output (Abort).
+	aborts []string
 }
 
 // StepResult is what one engine step did.
@@ -92,6 +94,10 @@ type StepResult struct {
 	// Executed is model_executed: the scheduled batch ran tokens.
 	Executed bool
 }
+
+// Schedules is how many batches the scheduler has made, each one execute_model call
+// (core.py:724-729, 667-668), including those that ran no tokens.
+func (c *Core) Schedules() int { return c.nextID }
 
 // InFlight is how many batches are queued.
 func (c *Core) InFlight() int { return len(c.queue) }
@@ -112,8 +118,30 @@ func (c *Core) schedule() Batch {
 	return b
 }
 
+// TransferGPU is a GPU whose worker also reports the KV transfers it finished with a batch's
+// output: ModelRunnerOutput.kv_connector_output (vllm/v1/outputs.py:215-233@5df63a72), which
+// update_from_output applies (vllm/v1/core/sched/scheduler.py:2058-2071, 2342-2343).
+type TransferGPU interface {
+	GPU
+	Transfers(b Batch) sched.TransferOutcome
+}
+
+// Abort queues client aborts for the next applied output: EngineCore drains its aborts queue
+// after it has a batch's output and before update_from_output (vllm/v1/engine/core.py:680,
+// 780-783, 814-822@5df63a72).
+func (c *Core) Abort(ids []string) { c.aborts = append(c.aborts, ids...) }
+
 func (c *Core) process(b Batch) []sched.Finished {
-	return c.Sched.Update(b.Out, c.GPU.Output(b))
+	toks := c.GPU.Output(b)
+	var o sched.TransferOutcome
+	if tg, ok := c.GPU.(TransferGPU); ok {
+		o = tg.Transfers(b)
+	}
+	if len(c.aborts) > 0 {
+		c.Sched.Abort(c.aborts)
+		c.aborts = nil
+	}
+	return c.Sched.UpdateWith(b.Out, toks, o)
 }
 
 // Step is one engine step: step_with_batch_queue (core.py:698-810) when QueueSize > 1,
@@ -196,12 +224,14 @@ func (c *Core) Schedule() Batch {
 
 // Drop takes the most recent batch back off the queue without applying it: a batch that
 // scheduled no tokens is not in flight for a caller of Schedule, and vLLM's update_from_output
-// of an empty schedule changes no request, only the stats it reports.
-func (c *Core) Drop(b Batch) {
+// of an empty schedule changes no request but one a connector's outcome finishes (a failed load
+// under kv_load_failure_policy "fail"), whose finish records it returns.
+func (c *Core) Drop(b Batch) []sched.Finished {
 	if n := len(c.queue); n > 0 && c.queue[n-1].ID == b.ID {
 		c.queue = c.queue[:n-1]
-		c.process(b)
+		return c.process(b)
 	}
+	return nil
 }
 
 // Complete is the second half: it applies the oldest queued batch, which must be b, with the

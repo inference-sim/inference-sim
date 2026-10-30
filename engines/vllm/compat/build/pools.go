@@ -97,6 +97,12 @@ func OpenPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top To
 	return pools, warnings, nil
 }
 
+// PoolIndices are the indexes of a scenario's pools by role (kernelmodel.RolePools), which a
+// simulator building each role's engine through engine.Spec passes as Spec.Pool.
+func PoolIndices(scenario string, repos kernelmodel.Repos) (map[deployment.Role]int, error) {
+	return kernelmodel.RolePools(scenario, repos)
+}
+
 // openPools is OpenPools, appending each startup warning to warnings as it is found.
 func openPools(scenario string, repos kernelmodel.Repos, kernelOpen bool, top Topology, warnings *[]string) (*Pools, error) {
 	// Checked before the early return below: a shared-only or encode+shared topology states no

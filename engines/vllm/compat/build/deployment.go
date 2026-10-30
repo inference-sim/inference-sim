@@ -148,7 +148,14 @@ func OpenFirstPool(in AdoptInputs, a *Adopted) error {
 		// Refused rather than fallen back on: there is no other latency model to serve the run.
 		return fmt.Errorf("scenario %q: %v", in.Scenario, err)
 	}
-	s, err := m.Settings()
+	// A 0.32.0 scenario runs on blis-vllm's own engine, which checks the KV cache at start-up over
+	// the model's groups as vLLM does (kernelmodel.SettingsCheckedByGroups); the compatibility
+	// engine's single-group check would refuse a hybrid model vLLM starts.
+	settings := m.Settings
+	if a.CoreEngine {
+		settings = m.SettingsCheckedByGroups
+	}
+	s, err := settings()
 	if err != nil {
 		return fmt.Errorf("scenario %q: %v", in.Scenario, err)
 	}

@@ -44,10 +44,10 @@ decode schedules one token against its whole context:
 ```
 
 ```text
-between 24.1 and 25.7 ms, bottleneck hbm
+between 24.1 and 25.4 ms, bottleneck hbm
 sm        4.5 ms
 hbm      16.5 ms
-nvlink    1.2 ms
+nvlink    0.9 ms
 host      3.5 ms
 ```
 
@@ -115,9 +115,9 @@ a 4,096-token request: 137 MiB of KV cache per rank
 ```
 
 ```text
-113 of 155 values rest on evidence; 41 were assumed
+115 of 157 values rest on evidence; 41 were assumed
   assumed       41
-  measured      99
+  measured     101
   not_charged    1
   vendor_spec   14
 the kernel assumed max_cudagraph_capture_size

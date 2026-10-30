@@ -71,6 +71,19 @@ func KVGroups(runs []KVLayerRun, disableHybrid, trailingDrafter bool) ([]kv.Grou
 // layers' elements is refused, naming both, rather than sized from a guessed dtype. Layers that
 // state a packed state's bytes, DeepSeek V4's, are sized as stated.
 func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock, availableBytes int64) (int64, error) {
+	per, err := KVPoolBytesPerBlock(runs, disableHybrid, blockSize, kernelPerBlock)
+	if err != nil {
+		return 0, err
+	}
+	return availableBytes / per, nil
+}
+
+// KVPoolBytesPerBlock is the bytes one block takes in the KV pool KVPoolBlocks sizes: the widest
+// KV cache group's (kv.PoolBytesPerBlock), with the layers' element sizes resolved from
+// kernelPerBlock as KVPoolBlocks resolves them. It is the worker_kv_bytes_per_block an
+// OffloadingConnector sizes its CPU tier from (the KV tensor's bytes over its blocks,
+// vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:136-147@5df63a72).
+func KVPoolBytesPerBlock(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPerBlock int64) (int64, error) {
 	layers, err := KVLayers(runs)
 	if err != nil {
 		return 0, err
@@ -84,7 +97,105 @@ func KVPoolBlocks(runs []KVLayerRun, disableHybrid bool, blockSize int, kernelPe
 	if err != nil {
 		return 0, fmt.Errorf("vllm: kv_layers: %w", err)
 	}
-	return availableBytes / per, nil
+	return per, nil
+}
+
+// KVStagePoolBytesPerBlock is each pipeline stage's pool bytes per block: the model's KV cache
+// groups formed once over every layer and projected onto that stage's layers
+// (kv.StagePoolBytesPerBlock), as vLLM sizes each worker's pool (_project_kv_cache_groups_to_worker,
+// vllm/v1/core/kv_cache_utils.py:2486-2528, 2595-2603@5df63a72). stages[s] is the [lo, hi) of
+// layers (one per layer, in model order, as KVLayers expands the runs) stage s holds. A stage
+// holding no KV layer has none, 0.
+//
+// kernelPerBlock is the caller's bytes for one block of every layer, as KVPoolBlocks reads it:
+// the element bytes are derived once over the whole model, so every stage pages them alike.
+func KVStagePoolBytesPerBlock(runs []KVLayerRun, stages [][2]int, disableHybrid bool, blockSize int,
+	kernelPerBlock int64) ([]int64, error) {
+	layers, err := KVLayers(runs)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
+			return nil, err
+		}
+	}
+	o := kv.GroupOptions{DisableHybrid: disableHybrid}
+	out := make([]int64, len(stages))
+	for s, span := range stages {
+		if span[0] < 0 || span[1] > len(layers) || span[0] > span[1] {
+			return nil, fmt.Errorf("vllm: kv_layers: stage %d holds layers [%d, %d) of %d", s, span[0], span[1], len(layers))
+		}
+		on := make([]bool, len(layers))
+		for i := span[0]; i < span[1]; i++ {
+			on[i] = true
+		}
+		if out[s], err = kv.StagePoolBytesPerBlock(layers, on, o, blockSize); err != nil {
+			return nil, fmt.Errorf("vllm: kv_layers: %w", err)
+		}
+	}
+	return out, nil
+}
+
+// KVStageGroupCopyBytes is, for each pipeline stage and each of the model's KV cache groups in
+// scheduler order, the bytes that stage's worker copies for one block of the group when it
+// offloads it (kv.StageGroupCopyBytes), with the layers' element sizes resolved from
+// kernelPerBlock as KVStagePoolBytesPerBlock resolves them. stages are as KVStagePoolBytesPerBlock's.
+func KVStageGroupCopyBytes(runs []KVLayerRun, stages [][2]int, disableHybrid bool, blockSize int,
+	kernelPerBlock int64) ([][]int64, error) {
+	layers, err := KVLayers(runs)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
+			return nil, err
+		}
+	}
+	o := kv.GroupOptions{DisableHybrid: disableHybrid}
+	out := make([][]int64, len(stages))
+	for s, span := range stages {
+		if span[0] < 0 || span[1] > len(layers) || span[0] > span[1] {
+			return nil, fmt.Errorf("vllm: kv_layers: stage %d holds layers [%d, %d) of %d", s, span[0], span[1], len(layers))
+		}
+		on := make([]bool, len(layers))
+		for i := span[0]; i < span[1]; i++ {
+			on[i] = true
+		}
+		if out[s], err = kv.StageGroupCopyBytes(layers, on, o, blockSize); err != nil {
+			return nil, fmt.Errorf("vllm: kv_layers: %w", err)
+		}
+	}
+	return out, nil
+}
+
+// KVStagePoolBlocks is a pipeline-parallel pool's block count: each stage's available memory
+// over its pool bytes per block (KVStagePoolBytesPerBlock), and the smallest of them, which the
+// engine keeps for every worker (get_kv_cache_configs step 5, kv_cache_utils.py:2660-2680@
+// 5df63a72). availableBytes[s] is stage s's memory for the KV cache. A stage holding no KV
+// layer does not bound the others. It returns the pool and the stage that binds it.
+func KVStagePoolBlocks(runs []KVLayerRun, stages [][2]int, disableHybrid bool, blockSize int,
+	kernelPerBlock int64, availableBytes []int64) (int64, int, error) {
+	if len(availableBytes) != len(stages) {
+		return 0, 0, fmt.Errorf("vllm: kv_layers: %d stages and %d stage budgets", len(stages), len(availableBytes))
+	}
+	per, err := KVStagePoolBytesPerBlock(runs, stages, disableHybrid, blockSize, kernelPerBlock)
+	if err != nil {
+		return 0, 0, err
+	}
+	pool, binding := int64(-1), -1
+	for s := range stages {
+		if per[s] == 0 {
+			continue
+		}
+		if blocks := availableBytes[s] / per[s]; pool < 0 || blocks < pool {
+			pool, binding = blocks, s
+		}
+	}
+	if pool < 0 {
+		return 0, 0, fmt.Errorf("vllm: kv_layers: no pipeline stage holds a KV layer")
+	}
+	return pool, binding, nil
 }
 
 // deriveElemBytes gives every layer that states no element size the bytes kernelPerBlock leaves
@@ -188,9 +299,15 @@ func checkKVLayersFit(c Config, blockSize, maxModelLen, inFlight, prefillLookahe
 		TrailingDrafter: trailingDrafter(method, c.KVLayers)}
 	var perBlock int64
 	if c.KVAvailableBytes > 0 {
-		if perBlock, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {
+		if _, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {
 			return fmt.Errorf("vllm: kv_layers: %w", err)
 		}
+		// The pool's own bytes a block: the caller sized num_gpu_blocks from kv_available_bytes
+		// (num_blocks = available // page_size, get_kv_cache_config_from_groups,
+		// kv_cache_utils.py:1622-1628@5df63a72), at the cache dtype and per-rank width it prices.
+		// The layer runs' element bytes are the engine's defaults, not the served cache dtype, so
+		// they would put the needed and the available memory in different units.
+		perBlock = c.KVAvailableBytes / int64(c.NumGPUBlocks)
 	}
 	limits := kv.RequestLimits{MaxModelLen: maxModelLen, MaxInFlightTokens: inFlight,
 		ExtraRetained: max(0, prefillLookahead-1)}

@@ -354,8 +354,9 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 // The KV pool holds what vLLM's would for the same memory: the memory left for KV over the widest
 // KV cache group's bytes per block (get_kv_cache_config_from_groups,
 // vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72). gpt-oss-120b's 36 layers are two groups of
-// 18, a window and full attention, so a block is 18 layers' pages and the pool holds twice the
-// compatibility engine's count, which prices a block as all 36. A model of one group keeps the
+// 18, a window and full attention, so a block is 18 layers' pages: the kernel's per-block bytes,
+// which are its 18 full-attention layers' (the window layers' rings are bounded per sequence, not
+// paged with context), and half its 36 layers' page bytes. A model of one group keeps the
 // compatibility engine's count: MiniMax-M3 (full attention and its indexers, one uniform-type
 // group) and kimi-k2.5 (full attention only).
 func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
@@ -364,9 +365,9 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		scenario string
 		want     func(compat kernelmodel.KVBudget) int64
 	}{
-		{"d036-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.AllocatableBytes / (b.PerBlockBytes / 2) }}, // gpt-oss-120b
-		{"d106-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // minimax-m3
-		{"d058-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // kimi-k2.5
+		{"d036-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.AllocatableBytes / b.PerBlockBytes }}, // gpt-oss-120b
+		{"d106-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                      // minimax-m3
+		{"d058-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                      // kimi-k2.5
 		// minimax-m3 with cache_dtype fp8: the attention layers' KV at fp8, the indexer's keys at
 		// bf16 (its own dtype), so the pool holds what vLLM sizes for one uniform-type group of
 		// two page sizes: 72893 blocks (oracle/scenarios/dashboard-minimax-m3-fp8-kv-probe, at
@@ -428,5 +429,186 @@ func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) 
 	}
 	if len(tr.Finished) != 1 {
 		t.Errorf("d025 at max_model_len 4096 finished %d of 1 requests", len(tr.Finished))
+	}
+}
+
+// Muse-Spark-Open-816B-A42B's hybrid KV (16 full, 46 sliding-window layers at 2048) is checked
+// at start-up over its groups, as vLLM checks it, not as one full-attention group: a DP8
+// rank on H200 holds a 262,144-token request (a full-attention group at full context and three
+// sliding-window groups at their admission caps), which every layer at full context would not.
+// Each arm runs: H100 RoCE PP2 x TP8 with and without the DSpark drafter, H200 InfiniBand
+// DP8 x EP8, and GB200 TP8 x EP8 and DP8 x EP8 with DSpark over two trays of one NVL72 rack.
+func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
+	Register()
+	for _, s := range []string{"muse-h100-roce-armB.yaml", "muse-h100-roce-armC.yaml",
+		"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark-128k.yaml", "muse-gb200-nvl-tep8.yaml",
+		"muse-gb200-nvl-dep8-dspark.yaml"} {
+		t.Run(s, func(t *testing.T) {
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
+			done, err := prepare(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var block struct {
+				Layers []vllm.KVLayerRun `yaml:"kv_layers"`
+			}
+			if err := done.Config.Decode(&block); err != nil {
+				t.Fatal(err)
+			}
+			if groups, err := vllm.KVGroups(block.Layers, false, false); err != nil || len(groups) < 2 {
+				t.Errorf("%d KV groups (%v): want the hybrid model's several", len(groups), err)
+			}
+			tr, err := enginetest.Drive(func() (engine.Engine, error) { return engine.New(spec) },
+				[]enginetest.Arrival{{At: 0, Req: req("a", 4096, 16)}, {At: 5000, Req: req("b", 8192, 8)}},
+				enginetest.Options{Accepted: func(engine.Batch, engine.Scheduled) int { return 2 }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tr.Finished) != 2 {
+				t.Fatalf("finished %d of 2 requests", len(tr.Finished))
+			}
+		})
+	}
+}
+
+// What vLLM refuses to start, the engine refuses, with vLLM's message: H200 DP8 x EP8 with the
+// DSpark drafter at a 262,144-token window leaves a rank 16,124 blocks, and one request needs
+// cdiv(262144, 16) = 16,384 for its full-attention group plus 4 x 1,153 for its sliding-window
+// groups (get_kv_cache_configs' check,
+// vllm/v1/core/kv_cache_utils.py:2627-2647@5df63a72). The same arm at 131,072 runs (above).
+func TestMuseSparkDeploymentVLLMRefusesIsRefused(t *testing.T) {
+	Register()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h200-ib-dep8-dspark.yaml")}
+	_, err := engine.New(spec)
+	if err == nil || !strings.Contains(err.Error(), "To serve at least one request with the model's max seq len (262144)") {
+		t.Errorf("err %v, want vLLM's start-up refusal", err)
+	}
+}
+
+// Muse Spark's P/D arm, 1P1D with TP16 + EP16 on each side over RoCE H100 (neither side at PP, so
+// NIXL's worker accepts it): the production factory gives the prefill pool NIXL as kv_producer
+// and the decode pool NIXL as kv_consumer, from the deployment's pd_transfer and each pool's
+// role. A disaggregated request then prefills on one side, is handed off, pulls on the other and
+// decodes there.
+func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
+	Register()
+	const s = "muse-h100-roce-1p1d.yaml"
+	var engines [2]engine.Engine
+	for i, want := range []string{"kv_producer", "kv_consumer"} {
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s), Pool: i}
+		done, err := prepare(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var block struct {
+			KV struct {
+				Connector string `yaml:"connector"`
+				Role      string `yaml:"kv_role"`
+			} `yaml:"kv_transfer"`
+		}
+		if err := done.Config.Decode(&block); err != nil {
+			t.Fatal(err)
+		}
+		if block.KV.Connector != "NixlConnector" || block.KV.Role != want {
+			t.Fatalf("pool %d's kv_transfer is %+v, want NixlConnector as %s", i, block.KV, want)
+		}
+		if engines[i], err = engine.New(spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, d := engines[0], engines[1]
+	r := req("a", 8192, 32)
+	pre := r
+	pre.RemoteDecode, pre.MaxOutputTokens = true, 1
+	if err := p.Add(pre, 0); err != nil {
+		t.Fatal(err)
+	}
+	now := engine.Time(0)
+	var held []engine.Handoff
+	for len(held) == 0 {
+		b, err := p.Schedule(now)
+		if err != nil || b.Empty() {
+			t.Fatalf("prefill schedule: %v, empty %v", err, b.Empty())
+		}
+		now += p.StepTime(b)
+		res, err := p.Complete(b.ID, engine.Outcome{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = res.Handoffs
+	}
+	dec := r
+	dec.RemotePrefill = true
+	if err := d.Add(dec, now); err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.Schedule(now)
+	if err != nil || len(b.TransfersStarted) != 1 || b.TransfersStarted[0].Tokens != 8192 {
+		t.Fatalf("decode schedule: %v, transfers %+v, want one pull of 8192 tokens", err, b.TransfersStarted)
+	}
+	now += 5000
+	if err := d.TransferDone(b.TransfersStarted[0].ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.TransferDone(held[0].Transfer, true, now); err != nil {
+		t.Fatal(err)
+	}
+	emitted := 0
+	for steps := 0; emitted < 32 && steps < 200; steps++ {
+		b, err := d.Schedule(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Empty() {
+			now += 1000
+			continue
+		}
+		for _, sc := range b.Reqs {
+			if sc.Computed == 0 && sc.Tokens > 1 {
+				t.Fatalf("the decoder computes the prompt itself: %+v", sc)
+			}
+		}
+		now += d.StepTime(b)
+		res, err := d.Complete(b.ID, engine.Outcome{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		emitted += res.Emitted["a"]
+	}
+	if emitted != 32 {
+		t.Fatalf("the decoder emitted %d of 32 tokens", emitted)
+	}
+}
+
+// A pool's kv_transfer names the deployment's pd_transfer.connector, whatever it is: a deployment
+// naming NixlPullConnector runs NixlPullConnector (vLLM's factory resolves both to the pull
+// scheduler, factory.py:177-189@5df63a72).
+func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
+	Register()
+	src, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-1p1d.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	alt := strings.Replace(string(src), "connector: NixlConnector", "connector: NixlPullConnector", 1)
+	if err := os.WriteFile(filepath.Join(dir, "pull.yaml"), []byte(alt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := roots(t, "muse-h100-roce-1p1d.yaml")
+	r[RootScenario] = filepath.Join(dir, "pull.yaml")
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block struct {
+		KV struct {
+			Connector string `yaml:"connector"`
+		} `yaml:"kv_transfer"`
+	}
+	if err := done.Config.Decode(&block); err != nil {
+		t.Fatal(err)
+	}
+	if block.KV.Connector != "NixlPullConnector" {
+		t.Fatalf("kv_transfer.connector %q, want the deployment's NixlPullConnector", block.KV.Connector)
 	}
 }

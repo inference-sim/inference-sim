@@ -3,6 +3,7 @@ package vllm
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -656,5 +657,109 @@ func TestBatchQueueKeepsTheContract(t *testing.T) {
 		"async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n"} {
 		enginetest.TestEngine(t, build(t, extra),
 			arrivals(req("a", 40, 6), req("b", 70, 3), req("c", 300, 9), req("d", 12, 1)), enginetest.Options{})
+	}
+}
+
+// stagedPricer prices a step as one stage per pipeline rank, the later stages heavier, so a
+// pipelined driver's overlap is visible.
+type stagedPricer struct{ stages int }
+
+func (p stagedPricer) StepTime(b engine.Batch) engine.Duration {
+	var sum engine.Duration
+	for _, d := range p.StageTimes(b) {
+		sum += d
+	}
+	return sum
+}
+
+func (p stagedPricer) StageTimes(b engine.Batch) []engine.Duration {
+	out := make([]engine.Duration, p.stages)
+	for i := range out {
+		out[i] = engine.Duration(50*(i+1)) + engine.Duration(b.Tokens())
+	}
+	return out
+}
+
+// Under pipeline parallelism the engine reports its batches' stages (engine.Pipelined), one
+// per pipeline_parallel_size and summing to StepTime, and keeps every contract law when a
+// driver overlaps its in-flight batches one per stage. A pricer that does not split gives one
+// stage, the whole step.
+func TestAPipelinedEngineReportsItsStages(t *testing.T) {
+	const extra = "pipeline_parallel_size: 2\nuse_v2_model_runner: true\nasync_scheduling: true\n"
+	s := spec(t, extra)
+	newEngine := func() (engine.Engine, error) {
+		return Factory{Pricer: func(engine.Spec) (Pricer, error) { return stagedPricer{2}, nil }}.New(s)
+	}
+	tr := enginetest.TestEngine(t, newEngine, arrivals(req("a", 40, 4), req("b", 40, 4), req("c", 40, 4)),
+		enginetest.Options{})
+	e, err := newEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := e.(engine.Pipelined)
+	if !ok {
+		t.Fatal("the engine is not engine.Pipelined")
+	}
+	overlapped := false
+	for i, st := range tr.Steps {
+		stages := p.StageTimes(st.Batch)
+		if len(stages) != 2 {
+			t.Fatalf("step %d: %d stages under pp 2", i, len(stages))
+		}
+		if stages[0]+stages[1] != e.StepTime(st.Batch) {
+			t.Errorf("step %d: stages %v do not sum to %d", i, stages, e.StepTime(st.Batch))
+		}
+		if i > 0 && st.Start < tr.Steps[i-1].End {
+			overlapped = true
+		}
+	}
+	if !overlapped {
+		t.Error("no batch started before the one ahead of it ended: the stages did not overlap")
+	}
+	single, err := build(t, "")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := engine.Batch{Reqs: []engine.Scheduled{{ID: "x", Tokens: 3}}}
+	if st := single.(engine.Pipelined).StageTimes(b); len(st) != 1 || st[0] != single.StepTime(b) {
+		t.Errorf("a one-stage engine reports %v", st)
+	}
+}
+
+// Every schedule is one execute_model call, which advances a pipeline rank's sampled-token ring
+// even when it ran no tokens (model_runner.py:1729-1747, pp_utils.py:125-137@5df63a72), so the
+// engine counts its runner steps with the empty schedules the contract does not put in flight.
+// One request at pp 2 under async scheduling alternates a decode with an empty schedule (the
+// AsyncScheduler holds a decode back until its previous token is in, async_scheduler.py:
+// 52-57@5df63a72): its batches are runner steps 0, 2, 4.
+func TestRunnerStepsCountEmptySchedules(t *testing.T) {
+	e, err := build(t, "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(req("a", 8, 4), 0); err != nil {
+		t.Fatal(err)
+	}
+	rs, ok := e.(interface{ RunnerSteps() int })
+	if !ok {
+		t.Fatal("the engine reports no runner steps")
+	}
+	var steps []int
+	var inFlight []engine.Batch
+	for now := engine.Time(0); len(steps) < 3 && now < 40; now++ {
+		b, err := e.Schedule(now)
+		if err == nil && !b.Empty() {
+			steps = append(steps, rs.RunnerSteps()-1)
+			inFlight = append(inFlight, b)
+		}
+		if len(inFlight) > 0 && (e.(*Engine).blocked || err != nil) {
+			if _, err := e.Complete(inFlight[0].ID, engine.Outcome{}, now); err != nil {
+				t.Fatal(err)
+			}
+			inFlight = inFlight[1:]
+		}
+	}
+	if !reflect.DeepEqual(steps, []int{0, 2, 4}) {
+		t.Fatalf("batches at runner steps %v, want [0 2 4]: an empty schedule is a runner step", steps)
 	}
 }

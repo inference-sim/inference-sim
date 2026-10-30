@@ -80,9 +80,9 @@ the deployment on [Pricing a step](step.md):
 ```
 
 ```text
-113 of 155 values rest on evidence; 41 were assumed
+115 of 157 values rest on evidence; 41 were assumed
   assumed       41
-  measured      99
+  measured     101
   not_charged    1
   vendor_spec   14
 the kernel assumed max_cudagraph_capture_size

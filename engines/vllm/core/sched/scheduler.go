@@ -129,6 +129,12 @@ type Request struct {
 	numStale int
 	// nextDecodeStep is next_decode_eligible_step.
 	nextDecodeStep int
+	// lastSchedSeq is last_sched_seq: the step sequence that last scheduled the request, kept
+	// with defer_block_free (scheduler.py:1631-1633).
+	lastSchedSeq int
+	// dropStale is drop_stale_output: the in-flight output a preemption made stale is dropped
+	// rather than delivered (scheduler.py:1603-1605), as a connector requiring KV delivery asks.
+	dropStale bool
 	// ReplayStart is replay_start (vllm/v1/request.py:209@5df63a72): where a bounded-replay
 	// prefix hit's recomputed window begins, 0 when nothing is replayed (markPrefixReplay).
 	ReplayStart int
@@ -185,6 +191,9 @@ type Output struct {
 	// SpecDecode is scheduled_spec_decode_tokens: the drafts each request verifies this step
 	// (-1 for first-decode padding).
 	SpecDecode map[string][]int64
+	// KVConnectorMetadata is kv_connector_metadata: what a MetaBuilder connector's
+	// build_connector_meta returned for the step (scheduler.py:1527-1530), nil otherwise.
+	KVConnectorMetadata any
 }
 
 // Finished is one request update_from_output finished.
@@ -226,6 +235,22 @@ type Scheduler struct {
 	deferred map[string]bool
 	// capacityBound is prefill_capacity_bound (scheduler.py:370, :1397-1401).
 	capacityBound bool
+	// deferBlockFree is defer_block_free: a KV consumer with more than one batch in flight
+	// defers freeing a request's blocks while a step that may write them is in flight, since a
+	// load may refill them unordered against that write (scheduler.py:184-192). schedSeq and
+	// processedSeq are sched_step_seq and processed_step_seq, the non-empty steps scheduled and
+	// processed (:411-417), and deferredFrees the blocks waiting for their fence.
+	deferBlockFree         bool
+	schedSeq, processedSeq int
+	deferredFrees          []deferredFree
+	// requiresKVDelivery is requires_kv_delivery (:168-170, 194): a preempted request's
+	// in-flight output is dropped, not delivered (_preempt_request's drop_stale_output, :839).
+	requiresKVDelivery bool
+	// tableLens and finishedIDs are what a MetaBuilder connector's step output is built from
+	// (connector_offload.go): each running request's block table lengths before the step's
+	// allocation, and finished_req_ids.
+	tableLens   map[string][]int
+	finishedIDs []string
 }
 
 // New builds a scheduler.
@@ -262,6 +287,13 @@ func New(cfg Config) (*Scheduler, error) {
 	return s, nil
 }
 
+// EnableKVEvents turns KV cache events on after construction, as Config.KVEvents does at it: a
+// simulator switches them on when a router consumes them.
+func (s *Scheduler) EnableKVEvents() {
+	s.cfg.KVEvents = true
+	s.KV.Pool.EnableEvents()
+}
+
 // TakeKVEvents returns the KV cache events of the last step, in the order vLLM queues them
 // (kv_cache_manager.take_events, scheduler.py:2371@5df63a72).
 func (s *Scheduler) TakeKVEvents() []kv.Event { return s.KV.Pool.TakeEvents() }
@@ -291,27 +323,56 @@ func (s *Scheduler) Add(r *Request) error {
 }
 
 // SetConnector installs a KV connector (KVConnectorFactory.create_connector,
-// scheduler.py:170-182). Call before any request is added. A connector is modelled for one
-// full-attention KV cache group, synchronous scheduling and no drafter; the rest is refused
-// until connectorRefusalIssue lands (docs/feature-matrix.md, "KV connectors and offload").
+// scheduler.py:170-182). Call before any request is added. A connector is modelled beside
+// what its Capabilities (ConnectorCapabilities) state it is diff-tested beside; one that states
+// none is modelled for one full-attention KV cache group, synchronous scheduling and no
+// drafter. The rest is refused until connectorRefusalIssue lands (docs/feature-matrix.md,
+// "KV connectors and offload").
 func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
+	var caps Capabilities
+	if cc, ok := c.(ConnectorCapabilities); ok {
+		caps = cc.ConnectorModels()
+	}
+	if n := s.KV.NumGroups(); n > 1 {
+		if _, hma := c.(SupportsHMA); !hma || !caps.HybridGroups {
+			// vLLM turns the hybrid manager off for a connector that is not SupportsHMA
+			// (vllm/config/vllm.py:2170-2192@5df63a72) and asserts one group (scheduler.py:3045-3050).
+			return fmt.Errorf("sched: a KV connector with %d KV cache groups is not modelled for this connector (%s)",
+				n, connectorRefusalIssue)
+		}
+	}
+	for g := 0; g < s.KV.NumGroups(); g++ {
+		spec := s.KV.GroupSpec(g)
+		if (spec.Kind != kv.FullAttention && spec.Kind != kv.SlidingWindow) || spec.BlockSize != 0 {
+			// A connector beside a bounded-replay window, a ring or a group of its own block
+			// size reaches code the connector oracle has not run: the replay window a load
+			// restores (_load_restores_replay_window, scheduler.py:3094-3101), NIXL's prefill
+			// backoff floor for it (nixl/base_scheduler.py:379-394) and the per-group transfer
+			// clipping (:262-300). Mamba groups are not modelled at all (blis-vllm#7).
+			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled: only full "+
+				"attention and sliding windows at the engine's block size are (%s)", g, spec, connectorRefusalIssue)
+		}
+	}
 	switch {
-	case s.KV.NumGroups() > 1:
-		return fmt.Errorf("sched: a KV connector with %d KV cache groups is not modelled (%s)", s.KV.NumGroups(),
-			connectorRefusalIssue)
-	case s.cfg.Async || s.cfg.MaxConcurrentBatches > 1:
+	case (s.cfg.Async || s.cfg.MaxConcurrentBatches > 1) && !caps.ConcurrentBatches:
 		// defer_block_free and requires_kv_delivery (scheduler.py:184-194) apply there.
-		return fmt.Errorf("sched: a KV connector with async scheduling or concurrent batches is not modelled (%s)",
+		return fmt.Errorf("sched: a KV connector with async scheduling or concurrent batches is not modelled "+
+			"for this connector (%s)", connectorRefusalIssue)
+	case s.cfg.Spec.NumTokens > 0 && !caps.Drafters:
+		return fmt.Errorf("sched: a KV connector with speculative decoding is not modelled for this connector (%s)",
 			connectorRefusalIssue)
-	case s.cfg.Spec.NumTokens > 0:
-		return fmt.Errorf("sched: a KV connector with speculative decoding is not modelled (%s)", connectorRefusalIssue)
 	}
 	s.connector, s.conf = c, conf
+	// defer_block_free and requires_kv_delivery (scheduler.py:184-194@5df63a72).
+	s.deferBlockFree = max(s.cfg.MaxConcurrentBatches, 1) > 1 && conf.Consumer
+	s.requiresKVDelivery = conf.Producer
+	if d, ok := c.(KVDelivery); ok {
+		s.requiresKVDelivery = d.RequiresKVDelivery()
+	}
 	return nil
 }
 
-// connectorRefusalIssue tracks the connector combinations SetConnector refuses: several KV
-// cache groups, the batch queue and drafters.
+// connectorRefusalIssue tracks the connector combinations SetConnector refuses.
 const connectorRefusalIssue = "https://github.com/inference-sim/blis-vllm/issues/34"
 
 // Counts is get_request_counts: (running, waiting) (scheduler.py:2608-2610).
@@ -327,7 +388,7 @@ func (s *Scheduler) HasRequests() bool {
 	if s.HasUnfinished() || s.finishedPending > 0 {
 		return true
 	}
-	return s.connector != nil && len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len()
+	return s.connector != nil && (len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len() || s.hasPushWork())
 }
 
 // Deferred is how many waiting requests the last waiting pass skipped (deferred_waiting).
@@ -470,6 +531,9 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			continue
 		}
 		ok := false
+		if s.connector != nil {
+			s.noteTable(r)
+		}
 		for {
 			if s.KV.Allocate(r.ID, kv.Alloc{Computed: r.NumComputed, New: numNew, Lookahead: s.cfg.Spec.Lookahead,
 				Hashes: r.hashes, NumTokens: r.NumTokens(), InFlight: r.numInFlight, HasScheduled: true, Run: s.run(r)}) {
@@ -479,6 +543,14 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 			var victim *Request
 			if s.cfg.Policy == Priority {
 				victim = maxRunning(s.running)
+			} else {
+				victim = s.running[len(s.running)-1]
+			}
+			if !s.canFreeBlocks(victim) {
+				// A deferred free will not help with immediate allocation (:803-806).
+				break
+			}
+			if s.cfg.Policy == Priority {
 				vi := indexOf(s.running, victim)
 				s.running = append(s.running[:vi], s.running[vi+1:]...)
 				if vi < reqIndex {
@@ -493,7 +565,6 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 					inputBudget += restored + draftSlots
 				}
 			} else {
-				victim = s.running[len(s.running)-1]
 				s.running = s.running[:len(s.running)-1]
 			}
 			s.preempt(victim)
@@ -566,7 +637,7 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				skip(q)
 				continue
 			}
-			if r.numStale > 0 {
+			if r.numStale > 0 && !r.dropStale {
 				// Deliverable stale output still in flight: resuming now could resample a
 				// position it later delivers (:934-938).
 				skip(q)
@@ -590,12 +661,18 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 				if s.connector != nil {
 					// The connector sees the block-aligned local hit (:968-980). A hit here is
 					// always whole blocks, so the partial-tail cases (:1000-1027) never arise.
-					external, async = s.connector.MatchedTokens(r, newLocal-newLocal%s.KV.BlockSize())
+					var deferred bool
+					external, async, deferred = s.matchedTokens(r, newLocal-newLocal%s.KV.BlockSize())
+					if deferred {
+						// The connector cannot size the hit yet (None, :983-988).
+						skip(q)
+						continue
+					}
 				}
 				numComputed = newLocal + external
 				// SWA bounded replay (:1047-1066): a hit no longer than the replayed window would be
 				// recomputed in full and save nothing, so it is dropped. No connector runs beside
-				// several KV cache groups (SetConnector), so no load restores the window here.
+				// a bounded-replay group (SetConnector), so no load restores the window here.
 				if replay := s.KV.PrefixReplayTokens(); 0 < numComputed && numComputed <= replay {
 					hit, newLocal, external, async, numComputed = nil, 0, 0, false, 0
 				}
@@ -720,12 +797,22 @@ func (s *Scheduler) ScheduleThrottled(throttle bool) Output {
 	for _, r := range preempted {
 		out.Preempted = append(out.Preempted, r.ID)
 	}
+	if s.connector != nil {
+		s.buildConnectorMeta(&out, scheduledRunning, admitted)
+	}
+	// The fence advances only for steps that write KV (:1549-1552).
+	if s.deferBlockFree && len(out.Scheduled) > 0 {
+		s.schedSeq++
+	}
 	// _update_after_schedule (:1616-1648): advance computed tokens now, so a prefill can
 	// be scheduled again next step.
 	for id, n := range out.Scheduled {
 		r := s.requests[id]
 		r.NumComputed += n
 		r.numInFlight += n
+		if s.deferBlockFree {
+			r.lastSchedSeq = s.schedSeq
+		}
 		r.IsPrefillChunk = r.NumComputed < r.NumTokens()+r.Placeholders
 		if s.cfg.Async && !r.IsPrefillChunk {
 			// AsyncScheduler._update_after_schedule (async_scheduler.py:25-58): the token this
@@ -771,10 +858,17 @@ func (s *Scheduler) inflightReserved() int {
 // allocatedBlocks is the request's block table as update_state_after_alloc sees it.
 func (s *Scheduler) allocatedBlocks(id string) AllocatedBlocks {
 	bs := s.KV.Blocks(id)
-	out := AllocatedBlocks{IDs: make([]int, len(bs)), Hashed: make([]bool, len(bs))}
+	out := AllocatedBlocks{IDs: make([]int, len(bs)), Hashed: make([]bool, len(bs)), Groups: make([][]int, s.KV.NumGroups())}
 	for i, b := range bs {
 		out.IDs[i] = b.ID
 		out.Hashed[i] = b.Hash != nil && !b.Null
+	}
+	for g := range out.Groups {
+		gb := s.KV.GroupBlocks(g, id)
+		out.Groups[g] = make([]int, len(gb))
+		for i, b := range gb {
+			out.Groups[g][i] = b.ID
+		}
 	}
 	return out
 }
@@ -793,10 +887,12 @@ func (s *Scheduler) run(r *Request) kv.StoredRun {
 // scheduling the request's in-flight output becomes stale: it still returns, but must not
 // move the counters the preemption reset (:1596-1607).
 func (s *Scheduler) preempt(r *Request) {
-	s.KV.Free(r.ID)
+	s.freeRequestBlocks(r)
 	r.Status = Preempted
 	r.NumComputed = 0
 	r.SpecTokens = nil
+	// An undrained drop-mode share stays dropped: its positions have been resampled (:1596-1605).
+	r.dropStale = s.requiresKVDelivery || (r.dropStale && r.numStale > 0)
 	r.numStale = r.numInFlight
 	r.Placeholders = 0
 	r.NumPreemptions++
@@ -828,6 +924,12 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 	var stopped []*Request
 	var skip map[string]bool
 	var fail []string
+	// Every GPU write this and earlier steps enqueued has completed: deferred blocks whose fence
+	// has passed go back to the pool (:2044-2048).
+	if s.deferBlockFree && len(out.Scheduled) > 0 {
+		s.processedSeq++
+		s.drainDeferredFrees()
+	}
 	if !o.empty() {
 		skip, fail = s.failedLoads(o, out.Scheduled)
 	}
@@ -846,6 +948,10 @@ func (s *Scheduler) UpdateWith(out Output, sampled map[string][]int64, o Transfe
 			continue
 		}
 		if r == nil || r.Status >= FinishedStopped {
+			continue
+		}
+		if stale && r.dropStale {
+			// Drop-mode stale output is discarded entirely (:2101-2103).
 			continue
 		}
 		toks := sampled[id]

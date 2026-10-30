@@ -262,6 +262,14 @@ func (m *Manager) SpecDecodeStepBlocks(tokens int) int {
 // NumGroups is the number of KV cache groups.
 func (m *Manager) NumGroups() int { return len(m.groups) }
 
+// PrefixIndexable reports whether KV cache group g is one a router's prefix index takes: a full
+// attention group. vLLM tags each event with its group's kv_cache_spec_kind
+// (KVCacheManager.take_events, vllm/v1/core/kv_cache_manager.py:700-721@5df63a72), and llm-d's
+// indexer skips the stores and removals of a sliding-window or ring group.
+func (m *Manager) PrefixIndexable(g uint32) bool {
+	return int(g) < len(m.groups) && m.groups[g].spec.Kind == FullAttention
+}
+
 // PrefixReplayTokens is the scheduler's prefix_replay_tokens (vllm/v1/core/sched/scheduler.py:
 // 290-305@5df63a72): the window a bounded-replay group rebuilds after a prefix hit by recomputing
 // its trailing tokens (SlidingWindowMLASpec.prefix_replay_tokens, vllm/v1/kv_cache_interface.py:
@@ -284,6 +292,16 @@ func (m *Manager) Blocks(id string) []*Block { return m.groups[0].reqBlocks[id] 
 
 // GroupBlocks returns the request's block table in group g. The slice is the manager's own.
 func (m *Manager) GroupBlocks(g int, id string) []*Block { return m.groups[g].reqBlocks[id] }
+
+// GroupBlockSize is group g's own block size, in tokens.
+func (m *Manager) GroupBlockSize(g int) int { return m.groups[g].blockSize }
+
+// GroupSpec is group g's spec.
+func (m *Manager) GroupSpec(g int) Group { return m.groups[g].spec }
+
+// RemoveSkipped is remove_skipped_blocks (kv_cache_manager.py:631-649@5df63a72): each sliding
+// window frees the request's blocks wholly below its window for processed computed tokens.
+func (m *Manager) RemoveSkipped(id string, processed int) { m.removeSkipped(id, processed) }
 
 // ComputedBlocks is get_computed_blocks (kv_cache_manager.py:265-319): the longest prefix
 // every group can serve from cached blocks, capped so the last token is always recomputed
@@ -922,6 +940,19 @@ func (m *Manager) Free(id string) {
 		delete(g.reqBlocks, id)
 		delete(g.numCached, id)
 	}
+}
+
+// PopBlocks is pop_blocks_for_free (kv_cache_coordinator.py:410-427@5df63a72): it drops the
+// request's bookkeeping in every group and returns its blocks without freeing them, each
+// group's in allocation order, group after group. The caller frees them later, reversed.
+func (m *Manager) PopBlocks(id string) []*Block {
+	var out []*Block
+	for _, g := range m.groups {
+		out = append(out, g.reqBlocks[id]...)
+		delete(g.reqBlocks, id)
+		delete(g.numCached, id)
+	}
+	return out
 }
 
 func cdiv(a, b int) int { return (a + b - 1) / b }

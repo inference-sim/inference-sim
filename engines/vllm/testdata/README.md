@@ -4,10 +4,8 @@
 against the same inputs it was tested against in inference-sim. These directories are copies of
 inference-sim's `testdata/` at commit `ca532abca209af41425c007974a5f3ef336f5981`:
 
-- `catalog/`: blis-catalog at the commit in `catalog/.upstream-commit`
-  (`676326ec6c708e91ec4981bd6b03922a7fe60512`, the 0.3.0 release);
-- `registry/`: blis-registry at the commit in `registry/.upstream-commit`
-  (`7f6662d7188dc3dc873a37623e1f7bbfe1d6081b`, the v0.2.0 release);
+- `catalog/`: blis-catalog at the commit in `catalog/.upstream-commit` (release 0.5.0);
+- `registry/`: blis-registry at the commit in `registry/.upstream-commit` (release v0.3.0);
 - `scenarios/`: inference-sim's own scenario fixtures (blis-schemas Scenario + Deployment
   documents written for its tests).
 

@@ -12,9 +12,17 @@ connectors:
     upstream: KVConnectorBase_V1
     behaves_like: nixl-pull
     roles: [pd_transfer]
-    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 22 scenarios + 1300 fuzz seeds at 0 mismatches"
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 36 scenarios + 3300 fuzz seeds at 0 mismatches"
   NixlPullConnector:
     upstream: KVConnectorBase_V1
     behaves_like: nixl-pull
     roles: [pd_transfer]
-    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 22 scenarios + 1300 fuzz seeds at 0 mismatches"
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/nixl, 36 scenarios + 3300 fuzz seeds at 0 mismatches"
+  # The OffloadingConnector's scheduler side over the CPU tier (CPUOffloadingSpec, or
+  # TieringOffloadingSpec with no secondary tiers), LRU eviction
+  # (vllm/distributed/kv_transfer/kv_connector/v1/offloading_connector.py:53@5df63a72).
+  OffloadingConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: offloading-cpu
+    roles: [offload]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/offloading, 13 scenarios + 3600 fuzz seeds at 0 mismatches (CPU tier, LRU, full attention and sliding-window groups, several workers, async scheduling and PP, DSpark and EAGLE-3 drafters)"

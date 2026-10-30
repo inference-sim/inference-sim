@@ -66,6 +66,64 @@ func (m *Model) KVLayers() ([]KVLayerRun, error) {
 		deepseekServing{runner: runner, family: m.id.capabilityMajor, cacheDType: m.cacheDType})
 }
 
+// PipelineStages is the pool's pipeline_parallel_size, at least one.
+func (m *Model) PipelineStages() int { return max(m.k.Deployment().Parallel.PP, 1) }
+
+// KVLayersOfStage is KVLayers for one pipeline stage's rank: only the layers vLLM places on
+// stage pp of the pool's pipeline_parallel_size (get_pp_indices,
+// vllm/distributed/utils.py:126-169@5df63a72), and on the last stage the drafter's, which
+// registers after the target's (dspark.py, start_layer_id = num_hidden_layers,
+// vllm/models/muse_spark/common/dspark.py@0f6b2619). Each worker sizes its pool from its own
+// layers and free memory, and the engine keeps the smallest (get_kv_cache_configs,
+// vllm/v1/core/kv_cache_utils.py:2530-2660@5df63a72). At pp 1 it is KVLayers.
+func (m *Model) KVLayersOfStage(stage int) ([]KVLayerRun, error) {
+	pool := m.k.Deployment()
+	pp := max(pool.Parallel.PP, 1)
+	if pp == 1 {
+		return m.KVLayers()
+	}
+	if stage < 0 || stage >= pp {
+		return nil, fmt.Errorf("pipeline stage %d of %d", stage, pp)
+	}
+	g := *m.graph
+	seq := g.Stack.Expand()
+	if len(seq) < pp {
+		return nil, fmt.Errorf("%d layers over %d pipeline stages", len(seq), pp)
+	}
+	lo, hi := ppIndices(len(seq), pp, stage)
+	g.Stack = model.Stack{Pattern: seq[lo:hi], Repeat: 1}
+	runner, _ := m.ModelRunner()
+	e := m.engine
+	// The drafter runs on the last stage only: earlier stages register none of its layers,
+	// which kvLayersOf reads from the engine's draft length.
+	if stage != pp-1 && e.Speculative != nil {
+		cp := *e.Speculative
+		cp.NumSpecTokens = 0
+		e.Speculative = &cp
+	}
+	return kvLayersOf(&g, pool, e, deepseekServing{runner: runner, family: m.id.capabilityMajor,
+		cacheDType: m.cacheDType})
+}
+
+// ppIndices is get_pp_indices (vllm/distributed/utils.py:126-169@5df63a72) without
+// VLLM_PP_LAYER_PARTITION: stage's [start, end) of layers over pp stages.
+func ppIndices(layers, pp, stage int) (int, int) {
+	parts := make([]int, pp)
+	for i := range parts {
+		parts[i] = layers / pp
+	}
+	if rem := layers % pp; rem > 0 {
+		for i := 2; i < rem+2; i++ {
+			parts[pp-i]++
+		}
+	}
+	start := 0
+	for i := range stage {
+		start += parts[i]
+	}
+	return start, start + parts[stage]
+}
+
 func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	if g == nil {
 		return nil, nil
@@ -121,13 +179,43 @@ func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine
 			}
 		}
 	}
-	switch sp := engine.Speculative; {
+	// A drafter's layers register after the target's, each attention its own spec: a speculator
+	// the graph states (its stack, which a deployment's speculative.draft_model grafts in) is
+	// mapped as the target's layers are, appended. A sliding-window-only drafter beside a hybrid
+	// target is Muse Spark's DSpark (five 2048-token windows, global_attn_cfg,
+	// vllm/models/muse_spark/nvidia/model.py:1101-1108@0f6b2619).
+	sp := engine.Speculative
+	drafting := sp != nil && sp.NumSpecTokens > 0
+	if drafting && g.Speculator != nil {
+		for _, id := range g.Speculator.Stack.Expand() {
+			for _, n := range kinds[id].Nodes {
+				if n.Op != model.OpAttention {
+					continue
+				}
+				if len(n.Caches) > 0 {
+					return nil, fmt.Errorf("drafter layer kind %s states caches, which are not mapped to a KV cache spec", id)
+				}
+				r := KVLayerRun{Count: 1, Spec: "full", NumKVHeads: max(n.NumKVHeads/tp, 1), HeadSize: n.HeadDim}
+				if n.AttentionKind == model.AttentionSWA {
+					r.Spec, r.SlidingWindow = "sliding_window", n.Window
+				}
+				plain = plain && r.Spec == "full"
+				if l := len(runs) - 1; l >= 0 && sameRun(runs[l], r) {
+					runs[l].Count++
+				} else {
+					runs = append(runs, r)
+				}
+			}
+		}
+	}
+	switch {
 	case plain:
 		return nil, nil
 	case shared:
 		return nil, fmt.Errorf("a layer reading another layer's KV beside these KV cache specs is not mapped")
-	case sp != nil && sp.NumSpecTokens > 0:
-		return nil, fmt.Errorf("a %s drafter's KV layers beside these KV cache specs are not mapped", sp.Method)
+	case drafting && g.Speculator == nil:
+		return nil, fmt.Errorf("a %s drafter's KV layers beside these KV cache specs are not mapped: the graph "+
+			"states no speculator to read them from", sp.Method)
 	}
 	return runs, nil
 }

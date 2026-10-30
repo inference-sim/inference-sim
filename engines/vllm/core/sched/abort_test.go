@@ -86,23 +86,63 @@ func TestRequestHashesAreTheBlockHashesOfItsTokens(t *testing.T) {
 	}
 }
 
-// A connector is refused where it is not modelled -- several KV cache groups, the batch queue
-// or a drafter -- each refusal naming the issue that brings it, and installed otherwise.
+// hmaConnector is loadingConnector stating it supports the hybrid memory allocator and the
+// given capabilities, recording the per-group block ids it is handed at finish.
+type hmaConnector struct {
+	loadingConnector
+	caps    Capabilities
+	groups  [][]int
+	alloced AllocatedBlocks
+}
+
+func (c *hmaConnector) ConnectorModels() Capabilities           { return c.caps }
+func (c *hmaConnector) MatchedTokens(*Request, int) (int, bool) { return 0, false }
+func (c *hmaConnector) FinishedAllGroups(r *Request, ids [][]int) bool {
+	c.groups = ids
+	return c.Finished(r, nil)
+}
+func (c *hmaConnector) AfterAlloc(_ *Request, b AllocatedBlocks, _ int) { c.alloced = b }
+
+// A connector is refused where it is not modelled for it, each refusal naming the issue that
+// brings it, and installed where its Capabilities state it is diff-tested: several KV cache
+// groups only for a SupportsHMA connector (vLLM turns the hybrid manager off for any other,
+// vllm/config/vllm.py:2170-2192@5df63a72), drafters and the batch queue only where stated, and
+// never beside a group kind the connector oracle has not run (a bounded-replay window, a ring,
+// a group of its own block size).
 func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 	base := Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40, MaxModelLen: 128,
 		EnableChunkedPrefill: true, Policy: FCFS, EnablePrefixCaching: true, ReserveFullSequence: true}
+	hybrid := func(c *Config) {
+		c.KVGroups = kv.ResolveGroups([]kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindow, Window: 8}}, false)
+	}
+	drafter := func(c *Config) { c.Spec = ResolveSpec(SpecOptions{Method: "dspark", NumTokens: 7}) }
+	async := func(c *Config) { c.Async, c.MaxConcurrentBatches = true, 2 }
+	nixlLike := func() Connector { return &hmaConnector{caps: Capabilities{HybridGroups: true, Drafters: true}} }
+	plain := func() Connector { return &loadingConnector{} }
 	for _, c := range []struct {
 		name string
+		conn func() Connector
 		edit func(*Config)
 		want string
 	}{
-		{"one full-attention group, synchronous, no drafter", func(*Config) {}, ""},
-		{"several KV cache groups", func(c *Config) {
-			c.KVGroups = kv.ResolveGroups([]kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindow, Window: 8}}, false)
-		}, "KV cache groups"},
-		{"async scheduling", func(c *Config) { c.Async, c.MaxConcurrentBatches = true, 2 }, "async scheduling"},
-		{"concurrent batches", func(c *Config) { c.MaxConcurrentBatches = 2 }, "concurrent batches"},
-		{"a drafter", func(c *Config) { c.Spec = ResolveSpec(SpecOptions{Method: "eagle3", NumTokens: 2}) }, "speculative decoding"},
+		{"one full-attention group, synchronous, no drafter", plain, func(*Config) {}, ""},
+		{"several KV cache groups, a connector without HMA", plain, hybrid, "KV cache groups"},
+		{"several KV cache groups, SupportsHMA without the capability",
+			func() Connector { return &hmaConnector{} }, hybrid, "KV cache groups"},
+		{"several KV cache groups, SupportsHMA and diff-tested", nixlLike, hybrid, ""},
+		{"a bounded-replay window", nixlLike, func(c *Config) {
+			c.KVGroups = []kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindowMLA, Window: 8, BoundedReplay: true}}
+		}, "is not modelled"},
+		{"a ring", nixlLike, func(c *Config) {
+			c.KVGroups = []kv.Group{{Kind: kv.FullAttention}, {Kind: kv.CircularBuffer}}
+		}, "is not modelled"},
+		{"a drafter, a connector without the capability", plain, drafter, "speculative decoding"},
+		{"a drafter, diff-tested", nixlLike, drafter, ""},
+		{"a drafter beside several groups, diff-tested", nixlLike, func(c *Config) { hybrid(c); drafter(c) }, ""},
+		{"async scheduling", nixlLike, async, "async scheduling"},
+		{"concurrent batches", nixlLike, func(c *Config) { c.MaxConcurrentBatches = 2 }, "concurrent batches"},
+		{"async scheduling, diff-tested",
+			func() Connector { return &hmaConnector{caps: Capabilities{ConcurrentBatches: true}} }, async, ""},
 	} {
 		cfg := base
 		c.edit(&cfg)
@@ -110,7 +150,7 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", c.name, err)
 		}
-		err = s.SetConnector(&loadingConnector{}, ConnectorConfig{})
+		err = s.SetConnector(c.conn(), ConnectorConfig{})
 		switch {
 		case c.want == "" && err != nil:
 			t.Errorf("%s: refused: %v", c.name, err)
@@ -118,5 +158,55 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 			!strings.Contains(err.Error(), "https://github.com/inference-sim/blis-vllm/issues/34")):
 			t.Errorf("%s: %v, want a refusal naming %q and blis-vllm#34", c.name, err, c.want)
 		}
+	}
+}
+
+// With several KV cache groups the connector sees every group's block ids: at admission
+// (update_state_after_alloc's KVCacheBlocks, AllocatedBlocks.Groups), and at finish through
+// request_finished_all_groups, after each sliding window freed its blocks below the window
+// (_connector_finished, vllm/v1/core/sched/scheduler.py:3024-3058@5df63a72), each group clipped
+// to the blocks covering the computed tokens, a freed slot as the null block's id (0).
+func TestAnHMAConnectorSeesEveryGroupsBlocks(t *testing.T) {
+	s, err := New(Config{MaxNumSeqs: 4, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 40, MaxModelLen: 128,
+		EnableChunkedPrefill: true, Policy: FCFS, EnablePrefixCaching: true, ReserveFullSequence: true,
+		KVGroups: kv.ResolveGroups([]kv.Group{{Kind: kv.FullAttention}, {Kind: kv.SlidingWindow, Window: 4}}, false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &hmaConnector{caps: Capabilities{HybridGroups: true}}
+	if err := s.SetConnector(c, ConnectorConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	prompt := make([]int64, 16)
+	for i := range prompt {
+		prompt[i] = int64(200 + i)
+	}
+	if err := s.Add(&Request{ID: "a", Prompt: prompt, MaxTokens: 4, EOS: eosToken}); err != nil {
+		t.Fatal(err)
+	}
+	out := s.Schedule()
+	if got := len(c.alloced.Groups); got != 2 {
+		t.Fatalf("update_state_after_alloc saw %d groups' block ids, want 2", got)
+	}
+	if len(c.alloced.Groups[0]) != len(c.alloced.IDs) || c.alloced.Groups[0][0] != c.alloced.IDs[0] {
+		t.Errorf("AllocatedBlocks.Groups[0] %v is not group 0's IDs %v", c.alloced.Groups[0], c.alloced.IDs)
+	}
+	s.Update(out, map[string][]int64{"a": {7}})
+	s.Abort([]string{"a"})
+	if len(c.groups) != 2 {
+		t.Fatalf("request_finished_all_groups got %d groups, want 2", len(c.groups))
+	}
+	// 16 computed tokens: full attention holds 4 blocks; the window of 4 keeps only the blocks
+	// for its last 3 tokens, so blocks 0-2 are freed to null slots before the hand-over.
+	if len(c.groups[0]) != 4 || len(c.groups[1]) != 4 {
+		t.Fatalf("block ids %v, want 4 per group", c.groups)
+	}
+	for i, id := range c.groups[1][:3] {
+		if id != 0 {
+			t.Errorf("window block %d is %d, want the null block (0): the window was not trimmed first", i, id)
+		}
+	}
+	if c.groups[1][3] == 0 {
+		t.Errorf("the window's last block was freed: %v", c.groups[1])
 	}
 }

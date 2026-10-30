@@ -61,6 +61,7 @@ import (
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
 	"github.com/inference-sim/blis-schemas/spec/acceptance"
@@ -297,6 +298,11 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if in.Routing, err = resolveRouting(in, engine, r.Registry, routingOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
+	// Read by the kernel only under adaptive verification, which sizes its verify budget from it
+	// (blis-latency-kernel#89); nil otherwise, as the kernel then prices without it.
+	if in.Acceptance, err = resolveAcceptance(in, engine, r.Registry, acceptanceOverrides); err != nil {
+		return nil, fmt.Errorf("%s: %w", scenario, err)
+	}
 	return fromDecoded(in, engine)
 }
 
@@ -333,7 +339,10 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, e
 	m.engine = engine
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
-	m.graph = in.Model
+	// The graph the kernel priced: the scenario's, with a drafter named by
+	// speculative.draft_model grafted on, so the KV groups sized from it are the priced layers.
+	g := k.Graph()
+	m.graph = &g
 	if in.Rules != nil {
 		m.cacheDType = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, m.id.capabilityMajor,
 			max(pool.Parallel.TP, 1), engine.CacheDType)
@@ -362,10 +371,29 @@ func newModel(k kernel.Kernel, id identity) (*Model, error) {
 	}, nil
 }
 
+// RolePools are the indexes, in the deployment's pools, of the pool serving each role, refusing
+// a scenario that states one role in more than one pool. An engine.Spec selects its pool by this
+// index (Spec.Pool).
+func RolePools(scenario string, r Repos) (map[deployment.Role]int, error) {
+	_, dep, err := blisschemas.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	if err != nil {
+		return nil, err
+	}
+	out := map[deployment.Role]int{}
+	for i, p := range dep.Pools {
+		if _, dup := out[p.Role]; dup {
+			return nil, fmt.Errorf("%s states more than one %s pool; one engine layout per role is "+
+				"what a simulated pool runs", scenario, p.Role)
+		}
+		out[p.Role] = i
+	}
+	return out, nil
+}
+
 // OpenRole opens the pool of a scenario that serves role -- the prefill or the decode pool of
 // a disaggregated deployment -- refusing a scenario that states no such pool or more than one.
 func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	_, dep, err := blisschemas.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return nil, err
 	}
@@ -398,6 +426,11 @@ func (m *Model) OffloadCopies() int64 {
 	}
 	return int64(m.id.rankGPUs)
 }
+
+// WorldSize is one engine's parallel world size, pp x tp x pcp (ParallelConfig.world_size): the
+// workers a KV connector runs on, which the OffloadingConnector pends every job on
+// (num_workers, vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:335@5df63a72).
+func (m *Model) WorldSize() int { return m.id.rankGPUs }
 
 // RankCapacity is how many data-parallel ranks the pool's nodes hold at its layout: the pool's
 // GPUs divided by the GPUs one rank occupies. A simulator running one replica per rank may run
@@ -514,6 +547,33 @@ func mtpDraftLayersOf(g *model.Graph, sp *engineconfig.Speculative) int {
 	return g.Speculator.Stack.Layers()
 }
 
+// TierTransferTicks prices moving blocks of this pool's KV to (toTier) or from an offload tier
+// device class, one transfer at a time, at the pool's per-block bytes: the kernel's TierTime,
+// rounded up to whole ticks. An unknown tier prices at the kernel's sentinel, which a caller
+// refuses at startup (compat/build priceOffload checks the tier first).
+func (m *Model) TierTransferTicks(tier string, toTier bool, blocks int64) int64 {
+	dir := kernel.DirectionFromTier
+	if toTier {
+		dir = kernel.DirectionToTier
+	}
+	bytes := blocks * m.k.SequenceVariableBytes(m.engine.BlockSize)
+	return max(1, ticks(m.k.TierTime(tier, dir, bytes, 1)))
+}
+
+// TierTransferTicksOf is TierTransferTicks for a transfer of bytes, the caller's own per-block
+// figure times the blocks (a hybrid pool's page bytes), or of blocks at the kernel's per-block
+// bytes when bytes is 0.
+func (m *Model) TierTransferTicksOf(tier string, toTier bool, bytes, blocks int64) int64 {
+	if bytes <= 0 {
+		return m.TierTransferTicks(tier, toTier, blocks)
+	}
+	dir := kernel.DirectionFromTier
+	if toTier {
+		dir = kernel.DirectionToTier
+	}
+	return max(1, ticks(m.k.TierTime(tier, dir, bytes, 1)))
+}
+
 // ReqShape is one request's share of a batch in the kernel's terms (blis-schemas
 // kernel.ReqShape), for a caller pricing batches it formed itself, such as blis-vllm's v0.32.0
 // engine through vllmengine.
@@ -526,6 +586,53 @@ type ReqShape = kernel.ReqShape
 func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
 	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
+}
+
+// verifiedDrafter is the latency kernel's adaptive-verification answer (blis-latency-kernel#89):
+// for each request of a batch, how many drafts the verifier runs under the adaptive budget, or
+// nil when the pool does not verify adaptively.
+type verifiedDrafter interface {
+	VerifiedDrafts(b kernel.Batch) []int
+}
+
+// VerifiedDraftsOfShapes is, for each request of a batch already in the kernel's shapes, how many
+// of its scheduled drafts the verifier runs, or nil when every scheduled draft is verified: the
+// pool does not turn adaptive verification on, or its kernel does not trim. Under adaptive
+// verification vLLM's scheduler still budgets 1 + K tokens a decode, and the runner trims the
+// verified drafts on the GPU to a confidence-chosen budget (get_num_tokens and reallocate_drafts,
+// vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350,392-448@5df63a72); the batch is
+// the one StepTimeOfShapes prices, so the widths are the ones its step time was priced at.
+func (m *Model) VerifiedDraftsOfShapes(reqs []ReqShape) []int {
+	v, ok := m.k.(verifiedDrafter)
+	if !ok {
+		return nil
+	}
+	return v.VerifiedDrafts(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
+}
+
+// StageTimesOfShapes splits StepTimeOfShapes by pipeline stage, in pipeline order, where the
+// pool runs more than one (the kernel's StepEstimate.Stages): each stage's NoOverlap figure in
+// ticks, at least one, the last carrying the rounding so the stages sum exactly to
+// StepTimeOfShapes. A single-stage pool returns that one figure.
+func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 {
+	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	e := m.k.StepTime(b)
+	total := max(1, ticks(e.NoOverlap))
+	if len(e.Stages) == 0 {
+		return []int64{total}
+	}
+	out := make([]int64, len(e.Stages))
+	var sum int64
+	for i, st := range e.Stages {
+		out[i] = max(1, ticks(st.NoOverlap))
+		sum += out[i]
+	}
+	// Rounding each stage can drift from the rounded whole by a tick a stage; the last stage
+	// absorbs it, and a total too short for one tick a stage widens to that.
+	if d := total - sum; d != 0 {
+		out[len(out)-1] = max(1, out[len(out)-1]+d)
+	}
+	return out
 }
 
 // QueueingTime is the host work before a request can be scheduled: tokenization and
@@ -834,7 +941,7 @@ func unmodelledSettings(e engineconfig.Engine) []string {
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
 	path := filepath.Join(r.Scenarios, scenario)
-	sc, dep, err := latencykernel.LoadBundle(path)
+	sc, dep, err := blisschemas.LoadBundle(path)
 	if err != nil {
 		return Shape{}, err
 	}

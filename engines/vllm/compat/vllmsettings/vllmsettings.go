@@ -28,6 +28,7 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 		BlockSize:               e.BlockSize,
 		MaxNumSeqs:              e.MaxNumSeqs,
 		MaxNumBatchedTokens:     e.MaxNumBatchedTokens,
+		GPUMemoryUtilization:    e.GPUMemoryUtilization,
 		MaxModelLen:             enginesettings.MaxModelLen(e.MaxModelLen),
 		EnablePrefixCaching:     e.EnablePrefixCaching,
 		AsyncScheduling:         e.AsyncScheduling,
@@ -51,7 +52,11 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 	}
 	if e.Speculative != nil {
 		s.Speculative = &enginesettings.Speculative{Method: e.Speculative.Method,
-			NumSpecTokens: e.Speculative.NumSpecTokens}
+			NumSpecTokens: e.Speculative.NumSpecTokens, DraftModel: e.Speculative.DraftModel,
+			// Tri-state in the engine block, nil being vLLM's default false
+			// (vllm/config/speculative.py:551@5df63a72).
+			EnableAdaptiveVerification: e.Speculative.EnableAdaptiveVerification != nil &&
+				*e.Speculative.EnableAdaptiveVerification}
 	}
 	if e.EngramConfig != nil {
 		s.EngramConfig = &enginesettings.EngramConfig{CPUOffload: e.EngramConfig.CPUOffload,

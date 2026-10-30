@@ -16,7 +16,11 @@
 // scheduler's decisions depend only on the outcome they report, which is the input here.
 package nixl
 
-import "github.com/inference-sim/blis-vllm/core/sched"
+import (
+	"fmt"
+
+	"github.com/inference-sim/blis-vllm/core/sched"
+)
 
 // Config is the connector's slice of KVTransferConfig.kv_connector_extra_config.
 type Config struct {
@@ -29,12 +33,42 @@ type Config struct {
 	// tokens the prefiller does not compute and the decoder recomputes. It is
 	// max(1 if the model has mamba layers or a replay window else 0,
 	// num_prefill_lookahead_tokens - 1); 0 for a full-attention model without a
-	// multi-module MTP drafter.
+	// multi-module MTP drafter. Backoff derives it.
 	PrefillBackoff int
 }
 
 // Default is the defaults kv_connector_extra_config leaves (base_scheduler.py:160-175).
 func Default() Config { return Config{RecomputeThreshold: 64} }
+
+// Backoff is _prefill_backoff (base_scheduler.py:379-394) for a model without Mamba layers or
+// a bounded-replay window: num_prefill_lookahead_tokens - 1, so a multi-module MTP drafter's
+// lookahead window stays off the prefiller, which would otherwise embed unverified drafts in
+// the MTP layers' KV (base_scheduler.py:391-394). Mamba layers and DeepSeek V4.1's bounded
+// replay add a floor of one token, which SetConnector refuses (no such group is modelled here).
+func Backoff(spec sched.Spec) int { return max(0, spec.PrefillLookahead-1) }
+
+// CheckWorker refuses what vLLM's NIXL worker refuses at start-up for the parallel layout
+// (NixlBaseConnectorWorker.__init__, nixl/base_worker.py:757-779@5df63a72): with
+// pipeline_parallel_size > 1, the pull worker refuses a hybrid KV cache layout that needs the
+// hybrid memory allocator (_is_hma_required, :560-566: some layer is not full attention and
+// disable_hybrid_kv_cache_manager is off; _supports_pp_hma is False for the pull worker, :132,
+// :761-765) and any decoder (kv_consumer, :775-779). The scheduler side never sees PP, so these
+// are the only parallel refusals.
+func CheckWorker(pp int, hmaRequired, kvConsumer bool) error {
+	if pp <= 1 {
+		return nil
+	}
+	if hmaRequired {
+		return fmt.Errorf("nixl: NixlConnector (pull) does not support pipeline_parallel_size %d with a hybrid "+
+			"KV cache layout (HMA); vLLM's worker refuses it (vllm/distributed/kv_transfer/kv_connector/v1/nixl/"+
+			"base_worker.py:760-765@5df63a72)", pp)
+	}
+	if kvConsumer {
+		return fmt.Errorf("nixl: a NIXL decoder (kv_consumer) does not support pipeline_parallel_size %d; vLLM's "+
+			"worker refuses it (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:775-779@5df63a72)", pp)
+	}
+	return nil
+}
 
 // Scheduler is NixlPullConnectorScheduler for one engine.
 type Scheduler struct {
@@ -64,11 +98,34 @@ func (s *Scheduler) remoteTokenCount(promptTokens int) int {
 	return promptTokens
 }
 
-// OnNewRequest is on_new_request (base_scheduler.py:199-238). The prefiller's truncation
-// of a remote-decode prompt by the backoff applies only with a backoff, which a
-// full-attention model without a multi-module MTP drafter does not have; heartbeats are
+// OnNewRequest is on_new_request (base_scheduler.py:199-238): a remote-decode request has its
+// prompt truncated by the backoff (_truncate_request_for_prefill, :405-438); heartbeats are
 // worker-side bookkeeping.
-func (s *Scheduler) OnNewRequest(r *sched.Request) {}
+func (s *Scheduler) OnNewRequest(r *sched.Request) {
+	if p := r.Transfer; p != nil && p.DoRemoteDecode {
+		s.truncateForPrefill(r)
+	}
+}
+
+// truncateForPrefill is _truncate_request_for_prefill (base_scheduler.py:405-438): the
+// prefiller drops the trailing backoff prompt tokens, which the decoder recomputes, and samples
+// one token, once per request. The request's block hashes were computed when it was built
+// (Request.__init__, vllm/v1/request.py:225-230@5df63a72) and are not recomputed, as in vLLM.
+func (s *Scheduler) truncateForPrefill(r *sched.Request) {
+	b := s.cfg.PrefillBackoff
+	if b == 0 || r.Transfer.PSideTruncated || len(r.Prompt) <= b {
+		return
+	}
+	r.Prompt = r.Prompt[:len(r.Prompt)-b]
+	r.MaxTokens = 1
+	r.Transfer.PSideTruncated = true
+}
+
+// ConnectorModels implements sched.ConnectorCapabilities: what this model of NIXL's scheduler
+// side is diff-tested beside, against vLLM v0.32.0 (oracle/run_connector.py).
+func (s *Scheduler) ConnectorModels() sched.Capabilities {
+	return sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true}
+}
 
 // MatchedTokens is get_num_new_matched_tokens (pull_scheduler.py:34-106).
 func (s *Scheduler) MatchedTokens(r *sched.Request, localComputed int) (int, bool) {
@@ -115,9 +172,16 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	}
 }
 
-// Finished is request_finished (pull_scheduler.py:191-292): whether the request's blocks
-// outlive it until the remote side has read them.
+// Finished is request_finished (pull_scheduler.py:191-292) as the scheduler calls it for one
+// KV cache group (NixlBaseConnector.request_finished, nixl/connector.py:203-210).
 func (s *Scheduler) Finished(r *sched.Request, computedBlockIDs []int) bool {
+	return s.FinishedAllGroups(r, [][]int{computedBlockIDs})
+}
+
+// FinishedAllGroups is request_finished_all_groups (nixl/connector.py:212-218): NIXL is
+// SupportsHMA (:78), so with several KV cache groups it gets every group's block ids, and the
+// request's blocks outlive it if any group holds one (pull_scheduler.py:248).
+func (s *Scheduler) FinishedAllGroups(r *sched.Request, blockIDs [][]int) bool {
 	p := r.Transfer
 	if p == nil {
 		return false
@@ -137,7 +201,10 @@ func (s *Scheduler) Finished(r *sched.Request, computedBlockIDs []int) bool {
 		s.notProcessed[r.ID] = true
 		return false
 	}
-	delay := len(computedBlockIDs) > 0
+	delay := false
+	for _, g := range blockIDs {
+		delay = delay || len(g) > 0
+	}
 	if delay {
 		s.send[r.ID] = true
 	}

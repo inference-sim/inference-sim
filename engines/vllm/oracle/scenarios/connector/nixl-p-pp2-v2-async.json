@@ -1,0 +1,122 @@
+{
+ "name": "nixl-p-pp2-v2-async",
+ "description": "Prefiller with pipeline_parallel_size 2 on the V2 model runner with async scheduling (three batches in flight, vllm/config/vllm.py:577-588, and PP decode spacing): the NIXL pull worker accepts PP > 1 only on a prefiller of a full-attention model (nixl/base_worker.py:757-779).",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "async_scheduling": true,
+  "num_blocks": 30,
+  "pipeline_parallel_size": 2,
+  "use_v2_model_runner": true,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    1400,
+    67,
+    2269,
+    3628,
+    2450,
+    3679,
+    785,
+    3122,
+    1285,
+    1673,
+    49,
+    3940,
+    3895,
+    3063,
+    4623,
+    3475,
+    1534,
+    1186
+   ],
+   "output": [
+    251
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    2097,
+    3046,
+    1496,
+    819,
+    3634,
+    2110,
+    4590
+   ],
+   "output": [
+    4283,
+    3052,
+    4644,
+    4094,
+    3080,
+    4255,
+    3026,
+    4376
+   ]
+  },
+  {
+   "id": "p1",
+   "arrival_step": 1,
+   "prompt": [
+    42,
+    2234,
+    2944,
+    1821,
+    4824,
+    796,
+    3345,
+    3105,
+    3468,
+    638
+   ],
+   "output": [
+    4061
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1
+  },
+  {
+   "id": "l1",
+   "arrival_step": 2,
+   "prompt": [
+    3336,
+    146,
+    787,
+    54,
+    401,
+    2685,
+    1315,
+    4457,
+    2142
+   ],
+   "output": [
+    275,
+    3752,
+    316,
+    1676,
+    4908,
+    3931
+   ]
+  }
+ ]
+}

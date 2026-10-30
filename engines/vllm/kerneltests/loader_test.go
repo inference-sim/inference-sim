@@ -16,6 +16,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/coefficient"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 	"github.com/inference-sim/blis-schemas/spec/hardware"
+	"github.com/inference-sim/blis-schemas/spec/model"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
@@ -90,9 +91,16 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	if err != nil {
 		t.Fatalf("committed fixture %s: decoding its engine block: %v", scenario, err)
 	}
+	// A drafter the deployment names by speculative.draft_model is a catalog model of its own.
+	var draft *model.Graph
+	if eng.Speculative != nil && eng.Speculative.DraftModel != "" {
+		draftPath := filepath.Join(catalogRoot, "models", eng.Speculative.DraftModel, "graph.yaml")
+		draft, err = schemas.LoadModelGraph(draftPath)
+		artifacttest.RequireArtifact(t, catalogRoot, draftPath, "catalog", err)
+	}
 	return Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
-		Model: graph, Chip: chip, Fabric: fabric,
+		Model: graph, Draft: draft, Chip: chip, Fabric: fabric,
 		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineVersion), Engine: &eng,
 	}
 }

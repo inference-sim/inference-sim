@@ -15,7 +15,7 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -75,7 +75,7 @@ func StatedRunSettings(m *kernelmodel.Model) (RunSettings, error) {
 // non-nil router becomes the variant's router block; a scenario that already states one is
 // refused rather than overwritten.
 func ScenarioVariant(src string, rs RunSettings, router *deployment.Router) ([]byte, error) {
-	sc, dep, err := latencykernel.LoadBundle(src)
+	sc, dep, err := blisschemas.LoadBundle(src)
 	if err != nil {
 		return nil, err
 	}

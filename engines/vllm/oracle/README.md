@@ -43,7 +43,8 @@ so, when it is unset.
 | T3 EngineCore | `run_enginecore.py` | `scenarios-t3/` | `gen_fuzz_t3.py` | `./core/engine` (`BLIS_VLLM_T3_FUZZ_DIR`) |
 | T3 data parallel | `run_dp.py` | `scenarios-dp/` | `gen_fuzz_dp.py` | `./core/engine` (`BLIS_VLLM_DP_FUZZ_DIR`) |
 | T3 data parallel, async (a batch queue per rank) | `run_dp.py` | `scenarios-dp-async/` | | `./core/engine`, `./core/vllm` |
-| T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
+| T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`; 20000+ add hybrid groups and drafters; 30000+ the batch queue) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
+| T4 OffloadingConnector (CPU tier, LRU) | `run_offloading.py` | `scenarios/offloading/` | `gen_offloading_fuzz.py` (seeds 20000+ add sliding-window groups) | `./core/connector/offloading` (`BLIS_VLLM_OFFLOAD_FUZZ_DIR`) |
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
 
 The guards: `check_mocks.py` (every write a runner makes into vLLM is listed in `mocks.json`),
@@ -51,7 +52,7 @@ The guards: `check_mocks.py` (every write a runner makes into vLLM is listed in 
 trailer), `compare_goldens.py` / `compare_goldens_t3.py` (each golden is what the pinned release
 produces now), `check_manifest.py` (tier 5's manifest against vLLM's live registry) and
 `test_checks.py` (each guard fails on what it guards). The mutation sweeps: `mutate.py` (T2),
-`mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_e24.py` (the engine interface) and
+`mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_offloading.py` (the OffloadingConnector), `mutate_e24.py` (the engine interface) and
 `mutate_metrics.py` (T5).
 
 ## Scenario

@@ -35,6 +35,8 @@ type model struct {
 var models = map[string]model{
 	"nixl-pull": {pkg: "core/connector/nixl", scenarios: "oracle/scenarios/connector/nixl-*.json",
 		connectors: []string{"NixlConnector", "NixlPullConnector"}, tier: 4},
+	"offloading-cpu": {pkg: "core/connector/offloading", scenarios: "oracle/scenarios/offloading/offloading-*.json",
+		connectors: []string{"OffloadingConnector"}, tier: 4},
 }
 
 // Load returns the registry, validated against blis-schemas' connector-registry schema.

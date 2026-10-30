@@ -19,7 +19,7 @@ MUTANTS = [
      "if n := s.remoteTokenCount(len(r.Prompt)) - localComputed; n > 0 {",
      "if n := s.remoteTokenCount(len(r.Prompt)); n > 0 {"),
     ("N2", "the prefiller holds a finished request's blocks", "core/connector/nixl/nixl.go",
-     "\tdelay := len(computedBlockIDs) > 0\n", "\tdelay := false\n"),
+     "\tif delay {\n\t\ts.send[r.ID] = true\n\t}\n\treturn delay", "\treturn false"),
     ("N3", "an aborted prefiller request frees at once", "core/connector/nixl/nixl.go",
      "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t\treturn false\n\t}",
      "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t}"),
@@ -76,6 +76,42 @@ MUTANTS = [
     ("N24", "the engine runs while a connector holds blocks", "core/sched/scheduler.go",
      "\treturn s.connector != nil && len(s.requests) > len(s.running)+s.waiting.len()+s.holding.len()",
      "\treturn false"),
+    # Hybrid KV cache groups, drafters and the batch queue (blis-vllm#34).
+    ("N25", "each window frees its below-window blocks before the connector sees them", "core/sched/connector.go",
+     "\ts.KV.RemoveSkipped(r.ID, max(0, r.NumComputed-r.numInFlight))\n", ""),
+    ("N26", "a prefiller truncates a remote-decode prompt by the backoff", "core/connector/nixl/nixl.go",
+     "\tif p := r.Transfer; p != nil && p.DoRemoteDecode {\n\t\ts.truncateForPrefill(r)\n\t}", "\t_ = r"),
+    ("N27", "the backoff is the drafter's prefill lookahead less one", "core/connector/nixl/nixl.go",
+     "func Backoff(spec sched.Spec) int { return max(0, spec.PrefillLookahead-1) }",
+     "func Backoff(spec sched.Spec) int { return 0 }"),
+    ("N28", "the window trim is on the processed-token basis", "core/sched/connector.go",
+     "s.KV.RemoveSkipped(r.ID, max(0, r.NumComputed-r.numInFlight))", "s.KV.RemoveSkipped(r.ID, r.NumComputed)"),
+    ("N29", "a KV consumer with batches in flight defers block frees", "core/sched/scheduler.go",
+     "\ts.deferBlockFree = max(s.cfg.MaxConcurrentBatches, 1) > 1 && conf.Consumer",
+     "\ts.deferBlockFree = false && conf.Consumer"),
+    ("N30", "a producer requires KV delivery", "core/sched/scheduler.go",
+     "\ts.requiresKVDelivery = conf.Producer\n", "\ts.requiresKVDelivery = false\n"),
+    ("N31", "no preemption victim whose free would be deferred", "core/sched/scheduler.go",
+     "\t\t\tif !s.canFreeBlocks(victim) {", "\t\t\tif false && !s.canFreeBlocks(victim) {"),
+    ("N32", "drop-mode stale output does not hold a request back", "core/sched/scheduler.go",
+     "\t\t\tif r.numStale > 0 && !r.dropStale {", "\t\t\tif r.numStale > 0 {"),
+    ("N33", "drop-mode stale output is discarded", "core/sched/scheduler.go",
+     "\t\tif stale && r.dropStale {", "\t\tif false && stale && r.dropStale {"),
+    ("N34", "the fence advances only on steps that write KV", "core/sched/scheduler.go",
+     "\tif s.deferBlockFree && len(out.Scheduled) > 0 {\n\t\ts.schedSeq++",
+     "\tif s.deferBlockFree {\n\t\ts.schedSeq++"),
+    ("N35", "a client abort waits for the next applied output", "core/engine/engine.go",
+     "func (c *Core) Abort(ids []string) { c.aborts = append(c.aborts, ids...) }",
+     "func (c *Core) Abort(ids []string) { c.Sched.Abort(ids) }"),
+    ("N36", "deferred blocks return once their fence is processed", "core/sched/connector.go",
+     "\tfor len(s.deferredFrees) > 0 && s.deferredFrees[0].fence <= s.processedSeq {",
+     "\tfor len(s.deferredFrees) > 0 && s.deferredFrees[0].fence < s.processedSeq {"),
+    ("N37", "a deferred entry is freed tail first", "core/sched/connector.go",
+     "\t\t\trev[len(bs)-1-i] = b\n", "\t\t\trev[i] = b\n"),
+    ("N38", "an HMA connector's blocks are held if any group holds one", "core/connector/nixl/nixl.go",
+     "\tfor _, g := range blockIDs {\n\t\tdelay = delay || len(g) > 0\n\t}", "\tdelay = len(blockIDs[0]) > 0"),
+    ("N39", "a truncated prefiller request samples one token", "core/connector/nixl/nixl.go",
+     "\tr.MaxTokens = 1\n\tr.Transfer.PSideTruncated = true", "\tr.Transfer.PSideTruncated = true"),
     # The connector registry (#2021 B10): an entry is earned only by a diff test.
     ("R1", "an entry's model is one a diff test checks", "registry/connectors.yaml",
      "  NixlPullConnector:\n    upstream: KVConnectorBase_V1\n    behaves_like: nixl-pull\n",
@@ -138,6 +174,10 @@ EQUIVALENT = {
     # single_type_kv_cache_manager.py:733-827) when the hash block size is the block size,
     # as it is for one group, so the block-aligned hit is the hit.
     "N17": "a full-attention local hit is always block-aligned",
+    # Every KV cache group holds at least one block of a request whose group 0 does: the NIXL
+    # delay decision reads any group (pull_scheduler.py:248), and group 0 is non-empty whenever
+    # another is (allocate_slots gives every group the request's slots).
+    "N38": "group 0 holds a block whenever any group does",
 }
 
 

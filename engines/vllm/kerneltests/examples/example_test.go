@@ -62,10 +62,10 @@ func ExampleOpen() {
 	// --8<-- [end:open]
 
 	// Output:
-	// between 24.1 and 25.7 ms, bottleneck hbm
+	// between 24.1 and 25.4 ms, bottleneck hbm
 	// sm        4.5 ms
 	// hbm      16.5 ms
-	// nvlink    1.2 ms
+	// nvlink    0.9 ms
 	// host      3.5 ms
 }
 
@@ -133,9 +133,9 @@ func ExampleKernel_Evidence() {
 	// --8<-- [end:evidence]
 
 	// Output:
-	// 113 of 155 values rest on evidence; 41 were assumed
+	// 115 of 157 values rest on evidence; 41 were assumed
 	//   assumed       41
-	//   measured      99
+	//   measured     101
 	//   not_charged    1
 	//   vendor_spec   14
 	// the kernel assumed max_cudagraph_capture_size

@@ -420,7 +420,13 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 		}
 	}
 
-	// Guard 2: KV capacity check (defense-in-depth, always active)
+	// Guard 2: KV capacity check (defense-in-depth, always active). The input alone, and with a
+	// client budget the whole sequence it may grow to: a lone request whose input fits and whose
+	// input + budget does not would preempt itself at its first unallocatable block, resume, and
+	// preempt again, never finishing (R19). vLLM cannot reach that state: it starts only when one
+	// max_model_len sequence fits the cache (_check_enough_kv_cache_memory) and rejects a prompt
+	// + max_tokens above max_model_len, so every request it admits fits alone. The budget is the
+	// client's (INV-9), as Guard 1 reads it.
 	blocksNeeded := (r.InputLen() + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()
 	if blocksNeeded > sim.KVCache.TotalCapacity() {
 		logrus.Warnf("dropping request %s: input requires %d KV blocks but cache has only %d total",
@@ -428,6 +434,16 @@ func (sim *EngineCore) EnqueueRequest(r *Request) {
 		sim.Rec.RecordDrop(r, false)
 		sim.Host.RequestDone(r, sim.Host.CurrentClock())
 		return
+	}
+	if r.MaxOutputLen > 0 {
+		seqBlocks := (r.InputLen() + int64(r.MaxOutputLen) + sim.KVCache.BlockSize() - 1) / sim.KVCache.BlockSize()
+		if seqBlocks > sim.KVCache.TotalCapacity() {
+			logrus.Warnf("dropping request %s: input + budget (%d + %d tokens) requires %d KV blocks but cache has only %d total",
+				r.ID, r.InputLen(), r.MaxOutputLen, seqBlocks, sim.KVCache.TotalCapacity())
+			sim.Rec.RecordDrop(r, false)
+			sim.Host.RequestDone(r, sim.Host.CurrentClock())
+			return
+		}
 	}
 
 	// Input tokens counted BEFORE past-due check (request was received)

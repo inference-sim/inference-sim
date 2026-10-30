@@ -1,0 +1,230 @@
+{
+ "name": "nixl-d-hybrid-mtp",
+ "description": "Decoder with full attention + a sliding window (10) and a four-module MTP drafter (K=3): the window keeps two extra tokens below it (extra_retained_tokens = num_prefill_lookahead - 1, kv_cache_utils.py:2582-2589), the pull stops two tokens short (the backoff), tight pool.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 36,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 10
+   }
+  ],
+  "speculative": {
+   "method": "mtp",
+   "num_speculative_tokens": 3,
+   "draft": "ernie-mtp-4"
+  },
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    1682,
+    595,
+    336,
+    208,
+    945,
+    1672,
+    1657,
+    2325,
+    4109,
+    4726,
+    1127
+   ],
+   "output": [
+    1619,
+    3343,
+    3292,
+    2712,
+    1008,
+    371,
+    1030,
+    2911,
+    695
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "accepted": [
+    3,
+    0,
+    0,
+    3,
+    3,
+    0,
+    1,
+    0,
+    3,
+    3,
+    3,
+    1
+   ]
+  },
+  {
+   "id": "d1",
+   "arrival_step": 1,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    3192,
+    4515,
+    2750,
+    2119,
+    3099
+   ],
+   "output": [
+    2089,
+    751,
+    916,
+    296,
+    2250,
+    3055,
+    401
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2,
+   "accepted": [
+    2,
+    3,
+    3,
+    1,
+    3,
+    2,
+    3,
+    1,
+    1,
+    2,
+    1,
+    0
+   ]
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    889,
+    3298,
+    1306,
+    1511,
+    3335,
+    385,
+    2465,
+    3871,
+    4213,
+    4151,
+    2337,
+    2233,
+    1756
+   ],
+   "output": [
+    1095,
+    394,
+    4601,
+    831,
+    1949,
+    864,
+    3829,
+    265,
+    396,
+    2111
+   ],
+   "accepted": [
+    2,
+    3,
+    1,
+    0,
+    0,
+    1,
+    0,
+    1,
+    2,
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "id": "d2",
+   "arrival_step": 2,
+   "prompt": [
+    1480,
+    4512,
+    1810,
+    1189,
+    2396,
+    1772,
+    2482,
+    1310,
+    156,
+    2887,
+    4227,
+    1897,
+    3254,
+    916,
+    2088,
+    4075,
+    3926,
+    22,
+    656
+   ],
+   "output": [
+    2388,
+    4459,
+    1748,
+    1373
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "accepted": [
+    2,
+    3,
+    2,
+    3,
+    0,
+    0,
+    2,
+    2
+   ],
+   "abort_step": 3
+  }
+ ]
+}
