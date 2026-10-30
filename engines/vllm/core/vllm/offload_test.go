@@ -325,3 +325,71 @@ func (e *Engine) lastMeta() ([]int, bool) {
 	}
 	return append([]int(nil), e.off.lastFlush...), true
 }
+
+// groupPricer records the group sizes the engine prices each offload transfer by.
+type groupPricer struct {
+	FixedPricer
+	got map[engine.TransferID][]int
+}
+
+func (g *groupPricer) TransferTime(engine.Transfer) engine.Duration { return 7 }
+
+func (g *groupPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) engine.Duration {
+	g.got[t.ID] = append([]int(nil), groupBlocks...)
+	return 9
+}
+
+// A pricer that prices by KV cache group is handed each offload job's GPU blocks by group
+// (GPULoadStoreSpec.group_sizes, vllm/v1/kv_offload/base.py:438-469@5df63a72), which sum to the
+// transfer's blocks: vLLM's worker copies each group's blocks over that group's layers only
+// (gpu_worker.py:395-416), so a hybrid model's job is priced by them rather than by its blocks.
+func TestAnOffloadTransferIsPricedByItsGroups(t *testing.T) {
+	g := &groupPricer{FixedPricer: 100, got: map[engine.TransferID][]int{}}
+	s := spec(t, cpuTier+"num_gpu_blocks: 24\nmax_model_len: 160\nkv_layers:\n"+
+		"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n"+
+		"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n")
+	eng, err := Factory{Pricer: func(engine.Spec) (Pricer, error) { return g, nil }}.New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := eng.(*Engine)
+	if err := e.Add(req("a", 96, 2), 0); err != nil {
+		t.Fatal(err)
+	}
+	now := engine.Time(0)
+	priced := 0
+	for steps := 0; steps < 1000 && e.s.HasUnfinished(); steps++ {
+		b, err := e.Schedule(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tr := range b.TransfersStarted {
+			d, ok := e.TransferTime(tr)
+			sizes := g.got[tr.ID]
+			sum := 0
+			for _, n := range sizes {
+				sum += n
+			}
+			if !ok || d != 9 || len(sizes) != 2 || sum != tr.Blocks {
+				t.Fatalf("transfer %+v priced %d (%v) by groups %v, want the job's two groups' blocks", tr, d, ok, sizes)
+			}
+			priced++
+		}
+		if b.Empty() {
+			now += 1000
+			continue
+		}
+		now += e.StepTime(b)
+		if _, err := e.Complete(b.ID, engine.Outcome{}, now); err != nil {
+			t.Fatal(err)
+		}
+		for _, tr := range b.TransfersStarted {
+			if err := e.TransferDone(tr.ID, true, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if priced == 0 {
+		t.Fatal("no offload transfer started")
+	}
+}

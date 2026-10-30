@@ -137,6 +137,38 @@ func KVStagePoolBytesPerBlock(runs []KVLayerRun, stages [][2]int, disableHybrid 
 	return out, nil
 }
 
+// KVStageGroupCopyBytes is, for each pipeline stage and each of the model's KV cache groups in
+// scheduler order, the bytes that stage's worker copies for one block of the group when it
+// offloads it (kv.StageGroupCopyBytes), with the layers' element sizes resolved from
+// kernelPerBlock as KVStagePoolBytesPerBlock resolves them. stages are as KVStagePoolBytesPerBlock's.
+func KVStageGroupCopyBytes(runs []KVLayerRun, stages [][2]int, disableHybrid bool, blockSize int,
+	kernelPerBlock int64) ([][]int64, error) {
+	layers, err := KVLayers(runs)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
+			return nil, err
+		}
+	}
+	o := kv.GroupOptions{DisableHybrid: disableHybrid}
+	out := make([][]int64, len(stages))
+	for s, span := range stages {
+		if span[0] < 0 || span[1] > len(layers) || span[0] > span[1] {
+			return nil, fmt.Errorf("vllm: kv_layers: stage %d holds layers [%d, %d) of %d", s, span[0], span[1], len(layers))
+		}
+		on := make([]bool, len(layers))
+		for i := span[0]; i < span[1]; i++ {
+			on[i] = true
+		}
+		if out[s], err = kv.StageGroupCopyBytes(layers, on, o, blockSize); err != nil {
+			return nil, fmt.Errorf("vllm: kv_layers: %w", err)
+		}
+	}
+	return out, nil
+}
+
 // KVStagePoolBlocks is a pipeline-parallel pool's block count: each stage's available memory
 // over its pool bytes per block (KVStagePoolBytesPerBlock), and the smallest of them, which the
 // engine keeps for every worker (get_kv_cache_configs step 5, kv_cache_utils.py:2660-2680@

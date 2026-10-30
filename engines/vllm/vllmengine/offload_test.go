@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -240,5 +241,95 @@ func TestAnOffloadTransferMovesThePoolsBytes(t *testing.T) {
 	}
 	if k.blockBytes != o.BytesPerBlock {
 		t.Fatalf("the pricer moves %d bytes a block, the offload's are %d", k.blockBytes, o.BytesPerBlock)
+	}
+}
+
+// armDVariant is arm D's scenario with its parallel layout replaced, written to a temporary
+// directory, as the roots a spec reads.
+func armDVariant(t *testing.T, parallel string) map[string]string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-armD.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const armDParallel = "parallel: {tp: 8, pp: 2, dp: 1, enable_expert_parallel: true}"
+	if !strings.Contains(string(src), armDParallel) {
+		t.Fatalf("arm D's scenario no longer states %q", armDParallel)
+	}
+	dir := t.TempDir()
+	alt := strings.Replace(string(src), armDParallel, "parallel: "+parallel, 1)
+	if err := os.WriteFile(filepath.Join(dir, "variant.yaml"), []byte(alt), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := roots(t, "muse-h100-roce-armD.yaml")
+	r[RootScenario] = filepath.Join(dir, "variant.yaml")
+	return r
+}
+
+// Under pipeline parallelism the CPU tier is sized from pipeline rank 0's bytes a block, not the
+// binding stage's: the scheduler's KV cache config, which its OffloadingConnector reads
+// worker_kv_bytes_per_block from (offloading/config.py:137-147), is a deep copy of worker 0's
+// (generate_scheduler_kv_cache_config, vllm/v1/core/kv_cache_utils.py:2289; vllm/v1/engine/
+// core.py:339@5df63a72). Arm D at PP8 x TP2 holds 8 KV heads a rank (16 x 8 x 64 x K,V x 1 byte of
+// fp8 = 16384 bytes a page). Muse's 51 window layers (DSpark's 5 included) fall into four window
+// groups by [i::4] and its 16 full layers into one: rank 0 holds window layers 0-4 and full
+// layers 0-1, at most 2 pages in a group, 32768 bytes; the last rank holds window layers 41-50,
+// 3 of them in groups 1 and 2, 49152 bytes, and with the least memory binds the pool.
+func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
+	Register()
+	r := armDVariant(t, "{tp: 2, pp: 8, dp: 1, enable_expert_parallel: true}")
+	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := p.model.KVLayers()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sp, err := stagePoolsOf(p.model, runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sp.perBlock[0] != 32768 || sp.perBlock[7] != 49152 || sp.binding != 7 {
+		t.Fatalf("stage bytes a block %v binding %d, want rank 0 at 32768 and the binding last rank at 49152",
+			sp.perBlock, sp.binding)
+	}
+	o, _ := preparedOffload(t, engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	if o.BytesPerBlock != 32768 || o.Workers != 16 || o.Copies != 16 {
+		t.Fatalf("kv_offload %+v, want rank 0's 32768 bytes a block over 16 workers and copies", o)
+	}
+}
+
+// An offload job moves, on each worker, its blocks' pages of each group's layers on that worker:
+// vLLM's CPU offload worker copies one (block, layer) page at a time over the group's layers
+// (_fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416; group_data_refs,
+// offloading/worker.py:202-207@5df63a72), and the job ends with the slowest worker. Arm D's
+// groups are four window groups of 13, 13, 13 and 12 layers and one of 16 full layers, 4096 bytes
+// a page: rank 0 holds window layers 0-22 (6, 6, 6, 5 of the groups) and 8 full layers, rank 1
+// window layers 23-50 (7 of each) and 8 full layers. A job of n blocks in every group moves
+// n x (4 x 7 + 8) pages on rank 1, 147456n bytes, not 5n blocks x the pool's 32768.
+func TestAnOffloadJobMovesEachGroupsLayers(t *testing.T) {
+	Register()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
+	p, err := pricerFor(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k := p.(kernelPricer)
+	want := [][]int64{{24576, 24576, 24576, 20480, 32768}, {28672, 28672, 28672, 28672, 32768}}
+	if !reflect.DeepEqual(k.groupBytes, want) {
+		t.Fatalf("bytes a block by rank and group %v, want %v", k.groupBytes, want)
+	}
+	for _, n := range []int{1, 64, 896} {
+		st := engine.Transfer{Kind: engine.TransferStore, Tier: "cpu", Blocks: 5 * n}
+		got := k.GroupTransferTime(st, []int{n, n, n, n, n})
+		if w := engine.Duration(k.m.TierTransferTicksOf("cpu_dram", true, int64(n)*147456, int64(5*n))); got != w {
+			t.Fatalf("a store of %d blocks in each group prices %d, want %d", n, got, w)
+		}
+		// A job of the full group alone moves 8 pages a block on either rank: the pool's stride.
+		ld := engine.Transfer{Kind: engine.TransferLoad, Tier: "cpu", Blocks: n}
+		if got, w := k.GroupTransferTime(ld, []int{0, 0, 0, 0, n}), k.TransferTime(ld); got != w {
+			t.Fatalf("a load of %d full-group blocks prices %d, want the pool's %d", n, got, w)
+		}
 	}
 }
