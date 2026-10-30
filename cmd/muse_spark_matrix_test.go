@@ -28,12 +28,16 @@ import (
 // engines' KV events, prefix-cache affinity on the in-flight load, a token-load scorer, flow
 // control), and run with --num-instances 2.
 //
+// The -1p1d file is the measured P/D arm: TP16 + EP16 on each side over RoCE H100, NIXL pulling
+// the prompt's KV to the decode side, run with one prefill and one decode instance. Every
+// request must be disaggregated, and none dropped.
+//
 // What vLLM refuses, the scenario set states as such: H200 DP8 x EP8 with DSpark at 262,144
 // tokens leaves a rank fewer blocks than one full-context request's full-attention group, and
 // vLLM refuses it at start-up; the 131,072-token arm runs.
 func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	if testing.Short() {
-		t.Skip("builds the binary and runs 39 scenarios")
+		t.Skip("builds the binary and runs 40 scenarios")
 	}
 	blis := builtBlis(t)
 	_, catalog, registry := kernelRepos(t)
@@ -43,7 +47,7 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	}
 	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
 	if err != nil || len(files) < 30 {
-		t.Fatalf("found %d Muse scenarios (%v); the matrix is 39", len(files), err)
+		t.Fatalf("found %d Muse scenarios (%v); the matrix is 40", len(files), err)
 	}
 	sort.Strings(files)
 	refused := map[string]string{
@@ -55,8 +59,11 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 			"--prompt-tokens", "4096", "--prompt-tokens-min", "4096", "--prompt-tokens-max", "4096",
 			"--prompt-tokens-stdev", "0", "--output-tokens", "64", "--output-tokens-min", "64",
 			"--output-tokens-max", "64", "--output-tokens-stdev", "0"}
-		if strings.HasSuffix(name, "-routed.yaml") {
+		switch {
+		case strings.HasSuffix(name, "-routed.yaml"):
 			args = append(args, "--num-instances", "2")
+		case strings.HasSuffix(name, "-1p1d.yaml"):
+			args = append(args, "--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1")
 		}
 		c := exec.Command(blis, args...)
 		var out, errBuf bytes.Buffer
@@ -98,6 +105,9 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 			}
 			if got := m["completed_requests"]; got != float64(8) {
 				t.Errorf("completed %v of 8 requests", got)
+			}
+			if got := m["dropped_unservable"]; got != nil && got != float64(0) {
+				t.Errorf("dropped %v requests as unservable", got)
 			}
 			tps[name], _ = m["tokens_per_sec"].(float64)
 		})

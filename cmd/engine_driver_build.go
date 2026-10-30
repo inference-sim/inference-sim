@@ -55,15 +55,15 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 		// run's own instance configuration.
 		return nil
 	}
-	// The contract path builds one engine per instance from the scenario's single colocated
-	// pool. A disaggregated topology needs the cluster to drive P/D handoffs through the
-	// contract, which it does not yet: refuse it, naming the piece, rather than run it on the
-	// compatibility engine. A data-parallel replica is one instance whose engine is the whole DP
-	// group, its ranks, waves and balancer the engine's (dpPlacementFor).
-	if prefillInstances != 0 || decodeInstances != 0 || prefillDecodeInstances != 0 {
-		logrus.Fatalf("scenario %q: engine_version %s runs through the engine contract, which does not "+
-			"drive a P/D topology yet (P/D disaggregation)", kernelScenario, version)
-	}
+	// The contract path builds one engine per instance from its pool: the colocated pool, or
+	// for a disaggregated topology the prefill or decode pool the instance's role takes (each
+	// pool's kernel is its role's latency model, rolesOf). The engine runs NIXL as that pool's
+	// kv_role, and the cluster drives the handoffs through the contract (sim.EngineDriver's
+	// AddRemote, LandRemote and ReleaseHandoff). A shared prefill-decode pod has no pool of its
+	// own, which blis-vllm's OpenPools refuses already. A data-parallel replica is one instance
+	// whose engine is the whole DP group, its ranks, waves and balancer the engine's
+	// (dpPlacementFor).
+	poolOf := kernelPDOpened.poolOfInstance()
 	// The DP group is vLLM's internal balancer, one endpoint routing to its ranks. Under the
 	// external balancer each rank is its own endpoint and the router picks the rank
 	// (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the group does not model: refuse
@@ -97,7 +97,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
 	frontend := groupFrontendConfigFromCLI(dataParallelism)
-	build := func(index int) (*sim.EngineDriver, error) {
+	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		kinds := engine.Kinds()
 		if len(kinds) != 1 {
 			return nil, fmt.Errorf("scenario %q: engine_version %s: the build site registers one engine kind, "+
@@ -109,7 +109,7 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 			Kind:            kinds[0],
 			UpstreamVersion: version,
 			Roots:           contractRoots(resolvedCatalogRoot, kernelRegistry, scenarioPath),
-			Pool:            0,
+			Pool:            poolOf(ic),
 			Seed:            seed,
 		})
 		if err != nil {
@@ -128,22 +128,31 @@ func engineDriverFactory(version string, horizon, seed int64, latency latencyMod
 			s.EnableServerSeries(iv)
 		}
 		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance}
-		hostOverheads(&cfg, latency)
+		m := latency
+		if kernelPDOpened != nil {
+			// Each P/D pool's host overheads are its own kernel's.
+			m = engineConfigIn(ic).LatencyModel
+		}
+		hostOverheads(&cfg, m)
 		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)
 	}
 	// Build the first instance's engine now: a deployment the engine refuses (one needing a
 	// piece it does not build yet) is a CLI refusal, named, before the cluster is assembled.
-	first, err := build(0)
+	if kernelPDOpened != nil {
+		// Each pool's engine is built with its instances, from the role's configuration.
+		return build
+	}
+	first, err := build(0, sim.InstanceConfig{})
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	return func(index int, _ sim.InstanceConfig) (*sim.EngineDriver, error) {
+	return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		if index == 0 && first != nil {
 			d := first
 			first = nil
 			return d, nil
 		}
-		return build(index)
+		return build(index, ic)
 	}
 }
 

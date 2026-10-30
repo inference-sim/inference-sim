@@ -20,6 +20,10 @@ import (
 func (d *EngineDriver) AddRemote(req *Request, now int64) {
 	er := d.engineRequest(req)
 	er.RemotePrefill = true
+	// Whether the engine had other work is read before the handoff reaches it: an engine that
+	// queues the handoff as a waiting request (blis-vllm's v0.32.0 engine) would otherwise count
+	// it as that work, and an idle engine would never be stepped to start the pull.
+	before := d.eng.Snapshot()
 	if err := d.eng.Add(er, now); err != nil {
 		panic(fmt.Sprintf("engine driver: AddRemote(%s): %v", req.ID, err))
 	}
@@ -27,7 +31,7 @@ func (d *EngineDriver) AddRemote(req *Request, now int64) {
 		d.remote, d.pulls = map[string]*Request{}, map[string]engine.TransferID{}
 	}
 	d.remote[req.ID] = req
-	if s := d.eng.Snapshot(); s.Waiting == 0 && s.Running == 0 {
+	if before.Waiting == 0 && before.Running == 0 {
 		d.kick(now)
 		return
 	}

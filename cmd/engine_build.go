@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/contract"
@@ -184,6 +185,29 @@ func openKernelPools(catalogRoot string) *kernelPools {
 	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector}
 	kernelPDOpened = p
 	return p
+}
+
+// poolOfInstance is the engine.Spec pool index each instance's engine is built from: the
+// colocated run's one pool, or the prefill or decode pool whose kernel the instance's role
+// configuration carries (rolesOf), by its index in the deployment (build.PoolIndices).
+func (p *kernelPools) poolOfInstance() func(sim.InstanceConfig) int {
+	if p == nil {
+		return func(sim.InstanceConfig) int { return 0 }
+	}
+	indices, err := build.PoolIndices(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir,
+		Catalog: resolvedCatalogRoot, Registry: kernelRegistry})
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	return func(c sim.InstanceConfig) int {
+		switch engineConfigIn(c).LatencyModel {
+		case latencyModel(p.prefill):
+			return indices[deployment.RolePrefill]
+		case latencyModel(p.decode):
+			return indices[deployment.RoleDecode]
+		}
+		panic("engine build: a disaggregated run's instance takes neither the prefill nor the decode pool")
+	}
 }
 
 // holdsPrefillKV reports whether the run's prefill engines hold a finished request's KV for

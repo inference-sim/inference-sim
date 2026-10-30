@@ -1,0 +1,46 @@
+# The P/D arm of internal deployment measurements: 1P1D, TP16 + EP16 on each side over RoCE H100
+# (four nodes), NIXL pulling the prompt's KV to the decode side; neither side runs PP, so vLLM's
+# NIXL worker accepts it. Routed by llm-d's disaggregating configuration (examples/llm-d/pd.yaml).
+# Run it with --prefill-instances 1 --decode-instances 1 --num-instances 2.
+kind: Scenario
+name: muse-h100-roce-1p1d
+engine_version: "0.32.0"
+model: muse-spark-open-816b-a42b-nvfp4
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: h100
+  fabric: roce-200g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: muse-h100-roce-1p1d
+pools:
+  - role: prefill
+    nodes: 2
+    parallel: {tp: 16, pp: 1, dp: 1, enable_expert_parallel: true}
+    engine:
+      block_size: 16
+      max_num_seqs: 64
+      max_num_batched_tokens: 8192
+      max_model_len: 262144
+      enable_prefix_caching: true
+      gpu_memory_utilization: 0.9
+      async_scheduling: false
+      moe_backend: marlin
+  - role: decode
+    nodes: 2
+    parallel: {tp: 16, pp: 1, dp: 1, enable_expert_parallel: true}
+    engine:
+      block_size: 16
+      max_num_seqs: 64
+      max_num_batched_tokens: 8192
+      max_model_len: 262144
+      enable_prefix_caching: true
+      gpu_memory_utilization: 0.9
+      async_scheduling: false
+      moe_backend: marlin
+pd_transfer:
+  connector: NixlConnector
+router:
+  endpoint_picker_config: ../../../examples/llm-d/pd.yaml

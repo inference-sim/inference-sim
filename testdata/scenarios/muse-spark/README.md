@@ -39,6 +39,15 @@ H100 and H200 serve the NVFP4 experts with Marlin (`moe_backend: marlin`). That 
 
 DSpark acceptance is pinned in each file at an acceptance length of 2.84. That figure comes from internal deployment measurements of 1.84 accepted tokens per draft with a fixed 7-token verify.
 
+## P/D
+
+`muse-h100-roce-1p1d.yaml` is the measured P/D arm: 1P1D with TP16 + EP16 on each side, on four
+RoCE H100 nodes. NIXL pulls the prompt's KV to the decode side. Neither side runs PP, so vLLM's
+NIXL worker accepts the layout. The prefill pool runs NIXL as `kv_producer` and the decode pool as
+`kv_consumer`. Each engine gets that role from the deployment's `pd_transfer` and its pool's
+role. llm-d's disaggregating configuration routes it. Run it with `--num-instances 2
+--prefill-instances 1 --decode-instances 1`.
+
 ## Routed
 
 Three files (`*-routed.yaml`) serve one measured layout per cluster as two replicas behind the
