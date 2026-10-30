@@ -86,10 +86,19 @@ type EngineDriver struct {
 	// direction: vLLM's CPU offload worker runs stores and loads on separate handlers, each
 	// chaining its own transfers (startTierTransfer).
 	tierFreeAt map[engine.TransferKind]int64
-	// recentStages are the last pipelined batches scheduled, newest last, at most one per stage:
-	// each one's sampling requests, its preemptions and when it leaves the last stage (timeBatch's
-	// T-pp dependency).
+	// recentStages are the last pipelined runner steps, newest last, at most one per stage: each
+	// one's sampling requests, the requests its schedule freed and when it leaves the last stage
+	// (timeBatch's T-pp dependency). Through an engine that counts its runner steps (RunnerSteps)
+	// they include the schedules that ran nothing, which advance vLLM's slot ring too.
 	recentStages []stagedBatch
+	// runnerSteps is the engine's RunnerSteps after its last Schedule.
+	runnerSteps int
+	// emptyWait is when the slot an empty runner step waited on leaves the last stage: its
+	// wait_event holds the main stream, so the next forward starts no earlier (noteEmptyStep).
+	emptyWait int64
+	// freedPending are the requests the engine finished since its last schedule, which the next
+	// schedule's finished_req_ids frees on the runner (model_runner.py:1152-1166@5df63a72).
+	freedPending map[string]bool
 	// pipelineDrainsAt is when the last batch scheduled leaves the last stage, under a
 	// pipelined engine.
 	pipelineDrainsAt int64
@@ -131,7 +140,10 @@ type EngineDriver struct {
 }
 
 type driverReq struct {
-	req          *Request
+	req *Request
+	// prefillLen is the runner's prefill_len for the request, its prompt plus the outputs before
+	// its last admission (states.py:104-110@5df63a72); 0 until the driver times a batch for it.
+	prefillLen   int
 	scheduledIdx int
 	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
@@ -146,11 +158,11 @@ type driverBatch struct {
 	end int64
 }
 
-// stagedBatch is a pipelined batch's sampling requests, the requests its schedule preempted, and
-// when it left the last stage.
+// stagedBatch is a pipelined runner step's sampling requests, the requests its schedule freed
+// (preempted, or finished since the schedule before), and when it left the last stage.
 type stagedBatch struct {
-	reqs, preempted map[string]bool
-	end             int64
+	reqs, freed map[string]bool
+	end         int64
 }
 
 // NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
@@ -557,6 +569,7 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	if err := d.eng.Finish(req.ID, engine.FinishTimeout, e.at); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s): %v", req.ID, err))
 	}
+	d.noteFreed(req.ID)
 	req.State = StateTimedOut
 	d.Metrics.TimedOutRequests++
 	d.Metrics.RecordTimeout(req)
@@ -594,6 +607,7 @@ func (d *EngineDriver) kick(now int64) {
 		d.notePreempted(b)
 		d.finishUnrun(b.Finished, now)
 		if b.Empty() {
+			d.noteEmptyStep(b)
 			d.startTransfers(b.TransfersStarted, now)
 			break
 		}
@@ -666,15 +680,8 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 	// request not preempted since. The async scheduler's own stagger (a decode is eligible again
 	// only pp steps later, async_scheduler.py:52-57) is the engine's.
 	pp := len(stages)
-	if n := len(d.recentStages); n >= pp {
-		prev := d.recentStages[n-pp]
-		for id := range prev.reqs {
-			if !d.preemptedSince(id, n-pp) {
-				start = max(start, prev.end)
-				break
-			}
-		}
-	}
+	start = max(start, d.ppWait(pp), d.emptyWait)
+	d.emptyWait = 0
 	at := start
 	for i, st := range stages {
 		at = max(at, d.stageFreeAt[i]) + max(st, 1)
@@ -688,34 +695,119 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 	return start, at
 }
 
-// noteStaged records a batch scheduled through the pipeline and when it leaves the last stage,
-// keeping the last pp (timeBatch's T-pp dependency): the requests it sampled for (a decode or a
-// prompt's final chunk; a non-final chunk samples nothing) and those its schedule preempted.
+// ppWait is when the runner step pp back leaves the last stage, if the step about to run waits on
+// it: it sampled for a request no step since has freed; 0 otherwise.
+func (d *EngineDriver) ppWait(pp int) int64 {
+	n := len(d.recentStages)
+	if n < pp {
+		return 0
+	}
+	prev := d.recentStages[n-pp]
+	for id := range prev.reqs {
+		if !d.preemptedSince(id, n-pp) {
+			return prev.end
+		}
+	}
+	return 0
+}
+
+// noteStaged records a runner step scheduled through the pipeline and when it leaves the last
+// stage, keeping the last pp (timeBatch's T-pp dependency): the requests it sampled for and those
+// its schedule freed. A request samples when its step reaches the end of its prefill, computed +
+// scheduled >= prefill_len, and is not a final prefill chunk whose one token reaches its length
+// cap (compute_need_sampled_mask, pp_utils.py:37-51@5df63a72). prefill_len is the prompt plus the
+// outputs before the request's admission, so a resumed request's recompute samples only at its
+// end (states.py:104-110@5df63a72); the cap is max_tokens, 1 for a disaggregated prefill.
 func (d *EngineDriver) noteStaged(b engine.Batch, end int64, pp int) {
+	if rs, ok := d.eng.(runnerStepper); ok {
+		d.runnerSteps = rs.RunnerSteps()
+	}
 	ids := map[string]bool{}
-	for _, r := range b.Reqs {
-		if r.Computed+r.Tokens >= r.PromptLen {
-			ids[r.ID] = true
+	for _, s := range b.Reqs {
+		prefillLen, maxTokens := s.PromptLen, 0
+		if r := d.reqs[s.ID]; r != nil {
+			if r.req.State != StateRunning || r.prefillLen == 0 {
+				// Admitted by this schedule: the runner adds it with every token so far
+				// (model_runner.py:1181-1199@5df63a72).
+				r.prefillLen = s.PromptLen + r.emitted
+			}
+			prefillLen, maxTokens = r.prefillLen, r.req.MaxOutputLen
+			if r.req.RetainKVOnFinish {
+				maxTokens = 1
+			}
+		}
+		prefilling := s.Computed < prefillLen
+		capped := maxTokens > 0 && prefilling && prefillLen+1 >= s.PromptLen+maxTokens
+		if s.Computed+s.Tokens >= prefillLen && !capped {
+			ids[s.ID] = true
 		}
 	}
-	var preempted map[string]bool
-	if len(b.Preempted) > 0 {
-		preempted = make(map[string]bool, len(b.Preempted))
-		for _, id := range b.Preempted {
-			preempted[id] = true
+	d.pushStage(stagedBatch{reqs: ids, end: end}, b.Preempted, pp)
+}
+
+// pushStage appends one runner step, with the requests its schedule preempted and those finished
+// since the schedule before, keeping the last pp.
+func (d *EngineDriver) pushStage(sb stagedBatch, preempted []string, pp int) {
+	if len(preempted) > 0 || len(d.freedPending) > 0 {
+		sb.freed = d.freedPending
+		if sb.freed == nil {
+			sb.freed = make(map[string]bool, len(preempted))
 		}
+		for _, id := range preempted {
+			sb.freed[id] = true
+		}
+		d.freedPending = nil
 	}
-	d.recentStages = append(d.recentStages, stagedBatch{reqs: ids, preempted: preempted, end: end})
+	d.recentStages = append(d.recentStages, sb)
 	if len(d.recentStages) > pp {
 		d.recentStages = d.recentStages[len(d.recentStages)-pp:]
 	}
 }
 
-// preemptedSince reports whether a schedule after recentStages[i] preempted request id, which
-// frees its runner state, so recentStages[i]'s token for it no longer gates a step.
+// runnerStepper is an engine that counts its runner steps: blis-vllm core/vllm's RunnerSteps, the
+// execute_model calls it has made, one per schedule, including those that ran no tokens. It is
+// optional, outside blis-schemas' contract; without it the driver counts the batches it times.
+type runnerStepper interface{ RunnerSteps() int }
+
+// noteEmptyStep records a schedule that ran nothing as a pipelined runner step when the engine
+// counts one. vLLM's execute_model still pops the slot pp steps back, waits on it and reserves an
+// empty one before it returns early (update_pp_decode_requests, model_runner.py:1729-1747;
+// pp_utils.py:125-152@5df63a72; no sample_tokens follows, core.py:733-735), so the step pp after
+// it waits on nothing, and its wait_event holds the main stream for the next forward.
+func (d *EngineDriver) noteEmptyStep(b engine.Batch) {
+	rs, ok := d.eng.(runnerStepper)
+	if !ok {
+		return
+	}
+	n := rs.RunnerSteps()
+	if pp := len(d.stageFreeAt); pp > 0 {
+		for range n - d.runnerSteps {
+			d.emptyWait = max(d.emptyWait, d.ppWait(pp))
+			d.pushStage(stagedBatch{}, b.Preempted, pp)
+			b.Preempted = nil
+		}
+	}
+	d.runnerSteps = n
+}
+
+// noteFreed records a request the engine finished: the next schedule's finished_req_ids frees its
+// runner state (model_runner.py:1152-1166@5df63a72), so a later step no longer waits on its token.
+func (d *EngineDriver) noteFreed(id string) {
+	if d.stageFreeAt == nil {
+		return
+	}
+	if d.freedPending == nil {
+		d.freedPending = map[string]bool{}
+	}
+	d.freedPending[id] = true
+}
+
+// preemptedSince reports whether a schedule after recentStages[i] freed request id (preempted or
+// finished it), which frees its runner state, so recentStages[i]'s token for it no longer gates a
+// step.
 func (d *EngineDriver) preemptedSince(id string, i int) bool {
 	for _, sb := range d.recentStages[i+1:] {
-		if sb.preempted[id] {
+		if sb.freed[id] {
 			return true
 		}
 	}
@@ -847,6 +939,7 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		r.emitted += res.Emitted[id]
 	}
 	for _, f := range res.Finished {
+		d.noteFreed(f.ID)
 		r := d.reqs[f.ID]
 		if r == nil {
 			continue
@@ -955,6 +1048,7 @@ func (d *EngineDriver) Evict(req *Request, now int64) bool {
 	if err := d.eng.Finish(req.ID, engine.FinishAbort, now); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s, abort): %v", req.ID, err))
 	}
+	d.noteFreed(req.ID)
 	req.State = StateCompleted
 	delete(d.reqs, req.ID)
 	d.kick(now)

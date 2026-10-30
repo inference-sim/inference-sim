@@ -122,6 +122,7 @@ func (d *EngineDriver) endRemote(req *Request, now int64) {
 	if err := d.eng.Finish(req.ID, engine.FinishAbort, now); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s, abort): %v", req.ID, err))
 	}
+	d.noteFreed(req.ID)
 	if pulling {
 		// An engine that ends the pull with the request (the compatibility engine's Finish
 		// forgets it) no longer knows the transfer, which is not an error here.
