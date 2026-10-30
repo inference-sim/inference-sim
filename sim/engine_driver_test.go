@@ -473,3 +473,30 @@ func TestEngineDriver_PipelinedDecodeWaitsForItsPreviousToken(t *testing.T) {
 		t.Fatalf("an unrelated third batch ends at %d, want 44", e2[2])
 	}
 }
+
+// A batch whose engine prices it as one stage (core/vllm's StageTimes when the pricer's split is
+// not pp long) after pipelined batches runs behind them: it may not end before the batch ahead of
+// it leaves the last stage, since batches complete in the order they were scheduled (the driver
+// completes inFlight[0] at each step end). Splits [10,90] then [20]: batch 1 ends at 100, so
+// batch 2 ends no earlier.
+func TestEngineDriver_OneStageBatchDoesNotOvertakeThePipeline(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 2, TokenBudget: 8, InFlight: 3, StepBaseUs: 1, Stages: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &unevenStages{FIFO: fifo, splits: [][]engine.Duration{{10, 90}, {20}, {5, 5}}}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	var ends []int64
+	for _, id := range []string{"a", "b", "c"} {
+		_, e := d.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: id, Tokens: 1}}}, 0)
+		ends = append(ends, e)
+	}
+	for i := 1; i < len(ends); i++ {
+		if ends[i] < ends[i-1] {
+			t.Fatalf("batch ends %v: batch %d ends before batch %d", ends, i+1, i)
+		}
+	}
+	if d.BusyUntil() < ends[len(ends)-1] {
+		t.Fatalf("BusyUntil %d before the last batch ends at %d", d.BusyUntil(), ends[len(ends)-1])
+	}
+}

@@ -617,9 +617,22 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 		return start, d.gpuFreeAt
 	}
 	stages := p.StageTimes(b)
-	if len(stages) <= 1 {
+	if len(stages) <= 1 && d.stageFreeAt == nil {
 		d.gpuFreeAt = start + total
 		return start, d.gpuFreeAt
+	}
+	if len(stages) <= 1 {
+		// A batch the engine did not split, behind pipelined ones, holds every stage: it starts
+		// when the first frees and ends no earlier than the pipeline drains, since batches
+		// complete in the order they were scheduled (the step end completes inFlight[0]).
+		start = max(now, d.stageFreeAt[0])
+		end = max(start+total, d.pipelineDrainsAt)
+		for i := range d.stageFreeAt {
+			d.stageFreeAt[i] = end
+		}
+		d.gpuFreeAt, d.pipelineDrainsAt = end, end
+		d.noteStaged(b, end, len(d.stageFreeAt))
+		return start, end
 	}
 	if len(d.stageFreeAt) != len(stages) {
 		d.stageFreeAt = make([]int64, len(stages))
@@ -649,15 +662,21 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 	// whole pipeline drains.
 	d.gpuFreeAt = d.stageFreeAt[0]
 	d.pipelineDrainsAt = at
+	d.noteStaged(b, at, pp)
+	return start, at
+}
+
+// noteStaged records a batch scheduled through the pipeline and when it leaves the last stage,
+// keeping the last pp (timeBatch's T-pp dependency).
+func (d *EngineDriver) noteStaged(b engine.Batch, end int64, pp int) {
 	ids := make(map[string]bool, len(b.Reqs))
 	for _, r := range b.Reqs {
 		ids[r.ID] = true
 	}
-	d.recentStages = append(d.recentStages, stagedBatch{reqs: ids, end: at})
+	d.recentStages = append(d.recentStages, stagedBatch{reqs: ids, end: end})
 	if len(d.recentStages) > pp {
 		d.recentStages = d.recentStages[len(d.recentStages)-pp:]
 	}
-	return start, at
 }
 
 // admit records a batch scheduled at now whose step starts at start: each request's first
