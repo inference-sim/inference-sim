@@ -218,8 +218,12 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 
 // offloadBytesPerBlock is one worker's KV bytes for one GPU block: the kernel's per-block KV bytes
 // for a model of one full-attention group, and the pool's widest KV cache group's bytes for a
-// hybrid model, as vLLM's KV tensor holds them (poolBlocks). Under pipeline parallelism it is the
-// binding stage's: the worker whose pool every worker's is cut to.
+// hybrid model, as vLLM's KV tensor holds them (poolBlocks). Under pipeline parallelism it is
+// pipeline rank 0's, not the binding stage's: the scheduler's KV cache config, which its
+// OffloadingConnector sizes the CPU tier from (worker_kv_bytes_per_block, offloading/config.py:
+// 137-147), is a copy of worker 0's (generate_scheduler_kv_cache_config, vllm/v1/core/
+// kv_cache_utils.py:2289; vllm/v1/engine/core.py:339@5df63a72), whose KV tensor is the shared
+// block count times rank 0's own bytes a block (get_kv_cache_configs step 5, :2664-2675).
 func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	b, err := m.KVBudget()
 	if err != nil {
@@ -233,7 +237,32 @@ func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return p.perBlock[p.binding], nil
+	if p.perBlock[0] <= 0 {
+		return 0, fmt.Errorf("vllmengine: pipeline rank 0 holds no KV layer, so vLLM's scheduler sizes no CPU tier " +
+			"(worker_kv_bytes_per_block 0, offloading/config.py:137-152@5df63a72)")
+	}
+	return p.perBlock[0], nil
+}
+
+// offloadGroupBytes is, for each pipeline rank and each of the scheduler's KV cache groups, the
+// bytes the rank's worker copies for one block of the group when it offloads it
+// (vllm.KVStageGroupCopyBytes); nil for a model of one full-attention group, whose block is
+// offloadBytesPerBlock whole.
+func offloadGroupBytes(m *kernelmodel.Model) ([][]int64, error) {
+	runs, err := m.KVLayers()
+	if err != nil || len(runs) == 0 {
+		return nil, err
+	}
+	p, err := stagePoolsOf(m, runs)
+	if err != nil {
+		return nil, err
+	}
+	e, err := m.Engine()
+	if err != nil {
+		return nil, err
+	}
+	disable := e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager
+	return vllm.KVStageGroupCopyBytes(vllmRuns(runs), p.spans, disable, e.BlockSize, p.page)
 }
 
 // stagePools is a pool's KV cache groups sized per pipeline rank: each rank's bytes a block and
@@ -243,6 +272,10 @@ type stagePools struct {
 	perBlock, avail []int64
 	binding         int
 	blocks          int64
+	// spans are each rank's [lo, hi) of the model's KV layers, and page the bytes for one block
+	// of every layer the element sizes are resolved from (KVStagePoolBytesPerBlock's kernelPerBlock).
+	spans [][2]int
+	page  int64
 }
 
 // stagePoolsOf sizes a pool over its KV cache groups. vLLM forms the groups once over every
@@ -273,8 +306,12 @@ func stagePoolsOf(m *kernelmodel.Model, runs []kernelmodel.KVLayerRun) (stagePoo
 		if err != nil {
 			return stagePools{}, err
 		}
+		n := 0
+		for _, r := range runs {
+			n += r.Count
+		}
 		return stagePools{perBlock: []int64{per}, avail: []int64{b.AllocatableBytes},
-			blocks: b.AllocatableBytes / per}, nil
+			blocks: b.AllocatableBytes / per, spans: [][2]int{{0, n}}, page: page}, nil
 	}
 	budgets, err := m.StageBudgets()
 	if err != nil {
@@ -318,7 +355,7 @@ func stagePoolsOf(m *kernelmodel.Model, runs []kernelmodel.KVLayerRun) (stagePoo
 	if err != nil {
 		return stagePools{}, err
 	}
-	return stagePools{perBlock: per, avail: avail, binding: binding, blocks: blocks}, nil
+	return stagePools{perBlock: per, avail: avail, binding: binding, blocks: blocks, spans: spans, page: modelPage}, nil
 }
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
@@ -492,6 +529,9 @@ func pricerFor(s engine.Spec) (vllm.Pricer, error) {
 	if per, err := offloadBytesPerBlock(p.model); err == nil {
 		k.blockBytes = per
 	}
+	if g, err := offloadGroupBytes(p.model); err == nil {
+		k.groupBytes = g
+	}
 	return k, nil
 }
 
@@ -501,8 +541,12 @@ func pricerFor(s engine.Spec) (vllm.Pricer, error) {
 type kernelPricer struct {
 	m *kernelmodel.Model
 	// blockBytes is a worker's KV bytes a GPU block, the pool's own (offloadBytesPerBlock), which
-	// an offload transfer moves per block; 0 prices at the kernel's per-block bytes.
+	// an offload transfer moves per block when its groups are not known; 0 prices at the kernel's
+	// per-block bytes.
 	blockBytes int64
+	// groupBytes are, by pipeline rank and KV cache group, the bytes a worker copies for one
+	// block of the group (offloadGroupBytes); nil prices every block at blockBytes.
+	groupBytes [][]int64
 }
 
 // StepTime implements core/vllm.Pricer.
@@ -516,6 +560,27 @@ func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
 func (k kernelPricer) TransferTime(t engine.Transfer) engine.Duration {
 	return engine.Duration(k.m.TierTransferTicksOf("cpu_dram", t.Kind == engine.TransferStore, int64(t.Blocks)*k.blockBytes,
 		int64(t.Blocks)))
+}
+
+// GroupTransferTime implements core/vllm.GroupTransferPricer: an offload job of groupBlocks[g]
+// GPU blocks of each KV cache group moves, on each worker, those blocks' pages of the group's
+// layers on that worker (vLLM's CPU offload worker copies one (block, layer) page at a time,
+// _fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416@5df63a72), and the job ends
+// when the worker moving the most bytes does. A group of fewer layers than the widest moves
+// fewer bytes a block than the pool's stride.
+func (k kernelPricer) GroupTransferTime(t engine.Transfer, groupBlocks []int) engine.Duration {
+	if len(k.groupBytes) == 0 || len(groupBlocks) != len(k.groupBytes[0]) {
+		return k.TransferTime(t)
+	}
+	var bytes int64
+	for _, per := range k.groupBytes {
+		var b int64
+		for g, n := range groupBlocks {
+			b += int64(n) * per[g]
+		}
+		bytes = max(bytes, b)
+	}
+	return engine.Duration(k.m.TierTransferTicksOf("cpu_dram", t.Kind == engine.TransferStore, bytes, int64(t.Blocks)))
 }
 
 // StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage

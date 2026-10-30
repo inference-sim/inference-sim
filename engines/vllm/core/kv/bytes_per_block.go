@@ -158,3 +158,45 @@ func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize
 	}
 	return BytesPerBlock(groups, deepseek(layers) && !o.DisableHybrid)
 }
+
+// StageGroupCopyBytes is, for each of the model's KV cache groups in GroupLayers' order, the bytes
+// the stage's worker copies for one block of that group when it offloads it: vLLM's CPU offload
+// worker copies a group's blocks one (block, layer) page at a time over the group's layers on that
+// worker, each at its unpadded page (_fill_direct_ops, vllm/v1/kv_offload/cpu/gpu_worker.py:395-416;
+// group_data_refs, offloading/worker.py:202-207@5df63a72), so a group of fewer layers than the
+// widest moves fewer bytes a block than the pool's stride. A packed layout (DeepSeek V4's) copies
+// the whole packed block for every group (offloading/worker.py:144-161), the stage's pool bytes
+// per block (StagePoolBytesPerBlock).
+func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize int) ([]int64, error) {
+	if len(on) != len(layers) {
+		return nil, fmt.Errorf("kv: %d stage flags for %d layers", len(on), len(layers))
+	}
+	_, members, err := groupLayers(layers, o)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]int64, len(members))
+	if deepseek(layers) && !o.DisableHybrid {
+		per, err := StagePoolBytesPerBlock(layers, on, o, blockSize)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			out[i] = per
+		}
+		return out, nil
+	}
+	for i, m := range members {
+		for _, j := range m {
+			if !on[j] {
+				continue
+			}
+			l := layers[j]
+			if l.BlockSize == 0 {
+				l.BlockSize = blockSize
+			}
+			out[i] += int64(pageBytes(l))
+		}
+	}
+	return out, nil
+}

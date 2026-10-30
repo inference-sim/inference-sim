@@ -87,6 +87,8 @@ type offload struct {
 	// schedule told the worker to finish, which the next applied output reports done.
 	jobs map[engine.TransferID]int
 	ids  map[int]engine.TransferID
+	// groups are the transfers in flight's GPU blocks in each KV cache group (Job.GroupSizes).
+	groups map[engine.TransferID][]int
 	// flushed are, by the core batch whose metadata names them, the jobs its worker finishes
 	// before the batch runs (handle_preemptions), which that batch's output reports.
 	flushed map[int][]int
@@ -178,7 +180,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	o := &offload{conn: conn, blockSize: bs, early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
-		flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}}
+		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
@@ -200,6 +202,7 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	add := func(j offloading.Job, kind engine.TransferKind) {
 		o.next++
 		o.jobs[o.next], o.ids[j.ID] = j.ID, o.next
+		o.groups[o.next] = append([]int(nil), j.GroupSizes...)
 		// Tokens are the widest group's blocks: every group is at one block size (offloading.New),
 		// and a full-attention group moves every block of the range, a window only its own.
 		widest := 0
@@ -221,6 +224,15 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 	}
 	o.lastFlush = append(o.lastFlush[:0], m.Flush...)
 	return out
+}
+
+// groupSizes is a transfer in flight's GPU blocks in each KV cache group, nil for one this
+// offload did not start.
+func (o *offload) groupSizes(id engine.TransferID) []int {
+	if o == nil {
+		return nil
+	}
+	return o.groups[id]
 }
 
 // done records a transfer's end for the next applied output. A failed transfer is refused: vLLM
@@ -248,6 +260,7 @@ func (o *offload) done(id engine.TransferID, ok bool) error {
 func (o *offload) complete(j int) {
 	id := o.ids[j]
 	delete(o.jobs, id)
+	delete(o.groups, id)
 	delete(o.ids, j)
 	delete(o.flushed, j)
 	o.completed = append(o.completed, j)

@@ -505,6 +505,15 @@ type TransferPricer interface {
 	TransferTime(t engine.Transfer) engine.Duration
 }
 
+// GroupTransferPricer is a TransferPricer that prices an offload job by its GPU blocks in each
+// KV cache group, groupBlocks in scheduler group order (GPULoadStoreSpec.group_sizes,
+// vllm/v1/kv_offload/base.py:438-469@5df63a72): vLLM's CPU offload worker copies each group's
+// blocks over that group's layers only (gpu_worker.py:395-416), so a hybrid model's job moves
+// fewer bytes than its blocks times the pool's stride.
+type GroupTransferPricer interface {
+	GroupTransferTime(t engine.Transfer, groupBlocks []int) engine.Duration
+}
+
 // TransferTime is how long one of the engine's offload-tier transfers takes, as its pricer
 // prices it (the latency kernel's TierTime for the CPU tier), at least one microsecond; false
 // when the pricer prices none. A simulator reads it by type-asserting
@@ -513,6 +522,11 @@ func (e *Engine) TransferTime(t engine.Transfer) (engine.Duration, bool) {
 	p, ok := e.pricer.(TransferPricer)
 	if !ok {
 		return 0, false
+	}
+	if g, ok := e.pricer.(GroupTransferPricer); ok {
+		if sizes := e.off.groupSizes(t.ID); sizes != nil {
+			return max(g.GroupTransferTime(t, sizes), 1), true
+		}
 	}
 	return max(p.TransferTime(t), 1), true
 }
