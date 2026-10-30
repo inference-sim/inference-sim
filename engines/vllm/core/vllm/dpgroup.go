@@ -455,6 +455,9 @@ func (g *DPGroup) EnableKVEvents() {
 	}
 }
 
+// KVEventsRefusal is the ranks' (Engine.KVEventsRefusal): every rank runs one configuration.
+func (g *DPGroup) KVEventsRefusal() error { return g.ranks[0].e.KVEventsRefusal() }
+
 // Ranks is the group's data-parallel width.
 func (g *DPGroup) Ranks() int { return len(g.ranks) }
 

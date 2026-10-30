@@ -752,6 +752,26 @@ func (e *Engine) Snapshot() engine.State {
 // prefix-cache changes in Result.KVEvents.
 func (e *Engine) EnableKVEvents() { e.s.EnableKVEvents() }
 
+// KVEventsRefusal reports why a router cannot index this engine's KV events, nil when it can. The
+// router keys every pod's blocks at the engine's block size (llm-d's indexer takes one block size;
+// the simulator's gateway is told the scenario's block_size). A full-attention group at another
+// block size (a packed group, _get_packed_kv_cache_groups, vllm/v1/core/kv_cache_utils.py:
+// 1860-2014@5df63a72) publishes BlockStored at its own block_size, which the router would key
+// wrongly. DeepSeek V4's deployments keep their full-attention group at the engine's block size
+// and are not refused. A simulator reads it by type-asserting interface{ KVEventsRefusal() error }
+// on the engine.Engine and refuses precise-prefix routing.
+func (e *Engine) KVEventsRefusal() error {
+	m := e.s.KV
+	for g := 0; g < m.NumGroups(); g++ {
+		if m.PrefixIndexable(uint32(g)) && m.GroupBlockSize(g) != m.BlockSize() {
+			return fmt.Errorf("vllm: KV cache group %d (full attention) is at block size %d, and the engine at %d: "+
+				"a router keying blocks at the engine's block size cannot index its KV events", g,
+				m.GroupBlockSize(g), m.BlockSize())
+		}
+	}
+	return nil
+}
+
 // indexable keeps the events of the KV cache groups a router's prefix index takes. vLLM
 // publishes every group's events tagged with the group's kind, and llm-d's indexer drops a
 // sliding-window or ring group's stores and removals (pkg/kvevents/pool.go,
