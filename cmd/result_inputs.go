@@ -178,21 +178,24 @@ func horizonSeconds(ticks int64) *float64 {
 }
 
 // traceBinding is the workload binding of a replayed trace: its data file and header.
-func traceBinding(dataPath string, h workload.TraceHeader, rows int) *schemaworkload.Binding {
-	ref := &schemaworkload.TraceRef{Data: dataPath, Rows: rows, Header: schemaworkload.TraceHeader{
+// The data file is named as an artifact is (artifactRef: no host directory layout) and pinned
+// by its sha256; a file that cannot be read is an error (R1).
+func traceBinding(dataPath string, h workload.TraceHeader, rows int) (*schemaworkload.Binding, error) {
+	d, err := fileDigest(dataPath)
+	if err != nil {
+		return nil, fmt.Errorf("--trace-data %s: %w", dataPath, err)
+	}
+	ref := &schemaworkload.TraceRef{Data: artifactRef(dataPath), SHA256: d, Rows: rows, Header: schemaworkload.TraceHeader{
 		Version: h.Version, TimeUnit: schemaworkload.TimeUnit(h.TimeUnit), Mode: schemaworkload.Mode(h.Mode),
 		WorkloadSeed: h.WorkloadSeed,
 	}}
-	if d, err := fileDigest(dataPath); err == nil {
-		ref.SHA256 = d
-	}
 	if len(h.GoodputSLOTargets) > 0 {
 		ref.Header.GoodputSLOTargets = map[string]schemaworkload.SLODimTargets{}
 		for cls, t := range h.GoodputSLOTargets {
 			ref.Header.GoodputSLOTargets[cls] = schemaworkload.SLODimTargets{TTFTMs: t.TTFTMs, ITLMs: t.ITLMs, E2EMs: t.E2EMs}
 		}
 	}
-	return &schemaworkload.Binding{Trace: ref}
+	return &schemaworkload.Binding{Trace: ref}, nil
 }
 
 // resultLedger is INV-1's ledger from the cluster's own counters: arrivals are observed at

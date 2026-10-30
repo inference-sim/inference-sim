@@ -73,6 +73,7 @@ Example:
 		logrus.SetLevel(level)
 		validateRouterFlags()
 		checkResultFlags()
+		snapshotResultFlags("replay", cmd)
 
 		// Validate required inputs (BC-6, BC-8). An agentic replay (#1937) reads its
 		// corpus instead of a TraceV2 file.
@@ -623,7 +624,7 @@ Example:
 		// document is computed from it, so the Result and the file measure the same window.
 		agentic := agx.emitOptions(cs.AggregatedMetrics())
 		emitRunResult(postRun{
-			cs: cs, gateway: gw, run: replayRunControls(cmd, agx, traceData, requests), goodputTargets: goodputTargets,
+			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
 			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
 		})
@@ -755,26 +756,29 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 }
 
 // replayRunControls are the run controls a replay records: the trace's offered load (or the
-// agentic scenario's lanes), the requests it replays, the seed and the horizon. No warmup is
+// agentic scenario's lanes), the requests it replays, the seed and the horizon it ran to. No warmup is
 // recorded for a trace: a replay measures every request (the header's warm_up_requests is
 // read only by calibrate), and an agentic replay's warmup is part of its workload.replay.
-func replayRunControls(cmd *cobra.Command, agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request) result.Run {
+func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) result.Run {
 	numRequests, load := len(requests), measurement.Load{}
 	var binding *schemaworkload.Binding
-	if trace != nil {
+	if agx == nil && trace != nil {
 		numRequests = max(numRequests, len(trace.Records))
 		load = traceLoad(trace)
-		binding = traceBinding(traceDataPath, trace.Header, len(trace.Records))
+		b, err := traceBinding(traceDataPath, trace.Header, len(trace.Records))
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		binding = b
 	}
 	if agx != nil {
 		load = measurement.Load{Concurrency: agx.spec.Concurrency}
 		binding = &schemaworkload.Binding{Replay: agx.spec}
 	}
-	var horizon *float64
-	if cmd.Flags().Changed("horizon") {
-		horizon = horizonSeconds(simulationHorizon)
-	}
-	return result.Run{Seed: seed, NumRequests: numRequests, Load: load, HorizonS: horizon, Workload: binding}
+	// The horizon the replay ran to: --horizon, or the one replay derives from the trace (2x
+	// its last arrival), or the end an agentic replay moved it to, so a rerun from the document
+	// stops where this one did (#1871 B2).
+	return result.Run{Seed: seed, NumRequests: numRequests, Load: load, HorizonS: horizonSeconds(horizonUs), Workload: binding}
 }
 
 // extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.

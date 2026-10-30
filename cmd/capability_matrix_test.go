@@ -101,7 +101,24 @@ func capRun(t *testing.T, args ...string) capOut {
 	return parseCapOut(t, stdout)
 }
 
-func (o capOut) num(k string) float64 { return o.cluster[k] }
+// num is a cluster figure by its MetricsOutput name; a name the run does not report fails the
+// test rather than reading as zero.
+func (o capOut) num(k string) float64 {
+	v, ok := o.cluster[k]
+	if !ok {
+		panic(fmt.Sprintf("capOut.num: the run reports no cluster figure %q (known: %v)", k, sortedKeysOf2(o.cluster)))
+	}
+	return v
+}
+
+func sortedKeysOf2(m map[string]float64) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
 
 // arrivals is every request the run accounted for: the sum of INV-1's eleven terminal
 // buckets plus the admission rejections, read bucket by bucket, so it is independent of the

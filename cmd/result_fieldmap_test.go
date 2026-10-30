@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -70,4 +71,76 @@ func jsonFields(typ reflect.Type) []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+// #1871 review N2: every home the field-map table names exists in an emitted Result. One
+// document exercises everything but the conditional sections: a multi-instance P/D run with SLO
+// targets, a detector, the deprecated --metrics-path file and a policy override. The homes only
+// a different kind of run states are listed with the run that states them.
+func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
+	conditional := map[string]string{
+		"engine.cluster.acceptance":    "a speculating run",
+		"engine.cluster.adapters":      "a LoRA run",
+		"breakdowns.per_adapter":       "a LoRA run",
+		"engine.cluster.agentic":       "an agentic replay",
+		"engine.cluster.server_series": "--server-series-interval-s",
+		"overrides":                    "a run that sets a flag or overrides its scenario",
+		"profiling_start":              "an agentic replay's explicit window (window.start)",
+		"profiling_end":                "an agentic replay's explicit window (window.stop)",
+	}
+	data, err := os.ReadFile("../docs/guide/results.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := string(data)
+	table := doc[strings.Index(doc, "<!-- result-field-map -->"):strings.Index(doc, "<!-- /result-field-map -->")]
+	path := regexp.MustCompile("`((?:requests|metrics|engine|breakdowns|goodput|window|revisions|artifacts|saturation|kernel)[a-z0-9_.*]*)`")
+	var homes []string
+	for _, line := range strings.Split(table, "\n") {
+		if cols := strings.Split(line, "|"); len(cols) >= 3 {
+			for _, m := range path.FindAllStringSubmatch(cols[2], -1) {
+				homes = append(homes, m[1])
+			}
+		}
+	}
+	if len(homes) < 40 {
+		t.Fatalf("non-vacuity: found %d homes in the table", len(homes))
+	}
+	metricsFile := filepath.Join(t.TempDir(), "m.json")
+	out, stderr, err := runKernelCLI(t, append([]string{"run", "--metrics-path", metricsFile, "--slo-ttft", "default=500ms",
+		"--detectors", "composite"}, pdBurst...)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	emitted := resultDoc(t, out)
+	for _, h := range homes {
+		if _, ok := conditional[h]; ok {
+			continue
+		}
+		if !homeExists(emitted, strings.Split(h, ".")) {
+			t.Errorf("the field map names %q, which the emitted Result does not carry", h)
+		}
+	}
+}
+
+// homeExists reports whether the dotted path, with * matching any key part, is in doc.
+func homeExists(v any, segs []string) bool {
+	if len(segs) == 0 {
+		return true
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	if !strings.Contains(segs[0], "*") {
+		next, ok := m[segs[0]]
+		return ok && homeExists(next, segs[1:])
+	}
+	re := regexp.MustCompile("^" + strings.ReplaceAll(regexp.QuoteMeta(segs[0]), `\*`, ".+") + "$")
+	for k, next := range m {
+		if re.MatchString(k) && homeExists(next, segs[1:]) {
+			return true
+		}
+	}
+	return false
 }

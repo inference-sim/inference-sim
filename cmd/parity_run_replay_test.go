@@ -484,7 +484,7 @@ func TestParity_RunStdout_DeterministicAndEagerLazyIdentical(t *testing.T) {
 		t.Fatalf("lazy Result non-deterministic outside runtime across two runs at seed %d", seed)
 	}
 	// eager ≡ lazy at the Result level.
-	if withoutRuntime(t, string(eager)) != withoutRuntime(t, string(lazy)) {
+	if withoutFlagRecord(t, string(eager)) != withoutFlagRecord(t, string(lazy)) {
 		t.Fatalf("stdout diverged between eager and lazy modes\nEAGER:\n%s\nLAZY:\n%s", eager, lazy)
 	}
 }

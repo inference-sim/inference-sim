@@ -40,7 +40,7 @@ func TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run with LoRA knobs and no adapters: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if withoutRuntime(t, knobs) != withoutRuntime(t, blind) {
+	if withoutFlagRecord(t, knobs) != withoutFlagRecord(t, blind) {
 		t.Errorf("INV-6 VIOLATION: LoRA cost knobs changed an adapter-blind run\n--- blind ---\n%s\n--- knobs ---\n%s",
 			blind, knobs)
 	}

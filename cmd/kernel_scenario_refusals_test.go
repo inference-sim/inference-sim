@@ -252,11 +252,14 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("results file overrides %+v, want %+v", got, tt.want)
 			}
-			// The Result records the same overrides: an input the run simulated differently is part
-			// of what the document says it predicts (blis-schemas#41 section A).
+			// The Result records the same policy overrides: an input the run simulated differently
+			// is part of what the document says it predicts (blis-schemas#41 section A). Its other
+			// rows are the command-line flags the harness passed (#1871 B1).
 			var inDoc []override
 			for _, o := range parseResult(t, stdout).Overrides {
-				inDoc = append(inDoc, override{o.Setting, o.Input, o.Run, o.Source})
+				if strings.HasPrefix(o.Setting, "scheduler") || strings.HasPrefix(o.Setting, "preemption_policy") {
+					inDoc = append(inDoc, override{o.Setting, o.Input, o.Run, o.Source})
+				}
 			}
 			if !reflect.DeepEqual(inDoc, tt.want) {
 				t.Errorf("Result overrides %+v, want %+v", inDoc, tt.want)

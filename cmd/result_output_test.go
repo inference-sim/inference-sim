@@ -31,6 +31,7 @@ import (
 	"github.com/inference-sim/blis-schemas/spec/result"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // resultRunArgs is a small colocated run on the pinned fixture scenario.
@@ -134,10 +135,14 @@ func TestResult_RunAndReplayAgreeOnMetricsRequestsAndBreakdowns(t *testing.T) {
 	if run.Requests.Completed != 30 {
 		t.Fatalf("non-vacuity: the run completed %d of 30", run.Requests.Completed)
 	}
+	// The three sections INV-13 names, and every other section the simulation computed.
 	if !jsonEqual(t, run.Metrics, rep.Metrics) || !jsonEqual(t, run.Requests, rep.Requests) ||
 		!jsonEqual(t, run.Breakdowns, rep.Breakdowns) {
 		t.Errorf("INV-13: run and replay differ\nmetrics %v\n        %v\nrequests %+v\n         %+v",
 			run.Metrics, rep.Metrics, run.Requests, rep.Requests)
+	}
+	if a, b := inv13View(t, runOut), inv13View(t, repOut); a != b {
+		t.Errorf("INV-13: run and replay differ in a simulated section\n%s", firstDiff(a, b))
 	}
 	// The run references the trace it exported, by digest.
 	if a, ok := run.Artifacts["trace_data"]; !ok || len(a.SHA256) != 64 || a.Rows == nil || *a.Rows != 30 {
@@ -455,5 +460,195 @@ func TestResult_AnUnwritableOutputLeavesStdoutEmpty(t *testing.T) {
 	}
 	if stdout != "" {
 		t.Errorf("stdout carried a document from a failed run:\n%s", lastLines(stdout, 5))
+	}
+}
+
+// #1871 review B2: a replay without --horizon runs to the horizon it derives from the trace
+// (2x the last arrival), and records it, so the document states where the replay stopped.
+// INV-13 is stated for the same run controls: replaying a run with the horizon the run's own
+// document records reproduces it, and a default replay states its own, shorter horizon.
+func TestResult_ADefaultReplayRecordsTheHorizonItRanTo(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+		"--num-requests", "30", "--rate", "10", "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	replay := func(extra ...string) *result.Result {
+		out, stderr, err := runKernelCLI(t, append([]string{"replay", "--scenario", kernelTestScenario, "--seed", "7",
+			"--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, extra...)...)
+		if err != nil {
+			t.Fatalf("replay %v: %v\n%s", extra, err, lastLines(stderr, 5))
+		}
+		return parseResult(t, out)
+	}
+	def := replay()
+	h := def.Input.Run.HorizonS
+	if h == nil || *h <= 0 {
+		t.Fatalf("a default replay records no horizon: %+v", def.Input.Run)
+	}
+	trace, err := workload.LoadTraceV2(prefix+".yaml", prefix+".csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var last int64
+	for _, r := range trace.Records {
+		last = max(last, r.ArrivalTimeUs)
+	}
+	if want := float64(2*last) / 1e6; *h != want {
+		t.Errorf("recorded horizon %v s, want 2x the last arrival, %v s", *h, want)
+	}
+	// The run had no horizon; the replay given the same (unbounded) horizon reproduces it.
+	run := parseResult(t, runOut)
+	if run.Input.Run.HorizonS != nil {
+		t.Fatalf("non-vacuity: the run states a horizon %v", *run.Input.Run.HorizonS)
+	}
+	same := replay("--horizon", "9223372036854775807")
+	if !jsonEqual(t, run.Metrics, same.Metrics) || !jsonEqual(t, run.Requests, same.Requests) {
+		t.Errorf("INV-13: the replay at the run's horizon differs from the run")
+	}
+}
+
+// #1871 review S1: generated is the cluster's own arrival count, checked against a count the
+// ledger does not define: the exported trace's rows (one per arrival, written by the arrival
+// hook). The run is cut by its horizon while requests are still in the host's render pipeline,
+// so a ledger that restated its bucket sum, or lost those requests, would disagree.
+func TestResult_GeneratedIsTheArrivalCountOnAHorizonCutRun(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "trace")
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+		"--num-requests", "200", "--rate", "400", "--horizon", "300000", "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	q := parseResult(t, stdout).Requests
+	trace, err := workload.LoadTraceV2(prefix+".yaml", prefix+".csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Generated != len(trace.Records) {
+		t.Errorf("generated = %d, want the %d arrivals the trace recorded", q.Generated, len(trace.Records))
+	}
+	if q.StillQueued == 0 || q.Generated >= 200 {
+		t.Fatalf("non-vacuity: the horizon did not cut the run with requests waiting: %+v", q)
+	}
+	if q.Terminal() != q.Injected {
+		t.Errorf("INV-1: injected %d, buckets %d: %+v", q.Injected, q.Terminal(), q)
+	}
+}
+
+// resultLedger states generated from the cluster's arrival count, never from its own buckets: on a
+// cluster whose engine lost track of a request (its terminal buckets sum short), the ledger still
+// states every arrival, so blis-schemas' INV-1 clause sees the gap instead of a restated sum.
+func TestResult_TheLedgerDoesNotRestateItsBucketSum(t *testing.T) {
+	reqs := makeSharedPrefixRequests(4)
+	cs := newRoutedCluster(newKernelDeployment(t, 1, nil).Config, reqs)
+	if err := cs.Run(); err != nil {
+		t.Fatal(err)
+	}
+	cs.AggregatedMetrics().CompletedRequests-- // a bucket loses a request
+	q := resultLedger(cs)
+	if q.Generated != len(reqs) || q.Injected != len(reqs) {
+		t.Errorf("generated %d, injected %d, want the %d requests that arrived", q.Generated, q.Injected, len(reqs))
+	}
+	if q.Terminal() == q.Injected {
+		t.Error("non-vacuity: the buckets still sum to injected")
+	}
+}
+
+// #1871 review S3: the emit path validates before it writes: an invalid document reaches
+// neither stdout nor --output, and the error names the problem.
+func TestResult_TheEmitPathRefusesAnInvalidDocument(t *testing.T) {
+	defer func(o string) { resultOutput = o }(resultOutput)
+	resultOutput = filepath.Join(t.TempDir(), "r.json")
+	var stdout bytes.Buffer
+	err := writeResult(&stdout, &result.Result{Kind: result.Kind, SchemaVersion: result.SchemaVersion, Name: "x"})
+	if err == nil || !strings.Contains(err.Error(), "does not validate") {
+		t.Fatalf("an invalid document was written: %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout carried %d bytes of an invalid document", stdout.Len())
+	}
+	if _, err := os.Stat(resultOutput); !os.IsNotExist(err) {
+		t.Errorf("--output was written for an invalid document (%v)", err)
+	}
+}
+
+// #1871 review S5: --fitness-weights and --summarize-trace are reported in the document, not
+// only by --view summary.
+func TestResult_FitnessAndTraceSummaryAreInTheDocument(t *testing.T) {
+	out, stderr, err := runKernelCLI(t, resultRunArgs("--fitness-weights", "p99_ttft:3,mean_e2e:1,throughput:2",
+		"--trace-level", "decisions", "--summarize-trace")...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if s := resultNum(t, out, "router.fitness.score"); s <= 0 || s > 6 {
+		t.Errorf("router.fitness.score = %v, want a weighted score in (0, 6]", s)
+	}
+	if n := resultNum(t, out, "router.trace_summary.TotalDecisions"); n <= 0 {
+		t.Errorf("router.trace_summary.TotalDecisions = %v, want the run's routing decisions", n)
+	}
+	if !strings.Contains(stderr, "--view summary") {
+		t.Errorf("no hint that --view summary prints them as text:\n%s", lastLines(stderr, 5))
+	}
+}
+
+// #1871 review S6, S8, S9: a replay's input names its trace without the host's directory; a
+// workload-spec run records --seed and the spec's own seed; a closed-loop cap the follow-up
+// rounds exceeded is kept as an override.
+func TestResult_InputRecordsTheTraceTheSeedsAndTheCap(t *testing.T) {
+	prefix := filepath.Join(t.TempDir(), "sub", "trace")
+	if err := os.MkdirAll(filepath.Dir(prefix), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runKernelCLI(t, resultRunArgs("--trace-output", prefix)...); err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
+	}
+	rep, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if d := parseResult(t, rep).Input.Run.Workload.Trace.Data; d != "trace.csv" {
+		t.Errorf("input.run.workload.trace.data = %q, want the file name only", d)
+	}
+
+	spec := filepath.Join(t.TempDir(), "spec.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 99
+category: reasoning
+aggregate_rate: 2
+num_requests: 6
+clients:
+  - id: chat
+    rate_fraction: 1
+    slo_class: standard
+    closed_loop: true
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 64}}
+    output_distribution: {type: constant, params: {value: 8}}
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 3, think_time_us: 500000, context_growth: accumulate}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--workload-spec", spec)
+	if err != nil {
+		t.Fatalf("spec run: %v\n%s", err, lastLines(stderr, 3))
+	}
+	r := parseResult(t, out)
+	rows := map[string]string{}
+	for _, o := range r.Overrides {
+		rows[o.Setting] = o.Run
+	}
+	if r.Input.Run.Seed != 42 || rows["workload_seed"] != "99" {
+		t.Errorf("seed %d, workload_seed %q; want --seed's 42 and the spec's 99", r.Input.Run.Seed, rows["workload_seed"])
+	}
+	if !strings.HasPrefix(rows["workload-spec"], "sha256:") {
+		t.Errorf("the spec is not pinned by sha256: %v", rows)
+	}
+	if r.Requests.Generated <= 6 || rows["num_requests_cap"] != "6" || r.Input.Run.NumRequests != r.Requests.Generated {
+		t.Errorf("generated %d, num_requests %d, cap row %q; want follow-ups past the 6 cap, kept as an override",
+			r.Requests.Generated, r.Input.Run.NumRequests, rows["num_requests_cap"])
 	}
 }

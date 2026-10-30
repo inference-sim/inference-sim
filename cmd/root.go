@@ -864,6 +864,7 @@ var runCmd = &cobra.Command{
 		logrus.SetLevel(level)
 		validateRouterFlags()
 		checkResultFlags()
+		snapshotResultFlags("run", cmd)
 
 		// The deployment comes from the scenario, so that resolution runs BEFORE the
 		// gates below: those refuse a run whose deployment nobody chose, and the scenario
@@ -1473,16 +1474,24 @@ var runCmd = &cobra.Command{
 		run := result.Run{
 			Load:        runLoadOf(spec, arrivalTimes(cs.AggregatedMetrics())),
 			NumRequests: runNumRequests,
-			Seed:        spec.Seed,
-			HorizonS:    horizonSeconds(simulationHorizon),
-			Workload:    runWorkloadBinding(),
+			// --seed seeds the engines and the router; a workload spec run without --seed keeps
+			// the spec's own seed for its requests, which the spec file's sha256 (overrides,
+			// workload-spec) pins and the workload_seed override row states (#1871 S8).
+			Seed:     seed,
+			HorizonS: horizonSeconds(simulationHorizon),
+			Workload: runWorkloadBinding(),
 		}
 		var artifacts []artifactFile
 		if traceOutput != "" {
 			artifacts = traceArtifacts(traceOutput, len(traceArrivals))
 		}
+		var extra []sim.ScenarioOverride
+		if spec != nil && spec.Seed != seed {
+			extra = append(extra, sim.ScenarioOverride{Setting: "workload_seed", Scenario: fmt.Sprint(seed),
+				Run: fmt.Sprint(spec.Seed), Source: "--workload-spec (its seed: field; --seed not given)"})
+		}
 		emitRunResult(postRun{
-			cs: cs, gateway: gw, run: run, goodputTargets: goodputTargets, satTracer: satTracer,
+			cs: cs, gateway: gw, run: run, goodputTargets: goodputTargets, satTracer: satTracer, extraOverrides: extra,
 			metricsPath: metricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			fitnessWeights: fitnessWeights, started: startTime,
 		})

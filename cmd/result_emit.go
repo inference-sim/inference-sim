@@ -5,6 +5,7 @@ package cmd
 // from one call, so the two commands cannot drift into reporting different things.
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -17,6 +18,15 @@ import (
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
+
+// floatMapAny copies a float map into a generic one, for an open-ended section.
+func floatMapAny(in map[string]float64) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
 
 // postRun is what a finished run hands the emitter.
 type postRun struct {
@@ -40,6 +50,9 @@ type postRun struct {
 	artifacts []artifactFile
 	// fitnessWeights is --fitness-weights, "" for none (run only).
 	fitnessWeights string
+	// extraOverrides are the command's own overrides beyond the flags it was given (a workload
+	// spec's seed the run did not use, a request cap the run's follow-ups exceeded).
+	extraOverrides []sim.ScenarioOverride
 	// started is when the command started, for the runtime block.
 	started time.Time
 }
@@ -119,7 +132,7 @@ func emitRunResult(p postRun) {
 		Deployment:     docs.Deployment,
 		Policy:         policy,
 		Run:            p.run,
-		Overrides:      scenarioOverrides,
+		Overrides:      runOverrides(p.extraOverrides...),
 		GPUs:           runGPUs(cs, docs.Deployment),
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
@@ -137,12 +150,16 @@ func emitRunResult(p postRun) {
 		ClockUs:         cs.Clock(),
 		HorizonUs:       cs.Horizon(),
 	}
-	// blis-schemas reads num_requests as the most requests the run generates. BLIS's
-	// --num-requests caps the requests the workload generator emits; a closed-loop session's
-	// follow-up rounds are generated during the run on top of them. The document records the
-	// larger, so it states a bound the run kept.
-	if in.Run.NumRequests < out.Ledger.Generated {
+	// blis-schemas reads num_requests as the most requests the run generates and checks
+	// generated <= num_requests. BLIS's --num-requests caps what the workload generator emits;
+	// a closed-loop session's follow-up rounds are generated during the run on top of it, and
+	// v0.9.1 has no field for them. The document states the bound the run kept, and records the
+	// cap the run was given as an override row, so it is not lost.
+	if cap := in.Run.NumRequests; cap < out.Ledger.Generated {
 		in.Run.NumRequests = out.Ledger.Generated
+		in.Overrides = append(in.Overrides, sim.ScenarioOverride{Setting: "num_requests_cap",
+			Scenario: fmt.Sprint(out.Ledger.Generated), Run: fmt.Sprint(cap),
+			Source: "the workload generator's cap; closed-loop follow-up rounds are generated beyond it"})
 	}
 	r := buildResult(in, out)
 	if len(r.Metrics) == 0 {
@@ -171,9 +188,18 @@ func emitRunResult(p postRun) {
 			logrus.Fatalf("Fitness evaluation failed: %v", err)
 		}
 		view.Fitness = &fitness
+		// The score is reported in the document too, under router: it scores the run's routing
+		// outcome from its raw metrics (#1871 review S5).
+		r.Router["fitness"] = map[string]any{"score": fitness.Score, "components": floatMapAny(fitness.Components),
+			"weights": p.fitnessWeights}
 	}
 	if cs.Trace() != nil && summarizeTrace {
 		view.Trace = trace.Summarize(cs.Trace())
+		r.Router["trace_summary"] = toGeneric(view.Trace)
+	}
+	if resultView != viewSummary && (p.fitnessWeights != "" || (cs.Trace() != nil && summarizeTrace)) {
+		logrus.Warnf("--fitness-weights and --summarize-trace are reported in the Result's router section; " +
+			"pass --view summary to also print them as text on stderr")
 	}
 	emitResult(r, view)
 }

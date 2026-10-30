@@ -104,6 +104,9 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	}
 	r.Input.Policy = in.Policy
 	r.Input.Run = in.Run
+	for _, o := range in.Overrides {
+		r.Overrides = append(r.Overrides, result.Override{Setting: o.Setting, Input: o.Scenario, Run: o.Run, Source: o.Source})
+	}
 	if r.Name == "" {
 		r.Name = resultName(r)
 	}
@@ -114,9 +117,6 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass)
 	if len(in.Saturation) > 0 {
 		r.Saturation = map[string]any{"final": stringMapAny(in.Saturation)}
-	}
-	for _, o := range in.Overrides {
-		r.Overrides = append(r.Overrides, result.Override{Setting: o.Setting, Input: o.Scenario, Run: o.Run, Source: o.Source})
 	}
 	return r
 }
@@ -422,7 +422,17 @@ func resultName(r *result.Result) string {
 	case l.RequestRate > 0:
 		load = "r" + strings.ReplaceAll(fmt.Sprintf("%g", l.RequestRate), ".", "p")
 	}
-	return slugPart(fmt.Sprintf("%s.%s-s%d", base, load, r.Input.Run.Seed))
+	name := fmt.Sprintf("%s.%s-s%d", base, load, r.Input.Run.Seed)
+	// Overrides change what ran, so two runs that differ only in them get different names: a
+	// short digest of the override rows (a --num-instances sweep no longer collides).
+	if len(r.Overrides) > 0 {
+		var b strings.Builder
+		for _, o := range r.Overrides {
+			fmt.Fprintf(&b, "%s\x1f%s\x1f%s\x1f%s\x1e", o.Setting, o.Input, o.Run, o.Source)
+		}
+		name += "-o" + bytesDigest([]byte(b.String()))[:8]
+	}
+	return slugPart(name)
 }
 
 // slugPart lowercases s and replaces every character a blis-schemas slug does not allow.

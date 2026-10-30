@@ -169,11 +169,12 @@ func resultNum(t *testing.T, stdout, path string) float64 {
 }
 
 // inv13Sections are the parts of a Result that INV-13 holds equal between a run and the
-// replay of its trace: everything the simulation computed. The input record, the name (which
-// states the load), the artifacts, the revisions and the runtime describe how each command
-// was invoked and are not compared.
+// replay of its trace: everything the simulation computed. The input record (input, overrides,
+// and the name that digests them), the artifacts, the revisions and the runtime describe how
+// each command was invoked -- a run records --rate, a replay its --trace-data -- and are not
+// compared.
 var inv13Sections = []string{"metric_defs", "window", "metrics", "requests", "goodput", "breakdowns",
-	"engine", "router", "kernel", "saturation", "overrides"}
+	"engine", "router", "kernel", "saturation"}
 
 // inv13View is stdout's INV-13 sections, re-encoded canonically, so a run and its replay
 // compare as strings.
@@ -231,7 +232,7 @@ func simulated(t *testing.T, stdout string) string {
 	doc := resultDoc(t, stdout)
 	view := map[string]any{}
 	for _, k := range inv13Sections {
-		if k == "kernel" || k == "overrides" {
+		if k == "kernel" {
 			continue
 		}
 		if v, ok := doc[k]; ok {
@@ -282,4 +283,27 @@ func firstDiff(a, b string) string {
 		}
 	}
 	return ""
+}
+
+// withoutFlagRecord is withoutRuntime with the command-line flag record removed: the flag
+// override rows (Source "--<flag>") and the name that digests them. For a metamorphic test that
+// sets a flag on one run and not the other on purpose (an inert knob, eager against lazy), so
+// the record of the flag differs by construction and the simulation must not.
+func withoutFlagRecord(t *testing.T, stdout string) string {
+	t.Helper()
+	r := parseResult(t, stdout)
+	r.Runtime, r.Name = nil, "x"
+	kept := r.Overrides[:0]
+	for _, o := range r.Overrides {
+		if !strings.HasPrefix(o.Source, "--") || o.Setting == "scheduler" || strings.HasPrefix(o.Setting, "scheduler ") ||
+			strings.HasPrefix(o.Setting, "preemption_policy") {
+			kept = append(kept, o)
+		}
+	}
+	r.Overrides = kept
+	data, err := result.Marshal(r, result.FormatJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

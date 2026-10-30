@@ -75,24 +75,34 @@ func warnDeprecatedFile(flag, path string) {
 // with --view summary, renders the text summary to stderr. A document the validator refuses
 // is fatal: it names every problem.
 func emitResult(r *result.Result, view *summaryView) {
+	if err := writeResult(os.Stdout, r); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	if resultView == viewSummary {
+		renderSummary(os.Stderr, r, view)
+	}
+}
+
+// writeResult validates and encodes r, writes it to --output when set, then to stdout. It writes
+// nothing at all for a document that does not validate, and nothing to stdout when --output
+// cannot be written.
+func writeResult(stdout io.Writer, r *result.Result) error {
 	data, err := encodeResult(r, result.Format(resultFormat))
 	if err != nil {
-		logrus.Fatalf("Result document: %v", err)
+		return fmt.Errorf("the Result document: %w", err)
 	}
 	// --output is written first: a run that cannot write its file fails before stdout carries a
 	// complete document a consumer could take for a successful run.
 	if resultOutput != "" {
 		if err := os.WriteFile(resultOutput, data, 0o644); err != nil {
-			logrus.Fatalf("--output %s: %v", resultOutput, err)
+			return fmt.Errorf("--output %s: %w", resultOutput, err)
 		}
 		logrus.Infof("Result written to: %s", resultOutput)
 	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		logrus.Fatalf("writing the Result document to stdout: %v", err)
+	if _, err := stdout.Write(data); err != nil {
+		return fmt.Errorf("writing the Result document to stdout: %w", err)
 	}
-	if resultView == viewSummary {
-		renderSummary(os.Stderr, r, view)
-	}
+	return nil
 }
 
 // encodeResult validates r and encodes it. It is emitResult without the writes, for tests.

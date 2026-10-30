@@ -103,7 +103,7 @@ This simulates a 4-instance cluster receiving 100 requests/second. Every cluster
 ./blis run --scenarios examplescenarios \
   --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
-  --trace-level decisions --summarize-trace
+  --trace-level decisions --summarize-trace --view summary
 
 # A different deployment: pick another scenario (single-node TP2: up to 4 instances)
 ./blis run --scenarios examplescenarios \

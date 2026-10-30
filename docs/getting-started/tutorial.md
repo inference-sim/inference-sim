@@ -149,10 +149,11 @@ For automated comparison across many configurations, use fitness evaluation:
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
   --scenarios testdata/scenarios --registry $PWD/blis-registry \
   --num-instances 8 --rate 40 --num-requests 4000 \
-  --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
+  --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2" --view summary
 ```
 
-The fitness score is a weighted sum of normalized metrics — **higher is better**. Each latency metric is normalized to a [0, 1] range using `1/(1+x/1000)`, and throughput is normalized to [0, 1] using `throughput/max_throughput`. With weights `p99_ttft:3, mean_e2e:1, throughput:2`, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).
+The score is in the Result at `router.fitness` (`score`, `components`, `weights`); `--view summary`
+also prints it on stderr. The fitness score is a weighted sum of normalized metrics — **higher is better**. Each latency metric is normalized to a [0, 1] range using `1/(1+x/1000)`, and throughput is normalized to [0, 1] using `throughput/max_throughput`. With weights `p99_ttft:3, mean_e2e:1, throughput:2`, the score is a weighted sum out of a theoretical maximum of 6.0 (the sum of all weights).
 
 !!! warning "Fitness score normalization"
     The `1/(1+x/1000)` normalization compresses large raw differences into small score differences. A 38% TTFT improvement may appear as only an 8% fitness score difference. Always examine raw metrics (`metrics.ttft_p99_ms`, `metrics.e2e_mean_ms`, `metrics.request_throughput`) alongside fitness scores when making capacity decisions.

@@ -25,18 +25,18 @@ jq '.metrics.ttft_p99_ms' result.json
 
 | Section | What it holds |
 |---|---|
-| `input` | The resolved `scenario` and `deployment`, the run controls under `run` (`load`, `num_requests`, `seed`, `horizon_s`, `workload`), and a `--policy-config` bundle verbatim under `policy`. |
+| `input` | The resolved `scenario` and `deployment`, the run controls under `run` (`load`, `num_requests`, `seed` (`--seed`, which seeds the engines and the router), `horizon_s` (for a replay, the horizon it ran to: `--horizon`, or 2x the trace's last arrival), `workload`: a catalog preset as `shape`, a replayed trace as `trace` pinned by sha256, an agentic replay as `replay`), and a `--policy-config` bundle verbatim under `policy`. |
 | `revisions` | The BLIS build, the blis-schemas, blis-latency-kernel and llm-d router releases it was built against, the engine model, and the catalog and registry git revisions (`-dirty` when the checkout has uncommitted content; `unknown` when it is not a git checkout). |
 | `metric_defs`, `metrics` | Standard-named metrics over the measured `window`, each defined in blis-schemas' measurement vocabulary on the `simulated` clock (below). |
 | `window` | The measured window: requests not in warm-up, first arrival to last completion (or a replay's explicit profiling window). A run in which no measured request completed states its zero rates over the simulated run (`simulation_start` to `simulation_end`). |
 | `requests` | INV-1's ledger: `generated`, `rejected`, `injected` and the eleven terminal buckets, plus `length_capped`. `generated` is the cluster's own arrival count, so blis-schemas' check that `injected` equals the sum of the buckets is not a restatement of a sum. |
-| `goodput` | With SLO targets: the targets, `goodput_rps`, `slo_attainment`, and per class `completed` and `met`. |
+| `goodput` | With SLO targets: the targets, `goodput_rps`, `slo_attainment`, and per class `completed` and `met`. Unlike every other rate, `goodput_rps` is over the whole simulated run (`engine.cluster.simulated_duration_s`), not the measured window, as the results file always computed it. |
 | `breakdowns` | `per_model`, `per_tenant`, `per_adapter` (the run's own metrics over each key's requests), `pd` (the prefill/decode split, in ms), `sessions`. |
 | `engine` | What the engines reported: under `cluster` the step-interval series, preemptions, KV figures, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own figures. |
-| `router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters. |
+| `router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness` (`score`, `components`, `weights`); with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
 | `kernel` | blis-latency-kernel's coefficient provenance per pool role. |
 | `saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
-| `overrides` | Every setting the run simulated differently from its scenario, and what chose it. |
+| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that only select what is reported (`--output`, `--format`, `--view`, `--log`, output paths, `--detectors`, ...) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
 | `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
@@ -54,7 +54,10 @@ jq '.metrics.ttft_p99_ms' result.json
 | `request_throughput` | completed requests over the window (`request_throughput`) |
 
 A latency family is stated only when it has a sample: a run that completed nothing states no
-latency rather than a zero. Percentiles are numpy-linear.
+latency rather than a zero. The ITL family needs a request with two or more output tokens;
+`interactivity_p50` and `interactivity_p90` additionally need that percentile of ITL to be
+positive (they are its reciprocal), and `interactivity_mean` needs a request with a positive
+ITL. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are numpy-linear.
 
 `itl_*` is always per token. Under speculative decoding one decode step emits several tokens, so
 the per-decode-step interval (the legacy `itl_*` keys of `MetricsOutput`) is longer by the
@@ -122,8 +125,10 @@ document, or is listed here as dropped with the reason.
 <!-- /result-field-map -->
 
 `input.run.num_requests` is the bound the run kept: `--num-requests` (or the spec's
-`num_requests`), raised to `requests.generated` when closed-loop session rounds generated more
-during the run; an uncapped run in which nothing arrived records 1, the smallest bound the
+`num_requests`). When closed-loop session rounds generated more during the run (they are
+generated on top of the cap, and blis-schemas v0.9.1 states no separate follow-up count), it is
+raised to `requests.generated` and the cap as given is an `overrides` row, `num_requests_cap`;
+an uncapped run in which nothing arrived records 1, the smallest bound the
 schema accepts. A run in which nothing arrived and no `--horizon` bounded simulated time has no
 span to report over and is refused. `blis observe` (deprecated, #1901) is unchanged: it still prints the
 `=== Simulation Metrics ===` JSON.
@@ -469,6 +474,10 @@ For automated multi-configuration comparison:
 ```bash
 --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2"
 ```
+
+The score, its per-metric components and the weights are in the Result at `router.fitness`;
+`--view summary` also prints them on stderr. `--summarize-trace` (with `--trace-level decisions`)
+is likewise at `router.trace_summary`.
 
 Valid metric keys: `throughput`, `tokens_per_sec`, `p99_ttft`, `p50_ttft`, `mean_ttft`, `p99_e2e`, `p50_e2e`, `mean_e2e`.
 
