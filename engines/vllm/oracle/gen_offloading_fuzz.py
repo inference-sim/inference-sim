@@ -16,6 +16,10 @@ Seeds below 20000 have one full-attention KV cache group; seeds 20000 and up add
 sliding windows beside it (the hybrid groups the OffloadingConnector supports as SupportsHMA).
 Seeds 40000 and up also run 2, 3, 4 or 6 workers (divisors of the helper model's 12 heads) (tensor_parallel_size, the connector's num_workers:
 each job is pending on every worker, and the CPU tier holds a copy of a block per worker).
+Seeds 60000 and up draw, from a third stream, the batch queue (async scheduling on the V1 or V2
+runner, pipeline parallelism 2 with async on V2) and a drafter (DSpark K 3-7 or EAGLE-3 K 1-4,
+with each request's acceptance plan), the shapes of Muse Spark's arm D. Seeds below 60000 are
+unchanged.
 
 Usage: python -I oracle/gen_offloading_fuzz.py <out dir> <first seed> <count>
 """
@@ -27,11 +31,18 @@ import sys
 
 HYBRID_SEEDS = 20000
 TP_SEEDS = 40000
+QUEUED_SEEDS = 60000
 
 
 def scenario(seed: int) -> dict:
+    if seed >= QUEUED_SEEDS:
+        return queued_scenario(seed)
+    return scenario_base(seed)
+
+
+def scenario_base(seed: int) -> dict:
     rng = random.Random(seed)
-    hybrid = seed >= HYBRID_SEEDS
+    hybrid = seed >= HYBRID_SEEDS and (seed < QUEUED_SEEDS or random.Random(seed * 7919).random() < 0.6)
     block = rng.choice([2, 4, 8])
     budget = rng.choice([16, 32, 64])
     seqs = rng.randint(1, 4)
@@ -72,6 +83,8 @@ def scenario(seed: int) -> dict:
     need_one = (-(-min(biggest, max_len) // block) + 1) * len(groups)
     blocks = rng.randint(need_one, need_one + 3 * len(groups) * 4)
     tp = rng.choice([2, 3, 4, 6]) if seed >= TP_SEEDS else 1
+    if seed >= QUEUED_SEEDS and random.Random(seed * 7919 + 1).random() < 0.5:
+        tp = 1
     chunk_bytes = 16384 * len(groups) * bpc * tp
     extra = {"cpu_bytes_to_use": chunk_bytes * rng.randint(1, 12), "offload_prompt_only": rng.random() < 0.5}
     if bpc > 1:
@@ -90,6 +103,45 @@ def scenario(seed: int) -> dict:
     if tp > 1:
         cfg["tensor_parallel_size"] = tp
     return {"name": f"ofuzz-{seed}", "seed": seed, "config": cfg, "requests": reqs, "max_steps": 400}
+
+
+def queued_scenario(seed: int) -> dict:
+    """A seed from QUEUED_SEEDS: a TP seed's draw, then, from a third stream, the batch queue and
+    a drafter."""
+    q = random.Random(seed * 104729 + 7)
+    sc = scenario_base(seed)
+    cfg = sc["config"]
+    roll = q.random()
+    if roll < 0.2:
+        cfg["pipeline_parallel_size"] = 2
+        cfg["async_scheduling"], cfg["use_v2_model_runner"] = True, True
+        # The world size grows by PP, and the CPU tier holds a copy per worker.
+        ex = cfg["connector"]["extra_config"]
+        ex["cpu_bytes_to_use"] *= 2
+    elif roll < 0.85:
+        cfg["async_scheduling"] = True
+        if q.random() < 0.4:
+            cfg["use_v2_model_runner"] = True
+    if q.random() < 0.6:
+        if q.random() < 0.6:
+            k = q.choice([3, 5, 7])
+            cfg["speculative"] = {"method": "dspark", "num_speculative_tokens": k}
+            cfg["use_v2_model_runner"] = True
+        else:
+            k = q.randint(1, 4)
+            cfg["speculative"] = {"method": "eagle3", "num_speculative_tokens": k, "draft": "llama-eagle"}
+            # The draft checkpoint has 2 attention heads, which vLLM's config check divides by TP.
+            if cfg.get("tensor_parallel_size", 1) > 2:
+                cfg["tensor_parallel_size"] = 2
+        # vLLM refuses a budget no larger than the draft slots (vllm/config/vllm.py:2285-2290), and
+        # a long-prefill cap below 1+K trips its padding assert (scheduler.py:1134-1156).
+        cfg["max_num_batched_tokens"] = max(cfg["max_num_batched_tokens"], 4 * (k + 1) * cfg["max_num_seqs"])
+        if 0 < cfg["long_prefill_token_threshold"] <= k + 1:
+            cfg["long_prefill_token_threshold"] = 0
+        for r in sc["requests"]:
+            r["accepted"] = [q.randint(0, k) for _ in range(len(r["output"]))]
+    sc["max_steps"] = 600
+    return sc
 
 
 def main() -> None:

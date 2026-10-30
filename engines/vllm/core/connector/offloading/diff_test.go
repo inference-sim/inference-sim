@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
@@ -39,7 +40,17 @@ type scenario struct {
 		SchedulingPolicy          string  `json:"scheduling_policy"`
 		// TensorParallelSize is the engine's world size, the connector's num_workers.
 		TensorParallelSize int `json:"tensor_parallel_size"`
-		KVPage             struct {
+		// The batch queue: async scheduling, pipeline parallelism and the model runner.
+		AsyncScheduling      bool `json:"async_scheduling"`
+		PipelineParallelSize int  `json:"pipeline_parallel_size"`
+		UseV2ModelRunner     bool `json:"use_v2_model_runner"`
+		// Speculative is the drafter, as tier 2 states it.
+		Speculative *struct {
+			Method    string `json:"method"`
+			NumTokens int    `json:"num_speculative_tokens"`
+			Draft     string `json:"draft"`
+		} `json:"speculative"`
+		KVPage struct {
 			NumKVHeads int `json:"num_kv_heads"`
 			HeadSize   int `json:"head_size"`
 		} `json:"kv_page"`
@@ -56,18 +67,8 @@ type scenario struct {
 			ExtraConfig map[string]any `json:"extra_config"`
 		} `json:"connector"`
 	} `json:"config"`
-	Requests []struct {
-		ID          string  `json:"id"`
-		ArrivalStep int     `json:"arrival_step"`
-		Prompt      []int64 `json:"prompt"`
-		Output      []int64 `json:"output"`
-		MaxTokens   int     `json:"max_tokens"`
-		Priority    int     `json:"priority"`
-		AbortStep   *int    `json:"abort_step"`
-		LoadDelay   *int    `json:"load_delay"`
-		StoreDelay  *int    `json:"store_delay"`
-	} `json:"requests"`
-	MaxSteps int `json:"max_steps"`
+	Requests []scenarioReq `json:"requests"`
+	MaxSteps int           `json:"max_steps"`
 }
 
 type cpuState struct {
@@ -106,6 +107,11 @@ type step struct {
 	KVFetchStages      []int          `json:"kv_fetch_stages"`
 	NumRequests        int            `json:"num_requests"`
 	Offload            *offState      `json:"offload"`
+	// SpecScheduled is the drafts each request verified this step, when any did; Processed and
+	// QueueLen are the batch queue's (queued scenarios only).
+	SpecScheduled map[string]int `json:"spec_scheduled,omitempty"`
+	Processed     bool           `json:"processed,omitempty"`
+	QueueLen      int            `json:"queue_len,omitempty"`
 }
 
 type finishRecord struct {
@@ -134,8 +140,17 @@ func intOr(v *int, def int) int {
 	return def
 }
 
+// setup is a scenario's scheduler, connector and batch queue.
+type setup struct {
+	s      *sched.Scheduler
+	conn   *Scheduler
+	chunks int
+	queue  int
+	spec   sched.Spec
+}
+
 // configure is the scenario's scheduler and connector, as oracle/run_offloading.py builds vLLM's.
-func configure(t *testing.T, sc scenario) (*sched.Scheduler, *Scheduler, int) {
+func configure(t *testing.T, sc scenario) setup {
 	t.Helper()
 	c := sc.Config
 	caching, chunked := true, true
@@ -145,8 +160,13 @@ func configure(t *testing.T, sc scenario) (*sched.Scheduler, *Scheduler, int) {
 	if c.EnableChunkedPrefill != nil {
 		chunked = *c.EnableChunkedPrefill
 	}
+	var spec sched.Spec
+	if sp := c.Speculative; sp != nil {
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: sp.Method, NumTokens: sp.NumTokens})
+	}
 	var layers []kv.Group
 	var groups []Group
+	extra := max(0, spec.PrefillLookahead-1)
 	for _, g := range c.KVGroups {
 		switch g.Kind {
 		case "full":
@@ -154,7 +174,7 @@ func configure(t *testing.T, sc scenario) (*sched.Scheduler, *Scheduler, int) {
 			groups = append(groups, Group{BlockSize: c.BlockSize})
 		case "sliding_window":
 			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow})
-			groups = append(groups, Group{BlockSize: c.BlockSize, Window: g.SlidingWindow})
+			groups = append(groups, Group{BlockSize: c.BlockSize, Window: g.SlidingWindow, ExtraRetained: extra})
 		default:
 			t.Fatalf("unknown KV cache group kind %q", g.Kind)
 		}
@@ -162,49 +182,204 @@ func configure(t *testing.T, sc scenario) (*sched.Scheduler, *Scheduler, int) {
 	if len(groups) == 0 {
 		groups = []Group{{BlockSize: c.BlockSize}}
 	}
+	pp := max(c.PipelineParallelSize, 1)
+	v2 := c.UseV2ModelRunner || (c.Speculative != nil && c.Speculative.Method == "dspark")
+	queue := 1
+	if c.AsyncScheduling || pp > 1 {
+		queue = engine.MaxConcurrentBatches(pp, c.AsyncScheduling, v2)
+	}
 	s, err := sched.New(sched.Config{
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
-		ReserveFullSequence: true, Watermark: c.Watermark, KVGroups: kv.ResolveGroups(layers, false),
+		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kv.ResolveGroups(layers, false),
+		Async: c.AsyncScheduling, DecodeStagger: pp, UseV2ModelRunner: v2, MaxConcurrentBatches: queue,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	extra := c.Connector.ExtraConfig
+	ex := c.Connector.ExtraConfig
 	bpc := 1
-	if v, ok := extra["blocks_per_chunk"].(float64); ok {
+	if v, ok := ex["blocks_per_chunk"].(float64); ok {
 		bpc = int(v)
 	}
 	promptOnly := true
-	if v, ok := extra["offload_prompt_only"].(bool); ok {
+	if v, ok := ex["offload_prompt_only"].(bool); ok {
 		promptOnly = v
 	}
-	cpuBytes, _ := extra["cpu_bytes_to_use"].(float64)
+	cpuBytes, _ := ex["cpu_bytes_to_use"].(float64)
 	heads, head := max(c.KVPage.NumKVHeads, 1), max(c.KVPage.HeadSize, 1)
 	// A layer's page: K and V, float32, block_size tokens (AttentionSpec.page_size_bytes); one
 	// layer per group, so the worker's bytes per block are the groups' pages
 	// (_group_kv_bytes_per_block, offloading/config.py:46-58; config.py:221-224).
 	perBlock := int64(2*c.BlockSize*heads*head*4) * int64(len(groups))
-	workers := max(c.TensorParallelSize, 1)
+	// The world size, the connector's num_workers: tp x pp (ParallelConfig.world_size).
+	workers := max(c.TensorParallelSize, 1) * pp
 	chunks := NumChunks(int64(cpuBytes), perBlock, workers, bpc, pageSize)
 	conn, err := New(Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(), NumChunks: chunks,
-		OffloadPromptOnly: promptOnly, PrefixCaching: caching, Workers: workers})
+		OffloadPromptOnly: promptOnly, PrefixCaching: caching, Workers: workers, EagleGroups: eagleGroups(spec, s)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
 		t.Fatal(err)
 	}
-	return s, conn, chunks
+	return setup{s: s, conn: conn, chunks: chunks, queue: queue, spec: spec}
+}
+
+// eagleGroups is the groups the scheduler's KV manager flags as the drafter's, which the
+// connector treats as volatile (GroupOffloadConfig.is_eagle_group, offloading/scheduler.py:226-
+// 287@5df63a72): none unless the drafter's block drop is on.
+func eagleGroups(spec sched.Spec, s *sched.Scheduler) []bool {
+	out := make([]bool, s.KV.NumGroups())
+	if !spec.EagleBlockDrop {
+		return out
+	}
+	for g := range out {
+		out[g] = s.KV.GroupSpec(g).Eagle
+	}
+	return out
+}
+
+// worker is the worker mock of oracle/run_offloading.py (Worker): on a step's metadata, when the
+// batch carrying it executes, the worker's protocol, and the jobs complete by then.
+type worker struct {
+	delay       func(id string, store bool) int
+	unsubmitted []int
+	completesAt map[int]int
+	jobReq      map[int]string
+	isLoad      map[int]bool
+	workers     int
+}
+
+func (w *worker) execute(m Meta, step int) (sched.TransferOutcome, []int) {
+	for _, j := range m.Loads {
+		w.jobReq[j.ID], w.isLoad[j.ID] = j.Req, true
+	}
+	for _, j := range m.Stores {
+		w.jobReq[j.ID] = j.Req
+	}
+	flush := map[int]bool{}
+	for _, j := range m.Flush {
+		flush[j] = true
+	}
+	var now []int
+	for _, j := range m.Stores {
+		if flush[j.ID] {
+			w.unsubmitted = append(w.unsubmitted, j.ID)
+		} else {
+			now = append(now, j.ID)
+		}
+	}
+	for _, j := range w.unsubmitted {
+		w.completesAt[j] = step + w.delay(w.jobReq[j], true)
+	}
+	w.unsubmitted = nil
+	for j := range flush {
+		if _, ok := w.completesAt[j]; ok {
+			w.completesAt[j] = step
+		}
+	}
+	for _, j := range m.Loads {
+		w.completesAt[j.ID] = step + w.delay(j.Req, false)
+	}
+	w.unsubmitted = append(w.unsubmitted, now...)
+	var done []int
+	for j, at := range w.completesAt {
+		if at <= step {
+			done = append(done, j)
+		}
+	}
+	sort.Ints(done)
+	recv := map[string]bool{}
+	for _, j := range done {
+		delete(w.completesAt, j)
+		if w.isLoad[j] {
+			recv[w.jobReq[j]] = true
+		}
+	}
+	var o sched.TransferOutcome
+	for id := range recv {
+		o.FinishedRecving = append(o.FinishedRecving, id)
+	}
+	sort.Strings(o.FinishedRecving)
+	if len(done) > 0 {
+		cs := make([]Completion, len(done))
+		for k, j := range done {
+			cs[k] = Completion{Job: j, Workers: w.workers}
+		}
+		o.WorkerMeta = cs
+	}
+	return o, done
+}
+
+// sampler is the GPU mock: a sampling request's next assigned token, the last as EOS, plus the
+// drafts the scenario's plan accepts at each verify step (at most the real drafts; every async
+// placeholder counts as one).
+type sampler struct {
+	reqs     []scenarioReq
+	byID     map[string]int
+	sampled  map[string]int
+	verified map[string]int
+	async    bool
+}
+
+type scenarioReq = struct {
+	ID          string  `json:"id"`
+	ArrivalStep int     `json:"arrival_step"`
+	Prompt      []int64 `json:"prompt"`
+	Output      []int64 `json:"output"`
+	MaxTokens   int     `json:"max_tokens"`
+	Priority    int     `json:"priority"`
+	AbortStep   *int    `json:"abort_step"`
+	LoadDelay   *int    `json:"load_delay"`
+	StoreDelay  *int    `json:"store_delay"`
+	Accepted    []int   `json:"accepted"`
+}
+
+func (g *sampler) sample(id string, drafts []int64) []int64 {
+	r := g.reqs[g.byID[id]]
+	n := 1
+	if len(drafts) > 0 {
+		real := len(drafts)
+		if !g.async {
+			real = 0
+			for _, d := range drafts {
+				if d >= 0 {
+					real++
+				}
+			}
+		}
+		v := g.verified[id]
+		g.verified[id] = v + 1
+		if v < len(r.Accepted) {
+			n += min(r.Accepted[v], real)
+		}
+	}
+	var out []int64
+	for j := 0; j < n; j++ {
+		k := g.sampled[id]
+		if k >= len(r.Output)-1 {
+			out = append(out, eosToken)
+		} else {
+			out = append(out, r.Output[k])
+		}
+		g.sampled[id] = k + 1
+		if k >= len(r.Output)-1 {
+			break
+		}
+	}
+	return out
 }
 
 // run drives a scenario through core/sched with this package's connector, exactly as
-// oracle/run_offloading.py drives vLLM's: the same GPU mock and the same worker mock.
+// oracle/run_offloading.py drives vLLM's: the same GPU mock and the same worker mock, through
+// core/engine's batch queue when more than one batch is in flight.
 func run(t *testing.T, sc scenario) trace {
 	t.Helper()
 	c := sc.Config
-	s, conn, chunks := configure(t, sc)
+	su := configure(t, sc)
+	s, conn := su.s, su.conn
 	reqs := sc.Requests
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].ArrivalStep != reqs[j].ArrivalStep {
@@ -216,38 +391,27 @@ func run(t *testing.T, sc scenario) trace {
 	for i, r := range reqs {
 		byID[r.ID] = i
 	}
-	delay := func(id string, store bool) int {
-		r := reqs[byID[id]]
-		if store {
-			return intOr(r.StoreDelay, intOr(c.Transfer.StoreDelay, 1))
-		}
-		return intOr(r.LoadDelay, intOr(c.Transfer.LoadDelay, 1))
-	}
-	var unsubmitted []int
-	completesAt := map[int]int{}
-	jobReq := map[int]string{}
-	isLoad := map[int]bool{}
-	sampled := map[string]int{}
+	w := &worker{completesAt: map[int]int{}, jobReq: map[int]string{}, isLoad: map[int]bool{}, workers: conn.Workers(),
+		delay: func(id string, store bool) int {
+			r := reqs[byID[id]]
+			if store {
+				return intOr(r.StoreDelay, intOr(c.Transfer.StoreDelay, 1))
+			}
+			return intOr(r.LoadDelay, intOr(c.Transfer.LoadDelay, 1))
+		}}
+	g := &sampler{reqs: reqs, byID: byID, sampled: map[string]int{}, verified: map[string]int{}, async: c.AsyncScheduling}
 	tr := trace{Finished: map[string]finishRecord{}}
-	tr.Provenance.CPUChunks = chunks
+	tr.Provenance.CPUChunks = su.chunks
+	if su.queue > 1 {
+		return runQueued(t, sc, su, w, g, reqs, tr)
+	}
 	maxSteps := sc.MaxSteps
 	if maxSteps == 0 {
 		maxSteps = 10000
 	}
 	next := 0
 	for i := 0; i < maxSteps; i++ {
-		for next < len(reqs) && reqs[next].ArrivalStep <= i {
-			r := reqs[next]
-			mt := r.MaxTokens
-			if mt == 0 {
-				mt = 1 << 20
-			}
-			if err := s.Add(&sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
-				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}); err != nil {
-				t.Fatal(err)
-			}
-			next++
-		}
+		next = addArrivals(t, s, reqs, next, i)
 		if !s.HasRequests() {
 			if next == len(reqs) {
 				break
@@ -257,134 +421,224 @@ func run(t *testing.T, sc scenario) trace {
 		}
 		out := s.Schedule()
 		meta := out.KVConnectorMetadata.(Meta)
-		off := &offState{Flush: append([]int{}, meta.Flush...)}
-		for _, j := range meta.Loads {
-			off.Loads = append(off.Loads, jobRow(j))
-			jobReq[j.ID], isLoad[j.ID] = j.Req, true
-		}
-		for _, j := range meta.Stores {
-			off.Stores = append(off.Stores, jobRow(j))
-			jobReq[j.ID] = j.Req
-		}
-		// The worker mock (oracle/run_offloading.py).
-		flush := map[int]bool{}
-		for _, j := range meta.Flush {
-			flush[j] = true
-		}
-		var now []int
-		for _, j := range meta.Stores {
-			if flush[j.ID] {
-				unsubmitted = append(unsubmitted, j.ID)
-			} else {
-				now = append(now, j.ID)
-			}
-		}
-		for _, j := range unsubmitted {
-			completesAt[j] = i + delay(jobReq[j], true)
-		}
-		unsubmitted = nil
-		for j := range flush {
-			if _, ok := completesAt[j]; ok {
-				completesAt[j] = i
-			}
-		}
-		for _, j := range meta.Loads {
-			completesAt[j.ID] = i + delay(j.Req, false)
-		}
-		unsubmitted = append(unsubmitted, now...)
-		// The GPU mock.
+		off := offRows(meta)
+		o, done := w.execute(meta, i)
+		off.Completed = append([]int{}, done...)
 		mock := map[string][]int64{}
-		for id := range out.Scheduled {
-			r := s.Request(id)
-			if r.IsPrefillChunk {
+		spec := map[string]int{}
+		for _, id := range out.Order {
+			if s.Request(id).IsPrefillChunk {
 				continue
 			}
-			o := reqs[byID[id]].Output
-			if k := sampled[id]; k < len(o) {
-				if k == len(o)-1 {
-					mock[id] = []int64{eosToken}
-				} else {
-					mock[id] = []int64{o[k]}
-				}
-				sampled[id] = k + 1
+			if d := out.SpecDecode[id]; len(d) > 0 {
+				spec[id] = len(d)
 			}
+			mock[id] = g.sample(id, out.SpecDecode[id])
 		}
-		var done []int
-		for j, at := range completesAt {
-			if at <= i {
-				done = append(done, j)
-			}
-		}
-		sort.Ints(done)
-		recv := map[string]bool{}
-		for _, j := range done {
-			delete(completesAt, j)
-			if isLoad[j] {
-				recv[jobReq[j]] = true
-			}
-		}
-		var o sched.TransferOutcome
-		for id := range recv {
-			o.FinishedRecving = append(o.FinishedRecving, id)
-		}
-		sort.Strings(o.FinishedRecving)
-		if len(done) > 0 {
-			cs := make([]Completion, len(done))
-			for k, j := range done {
-				cs[k] = Completion{Job: j, Workers: conn.Workers()}
-			}
-			o.WorkerMeta = cs
-		}
-		off.Completed = append([]int{}, done...)
-		var aborts []string
-		for _, r := range reqs {
-			if r.AbortStep != nil && *r.AbortStep == i {
-				aborts = append(aborts, r.ID)
-			}
-		}
-		sort.Strings(aborts)
+		aborts := abortsAt(reqs, i)
 		if len(aborts) > 0 {
 			s.Abort(aborts)
 		}
 		st := step{Step: i, Scheduled: out.Scheduled, Preempted: sortedStrings(out.Preempted), Aborted: append([]string{}, aborts...)}
+		if len(spec) > 0 {
+			st.SpecScheduled = spec
+		}
 		var fin []string
 		for _, f := range s.UpdateWith(out, mock, o) {
 			fin = append(fin, f.ID)
-			reason := map[sched.Status]string{sched.FinishedStopped: "stop", sched.FinishedLength: "length",
-				sched.FinishedError: "error"}[f.Status]
-			tr.Finished[f.ID] = finishRecord{reason, sampled[f.ID], i}
+			tr.Finished[f.ID] = finishOf(f, g.sampled[f.ID], i)
+		}
+		if su.spec.NumTokens > 0 && len(out.Scheduled) > 0 {
+			// The drafter proposes K drafts for every request the step ran, as the oracle's mock
+			// hands them over after update_from_output (EngineCore.post_step).
+			drafts := map[string][]int64{}
+			for id := range out.Scheduled {
+				if s.Request(id) != nil {
+					drafts[id] = make([]int64, su.spec.NumTokens)
+				}
+			}
+			s.UpdateDrafts(drafts)
 		}
 		st.Finished = sortedStrings(fin)
-		nr, nw := s.Counts()
-		st.FreeBlocks, st.Running, st.NumRunning, st.NumWaiting = s.KV.Pool.NumFree(), sortedStrings(s.Running()), nr, nw
-		st.KVUsage, st.Blocks = s.KV.Pool.Usage(), map[string]any{}
-		for _, id := range st.Running {
-			if s.KV.NumGroups() == 1 {
-				st.Blocks[id] = blockRows(s.KV.Blocks(id), false)
-				continue
-			}
-			rows := []any{}
-			for g := 0; g < s.KV.NumGroups(); g++ {
-				rows = append(rows, blockRows(s.KV.GroupBlocks(g, id), true))
-			}
-			st.Blocks[id] = rows
+		record(s, conn, &st, off)
+		tr.Steps = append(tr.Steps, st)
+	}
+	return tr
+}
+
+func addArrivals(t *testing.T, s *sched.Scheduler, reqs []scenarioReq, next, i int) int {
+	t.Helper()
+	for next < len(reqs) && reqs[next].ArrivalStep <= i {
+		r := reqs[next]
+		mt := r.MaxTokens
+		if mt == 0 {
+			mt = 1 << 20
 		}
-		st.WaitingForRemoteKV = sortedStrings(s.WaitingForRemoteKV())
-		st.RecvLanded = sortedStrings(s.RecvLanded())
-		st.DelayFreed = sortedStrings(s.DelayFreed())
-		st.KVHoldingWaiting = sortedStrings(s.Holding())
-		fc := s.FetchCounts()
-		st.KVFetchStages = fc[:]
-		st.NumRequests = s.NumRequests()
-		off.Jobs = conn.Jobs()
-		off.PendingPush = conn.HasPendingPushWork()
-		cs, free, ev := conn.CPU()
-		off.CPU = cpuState{Chunks: [][]any{}, Free: free, Evictable: ev}
-		for _, ch := range cs {
-			off.CPU.Chunks = append(off.CPU.Chunks, []any{fmt.Sprintf("%x/%d", ch.Key.HashPrefix(), ch.Key.Group()),
-				float64(ch.ID), float64(ch.RefCnt)})
+		if err := s.Add(&sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
+			Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}); err != nil {
+			t.Fatal(err)
 		}
-		st.Offload = off
+		next++
+	}
+	return next
+}
+
+func abortsAt(reqs []scenarioReq, i int) []string {
+	var aborts []string
+	for _, r := range reqs {
+		if r.AbortStep != nil && *r.AbortStep == i {
+			aborts = append(aborts, r.ID)
+		}
+	}
+	sort.Strings(aborts)
+	return aborts
+}
+
+func finishOf(f sched.Finished, sampled, i int) finishRecord {
+	reason := map[sched.Status]string{sched.FinishedStopped: "stop", sched.FinishedLength: "length",
+		sched.FinishedError: "error"}[f.Status]
+	return finishRecord{reason, sampled, i}
+}
+
+func offRows(m Meta) *offState {
+	off := &offState{Flush: append([]int{}, m.Flush...)}
+	for _, j := range m.Loads {
+		off.Loads = append(off.Loads, jobRow(j))
+	}
+	for _, j := range m.Stores {
+		off.Stores = append(off.Stores, jobRow(j))
+	}
+	return off
+}
+
+// record is the step's state after its output, as oracle/run_offloading.py records it.
+func record(s *sched.Scheduler, conn *Scheduler, st *step, off *offState) {
+	nr, nw := s.Counts()
+	st.FreeBlocks, st.Running, st.NumRunning, st.NumWaiting = s.KV.Pool.NumFree(), sortedStrings(s.Running()), nr, nw
+	st.KVUsage, st.Blocks = s.KV.Pool.Usage(), map[string]any{}
+	for _, id := range st.Running {
+		if s.KV.NumGroups() == 1 {
+			st.Blocks[id] = blockRows(s.KV.Blocks(id), false)
+			continue
+		}
+		rows := []any{}
+		for g := 0; g < s.KV.NumGroups(); g++ {
+			rows = append(rows, blockRows(s.KV.GroupBlocks(g, id), true))
+		}
+		st.Blocks[id] = rows
+	}
+	st.WaitingForRemoteKV = sortedStrings(s.WaitingForRemoteKV())
+	st.RecvLanded = sortedStrings(s.RecvLanded())
+	st.DelayFreed = sortedStrings(s.DelayFreed())
+	st.KVHoldingWaiting = sortedStrings(s.Holding())
+	fc := s.FetchCounts()
+	st.KVFetchStages = fc[:]
+	st.NumRequests = s.NumRequests()
+	off.Jobs = conn.Jobs()
+	off.PendingPush = conn.HasPendingPushWork()
+	cs, free, ev := conn.CPU()
+	off.CPU = cpuState{Chunks: [][]any{}, Free: free, Evictable: ev}
+	for _, ch := range cs {
+		off.CPU.Chunks = append(off.CPU.Chunks, []any{fmt.Sprintf("%x/%d", ch.Key.HashPrefix(), ch.Key.Group()),
+			float64(ch.ID), float64(ch.RefCnt)})
+	}
+	st.Offload = off
+}
+
+// queuedGPU is the GPU and worker mocks of oracle/run_offloading.py's QueuedGPU for core/engine's
+// batch queue: the worker runs on a batch's metadata when the batch executes (StepBegin); the
+// batch's tokens and the worker's report for it are its output, taken when it is applied.
+type queuedGPU struct {
+	s        *sched.Scheduler
+	g        *sampler
+	outcomes map[int]sched.TransferOutcome
+	cur      *step
+}
+
+func (q *queuedGPU) Output(b engine.Batch) map[string][]int64 {
+	out := map[string][]int64{}
+	for _, id := range b.Samples {
+		out[id] = q.g.sample(id, b.Out.SpecDecode[id])
+	}
+	return out
+}
+
+func (q *queuedGPU) Transfers(b engine.Batch) sched.TransferOutcome {
+	o := q.outcomes[b.ID]
+	delete(q.outcomes, b.ID)
+	q.cur.Processed = true
+	return o
+}
+
+// runQueued is oracle/run_offloading.py's run_queued: vLLM's step_with_batch_queue through
+// core/engine's batch queue, one step per loop, then post_step.
+func runQueued(t *testing.T, sc scenario, su setup, w *worker, g *sampler, reqs []scenarioReq, tr trace) trace {
+	t.Helper()
+	s, conn := su.s, su.conn
+	var st step
+	q := &queuedGPU{s: s, g: g, outcomes: map[int]sched.TransferOutcome{}, cur: &st}
+	core := &engine.Core{Sched: s, QueueSize: su.queue, GPU: q}
+	maxSteps := sc.MaxSteps
+	if maxSteps == 0 {
+		maxSteps = 10000
+	}
+	next := 0
+	for i := 0; i < maxSteps; i++ {
+		next = addArrivals(t, s, reqs, next, i)
+		if !core.HasWork() && next == len(reqs) {
+			break
+		}
+		st = step{Step: i, Scheduled: map[string]int{}, Preempted: []string{}}
+		off := &offState{}
+		aborts := abortsAt(reqs, i)
+		if len(aborts) > 0 {
+			core.Abort(aborts)
+		}
+		st.Aborted = append([]string{}, aborts...)
+		var res engine.StepResult
+		if core.HasWork() {
+			var block bool
+			res, block = core.StepBegin()
+			if b := res.Scheduled; b != nil {
+				st.Scheduled = b.Out.Scheduled
+				st.Preempted = sortedStrings(b.Out.Preempted)
+				for id, d := range b.Out.SpecDecode {
+					if len(d) > 0 {
+						if st.SpecScheduled == nil {
+							st.SpecScheduled = map[string]int{}
+						}
+						st.SpecScheduled[id] = len(d)
+					}
+				}
+				meta := b.Out.KVConnectorMetadata.(Meta)
+				off = offRows(meta)
+				o, done := w.execute(meta, i)
+				off.Completed = append([]int{}, done...)
+				q.outcomes[b.ID] = o
+			}
+			if block {
+				res = core.StepEnd(res)
+			}
+			if su.spec.NumTokens > 0 && !sc.Config.AsyncScheduling && res.Executed && res.Scheduled != nil {
+				drafts := map[string][]int64{}
+				for id := range res.Scheduled.Out.Scheduled {
+					if s.Request(id) != nil {
+						drafts[id] = make([]int64, su.spec.NumTokens)
+					}
+				}
+				s.UpdateDrafts(drafts)
+			}
+		} else {
+			st.Idle = true
+		}
+		var fin []string
+		for _, f := range res.Finished {
+			fin = append(fin, f.ID)
+			tr.Finished[f.ID] = finishOf(f, g.sampled[f.ID], i)
+		}
+		st.Finished = sortedStrings(fin)
+		st.QueueLen = core.InFlight()
+		record(s, conn, &st, off)
 		tr.Steps = append(tr.Steps, st)
 	}
 	return tr
@@ -631,22 +885,27 @@ func TestCheckRefusesWhatIsNotModelled(t *testing.T) {
 	}
 }
 
-// The scheduler refuses the connector beside the batch queue and a drafter, which are not
-// diff-tested with it yet.
-func TestSetConnectorRefusesBatchQueueAndDrafter(t *testing.T) {
+// The connector states the batch queue and drafters as diff-tested (fuzz seeds 60000+), so the
+// scheduler accepts it beside async scheduling, PP and a drafter; a KV cache group vLLM flags as a
+// drafter's own (MTP, DeepSeek V4), whose volatile-chunk path is not diff-tested, is refused.
+func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 	for _, cfg := range []sched.Config{
-		{MaxNumSeqs: 2, MaxNumBatchedTokens: 32, BlockSize: 4, NumBlocks: 20, MaxModelLen: 64, MaxConcurrentBatches: 2},
-		{MaxNumSeqs: 2, MaxNumBatchedTokens: 32, BlockSize: 4, NumBlocks: 20, MaxModelLen: 64, Async: true},
-		{MaxNumSeqs: 2, MaxNumBatchedTokens: 32, BlockSize: 4, NumBlocks: 20, MaxModelLen: 64,
-			Spec: sched.ResolveSpec(sched.SpecOptions{Method: "dspark", NumTokens: 7})},
+		{MaxNumSeqs: 2, MaxNumBatchedTokens: 32, BlockSize: 4, NumBlocks: 20, MaxModelLen: 64, MaxConcurrentBatches: 3,
+			Async: true, UseV2ModelRunner: true, DecodeStagger: 2},
+		{MaxNumSeqs: 2, MaxNumBatchedTokens: 64, BlockSize: 4, NumBlocks: 20, MaxModelLen: 64, MaxConcurrentBatches: 2,
+			Async: true, Spec: sched.ResolveSpec(sched.SpecOptions{Method: "dspark", NumTokens: 7})},
 	} {
 		s, err := sched.New(cfg)
 		if err != nil {
 			t.Fatal(err)
 		}
 		conn, _ := New(Config{Groups: []Group{{BlockSize: 4}}, TokensPerHash: 4, NumChunks: 4})
-		if err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err == nil {
-			t.Errorf("SetConnector accepted the OffloadingConnector beside %+v", cfg)
+		if err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
+			t.Errorf("SetConnector refused the OffloadingConnector beside %+v: %v", cfg, err)
 		}
+	}
+	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 4, Window: 8}}, TokensPerHash: 4, NumChunks: 4,
+		EagleGroups: []bool{false, true}}); err == nil || !strings.Contains(err.Error(), "issues/14") {
+		t.Errorf("a drafter's own group: %v, want refused with blis-vllm#14", err)
 	}
 }

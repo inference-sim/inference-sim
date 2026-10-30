@@ -25,4 +25,4 @@ connectors:
     upstream: KVConnectorBase_V1
     behaves_like: offloading-cpu
     roles: [offload]
-    evidence: "diff-test @ vLLM v0.32.0: core/connector/offloading, 9 scenarios + 2000 fuzz seeds at 0 mismatches (CPU tier, LRU, full attention and sliding-window groups, synchronous scheduling, no drafter)"
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/offloading, 13 scenarios + 3600 fuzz seeds at 0 mismatches (CPU tier, LRU, full attention and sliding-window groups, several workers, async scheduling and PP, DSpark and EAGLE-3 drafters)"

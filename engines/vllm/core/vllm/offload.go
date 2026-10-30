@@ -32,6 +32,12 @@ import (
 // worker.py:198-224), are reported done with that step's output, whatever the simulator's
 // price, since vLLM's worker waits for them there; and every worker of the engine's world size
 // reports a job in the same step (the one-transfer-per-job price is the slowest worker's).
+//
+// With a batch queue (async scheduling or pipeline parallelism) several batches are in flight.
+// Their metadata reaches the worker in schedule order, and a batch's output reports what the
+// worker finished up to it: the transfers the simulator ended since the last applied output, and
+// the batch's own flushed jobs. That is the oracle's order (oracle/run_offloading.py run_queued),
+// diff-tested against vLLM's step_with_batch_queue.
 
 // offloadConfig is the engine block's kv_offload: the offload connector and its CPU tier, as
 // kv_connector_extra_config states them for the OffloadingConnector
@@ -79,9 +85,11 @@ type offload struct {
 	early map[engine.TransferID]bool
 	// jobs are the transfers in flight, by transfer, with the job each is; flushed are the jobs a
 	// schedule told the worker to finish, which the next applied output reports done.
-	jobs    map[engine.TransferID]int
-	ids     map[int]engine.TransferID
-	flushed map[int]bool
+	jobs map[engine.TransferID]int
+	ids  map[int]engine.TransferID
+	// flushed are, by the core batch whose metadata names them, the jobs its worker finishes
+	// before the batch runs (handle_preemptions), which that batch's output reports.
+	flushed map[int][]int
 	// completed are the jobs completed since the last applied output, and recv the requests whose
 	// load completed.
 	completed []int
@@ -96,7 +104,7 @@ type offload struct {
 // model. Each KV cache group is offloaded at its block size, a sliding window with the
 // extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
 // vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
-func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, queue int, prefixCaching bool) (*offload, error) {
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool) (*offload, error) {
 	if c.Connector != "OffloadingConnector" {
 		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
 			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
@@ -151,26 +159,26 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, queue i
 		return nil, fmt.Errorf("vllm: kv_offload.cpu_bytes %d holds no chunk of %d block(s) of %d bytes for %d "+
 			"worker copies (cpu/spec.py:107-121@5df63a72)", c.CPUBytes, bpc, c.BytesPerBlock, copies)
 	}
+	if method == "mtp" {
+		// vLLM flags the group holding an MTP drafter's trailing layers as the drafter's
+		// (_uses_trailing_mtp_layers, _annotate_eagle_groups, vllm/v1/core/kv_cache_utils.py:
+		// 1997-2013, 2029-2085@5df63a72), and the connector then treats its trailing chunk as
+		// volatile (offloading/scheduler.py:226-287, 473-481), which is not diff-tested.
+		return nil, fmt.Errorf("vllm: kv_offload beside an MTP drafter is not modelled: vLLM marks the drafter's KV "+
+			"cache group, whose offload path is not diff-tested (%s)", offloading.Issue)
+	}
+	// The drafter's groups core/kv flags (DeepSeek V4's), which the connector refuses (offloading.New).
+	eagle := make([]bool, s.KV.NumGroups())
+	for g := range eagle {
+		eagle[g] = spec.EagleBlockDrop && s.KV.GroupSpec(g).Eagle
+	}
 	conn, err := offloading.New(offloading.Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
-		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world})
+		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle})
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
-	switch {
-	case queue > 1:
-		// defer_block_free, requires_kv_delivery and the batch queue's interleaving of the
-		// connector's metadata with outputs in flight (vllm/v1/core/sched/scheduler.py:184-194,
-		// vllm/v1/engine/core.py:698-810@5df63a72) are not yet diff-tested beside the connector.
-		return nil, fmt.Errorf("vllm: kv_offload with async scheduling or pipeline parallelism (max_concurrent_batches %d) "+
-			"is not modelled yet: the OffloadingConnector is diff-tested with one batch in flight (%s, part 3)",
-			queue, offloading.Issue)
-	case spec.NumTokens > 0:
-		// The connector's EAGLE-group handling and a drafter's lookahead beside its stores
-		// (offloading/scheduler.py:473-481, 856-874@5df63a72) are not yet diff-tested.
-		return nil, fmt.Errorf("vllm: kv_offload with speculative decoding is not modelled yet (%s, part 3)", offloading.Issue)
-	}
 	o := &offload{conn: conn, blockSize: bs, early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
-		flushed: map[int]bool{}, recv: map[string]bool{}, loadReq: map[int]string{}}
+		flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
@@ -180,7 +188,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, queue i
 
 // started reports the jobs a schedule's metadata lists as transfers: the step's loads, then its
 // stores, each in job order. The jobs it tells the worker to flush complete with the step.
-func (o *offload) started(cb any) []engine.Transfer {
+func (o *offload) started(batch int, cb any) []engine.Transfer {
 	if o == nil {
 		return nil
 	}
@@ -208,8 +216,8 @@ func (o *offload) started(cb any) []engine.Transfer {
 	for _, j := range m.Stores {
 		add(j, engine.TransferStore)
 	}
-	for _, j := range m.Flush {
-		o.flushed[j] = true
+	if len(m.Flush) > 0 {
+		o.flushed[batch] = append([]int(nil), m.Flush...)
 	}
 	o.lastFlush = append(o.lastFlush[:0], m.Flush...)
 	return out
@@ -249,20 +257,20 @@ func (o *offload) complete(j int) {
 	}
 }
 
-// take is the outcome the workers report with the applied output, once: the jobs completed since
-// the last, flushed ones included, each by every worker, in job order, and the requests whose
+// take is the outcome the workers report with batch's applied output, once: the jobs completed
+// since the last, and the jobs batch's own metadata flushed, each by every worker, in job order, and the requests whose
 // load completed, by request ID (the transport's order, oracle/mocks.json).
-func (o *offload) take() (jobs []offloading.Completion, recv []string) {
+func (o *offload) take(batch int) (jobs []offloading.Completion, recv []string) {
 	if o == nil {
 		return nil, nil
 	}
-	for j := range o.flushed {
+	for _, j := range o.flushed[batch] {
 		if id, inFlight := o.ids[j]; inFlight {
 			o.early[id] = true
 			o.complete(j)
 		}
 	}
-	o.flushed = map[int]bool{}
+	delete(o.flushed, batch)
 	sort.Ints(o.completed)
 	for _, j := range o.completed {
 		jobs = append(jobs, offloading.Completion{Job: j, Workers: o.conn.Workers()})

@@ -280,12 +280,12 @@ func (p *pd) aborted(id string) {
 // being applied, which carries every transfer that ended since the last. A step that ran no
 // model still reports it: with a connector, vLLM's runner returns the connector's output without
 // a forward pass (kv_connector_no_forward, vllm/v1/worker/gpu_model_runner.py@5df63a72).
-func (g *batchOutput) Transfers(core.Batch) sched.TransferOutcome {
+func (g *batchOutput) Transfers(b core.Batch) sched.TransferOutcome {
 	o := g.pd.take()
 	if g.off != nil {
 		// The offload workers' completed jobs (kv_connector_worker_meta) and completed loads
 		// (finished_recving), offload.go.
-		jobs, recv := g.off.take()
+		jobs, recv := g.off.take(b.ID)
 		if len(jobs) > 0 {
 			o.WorkerMeta = jobs
 		}

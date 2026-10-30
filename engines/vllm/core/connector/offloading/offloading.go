@@ -18,9 +18,10 @@
 // reports the ones it finished (OffloadingWorkerMetadata.completed_jobs).
 //
 // Modelled and diff-tested: KV cache groups of full attention and sliding windows of one block
-// size, any blocks_per_chunk, one worker, dense prefix-cache retention, LRU eviction,
-// offload_prompt_only, synchronous scheduling without a drafter. The rest is refused, by Check
-// (configuration) or by the scheduler's SetConnector (Capabilities): see Check.
+// size, any blocks_per_chunk, several workers, dense prefix-cache retention, LRU eviction,
+// offload_prompt_only, the batch queue (async scheduling, pipeline parallelism) and drafters
+// whose layers vLLM does not flag as their own group. The rest is refused, by Check
+// (configuration) or New: see both.
 package offloading
 
 import (
@@ -61,11 +62,16 @@ type Config struct {
 	// Workers is num_workers, the engine's world size (scheduler.py:335); 0 means 1. A job is
 	// pending on every worker until each reports it (TransferJobStatus.pending_count, :76-78).
 	Workers int
+	// EagleGroups flags each group that holds a drafter's layers with the drafter's block drop on
+	// (is_eagle_group, scheduler.py:226-287@5df63a72): its trailing chunk is volatile while
+	// decoding and a hit on it peeks one chunk past the boundary. nil is none.
+	EagleGroups []bool
 }
 
 // groupCfg is GroupOffloadConfig with its derived sizes.
 type groupCfg struct {
 	Group
+	eagle          bool
 	tokensPerChunk int
 	hashesPerChunk int
 	// windowChunks is sliding_window_size_in_chunks; 0 for full attention.
@@ -159,6 +165,17 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.Workers == 0 {
 		cfg.Workers = 1
 	}
+	for g, e := range cfg.EagleGroups {
+		if e {
+			// A drafter group's volatile trailing chunk and its one-chunk peek (scheduler.py:226-287,
+			// 473-481, 790-898; single_type_kv_cache_manager.py:943-953@5df63a72) are ported but not
+			// diff-tested: vLLM flags such a group only for MTP and DeepSeek V4's drafters
+			// (_uses_trailing_mtp_layers, vllm/v1/core/kv_cache_utils.py:1997-2013), which the oracle
+			// does not build beside the connector.
+			return nil, fmt.Errorf("offloading: KV cache group %d holds a drafter's layers (an MTP or DeepSeek V4 drafter), "+
+				"beside which the connector is not diff-tested (%s)", g, Issue)
+		}
+	}
 	s := &Scheduler{cfg: cfg, manager: newCPUManager(cfg.NumChunks), reqs: map[string]*reqState{},
 		flush: map[int]bool{}, allocated: map[int]bool{}, jobs: map[int]*jobStatus{}, pendingOf: map[int]map[int]bool{}}
 	if cfg.PrefixCaching {
@@ -175,6 +192,7 @@ func New(cfg Config) (*Scheduler, error) {
 			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d", g.BlockSize, cfg.TokensPerHash)
 		}
 		gc := groupCfg{Group: g, tokensPerChunk: g.BlockSize * cfg.BlocksPerChunk}
+		gc.eagle = len(s.groups) < len(cfg.EagleGroups) && cfg.EagleGroups[len(s.groups)]
 		gc.hashesPerChunk = gc.tokensPerChunk / cfg.TokensPerHash
 		if g.Window > 0 {
 			// get_sliding_window_size_in_chunks (scheduler.py:129-140).
@@ -252,9 +270,10 @@ func Check(o Options) error {
 }
 
 // ConnectorModels states what the connector is diff-tested beside (sched.Capabilities): several
-// KV cache groups (it is SupportsHMA, offloading_connector.py:53).
+// KV cache groups (it is SupportsHMA, offloading_connector.py:53), the batch queue and drafters
+// (oracle/run_offloading.py run_queued; fuzz seeds 60000+).
 func (s *Scheduler) ConnectorModels() sched.Capabilities {
-	return sched.Capabilities{HybridGroups: true}
+	return sched.Capabilities{HybridGroups: true, ConcurrentBatches: true, Drafters: true}
 }
 
 // RequiresKVDelivery is requires_kv_delivery (offloading_connector.py:72-76): a best-effort
@@ -374,6 +393,9 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 	hitTokens := 0
 	deferred := false
 	order := append(append([]int(nil), s.full...), s.swa...)
+	// eagleVerified are the drafter groups whose volatile trailing chunk this iteration has
+	// already popped (:790-793).
+	eagleVerified := map[int]bool{}
 	for len(order) > 0 {
 		lookedUpSWA := false
 		groups := order
@@ -381,11 +403,17 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 		for _, gi := range groups {
 			g := s.groups[gi]
 			keys := st.groups[gi].keys
+			unverified := g.eagle && !eagleVerified[gi]
 			maxHit = min(maxHit, len(keys)*g.tokensPerChunk)
 			if maxHit-local < g.tokensPerChunk {
 				return 0, false
 			}
-			numChunks := min(cdiv(maxHit, g.tokensPerChunk), len(keys))
+			// A drafter group queries one extra chunk, which it pops (:830-842).
+			queryMax := maxHit
+			if unverified {
+				queryMax = min(maxHit+g.tokensPerChunk, len(keys)*g.tokensPerChunk)
+			}
+			numChunks := min(cdiv(queryMax, g.tokensPerChunk), len(keys))
 			start := local / g.tokensPerChunk
 			ks := keys[start:numChunks]
 			var n int
@@ -393,8 +421,13 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			if !g.sliding() {
 				n, pend = s.prefixLookup(ks)
 			} else {
-				end := min(maxHit, numChunks*g.tokensPerChunk)
-				n, pend = s.windowLookup(ks, g.windowChunks, g.loadWindowChunks(end))
+				window := g.windowChunks
+				drop := 0
+				if unverified {
+					window, drop = window+1, 1
+				}
+				end := min(maxHit, (numChunks-drop)*g.tokensPerChunk)
+				n, pend = s.windowLookup(ks, window, g.loadWindowChunks(end)+drop)
 			}
 			if n == 0 && !pend {
 				return 0, false
@@ -402,6 +435,10 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			if pend {
 				deferred = true
 			} else {
+				if unverified {
+					n--
+					eagleVerified[gi] = true
+				}
 				maxHit = min(maxHit, g.tokensPerChunk*(start+n))
 			}
 			newHit := maxHit - local
@@ -409,6 +446,9 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 				return 0, false
 			}
 			if newHit < hitTokens {
+				if !g.eagle {
+					eagleVerified = map[int]bool{}
+				}
 				if deferred {
 					deferred = false
 					order = append(append([]int(nil), s.full...), s.swa...)
@@ -605,15 +645,20 @@ func (s *Scheduler) offloadable(r *sched.Request, computed int) int {
 	return n
 }
 
-// storable is storable_chunks (scheduler.py:450-481) for a group without EAGLE.
-func (s *Scheduler) storable(g groupCfg, gs *groupState, tokens int) int {
-	return min(tokens/g.tokensPerChunk, len(gs.blockIDs)/s.cfg.BlocksPerChunk, len(gs.keys))
+// storable is storable_chunks (scheduler.py:450-481): a drafter group's trailing chunk is
+// volatile while the request decodes and has not finished.
+func (s *Scheduler) storable(r *sched.Request, g groupCfg, gs *groupState, tokens int) int {
+	n := tokens / g.tokensPerChunk
+	if g.eagle && tokens > r.NumPromptTokens() && !r.IsFinished() {
+		n = max(0, n-1)
+	}
+	return min(n, len(gs.blockIDs)/s.cfg.BlocksPerChunk, len(gs.keys))
 }
 
 func (s *Scheduler) advanceStored(st *reqState, tokens int) {
 	for gi, g := range s.groups {
 		gs := st.groups[gi]
-		gs.nextStored = max(gs.nextStored, s.storable(g, gs, tokens))
+		gs.nextStored = max(gs.nextStored, s.storable(st.req, g, gs, tokens))
 	}
 }
 
@@ -629,6 +674,13 @@ func (s *Scheduler) reachable(g groupCfg, start, end, finalEnd int) []bool {
 	bpc := s.cfg.BlocksPerChunk
 	window := g.Window + g.ExtraRetained
 	need := cdiv(window-1, g.BlockSize)
+	// A drafter group's hit peeks one block past the boundary (_contiguous_blocks_for_hit,
+	// single_type_kv_cache_manager.py:943-953@5df63a72), so its run ends one block later.
+	shift := 0
+	if g.eagle {
+		need++
+		shift = 1
+	}
 	per := s.alignment / g.BlockSize
 	if need >= per {
 		return nil
@@ -636,11 +688,11 @@ func (s *Scheduler) reachable(g groupCfg, start, end, finalEnd int) []bool {
 	sb, eb := start*bpc, end*bpc
 	mask := make([]bool, eb-sb)
 	for i := sb; i < eb; i++ {
-		if i%per >= per-need {
+		if i >= shift && (i-shift)%per >= per-need {
 			mask[i-sb] = true
 		}
 	}
-	if finalEnd >= 0 {
+	if finalEnd >= 0 && !g.eagle {
 		fe := finalEnd * bpc
 		if size := fe % per; size > 0 {
 			from := max(fe-size, fe-need)
@@ -655,8 +707,7 @@ func (s *Scheduler) reachable(g groupCfg, start, end, finalEnd int) []bool {
 // storeRange is one group's [start, end) chunk range of a store.
 type storeRange struct{ start, end int }
 
-// buildStores is _build_store_jobs (scheduler.py:1570-1844) with retention None and no EAGLE
-// groups.
+// buildStores is _build_store_jobs (scheduler.py:1570-1844) with dense retention.
 func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 	bpc := s.cfg.BlocksPerChunk
 	var out []Job
@@ -682,16 +733,17 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 		ranges := make([]storeRange, len(s.groups))
 		for gi, g := range s.groups {
 			gs := st.groups[gi]
-			n := s.storable(g, gs, tokens)
+			n := s.storable(r, g, gs, tokens)
 			start := gs.nextStored
 			horizon := prompt / g.tokensPerChunk
 			finalAlign := 0
-			if g.sliding() && s.alignment > 0 && s.alignment%g.BlockSize == 0 {
+			if g.sliding() && !g.eagle && s.alignment > 0 && s.alignment%g.BlockSize == 0 {
 				finalAlign = s.alignment / g.BlockSize
 			}
 			reconsider := r.IsFinished() && n != horizon && finalAlign > 0
 			finalEnd := -1
 			switch {
+			case g.eagle:
 			case r.IsFinished():
 				finalEnd = n
 			case n <= horizon:

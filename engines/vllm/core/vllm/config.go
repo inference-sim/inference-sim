@@ -111,8 +111,9 @@ type settings struct {
 	// vLLM's NIXL worker checks it against.
 	connector *connectorConfig
 	pp        int
-	// offload is the pool's KV offload, nil for none.
-	offload *offloadConfig
+	// offload is the pool's KV offload, nil for none; specMethod the drafter's method.
+	offload    *offloadConfig
+	specMethod string
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
@@ -317,7 +318,7 @@ func resolve(c Config) (settings, error) {
 	}
 	s.queueSize, s.v2Runner = queue, v2
 	s.connector, s.pp = c.KVTransfer, pp
-	s.offload = c.KVOffload
+	s.offload, s.specMethod = c.KVOffload, method
 	if s.offload != nil && s.connector != nil {
 		// Both at once is vLLM's MultiConnector, which is not modelled.
 		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+

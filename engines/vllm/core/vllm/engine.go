@@ -161,7 +161,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 	}
 	e.gpu.pd = e.pd
 	if st.offload != nil {
-		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.queueSize, st.sched.EnablePrefixCaching); err != nil {
+		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching); err != nil {
 			return nil, err
 		}
 		e.gpu.off = e.off
@@ -423,7 +423,7 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	b.Preempted = append([]string(nil), cb.Out.Preempted...)
 	b.TransfersStarted = e.pd.started(e.s)
 	if e.off != nil {
-		b.TransfersStarted = append(b.TransfersStarted, e.off.started(cb.Out.KVConnectorMetadata)...)
+		b.TransfersStarted = append(b.TransfersStarted, e.off.started(cb.ID, cb.Out.KVConnectorMetadata)...)
 	}
 	for _, id := range cb.Out.Preempted {
 		e.reqs[id].preemptions++

@@ -1,6 +1,7 @@
 package vllmengine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,10 +44,8 @@ func preparedOffload(t *testing.T, spec engine.Spec) (kvOffload, int64) {
 // Muse Spark's arm D, PP2 x TP8 over two H100 nodes with DSpark, fp8 KV, async scheduling and the
 // OffloadingConnector's CPU tier, maps the deployment's offload block onto the engine block: the
 // tier's bytes as cpu_bytes_to_use, LRU, and what the kernel states of the engine (16 workers each
-// holding a copy, a worker's bytes a block). It is refused, naming blis-vllm#14, until the batch
-// queue and the drafter are diff-tested beside the connector. Its PP1 sync twin on one node maps
-// the same way and runs: requests sharing a prefix, the GPU's prefix cache forgetting it, the CPU
-// tier serving it back.
+// holding a copy, a worker's bytes a block). Its PP1 sync twin on one node maps the same way.
+// Both run through engine.New (runWithReload).
 func TestMuseSparkArmDOffload(t *testing.T) {
 	Register()
 	armD := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
@@ -55,10 +54,21 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 		o.EvictionPolicy != "lru" || o.BytesPerBlock <= 0 {
 		t.Fatalf("arm D's kv_offload %+v, want OffloadingConnector over 1 TiB, lru, 16 workers and copies", o)
 	}
-	_, err := engine.New(armD)
-	if err == nil || !strings.Contains(err.Error(), "issues/14") {
-		t.Fatalf("arm D built (%v): want the batch queue beside the connector refused with blis-vllm#14", err)
+	// Arm D's own pool holds 1,062,119 blocks, which a test cannot cycle through to make the GPU's
+	// prefix cache forget a prompt. Its engine block is handed over with two numbers stated
+	// smaller, which the factory keeps (prepare completes only what a block leaves out):
+	// num_gpu_blocks 20,000 and max_model_len 16,384 (vLLM's start-up check needs the pool to hold
+	// one max_model_len sequence). Every other setting is arm D's: PP2 x TP8, EP, DSpark K=7, fp8
+	// KV, async scheduling on the V2 runner (three batches in flight), the 1 TiB CPU tier over 16
+	// workers' copies.
+	armD.Config = poolEngine(t, "muse-h100-roce-armD.yaml")
+	for i := 0; i+1 < len(armD.Config.Content); i += 2 {
+		if armD.Config.Content[i].Value == "max_model_len" {
+			armD.Config.Content[i+1].Value = "16384"
+		}
 	}
+	setIfAbsent(&armD.Config, "num_gpu_blocks", "20000")
+	runWithReload(t, armD, 6144, 30_000_000)
 
 	twin := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD-pp1-sync.yaml")}
 	o, blocks := preparedOffload(t, twin)
@@ -71,43 +81,75 @@ func TestMuseSparkArmDOffload(t *testing.T) {
 	}
 	// a's 6,144-token prompt, then eight prompts of new tokens (more than the GPU pool's 2,653
 	// blocks hold beside it), then b with a's prefix, which the CPU tier serves back.
-	prefix := make([]int32, 6144)
+	runWithReload(t, twin, 6144, 2_000_000)
+}
+
+// runWithReload drives a prepared engine through blis-schemas enginetest's driver: a's prompt,
+// then requests of new tokens enough to push it out of the GPU's prefix cache, then b with a's
+// prefix, which the CPU tier serves back. Every transfer names the cpu tier; prompts are stored
+// and b's prefix is loaded.
+func runWithReload(t *testing.T, spec engine.Spec, prompt int, gap engine.Time) {
+	t.Helper()
+	e, err := engine.New(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := e.Snapshot()
+	// Enough fresh prompts to fill the GPU pool over again.
+	fill := int(st.KVBlocksTotal)*st.KVBlockSize/prompt + 2
+	prefix := make([]int32, prompt)
 	for k := range prefix {
 		prefix[k] = int32(1_000_000 + k)
 	}
 	var arrivals []enginetest.Arrival
-	ids := []string{"a", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "b"}
-	for i, id := range ids {
-		r := req(id, 0, 4)
-		if id == "a" || id == "b" {
-			r.Prompt = append(append([]int32(nil), prefix...), int32(i))
-		} else {
-			for k := 0; k < 6144; k++ {
-				r.Prompt = append(r.Prompt, int32(2_000_000+10_000*i+k))
-			}
-		}
-		arrivals = append(arrivals, enginetest.Arrival{At: engine.Time(i) * 2_000_000, Req: r})
+	at := engine.Time(0)
+	add := func(r engine.Request) {
+		arrivals = append(arrivals, enginetest.Arrival{At: at, Req: r})
+		at += gap
 	}
+	a := req("a", 0, 4)
+	a.Prompt = append(append([]int32(nil), prefix...), 1)
+	add(a)
+	for i := 0; i < fill; i++ {
+		x := req(fmt.Sprintf("x%03d", i), 0, 2)
+		for k := 0; k < prompt; k++ {
+			x.Prompt = append(x.Prompt, int32(2_000_000+10_000*i+k))
+		}
+		add(x)
+	}
+	b := req("b", 0, 4)
+	b.Prompt = append(append([]int32(nil), prefix...), 2)
+	add(b)
 	kinds := map[engine.TransferKind]int{}
-	tr, err := enginetest.Drive(func() (engine.Engine, error) { return engine.New(twin) }, arrivals, enginetest.Options{
+	var loads []engine.Transfer
+	tr, err := enginetest.Drive(func() (engine.Engine, error) { return engine.New(spec) }, arrivals, enginetest.Options{
 		TransferTime: func(x engine.Transfer) engine.Duration {
 			if x.Tier != "cpu" {
 				t.Errorf("transfer %+v names tier %q, want cpu", x, x.Tier)
 			}
 			kinds[x.Kind]++
+			if x.Kind == engine.TransferLoad {
+				loads = append(loads, x)
+			}
 			return 1000
 		},
+		Accepted: func(engine.Batch, engine.Scheduled) int { return 2 },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tr.Finished) != len(ids) {
-		t.Fatalf("finished %d of %d requests", len(tr.Finished), len(ids))
+	if len(tr.Finished) != len(arrivals) {
+		t.Fatalf("finished %d of %d requests", len(tr.Finished), len(arrivals))
 	}
-	if kinds[engine.TransferStore] == 0 || kinds[engine.TransferLoad] == 0 {
-		t.Fatalf("transfers %v: want prompts stored to the CPU tier and b's prefix loaded back", kinds)
+	reloadedB := false
+	for _, l := range loads {
+		reloadedB = reloadedB || (l.Request == "b" && l.Tokens > 0)
 	}
-	t.Logf("the twin's transfers: %v", kinds)
+	if kinds[engine.TransferStore] == 0 || !reloadedB {
+		t.Fatalf("transfers %v, loads %+v: want prompts stored to the CPU tier and b's prefix loaded back", kinds, loads)
+	}
+	t.Logf("%d GPU blocks of %d, %d fill requests; transfers %v; b's load %+v", st.KVBlocksTotal, st.KVBlockSize,
+		fill, kinds, loads)
 }
 
 // The mapping refuses what the engine does not model, each naming its issue: a tier other than

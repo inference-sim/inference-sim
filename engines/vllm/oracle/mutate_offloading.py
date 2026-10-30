@@ -88,6 +88,21 @@ MUTANTS = [
      "\t\t\t\tif s.allocated[b] {\n\t\t\t\t\ts.flush[job.ID] = true\n\t\t\t\t}", ""),
     ("O30", "a load's block range starts past the local hit", OFF,
      "\t\tfirst := cdiv(local, g.BlockSize)", "\t\tfirst := 0"),
+    ("O31", "each job is pending on every worker", OFF,
+     "s.jobs[job.ID] = &jobStatus{req: id, pending: s.cfg.Workers,", "s.jobs[job.ID] = &jobStatus{req: id, pending: 1,"),
+    ("O32", "a request finished between steps stores at the next", HOOK,
+     "\tstep.Finished = append([]string(nil), s.finishedIDs...)\n", ""),
+    ("O33", "finished requests reach build_connector_meta at all", "core/sched/connector.go",
+     "\ts.noteFinished(r)\n", ""),
+    ("O34", "the connector is a KV consumer (defer_block_free under the batch queue)",
+     "core/connector/offloading/diff_test.go",
+     "\tif err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn setup{",
+     "\tif err := s.SetConnector(conn, sched.ConnectorConfig{Producer: true}); err != nil {\n\t\tt.Fatal(err)\n\t}\n\treturn setup{"),
+    ("O35", "requires_kv_delivery is the connector's False, not the producer default", OFF,
+     "func (s *Scheduler) RequiresKVDelivery() bool { return false }",
+     "func (s *Scheduler) RequiresKVDelivery() bool { return true }"),
+    ("O36", "a window keeps the drafter's extra_retained_tokens", "core/connector/offloading/diff_test.go",
+     "Window: g.SlidingWindow, ExtraRetained: extra})", "Window: g.SlidingWindow, ExtraRetained: 0 * extra})"),
 ]
 
 # Mutants no diff test can catch, each with its argument.
@@ -95,15 +110,18 @@ EQUIVALENT = {
     "O4": "the evictable-count check is prepare_store's fast path (cpu/manager.py:315-317): without it the LRU's "
           "evict returns None whenever fewer unprotected evictable chunks than needed exist (lru.py:624-629), and "
           "the evictable count is never below that, so the store fails in the same cases",
-    "O11": "a request reaches the lookup with jobs in flight only after a preemption, which flushes its jobs "
-           "(scheduler.py:1856-1863); the worker waits for flushed jobs before the step runs (worker.py:198-224) "
-           "and reports them that step, and a step that preempts runs no waiting pass (scheduler.py:899-917), so "
-           "by the next lookup the jobs are complete",
     "O22": "with every group at one block size (New refuses others) the sliding window's alignment is the "
            "full-attention chunk, so each chunk is one alignment segment, whose last cdiv(window-1, block) >= 1 "
            "blocks are reachable (single_type_kv_cache_manager.py:1101-1110): every chunk keeps a reachable "
            "block and the mask filters none (scheduler.py:1719-1725). It filters only beside groups of several "
            "block sizes, which are refused",
+    "O35": "requires_kv_delivery only decides whether a preempted request's output still in flight is dropped "
+           "(scheduler.py:839, 1596-1605); vLLM's recompute preemption under the batch queue picks a victim that "
+           "has nothing in flight in every queued fuzz scenario and hand-written one the oracle ran (an instrumented "
+           "run of the 1000 queued seeds found no preemption with in-flight output), so True and False agree here",
+    "O36": "extra_retained_tokens is num_prefill_lookahead_tokens - 1 (kv_cache_utils.py:2582-2589), which is 0 for "
+           "every drafter the connector runs beside (EAGLE-family, DSpark: vllm/config/vllm.py:644-664); it is 1 or "
+           "more only for multi-module MTP, which core/vllm refuses beside the connector",
     "O26": "with the V1 runner's resumed-request path a preempted request's blocks were all freed, so "
            "the blocks appended at its resumption are its whole table: both lists are equal",
 }

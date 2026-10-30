@@ -43,6 +43,16 @@ has_requests() is false, which counts the connector's pending transfer jobs
 Client aborts, as tier 4's NIXL runner applies them, land between the model run and
 update_from_output (core.py:678-683).
 
+A scenario with async scheduling or pipeline parallelism ("async_scheduling",
+"pipeline_parallel_size", "use_v2_model_runner", as tier 3 states them) runs vLLM's own
+EngineCore.step_with_batch_queue (core.py:698-810) on tier 3's bare EngineCore
+(run_enginecore.py engine_core and set_async, the environment mocks oracle/mocks.json lists for
+it), as oracle/run_connector.py runs NIXL: the AsyncScheduler for async scheduling, the batch
+queue at vLLM's own max_concurrent_batches. The worker mock runs on a batch's metadata when the
+batch executes, and the batch's output, resolved when the queue pops it, carries the worker's
+report. A drafter ("speculative": DSpark on the V2 runner, or EAGLE-3 on a configuration-only
+draft) is tier 2's, with each request's acceptance plan ("accepted").
+
 Per step it records tier 2's state, tier 4's connector-visible state, and the offloading state:
 the step's load and store jobs (job id, request, CPU chunks, GPU blocks by group), the jobs
 flushed, the jobs completed, the jobs still pending, and the CPU tier's chunks in LRU order
@@ -87,6 +97,62 @@ def key_text(key: bytes) -> str:
     return key[:8].hex() + "/" + str(int.from_bytes(key[-4:], "big"))
 
 
+class Worker:
+    """The worker side (OffloadingConnectorWorker) as the transport mock (oracle/mocks.json): on a
+    step's OffloadingConnectorMetadata, when the batch carrying it executes, it follows the
+    worker's protocol (handle_preemptions, start_kv_transfers, prepare_store_kv,
+    offloading/worker.py:198-249@5df63a72), and reports the jobs complete by then, as get_finished
+    does at the end of that execute (worker.py:273-309), in that batch's output."""
+
+    def __init__(self, by_id, transfer, workers, output_cls, meta_cls):
+        self.by_id, self.transfer, self.workers = by_id, transfer, workers
+        self.output_cls, self.meta_cls = output_cls, meta_cls
+        self.unsubmitted: list[int] = []
+        self.completes_at: dict[int, int] = {}
+        self.job_req: dict[int, str] = {}
+        self.load_jobs: set[int] = set()
+
+    def delay(self, rid: str, kind: str) -> int:
+        r = self.by_id.get(rid, {})
+        return int(r.get(kind, self.transfer.get(kind, 1)))
+
+    def submit(self, jid: int, step: int, kind: str) -> None:
+        self.completes_at[jid] = step + self.delay(self.job_req[jid], kind)
+
+    def execute(self, meta, step: int):
+        """The worker on one batch's metadata at its execute step; returns the batch's
+        KVConnectorOutput (None for none) and the jobs it reports."""
+        for jid, j in meta.load_jobs.items():
+            self.job_req[jid] = j.req_id
+            self.load_jobs.add(jid)
+        for jid, j in meta.store_jobs.items():
+            self.job_req[jid] = j.req_id
+        flush = set(meta.jobs_to_flush or ())
+        stores_now = [jid for jid in sorted(meta.store_jobs) if jid not in flush]
+        self.unsubmitted.extend(jid for jid in sorted(meta.store_jobs) if jid in flush)
+        for jid in self.unsubmitted:
+            self.submit(jid, step, "store_delay")
+        self.unsubmitted.clear()
+        for jid in flush:
+            if jid in self.completes_at:
+                self.completes_at[jid] = step
+        for jid in sorted(meta.load_jobs):
+            self.submit(jid, step, "load_delay")
+        self.unsubmitted.extend(stores_now)
+        # The report: jobs complete in job-id order, each by every worker; a completed load's
+        # request is finished_recving, by request id.
+        done = sorted(jid for jid, at in self.completes_at.items() if at <= step)
+        for jid in done:
+            del self.completes_at[jid]
+        recving = sorted({self.job_req[j] for j in done if j in self.load_jobs})
+        kv_out = None
+        if done:
+            kv_out = self.output_cls(
+                finished_recving=dict.fromkeys(recving).keys() if recving else None,
+                kv_connector_worker_meta=self.meta_cls(completed_jobs={j: self.workers for j in done}))
+        return kv_out, done
+
+
 def build_config(cfg: dict, model: str):
     """vLLM's own config objects for the scenario, built by their constructors (no write into a
     built object): the helper's create_vllm_config (tests/v1/kv_connector/unit/utils.py:111-180)
@@ -124,7 +190,8 @@ def build_config(cfg: dict, model: str):
     # The engine's world size, the connector's num_workers (offloading/scheduler.py:335): every
     # job is pending on each worker, and the CPU tier holds a copy of a block per worker
     # (cpu/spec.py:107-121).
-    kw = {"parallel_config": ParallelConfig(tensor_parallel_size=cfg.get("tensor_parallel_size", 1))}
+    kw = {"parallel_config": ParallelConfig(tensor_parallel_size=cfg.get("tensor_parallel_size", 1),
+                                            pipeline_parallel_size=cfg.get("pipeline_parallel_size", 1))}
     spec = cfg.get("speculative")
     if spec:
         args = {"method": spec["method"], "num_speculative_tokens": spec["num_speculative_tokens"]}
@@ -204,13 +271,23 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     if extra.get("spec_name", "CPUOffloadingSpec") != "CPUOffloadingSpec":
         sys.exit(f"{scenario_path}: spec_name {extra['spec_name']!r}: the oracle runs CPUOffloadingSpec (see the "
                  "module docstring)")
-    if cfg.get("async_scheduling") or cfg.get("pipeline_parallel_size", 1) > 1:
-        sys.exit(f"{scenario_path}: the batch queue is not run by this oracle (blis-vllm#14)")
-
     spec = cfg.get("speculative")
-    restore_env = v2_runner_env(bool(spec) and spec["method"] == "dspark")
+    async_sched = bool(cfg.get("async_scheduling", False))
+    pp = int(cfg.get("pipeline_parallel_size", 1))
+    v2 = bool(cfg.get("use_v2_model_runner", False)) or (bool(spec) and spec["method"] == "dspark")
+    if pp > 1 and async_sched and not v2:
+        sys.exit(f"{scenario_path}: the V1 model runner does not support PP with async scheduling "
+                 "(vllm/config/vllm.py:2970-2974@5df63a72)")
+    from run_enginecore import set_async  # noqa: E402
+
+    restore_env = v2_runner_env(v2)
     try:
         vllm_config = build_config(cfg, model)
+        # The CPU platform turns async scheduling off (vllm/platforms/cpu.py:329-331); tier 3's
+        # set_async sets the scenario's value back and returns vLLM's own max_concurrent_batches,
+        # before the Scheduler reads both (defer_block_free, scheduler.py:184-192). The helper's
+        # create_scheduler then builds the AsyncScheduler for it (utils.py:207-209).
+        batch_queue_size = set_async(vllm_config, async_sched, v2) if (async_sched or pp > 1) else 1
         scheduler = helpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"],
                                              kv_cache_config=kv_cache_config(cfg, vllm_config))
     finally:
@@ -233,19 +310,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     max_steps = sc.get("max_steps", 10000)
     transfer = cfg.get("transfer") or {}
 
-    # The transport mock's state: stores deferred to the next step, and every submitted job's
-    # completion step, with the request a load belongs to.
-    unsubmitted: list[int] = []
-    completes_at: dict[int, int] = {}
-    job_req: dict[int, str] = {}
-    load_jobs: set[int] = set()
-
-    def delay(rid: str, kind: str) -> int:
-        r = by_id.get(rid, {})
-        return int(r.get(kind, transfer.get(kind, 1)))
-
-    def submit(jid: int, step: int, kind: str) -> None:
-        completes_at[jid] = step + delay(job_req[jid], kind)
+    worker = Worker(by_id, transfer, workers, KVConnectorOutput, OffloadingWorkerMetadata)
 
     def add_arrivals(upto: int) -> None:
         while pending and pending[0]["arrival_step"] <= upto:
@@ -283,6 +348,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             "evictable": manager._num_evictable_cache_chunks,
         }
 
+    if batch_queue_size > 1:
+        return run_queued(scheduler, vllm_config, batch_queue_size, sc, scenario_path, vllm_root, worker,
+                          add_arrivals, connector_state, cpu_state, gpu_spec, sampled_so_far, finished)
+
     step = 0
     while step < max_steps:
         add_arrivals(step)
@@ -307,24 +376,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                        for jid, j in sorted(meta.store_jobs.items())],
             "flush": sorted(meta.jobs_to_flush or []),
         }
-        for jid, j in meta.load_jobs.items():
-            job_req[jid] = j.req_id
-            load_jobs.add(jid)
-        for jid, j in meta.store_jobs.items():
-            job_req[jid] = j.req_id
-        # The worker (the transport mock), on this step's metadata.
-        flush = set(meta.jobs_to_flush or ())
-        stores_now = [jid for jid in sorted(meta.store_jobs) if jid not in flush]
-        unsubmitted.extend(jid for jid in sorted(meta.store_jobs) if jid in flush)
-        for jid in unsubmitted:
-            submit(jid, step, "store_delay")
-        unsubmitted.clear()
-        for jid in flush:
-            if jid in completes_at:
-                completes_at[jid] = step
-        for jid in sorted(meta.load_jobs):
-            submit(jid, step, "load_delay")
-        unsubmitted.extend(stores_now)
+        # The worker (the transport mock), on this step's metadata, as the batch executes.
+        kv_out, done = worker.execute(meta, step)
 
         # The GPU mock.
         req_ids, sampled = [], []
@@ -354,17 +407,6 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         if spec_scheduled:
             record["spec_scheduled"] = dict(sorted(spec_scheduled.items()))
 
-        # The worker's report: jobs complete in job-id order; a completed load's request is
-        # finished_recving.
-        done = sorted(jid for jid, at in completes_at.items() if at <= step)
-        for jid in done:
-            del completes_at[jid]
-        recving = sorted({job_req[j] for j in done if j in load_jobs})
-        kv_out = None
-        if done:
-            kv_out = KVConnectorOutput(
-                finished_recving=dict.fromkeys(recving).keys() if recving else None,
-                kv_connector_worker_meta=OffloadingWorkerMetadata(completed_jobs={j: workers for j in done}))
         off["completed"] = done
         aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
         if aborts:
@@ -400,6 +442,166 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     prov = provenance(vllm_root, scenario_path)
     prov["tier"] = 4
     prov["cpu_chunks"] = manager._num_chunks
+    return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
+
+
+class QueuedGPU:
+    """The GPU and worker mocks as tier 3's EngineCore executor (oracle/mocks.json): when a batch
+    executes, which of its requests sample is read from the scheduler's own is_prefill_chunk, and
+    the worker mock runs on the batch's OffloadingConnectorMetadata (Worker.execute); the batch's
+    output (the scenario's tokens, the last one as EOS, plus the drafts the acceptance plan
+    accepts, every async placeholder a real draft; and the worker's KVConnectorOutput) is resolved
+    when the batch queue pops it."""
+
+    def __init__(self, scheduler, by_id, clock, worker, async_sched, sampled, record, gpu_spec):
+        self.scheduler, self.by_id, self.clock, self.worker = scheduler, by_id, clock, worker
+        self.async_sched, self.sampled, self.record, self.gpu_spec = async_sched, sampled, record, gpu_spec
+        self.verify = {rid: 0 for rid in by_id}
+        self.last = None
+        self.pending = None
+
+    def executor(self):
+        return self
+
+    def execute_model(self, so, non_block=False):
+        from run_enginecore import Done, Lazy  # noqa: E402
+
+        meta = so.kv_connector_metadata
+        rec = self.record()
+        rec["scheduled"] = dict(sorted(so.num_scheduled_tokens.items()))
+        rec["preempted"] = sorted(so.preempted_req_ids or [])
+        spec = {rid: len(d) for rid, d in so.scheduled_spec_decode_tokens.items() if d}
+        if spec:
+            rec["spec_scheduled"] = dict(sorted(spec.items()))
+        rec["offload"] = {
+            "loads": [[jid, j.req_id, [int(c) for c in j.src_spec.block_ids], self.gpu_spec(j.dst_spec)]
+                      for jid, j in sorted(meta.load_jobs.items())],
+            "stores": [[jid, j.req_id, [int(c) for c in j.dst_spec.block_ids], self.gpu_spec(j.src_spec)]
+                       for jid, j in sorted(meta.store_jobs.items())],
+            "flush": sorted(meta.jobs_to_flush or []),
+        }
+        # The worker runs on the metadata as the step's batch executes (kv_connector_no_forward
+        # for an empty one, kv_connector_model_runner_mixin.py:25-38, 66-110@5df63a72).
+        kv_out, done = self.worker.execute(meta, self.clock["step"])
+        rec["offload"]["completed"] = done
+        samples = [rid for rid in so.num_scheduled_tokens if not self.scheduler.requests[rid].is_prefill_chunk]
+        if so.total_num_scheduled_tokens == 0:
+            return Lazy(lambda: self.output(so, [], kv_out))
+        self.last = so
+        self.pending = (so, samples, kv_out)
+        return Done(None)
+
+    def sample_tokens(self, grammar_output, non_block=False):
+        from run_enginecore import Lazy  # noqa: E402
+
+        so, samples, kv_out = self.pending
+        return Lazy(lambda: self.output(so, samples, kv_out))
+
+    def take_draft_token_ids(self):
+        # The drafter after a step that ran, without async scheduling (core.py:689-696), as tier
+        # 3's mock proposes: num_speculative_tokens drafts for every request the last executed
+        # batch ran. Only their count reaches a decision.
+        from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+        if self.last is None:
+            return None
+        ids = [rid for rid in self.last.num_scheduled_tokens if rid in self.scheduler.requests]
+        k = self.scheduler.num_spec_tokens
+        return DraftTokenIds(ids, [[0] * k for _ in ids])
+
+    def output(self, so, samples, kv_out):
+        from tests.v1.core.utils import EOS_TOKEN_ID  # noqa: E402
+        from vllm.v1.outputs import ModelRunnerOutput  # noqa: E402
+
+        req_ids = list(so.num_scheduled_tokens.keys())
+        tokens = []
+        for rid in req_ids:
+            if rid not in samples:
+                tokens.append([])
+                continue
+            outp = self.by_id[rid]["output"]
+            n = 1
+            drafts = so.scheduled_spec_decode_tokens.get(rid, [])
+            if drafts:
+                plan, i = self.by_id[rid].get("accepted", []), self.verify[rid]
+                self.verify[rid] = i + 1
+                real = len(drafts) if self.async_sched else len([d for d in drafts if d >= 0])
+                n = 1 + min(plan[i] if i < len(plan) else 0, real)
+            toks = []
+            for _ in range(n):
+                k = self.sampled[rid]
+                toks.append(EOS_TOKEN_ID if k >= len(outp) - 1 else outp[k])
+                self.sampled[rid] = k + 1
+                if k >= len(outp) - 1:
+                    break
+            tokens.append(toks)
+        self.record()["processed"] = True
+        return ModelRunnerOutput(
+            req_ids=req_ids, req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
+            sampled_token_ids=tokens, logprobs=None, prompt_logprobs_dict={}, pooler_output=[],
+            kv_connector_output=kv_out)
+
+
+def run_queued(scheduler, vllm_config, batch_queue_size, sc, scenario_path, vllm_root, worker, add_arrivals,
+               connector_state, cpu_state, gpu_spec, sampled, finished) -> dict:
+    """A scenario with more than one batch in flight: vLLM's own step_with_batch_queue on tier 3's
+    bare EngineCore (run_enginecore.py engine_core), one call per step, then post_step, as
+    oracle/run_connector.py run_queued drives NIXL. Client aborts go through the EngineCore's aborts
+    queue (core.py:780-783, 814-822)."""
+    from run_enginecore import engine_core  # noqa: E402
+    from run_scheduler import kv_state, provenance  # noqa: E402
+
+    cs = scheduler.connector.connector_scheduler
+    by_id = {r["id"]: r for r in sc["requests"]}
+    clock = {"step": 0}
+    steps: list[dict] = []
+    current: dict = {}
+    async_sched = bool(vllm_config.scheduler_config.async_scheduling)
+    gpu = QueuedGPU(scheduler, by_id, clock, worker, async_sched, sampled, lambda: current, gpu_spec)
+    core = engine_core(scheduler, vllm_config, batch_queue_size, async_sched, scheduler.num_spec_tokens > 0, gpu)
+    pending = [r for r in sc["requests"]]
+    max_steps = sc.get("max_steps", 10000)
+    step = 0
+    while step < max_steps:
+        clock["step"] = step
+        add_arrivals(step)
+        pending = [r for r in pending if r["arrival_step"] > step]
+        has_work = scheduler.has_requests() or bool(core.batch_queue)
+        if not has_work and not pending:
+            break
+        current = {"step": step, "scheduled": {}, "preempted": [], "processed": False,
+                   "offload": {"loads": [], "stores": [], "flush": [], "completed": []}}
+        aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
+        if aborts:
+            core.aborts_queue.put_nowait(aborts)
+        if has_work:
+            scheduler.finished_req_ids = IdOrderedSet(scheduler.finished_req_ids)
+            outputs, executed = core.step_with_batch_queue()
+            core.post_step(executed)
+        else:
+            outputs, current["idle"] = None, True
+        done = []
+        for eco in (outputs or {}).values():
+            for o in eco.outputs:
+                if o.finish_reason is not None:
+                    done.append(o.request_id)
+                    finished[o.request_id] = {"reason": str(o.finish_reason),
+                                              "output_tokens": sampled[o.request_id], "step": step}
+        current["finished"] = sorted(done)
+        current["queue_len"] = len(core.batch_queue)
+        current["aborted"] = aborts
+        current.update(kv_state(scheduler))
+        current.update(connector_state())
+        current["offload"]["jobs"] = sorted(cs._jobs)
+        current["offload"]["pending_push"] = cs.has_pending_push_work()
+        current["offload"]["cpu"] = cpu_state()
+        steps.append(current)
+        step += 1
+    prov = provenance(vllm_root, scenario_path)
+    prov["tier"] = 4
+    prov["cpu_chunks"] = cs.manager._num_chunks
+    prov["engine"] = {"max_concurrent_batches": batch_queue_size, "async_scheduling": async_sched,
+                      "scheduler_class": type(scheduler).__name__}
     return {"provenance": prov, "steps": steps, "finished": dict(sorted(finished.items()))}
 
 
