@@ -383,3 +383,35 @@ func TestResult_ViewSummaryKeepsTheSectionOrder(t *testing.T) {
 		t.Errorf("the P/D section does not report the 40 disaggregated requests:\n%s", lastLines(stderr, 20))
 	}
 }
+
+// A run in which nothing arrives and no --horizon bounds simulated time has no span to state
+// a rate over; it is refused with a message naming the cause, not a validator dump.
+func TestResult_ARunThatSimulatedNoTimeIsRefused(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "spec.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 1
+aggregate_rate: 1
+num_requests: 5
+clients:
+  - id: c
+    rate_fraction: 1
+    slo_class: standard
+    arrival: {process: poisson}
+    input_distribution: {type: constant, params: {value: 64}}
+    output_distribution: {type: constant, params: {value: 8}}
+    lifecycle:
+      windows: [{start_us: 0, end_us: 10}]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--workload-spec", spec)
+	if err == nil {
+		t.Fatalf("a run that simulated no time printed:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "simulated no time") || strings.Contains(stderr, "does not validate") {
+		t.Errorf("not refused with the cause named:\n%s", lastLines(stderr, 3))
+	}
+	if stdout != "" {
+		t.Errorf("a refused run printed to stdout:\n%s", stdout)
+	}
+}

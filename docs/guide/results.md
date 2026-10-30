@@ -123,7 +123,9 @@ document, or is listed here as dropped with the reason.
 
 `input.run.num_requests` is the bound the run kept: `--num-requests` (or the spec's
 `num_requests`), raised to `requests.generated` when closed-loop session rounds generated more
-during the run. `blis observe` (deprecated, #1901) is unchanged: it still prints the
+during the run; an uncapped run in which nothing arrived records 1, the smallest bound the
+schema accepts. A run in which nothing arrived and no `--horizon` bounded simulated time has no
+span to report over and is refused. `blis observe` (deprecated, #1901) is unchanged: it still prints the
 `=== Simulation Metrics ===` JSON.
 
 The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,

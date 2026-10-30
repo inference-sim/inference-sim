@@ -29,7 +29,7 @@ Principles guide design decisions. The [antipattern rules](rules.md) are specifi
 
 ## Output Channel Separation
 
-- **stdout** (deterministic): simulation results — metrics JSON, fitness scores, anomaly counters, KV cache metrics, per-SLO metrics, trace summaries. Use `fmt.Println`/`fmt.Printf`.
+- **stdout** (deterministic): simulation results. For `blis run` and `blis replay` that is exactly one `Result` document (#1871); their human-readable sections (fitness, anomaly counters, KV cache, per-SLO, trace summary) are `--view summary`, on stderr.
 - **stderr** (diagnostic): configuration echoes, progress markers, warnings, errors. Use `logrus.*`, controlled by `--log`.
 - Rule of thumb: if a user piping to a file would want to capture it, use `fmt`. If it's debugging context, use `logrus`.
 

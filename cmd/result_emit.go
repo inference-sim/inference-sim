@@ -145,6 +145,12 @@ func emitRunResult(p postRun) {
 		in.Run.NumRequests = out.Ledger.Generated
 	}
 	r := buildResult(in, out)
+	if len(r.Metrics) == 0 {
+		// Nothing arrived and simulated time never advanced (no horizon bounded it): there is no
+		// span to state any rate over, so the run measured nothing a Result can report.
+		logrus.Fatalf("the run simulated no time: no request arrived (generated %d) and no --horizon bounds the run, "+
+			"so there is nothing to report; check the workload's arrival windows, or pass --horizon", out.Ledger.Generated)
+	}
 	r.Runtime = resultRuntime(p.started)
 
 	view := &summaryView{

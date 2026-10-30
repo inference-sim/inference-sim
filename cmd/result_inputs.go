@@ -445,7 +445,7 @@ func resultArtifacts(files []artifactFile) (map[string]result.Artifact, error) {
 // runs of one input differ, INV-6).
 func artifactRef(path string) string {
 	if resultOutput == "" {
-		return filepath.ToSlash(path)
+		return filepath.ToSlash(filepath.Clean(path))
 	}
 	absBase, err1 := filepath.Abs(filepath.Dir(resultOutput))
 	absPath, err2 := filepath.Abs(path)

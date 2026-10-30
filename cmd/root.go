@@ -1463,8 +1463,9 @@ var runCmd = &cobra.Command{
 		// The Result document (#1871): stdout is exactly one blis-schemas Result, and
 		// --output the same bytes. The run's figures, the deprecated --metrics-path file and
 		// --view summary all come from the one path replay shares (INV-13).
-		// With no cap the run generated what arrived before its horizon (at least one: the
-		// schema states a positive bound, and a run that saw nothing was asked for nothing).
+		// With no cap the run generated what arrived before its horizon. blis-schemas requires a
+		// positive bound, so an uncapped run in which nothing arrived records 1, the smallest
+		// bound (docs/guide/results.md states it).
 		runNumRequests := max(cs.Arrivals(), 1)
 		if maxRequests > 0 {
 			runNumRequests = int(maxRequests)
