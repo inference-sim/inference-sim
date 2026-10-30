@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/inference-sim/blis-schemas/engine"
@@ -85,28 +86,49 @@ func (d *EngineDriver) LandRemote(req *Request, now int64) {
 	d.stepAfterArrivals(now)
 }
 
-// FailRemote ends req's pull at now without its KV landing: what it reserved is freed.
+// FailRemote ends req's pull at now without its KV landing, the cluster having dropped the
+// request (its decode instance went unroutable): the engine ends the request as well (Finish,
+// abort) and is told the pull is over, so what the pull reserved is freed and nothing runs for
+// it. Failing the pull alone would leave the request to the engine's kv_load_failure_policy,
+// which under "recompute" prefills it locally (vllm/v1/core/sched/scheduler.py:3132-3153,
+// 3341-3354@5df63a72), a request the cluster no longer counts.
 func (d *EngineDriver) FailRemote(req *Request, now int64) {
-	id, ok := d.pulls[req.ID]
-	if !ok {
+	if _, ok := d.pulls[req.ID]; !ok {
 		panic(fmt.Sprintf("engine driver: FailRemote(%s): no pull of it is in flight", req.ID))
 	}
-	delete(d.pulls, req.ID)
-	delete(d.remote, req.ID)
-	if err := d.eng.TransferDone(id, false, now); err != nil {
-		panic(fmt.Sprintf("engine driver: TransferDone(%d, failed) for %s: %v", id, req.ID, err))
-	}
-	d.rearmWake(now)
+	d.endRemote(req, now)
+	// The engine's next output frees what the pull held. FailRemote can run inside a kick (the
+	// cluster prices a pull as the engine starts it, startPull), so the step is queued, not run.
+	d.stepAfterArrivals(now)
 }
 
 // AbortRemote ends a handoff the engine holds before its pull landed, at now (Finish, abort).
 func (d *EngineDriver) AbortRemote(req *Request, now int64) {
+	d.endRemote(req, now)
+	d.kick(now)
+}
+
+// endRemote ends a handoff the host gives up on before its pull landed: the engine finishes the
+// request (finish_requests, FINISHED_ABORTED), and a pull in flight for it is reported over. vLLM
+// delays the free of a request whose load is in flight until the worker reports the load done
+// (finish_requests' delay_free_blocks, then _update_from_kv_xfer_finished's free of a finished
+// request, scheduler.py:2690-2700, 3226-3231@5df63a72); unreported, its blocks stay held for the
+// rest of the run. The pull is reported over at now, which frees the blocks when the host gives
+// up rather than when the abandoned read would have ended.
+func (d *EngineDriver) endRemote(req *Request, now int64) {
+	id, pulling := d.pulls[req.ID]
 	delete(d.pulls, req.ID)
 	delete(d.remote, req.ID)
 	if err := d.eng.Finish(req.ID, engine.FinishAbort, now); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s, abort): %v", req.ID, err))
 	}
-	d.kick(now)
+	if pulling {
+		// An engine that ends the pull with the request (the compatibility engine's Finish
+		// forgets it) no longer knows the transfer, which is not an error here.
+		if err := d.eng.TransferDone(id, false, now); err != nil && !errors.Is(err, engine.ErrUnknownTransfer) {
+			panic(fmt.Sprintf("engine driver: TransferDone(%d, failed) for %s: %v", id, req.ID, err))
+		}
+	}
 }
 
 // HandoffBlocks are the KV blocks the engine holds for req's pull (Result.Handoffs).
