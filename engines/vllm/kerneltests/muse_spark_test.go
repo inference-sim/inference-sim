@@ -48,7 +48,7 @@ func TestMuseSparkPricesTwoPipelineStages(t *testing.T) {
 	if one.StepTime(museBatches()[1]).Stages != nil {
 		t.Error("a one-stage pool reported stages")
 	}
-	if w, w1 := pp.FixedBytes().Weights, one.FixedBytes().Weights; !(w < w1*6/10 && w > w1*4/10) {
+	if w, w1 := pp.FixedBytes().Weights, one.FixedBytes().Weights; w >= w1*6/10 || w <= w1*4/10 {
 		t.Errorf("pp 2 holds %d weight bytes a rank against %d at pp 1: want about half", w, w1)
 	}
 	if kv, kv1 := pp.SequenceVariableBytes(16), one.SequenceVariableBytes(16); kv*2 != kv1 {
@@ -71,13 +71,13 @@ func TestMuseSparkPricesItsNamedDrafter(t *testing.T) {
 	// last stage's alone, so that stage gains the most.
 	last := s.Stages[1].NoOverlap - p.Stages[1].NoOverlap
 	first := s.Stages[0].NoOverlap - p.Stages[0].NoOverlap
-	if !(last > 0 && last > first) {
+	if last <= 0 || last <= first {
 		t.Errorf("the drafter added %v to the last stage and %v to the first", last, first)
 	}
-	if !(spec.FixedBytes().Weights > plain.FixedBytes().Weights) {
+	if spec.FixedBytes().Weights <= plain.FixedBytes().Weights {
 		t.Error("the drafter's weights are not resident")
 	}
-	if !(spec.SequenceVariableBytes(16) > plain.SequenceVariableBytes(16)) {
+	if spec.SequenceVariableBytes(16) <= plain.SequenceVariableBytes(16) {
 		t.Error("the drafter's KV is not resident")
 	}
 }
@@ -110,7 +110,7 @@ func TestMuseSparkPricesItsFabricPerCluster(t *testing.T) {
 		}
 		return k.StepTime(b)
 	}
-	if got := derate("muse-h100-pp2tp8.yaml", "roce-200g", 0.5); !(got.Stages[0].NoOverlap > roce.Stages[0].NoOverlap) {
+	if got := derate("muse-h100-pp2tp8.yaml", "roce-200g", 0.5); got.Stages[0].NoOverlap <= roce.Stages[0].NoOverlap {
 		t.Errorf("a half-efficient RoCE fabric left the boundary send's stage at %v (nominal %v)",
 			got.Stages[0].NoOverlap, roce.Stages[0].NoOverlap)
 	}
