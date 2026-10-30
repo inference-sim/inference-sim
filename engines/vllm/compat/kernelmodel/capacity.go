@@ -38,6 +38,8 @@ package kernelmodel
 
 import (
 	"fmt"
+
+	latencykernel "github.com/inference-sim/blis-latency-kernel"
 )
 
 // KVBudget is the KV-block budget derived from a kernel, with the terms that produced it.
@@ -227,3 +229,64 @@ const gibToBytes = 1 << 30
 // sharding error in a memory term shows up as a per-rank figure larger than the part. A
 // capacity number divided out of an impossible occupancy looks plausible and silently sets
 // the wrong resident batch, which is the quantity this experiment measures.
+
+// StageBudget is one pipeline rank's KV budget: the memory its KV pool may take and one block
+// of every KV layer it holds. vLLM sizes each worker's pool from its own free memory over its
+// own layers and keeps the smallest (get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:
+// 2531-2680@5df63a72), and the stages' weights and layers differ, so a pipeline pool is sized
+// stage by stage from these.
+type StageBudget struct {
+	// AllocatableBytes is the stage rank's budget less its own fixed occupancy.
+	AllocatableBytes int64
+	// PageBytes is one block of every KV layer the stage holds whose cache the kernel infers,
+	// window rings included: the bytes its share of the KV cache groups is cut from.
+	PageBytes int64
+}
+
+// stageMemorist is the kernel's per-stage memory under pipeline parallelism, exported by
+// blis-latency-kernel beside the published kernel.Kernel interface.
+type stageMemorist interface {
+	PipelineStageMemory() []latencykernel.StageMemory
+	KVLayerPageBytes(blockTokens int) int64
+}
+
+// KVLayerPageBytes is one block of every KV layer the pool's rank holds whose cache the kernel
+// infers, window rings included (blis-latency-kernel Kernel.KVLayerPageBytes): what an engine
+// model cutting the pool into KV cache groups derives each layer's element bytes from. It is
+// PerBlockBytes where every layer's cache grows with context.
+func (m *Model) KVLayerPageBytes() (int64, error) {
+	s, ok := m.k.(stageMemorist)
+	if !ok {
+		return 0, fmt.Errorf("kernelmodel: the kernel (%T) does not report its KV layers' page bytes", m.k)
+	}
+	return s.KVLayerPageBytes(m.engine.BlockSize), nil
+}
+
+// StageBudgets is every pipeline rank's KV budget, in stage order, at the engine's
+// gpu_memory_utilization; nil at pp 1, where KVBudget is the one rank's.
+func (m *Model) StageBudgets() ([]StageBudget, error) {
+	s, ok := m.k.(stageMemorist)
+	if !ok {
+		return nil, fmt.Errorf("kernelmodel: the kernel (%T) does not report its pipeline stages' memory", m.k)
+	}
+	stages := s.PipelineStageMemory()
+	if len(stages) == 0 {
+		return nil, nil
+	}
+	b, err := m.KVBudget()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]StageBudget, len(stages))
+	for i, st := range stages {
+		allocatable := b.BudgetBytes - st.Fixed.Total()
+		if allocatable <= 0 {
+			return nil, fmt.Errorf("kernelmodel: No available memory for the cache blocks. Try "+
+				"increasing `gpu_memory_utilization` when initializing the engine (pipeline stage "+
+				"%d holds %.1f GiB of fixed occupancy against a %.1f GiB budget)", i,
+				float64(st.Fixed.Total())/float64(gibToBytes), float64(b.BudgetBytes)/float64(gibToBytes))
+		}
+		out[i] = StageBudget{AllocatableBytes: allocatable, PageBytes: st.LayerPageBytes}
+	}
+	return out, nil
+}

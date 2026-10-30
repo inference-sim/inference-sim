@@ -97,6 +97,12 @@ var summaries = map[string]struct{ title, summary string }{
 			"then carries several payloads, and a placement that names a node rather than a rank " +
 			"cannot express that.",
 	},
+	"pipeline.go|(*Kernel).liftPipeline|Coverage limit": {
+		"Pipeline parallelism over stated caches",
+		"A model whose graph states its KV caches -- DeepSeek-V4 and V4.1, MiniMax-M3 -- is " +
+			"refused under pipeline parallelism, which vLLM does serve: the stated caches are " +
+			"sized and pooled over the whole stack, and the kernel does not yet split them by stage.",
+	},
 	"kernel.go|(*Kernel).SequenceVariableBytes|Coverage limit": {
 		"Hybrid attention under decode-context parallelism",
 		"For a model that mixes sliding-window and full-attention layers, decode-context " +

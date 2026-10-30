@@ -100,6 +100,72 @@ func KVPoolBytesPerBlock(runs []KVLayerRun, disableHybrid bool, blockSize int, k
 	return per, nil
 }
 
+// KVStagePoolBytesPerBlock is each pipeline stage's pool bytes per block: the model's KV cache
+// groups formed once over every layer and projected onto that stage's layers
+// (kv.StagePoolBytesPerBlock), as vLLM sizes each worker's pool (_project_kv_cache_groups_to_worker,
+// vllm/v1/core/kv_cache_utils.py:2486-2528, 2595-2603@5df63a72). stages[s] is the [lo, hi) of
+// layers (one per layer, in model order, as KVLayers expands the runs) stage s holds. A stage
+// holding no KV layer has none, 0.
+//
+// kernelPerBlock is the caller's bytes for one block of every layer, as KVPoolBlocks reads it:
+// the element bytes are derived once over the whole model, so every stage pages them alike.
+func KVStagePoolBytesPerBlock(runs []KVLayerRun, stages [][2]int, disableHybrid bool, blockSize int,
+	kernelPerBlock int64) ([]int64, error) {
+	layers, err := KVLayers(runs)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.ContainsFunc(layers, func(l kv.Layer) bool { return l.StateBytes > 0 }) {
+		if err := deriveElemBytes(layers, blockSize, kernelPerBlock); err != nil {
+			return nil, err
+		}
+	}
+	o := kv.GroupOptions{DisableHybrid: disableHybrid}
+	out := make([]int64, len(stages))
+	for s, span := range stages {
+		if span[0] < 0 || span[1] > len(layers) || span[0] > span[1] {
+			return nil, fmt.Errorf("vllm: kv_layers: stage %d holds layers [%d, %d) of %d", s, span[0], span[1], len(layers))
+		}
+		on := make([]bool, len(layers))
+		for i := span[0]; i < span[1]; i++ {
+			on[i] = true
+		}
+		if out[s], err = kv.StagePoolBytesPerBlock(layers, on, o, blockSize); err != nil {
+			return nil, fmt.Errorf("vllm: kv_layers: %w", err)
+		}
+	}
+	return out, nil
+}
+
+// KVStagePoolBlocks is a pipeline-parallel pool's block count: each stage's available memory
+// over its pool bytes per block (KVStagePoolBytesPerBlock), and the smallest of them, which the
+// engine keeps for every worker (get_kv_cache_configs step 5, kv_cache_utils.py:2660-2680@
+// 5df63a72). availableBytes[s] is stage s's memory for the KV cache. A stage holding no KV
+// layer does not bound the others. It returns the pool and the stage that binds it.
+func KVStagePoolBlocks(runs []KVLayerRun, stages [][2]int, disableHybrid bool, blockSize int,
+	kernelPerBlock int64, availableBytes []int64) (int64, int, error) {
+	if len(availableBytes) != len(stages) {
+		return 0, 0, fmt.Errorf("vllm: kv_layers: %d stages and %d stage budgets", len(stages), len(availableBytes))
+	}
+	per, err := KVStagePoolBytesPerBlock(runs, stages, disableHybrid, blockSize, kernelPerBlock)
+	if err != nil {
+		return 0, 0, err
+	}
+	pool, binding := int64(-1), -1
+	for s := range stages {
+		if per[s] == 0 {
+			continue
+		}
+		if blocks := availableBytes[s] / per[s]; pool < 0 || blocks < pool {
+			pool, binding = blocks, s
+		}
+	}
+	if pool < 0 {
+		return 0, 0, fmt.Errorf("vllm: kv_layers: no pipeline stage holds a KV layer")
+	}
+	return pool, binding, nil
+}
+
 // deriveElemBytes gives every layer that states no element size the bytes kernelPerBlock leaves
 // after the layers that state one, split evenly over their elements (KVPoolBlocks). With no
 // layer stating one, each layer takes kernelPerBlock over every layer's elements, as before.

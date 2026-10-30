@@ -114,3 +114,47 @@ func PoolBytesPerBlock(layers []Layer, o GroupOptions, blockSize int) (int64, er
 	}
 	return BytesPerBlock(groups, deepseek(layers) && !o.DisableHybrid)
 }
+
+// StagePoolBytesPerBlock is a pipeline stage's pool bytes per block: the model's KV cache
+// groups formed ONCE over every layer (GroupLayers), each projected onto the layers the stage
+// holds (on[i] for layers[i]), and BytesPerBlock over the projections. That is vLLM's per-worker
+// sizing under pipeline parallelism: get_kv_cache_groups runs over the merged specs of every
+// worker, _project_kv_cache_groups_to_worker keeps each group's layers on that worker, and the
+// worker's pool is its memory over the projected groups' bytes per block
+// (vllm/v1/core/kv_cache_utils.py:2486-2528, 2595-2603, 2650-2660@5df63a72). A group with
+// none of the stage's layers contributes no bytes, and a stage holding no layer has none: 0.
+//
+// Grouping a stage's layers by themselves is not the same: 20 full and 30 sliding-window
+// layers group as one full group of 20 and two window groups of 15, so a stage of 20 full
+// and 5 window layers pages max(20, 3, 2) = 20 layers a block, where grouping its own layers
+// would form one group of each kind and page 20 + 5.
+func StagePoolBytesPerBlock(layers []Layer, on []bool, o GroupOptions, blockSize int) (int64, error) {
+	if len(on) != len(layers) {
+		return 0, fmt.Errorf("kv: %d stage flags for %d layers", len(on), len(layers))
+	}
+	_, members, err := groupLayers(layers, o)
+	if err != nil {
+		return 0, err
+	}
+	var groups []PageGroup
+	for _, m := range members {
+		var g PageGroup
+		for _, j := range m {
+			if !on[j] {
+				continue
+			}
+			l := layers[j]
+			if l.BlockSize == 0 {
+				l.BlockSize = blockSize
+			}
+			g = append(g, PageLayer{PageBytes: int64(pageBytes(l)), Alignment: int64(max(l.StrideAlignment, 1))})
+		}
+		if len(g) > 0 {
+			groups = append(groups, g)
+		}
+	}
+	if len(groups) == 0 {
+		return 0, nil
+	}
+	return BytesPerBlock(groups, deepseek(layers) && !o.DisableHybrid)
+}

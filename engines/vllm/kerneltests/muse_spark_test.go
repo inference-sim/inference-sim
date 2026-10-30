@@ -77,8 +77,18 @@ func TestMuseSparkPricesItsNamedDrafter(t *testing.T) {
 	if spec.FixedBytes().Weights <= plain.FixedBytes().Weights {
 		t.Error("the drafter's weights are not resident")
 	}
-	if spec.SequenceVariableBytes(16) <= plain.SequenceVariableBytes(16) {
-		t.Error("the drafter's KV is not resident")
+	// The drafter's five layers are sliding-window only, so their caches are rings bounded per
+	// sequence, not KV that grows with context: they are in the bounded hold and in the pool's
+	// page, and the growing KV a block is the target's alone.
+	if spec.SequenceFixedBytes() <= plain.SequenceFixedBytes() {
+		t.Error("the drafter's window rings are not resident")
+	}
+	if spec.KVLayerPageBytes(16) <= plain.KVLayerPageBytes(16) {
+		t.Error("the drafter's KV layers are not in the pool's page")
+	}
+	if spec.SequenceVariableBytes(16) != plain.SequenceVariableBytes(16) {
+		t.Errorf("the drafter's window rings grew the per-block KV: %d against %d",
+			spec.SequenceVariableBytes(16), plain.SequenceVariableBytes(16))
 	}
 }
 

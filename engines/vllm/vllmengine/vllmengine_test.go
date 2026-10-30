@@ -354,8 +354,9 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 // The KV pool holds what vLLM's would for the same memory: the memory left for KV over the widest
 // KV cache group's bytes per block (get_kv_cache_config_from_groups,
 // vllm/v1/core/kv_cache_utils.py:1622-1628@5df63a72). gpt-oss-120b's 36 layers are two groups of
-// 18, a window and full attention, so a block is 18 layers' pages and the pool holds twice the
-// compatibility engine's count, which prices a block as all 36. A model of one group keeps the
+// 18, a window and full attention, so a block is 18 layers' pages: the kernel's per-block bytes,
+// which are its 18 full-attention layers' (the window layers' rings are bounded per sequence, not
+// paged with context), and half its 36 layers' page bytes. A model of one group keeps the
 // compatibility engine's count: MiniMax-M3 (full attention and its indexers, one uniform-type
 // group) and kimi-k2.5 (full attention only).
 func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
@@ -364,9 +365,9 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		scenario string
 		want     func(compat kernelmodel.KVBudget) int64
 	}{
-		{"d036-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.AllocatableBytes / (b.PerBlockBytes / 2) }}, // gpt-oss-120b
-		{"d106-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // minimax-m3
-		{"d058-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                            // kimi-k2.5
+		{"d036-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.AllocatableBytes / b.PerBlockBytes }}, // gpt-oss-120b
+		{"d106-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                      // minimax-m3
+		{"d058-032.yaml", func(b kernelmodel.KVBudget) int64 { return b.PerRankBlocks }},                      // kimi-k2.5
 		// minimax-m3 with cache_dtype fp8: the attention layers' KV at fp8, the indexer's keys at
 		// bf16 (its own dtype), so the pool holds what vLLM sizes for one uniform-type group of
 		// two page sizes: 72893 blocks (oracle/scenarios/dashboard-minimax-m3-fp8-kv-probe, at

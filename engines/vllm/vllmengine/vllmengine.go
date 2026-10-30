@@ -219,7 +219,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 // offloadBytesPerBlock is one worker's KV bytes for one GPU block: the kernel's per-block KV bytes
 // for a model of one full-attention group, and the pool's widest KV cache group's bytes for a
 // hybrid model, as vLLM's KV tensor holds them (poolBlocks). Under pipeline parallelism it is the
-// binding stage's, the one the kernel's bytes describe.
+// binding stage's: the worker whose pool every worker's is cut to.
 func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	b, err := m.KVBudget()
 	if err != nil {
@@ -229,25 +229,96 @@ func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 	if err != nil || len(runs) == 0 {
 		return b.PerBlockBytes, err
 	}
-	e, err := m.Engine()
+	p, err := stagePoolsOf(m, runs)
 	if err != nil {
 		return 0, err
 	}
-	disable := e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager
-	if pp := m.PipelineStages(); pp > 1 {
-		var widest []kernelmodel.KVLayerRun
-		for s := range pp {
-			stage, err := m.KVLayersOfStage(s)
-			if err != nil {
-				return 0, err
-			}
-			if kvElems(stage) > kvElems(widest) {
-				widest = stage
-			}
-		}
-		runs = widest
+	return p.perBlock[p.binding], nil
+}
+
+// stagePools is a pool's KV cache groups sized per pipeline rank: each rank's bytes a block and
+// the memory its pool may take, the rank whose pool binds, and its block count. At pp 1 it is
+// the one rank's.
+type stagePools struct {
+	perBlock, avail []int64
+	binding         int
+	blocks          int64
+}
+
+// stagePoolsOf sizes a pool over its KV cache groups. vLLM forms the groups once over every
+// layer (get_kv_cache_groups) and sizes each worker's pool from its own memory over the groups
+// projected onto its layers (_project_kv_cache_groups_to_worker), keeping the smallest
+// (get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:2486-2528, 2595-2603, 2650-2680@5df63a72).
+// A rank's memory is the kernel's for that rank (kernelmodel StageBudgets): its own budget less
+// its own fixed occupancy. The layers' element bytes come from the kernel's bytes for one block of
+// every KV layer (KVLayerPageBytes), window layers included, not from SequenceVariableBytes,
+// which is only the share that grows with context.
+func stagePoolsOf(m *kernelmodel.Model, runs []kernelmodel.KVLayerRun) (stagePools, error) {
+	b, err := m.KVBudget()
+	if err != nil {
+		return stagePools{}, err
 	}
-	return vllm.KVPoolBytesPerBlock(vllmRuns(runs), disable, e.BlockSize, b.PerBlockBytes)
+	e, err := m.Engine()
+	if err != nil {
+		return stagePools{}, err
+	}
+	page, err := m.KVLayerPageBytes()
+	if err != nil {
+		return stagePools{}, err
+	}
+	disable := e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager
+	pp := m.PipelineStages()
+	if pp == 1 {
+		per, err := vllm.KVPoolBytesPerBlock(vllmRuns(runs), disable, e.BlockSize, page)
+		if err != nil {
+			return stagePools{}, err
+		}
+		return stagePools{perBlock: []int64{per}, avail: []int64{b.AllocatableBytes},
+			blocks: b.AllocatableBytes / per}, nil
+	}
+	budgets, err := m.StageBudgets()
+	if err != nil {
+		return stagePools{}, err
+	}
+	// Every stage's span of the model's layers, in model order. The kernel's page bytes are the
+	// binding rank's; every layer is at one cache dtype, so its bytes over that rank's elements
+	// is the bytes an element, which sizes the whole model's block of every layer.
+	spans := make([][2]int, pp)
+	avail := make([]int64, pp)
+	at, bindElems := 0, int64(0)
+	for s := range pp {
+		stage, err := m.KVLayersOfStage(s)
+		if err != nil {
+			return stagePools{}, err
+		}
+		n := 0
+		for _, r := range stage {
+			n += r.Count
+		}
+		spans[s] = [2]int{at, at + n}
+		at += n
+		avail[s] = budgets[s].AllocatableBytes
+		if budgets[s].PageBytes == page && bindElems == 0 {
+			bindElems = kvElems(stage)
+		}
+	}
+	whole := 0
+	for _, r := range runs {
+		whole += r.Count
+	}
+	if at != whole || bindElems == 0 {
+		return stagePools{}, fmt.Errorf("vllmengine: the pipeline stages hold %d KV layers of the model's %d", at, whole)
+	}
+	modelPage := page * kvElems(runs) / bindElems
+	per, err := vllm.KVStagePoolBytesPerBlock(vllmRuns(runs), spans, disable, e.BlockSize, modelPage)
+	if err != nil {
+		return stagePools{}, err
+	}
+	blocks, binding, err := vllm.KVStagePoolBlocks(vllmRuns(runs), spans, disable, e.BlockSize, modelPage, avail)
+	if err != nil {
+		return stagePools{}, err
+	}
+	return stagePools{perBlock: per, avail: avail, binding: binding, blocks: blocks}, nil
 }
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
@@ -261,59 +332,19 @@ func offloadBytesPerBlock(m *kernelmodel.Model) (int64, error) {
 // For a hybrid model it also returns the memory the pool was sized from, which the engine block
 // states as kv_available_bytes so vLLM's start-up check reports its numbers in GiB.
 //
-// Under pipeline parallelism each stage's rank sizes a pool over its own layers (the drafter's
-// on the last), and the engine keeps the smallest (get_kv_cache_configs step 5,
-// vllm/v1/core/kv_cache_utils.py:2530-2660@5df63a72). The kernel's per-rank budget and bytes per
-// block are the binding stage's, so each stage's layers are sized against them and the
-// smallest count is the pool's.
+// Under pipeline parallelism each stage's rank sizes its own pool from its own memory over the
+// model's groups projected onto its layers, and the engine keeps the smallest (stagePoolsOf);
+// the memory returned is the binding rank's.
 func poolBlocks(m *kernelmodel.Model, st kernelmodel.Settings) (int64, int64, error) {
 	runs, err := m.KVLayers()
 	if err != nil || len(runs) == 0 {
 		return st.KVBlocks, 0, err
 	}
-	b, err := m.KVBudget()
+	p, err := stagePoolsOf(m, runs)
 	if err != nil {
 		return 0, 0, err
 	}
-	e, err := m.Engine()
-	if err != nil {
-		return 0, 0, err
-	}
-	disable := e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager
-	pp := m.PipelineStages()
-	if pp == 1 {
-		blocks, err := vllm.KVPoolBlocks(vllmRuns(runs), disable, e.BlockSize, b.PerBlockBytes, b.AllocatableBytes)
-		return blocks, b.AllocatableBytes, err
-	}
-	// The kernel's bytes a block are the binding stage's: the stage holding the most KV
-	// elements a token (liftPipelineMemory). Every layer is at one cache dtype, so its bytes
-	// over that stage's elements is the bytes an element, which sizes every stage's page.
-	stages := make([][]kernelmodel.KVLayerRun, pp)
-	var widest int64
-	for s := range pp {
-		if stages[s], err = m.KVLayersOfStage(s); err != nil {
-			return 0, 0, err
-		}
-		widest = max(widest, kvElems(stages[s]))
-	}
-	if widest == 0 {
-		return st.KVBlocks, 0, nil
-	}
-	pool := int64(-1)
-	for _, stage := range stages {
-		if len(stage) == 0 {
-			continue
-		}
-		perBlock := b.PerBlockBytes * kvElems(stage) / widest
-		blocks, err := vllm.KVPoolBlocks(vllmRuns(stage), disable, e.BlockSize, perBlock, b.AllocatableBytes)
-		if err != nil {
-			return 0, 0, err
-		}
-		if pool < 0 || blocks < pool {
-			pool = blocks
-		}
-	}
-	return pool, b.AllocatableBytes, nil
+	return p.blocks, p.avail[p.binding], nil
 }
 
 // kvElems is the KV elements one token of these layers holds: what scales a block's bytes

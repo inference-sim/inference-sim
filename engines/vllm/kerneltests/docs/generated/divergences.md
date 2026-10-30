@@ -218,6 +218,21 @@ DeepSeek-V4.1's prefill gather workspace and its indexer's logits stand-in are c
     MoE intermediates; and the indexer's logits stand-in is a transient that this adds to the
     activation multiple's own transients rather than to their peak.
 
+### Pipeline parallelism over stated caches
+
+*Coverage limit, in `(*Kernel).liftPipeline` in [`pipeline.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/pipeline.go).*
+
+A model whose graph states its KV caches -- DeepSeek-V4 and V4.1, MiniMax-M3 -- is refused under pipeline parallelism, which vLLM does serve: the stated caches are sized and pooled over the whole stack, and the kernel does not yet split them by stage.
+
+??? quote "The note in the source"
+    A cache a graph states -- the target's or its drafter's -- is sized per layer kind over
+    the whole stack (cacheTerms) and grouped into one pool over all of them, not per stage,
+    so a pipeline split of it would charge each rank every stage's cache. Refused rather
+    than overstated. COVERAGE LIMIT, not an engine refusal: vLLM serves DeepSeek-V4 and
+    V4.1, whose graphs state their caches, under PP (their make\_empty\_intermediate\_tensors,
+    vllm/models/deepseek\_v4/nvidia/model.py:1406-1424, deepseek\_v41/nvidia/model.py:
+    885-910@v0.32.0).
+
 ### Choosing the sparse attention backend
 
 *Coverage limit, in `sparseMLABackend` in [`sparse_mla.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/sparse_mla.go).*
@@ -253,4 +268,4 @@ Under tensor parallelism each rank is charged the arithmetic of whole routed exp
     that are pure TP. The BYTES do divide by it (routedWeightBytes, below), so the
     two terms disagree about the same experts.
 
-*17 notes: 1 known divergence, 3 known over-charges, 13 coverage limits.*
+*18 notes: 1 known divergence, 3 known over-charges, 14 coverage limits.*

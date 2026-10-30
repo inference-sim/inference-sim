@@ -189,3 +189,41 @@ func TestMuseSparkPoolPerStageIsVLLMs(t *testing.T) {
 		}
 	}
 }
+
+// A pipeline stage's pool is sized over the model's KV cache groups projected onto its layers,
+// not over groups formed from its own layers alone, and a stage of full attention only is sized
+// too (_project_kv_cache_groups_to_worker, vllm/v1/core/kv_cache_utils.py:2486-2528@5df63a72).
+// 20 full then 30 sliding-window layers group as one full group of 20 and two window groups of
+// 15; at pp 2 stage 0 holds 20 full + 5 window layers and pages max(20, 3, 2) = 20 layers a
+// block, stage 1 the other 25 window layers and pages max(0, 12, 13) = 13.
+func TestAStagePoolIsTheGlobalGroupsProjected(t *testing.T) {
+	const avail = 81920 * 1000
+	run := func(n int, spec string) KVLayerRun {
+		r := KVLayerRun{Count: n, Spec: spec, NumKVHeads: 1, HeadSize: 64, ElemBytes: 2}
+		if spec == "sliding_window" {
+			r.SlidingWindow = 2048
+		}
+		return r
+	}
+	runs := []KVLayerRun{run(20, "full"), run(30, "sliding_window")}
+	const page = 2 * 64 * 16 * 2
+	for _, c := range []struct {
+		what   string
+		stages [][2]int
+		avail  []int64
+		want   int64
+	}{
+		{"pp 2", [][2]int{{0, 25}, {25, 50}}, []int64{avail, avail}, min(avail/(20*page), avail/(13*page))},
+		// The binding stage is the one with less memory for its pages: stage 1 at a third.
+		{"pp 2, stage 1 with less memory", [][2]int{{0, 25}, {25, 50}}, []int64{avail, avail / 3},
+			min(avail/(20*page), avail/3/(13*page))},
+		// A stage of full attention alone is a worker too.
+		{"full-attention stage", [][2]int{{0, 10}, {10, 50}}, []int64{avail / 4, avail},
+			min(avail/4/(10*page), avail/(max(10, 15, 15)*page))},
+	} {
+		got, _, err := KVStagePoolBlocks(runs, c.stages, false, 16, 0, c.avail)
+		if err != nil || got != c.want {
+			t.Errorf("%s: %d blocks (%v), vLLM sizes %d", c.what, got, err, c.want)
+		}
+	}
+}
