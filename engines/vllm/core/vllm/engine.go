@@ -852,6 +852,18 @@ func (e *Engine) NextWake(now engine.Time) (engine.Time, bool) {
 // InFlightLimit implements engine.Engine: max_concurrent_batches.
 func (e *Engine) InFlightLimit() int { return max(e.core.QueueSize, 1) }
 
+// RunnerSteps is how many execute_model calls the engine has made: one per schedule, whether
+// or not it ran tokens (core.py:724-729, 667-668@5df63a72). Each call advances a pipeline rank's
+// sampled-token ring before it returns early for a schedule that ran no tokens:
+// update_pp_decode_requests pops the slot pp steps back and reserves one, which stays empty
+// (model_runner.py:1729-1747, pp_utils.py:125-137@5df63a72). So a batch Schedule just returned is
+// runner step RunnerSteps()-1, counting the empty schedules the contract does not put in flight,
+// and a request freed now is freed at runner step RunnerSteps(), the next schedule's
+// finished_req_ids (model_runner.py:1152-1166@5df63a72). It is not part of blis-schemas'
+// contract: a simulator gating a pipelined step on the step pp back looks for it by type
+// assertion.
+func (e *Engine) RunnerSteps() int { return e.core.Schedules() }
+
 // Snapshot implements engine.Engine.
 func (e *Engine) Snapshot() engine.State {
 	nr, nw := e.s.Counts()

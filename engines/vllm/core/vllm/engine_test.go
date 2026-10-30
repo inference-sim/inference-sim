@@ -3,6 +3,7 @@ package vllm
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -722,5 +723,43 @@ func TestAPipelinedEngineReportsItsStages(t *testing.T) {
 	b := engine.Batch{Reqs: []engine.Scheduled{{ID: "x", Tokens: 3}}}
 	if st := single.(engine.Pipelined).StageTimes(b); len(st) != 1 || st[0] != single.StepTime(b) {
 		t.Errorf("a one-stage engine reports %v", st)
+	}
+}
+
+// Every schedule is one execute_model call, which advances a pipeline rank's sampled-token ring
+// even when it ran no tokens (model_runner.py:1729-1747, pp_utils.py:125-137@5df63a72), so the
+// engine counts its runner steps with the empty schedules the contract does not put in flight.
+// One request at pp 2 under async scheduling alternates a decode with an empty schedule (the
+// AsyncScheduler holds a decode back until its previous token is in, async_scheduler.py:
+// 52-57@5df63a72): its batches are runner steps 0, 2, 4.
+func TestRunnerStepsCountEmptySchedules(t *testing.T) {
+	e, err := build(t, "async_scheduling: true\nuse_v2_model_runner: true\npipeline_parallel_size: 2\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(req("a", 8, 4), 0); err != nil {
+		t.Fatal(err)
+	}
+	rs, ok := e.(interface{ RunnerSteps() int })
+	if !ok {
+		t.Fatal("the engine reports no runner steps")
+	}
+	var steps []int
+	var inFlight []engine.Batch
+	for now := engine.Time(0); len(steps) < 3 && now < 40; now++ {
+		b, err := e.Schedule(now)
+		if err == nil && !b.Empty() {
+			steps = append(steps, rs.RunnerSteps()-1)
+			inFlight = append(inFlight, b)
+		}
+		if len(inFlight) > 0 && (e.(*Engine).blocked || err != nil) {
+			if _, err := e.Complete(inFlight[0].ID, engine.Outcome{}, now); err != nil {
+				t.Fatal(err)
+			}
+			inFlight = inFlight[1:]
+		}
+	}
+	if !reflect.DeepEqual(steps, []int{0, 2, 4}) {
+		t.Fatalf("batches at runner steps %v, want [0 2 4]: an empty schedule is a runner step", steps)
 	}
 }

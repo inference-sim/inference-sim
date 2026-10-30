@@ -95,6 +95,10 @@ type StepResult struct {
 	Executed bool
 }
 
+// Schedules is how many batches the scheduler has made, each one execute_model call
+// (core.py:724-729, 667-668), including those that ran no tokens.
+func (c *Core) Schedules() int { return c.nextID }
+
 // InFlight is how many batches are queued.
 func (c *Core) InFlight() int { return len(c.queue) }
 
