@@ -274,3 +274,36 @@ func TestCompatVersionsAgreeWithTheFactory(t *testing.T) {
 		t.Errorf("compat/build models %v, core/vllm hands the compatibility engine %v", CompatVersions(), vllm.CompatVersions)
 	}
 }
+
+// A 0.32.0 hybrid model's first pool opens on its KV cache groups, as the v0.32.0 engine checks them:
+// Muse-Spark-Open-816B-A42B at H200 DP8 x EP8 and 262,144 tokens holds one request in vLLM
+// (19.38 GiB against 25.77), which the compatibility engine's every-layer-at-full-context
+// check refused. At 0.31.0 the compatibility engine runs it, and its check stands.
+func TestAdopt_032HybridKVIsCheckedOverItsGroups(t *testing.T) {
+	repos := vendoredRepos(t)
+	src := filepath.Join("..", "..", "vllmengine", "testdata", "muse-h200-ib-dep8.yaml")
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		version string
+		ok      bool
+	}{{"0.32.0", true}, {"0.31.0", false}} {
+		dir := t.TempDir()
+		body := strings.Replace(string(raw), `engine_version: "0.32.0"`, `engine_version: "`+c.version+`"`, 1)
+		if err := os.WriteFile(filepath.Join(dir, "m.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		in := AdoptInputs{Scenario: "m.yaml", ScenariosDir: dir, Registry: repos.Registry,
+			Catalog: func() (string, error) { return repos.Catalog, nil }}
+		a, err := Adopt(in)
+		if err != nil {
+			t.Fatalf("engine_version %s: adopt: %v", c.version, err)
+		}
+		err = OpenFirstPool(in, &a)
+		if (err == nil) != c.ok {
+			t.Errorf("engine_version %s: %v, want adopted %t", c.version, err, c.ok)
+		}
+	}
+}
