@@ -61,9 +61,28 @@ type Settings struct {
 // Settings answers the simulator's sizing questions for this model's pool.
 func (m *Model) Settings() (Settings, error) { return m.SettingsReserving(0) }
 
+// SettingsCheckedByGroups is Settings for an engine that runs vLLM's own start-up check over
+// the model's KV cache groups itself, as blis-vllm's v0.32.0 engine does (checkKVLayersFit,
+// core/vllm/kvlayers.go; get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:2627-2646
+// @5df63a72). The check here charges every layer's KV at full context, which is the
+// compatibility engine's single full-attention group; on a hybrid model -- Muse Spark's 46
+// sliding-window layers of 62 -- it refuses a pool vLLM starts, so a group-aware caller skips it.
+// A model with no KV groups to check keeps it.
+func (m *Model) SettingsCheckedByGroups() (Settings, error) {
+	runs, err := m.KVLayers()
+	if err != nil {
+		return Settings{}, err
+	}
+	return m.settings(0, len(runs) == 0)
+}
+
 // SettingsReserving is Settings with reservedBytes of each rank's HBM set aside before the KV
 // budget is sized (see KVBudgetReserving).
 func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
+	return m.settings(reservedBytes, true)
+}
+
+func (m *Model) settings(reservedBytes int64, startupCheck bool) (Settings, error) {
 	e, err := m.Engine()
 	if err != nil {
 		return Settings{}, err
@@ -97,6 +116,9 @@ func (m *Model) SettingsReserving(reservedBytes int64) (Settings, error) {
 	if e.MaxModelLen.Auto() && s.MaxModelLen == 0 && m.id.defaultWindow > 0 {
 		return Settings{}, fmt.Errorf("kernelmodel: Cannot auto-fit max_model_len: not enough GPU " +
 			"memory available to serve even a single token. Try increasing `gpu_memory_utilization`")
+	}
+	if !startupCheck {
+		return s, nil
 	}
 	if err := checkEnoughKVCacheMemory(b, need, s.MaxModelLen); err != nil {
 		return Settings{}, err

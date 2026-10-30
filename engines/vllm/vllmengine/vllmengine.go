@@ -93,7 +93,8 @@ func open(s engine.Spec) (pool, error) {
 		return pool{}, fmt.Errorf("vllmengine: %s needs %s, which blis-vllm's v0.32.0 engine does not build yet",
 			filepath.Base(path), strings.Join(missing, ", "))
 	}
-	st, err := m.Settings()
+	// The engine runs vLLM's start-up check over the KV cache groups (core/vllm checkKVLayersFit).
+	st, err := m.SettingsCheckedByGroups()
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}

@@ -430,3 +430,55 @@ func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) 
 		t.Errorf("d025 at max_model_len 4096 finished %d of 1 requests", len(tr.Finished))
 	}
 }
+
+// Muse-Spark-Open-816B-A42B's hybrid KV (16 full, 46 sliding-window layers at 2048) is checked
+// at start-up over its groups, as vLLM checks it, not as one full-attention group: a DP8
+// rank on H200 holds a 262,144-token request (a full-attention group at full context and three
+// sliding-window groups at their admission caps), which every layer at full context would not.
+// Each arm runs: H100 RoCE PP2 x TP8 with and without the DSpark drafter, H200 InfiniBand
+// DP8 x EP8, and GB200 TP8 x EP8 and DP8 x EP8 with DSpark over two trays of one NVL72 rack.
+func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
+	Register()
+	for _, s := range []string{"muse-h100-roce-armB.yaml", "muse-h100-roce-armC.yaml",
+		"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark-128k.yaml", "muse-gb200-nvl-tep8.yaml",
+		"muse-gb200-nvl-dep8-dspark.yaml"} {
+		t.Run(s, func(t *testing.T) {
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
+			done, err := prepare(spec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var block struct {
+				Layers []vllm.KVLayerRun `yaml:"kv_layers"`
+			}
+			if err := done.Config.Decode(&block); err != nil {
+				t.Fatal(err)
+			}
+			if groups, err := vllm.KVGroups(block.Layers, false, false); err != nil || len(groups) < 2 {
+				t.Errorf("%d KV groups (%v): want the hybrid model's several", len(groups), err)
+			}
+			tr, err := enginetest.Drive(func() (engine.Engine, error) { return engine.New(spec) },
+				[]enginetest.Arrival{{At: 0, Req: req("a", 4096, 16)}, {At: 5000, Req: req("b", 8192, 8)}},
+				enginetest.Options{Accepted: func(engine.Batch, engine.Scheduled) int { return 2 }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tr.Finished) != 2 {
+				t.Fatalf("finished %d of 2 requests", len(tr.Finished))
+			}
+		})
+	}
+}
+
+// What vLLM refuses to start, the engine refuses: H200 DP8 x EP8 with the DSpark drafter at a
+// 262,144-token window leaves a rank 16,124 blocks, and its full-attention group alone needs
+// cdiv(262144, 16) = 16,384 for one request (get_kv_cache_configs' check,
+// vllm/v1/core/kv_cache_utils.py:2627-2647@5df63a72). The same arm at 131,072 runs (above).
+func TestMuseSparkDeploymentVLLMRefusesIsRefused(t *testing.T) {
+	Register()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h200-ib-dep8-dspark.yaml")}
+	_, err := engine.New(spec)
+	if err == nil || !strings.Contains(err.Error(), "cannot hold one max_model_len 262144 sequence") {
+		t.Errorf("err %v, want vLLM's start-up refusal", err)
+	}
+}
