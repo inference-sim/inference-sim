@@ -171,6 +171,13 @@ func TestPDConformance(t *testing.T) {
 	}{
 		{"prefiller", producer, func(r *engine.Request) { r.RemoteDecode = true }},
 		{"decoder", consumer, func(r *engine.Request) { r.RemotePrefill = true }},
+		// The measured Muse P/D arm runs vLLM's default async scheduling: two batches in flight.
+		{"prefiller async", producer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemoteDecode = true }},
+		{"decoder async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemotePrefill = true }},
+		{"decoder hybrid async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\nkv_layers:\n" +
+			"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
+			"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n",
+			func(r *engine.Request) { r.RemotePrefill = true }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			reqs := []engine.Request{req("a", 40, 6), req("b", 70, 3), req("c", 20, 9), req("d", 90, 4)}
