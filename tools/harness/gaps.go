@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -256,7 +256,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 	}
 
 	// The deployment: the scenario file and everything it names.
-	sc, dep, err := latencykernel.LoadBundle(filepath.Join(cfg.Repos.Scenarios, sw.Scenario))
+	sc, dep, err := blisschemas.LoadBundle(filepath.Join(cfg.Repos.Scenarios, sw.Scenario))
 	if err != nil {
 		cv.sweepGap(sw, "no loadable scenario for the sweep", OwnerKernel, err.Error())
 		return
@@ -376,7 +376,7 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 }
 
 // missingArtifact names the first catalog or registry file the scenario needs and does not
-// find, at the paths the kernel's own loader reads (latencykernel.OpenInputs).
+// find, at the paths the kernel's own loader reads (blis-latency-kernel's OpenInputs).
 func missingArtifact(model, hardware, fabric string, coefficients []string, r kernelmodel.Repos) (path, owner, cause string) {
 	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
 	if p := filepath.Join(r.Catalog, "models", model, "graph.yaml"); !exists(p) {
