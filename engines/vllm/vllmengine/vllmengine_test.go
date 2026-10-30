@@ -482,3 +482,98 @@ func TestMuseSparkDeploymentVLLMRefusesIsRefused(t *testing.T) {
 		t.Errorf("err %v, want vLLM's start-up refusal", err)
 	}
 }
+
+// Muse Spark's P/D arm, 1P1D with TP16 + EP16 on each side over RoCE H100 (neither side at PP, so
+// NIXL's worker accepts it): the production factory gives the prefill pool NIXL as kv_producer
+// and the decode pool NIXL as kv_consumer, from the deployment's pd_transfer and each pool's
+// role. A disaggregated request then prefills on one side, is handed off, pulls on the other and
+// decodes there.
+func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
+	Register()
+	const s = "muse-h100-roce-1p1d.yaml"
+	var engines [2]engine.Engine
+	for i, want := range []string{"kv_producer", "kv_consumer"} {
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s), Pool: i}
+		done, err := prepare(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var block struct {
+			KV struct {
+				Connector string `yaml:"connector"`
+				Role      string `yaml:"kv_role"`
+			} `yaml:"kv_transfer"`
+		}
+		if err := done.Config.Decode(&block); err != nil {
+			t.Fatal(err)
+		}
+		if block.KV.Connector != "NixlConnector" || block.KV.Role != want {
+			t.Fatalf("pool %d's kv_transfer is %+v, want NixlConnector as %s", i, block.KV, want)
+		}
+		if engines[i], err = engine.New(spec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, d := engines[0], engines[1]
+	r := req("a", 8192, 32)
+	pre := r
+	pre.RemoteDecode, pre.MaxOutputTokens = true, 1
+	if err := p.Add(pre, 0); err != nil {
+		t.Fatal(err)
+	}
+	now := engine.Time(0)
+	var held []engine.Handoff
+	for len(held) == 0 {
+		b, err := p.Schedule(now)
+		if err != nil || b.Empty() {
+			t.Fatalf("prefill schedule: %v, empty %v", err, b.Empty())
+		}
+		now += p.StepTime(b)
+		res, err := p.Complete(b.ID, engine.Outcome{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = res.Handoffs
+	}
+	dec := r
+	dec.RemotePrefill = true
+	if err := d.Add(dec, now); err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.Schedule(now)
+	if err != nil || len(b.TransfersStarted) != 1 || b.TransfersStarted[0].Tokens != 8192 {
+		t.Fatalf("decode schedule: %v, transfers %+v, want one pull of 8192 tokens", err, b.TransfersStarted)
+	}
+	now += 5000
+	if err := d.TransferDone(b.TransfersStarted[0].ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.TransferDone(held[0].Transfer, true, now); err != nil {
+		t.Fatal(err)
+	}
+	emitted := 0
+	for steps := 0; emitted < 32 && steps < 200; steps++ {
+		b, err := d.Schedule(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b.Empty() {
+			now += 1000
+			continue
+		}
+		for _, sc := range b.Reqs {
+			if sc.Computed == 0 && sc.Tokens > 1 {
+				t.Fatalf("the decoder computes the prompt itself: %+v", sc)
+			}
+		}
+		now += d.StepTime(b)
+		res, err := d.Complete(b.ID, engine.Outcome{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		emitted += res.Emitted["a"]
+	}
+	if emitted != 32 {
+		t.Fatalf("the decoder emitted %d of 32 tokens", emitted)
+	}
+}

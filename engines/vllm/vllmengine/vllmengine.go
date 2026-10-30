@@ -68,6 +68,10 @@ type pool struct {
 	kvBytes int64
 	engine  yaml.Node
 	pp, dp  int
+	// role is the pool's role and connector the deployment's pd_transfer.connector, which a
+	// prefill or decode pool runs as kv_producer or kv_consumer.
+	role      deployment.Role
+	connector string
 }
 
 // open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
@@ -102,11 +106,17 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, err
 	}
+	shape, err := kernelmodel.ShapeOf(filepath.Base(path), kernelmodel.Repos{
+		Scenarios: filepath.Dir(path), Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+	if err != nil {
+		return pool{}, fmt.Errorf("vllmengine: %w", err)
+	}
 	blocks, kvBytes, err := poolBlocks(m, st)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	return pool{model: m, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1)}, nil
+	return pool{model: m, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
+		role: m.Role(), connector: shape.PDConnector}, nil
 }
 
 // poolBlocks is the KV pool's block count. vLLM sizes the pool over its KV cache groups: the
@@ -258,12 +268,31 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// (vllm/config/vllm.py:644-664@5df63a72), which the catalog's model graph holds.
 		setIfAbsent(&block, "mtp_nextn_predict_layers", fmt.Sprint(n))
 	}
+	if role := kvRoleOf(p.role); role != "" && p.connector != "" {
+		// A P/D pool's kv_transfer_config: the deployment's pd_transfer.connector, and the pool's
+		// role as vLLM's kv_role (a prefill pool produces KV, a decode pool consumes it).
+		kt := yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		setIfAbsent(&kt, "connector", p.connector)
+		setIfAbsent(&kt, "kv_role", role)
+		setNodeIfAbsent(&block, "kv_transfer", &kt)
+	}
 	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
 		// The model's attention layers by the KV cache spec vLLM builds for each, which the
 		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_utils.py:2159@5df63a72).
 		setNodeIfAbsent(&block, "kv_layers", kvLayersNode(runs))
 	}
 	return block
+}
+
+// kvRoleOf is a pool role's kv_role, "" for a pool that runs no P/D connector.
+func kvRoleOf(r deployment.Role) string {
+	switch r {
+	case deployment.RolePrefill:
+		return "kv_producer"
+	case deployment.RoleDecode:
+		return "kv_consumer"
+	}
+	return ""
 }
 
 // kvLayersNode is the kernel's KV layer runs as an engine block's kv_layers.
