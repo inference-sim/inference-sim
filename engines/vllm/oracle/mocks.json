@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/2+025b232da37d",
+  "version": "gpu-mock/3+ea15d51fe3e4",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -206,6 +206,26 @@
       "how": "oracle/run_connector.py only: the kv_transfer_params a P/D proxy hands each side (do_remote_prefill and the remote block ids for a decoder, do_remote_decode for a prefiller) are set on the Request as vLLM's own create_request builds them (tests/v1/kv_connector/unit/utils.py:246-264@5df63a72); the connector reads them unmodified",
       "sites": [
         "run_connector.py:req.kv_transfer_params"
+      ]
+    },
+    {
+      "symbol": "OffloadingConnector scheduler config",
+      "kind": "environment",
+      "how": "oracle/run_offloading.py only: the scenario's VllmConfig is built by vLLM's own config constructors (ModelConfig with the scenario's max_model_len, SchedulerConfig with its policy, long-prefill cap and watermark, CacheConfig with prefix_cache_retention_interval None, dense retention, which core/kv models, and KVTransferConfig naming OffloadingConnector with the scenario's kv_connector_extra_config), the values tests/v1/kv_connector/unit/utils.py:111-180@5df63a72 create_vllm_config fixes; the KV cache groups are vLLM's own FullAttentionSpec and SlidingWindowSpec of the scenario's page, each window tagged with extra_retained_tokens as get_kv_cache_configs tags it (vllm/v1/core/kv_cache_utils.py:2582-2589). The spec is CPUOffloadingSpec (vllm/v1/kv_offload/factory.py:31): TieringOffloadingSpec's scheduler-side manager needs a /dev/shm region (vllm/v1/kv_offload/tiering/spec.py:342-350) and with no secondary tiers forwards every scheduler call to its CPU primary tier, a CPUOffloadingManager (tiering/manager.py:396-417, 569-661, 736-781, 843-873, 912-921), so a scenario stating it is refused, not substituted. Nothing is written into a built object",
+      "sites": []
+    },
+    {
+      "symbol": "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+      "kind": "transport",
+      "how": "oracle/run_offloading.py only: the worker side (OffloadingConnectorWorker, vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:40-323@5df63a72) is the transport mock. On each step's OffloadingConnectorMetadata it follows the worker's protocol: jobs_to_flush are submitted and waited for at once (handle_preemptions, :198-224), the stores the previous step deferred and this step's loads are submitted (start_kv_transfers, :226-238) and this step's stores are deferred to the next step (prepare_store_kv, :240-249). A submitted load completes load_delay steps later and a store store_delay steps later (the scenario's, per request or for all). Completions reach the scheduler as vLLM's own OffloadingWorkerMetadata(completed_jobs={job: 1}) (offloading/common.py:76-104) in the step's KVConnectorOutput.kv_connector_worker_meta, and a completed load's request in finished_recving (worker.py:273-309); the worker reports both as sets, so the mock fixes their order: jobs by job id, requests by request id. The Go side (core/connector/offloading) reports them in the same order",
+      "sites": []
+    },
+    {
+      "symbol": "finished_req_ids iteration order (per-process hash seed)",
+      "kind": "environment",
+      "how": "oracle/run_offloading.py only: the Scheduler's finished_req_ids is a set of request-id strings (vllm/v1/core/sched/scheduler.py:237, 2736), and str hashing is randomised per process (python -I ignores PYTHONHASHSEED), so vLLM's own iteration order over it is not reproducible from run to run. OffloadingConnectorScheduler iterates it to store a finished request's last chunks and to tell the CPU manager the request finished (offloading/scheduler.py:1576-1579, 1889-1896@5df63a72), which orders prepare_store (CPU evictions) and the LRU's recency updates when two or more requests finish between steps. Before each schedule() the runner replaces the attribute with a set holding the same ids that iterates in sorted order; membership and size are unchanged and the scheduler reads it only through iteration and membership. The Go side's offloading connector (core/connector/offloading, added after this mock) iterates the step's finished requests in the same sorted request-id order",
+      "sites": [
+        "run_offloading.py:scheduler.finished_req_ids"
       ]
     }
   ]
