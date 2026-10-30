@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
@@ -33,11 +33,11 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 		if err := writeScenarioVariant(src, dst, pc, nil); err != nil {
 			t.Fatalf("writeScenarioVariant: %v", err)
 		}
-		wantSc, wantDep, err := latencykernel.LoadBundle(src)
+		wantSc, wantDep, err := blisschemas.LoadBundle(src)
 		if err != nil {
 			t.Fatal(err)
 		}
-		gotSc, gotDep, err := latencykernel.LoadBundle(dst)
+		gotSc, gotDep, err := blisschemas.LoadBundle(dst)
 		if err != nil {
 			t.Fatalf("the variant does not load as a scenario: %v", err)
 		}
@@ -108,7 +108,7 @@ func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
 	if err := writeScenarioVariant(src, dst, pc, want); err != nil {
 		t.Fatalf("writeScenarioVariant: %v", err)
 	}
-	_, dep, err := latencykernel.LoadBundle(dst)
+	_, dep, err := blisschemas.LoadBundle(dst)
 	if err != nil {
 		t.Fatal(err)
 	}
