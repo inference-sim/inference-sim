@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-schemas v0.9.2-0.20261030162312-3465d9d16dfc // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261030162906-5ef93d0122f1 // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261030165917-fba40f993f31 // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
