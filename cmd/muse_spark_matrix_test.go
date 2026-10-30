@@ -51,7 +51,7 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 	}
 	sort.Strings(files)
 	refused := map[string]string{
-		"muse-h200-ib-dep8-dspark.yaml": "cannot hold one max_model_len 262144 sequence",
+		"muse-h200-ib-dep8-dspark.yaml": "To serve at least one request with the model's max seq len (262144)",
 	}
 	run := func(name string) (map[string]any, string, error) {
 		args := []string{"run", "--scenarios", dir, "--scenario", name, "--catalog", catalog,
@@ -118,6 +118,11 @@ func TestMuseSparkRunsOnEveryLayoutAndCluster(t *testing.T) {
 		if roce == ib || ib == nvl || roce == nvl {
 			t.Errorf("%s prices alike across clusters: roce %v, ib %v, nvlink %v", layout, roce, ib, nvl)
 		}
+	}
+	// Arm D is arm C with fp8 KV and the OffloadingConnector's 1 TiB CPU tier: its engine moves KV
+	// to and from that tier, priced by the kernel, so it does not price as arm C does.
+	if c, d := tps["muse-h100-roce-armC.yaml"], tps["muse-h100-roce-armD.yaml"]; c == 0 || d == 0 || c == d {
+		t.Errorf("arm D (CPU tier, fp8 KV) prices %v against arm C's %v", d, c)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "muse-h200-ib-dep8-dspark-128k.yaml")); err != nil {
 		t.Error("the runnable 131,072-token H200 DP8 DSpark arm is missing")

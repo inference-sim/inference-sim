@@ -34,3 +34,11 @@ pools:
         method: dspark
         num_spec_tokens: 7
         draft_model: muse-spark-open-dspark
+# Arm D's CPU tier: vLLM's OffloadingConnector, LRU, 512 GiB of host DRAM on each of the engine's
+# two nodes. A tier's bytes are the engine's cpu_bytes_to_use, which vLLM divides among the workers'
+# copies (vllm/v1/kv_offload/cpu/spec.py:103-121), so the PP2 x TP8 engine states both nodes': 1 TiB.
+offload:
+  connector: OffloadingConnector
+  eviction_policy: lru
+  tiers:
+    - {tier: cpu_dram, bytes: 1099511627776}

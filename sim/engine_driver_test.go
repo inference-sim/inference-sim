@@ -417,3 +417,59 @@ func TestEngineDriver_ARequestStillInThePipelineAtTheHorizonIsStillQueued(t *tes
 		})
 	}
 }
+
+// unevenStages is a FIFO whose batches split by stage as listed, in order: batch i takes
+// splits[i] (the last entry repeats).
+type unevenStages struct {
+	*enginetest.FIFO
+	splits [][]engine.Duration
+	n      int
+}
+
+func (u *unevenStages) StepTime(b engine.Batch) engine.Duration {
+	var t engine.Duration
+	for _, s := range u.split() {
+		t += s
+	}
+	return t
+}
+
+func (u *unevenStages) split() []engine.Duration { return u.splits[min(u.n, len(u.splits)-1)] }
+
+func (u *unevenStages) StageTimes(b engine.Batch) []engine.Duration {
+	s := u.split()
+	u.n++
+	return append([]engine.Duration(nil), s...)
+}
+
+// A decode under pipeline parallelism samples from the step pp batches back: vLLM's non-last rank
+// waits on that step's sampled tokens before its forward (pp_utils.py:125-152@5df63a72). With
+// stage splits [8,20], [1,8], [20,8] and two stages, batch 2 runs batch 0's request and so may
+// not start before batch 0 leaves the last stage at 28: it ends at 56, not 44.
+func TestEngineDriver_PipelinedDecodeWaitsForItsPreviousToken(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 3, StepBaseUs: 1, Stages: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	var ends []int64
+	for _, id := range []string{"a", "b", "a"} {
+		_, e := d.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: id, Tokens: 1}}}, 0)
+		ends = append(ends, e)
+	}
+	if want := []int64{28, 36, 56}; ends[0] != want[0] || ends[1] != want[1] || ends[2] != want[2] {
+		t.Fatalf("batch ends %v, want %v (batch 2 waits for batch 0's token)", ends, want)
+	}
+	// A batch with none of the earlier batch's requests is not held back.
+	d2 := NewEngineDriver(&unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}},
+		EngineDriverConfig{Horizon: 1 << 40})
+	var e2 []int64
+	for _, id := range []string{"a", "b", "c"} {
+		_, e := d2.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: id, Tokens: 1}}}, 0)
+		e2 = append(e2, e)
+	}
+	if e2[2] != 44 {
+		t.Fatalf("an unrelated third batch ends at %d, want 44", e2[2])
+	}
+}

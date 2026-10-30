@@ -33,7 +33,7 @@ The H100 files also carry the measured arms by name:
 | `armC` | B + DSpark |
 | `armB1M` | B at 1,048,576 tokens |
 | `armW` | TP16 x EP16 |
-| `armD` | C + fp8 KV cache |
+| `armD` | C + fp8 KV cache + vLLM's OffloadingConnector with a 512 GiB CPU tier per node (1 TiB for the two-node engine) |
 
 H100 and H200 serve the NVFP4 experts with Marlin (`moe_backend: marlin`). That is the only Hopper backend Muse's MoE has.
 

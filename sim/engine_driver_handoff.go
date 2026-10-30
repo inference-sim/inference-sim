@@ -41,6 +41,10 @@ func (d *EngineDriver) AddRemote(req *Request, now int64) {
 // startTransfers reports the pulls a schedule at now started to the host.
 func (d *EngineDriver) startTransfers(ts []engine.Transfer, now int64) {
 	for _, t := range ts {
+		if t.Tier != "" {
+			d.startTierTransfer(t, now)
+			continue
+		}
 		req := d.remote[t.Request]
 		if t.Kind != engine.TransferLoad || req == nil {
 			panic(fmt.Sprintf("engine driver: the engine started a %s transfer for %q, which is not a waiting handoff",
@@ -131,4 +135,40 @@ func (d *EngineDriver) noteHandoffs(hs []engine.Handoff) {
 		}
 		d.holds[h.ID] = h
 	}
+}
+
+// startTierTransfer prices an engine's load from or store to an offload tier (Transfer.Tier,
+// blis-vllm's OffloadingConnector) by the engine's own pricer, and reports it done when it lands.
+// The tier's transfers run one at a time on their own stream (vLLM's offload handler), so each
+// starts when the one before it lands. An engine that starts one and prices none is refused.
+func (d *EngineDriver) startTierTransfer(t engine.Transfer, now int64) {
+	p, ok := d.eng.(interface {
+		TransferTime(engine.Transfer) (engine.Duration, bool)
+	})
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine started a %s transfer to tier %q, and prices none", t.Kind, t.Tier))
+	}
+	dur, ok := p.TransferTime(t)
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine started a %s transfer to tier %q, and prices none", t.Kind, t.Tier))
+	}
+	start := max(now, d.tierFreeAt)
+	d.tierFreeAt = start + int64(dur)
+	d.schedule(&driverTierTransferDone{at: d.tierFreeAt, id: t.ID})
+}
+
+// driverTierTransferDone reports an offload-tier transfer landed. Transfer completions run after
+// the instant's arrivals and before its steps (the engine contract's same-instant order).
+type driverTierTransferDone struct {
+	at int64
+	id engine.TransferID
+}
+
+func (e *driverTierTransferDone) Timestamp() int64 { return e.at }
+func (e *driverTierTransferDone) Priority() int    { return PriorityQueued }
+func (e *driverTierTransferDone) run(d *EngineDriver) {
+	if err := d.eng.TransferDone(e.id, true, e.at); err != nil {
+		panic(fmt.Sprintf("engine driver: TransferDone(%d) of a tier transfer: %v", e.id, err))
+	}
+	d.kick(e.at)
 }

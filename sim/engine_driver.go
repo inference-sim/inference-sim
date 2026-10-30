@@ -82,6 +82,11 @@ type EngineDriver struct {
 	// splits its steps by stage (engine.Pipelined); nil for one stage, where gpuFreeAt is the
 	// one device's.
 	stageFreeAt []int64
+	// tierFreeAt is when the engine's offload-tier stream finishes the transfer it holds.
+	tierFreeAt int64
+	// recentStages are the last pipelined batches scheduled, newest last, at most one per stage:
+	// each one's requests and when it leaves the last stage (timeBatch's T-pp dependency).
+	recentStages []stagedBatch
 	// pipelineDrainsAt is when the last batch scheduled leaves the last stage, under a
 	// pipelined engine.
 	pipelineDrainsAt int64
@@ -133,6 +138,12 @@ type driverReq struct {
 type driverBatch struct {
 	b   engine.Batch
 	end int64
+}
+
+// stagedBatch is a pipelined batch's requests and when it left the last stage.
+type stagedBatch struct {
+	reqs map[string]bool
+	end  int64
 }
 
 // NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
@@ -614,6 +625,21 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 		d.stageFreeAt = make([]int64, len(stages))
 	}
 	start = max(now, d.stageFreeAt[0])
+	// A decode in step T samples from step T-pp's output: vLLM's runner reschedules a decode pp
+	// steps later (async_scheduler.py:52-57@5df63a72), and a non-last rank's forward waits on
+	// that step's sampled-token broadcast (update_pp_decode_requests, model_runner.py:1171-1179;
+	// get_prev_sampled_outputs' wait_event, pp_utils.py:125-152). So the batch pp steps back
+	// gates this one's first stage when it ran any of this batch's requests.
+	pp := len(stages)
+	if n := len(d.recentStages); n >= pp {
+		prev := d.recentStages[n-pp]
+		for _, r := range b.Reqs {
+			if prev.reqs[r.ID] {
+				start = max(start, prev.end)
+				break
+			}
+		}
+	}
 	at := start
 	for i, st := range stages {
 		at = max(at, d.stageFreeAt[i]) + max(st, 1)
@@ -623,6 +649,14 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 	// whole pipeline drains.
 	d.gpuFreeAt = d.stageFreeAt[0]
 	d.pipelineDrainsAt = at
+	ids := make(map[string]bool, len(b.Reqs))
+	for _, r := range b.Reqs {
+		ids[r.ID] = true
+	}
+	d.recentStages = append(d.recentStages, stagedBatch{reqs: ids, end: at})
+	if len(d.recentStages) > pp {
+		d.recentStages = d.recentStages[len(d.recentStages)-pp:]
+	}
 	return start, at
 }
 
