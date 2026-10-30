@@ -6,6 +6,6 @@
 # run the script, and run `go test ./...`: a renamed chip or coefficient is supposed to
 # break the fixtures that name it.
 # TEMPORARY: the catalog line pins the pushed head of inference-sim/blis-catalog#47 (Muse Spark), until it is released.
-catalog  https://github.com/inference-sim/blis-catalog  pr47    46405232ed4e4cd4449212e61d212b4a358be380  hardware/*.yaml networks/*.yaml devices/storage.yaml models/*/graph.yaml
+catalog  https://github.com/inference-sim/blis-catalog  pr47    c85ee78379483854b06995bc5e51b38146612ed8  hardware/*.yaml networks/*.yaml devices/storage.yaml models/*/graph.yaml
 # TEMPORARY: the registry line pins the pushed head of inference-sim/blis-registry#62 (Muse Spark), until it is released.
-registry https://github.com/inference-sim/blis-registry pr62    1dbdd5d208bc6ddc7332eb502f9c7dfaf9ca793c  coefficients/*.yaml
+registry https://github.com/inference-sim/blis-registry pr62    474f6b79c451438b6768df98a981db62d069e42d  coefficients/*.yaml
