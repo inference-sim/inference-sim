@@ -34,8 +34,11 @@ jobs:
       # distribute, so it is vetted rather than run, as it was in blis-latency-kernel.
       - name: go vet (the kernel tests' scoring suite)
         run: go vet -tags scoring ./kerneltests/...
+      # kerneltests runs about 330s under -race on a hosted runner, and a slow runner has taken
+      # it past go test's default 10m per-package timeout with every test passing; the timeout
+      # is raised so it fails on a test, not on the runner's speed.
       - name: go test
-        run: go test -race ./...
+        run: go test -race -timeout 30m ./...
       # The kernel tests that read the kernel's unexported state run inside the kernel package
       # this module pins (kerneltests/_inpackage).
       - name: kernel tests in the kernel package
