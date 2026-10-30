@@ -63,7 +63,7 @@ func TestEngineDriver_RequestFinishedInABatchLeavesTheBooks(t *testing.T) {
 		if _, ok := m.Requests["a"]; ok {
 			t.Errorf("alone %v: a keeps a request row", alone)
 		}
-		if got := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests; got != len(reqs) {
+		if got := inv1Accounted(m); got != len(reqs) {
 			t.Errorf("alone %v: INV-1 terms sum to %d, want %d", alone, got, len(reqs))
 		}
 		if !alone && (m.CompletedRequests != 1 || done["b"] != 1) {
