@@ -7,4 +7,5 @@
 # break the fixtures that name it.
 # TEMPORARY: the catalog line pins the pushed head of inference-sim/blis-catalog#47 (Muse Spark), until it is released.
 catalog  https://github.com/inference-sim/blis-catalog  pr47    eb675efbfad262c2d23b3d50a7281344c775b471  hardware/*.yaml networks/*.yaml devices/storage.yaml models/*/graph.yaml
-registry https://github.com/inference-sim/blis-registry v0.2.0  7f6662d7188dc3dc873a37623e1f7bbfe1d6081b  coefficients/*.yaml
+# TEMPORARY: the registry line pins the pushed head of inference-sim/blis-registry#62 (Muse Spark), until it is released.
+registry https://github.com/inference-sim/blis-registry pr62    6fee96fc07c945ed3873cf60aae21ad1ecd4f89e  coefficients/*.yaml

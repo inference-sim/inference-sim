@@ -5,4 +5,4 @@
 | Engine behavior: [vLLM](https://github.com/vllm-project/vllm/tree/v0.31.0) | `v0.31.0` | `db9527a46873` | `EngineBehaviourVersion`, `EngineBehaviourCommit` in `new.go` |
 | Interfaces and document types: [blis-schemas](https://github.com/inference-sim/blis-schemas/tree/v0.8.1-0.20261030013641-b796f8db50ce) | `v0.8.1-0.20261030013641-b796f8db50ce` | — | `go.mod` |
 | Declared facts: [blis-catalog](https://github.com/inference-sim/blis-catalog/tree/eb675efbfad262c2d23b3d50a7281344c775b471) | `pr47` | `eb675efbfad2` | `testdata/upstream.lock` |
-| Coefficients: [blis-registry](https://github.com/inference-sim/blis-registry/tree/7f6662d7188dc3dc873a37623e1f7bbfe1d6081b) | `v0.2.0` | `7f6662d7188d` | `testdata/upstream.lock` |
+| Coefficients: [blis-registry](https://github.com/inference-sim/blis-registry/tree/6fee96fc07c945ed3873cf60aae21ad1ecd4f89e) | `pr62` | `6fee96fc07c9` | `testdata/upstream.lock` |

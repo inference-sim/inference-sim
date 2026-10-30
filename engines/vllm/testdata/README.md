@@ -6,8 +6,8 @@ inference-sim's `testdata/` at commit `ca532abca209af41425c007974a5f3ef336f5981`
 
 - `catalog/`: blis-catalog at the commit in `catalog/.upstream-commit` (TEMPORARY: the pushed
   head of inference-sim/blis-catalog#47, until it is released);
-- `registry/`: blis-registry at the commit in `registry/.upstream-commit`
-  (`7f6662d7188dc3dc873a37623e1f7bbfe1d6081b`, the v0.2.0 release);
+- `registry/`: blis-registry at the commit in `registry/.upstream-commit` (TEMPORARY: the
+  pushed head of inference-sim/blis-registry#62, until it is released);
 - `scenarios/`: inference-sim's own scenario fixtures (blis-schemas Scenario + Deployment
   documents written for its tests).
 

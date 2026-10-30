@@ -1,5 +1,5 @@
-github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030031437-e0377f3f6e79 h1:AkQouYAN9kF8cyI8HHwh0//tCN3u5luj8v5JXkrDLPs=
-github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030031437-e0377f3f6e79/go.mod h1:USc6uRxfiatuzgsOHuSsoXv8n6c3Ele7dggzPbYjfE8=
+github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030045702-e5e5e7feba66 h1:7HZ9s+hpob73EXFay52w6AmSUcUiZSkR69oCX1XJGJI=
+github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030045702-e5e5e7feba66/go.mod h1:USc6uRxfiatuzgsOHuSsoXv8n6c3Ele7dggzPbYjfE8=
 github.com/inference-sim/blis-schemas v0.8.1-0.20261030013641-b796f8db50ce h1:0BOI/+Cq5sCbaj4IM2mcuF9EoeY5eduV6CB12gD75Ak=
 github.com/inference-sim/blis-schemas v0.8.1-0.20261030013641-b796f8db50ce/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
