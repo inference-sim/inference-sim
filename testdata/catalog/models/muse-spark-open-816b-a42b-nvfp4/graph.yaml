@@ -1,0 +1,507 @@
+kind: ModelGraph
+name: muse-spark-open-816b-a42b-nvfp4
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 439857095414fb030946020aea144b8d3545ce95b704893b341548db2e466567
+  deriver_version: 1
+global:
+  hidden_size: 8192
+  vocab_size: 202048
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: MuseSparkForConditionalGeneration
+  context_window: 1048576
+  pipeline_boundary_bytes_per_token: 32768
+layer_kinds:
+- id: swa_moe_bf16
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: qkv_gate_proj
+    n: 18432
+    k: 8192
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 36864
+  - op: Attention
+    kind: swa
+    n_q: 128
+    n_kv: 16
+    d_h: 64
+    kv_heads_not_replicated: true
+    window: 2048
+  - op: Elementwise
+    role: o_norm_gate
+    bytes_per_token: 49152
+  - op: GEMM
+    role: o_proj
+    n: 8192
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 256
+    k: 8192
+    tp: replicated
+    weight_dtype: fp32
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 4096
+    k: 8192
+    tp: replicated
+    sharded_at_decode: &id001
+      capability_family: 10
+      max_tokens: 256
+  - op: Elementwise
+    role: pre_expert_norm
+    bytes_per_token: 16384
+    tp: replicated
+  - op: GroupedGEMM
+    role: experts
+    n: 4096
+    k: 8192
+    experts: 256
+    top_k: 8
+    latent_size: 4096
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_route_rows
+    emit: tensor_parallel_without_expert_parallel
+    bytes_per_token: 65536
+  - op: Elementwise
+    role: post_expert_norm
+    bytes_per_token: 73728
+    tp: replicated
+  - op: AllReduce
+    role: moe_combine
+    emit: expert_parallel_without_dispatch
+    bytes_per_token: 8192
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 8192
+    k: 4096
+    tp: replicated
+    sharded_at_decode:
+      capability_family: 10
+      max_tokens: 256
+      min_tokens_across_nodes: 32
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+- id: full_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: qkv_gate_proj
+    n: 18432
+    k: 8192
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 36864
+  - op: Attention
+    kind: gqa
+    n_q: 128
+    n_kv: 16
+    d_h: 64
+    kv_heads_not_replicated: true
+  - op: Elementwise
+    role: o_norm_gate
+    bytes_per_token: 49152
+  - op: GEMM
+    role: o_proj
+    n: 8192
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 256
+    k: 8192
+    tp: replicated
+    weight_dtype: fp32
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 4096
+    k: 8192
+    tp: replicated
+    sharded_at_decode: *id001
+  - op: Elementwise
+    role: pre_expert_norm
+    bytes_per_token: 16384
+    tp: replicated
+  - op: GroupedGEMM
+    role: experts
+    n: 4096
+    k: 8192
+    experts: 256
+    top_k: 8
+    latent_size: 4096
+    weight_dtype: nvfp4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_route_rows
+    emit: tensor_parallel_without_expert_parallel
+    bytes_per_token: 65536
+  - op: Elementwise
+    role: post_expert_norm
+    bytes_per_token: 73728
+    tp: replicated
+  - op: AllReduce
+    role: moe_combine
+    emit: expert_parallel_without_dispatch
+    bytes_per_token: 8192
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 8192
+    k: 4096
+    tp: replicated
+    sharded_at_decode:
+      capability_family: 10
+      max_tokens: 256
+      min_tokens_across_nodes: 32
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+- id: swa_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: qkv_gate_proj
+    n: 18432
+    k: 8192
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 36864
+  - op: Attention
+    kind: swa
+    n_q: 128
+    n_kv: 16
+    d_h: 64
+    kv_heads_not_replicated: true
+    window: 2048
+  - op: Elementwise
+    role: o_norm_gate
+    bytes_per_token: 49152
+  - op: GEMM
+    role: o_proj
+    n: 8192
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 256
+    k: 8192
+    tp: replicated
+    weight_dtype: fp32
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 4096
+    k: 8192
+    tp: replicated
+    sharded_at_decode: *id001
+  - op: Elementwise
+    role: pre_expert_norm
+    bytes_per_token: 16384
+    tp: replicated
+  - op: GroupedGEMM
+    role: experts
+    n: 4096
+    k: 8192
+    experts: 256
+    top_k: 8
+    latent_size: 4096
+    weight_dtype: nvfp4
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_route_rows
+    emit: tensor_parallel_without_expert_parallel
+    bytes_per_token: 65536
+  - op: Elementwise
+    role: post_expert_norm
+    bytes_per_token: 73728
+    tp: replicated
+  - op: AllReduce
+    role: moe_combine
+    emit: expert_parallel_without_dispatch
+    bytes_per_token: 8192
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 8192
+    k: 4096
+    tp: replicated
+    sharded_at_decode:
+      capability_family: 10
+      max_tokens: 256
+      min_tokens_across_nodes: 32
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+- id: full_moe_bf16
+  nodes:
+  - op: Elementwise
+    role: input_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: qkv_gate_proj
+    n: 18432
+    k: 8192
+  - op: Elementwise
+    role: qk_norm_rope
+    bytes_per_token: 36864
+  - op: Attention
+    kind: gqa
+    n_q: 128
+    n_kv: 16
+    d_h: 64
+    kv_heads_not_replicated: true
+  - op: Elementwise
+    role: o_norm_gate
+    bytes_per_token: 49152
+  - op: GEMM
+    role: o_proj
+    n: 8192
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+    bytes_per_token: 98304
+    tp: replicated
+  - op: GEMM
+    role: router
+    n: 256
+    k: 8192
+    tp: replicated
+    weight_dtype: fp32
+  - op: GEMM
+    role: routed_expert_down_proj
+    n: 4096
+    k: 8192
+    tp: replicated
+    sharded_at_decode: *id001
+  - op: Elementwise
+    role: pre_expert_norm
+    bytes_per_token: 16384
+    tp: replicated
+  - op: GroupedGEMM
+    role: experts
+    n: 4096
+    k: 8192
+    experts: 256
+    top_k: 8
+    latent_size: 4096
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: moe_route_rows
+    emit: tensor_parallel_without_expert_parallel
+    bytes_per_token: 65536
+  - op: Elementwise
+    role: post_expert_norm
+    bytes_per_token: 73728
+    tp: replicated
+  - op: AllReduce
+    role: moe_combine
+    emit: expert_parallel_without_dispatch
+    bytes_per_token: 8192
+  - op: GEMM
+    role: routed_expert_up_proj
+    n: 8192
+    k: 4096
+    tp: replicated
+    sharded_at_decode:
+      capability_family: 10
+      max_tokens: 256
+      min_tokens_across_nodes: 32
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+stack:
+  prologue:
+  - swa_moe_bf16
+  pattern:
+  - full_moe
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  repeat: 15
+  epilogue:
+  - full_moe_bf16
+modality: text_decoder_of_multimodal
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 202048
+  row_bytes: 16384
+  rows_per_token: 1
+  out_bytes_per_token: 16384
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+head:
+- op: Elementwise
+  role: final_norm
+  bytes_per_token: 98304
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 202048
+  k: 8192
+  tp: column

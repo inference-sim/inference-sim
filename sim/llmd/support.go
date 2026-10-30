@@ -33,6 +33,9 @@ var supported = map[string]bool{
 	"label-selector-filter":            true,
 	"topology-affinity-filter":         true,
 	"topology-stamp-handler":           true,
+	// Its TTFT load gate reads the in-flight load (inflight-load-producer) on its default source;
+	// the fork refuses the latency-predictor source.
+	"prefix-cache-affinity-filter": true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,

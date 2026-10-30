@@ -208,6 +208,26 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/gemm/vllm/0.27.1/gemm_perf.parquet (NVIDIA B200), 35,890 nvfp4 rows over 74 token counts, kernel FlashInferCuteDslNvFp4LinearKernel", role: primary}
       rationale: >
         The token count at which the ramp reaches half its asymptote, so it sets how fast a widening batch approaches peak. Fitted jointly with gemm_eps_max_nvfp4 on the same envelope; residual 0.0331.
+  - gemm_eps_max_w4a16_mxfp4_grouped:
+      value: 0.115
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
+      rationale: >
+        Asymptotic fraction of this part's dense BF16 peak (2250 TFLOPS) that vLLM's Marlin MXFP4 W4A16 grouped GEMM reaches. On this part stock v0.31.0 does NOT select Marlin for MXFP4 experts (CutlassExpertsMxfp4, TRTLLM or DeepGEMM), but it DOES run Kimi-K2.5's WNA16 int4 experts on Marlin on Blackwell (int_wna16.py:132-141; VLLM_USE_FLASHINFER_MOE_INT4 defaults to 0, envs.py:221), so apply this where the deployment's MoE backend is Marlin W4A16 (blis-registry#51 part 2). Marlin dequantizes the four-bit weights in registers and multiplies against BF16 activations with mma.sync, so its rate is a fraction of the BF16 peak, not of an FP8 or FP4 one. Fitted with gemm_m_half_w4a16_mxfp4_grouped under the kernel's routed-expert composition -- the SM half, over the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp; fitted at tp = ep = 1), summed with the distinct experts' stored weight bytes (0.53125 B/weight, E8M0 scales included) at BwPeak x hbm_derate -- so the ramp is what remains once the kernel's own memory half is charged. Geometric error 1.304x (signed 0.845); held out on vLLM's int4 Marlin MoE (hidden 7168, inter 2048, top-8 of 384, group 128; 27 token counts) at 1.275x, signed 0.969. COUPLED TO THE CONSUMER'S ROUTED TERM, as checked against blis-latency-kernel#44 (483f6aa): compute and memory SUMMED; the ramp evaluated at the step's token count; compute at the BF16 peak; memory as ExpertsTouched experts' stored bytes at BwPeak x hbm_derate; imbalance and SM derate 1 (balanced rows, no concurrent fetch); FLOPs the rank's own (#44 divides routed FLOPs by tp on this ramp). #44 also scales routed FLOPs and bytes by Marlin's round-up of inter / tp to a multiple of 128 (V4.1 at TP8: 288 -> 384); fitted at tp 1, where that pad is 1, the fit has not checked it -- it is the consumer's addition. A change to any of those -- sum versus max, the ramp's argument, the byte count -- needs a refit. The bytes are blis-schemas v0.3.0's StoredBytes for MXFP4 (0.5 + 1/32), which #44 charges; a consumer charging payload only (0.5, blis-latency-kernel main e9cf217) would need 0.115 / 58. vLLM's Python side changed since 0.25.0 too: #48144 sets the M used for Marlin's block-size choice to ceil(M x local / global experts) under EP -- inert at ep 1, where this is fitted, but the 0.25.0 rows at ep > 1 may not describe v0.31.0 wherever it changes the chosen block size. Applies to the routed-expert term only; a dense MXFP4 linear runs a different Marlin kernel and is not measured. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_m_half_w4a16_mxfp4_grouped:
+      value: 56
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [b200]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b200_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
+      rationale: >
+        The step token count at which the Marlin MXFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_mxfp4_grouped over 27 token counts; the kernel evaluates it at the step's token count, as it does every ramp. Reproduce with scripts/fit_marlin_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.963
       units: dimensionless
@@ -360,6 +380,26 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/gemm/vllm/0.27.1/gemm_perf.parquet (NVIDIA B300), 35,890 nvfp4 rows over 74 token counts, kernel FlashInferCuteDslNvFp4LinearKernel", role: primary}
       rationale: >
         The token count at which the ramp reaches half its asymptote, so it sets how fast a widening batch approaches peak. Fitted jointly with gemm_eps_max_nvfp4 on the same envelope; residual 0.0253.
+  - gemm_eps_max_w4a16_mxfp4_grouped:
+      value: 0.120
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
+      rationale: >
+        Asymptotic fraction of this part's dense BF16 peak (2250 TFLOPS) that vLLM's Marlin MXFP4 W4A16 grouped GEMM reaches. On this part stock v0.31.0 does NOT select Marlin for MXFP4 experts (CutlassExpertsMxfp4, TRTLLM or DeepGEMM), but it DOES run Kimi-K2.5's WNA16 int4 experts on Marlin on Blackwell (int_wna16.py:132-141; VLLM_USE_FLASHINFER_MOE_INT4 defaults to 0, envs.py:221), so apply this where the deployment's MoE backend is Marlin W4A16 (blis-registry#51 part 2). Marlin dequantizes the four-bit weights in registers and multiplies against BF16 activations with mma.sync, so its rate is a fraction of the BF16 peak, not of an FP8 or FP4 one. Fitted with gemm_m_half_w4a16_mxfp4_grouped under the kernel's routed-expert composition -- the SM half, over the rank's OWN routed FLOPs (tokens x top_k / ep x 6 x hidden x inter / tp; fitted at tp = ep = 1), summed with the distinct experts' stored weight bytes (0.53125 B/weight, E8M0 scales included) at BwPeak x hbm_derate -- so the ramp is what remains once the kernel's own memory half is charged. Geometric error 1.290x (signed 0.852); held out on vLLM's int4 Marlin MoE (hidden 7168, inter 2048, top-8 of 384, group 128; 27 token counts) at 1.265x, signed 0.973. COUPLED TO THE CONSUMER'S ROUTED TERM, as checked against blis-latency-kernel#44 (483f6aa): compute and memory SUMMED; the ramp evaluated at the step's token count; compute at the BF16 peak; memory as ExpertsTouched experts' stored bytes at BwPeak x hbm_derate; imbalance and SM derate 1 (balanced rows, no concurrent fetch); FLOPs the rank's own (#44 divides routed FLOPs by tp on this ramp). #44 also scales routed FLOPs and bytes by Marlin's round-up of inter / tp to a multiple of 128 (V4.1 at TP8: 288 -> 384); fitted at tp 1, where that pad is 1, the fit has not checked it -- it is the consumer's addition. A change to any of those -- sum versus max, the ramp's argument, the byte count -- needs a refit. The bytes are blis-schemas v0.3.0's StoredBytes for MXFP4 (0.5 + 1/32), which #44 charges; a consumer charging payload only (0.5, blis-latency-kernel main e9cf217) would need 0.120 / 57. vLLM's Python side changed since 0.25.0 too: #48144 sets the M used for Marlin's block-size choice to ceil(M x local / global experts) under EP -- inert at ep 1, where this is fitted, but the 0.25.0 rows at ep > 1 may not describe v0.31.0 wherever it changes the chosen block size. Applies to the routed-expert term only; a dense MXFP4 linear runs a different Marlin kernel and is not measured. Reproduce with scripts/fit_marlin_grouped_ramp.py.
+  - gemm_m_half_w4a16_mxfp4_grouped:
+      value: 54
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [b300]}
+      sources:
+        - {kind: model, cite: "NVIDIA AISimulate systems/data/b300_sxm/moe/vllm/0.25.0/moe_perf.parquet, vllm_compressedtensorsw4a4mxfp4moe_marlin_marlinexperts_situ_as_silu, moe_dtype w4a16_mxfp4, balanced, moe_tp 1 / moe_ep 1, 27 token counts (hidden 3584, inter 3072, top-16 of 896)", role: primary}
+      rationale: >
+        The step token count at which the Marlin MXFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_mxfp4_grouped over 27 token counts; the kernel evaluates it at the step's token count, as it does every ramp. Reproduce with scripts/fit_marlin_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.963
       units: dimensionless
@@ -685,6 +725,26 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/gemm/vllm/0.25.0/gemm_perf.parquet via gemm_m_half_bf16", role: primary}
       rationale: >
         ASSUMED: this part's measured cuBLAS BF16 knee (gemm_m_half_bf16), paired with gemm_eps_max_w8a16_mxfp8 so the two describe one ramp rather than an asymptote from one kernel and a knee from another. The knee is where a GEMM stops being operand-starved; Marlin's grouped form measures 15 tokens on this part (gemm_m_half_w4a16_mxfp4_grouped), against 170 here, so the dense Marlin knee is unmeasured within that range. DIRECTION: NOT a bound. A knee above Marlin's own lowers the ramp at mid M, so this half is likely pessimistic there while the asymptote is optimistic at large M; the two partly offset and neither direction is established. At decode M the kernel's HBM term -- the FP8 weight read -- dominates either way. TO REPLACE IT: the same MarlinMxfp8LinearKernel sweep as the asymptote; both come from one fit.
+  - gemm_eps_max_w4a16_nvfp4_grouped:
+      value: 0.237
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+      rationale: >
+        Asymptotic fraction of the dense BF16 peak vLLM's Marlin NVFP4 W4A16 grouped GEMM reaches on this part (FP8 E4M3 scales per 16, 0.5625 stored B/weight). Fitted with gemm_m_half_w4a16_nvfp4_grouped through the kernel's MoE composition: a shared expert priced as a dense max(SM, HBM) on gemm_*_w8a16_mxfp8 at 1.03125 B/weight plus the routed SM + HBM sum, on every second token count; held out on the rest: median 4.8%, signed +4.4%, max 24.6% (n 16), against the MXFP4 ramp the kernel otherwise falls back to (0.282 / 15) at median 11.1%, signed -3.3%, max 18.7% (n 16). The vLLM nightly cd10ed6 these rows ran has v0.31.0's Marlin MoE kernel byte for byte (scripts/fit_marlin_nvfp4_grouped_ramp.py states the diff). One geometry, natural routing, priced at imbalance 1. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
+  - gemm_m_half_w4a16_nvfp4_grouped:
+      value: 24
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h100]}
+      sources:
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+      rationale: >
+        The token count at which the Marlin NVFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_nvfp4_grouped. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.998
       units: dimensionless
@@ -869,6 +929,26 @@ coefficients:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/gemm/vllm/0.25.0/gemm_perf.parquet via gemm_m_half_bf16", role: primary}
       rationale: >
         ASSUMED: this part's measured cuBLAS BF16 knee (gemm_m_half_bf16), paired with gemm_eps_max_w8a16_mxfp8 so the two describe one ramp rather than an asymptote from one kernel and a knee from another. The knee is where a GEMM stops being operand-starved; Marlin's grouped form measures 26 tokens on this part (gemm_m_half_w4a16_mxfp4_grouped), against 110 here, so the dense Marlin knee is unmeasured within that range. DIRECTION: NOT a bound. A knee above Marlin's own lowers the ramp at mid M, so this half is likely pessimistic there while the asymptote is optimistic at large M; the two partly offset and neither direction is established. At decode M the kernel's HBM term -- the FP8 weight read -- dominates either way. TO REPLACE IT: the same MarlinMxfp8LinearKernel sweep as the asymptote; both come from one fit.
+  - gemm_eps_max_w4a16_nvfp4_grouped:
+      value: 0.230
+      units: dimensionless
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+      rationale: >
+        Asymptotic fraction of the dense BF16 peak vLLM's Marlin NVFP4 W4A16 grouped GEMM reaches on this part (FP8 E4M3 scales per 16, 0.5625 stored B/weight). Fitted with gemm_m_half_w4a16_nvfp4_grouped through the kernel's MoE composition: a shared expert priced as a dense max(SM, HBM) on gemm_*_w8a16_mxfp8 at 1.03125 B/weight plus the routed SM + HBM sum, on every second token count; held out on the rest: median 3.5%, signed -1.1%, max 37.3% (n 16), against the MXFP4 ramp the kernel otherwise falls back to (0.245 / 26) at median 9.3%, signed -9.3%, max 21.1% (n 16). The vLLM nightly cd10ed6 these rows ran has v0.31.0's Marlin MoE kernel byte for byte (scripts/fit_marlin_nvfp4_grouped_ramp.py states the diff). One geometry, natural routing, priced at imbalance 1. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
+  - gemm_m_half_w4a16_nvfp4_grouped:
+      value: 61
+      units: tokens
+      method: measured
+      fitted: true
+      scope: {hardware: [h200]}
+      sources:
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+      rationale: >
+        The token count at which the Marlin NVFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_nvfp4_grouped. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
   - moe_routing_imbalance_median:
       value: 0.999
       units: dimensionless

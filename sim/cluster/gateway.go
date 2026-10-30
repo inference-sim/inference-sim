@@ -377,6 +377,13 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 		// A NIXL prefill engine keeps the finished prefill KV for the decode pull (INV-PD-7).
 		RetainKVOnFinish: cs.config.PDPrefillKVHold,
 	}
+	if cs.config.PDPrefillSamplesFirstToken && len(req.OutputTokens) > 0 {
+		// The P/D proxy's prefill leg is max_tokens 1 (vLLM's toy_proxy_server.py:167-169; llm-d's
+		// CapSingleToken): the prefiller samples the request's first output token, which an engine
+		// through the contract samples from the output it is assigned.
+		prefillSubReq.OutputTokens = req.OutputTokens[:1]
+		prefillSubReq.MaxOutputLen = 1
+	}
 	parent.PrefillSubReq = prefillSubReq
 	cs.pendingPrefillCompletions[prefillSubReq.ID] = parent.ID
 	heap.Push(&cs.clusterEvents, clusterEventEntry{

@@ -1,0 +1,41 @@
+# muse-h100-roce-armC behind the llm-d router configuration of internal deployment measurements
+# (router/precise-affinity-flow-control.yaml): precise prefix-cache routing from the engines' KV
+# events, a prefix-cache affinity gate on the in-flight load, a token-load scorer and flow control.
+# Run it with --num-instances 2 or more: the nodes hold two replicas.
+kind: Scenario
+name: muse-h100-roce-armC-routed
+engine_version: "0.32.0"
+model: muse-spark-open-816b-a42b-nvfp4
+acceptance:
+  value:
+    num_spec_tokens: 7
+    acceptance_length: 2.84
+    source: "internal deployment measurements: 1.84 accepted tokens per DSpark draft at c16 on H100 PP2xTP8, fixed 7-token verify (AL = 1 + accepted)"
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
+cluster:
+  hardware: h100
+  fabric: roce-200g
+  nodes: 4
+  gpus_per_node: 8
+---
+kind: Deployment
+name: muse-h100-roce-armC-routed
+pools:
+  - role: colocated
+    nodes: 4
+    parallel: {tp: 8, pp: 2, dp: 1, enable_expert_parallel: true}
+    engine:
+      block_size: 16
+      max_num_seqs: 64
+      max_num_batched_tokens: 8192
+      max_model_len: 262144
+      enable_prefix_caching: true
+      gpu_memory_utilization: 0.9
+      async_scheduling: true
+      moe_backend: marlin
+      speculative:
+        method: dspark
+        num_spec_tokens: 7
+        draft_model: muse-spark-open-dspark
+router:
+  endpoint_picker_config: router/precise-affinity-flow-control.yaml

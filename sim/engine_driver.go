@@ -78,6 +78,33 @@ type EngineDriver struct {
 	inFlight []driverBatch
 	// gpuFreeAt is when the GPU finishes the last batch scheduled: the next one starts no earlier.
 	gpuFreeAt int64
+	// stageFreeAt is when each pipeline stage finishes the batch it holds, for an engine that
+	// splits its steps by stage (engine.Pipelined); nil for one stage, where gpuFreeAt is the
+	// one device's.
+	stageFreeAt []int64
+	// tierFreeAt is when the engine's offload-tier streams finish the transfers they hold, by
+	// direction: vLLM's CPU offload worker runs stores and loads on separate handlers, each
+	// chaining its own transfers (startTierTransfer).
+	tierFreeAt map[engine.TransferKind]int64
+	// recentStages are the last pipelined runner steps, newest last, at most one per stage: each
+	// one's sampling requests, the requests its schedule freed and when it leaves the last stage
+	// (timeBatch's T-pp dependency). Through an engine that counts its runner steps (RunnerSteps)
+	// they include the schedules that ran nothing, which advance vLLM's slot ring too.
+	recentStages []stagedBatch
+	// runnerSteps is the engine's RunnerSteps after its last Schedule.
+	runnerSteps int
+	// emptyWait is when the slot an empty runner step waited on leaves the last stage: its
+	// wait_event holds the main stream, so the next forward starts no earlier (noteEmptyStep).
+	emptyWait int64
+	// freedPending are the requests the engine finished since its last schedule, which the next
+	// schedule's finished_req_ids frees on the runner (model_runner.py:1152-1166@5df63a72).
+	freedPending map[string]bool
+	// pipelineDrainsAt is when the last batch scheduled leaves the last stage, under a
+	// pipelined engine.
+	pipelineDrainsAt int64
+	// unserved are the requests the engine failed before they emitted anything, dropped as
+	// unservable (finish), whose pending deadline no longer applies.
+	unserved map[string]bool
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
 	// renderer is the host's API-server render stage (INV-R1), nil when the front end is inert.
@@ -113,7 +140,10 @@ type EngineDriver struct {
 }
 
 type driverReq struct {
-	req          *Request
+	req *Request
+	// prefillLen is the runner's prefill_len for the request, its prompt plus the outputs before
+	// its last admission (states.py:104-110@5df63a72); 0 until the driver times a batch for it.
+	prefillLen   int
 	scheduledIdx int
 	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
@@ -126,6 +156,13 @@ type driverReq struct {
 type driverBatch struct {
 	b   engine.Batch
 	end int64
+}
+
+// stagedBatch is a pipelined runner step's sampling requests, the requests its schedule freed
+// (preempted, or finished since the schedule before), and when it left the last stage.
+type stagedBatch struct {
+	reqs, freed map[string]bool
+	end         int64
 }
 
 // NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
@@ -220,7 +257,7 @@ func (d *EngineDriver) ProcessNextEvent() Event {
 	if w, ok := shim.ev.(*driverWakeEvent); ok && w.cancelled {
 		return entry.event
 	}
-	if te, ok := shim.ev.(*driverTimeoutEvent); ok && te.req.State == StateCompleted {
+	if te, ok := shim.ev.(*driverTimeoutEvent); ok && te.dead(d) {
 		return entry.event
 	}
 	d.preEventClock = d.Clock
@@ -237,7 +274,7 @@ func (s *driverShim) Skipped() bool {
 	case *driverWakeEvent:
 		return e.cancelled
 	case *driverTimeoutEvent:
-		return e.req.State == StateCompleted
+		return e.dead(s.d)
 	}
 	return false
 }
@@ -526,18 +563,25 @@ func (e *driverTimeoutEvent) Timestamp() int64 { return e.at }
 func (e *driverTimeoutEvent) Priority() int    { return PriorityTimeout }
 func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	req := e.req
-	if req.State == StateCompleted || req.State == StateTimedOut {
+	if req.State == StateTimedOut || e.dead(d) {
 		return
 	}
 	if err := d.eng.Finish(req.ID, engine.FinishTimeout, e.at); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s): %v", req.ID, err))
 	}
+	d.noteFreed(req.ID)
 	req.State = StateTimedOut
 	d.Metrics.TimedOutRequests++
 	d.Metrics.RecordTimeout(req)
 	delete(d.reqs, req.ID)
 	d.done(req, e.at)
 	d.kick(e.at)
+}
+
+// dead reports a timeout whose request already left the engine: completed, or failed by the
+// engine before it emitted anything (finish).
+func (e *driverTimeoutEvent) dead(d *EngineDriver) bool {
+	return e.req.State == StateCompleted || d.unserved[e.req.ID]
 }
 
 // kick schedules as many batches as the engine admits at now, each starting when the GPU is
@@ -561,13 +605,16 @@ func (d *EngineDriver) kick(now int64) {
 			panic(fmt.Sprintf("engine driver: Schedule at %d: %v", now, err))
 		}
 		d.notePreempted(b)
-		d.startTransfers(b.TransfersStarted, now)
+		d.finishUnrun(b.Finished, now)
 		if b.Empty() {
+			d.noteEmptyStep(b)
+			d.startTransfers(b.TransfersStarted, now)
 			break
 		}
-		start := max(now, d.gpuFreeAt)
-		end := start + max(d.eng.StepTime(b), 1)
-		d.gpuFreeAt = end
+		start, end := d.timeBatch(b, now)
+		// The worker submits a step's offload copies after its forward pass, and each copy's
+		// stream waits on the compute stream (startTierTransfer): they start when the step ends.
+		d.startTransfersAfter(b.TransfersStarted, now, end)
 		d.stepIdx++
 		d.admit(b, now, start)
 		if d.cfg.ApplyAtStepStart {
@@ -583,6 +630,188 @@ func (d *EngineDriver) kick(now int64) {
 		d.schedule(&driverStepEnd{at: end})
 	}
 	d.rearmWake(now)
+}
+
+// timeBatch is when a batch scheduled at now starts and ends. On one device it starts when the
+// one before it ends. Through an engine that splits its steps by pipeline stage
+// (engine.Pipelined, vLLM at pipeline_parallel_size > 1), each stage is its own device: stage s
+// of the batch starts once the batch has left stage s-1 and stage s has finished the batch
+// ahead of it, and the batch ends when its last stage does -- the overlap vLLM's batch queue
+// keeps max_concurrent_batches batches in flight for (vllm/v1/engine/core.py:698-810@5df63a72).
+// The contract is blis-schemas engine.Pipelined; its stages sum to StepTime.
+func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
+	start = max(now, d.gpuFreeAt)
+	total := max(d.eng.StepTime(b), 1)
+	p, ok := d.eng.(engine.Pipelined)
+	if !ok {
+		d.gpuFreeAt = start + total
+		return start, d.gpuFreeAt
+	}
+	stages := p.StageTimes(b)
+	if len(stages) <= 1 && d.stageFreeAt == nil {
+		d.gpuFreeAt = start + total
+		return start, d.gpuFreeAt
+	}
+	if len(stages) <= 1 {
+		// A batch the engine did not split, behind pipelined ones, holds every stage: it starts
+		// when the first frees and ends no earlier than the pipeline drains, since batches
+		// complete in the order they were scheduled (the step end completes inFlight[0]).
+		start = max(now, d.stageFreeAt[0])
+		end = max(start+total, d.pipelineDrainsAt)
+		for i := range d.stageFreeAt {
+			d.stageFreeAt[i] = end
+		}
+		d.gpuFreeAt, d.pipelineDrainsAt = end, end
+		d.noteStaged(b, end, len(d.stageFreeAt))
+		return start, end
+	}
+	if len(d.stageFreeAt) != len(stages) {
+		d.stageFreeAt = make([]int64, len(stages))
+	}
+	start = max(now, d.stageFreeAt[0])
+	// vLLM's V2 runner holds a non-last pipeline rank's step T until step T-pp's sampled tokens
+	// are broadcast (update_pp_decode_requests before the forward, model_runner.py:1171-1179,
+	// 1732; PPHandler.get_prev_sampled_outputs' wait_event on the slot pp steps back,
+	// pp_utils.py:125-152@5df63a72). The wait is on the step, not on a shared request: it is
+	// skipped only when that step sampled for no request still live, its requests all non-final
+	// prefill chunks (compute_need_sampled_mask, pp_utils.py:37-53) or freed since (a preempted
+	// request's slot is freed by finish_requests, model_runner.py:1152-1166). So the first stage of
+	// this batch waits for the batch pp steps back to leave the last stage when it sampled for a
+	// request not preempted since. The async scheduler's own stagger (a decode is eligible again
+	// only pp steps later, async_scheduler.py:52-57) is the engine's.
+	pp := len(stages)
+	start = max(start, d.ppWait(pp), d.emptyWait)
+	d.emptyWait = 0
+	at := start
+	for i, st := range stages {
+		at = max(at, d.stageFreeAt[i]) + max(st, 1)
+		d.stageFreeAt[i] = at
+	}
+	// The next batch may enter as soon as the first stage frees; BusyUntil reports when the
+	// whole pipeline drains.
+	d.gpuFreeAt = d.stageFreeAt[0]
+	d.pipelineDrainsAt = at
+	d.noteStaged(b, at, pp)
+	return start, at
+}
+
+// ppWait is when the runner step pp back leaves the last stage, if the step about to run waits on
+// it: it sampled for a request no step since has freed; 0 otherwise.
+func (d *EngineDriver) ppWait(pp int) int64 {
+	n := len(d.recentStages)
+	if n < pp {
+		return 0
+	}
+	prev := d.recentStages[n-pp]
+	for id := range prev.reqs {
+		if !d.preemptedSince(id, n-pp) {
+			return prev.end
+		}
+	}
+	return 0
+}
+
+// noteStaged records a runner step scheduled through the pipeline and when it leaves the last
+// stage, keeping the last pp (timeBatch's T-pp dependency): the requests it sampled for and those
+// its schedule freed. A request samples when its step reaches the end of its prefill, computed +
+// scheduled >= prefill_len, and is not a final prefill chunk whose one token reaches its length
+// cap (compute_need_sampled_mask, pp_utils.py:37-51@5df63a72). prefill_len is the prompt plus the
+// outputs before the request's admission, so a resumed request's recompute samples only at its
+// end (states.py:104-110@5df63a72); the cap is max_tokens, 1 for a disaggregated prefill.
+func (d *EngineDriver) noteStaged(b engine.Batch, end int64, pp int) {
+	if rs, ok := d.eng.(runnerStepper); ok {
+		d.runnerSteps = rs.RunnerSteps()
+	}
+	ids := map[string]bool{}
+	for _, s := range b.Reqs {
+		prefillLen, maxTokens := s.PromptLen, 0
+		if r := d.reqs[s.ID]; r != nil {
+			if r.req.State != StateRunning || r.prefillLen == 0 {
+				// Admitted by this schedule: the runner adds it with every token so far
+				// (model_runner.py:1181-1199@5df63a72).
+				r.prefillLen = s.PromptLen + r.emitted
+			}
+			prefillLen, maxTokens = r.prefillLen, r.req.MaxOutputLen
+			if r.req.RetainKVOnFinish {
+				maxTokens = 1
+			}
+		}
+		prefilling := s.Computed < prefillLen
+		capped := maxTokens > 0 && prefilling && prefillLen+1 >= s.PromptLen+maxTokens
+		if s.Computed+s.Tokens >= prefillLen && !capped {
+			ids[s.ID] = true
+		}
+	}
+	d.pushStage(stagedBatch{reqs: ids, end: end}, b.Preempted, pp)
+}
+
+// pushStage appends one runner step, with the requests its schedule preempted and those finished
+// since the schedule before, keeping the last pp.
+func (d *EngineDriver) pushStage(sb stagedBatch, preempted []string, pp int) {
+	if len(preempted) > 0 || len(d.freedPending) > 0 {
+		sb.freed = d.freedPending
+		if sb.freed == nil {
+			sb.freed = make(map[string]bool, len(preempted))
+		}
+		for _, id := range preempted {
+			sb.freed[id] = true
+		}
+		d.freedPending = nil
+	}
+	d.recentStages = append(d.recentStages, sb)
+	if len(d.recentStages) > pp {
+		d.recentStages = d.recentStages[len(d.recentStages)-pp:]
+	}
+}
+
+// runnerStepper is an engine that counts its runner steps: blis-vllm core/vllm's RunnerSteps, the
+// execute_model calls it has made, one per schedule, including those that ran no tokens. It is
+// optional, outside blis-schemas' contract; without it the driver counts the batches it times.
+type runnerStepper interface{ RunnerSteps() int }
+
+// noteEmptyStep records a schedule that ran nothing as a pipelined runner step when the engine
+// counts one. vLLM's execute_model still pops the slot pp steps back, waits on it and reserves an
+// empty one before it returns early (update_pp_decode_requests, model_runner.py:1729-1747;
+// pp_utils.py:125-152@5df63a72; no sample_tokens follows, core.py:733-735), so the step pp after
+// it waits on nothing, and its wait_event holds the main stream for the next forward.
+func (d *EngineDriver) noteEmptyStep(b engine.Batch) {
+	rs, ok := d.eng.(runnerStepper)
+	if !ok {
+		return
+	}
+	n := rs.RunnerSteps()
+	if pp := len(d.stageFreeAt); pp > 0 {
+		for range n - d.runnerSteps {
+			d.emptyWait = max(d.emptyWait, d.ppWait(pp))
+			d.pushStage(stagedBatch{}, b.Preempted, pp)
+			b.Preempted = nil
+		}
+	}
+	d.runnerSteps = n
+}
+
+// noteFreed records a request the engine finished: the next schedule's finished_req_ids frees its
+// runner state (model_runner.py:1152-1166@5df63a72), so a later step no longer waits on its token.
+func (d *EngineDriver) noteFreed(id string) {
+	if d.stageFreeAt == nil {
+		return
+	}
+	if d.freedPending == nil {
+		d.freedPending = map[string]bool{}
+	}
+	d.freedPending[id] = true
+}
+
+// preemptedSince reports whether a schedule after recentStages[i] freed request id (preempted or
+// finished it), which frees its runner state, so recentStages[i]'s token for it no longer gates a
+// step.
+func (d *EngineDriver) preemptedSince(id string, i int) bool {
+	for _, sb := range d.recentStages[i+1:] {
+		if sb.freed[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // admit records a batch scheduled at now whose step starts at start: each request's first
@@ -710,12 +939,55 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		r.emitted += res.Emitted[id]
 	}
 	for _, f := range res.Finished {
+		d.noteFreed(f.ID)
 		r := d.reqs[f.ID]
 		if r == nil {
 			continue
 		}
-		d.complete(r, f, end)
+		d.finish(r, f, end)
 	}
+}
+
+// finishUnrun ends the requests a scheduling decision finished without running them
+// (engine.Batch.Finished, blis-schemas 45f1d4e), at now: vLLM's update_from_output of a step that
+// ran nothing finishes a failed KV load under kv_load_failure_policy "fail" as FINISHED_ERROR
+// (vllm/v1/core/sched/scheduler.py:2306-2325@5df63a72). Such a request never appears in a Result,
+// so without this it would stay on the driver's books, never done. An ID the driver does not hold
+// is skipped, as apply skips one: a decode handoff whose pull the host failed (FailRemote) left
+// the books when the cluster dropped it.
+func (d *EngineDriver) finishUnrun(fs []engine.Finished, now int64) {
+	for _, f := range fs {
+		if r := d.reqs[f.ID]; r != nil {
+			d.finish(r, f, now)
+		}
+	}
+}
+
+// finish ends a request the engine finished at end. One the engine failed before it emitted
+// anything (engine.FinishError: vLLM answers it with an error, no token, vllm/v1/engine/
+// __init__.py:56-57@5df63a72) is unservable, as a request the engine refuses at Add is: it is
+// dropped, not completed, so it adds no latency sample. Any other finish is a completion.
+func (d *EngineDriver) finish(r *driverReq, f engine.Finished, end int64) {
+	if f.Reason != engine.FinishError || r.emitted > 0 {
+		d.complete(r, f, end)
+		return
+	}
+	req := r.req
+	d.Metrics.DroppedUnservable++
+	d.Metrics.RecordUnserved(req, false)
+	delete(d.Metrics.Requests, req.ID)
+	delete(d.reqs, req.ID)
+	if d.unserved == nil {
+		d.unserved = map[string]bool{}
+	}
+	// Its deadline, if one is pending, no longer applies (driverTimeoutEvent).
+	d.unserved[req.ID] = true
+	// A drop reaches the done callback as StateQueued, as a request the engine refuses at Add
+	// does: SessionManager.OnComplete cancels the session on it (BC-17) and the cluster reports
+	// it DoneDropped. A request the engine had admitted is StateRunning here, which both would
+	// read as a completion, so a session would go on to its next round.
+	req.State = StateQueued
+	d.done(req, end)
 }
 
 // complete records a finished request as the compatibility engine's recordRequestCompletion
@@ -781,6 +1053,7 @@ func (d *EngineDriver) Evict(req *Request, now int64) bool {
 	if err := d.eng.Finish(req.ID, engine.FinishAbort, now); err != nil {
 		panic(fmt.Sprintf("engine driver: Finish(%s, abort): %v", req.ID, err))
 	}
+	d.noteFreed(req.ID)
 	req.State = StateCompleted
 	delete(d.reqs, req.ID)
 	d.kick(now)
@@ -821,6 +1094,16 @@ func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) err
 	}
 	p.EnableKVEvents()
 	d.kvEventSink = sink
+	return nil
+}
+
+// KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says
+// (a KVEventsRefusal method, blis-vllm's v0.32.0 engine for a full-attention group at a block size
+// other than its hash block size); nil otherwise.
+func (d *EngineDriver) KVEventsRefusal() error {
+	if q, ok := d.eng.(interface{ KVEventsRefusal() error }); ok {
+		return q.KVEventsRefusal()
+	}
 	return nil
 }
 
@@ -899,7 +1182,7 @@ func (d *EngineDriver) BatchSize() int  { return d.eng.Snapshot().Running }
 func (d *EngineDriver) HasWork() bool { return len(d.reqs) > 0 }
 
 // BusyUntil is when the GPU finishes the batches in flight.
-func (d *EngineDriver) BusyUntil() int64 { return d.gpuFreeAt }
+func (d *EngineDriver) BusyUntil() int64 { return max(d.gpuFreeAt, d.pipelineDrainsAt) }
 
 // EngineMetricsAt is what a scrape of the model server at t sees, from the engine's state.
 func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {

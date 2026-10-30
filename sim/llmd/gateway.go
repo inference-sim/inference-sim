@@ -103,6 +103,9 @@ type Gateway struct {
 	// kvHeld counts, per instance, the published holdings (tiers) of each block hash, to release
 	// the canonicalizer's pins when the instance's cache is cleared.
 	kvHeld map[cluster.InstanceID]map[string]int
+	// kvChains maps, per instance, each block hash its engine publishes in the engine's own form to
+	// the prefix chain BLIS keys the block by (chainEvents).
+	kvChains map[cluster.InstanceID]map[string]*engineChain
 	// kvLastDelivery is when the router last receives each instance's KV stream (kvDeliveryTime).
 	kvLastDelivery map[cluster.InstanceID]int64
 	// canonCapacity, set only by tests, overrides the canonicalizer's chain capacity.
@@ -237,6 +240,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 	}
 	g.canon = newPromptCanon(g.rt.seed, int(host.BlockSizeTokens()), capacity)
 	g.kvHeld = map[cluster.InstanceID]map[string]int{}
+	g.kvChains = map[cluster.InstanceID]map[string]*engineChain{}
 	g.kvLastDelivery = map[cluster.InstanceID]int64{}
 	for _, inst := range host.Instances() {
 		if err := g.checkPreciseLoRA(inst); err != nil {
@@ -1043,12 +1047,21 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 	return nil
 }
 
-// checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters.
+// checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters, and a
+// router indexing KV events over an engine that says it cannot be indexed (KVEventsRefusal).
 func (g *Gateway) checkPreciseLoRA(inst *cluster.InstanceSimulator) error {
 	if len(g.req.PrefixIndexes) > 0 && inst.AdapterCapacity() > 0 {
 		return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
 			"keys blocks by LoRA adapter, but the compatibility engine this simulator runs keys its prefix cache " +
 			"without the adapter, so its KV events cannot name the adapter a block belongs to")
+	}
+	if g.router.WantsKVEvents() {
+		// An engine whose KV events the router cannot key (a full-attention group at another
+		// block size, DeepSeek V4's packed groups) is refused rather than mis-indexed.
+		if err := inst.KVEventsRefusal(); err != nil {
+			return fmt.Errorf("the router configuration cannot be simulated faithfully: it indexes KV events, "+
+				"and instance %s's engine publishes events it cannot key: %w", inst.ID(), err)
+		}
 	}
 	return nil
 }

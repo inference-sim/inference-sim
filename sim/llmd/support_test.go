@@ -280,6 +280,28 @@ func TestSignalPolicyRefusesThroughTheRouter(t *testing.T) {
 	}
 }
 
+// TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad: the filter's default TTFT source (the
+// in-flight load) runs, and is deterministic across processes (TestLLMDGuides runs the guides
+// that use it; determinism_test.go the same simulation in separate processes); its
+// latency-predictor source is refused at startup, naming the service (#1991).
+func TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad(t *testing.T) {
+	config := func(source string) string {
+		return "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n- type: approx-prefix-cache-producer\n" +
+			"- type: inflight-load-producer\n- type: prefix-cache-affinity-filter\n  parameters:\n    affinityThreshold: 0.5\n" +
+			"    maxTTFTPenaltyMs: 4500\n    peakPrefillThroughput: 15000\n    ttftSource: " + source + "\n" +
+			"- type: token-load-scorer\n- type: max-score-picker\n- type: single-profile-handler\nschedulingProfiles:\n" +
+			"- name: default\n  plugins:\n  - pluginRef: prefix-cache-affinity-filter\n  - pluginRef: token-load-scorer\n" +
+			"  - pluginRef: max-score-picker\n"
+	}
+	if err := refusal(t, testDeployment(2), config("prefillThroughput"), nil); err != nil {
+		t.Fatalf("the in-flight-load source is refused: %v", err)
+	}
+	err := refusal(t, testDeployment(2), config("latencyPredictor"), nil)
+	if err == nil || !strings.Contains(err.Error(), "reads TTFT from the latency predictor (ttftSource latencyPredictor), an external service") {
+		t.Fatalf("want the latency-predictor source refused, got %v", err)
+	}
+}
+
 // TestAllow: BLIS's policy allows exactly its supported types, and gives each refused type its
 // recorded reason or the generic one.
 func TestAllow(t *testing.T) {

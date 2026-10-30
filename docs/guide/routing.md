@@ -303,7 +303,7 @@ plugin policy, the types whose signals the simulation does not produce.
 | Kind | Types |
 |---|---|
 | Profile handlers and pickers | `single-profile-handler`, `disagg-profile-handler`, `max-score-picker`, `random-picker`, `weighted-random-picker` |
-| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter`, `topology-affinity-filter` (kernel-backed placement) |
+| Filters | `decode-filter`, `prefill-filter`, `encode-filter`, `label-selector-filter`, `topology-affinity-filter` (kernel-backed placement), `prefix-cache-affinity-filter` (its TTFT gate on the in-flight load, `ttftSource: prefillThroughput`, the default) |
 | Scorers | `queue-scorer`, `kv-cache-utilization-scorer`, `prefix-cache-scorer`, `load-aware-scorer`, `running-requests-size-scorer`, `lora-affinity-scorer`, `token-load-scorer`, `no-hit-lru-scorer`, `active-request-scorer`, `context-length-aware`, `topology-affinity-scorer` (kernel-backed placement) |
 | P/D deciders | `always-disagg-pd-decider`, `prefix-based-pd-decider` |
 | Data producers | `approx-prefix-cache-producer`, `precise-prefix-cache-producer` (fed by the engines' KV events), `inflight-load-producer`, `token-producer` (estimate backend, or vLLM backend with a fixed URL) |
@@ -327,7 +327,7 @@ only through a reference such as a flow-control `fairnessPolicyRef`.
 | What | Why |
 |---|---|
 | `burst-prefix-cache-producer` | It blocks a request on a sealing timer the hosting runtime does not model. |
-| `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, `prefix-cache-affinity-filter` | They call or consume an external latency-predictor service. |
+| `predicted-latency-producer`, `latency-scorer`, `latency-slo-admitter`, `slo-headroom-tier-filter`, and `prefix-cache-affinity-filter` with `ttftSource: latencyPredictor` | They call or consume an external latency-predictor service. |
 | `latency-observer-producer-hub`, `latency-observation-scorer-hub`, `session-state-producer`, `program-aware-fairness`, `disaggregatedset-rollout-screener`, `utilization-filter`, `request-attribute-reporter` | Not yet audited for, or not yet moved onto, the hosting runtime. |
 | `session-affinity-*`, `session-id-producer`, `agent-identity`, `outlen-bucket`, `header-profile-handler`, `header-label-affinity-scorer`, `endpoint-pin-screener` | The simulated workload does not send the headers they read. |
 | `mm-embeddings-*` | The simulated media have no content of their own, so there is no embedding to cache. |
