@@ -93,6 +93,9 @@ type EngineDriver struct {
 	// pipelineDrainsAt is when the last batch scheduled leaves the last stage, under a
 	// pipelined engine.
 	pipelineDrainsAt int64
+	// unserved are the requests the engine failed before they emitted anything, dropped as
+	// unservable (finish), whose pending deadline no longer applies.
+	unserved map[string]bool
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
 	// renderer is the host's API-server render stage (INV-R1), nil when the front end is inert.
@@ -242,7 +245,7 @@ func (d *EngineDriver) ProcessNextEvent() Event {
 	if w, ok := shim.ev.(*driverWakeEvent); ok && w.cancelled {
 		return entry.event
 	}
-	if te, ok := shim.ev.(*driverTimeoutEvent); ok && te.req.State == StateCompleted {
+	if te, ok := shim.ev.(*driverTimeoutEvent); ok && te.dead(d) {
 		return entry.event
 	}
 	d.preEventClock = d.Clock
@@ -259,7 +262,7 @@ func (s *driverShim) Skipped() bool {
 	case *driverWakeEvent:
 		return e.cancelled
 	case *driverTimeoutEvent:
-		return e.req.State == StateCompleted
+		return e.dead(s.d)
 	}
 	return false
 }
@@ -548,7 +551,7 @@ func (e *driverTimeoutEvent) Timestamp() int64 { return e.at }
 func (e *driverTimeoutEvent) Priority() int    { return PriorityTimeout }
 func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	req := e.req
-	if req.State == StateCompleted || req.State == StateTimedOut {
+	if req.State == StateTimedOut || e.dead(d) {
 		return
 	}
 	if err := d.eng.Finish(req.ID, engine.FinishTimeout, e.at); err != nil {
@@ -560,6 +563,12 @@ func (e *driverTimeoutEvent) run(d *EngineDriver) {
 	delete(d.reqs, req.ID)
 	d.done(req, e.at)
 	d.kick(e.at)
+}
+
+// dead reports a timeout whose request already left the engine: completed, or failed by the
+// engine before it emitted anything (finish).
+func (e *driverTimeoutEvent) dead(d *EngineDriver) bool {
+	return e.req.State == StateCompleted || d.unserved[e.req.ID]
 }
 
 // kick schedules as many batches as the engine admits at now, each starting when the GPU is
@@ -583,6 +592,7 @@ func (d *EngineDriver) kick(now int64) {
 			panic(fmt.Sprintf("engine driver: Schedule at %d: %v", now, err))
 		}
 		d.notePreempted(b)
+		d.finishUnrun(b.Finished, now)
 		if b.Empty() {
 			d.startTransfers(b.TransfersStarted, now)
 			break
@@ -841,8 +851,45 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		if r == nil {
 			continue
 		}
-		d.complete(r, f, end)
+		d.finish(r, f, end)
 	}
+}
+
+// finishUnrun ends the requests a scheduling decision finished without running them
+// (engine.Batch.Finished, blis-schemas 45f1d4e), at now: vLLM's update_from_output of a step that
+// ran nothing finishes a failed KV load under kv_load_failure_policy "fail" as FINISHED_ERROR
+// (vllm/v1/core/sched/scheduler.py:2306-2325@5df63a72). Such a request never appears in a Result,
+// so without this it would stay on the driver's books, never done. An ID the driver does not hold
+// is skipped, as apply skips one: a decode handoff whose pull the host failed (FailRemote) left
+// the books when the cluster dropped it.
+func (d *EngineDriver) finishUnrun(fs []engine.Finished, now int64) {
+	for _, f := range fs {
+		if r := d.reqs[f.ID]; r != nil {
+			d.finish(r, f, now)
+		}
+	}
+}
+
+// finish ends a request the engine finished at end. One the engine failed before it emitted
+// anything (engine.FinishError: vLLM answers it with an error, no token, vllm/v1/engine/
+// __init__.py:56-57@5df63a72) is unservable, as a request the engine refuses at Add is: it is
+// dropped, not completed, so it adds no latency sample. Any other finish is a completion.
+func (d *EngineDriver) finish(r *driverReq, f engine.Finished, end int64) {
+	if f.Reason != engine.FinishError || r.emitted > 0 {
+		d.complete(r, f, end)
+		return
+	}
+	req := r.req
+	d.Metrics.DroppedUnservable++
+	d.Metrics.RecordUnserved(req, false)
+	delete(d.Metrics.Requests, req.ID)
+	delete(d.reqs, req.ID)
+	if d.unserved == nil {
+		d.unserved = map[string]bool{}
+	}
+	// Its deadline, if one is pending, no longer applies (driverTimeoutEvent).
+	d.unserved[req.ID] = true
+	d.done(req, end)
 }
 
 // complete records a finished request as the compatibility engine's recordRequestCompletion

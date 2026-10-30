@@ -233,6 +233,13 @@ func (d *EngineDriver) kickGroup(now int64) {
 		o.notePreempted(ob)
 		o.admit(ob, now, now)
 	}
+	for _, f := range b.Finished {
+		// A request the step ended without running it (engine.Batch.Finished) ends on the rank
+		// that holds it.
+		if o := d.groupOf(f.ID); o != nil {
+			o.finishUnrun([]engine.Finished{f}, now)
+		}
+	}
 	for _, o := range drivers {
 		r := results[o]
 		o.apply(shares[o], r, end)
