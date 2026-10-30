@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.4.4
 	github.com/google/uuid v1.6.0
 	github.com/inference-sim/blis-schemas v0.10.0
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261030210131-3f9c271fade8 // TEMPORARY: the pushed head of inference-sim/blis-vllm#45, until it is released
+	github.com/inference-sim/blis-vllm v0.32.0-blis.1
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -128,6 +128,6 @@ require (
 
 // The one permitted replace: the llm-d router fork keeps upstream's module path, so a replace is
 // the only way to substitute it (docs/contributing/llm-d-router-fork.md).
-// TEMPORARY: the head of inference-sim/llm-d-router#4 (prefix-cache-affinity-filter hosted), for
-// inference-sim/inference-sim#2059; moves to the fork's tag once that PR merges and is tagged.
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.1.0.20261030181212-83fe33450a62
+// v1.0.0-blis.2 hosts prefix-cache-affinity-filter on its in-flight-load TTFT source
+// (inference-sim/llm-d-router#4).
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2
