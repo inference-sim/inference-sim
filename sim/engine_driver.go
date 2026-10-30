@@ -78,6 +78,13 @@ type EngineDriver struct {
 	inFlight []driverBatch
 	// gpuFreeAt is when the GPU finishes the last batch scheduled: the next one starts no earlier.
 	gpuFreeAt int64
+	// stageFreeAt is when each pipeline stage finishes the batch it holds, for an engine that
+	// splits its steps by stage (engine.Pipelined); nil for one stage, where gpuFreeAt is the
+	// one device's.
+	stageFreeAt []int64
+	// pipelineDrainsAt is when the last batch scheduled leaves the last stage, under a
+	// pipelined engine.
+	pipelineDrainsAt int64
 	// pendingWake is the wake the engine last reported (0 = none).
 	pendingWake *driverWakeEvent
 	// renderer is the host's API-server render stage (INV-R1), nil when the front end is inert.
@@ -565,9 +572,7 @@ func (d *EngineDriver) kick(now int64) {
 		if b.Empty() {
 			break
 		}
-		start := max(now, d.gpuFreeAt)
-		end := start + max(d.eng.StepTime(b), 1)
-		d.gpuFreeAt = end
+		start, end := d.timeBatch(b, now)
 		d.stepIdx++
 		d.admit(b, now, start)
 		if d.cfg.ApplyAtStepStart {
@@ -583,6 +588,42 @@ func (d *EngineDriver) kick(now int64) {
 		d.schedule(&driverStepEnd{at: end})
 	}
 	d.rearmWake(now)
+}
+
+// timeBatch is when a batch scheduled at now starts and ends. On one device it starts when the
+// one before it ends. Through an engine that splits its steps by pipeline stage
+// (engine.Pipelined, vLLM at pipeline_parallel_size > 1), each stage is its own device: stage s
+// of the batch starts once the batch has left stage s-1 and stage s has finished the batch
+// ahead of it, and the batch ends when its last stage does -- the overlap vLLM's batch queue
+// keeps max_concurrent_batches batches in flight for (vllm/v1/engine/core.py:698-810@5df63a72).
+// The contract is blis-schemas engine.Pipelined; its stages sum to StepTime.
+func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
+	start = max(now, d.gpuFreeAt)
+	total := max(d.eng.StepTime(b), 1)
+	p, ok := d.eng.(engine.Pipelined)
+	if !ok {
+		d.gpuFreeAt = start + total
+		return start, d.gpuFreeAt
+	}
+	stages := p.StageTimes(b)
+	if len(stages) <= 1 {
+		d.gpuFreeAt = start + total
+		return start, d.gpuFreeAt
+	}
+	if len(d.stageFreeAt) != len(stages) {
+		d.stageFreeAt = make([]int64, len(stages))
+	}
+	start = max(now, d.stageFreeAt[0])
+	at := start
+	for i, st := range stages {
+		at = max(at, d.stageFreeAt[i]) + max(st, 1)
+		d.stageFreeAt[i] = at
+	}
+	// The next batch may enter as soon as the first stage frees; BusyUntil reports when the
+	// whole pipeline drains.
+	d.gpuFreeAt = d.stageFreeAt[0]
+	d.pipelineDrainsAt = at
+	return start, at
 }
 
 // admit records a batch scheduled at now whose step starts at start: each request's first
@@ -899,7 +940,7 @@ func (d *EngineDriver) BatchSize() int  { return d.eng.Snapshot().Running }
 func (d *EngineDriver) HasWork() bool { return len(d.reqs) > 0 }
 
 // BusyUntil is when the GPU finishes the batches in flight.
-func (d *EngineDriver) BusyUntil() int64 { return d.gpuFreeAt }
+func (d *EngineDriver) BusyUntil() int64 { return max(d.gpuFreeAt, d.pipelineDrainsAt) }
 
 // EngineMetricsAt is what a scrape of the model server at t sees, from the engine's state.
 func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {

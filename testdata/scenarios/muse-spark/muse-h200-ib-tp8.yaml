@@ -1,0 +1,25 @@
+kind: Scenario
+name: muse-h200-ib-tp8
+engine_version: "0.32.0"
+model: muse-spark-open-816b-a42b-nvfp4
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: muse-h200-ib-tp8
+pools:
+  - role: colocated
+    nodes: 1
+    parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: false}
+    engine:
+      block_size: 16
+      max_num_seqs: 64
+      max_num_batched_tokens: 8192
+      max_model_len: 262144
+      enable_prefix_caching: true
+      gpu_memory_utilization: 0.9
+      async_scheduling: true
+      moe_backend: marlin

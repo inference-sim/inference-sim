@@ -190,6 +190,30 @@ func TestEngineDriver_SecondBatchInFlightWaitsForTheGPU(t *testing.T) {
 	}
 }
 
+// Through an engine whose steps run on pipeline stages (engine.Pipelined), two batches in
+// flight overlap one per stage: the second enters the first stage as the first batch leaves it,
+// instead of waiting for the whole step. Same engine and requests as the serial test above,
+// split into two stages of 50 us each.
+func TestEngineDriver_PipelinedBatchesOverlapOnePerStage(t *testing.T) {
+	d := newFIFODriver(t, enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 8, InFlight: 2,
+		StepBaseUs: 100, Stages: 2}, 1<<40)
+	a := &Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+	b := &Request{ID: "b", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+	d.InjectArrival(a)
+	d.InjectArrival(b)
+	d.Run()
+	if d.Metrics.CompletedRequests != 2 {
+		t.Fatalf("completed = %d, want 2", d.Metrics.CompletedRequests)
+	}
+	// a runs stage 0 at 0-50 and stage 1 at 50-100; b enters stage 0 at 50 and stage 1 at 100.
+	if a.FirstTokenTime != 100 || b.FirstTokenTime != 150 {
+		t.Errorf("first tokens at %d and %d, want 100 and 150 (one batch a stage)", a.FirstTokenTime, b.FirstTokenTime)
+	}
+	if d.BusyUntil() < b.FirstTokenTime {
+		t.Errorf("BusyUntil %d before the pipeline drains at %d", d.BusyUntil(), b.FirstTokenTime)
+	}
+}
+
 // Requests that reach the engine at one instant share its next batch: the contract orders
 // arrivals before steps at one instant, so the driver schedules once after every arrival of the
 // instant rather than inside the first (as the compatibility engine's scheduleStepBy does).
