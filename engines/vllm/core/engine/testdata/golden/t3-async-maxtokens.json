@@ -92,7 +92,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "61edc82d20d0748511c48e2d051abd93ce922d01",
+  "blis_vllm_commit": "61d62fd49ffaa25a77c56701a9a3544bfc279370",
   "engine": {
    "async_scheduling": true,
    "max_concurrent_batches": 2,
@@ -100,8 +100,8 @@
    "scheduler_class": "AsyncScheduler",
    "use_v2_model_runner": false
   },
-  "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/2+025b232da37d",
+  "lockfile_sha256": "54d4c6c9f165370faaddbc8e59fdb6a80bd9fb12550e725eb5610b5f9cf588c9",
+  "mock_version": "gpu-mock/3+ea15d51fe3e4",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -126,12 +126,15 @@
    "DPEngineCoreProc construction",
    "DP wave loop (harness copy of DPEngineCoreProc.run_busy_loop)",
    "NIXL connector scheduler config",
-   "KV-transfer parameters on a request"
+   "KV-transfer parameters on a request",
+   "OffloadingConnector scheduler config",
+   "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
+   "finished_req_ids iteration order (per-process hash seed)"
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
-  "platform": "linux-x86_64",
-  "python": "3.12.15",
+  "platform": "darwin-arm64",
+  "python": "3.12.12",
   "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
   "scenario_sha256": "9f0e6c06bb3f8f1d3b38b514f28a4d91bc9f29678230f78077223b1594df043d",
   "seed": null,
