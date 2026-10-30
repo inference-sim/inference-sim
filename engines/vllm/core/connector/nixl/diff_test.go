@@ -421,7 +421,6 @@ type queuedGPU struct {
 	finishedAt  map[string]int
 	reported    map[string]bool
 	transport   *step
-	spec        map[string]int
 }
 
 func (g *queuedGPU) Output(b engine.Batch) map[string][]int64 {

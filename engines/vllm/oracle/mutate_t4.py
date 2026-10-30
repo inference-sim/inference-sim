@@ -19,7 +19,7 @@ MUTANTS = [
      "if n := s.remoteTokenCount(len(r.Prompt)) - localComputed; n > 0 {",
      "if n := s.remoteTokenCount(len(r.Prompt)); n > 0 {"),
     ("N2", "the prefiller holds a finished request's blocks", "core/connector/nixl/nixl.go",
-     "\tdelay := len(computedBlockIDs) > 0\n", "\tdelay := false\n"),
+     "\tif delay {\n\t\ts.send[r.ID] = true\n\t}\n\treturn delay", "\treturn false"),
     ("N3", "an aborted prefiller request frees at once", "core/connector/nixl/nixl.go",
      "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t\treturn false\n\t}",
      "\tif r.Status != sched.FinishedLength && r.Status != sched.FinishedStopped {\n\t\ts.notProcessed[r.ID] = true\n\t}"),
@@ -174,21 +174,10 @@ EQUIVALENT = {
     # single_type_kv_cache_manager.py:733-827) when the hash block size is the block size,
     # as it is for one group, so the block-aligned hit is the hit.
     "N17": "a full-attention local hit is always block-aligned",
-    # A request's blocks are freed by deferral only after its last step was processed, so its
-    # blocks hold one reference each and land at the free queue's head or tail by hash; within
-    # a deferred entry the order flips only for unhashed blocks that are all reused together by
-    # the next allocation, which takes them as a run: no scenario or seed has shown a difference
-    # (seeds 30000-30999). Kept as a candidate for a scenario that splits such a run.
-    "N37": "a deferred entry's blocks are reused as one run",
     # Every KV cache group holds at least one block of a request whose group 0 does: the NIXL
     # delay decision reads any group (pull_scheduler.py:248), and group 0 is non-empty whenever
     # another is (allocate_slots gives every group the request's slots).
     "N38": "group 0 holds a block whenever any group does",
-    # A remote-decode request reaches a prefiller with max_tokens 1 from the P/D proxy (as
-    # create_request builds it, tests/v1/kv_connector/unit/utils.py:260@5df63a72); the scenarios
-    # state it except nixl-p-mtp-backoff's p1, whose assigned output stops it at one token by the
-    # length cap only when the truncation sets it -- see the note in the report on N39.
-    "N39": "a remote-decode request is sent with max_tokens 1",
 }
 
 
