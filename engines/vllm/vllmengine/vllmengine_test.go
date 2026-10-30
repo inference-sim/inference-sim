@@ -470,15 +470,16 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 	}
 }
 
-// What vLLM refuses to start, the engine refuses: H200 DP8 x EP8 with the DSpark drafter at a
-// 262,144-token window leaves a rank 16,124 blocks, and its full-attention group alone needs
-// cdiv(262144, 16) = 16,384 for one request (get_kv_cache_configs' check,
+// What vLLM refuses to start, the engine refuses, with vLLM's message: H200 DP8 x EP8 with the
+// DSpark drafter at a 262,144-token window leaves a rank 16,124 blocks, and one request needs
+// cdiv(262144, 16) = 16,384 for its full-attention group plus 4 x 1,153 for its sliding-window
+// groups (get_kv_cache_configs' check,
 // vllm/v1/core/kv_cache_utils.py:2627-2647@5df63a72). The same arm at 131,072 runs (above).
 func TestMuseSparkDeploymentVLLMRefusesIsRefused(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h200-ib-dep8-dspark.yaml")}
 	_, err := engine.New(spec)
-	if err == nil || !strings.Contains(err.Error(), "cannot hold one max_model_len 262144 sequence") {
+	if err == nil || !strings.Contains(err.Error(), "To serve at least one request with the model's max seq len (262144)") {
 		t.Errorf("err %v, want vLLM's start-up refusal", err)
 	}
 }

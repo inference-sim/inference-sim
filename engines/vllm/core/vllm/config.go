@@ -173,7 +173,10 @@ func resolve(c Config) (settings, error) {
 	// checked against the blocks left beside the null block
 	// (vllm/v1/core/kv_cache_utils.py:2627-2647, 1003-1040@5df63a72). A request the cache could
 	// never hold would otherwise wait for ever.
-	if need := (maxLen + blockSize - 1) / blockSize; need > c.NumGPUBlocks-1 {
+	// A model stating its KV layers is checked over its KV cache groups instead, with vLLM's own
+	// message (checkKVLayersFit, check_enough_kv_cache_memory): a hybrid model's groups share the
+	// pool, so one full-attention group's need is not the whole of it.
+	if need := (maxLen + blockSize - 1) / blockSize; len(c.KVLayers) == 0 && need > c.NumGPUBlocks-1 {
 		return s, fmt.Errorf("vllm: num_gpu_blocks %d cannot hold one max_model_len %d sequence (%d blocks of %d "+
 			"beside the null block), which vLLM refuses at startup (vllm/v1/core/kv_cache_utils.py:2638-2647@5df63a72)",
 			c.NumGPUBlocks, maxLen, need, blockSize)

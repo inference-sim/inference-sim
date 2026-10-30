@@ -201,9 +201,15 @@ func checkKVLayersFit(c Config, blockSize, maxModelLen, inFlight, prefillLookahe
 		TrailingDrafter: trailingDrafter(method, c.KVLayers)}
 	var perBlock int64
 	if c.KVAvailableBytes > 0 {
-		if perBlock, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {
+		if _, err = kv.PoolBytesPerBlock(layers, o, blockSize); err != nil {
 			return fmt.Errorf("vllm: kv_layers: %w", err)
 		}
+		// The pool's own bytes a block: the caller sized num_gpu_blocks from kv_available_bytes
+		// (num_blocks = available // page_size, get_kv_cache_config_from_groups,
+		// kv_cache_utils.py:1622-1628@5df63a72), at the cache dtype and per-rank width it prices.
+		// The layer runs' element bytes are the engine's defaults, not the served cache dtype, so
+		// they would put the needed and the available memory in different units.
+		perBlock = c.KVAvailableBytes / int64(c.NumGPUBlocks)
 	}
 	limits := kv.RequestLimits{MaxModelLen: maxModelLen, MaxInFlightTokens: inFlight,
 		ExtraRetained: max(0, prefillLookahead-1)}
