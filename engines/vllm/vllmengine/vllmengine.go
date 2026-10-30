@@ -118,6 +118,12 @@ func open(s engine.Spec) (pool, error) {
 //
 // For a hybrid model it also returns the memory the pool was sized from, which the engine block
 // states as kv_available_bytes so vLLM's start-up check reports its numbers in GiB.
+//
+// Under pipeline parallelism each stage's rank sizes a pool over its own layers (the drafter's
+// on the last), and the engine keeps the smallest (get_kv_cache_configs step 5,
+// vllm/v1/core/kv_cache_utils.py:2530-2660@5df63a72). The kernel's per-rank budget and bytes per
+// block are the binding stage's, so each stage's layers are sized against them and the
+// smallest count is the pool's.
 func poolBlocks(m *kernelmodel.Model, st kernelmodel.Settings) (int64, int64, error) {
 	runs, err := m.KVLayers()
 	if err != nil || len(runs) == 0 {
@@ -131,9 +137,51 @@ func poolBlocks(m *kernelmodel.Model, st kernelmodel.Settings) (int64, int64, er
 	if err != nil {
 		return 0, 0, err
 	}
-	blocks, err := vllm.KVPoolBlocks(vllmRuns(runs), e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager,
-		e.BlockSize, b.PerBlockBytes, b.AllocatableBytes)
-	return blocks, b.AllocatableBytes, err
+	disable := e.DisableHybridKVCacheManager != nil && *e.DisableHybridKVCacheManager
+	pp := m.PipelineStages()
+	if pp == 1 {
+		blocks, err := vllm.KVPoolBlocks(vllmRuns(runs), disable, e.BlockSize, b.PerBlockBytes, b.AllocatableBytes)
+		return blocks, b.AllocatableBytes, err
+	}
+	// The kernel's bytes a block are the binding stage's: the stage holding the most KV
+	// elements a token (liftPipelineMemory). Every layer is at one cache dtype, so its bytes
+	// over that stage's elements is the bytes an element, which sizes every stage's page.
+	stages := make([][]kernelmodel.KVLayerRun, pp)
+	var widest int64
+	for s := range pp {
+		if stages[s], err = m.KVLayersOfStage(s); err != nil {
+			return 0, 0, err
+		}
+		widest = max(widest, kvElems(stages[s]))
+	}
+	if widest == 0 {
+		return st.KVBlocks, 0, nil
+	}
+	pool := int64(-1)
+	for _, stage := range stages {
+		if len(stage) == 0 {
+			continue
+		}
+		perBlock := b.PerBlockBytes * kvElems(stage) / widest
+		blocks, err := vllm.KVPoolBlocks(vllmRuns(stage), disable, e.BlockSize, perBlock, b.AllocatableBytes)
+		if err != nil {
+			return 0, 0, err
+		}
+		if pool < 0 || blocks < pool {
+			pool = blocks
+		}
+	}
+	return pool, b.AllocatableBytes, nil
+}
+
+// kvElems is the KV elements one token of these layers holds: what scales a block's bytes
+// between layer sets at one cache dtype.
+func kvElems(runs []kernelmodel.KVLayerRun) int64 {
+	var n int64
+	for _, r := range runs {
+		n += int64(r.Count) * int64(r.NumKVHeads) * int64(r.HeadSize)
+	}
+	return n
 }
 
 // poolBlock reads the pool's engine block, as the document gave it, and its parallel block.

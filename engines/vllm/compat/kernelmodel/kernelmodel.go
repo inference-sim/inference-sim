@@ -333,7 +333,10 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, e
 	m.engine = engine
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
-	m.graph = in.Model
+	// The graph the kernel priced: the scenario's, with a drafter named by
+	// speculative.draft_model grafted on, so the KV groups sized from it are the priced layers.
+	g := k.Graph()
+	m.graph = &g
 	if in.Rules != nil {
 		m.cacheDType = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, m.id.capabilityMajor,
 			max(pool.Parallel.TP, 1), engine.CacheDType)

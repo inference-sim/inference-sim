@@ -139,3 +139,53 @@ func TestTheTrailingDrafterGroupIsFlagged(t *testing.T) {
 		})
 	}
 }
+
+// Muse-Spark-Open-816B-A42B's pool, per pipeline stage, is vLLM's own count. The figures are
+// get_kv_cache_configs' num_blocks at v0.32.0 (vllm/v1/core/kv_cache_utils.py:2530-2660
+// @5df63a72), printed from the pinned source for 28.5 GiB a rank, block 16, two KV heads of 64
+// a rank (16 at tp 8), bf16: the 62 layers of layer_types (16 full, 46 sliding at 2048) on one
+// rank, each half of them on a pp 2 stage, and the five sliding-window DSpark draft layers
+// after them on the last stage. Each worker's pool comes from its own layers; the engine keeps
+// the smallest.
+func TestMuseSparkPoolPerStageIsVLLMs(t *testing.T) {
+	full := []bool{false, true, false, false}
+	layers := func(lo, hi, draft int) []KVLayerRun {
+		var runs []KVLayerRun
+		add := func(spec string, window int) {
+			if l := len(runs) - 1; l >= 0 && runs[l].Spec == spec && runs[l].SlidingWindow == window {
+				runs[l].Count++
+				return
+			}
+			runs = append(runs, KVLayerRun{Count: 1, Spec: spec, SlidingWindow: window, NumKVHeads: 2, HeadSize: 64})
+		}
+		for i := lo; i < hi; i++ {
+			if full[i%4] {
+				add("full", 0)
+			} else {
+				add("sliding_window", 2048)
+			}
+		}
+		for range draft {
+			add("sliding_window", 2048)
+		}
+		return runs
+	}
+	const mem = int64(28.5 * (1 << 30))
+	perBlock := func(n int) int64 { return int64(16 * 2 * 64 * 2 * 2 * n) }
+	for _, c := range []struct {
+		what          string
+		lo, hi, draft int
+		want          int64
+	}{
+		{"pp 1", 0, 62, 0, 233472},
+		{"pp 2, stage 0", 0, 31, 0, 466944},
+		{"pp 2, stage 1", 31, 62, 0, 466944},
+		{"pp 1 with the drafter", 0, 62, 5, 233472},
+		{"pp 2, stage 1 with the drafter", 31, 62, 5, 466944},
+	} {
+		got, err := KVPoolBlocks(layers(c.lo, c.hi, c.draft), false, 16, perBlock(c.hi-c.lo+c.draft), mem)
+		if err != nil || got != c.want {
+			t.Errorf("%s: %d blocks (%v), vLLM sizes %d", c.what, got, err, c.want)
+		}
+	}
+}
