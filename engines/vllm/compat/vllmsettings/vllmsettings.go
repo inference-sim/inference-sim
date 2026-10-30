@@ -28,6 +28,7 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 		BlockSize:               e.BlockSize,
 		MaxNumSeqs:              e.MaxNumSeqs,
 		MaxNumBatchedTokens:     e.MaxNumBatchedTokens,
+		GPUMemoryUtilization:    e.GPUMemoryUtilization,
 		MaxModelLen:             enginesettings.MaxModelLen(e.MaxModelLen),
 		EnablePrefixCaching:     e.EnablePrefixCaching,
 		AsyncScheduling:         e.AsyncScheduling,

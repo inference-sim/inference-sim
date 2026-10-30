@@ -109,6 +109,7 @@ func TestOfCarriesEachValue(t *testing.T) {
 		"BlockSize":               {s.BlockSize, e.BlockSize},
 		"MaxNumSeqs":              {s.MaxNumSeqs, e.MaxNumSeqs},
 		"MaxNumBatchedTokens":     {s.MaxNumBatchedTokens, e.MaxNumBatchedTokens},
+		"GPUMemoryUtilization":    {s.GPUMemoryUtilization, e.GPUMemoryUtilization},
 		"MaxModelLen":             {int(s.MaxModelLen), int(e.MaxModelLen)},
 		"CPKVCacheInterleaveSize": {s.CPKVCacheInterleaveSize, e.CPKVCacheInterleaveSize},
 		"NumSpecTokens":           {s.Speculative.NumSpecTokens, e.Speculative.NumSpecTokens},

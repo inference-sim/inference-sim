@@ -104,7 +104,12 @@ func TestPPCapacityIsTheSmallestStagesPool(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s pp %d tp %d: %v", c.fix, c.pp, c.tp, err)
 		}
-		budget := k.chip.MemoryGiB * (1 << 30) * assumedMemoryUtilization
+		// Each worker's budget is the deployment's share of its GPU (gpu_worker.py:535-540@v0.32.0).
+		util := k.engine.GPUMemoryUtilization
+		if util <= 0 {
+			util = defaultMemoryUtilization
+		}
+		budget := k.chip.MemoryGiB * (1 << 30) * util
 		best, at := math.Inf(1), -1
 		for i := range k.stages {
 			st := &k.stages[i]
@@ -221,10 +226,15 @@ func TestPPReceivingStageAllGathersTheSlices(t *testing.T) {
 // sends the stream and two fp32 states; at pp 4 ([0, 15), [15, 31), [31, 47), [47, 62)) the
 // boundaries carry 1, 2 and 3.
 func TestPPBoundaryCarriesTheDrafterAuxStates(t *testing.T) {
+	// Each stage sends the fp32 stream, its own captures at fp32, and the captures it relays
+	// from upstream at the model dtype, bf16: the receive slots are allocated at
+	// model_config.dtype (eagle3_utils.py:89-95, gpu/model_runner.py:537-541@v0.32.0). At pp 4
+	// over 62 layers ([0,15) [15,31) [31,47) [47,62)) stage 1 relays 14 and captures 30, and
+	// stage 2 relays 14 and 30 and captures 46.
 	for _, c := range []struct {
 		pp, tp int
-		aux    []int
-	}{{2, 8, []int{2}}, {4, 4, []int{1, 2, 3}}} {
+		aux    []int // per stage: [own, relayed]
+	}{{2, 8, []int{2, 0}}, {4, 4, []int{1, 0, 1, 1, 1, 2}}} {
 		in := ppInputs(t, "muse-h100-pp2tp8-dspark.yaml", c.pp, c.tp)
 		k, err := newKernel(in)
 		if err != nil {
@@ -237,11 +247,12 @@ func TestPPBoundaryCarriesTheDrafterAuxStates(t *testing.T) {
 		} else if len(got) != 5 {
 			t.Fatalf("the drafter graph states aux layers %v, want Muse's five", got)
 		}
-		for i, n := range c.aux {
-			want := (32768 + float64(n)*32768) / float64(c.tp)
+		for i := 0; 2*i < len(c.aux); i++ {
+			own, relayed := c.aux[2*i], c.aux[2*i+1]
+			want := (32768 + float64(own)*32768 + float64(relayed)*16384) / float64(c.tp)
 			if got := k.stages[i].sendBytesPerToken; got != want {
-				t.Errorf("pp %d stage %d sends %v B a token a rank, want the stream and %d aux states, %v",
-					c.pp, i, got, n, want)
+				t.Errorf("pp %d stage %d sends %v B a token a rank, want the stream, %d own and %d relayed aux states, %v",
+					c.pp, i, got, own, relayed, want)
 			}
 		}
 	}
@@ -447,6 +458,48 @@ func TestMusePoolerShardsAtDecodeOnBlackwell(t *testing.T) {
 	for _, g := range h.plan.Layers[0].DenseGEMMs {
 		if g.ShardedAtDecode != nil && h.shardsAtDecode(&g, 64) {
 			t.Error("Hopper sharded the pooler")
+		}
+	}
+}
+
+// B2 at the deployment's utilization: the kernel picks the binding stage at the engine block's
+// gpu_memory_utilization, the share each worker requests (requested_memory,
+// vllm/v1/worker/gpu_worker.py:535-540@v0.32.0). MiniMax-M2.5 at pp 3 x tp 2 has a last stage
+// that holds the head and an embedding-holding first one; across utilizations the binding
+// stage is the smallest of the pools recomputed at that utilization, and the kernel's
+// recorded fallback appears only where the block states none.
+func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
+	for _, util := range []float64{0, 0.5, 0.92, 0.98} {
+		in := ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2)
+		e := mustDecode(t, in.Deployment.Pools[0])
+		e.GPUMemoryUtilization = util
+		setEngine(t, &in.Deployment.Pools[0], e)
+		k, err := newKernel(in)
+		if err != nil {
+			t.Fatalf("util %v: %v", util, err)
+		}
+		u := util
+		if u <= 0 {
+			u = defaultMemoryUtilization
+		}
+		budget := k.chip.MemoryGiB * (1 << 30) * u
+		best, at := math.Inf(1), -1
+		for i := range k.stages {
+			st := &k.stages[i]
+			other := float64(k.captureBytes+k.deepEPBufferBytes(k.graph)) + k.activationBytes(k.graph, st.last)
+			if tok := (budget - stageWeights(k, st) - other) / st.memory.kvPerToken; tok < best {
+				best, at = tok, i
+			}
+		}
+		if at != k.ppKVStage {
+			t.Errorf("util %v: binding stage %d, the smallest pool at that utilization is stage %d's", util, k.ppKVStage, at)
+		}
+		recorded := false
+		for _, a := range k.assumptions {
+			recorded = recorded || a.Name == "pipeline_binding_utilization"
+		}
+		if recorded != (util == 0) {
+			t.Errorf("util %v: pipeline_binding_utilization recorded %t", util, recorded)
 		}
 	}
 }
