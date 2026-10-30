@@ -106,6 +106,8 @@ type Engine struct {
 	gpu batchOutput
 	// pd is the engine's P/D connector side, nil when it runs none (connector.go).
 	pd *pd
+	// off is the engine's KV offload side, nil when it runs none (offload.go).
+	off *offload
 }
 
 // reqState is what the engine keeps of a request beside the scheduler's own record.
@@ -131,6 +133,8 @@ type batchOutput struct {
 	// pd is the engine's connector side, whose pending outcome the worker reports with each
 	// applied output (Transfers); nil when the engine runs none.
 	pd *pd
+	// off is the engine's KV offload side, whose completed jobs the workers report likewise.
+	off *offload
 }
 
 // Output implements core/engine.GPU.
@@ -156,6 +160,12 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		return nil, err
 	}
 	e.gpu.pd = e.pd
+	if st.offload != nil {
+		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.sched.EnablePrefixCaching); err != nil {
+			return nil, err
+		}
+		e.gpu.off = e.off
+	}
 	return e, nil
 }
 
@@ -412,6 +422,9 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 	}
 	b.Preempted = append([]string(nil), cb.Out.Preempted...)
 	b.TransfersStarted = e.pd.started(e.s)
+	if e.off != nil {
+		b.TransfersStarted = append(b.TransfersStarted, e.off.started(cb.Out.KVConnectorMetadata)...)
+	}
 	for _, id := range cb.Out.Preempted {
 		e.reqs[id].preemptions++
 	}
@@ -633,6 +646,10 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 // is unknown. The simulator steps the engine after a transfer completion at the same instant
 // (the engine package's same-instant order), and that step's output carries it.
 func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
+	if e.off != nil {
+		// An engine runs one connector (resolve), so the transfer is the offload's.
+		return e.off.done(id, ok)
+	}
 	failed, err := e.pd.done(id, ok)
 	if err != nil || failed == "" {
 		return err
@@ -644,6 +661,12 @@ func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) er
 // new input: unfinished requests, or a transfer outcome its next step reports. Finished requests
 // whose blocks the connector holds change nothing until the simulator ends the hold, so they do
 // not keep the engine polling (the wake protocol's "with no new input").
+//
+// Offload jobs in flight do not keep it polling either: vLLM's loop steps every millisecond while
+// has_pending_push_work holds has_requests true (core.py:1611-1616@5df63a72), but those steps
+// change nothing until a job's completion is reported, and the simulator steps the engine at the
+// TransferDone that reports it. A schedule's flushed jobs and the completions reported before it
+// are taken by its own applied output, so none waits for a poll.
 func (e *Engine) polls() bool { return e.s.HasUnfinished() || e.pd.pending() }
 
 // Finish implements engine.Engine: finish_requests(FINISHED_ABORTED), a no-op for an unknown

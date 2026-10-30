@@ -24,7 +24,7 @@ runs:
           echo "FUZZ_T2_SEEDS=1000-2000_5000-2000"
           echo "FUZZ_T3_SEEDS=1000-1000"
           echo "FUZZ_DP_SEEDS=1000-500_2000-500"
-          echo "FUZZ_OFFLOAD_SEEDS=1-1000_20000-1000"
+          echo "FUZZ_OFFLOAD_SEEDS=1-1000_20000-1000_40000-600"
           echo "FUZZ_CONNECTOR_SEEDS=1-1000_10000-300_20000-1000_30000-1000"
           echo "FUZZ_VLLM_COMMIT=5df63a7203cdb9328d824a27b682e77c7b9928be"
           echo "FUZZ_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6"
@@ -148,7 +148,7 @@ runs:
       run: |
         export ORACLE_MODEL_REVISION="$FUZZ_MODEL_REVISION"
         mkdir -p oracle/out/fuzz-offloading
-        # Seeds 20000+ add sliding-window KV cache groups beside full attention.
+        # Seeds 20000+ add sliding-window KV cache groups beside full attention; 40000+ several workers.
         for r in ${FUZZ_OFFLOAD_SEEDS//_/ }; do python -I oracle/gen_offloading_fuzz.py oracle/out/fuzz-offloading "${r%-*}" "${r#*-}"; done
         python -I oracle/run_offloading.py vllm-source oracle/out/fuzz-offloading
     - name: save the offloading fuzz corpus and vLLM's traces (cache miss)

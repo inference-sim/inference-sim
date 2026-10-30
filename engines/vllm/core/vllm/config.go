@@ -77,6 +77,10 @@ type Config struct {
 	// The deployment states the connector (pd_transfer.connector) and the pool's role; a caller
 	// restates them here. Unstated is no connector.
 	KVTransfer *connectorConfig `yaml:"kv_transfer,omitempty"`
+	// KVOffload is the pool's KV offload connector and its CPU tier (offload.go). The deployment
+	// states it (offload: connector, tiers, eviction_policy); a caller restates it here with the
+	// bytes a block its memory model sizes. Unstated is no offload.
+	KVOffload *offloadConfig `yaml:"kv_offload,omitempty"`
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -107,6 +111,8 @@ type settings struct {
 	// vLLM's NIXL worker checks it against.
 	connector *connectorConfig
 	pp        int
+	// offload is the pool's KV offload, nil for none.
+	offload *offloadConfig
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
@@ -311,6 +317,16 @@ func resolve(c Config) (settings, error) {
 	}
 	s.queueSize, s.v2Runner = queue, v2
 	s.connector, s.pp = c.KVTransfer, pp
+	s.offload = c.KVOffload
+	if s.offload != nil && s.connector != nil {
+		// Both at once is vLLM's MultiConnector, which is not modelled.
+		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
+			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/14")
+	}
+	if s.offload != nil && c.DataParallelSize > 1 {
+		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/14")
+	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
 	if s.dp.syncInterval == 0 {
