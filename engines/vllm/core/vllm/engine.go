@@ -204,6 +204,15 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 		return fmt.Errorf("vllm: request %s: the prompt (length %d) plus at least one output token is longer "+
 			"than the maximum model length of %d", r.ID, len(r.Prompt), maxLen)
 	}
+	if r.RemoteDecode {
+		// A P/D proxy sends the prefill leg with max_tokens 1: the prefiller samples one token
+		// and the decoder generates the rest. A simulator that assigns the prefill leg no output
+		// gets that one token (the shared GPU mock's EOS, so it stops there).
+		if len(r.Output) == 0 {
+			r.Output = []int32{0}
+		}
+		r.MaxOutputTokens = 1
+	}
 	if len(r.Output) == 0 {
 		return fmt.Errorf("vllm: request %s has no assigned output: a generating request samples at least one token", r.ID)
 	}

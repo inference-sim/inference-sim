@@ -213,3 +213,27 @@ func TestPDRefusals(t *testing.T) {
 		t.Error("a kv_producer accepted a remote prefill")
 	}
 }
+
+// A prefill leg is the proxy's max_tokens 1 request: one token sampled, whatever output the
+// simulator assigned it, none included.
+func TestPDPrefillLegSamplesOneToken(t *testing.T) {
+	for _, out := range []int{0, 9} {
+		p := mustEngine(t, producer)
+		r := req("a", 40, max(out, 1))
+		if out == 0 {
+			r.Output = nil
+		}
+		r.RemoteDecode = true
+		if err := p.Add(r, 0); err != nil {
+			t.Fatalf("output %d: %v", out, err)
+		}
+		results, _, _ := runOne(t, p, 0)
+		var fin []engine.Finished
+		for _, res := range results {
+			fin = append(fin, res.Finished...)
+		}
+		if len(fin) != 1 || fin[0].OutputTokens != 1 {
+			t.Fatalf("output %d: finished %+v, want one token", out, fin)
+		}
+	}
+}
