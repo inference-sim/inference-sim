@@ -3,15 +3,8 @@
 package build
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/spec/acceptance"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -31,10 +24,6 @@ const (
 	AcceptanceThinkingFlag = "speculative-thinking"
 	AcceptanceCategoryFlag = "speculative-category"
 	AcceptanceFallbackFlag = "speculative-fallback-category"
-
-	// registryAcceptanceDir is the registry's acceptance-profile namespace, the counterpart of
-	// coefficients/ (blis-schemas registry layout).
-	registryAcceptanceDir = "acceptance"
 )
 
 // AcceptanceFlags are the command line's acceptance layer and selectors, each with whether it
@@ -152,47 +141,12 @@ func acceptanceWorkloadTerms(in AcceptanceInputs) acceptance.Workload {
 	return w
 }
 
-// loadRegistryAcceptanceSets loads and validates every acceptance-profile set under the
-// registry's acceptance/ namespace, in path order. A registry with no such namespace has no
-// sets; a set that fails to load or validate is an error, never skipped.
+// loadRegistryAcceptanceSets is kernelmodel's loader, the one copy: the kernel resolves the same
+// sets for adaptive verification (kernelmodel resolveAcceptance).
 func loadRegistryAcceptanceSets(registry string) ([]*acceptance.ProfileSet, error) {
-	dir := filepath.Join(registry, registryAcceptanceDir)
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	var paths []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type().IsRegular() && (strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
-			paths = append(paths, p)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", dir, err)
-	}
-	sort.Strings(paths)
-	sets := make([]*acceptance.ProfileSet, 0, len(paths))
-	for _, p := range paths {
-		s, err := blisschemas.LoadAcceptanceProfileSet(p)
-		if err != nil {
-			return nil, fmt.Errorf("acceptance profile set %s: %w", p, err)
-		}
-		if problems := s.Validate(); !problems.OK() {
-			return nil, fmt.Errorf("acceptance profile set %s: %s", p, problems.Error())
-		}
-		sets = append(sets, s)
-	}
-	return sets, nil
+	return kernelmodel.LoadRegistryAcceptanceSets(registry)
 }
 
 func findSet(sets []*acceptance.ProfileSet, name string) *acceptance.ProfileSet {
-	for _, s := range sets {
-		if s.Name == name {
-			return s
-		}
-	}
-	return nil
+	return kernelmodel.FindAcceptanceSet(sets, name)
 }

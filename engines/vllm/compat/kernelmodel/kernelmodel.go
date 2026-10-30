@@ -297,6 +297,11 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if in.Routing, err = resolveRouting(in, engine, r.Registry, routingOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
+	// Read by the kernel only under adaptive verification, which sizes its verify budget from it
+	// (blis-latency-kernel#89); nil otherwise, as the kernel then prices without it.
+	if in.Acceptance, err = resolveAcceptance(in, engine, r.Registry, acceptanceOverrides); err != nil {
+		return nil, fmt.Errorf("%s: %w", scenario, err)
+	}
 	return fromDecoded(in, engine)
 }
 
@@ -580,6 +585,28 @@ type ReqShape = kernel.ReqShape
 func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
 	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
+}
+
+// verifiedDrafter is the latency kernel's adaptive-verification answer (blis-latency-kernel#89):
+// for each request of a batch, how many drafts the verifier runs under the adaptive budget, or
+// nil when the pool does not verify adaptively.
+type verifiedDrafter interface {
+	VerifiedDrafts(b kernel.Batch) []int
+}
+
+// VerifiedDraftsOfShapes is, for each request of a batch already in the kernel's shapes, how many
+// of its scheduled drafts the verifier runs, or nil when every scheduled draft is verified: the
+// pool does not turn adaptive verification on, or its kernel does not trim. Under adaptive
+// verification vLLM's scheduler still budgets 1 + K tokens a decode, and the runner trims the
+// verified drafts on the GPU to a confidence-chosen budget (get_num_tokens and reallocate_drafts,
+// vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350,392-448@5df63a72); the batch is
+// the one StepTimeOfShapes prices, so the widths are the ones its step time was priced at.
+func (m *Model) VerifiedDraftsOfShapes(reqs []ReqShape) []int {
+	v, ok := m.k.(verifiedDrafter)
+	if !ok {
+		return nil
+	}
+	return v.VerifiedDrafts(kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget})
 }
 
 // StageTimesOfShapes splits StepTimeOfShapes by pipeline stage, in pipeline order, where the

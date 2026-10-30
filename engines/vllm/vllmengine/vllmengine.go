@@ -510,6 +510,14 @@ func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
 	return engine.Duration(k.m.StepTimeOfShapes(shapes(b)))
 }
 
+// VerifiedDrafts implements core/vllm.VerifyingPricer: how many of each request's scheduled
+// drafts the verifier runs under DSpark adaptive verification, from the same kernel and the same
+// shapes StepTime priced (compat/kernelmodel.VerifiedDraftsOfShapes); nil when the pool does not
+// verify adaptively, so the engine caps acceptance at the scheduled drafts as before.
+func (k kernelPricer) VerifiedDrafts(b engine.Batch) []int {
+	return k.m.VerifiedDraftsOfShapes(shapes(b))
+}
+
 // TransferTime implements core/vllm.TransferPricer: an offload transfer of t.Blocks GPU blocks
 // to or from the CPU tier, as the kernel prices it (TierTime at cpu_dram, one at a time, as
 // vLLM's offload handler runs its copies on one stream chain: kv_offload/cpu/gpu_worker.py).
