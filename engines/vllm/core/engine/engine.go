@@ -220,12 +220,14 @@ func (c *Core) Schedule() Batch {
 
 // Drop takes the most recent batch back off the queue without applying it: a batch that
 // scheduled no tokens is not in flight for a caller of Schedule, and vLLM's update_from_output
-// of an empty schedule changes no request, only the stats it reports.
-func (c *Core) Drop(b Batch) {
+// of an empty schedule changes no request but one a connector's outcome finishes (a failed load
+// under kv_load_failure_policy "fail"), whose finish records it returns.
+func (c *Core) Drop(b Batch) []sched.Finished {
 	if n := len(c.queue); n > 0 && c.queue[n-1].ID == b.ID {
 		c.queue = c.queue[:n-1]
-		c.process(b)
+		return c.process(b)
 	}
+	return nil
 }
 
 // Complete is the second half: it applies the oldest queued batch, which must be b, with the

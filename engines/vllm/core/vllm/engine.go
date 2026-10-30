@@ -108,6 +108,10 @@ type Engine struct {
 	pd *pd
 	// off is the engine's KV offload side, nil when it runs none (offload.go).
 	off *offload
+	// emptyFinished are requests a schedule that ran no tokens finished (a failed load under
+	// kv_load_failure_policy "fail": update_from_output finishes it as an error,
+	// scheduler.py:2306-2325@5df63a72), not yet reported: the next Batch's Finished reports them.
+	emptyFinished []sched.Finished
 }
 
 // reqState is what the engine keeps of a request beside the scheduler's own record.
@@ -215,12 +219,10 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 			"than the maximum model length of %d", r.ID, len(r.Prompt), maxLen)
 	}
 	if r.RemoteDecode {
-		// A P/D proxy sends the prefill leg with max_tokens 1: the prefiller samples one token
-		// and the decoder generates the rest. A simulator that assigns the prefill leg no output
-		// gets that one token (the shared GPU mock's EOS, so it stops there).
-		if len(r.Output) == 0 {
-			r.Output = []int32{0}
-		}
+		// A P/D proxy sends the prefill leg with max_tokens 1 (vLLM's toy_proxy_server.py:167-169,
+		// llm-d's CapSingleToken): the prefiller samples one token and the decoder generates the
+		// rest. The simulator assigns the leg that token (engine.Request.Output's first).
+		// Its finish is the cap's (length), unless the assigned output is that one token.
 		r.MaxOutputTokens = 1
 	}
 	if len(r.Output) == 0 {
@@ -295,6 +297,16 @@ func (e *Engine) maxModelLen() int {
 // Schedule returns an empty batch, scheduling nothing, while a step is blocked: the simulator's
 // next Complete ends that step, and its following Schedule call is the loop's next step.
 func (e *Engine) Schedule(now engine.Time) (engine.Batch, error) {
+	b, err := e.schedule(now)
+	if err == nil {
+		// Requests this decision ended without running them (Batch.Finished): a failed load under
+		// kv_load_failure_policy "fail", finished in update_from_output of a step that ran nothing.
+		b.Finished = append(b.Finished, e.takeEmptyFinished()...)
+	}
+	return b, err
+}
+
+func (e *Engine) schedule(now engine.Time) (engine.Batch, error) {
 	if len(e.pending) >= e.InFlightLimit() {
 		// The contract's capacity is the batches in flight: an empty schedule holds a slot of
 		// vLLM's queue but no forward pass, and is drained before the next batch is completed.
@@ -373,6 +385,7 @@ func (e *Engine) drainEmpty(at engine.Time) {
 		}
 		e.queuedEmpty = e.queuedEmpty[1:]
 		res := e.core.StepEnd(core.StepResult{})
+		e.emptyFinished = append(e.emptyFinished, res.Finished...)
 		e.finishStep(*res.Processed, nil, res.Finished, at)
 	}
 }
@@ -387,8 +400,9 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 	if b.Empty() {
 		// A batch that runs nothing is not in flight (the contract), and vLLM's step() makes no
 		// output for it: update_from_output with nothing scheduled changes no request.
-		e.core.Drop(cb)
-		e.finishStep(cb, nil, nil, now)
+		fins := e.core.Drop(cb)
+		e.emptyFinished = append(e.emptyFinished, fins...)
+		e.finishStep(cb, nil, fins, now)
 		e.idleWake = 0
 		if e.polls() && len(e.pending) == 0 {
 			e.idleWake = now + idlePollUs
@@ -400,6 +414,29 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 	b.ID = e.nextID
 	e.pending = append(e.pending, pendingBatch{id: b.ID, b: cb})
 	return b, nil
+}
+
+// takeEmptyFinished reports the requests schedules that ran nothing have finished since the last
+// batch returned: their finish records, which go in that batch's Finished, and their entries.
+func (e *Engine) takeEmptyFinished() []engine.Finished {
+	var out []engine.Finished
+	for _, f := range e.emptyFinished {
+		why := engine.FinishStop
+		switch f.Status {
+		case sched.FinishedLength:
+			why = engine.FinishLength
+		case sched.FinishedError:
+			why = engine.FinishError
+		}
+		out = append(out, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
+		if e.inFlight(f.ID) {
+			e.aborted[f.ID] = true
+		} else {
+			delete(e.reqs, f.ID)
+		}
+	}
+	e.emptyFinished = nil
+	return out
 }
 
 // batchOf is a scheduled batch in the contract's terms.
@@ -663,8 +700,9 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 }
 
 // TransferDone implements engine.Engine: a P/D transfer's end, which the worker reports with
-// the next applied output (connector.go). A failed pull aborts its request here: the simulator
-// has given up on it. An engine with no connector starts none, so every ID
+// the next applied output (connector.go). A failed pull ends as the pool's kv_load_failure_policy
+// says: an error finish the next result reports, or a local recompute. An engine with no
+// connector starts none, so every ID
 // is unknown. The simulator steps the engine after a transfer completion at the same instant
 // (the engine package's same-instant order), and that step's output carries it.
 func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
@@ -672,11 +710,7 @@ func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) er
 		// An engine runs one connector (resolve), so the transfer is the offload's.
 		return e.off.done(id, ok)
 	}
-	failed, err := e.pd.done(id, ok)
-	if err != nil || failed == "" {
-		return err
-	}
-	return e.Finish(failed, engine.FinishAbort, now)
+	return e.pd.done(id, ok)
 }
 
 // polls reports whether vLLM's loop, after a step that ran no model, would step again with no

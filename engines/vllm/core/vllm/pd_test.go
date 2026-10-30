@@ -131,34 +131,101 @@ func TestPDThroughTheEngine(t *testing.T) {
 	}
 }
 
-// A pull the simulator reports failed takes the request off the decoder: the blocks the load
-// reserved are freed, nothing more is reported for it, and the transfer is no longer known.
-func TestPDFailedPullFailsTheRequest(t *testing.T) {
-	d := mustEngine(t, consumer)
-	r := req("a", 80, 6)
-	r.RemotePrefill = true
-	if err := d.Add(r, 0); err != nil {
-		t.Fatal(err)
-	}
-	b, err := d.Schedule(0)
-	if err != nil || len(b.TransfersStarted) != 1 {
-		t.Fatalf("schedule: %v, transfers %v", err, b.TransfersStarted)
-	}
-	if err := d.TransferDone(b.TransfersStarted[0].ID, false, 100); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.TransferDone(b.TransfersStarted[0].ID, true, 100); err != engine.ErrUnknownTransfer {
-		t.Fatalf("a second TransferDone of the same pull: %v, want ErrUnknownTransfer", err)
-	}
-	results, _, _ := runOne(t, d, 0)
-	for _, res := range results {
-		if len(res.Finished) > 0 || len(res.Emitted) > 0 {
-			t.Fatalf("the failed request still ran: %+v", res)
+// A pull the simulator reports failed ends as vLLM's kv_load_failure_policy says
+// (scheduler.py:2057-2061, 3132-3153, 3341-3354@5df63a72): under "fail", the default, the request
+// finishes as an error; under "recompute" the decoder computes the prompt itself and the request
+// completes. An error finish the step that applied the outcome made, which ran nothing, is
+// reported in that schedule's Batch.Finished. Either way the transfer is then unknown and every
+// block is free again.
+func TestPDFailedPullFollowsTheLoadFailurePolicy(t *testing.T) {
+	for _, c := range []struct {
+		policy string
+		want   engine.FinishReason
+		out    int
+	}{{"", engine.FinishError, 0}, {"recompute", engine.FinishStop, 6}} {
+		extra := consumer
+		if c.policy != "" {
+			extra = "kv_transfer: {connector: NixlConnector, kv_role: kv_consumer, kv_load_failure_policy: " + c.policy + "}\n"
+		}
+		d := mustEngine(t, extra)
+		r := req("a", 80, 6)
+		r.RemotePrefill = true
+		if err := d.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+		b, err := d.Schedule(0)
+		if err != nil || len(b.TransfersStarted) != 1 {
+			t.Fatalf("%q: schedule: %v, transfers %v", c.policy, err, b.TransfersStarted)
+		}
+		if err := d.TransferDone(b.TransfersStarted[0].ID, false, 100); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.TransferDone(b.TransfersStarted[0].ID, true, 100); err != engine.ErrUnknownTransfer {
+			t.Fatalf("%q: a second TransferDone of the same pull: %v, want ErrUnknownTransfer", c.policy, err)
+		}
+		results, batches, _ := runOneBatches(t, d)
+		var fin []engine.Finished
+		for _, res := range results {
+			fin = append(fin, res.Finished...)
+		}
+		for _, b := range batches {
+			fin = append(fin, b.Finished...)
+		}
+		if len(fin) != 1 || fin[0].Reason != c.want || fin[0].OutputTokens != c.out {
+			t.Fatalf("%q: finished %+v, want a as %s with %d tokens", c.policy, fin, c.want, c.out)
+		}
+		if d.s.NumRequests() != 0 || d.s.KV.Pool.NumFree() != d.s.KV.Pool.NumBlocks()-1 {
+			t.Fatalf("%q: %d requests and %d of %d blocks free after the failed pull", c.policy, d.s.NumRequests(),
+				d.s.KV.Pool.NumFree(), d.s.KV.Pool.NumBlocks()-1)
 		}
 	}
-	if d.s.NumRequests() != 0 || d.s.KV.Pool.NumFree() != d.s.KV.Pool.NumBlocks()-1 {
-		t.Fatalf("%d requests and %d of %d blocks free after the failed pull", d.s.NumRequests(),
-			d.s.KV.Pool.NumFree(), d.s.KV.Pool.NumBlocks()-1)
+}
+
+// runOneBatches is runOne with no transfers, also returning every batch scheduled.
+func runOneBatches(t *testing.T, e *Engine) ([]engine.Result, []engine.Batch, engine.Time) {
+	t.Helper()
+	var results []engine.Result
+	var batches []engine.Batch
+	now := engine.Time(0)
+	for steps := 0; steps < 10000; steps++ {
+		b, err := e.Schedule(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		batches = append(batches, b)
+		if b.Empty() {
+			if !e.s.HasUnfinished() {
+				return results, batches, now
+			}
+			now += 1000
+			continue
+		}
+		now += e.StepTime(b)
+		res, err := e.Complete(b.ID, engine.Outcome{}, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		results = append(results, res)
+	}
+	t.Fatal("no progress")
+	return nil, nil, 0
+}
+
+// Every pull failing keeps the engine contract's laws: no request is lost (enginetest's
+// conservation), whatever the policy.
+func TestPDConformanceWhenEveryPullFails(t *testing.T) {
+	for _, extra := range []string{consumer, "kv_transfer: {connector: NixlConnector, kv_role: kv_consumer, kv_load_failure_policy: recompute}\n"} {
+		// A lone failed pull, whose error finish no result carries, and a mix.
+		lone := req("z", 40, 6)
+		lone.RemotePrefill = true
+		enginetest.TestEngine(t, build(t, extra), arrivals(lone), enginetest.Options{
+			TransferFails: func(engine.Transfer) bool { return true }})
+		reqs := []engine.Request{req("a", 40, 6), req("b", 70, 3), req("c", 20, 9)}
+		reqs[0].RemotePrefill, reqs[2].RemotePrefill = true, true
+		enginetest.TestEngine(t, build(t, extra), arrivals(reqs...), enginetest.Options{
+			TransferTime:  func(engine.Transfer) engine.Duration { return 250 },
+			TransferFails: func(engine.Transfer) bool { return true },
+		})
 	}
 }
 
@@ -204,6 +271,8 @@ func TestPDRefusals(t *testing.T) {
 		{"kv_both", "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n"},
 		{"unknown role", "kv_transfer: {connector: NixlConnector, kv_role: decoder}\n"},
 		{"consumer at pp 2", consumer + "pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n"},
+		{"producer at dp 2", producer + "data_parallel_size: 2\n"},
+		{"consumer at dp 2", consumer + "data_parallel_size: 2\n"},
 	} {
 		if _, err := build(t, c.extra)(); err == nil {
 			t.Errorf("%s: built, want refused", c.name)
@@ -221,28 +290,35 @@ func TestPDRefusals(t *testing.T) {
 	}
 }
 
-// A prefill leg is the proxy's max_tokens 1 request: one token sampled, whatever output the
-// simulator assigned it, none included.
+// A prefill leg is the proxy's max_tokens 1 request: one token sampled, which finishes it at its
+// length cap, whatever output the simulator assigned beyond it; a leg with none assigned is
+// refused, as any request is, rather than given a token the simulator never assigned.
 func TestPDPrefillLegSamplesOneToken(t *testing.T) {
-	for _, out := range []int{0, 9} {
-		p := mustEngine(t, producer)
-		r := req("a", 40, max(out, 1))
-		if out == 0 {
-			r.Output = nil
-		}
-		r.RemoteDecode = true
-		if err := p.Add(r, 0); err != nil {
-			t.Fatalf("output %d: %v", out, err)
-		}
-		results, _, _ := runOne(t, p, 0)
-		var fin []engine.Finished
-		for _, res := range results {
-			fin = append(fin, res.Finished...)
-		}
-		if len(fin) != 1 || fin[0].OutputTokens != 1 {
-			t.Fatalf("output %d: finished %+v, want one token", out, fin)
-		}
+	p := mustEngine(t, producer)
+	r := req("a", 40, 9)
+	r.RemoteDecode = true
+	if err := p.Add(r, 0); err != nil {
+		t.Fatal(err)
 	}
+	results, _, _ := runOne(t, p, 0)
+	var fin []engine.Finished
+	for _, res := range results {
+		fin = append(fin, res.Finished...)
+	}
+	if len(fin) != 1 || fin[0].OutputTokens != 1 || fin[0].Reason != engine.FinishLength {
+		t.Fatalf("finished %+v, want one token at the length cap", fin)
+	}
+	none := req("b", 40, 1)
+	none.Output, none.RemoteDecode = nil, true
+	if err := mustEngine(t, producer).Add(none, 0); err == nil {
+		t.Fatal("a prefill leg with no assigned output was accepted")
+	}
+	// The contract's laws hold for prefill legs: none emits more than it was assigned.
+	legs := []engine.Request{req("c", 40, 1), req("d", 70, 5)}
+	for i := range legs {
+		legs[i].RemoteDecode = true
+	}
+	enginetest.TestEngine(t, build(t, producer), arrivals(legs...), enginetest.Options{})
 }
 
 // A hybrid model's handoff holds the prompt's full-attention blocks: every one of its tokens,

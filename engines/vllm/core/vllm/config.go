@@ -327,6 +327,12 @@ func resolve(c Config) (settings, error) {
 		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
 			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/14")
 	}
+	if s.connector != nil && c.DataParallelSize > 1 {
+		// The data-parallel group starts no transfers and holds no handoffs (DPGroup): a P/D pool
+		// at dp > 1 would never pull or release its KV.
+		return settings{}, fmt.Errorf("vllm: kv_transfer with data parallelism (dp %d) is not built yet: the "+
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/44")
+	}
 	if s.offload != nil && c.DataParallelSize > 1 {
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
 			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/14")

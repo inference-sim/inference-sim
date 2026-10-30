@@ -216,35 +216,33 @@ func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handof
 }
 
 // done records a transfer's end for the next applied output: a hold read (finished_sending) or a
-// load landed (finished_recving). A failed load returns its request's ID: the simulator gives up
-// on the pull and the request leaves this engine (engine.Engine's TransferDone, failed), so the
-// engine aborts it and frees what the load reserved, rather than reporting it as vLLM's
-// failed_recving, whose request the simulator no longer tracks.
-func (p *pd) done(id engine.TransferID, ok bool) (failed string, err error) {
+// load landed (finished_recving). A failed load is reported as vLLM's NIXL worker reports one, in
+// finished_recving and failed_recving both (nixl/base_worker.py:2880-2889, 2991@5df63a72), and the
+// scheduler's kv_load_failure_policy decides what follows: "fail" (the default) finishes the
+// request as an error, which the simulator sees in a result; "recompute" recomputes its prompt here
+// (scheduler.py:2057-2061, 3132-3153, 3341-3354@5df63a72).
+func (p *pd) done(id engine.TransferID, ok bool) error {
 	if p == nil {
-		return "", engine.ErrUnknownTransfer
+		return engine.ErrUnknownTransfer
 	}
 	if rid, held := p.holds[id]; held {
 		delete(p.holds, id)
 		p.outcome.FinishedSending = append(p.outcome.FinishedSending, rid)
-		return "", nil
+		return nil
 	}
 	rid, pulling := p.pulls[id]
 	if !pulling {
-		return "", engine.ErrUnknownTransfer
+		return engine.ErrUnknownTransfer
 	}
 	delete(p.pulls, id)
 	delete(p.pulling, rid)
 	delete(p.matched, rid)
 	delete(p.remote, rid)
-	// Either way the worker's load is over: finished_recving lets the scheduler free what an
-	// aborted request's load held (finish_requests delays the free until it, scheduler.py:2690-
-	// 2700@5df63a72).
 	p.outcome.FinishedRecving = append(p.outcome.FinishedRecving, rid)
 	if !ok {
-		return rid, nil
+		p.outcome.FailedRecving = append(p.outcome.FailedRecving, rid)
 	}
-	return "", nil
+	return nil
 }
 
 // take is the outcome the worker reports with the applied output, once.
@@ -255,12 +253,13 @@ func (p *pd) take() sched.TransferOutcome {
 	o := p.outcome
 	p.outcome = sched.TransferOutcome{}
 	sort.Strings(o.FinishedSending)
+	sort.Strings(o.FailedRecving)
 	return o
 }
 
 // pending reports whether a transfer outcome is waiting for an output to carry it.
 func (p *pd) pending() bool {
-	return p != nil && len(p.outcome.FinishedRecving)+len(p.outcome.FinishedSending) > 0
+	return p != nil && len(p.outcome.FinishedRecving)+len(p.outcome.FinishedSending)+len(p.outcome.FailedRecving) > 0
 }
 
 // aborted forgets a request Finish ended: a load in flight for it still ends with TransferDone,

@@ -4,7 +4,7 @@ go 1.27.2
 
 require (
 	github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030105539-448cbcac0c50 // TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
-	github.com/inference-sim/blis-schemas v0.8.1-0.20261030103752-99502b8e6ff8 // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
+	github.com/inference-sim/blis-schemas v0.8.1-0.20261030130954-45f1d4e78fbb // TEMPORARY: the pushed head of inference-sim/blis-schemas#112, until it is released
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
 	gopkg.in/yaml.v3 v3.0.1
