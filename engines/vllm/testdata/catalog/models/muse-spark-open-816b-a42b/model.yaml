@@ -1,0 +1,6 @@
+name: muse-spark-open-816b-a42b
+source:
+  provider: huggingface
+  repo: unsloth/Muse-Spark-Open-816B-A42B
+  revision: 49cade7b0c6ed297f0434229ac67eea5f9ae1220
+  retrieved: 2026-10-29

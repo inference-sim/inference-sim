@@ -528,6 +528,31 @@ func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
+// StageTimesOfShapes splits StepTimeOfShapes by pipeline stage, in pipeline order, where the
+// pool runs more than one (the kernel's StepEstimate.Stages): each stage's NoOverlap figure in
+// ticks, at least one, the last carrying the rounding so the stages sum exactly to
+// StepTimeOfShapes. A single-stage pool returns that one figure.
+func (m *Model) StageTimesOfShapes(reqs []ReqShape) []int64 {
+	b := kernel.Batch{Reqs: reqs, DecodeThreshold: m.decodeThreshold, SMBudget: m.smBudget}
+	e := m.k.StepTime(b)
+	total := max(1, ticks(e.NoOverlap))
+	if len(e.Stages) == 0 {
+		return []int64{total}
+	}
+	out := make([]int64, len(e.Stages))
+	var sum int64
+	for i, st := range e.Stages {
+		out[i] = max(1, ticks(st.NoOverlap))
+		sum += out[i]
+	}
+	// Rounding each stage can drift from the rounded whole by a tick a stage; the last stage
+	// absorbs it, and a total too short for one tick a stage widens to that.
+	if d := total - sum; d != 0 {
+		out[len(out)-1] = max(1, out[len(out)-1]+d)
+	}
+	return out
+}
+
 // QueueingTime is the host work before a request can be scheduled: tokenization and
 // prompt preprocessing. It excludes queue waiting, which depends on engine busyness and
 // is the simulator's own concern rather than a pure function's.

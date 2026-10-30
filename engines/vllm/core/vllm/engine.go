@@ -90,6 +90,8 @@ type Engine struct {
 	// async is async scheduling: a decode's drafts are the AsyncScheduler's placeholders, which
 	// the worker fills with its own proposals (async_scheduler.py:25-58@5df63a72).
 	async bool
+	// pp is pipeline_parallel_size: how many stages a batch runs through (StageTimes).
+	pp int
 	// idleWake is when the engine next polls after an empty schedule that left requests, 0
 	// when none is due.
 	idleWake engine.Time
@@ -142,6 +144,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
+		pp: max(st.sched.DecodeStagger, 1),
 	}
 	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
 	return e, nil
@@ -393,6 +396,35 @@ func (e *Engine) batchOf(cb core.Batch) (engine.Batch, error) {
 
 // StepTime implements engine.Engine.
 func (e *Engine) StepTime(b engine.Batch) engine.Duration { return max(e.pricer.StepTime(b), 1) }
+
+// StagePricer is a Pricer that splits a batch's price by pipeline stage, summing to StepTime.
+type StagePricer interface {
+	StageTimes(b engine.Batch) []engine.Duration
+}
+
+// StageTimes implements engine.Pipelined: the batch's forward pass split by pipeline stage,
+// one entry per stage of pipeline_parallel_size, summing to StepTime. vLLM's batch queue keeps
+// max_concurrent_batches batches in flight so each stage works on one (vllm/config/vllm.py:
+// 577-588, vllm/v1/engine/core.py:698-810@5df63a72), which a simulator honours by timing each
+// batch through the stages. A pricer that does not split gives one stage, the whole step.
+func (e *Engine) StageTimes(b engine.Batch) []engine.Duration {
+	total := e.StepTime(b)
+	p, ok := e.pricer.(StagePricer)
+	if !ok || e.pp <= 1 {
+		return []engine.Duration{total}
+	}
+	st := p.StageTimes(b)
+	if len(st) != e.pp {
+		return []engine.Duration{total}
+	}
+	var sum engine.Duration
+	for i := range st {
+		st[i] = max(st[i], 1)
+		sum += st[i]
+	}
+	st[len(st)-1] = max(st[len(st)-1]+total-sum, 1)
+	return st
+}
 
 // Assumptions are the pricer's disclosed assumptions, when it records any: for the latency
 // kernel, that it prices vLLM 0.31.0's engine behaviour for a 0.32.0 scenario. A simulator reads

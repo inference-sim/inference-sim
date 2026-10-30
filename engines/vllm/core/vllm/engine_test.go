@@ -658,3 +658,69 @@ func TestBatchQueueKeepsTheContract(t *testing.T) {
 			arrivals(req("a", 40, 6), req("b", 70, 3), req("c", 300, 9), req("d", 12, 1)), enginetest.Options{})
 	}
 }
+
+// stagedPricer prices a step as one stage per pipeline rank, the later stages heavier, so a
+// pipelined driver's overlap is visible.
+type stagedPricer struct{ stages int }
+
+func (p stagedPricer) StepTime(b engine.Batch) engine.Duration {
+	var sum engine.Duration
+	for _, d := range p.StageTimes(b) {
+		sum += d
+	}
+	return sum
+}
+
+func (p stagedPricer) StageTimes(b engine.Batch) []engine.Duration {
+	out := make([]engine.Duration, p.stages)
+	for i := range out {
+		out[i] = engine.Duration(50*(i+1)) + engine.Duration(b.Tokens())
+	}
+	return out
+}
+
+// Under pipeline parallelism the engine reports its batches' stages (engine.Pipelined), one
+// per pipeline_parallel_size and summing to StepTime, and keeps every contract law when a
+// driver overlaps its in-flight batches one per stage. A pricer that does not split gives one
+// stage, the whole step.
+func TestAPipelinedEngineReportsItsStages(t *testing.T) {
+	const extra = "pipeline_parallel_size: 2\nuse_v2_model_runner: true\nasync_scheduling: true\n"
+	s := spec(t, extra)
+	newEngine := func() (engine.Engine, error) {
+		return Factory{Pricer: func(engine.Spec) (Pricer, error) { return stagedPricer{2}, nil }}.New(s)
+	}
+	tr := enginetest.TestEngine(t, newEngine, arrivals(req("a", 40, 4), req("b", 40, 4), req("c", 40, 4)),
+		enginetest.Options{})
+	e, err := newEngine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := e.(engine.Pipelined)
+	if !ok {
+		t.Fatal("the engine is not engine.Pipelined")
+	}
+	overlapped := false
+	for i, st := range tr.Steps {
+		stages := p.StageTimes(st.Batch)
+		if len(stages) != 2 {
+			t.Fatalf("step %d: %d stages under pp 2", i, len(stages))
+		}
+		if stages[0]+stages[1] != e.StepTime(st.Batch) {
+			t.Errorf("step %d: stages %v do not sum to %d", i, stages, e.StepTime(st.Batch))
+		}
+		if i > 0 && st.Start < tr.Steps[i-1].End {
+			overlapped = true
+		}
+	}
+	if !overlapped {
+		t.Error("no batch started before the one ahead of it ended: the stages did not overlap")
+	}
+	single, err := build(t, "")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := engine.Batch{Reqs: []engine.Scheduled{{ID: "x", Tokens: 3}}}
+	if st := single.(engine.Pipelined).StageTimes(b); len(st) != 1 || st[0] != single.StepTime(b) {
+		t.Errorf("a one-stage engine reports %v", st)
+	}
+}

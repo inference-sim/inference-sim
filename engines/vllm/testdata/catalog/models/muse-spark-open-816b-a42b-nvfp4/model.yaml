@@ -1,0 +1,6 @@
+name: muse-spark-open-816b-a42b-nvfp4
+source:
+  provider: huggingface
+  repo: unsloth/Muse-Spark-Open-816B-A42B-NVFP4
+  revision: fc6908f53c6882d4ec48fca5ba144e41d21e1f92
+  retrieved: 2026-10-29

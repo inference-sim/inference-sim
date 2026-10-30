@@ -39,6 +39,12 @@ func TestWhatTheKernelCannotPriceItRefuses(t *testing.T) {
 			pool.Nodes, in.Scenario.Cluster.Nodes = 2, 2
 		}
 	}
+	ppWithDP := func(pp, dp int) func(*Inputs) {
+		return func(in *Inputs) {
+			twoNodes(pp, 4)(in)
+			in.Deployment.Pools[0].Parallel.DP = dp
+		}
+	}
 	renamed := func(name string) func(*Inputs) {
 		return func(in *Inputs) {
 			chip := *in.Chip
@@ -52,10 +58,11 @@ func TestWhatTheKernelCannotPriceItRefuses(t *testing.T) {
 		edit    func(*Inputs)
 		want    bool
 	}{
-		// Pipeline parallelism: no stage split, no inter-stage transfer. Both on two nodes,
-		// so pp=2 is a layout the schema admits and only the kernel's own check refuses.
+		// Pipeline parallelism is priced per stage (blis-latency-kernel#90), on two nodes and
+		// one alike; beside data parallelism it is still refused.
 		{"pp 1 on two nodes", dcpMLAFixture, twoNodes(1, 16), true},
-		{"pp 2 on two nodes", dcpMLAFixture, twoNodes(2, 8), false},
+		{"pp 2 on two nodes", dcpMLAFixture, twoNodes(2, 8), true},
+		{"pp 2 with dp 2", dcpMLAFixture, ppWithDP(2, 2), false},
 		// Cache dtypes: the engine's closed list (vllm/config/cache.py:39-58), less the
 		// formats whose page this kernel does not size.
 		{"cache fp8_e5m2", dcpMLAFixture, cache("fp8_e5m2"), true},

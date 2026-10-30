@@ -257,6 +257,17 @@ func (k kernelPricer) StepTime(b engine.Batch) engine.Duration {
 	return engine.Duration(k.m.StepTimeOfShapes(shapes(b)))
 }
 
+// StageTimes implements core/vllm.StagePricer: the batch's price split by pipeline stage
+// (compat/kernelmodel.StageTimesOfShapes), summing to StepTime.
+func (k kernelPricer) StageTimes(b engine.Batch) []engine.Duration {
+	got := k.m.StageTimesOfShapes(shapes(b))
+	out := make([]engine.Duration, len(got))
+	for i, d := range got {
+		out[i] = engine.Duration(d)
+	}
+	return out
+}
+
 // Assumptions are the kernel's recorded assumptions for this pool, each as "name = value:
 // reason". For a 0.32.0 scenario they include that the kernel prices vLLM 0.31.0's engine
 // behaviour.

@@ -1,7 +1,7 @@
-github.com/inference-sim/blis-latency-kernel v0.4.0 h1:xTWvaWaqRMCIhlKGk7gSfO9CCkGjfUhZkHU6xEQHug4=
-github.com/inference-sim/blis-latency-kernel v0.4.0/go.mod h1:PijgT4tqAG8Epx0+reqm2M4hZpbvkgemqKjKsFsCje4=
-github.com/inference-sim/blis-schemas v0.8.0 h1:MfNOFbmEmst31RB6AvdPkGxuwH3JvKclSxfmPtJDd5I=
-github.com/inference-sim/blis-schemas v0.8.0/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030025539-5a77ced639e0 h1:w9kc+JNaBViquNTalHsk1ER0myv4IR3/AXuvrPDrXIU=
+github.com/inference-sim/blis-latency-kernel v0.4.1-0.20261030025539-5a77ced639e0/go.mod h1:USc6uRxfiatuzgsOHuSsoXv8n6c3Ele7dggzPbYjfE8=
+github.com/inference-sim/blis-schemas v0.8.1-0.20261030013641-b796f8db50ce h1:0BOI/+Cq5sCbaj4IM2mcuF9EoeY5eduV6CB12gD75Ak=
+github.com/inference-sim/blis-schemas v0.8.1-0.20261030013641-b796f8db50ce/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/sirupsen/logrus v1.9.4 h1:TsZE7l11zFCLZnZ+teH4Umoq5BhEIfIzfRDZ1Uzql2w=
 github.com/sirupsen/logrus v1.9.4/go.mod h1:ftWc9WdOfJ0a92nsE2jF5u5ZwH8Bv2zdeOC42RjbV2g=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

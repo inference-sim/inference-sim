@@ -51,7 +51,7 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 	}
 	if e.Speculative != nil {
 		s.Speculative = &enginesettings.Speculative{Method: e.Speculative.Method,
-			NumSpecTokens: e.Speculative.NumSpecTokens}
+			NumSpecTokens: e.Speculative.NumSpecTokens, DraftModel: e.Speculative.DraftModel}
 	}
 	if e.EngramConfig != nil {
 		s.EngramConfig = &enginesettings.EngramConfig{CPUOffload: e.EngramConfig.CPUOffload,
