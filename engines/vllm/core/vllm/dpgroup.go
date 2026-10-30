@@ -447,6 +447,14 @@ func (g *DPGroup) Snapshot() engine.State {
 // Assumptions are the pricer's disclosed assumptions, as Engine reports them.
 func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
 
+// EnableKVEvents turns on every rank's KV cache events: the group's results carry them, each
+// rank's in rank order (Complete).
+func (g *DPGroup) EnableKVEvents() {
+	for _, r := range g.ranks {
+		r.e.EnableKVEvents()
+	}
+}
+
 // Ranks is the group's data-parallel width.
 func (g *DPGroup) Ranks() int { return len(g.ranks) }
 

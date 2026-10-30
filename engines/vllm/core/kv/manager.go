@@ -262,6 +262,14 @@ func (m *Manager) SpecDecodeStepBlocks(tokens int) int {
 // NumGroups is the number of KV cache groups.
 func (m *Manager) NumGroups() int { return len(m.groups) }
 
+// PrefixIndexable reports whether KV cache group g is one a router's prefix index takes: a full
+// attention group. vLLM tags each event with its group's kv_cache_spec_kind
+// (KVCacheManager.take_events, vllm/v1/core/kv_cache_manager.py:700-721@5df63a72), and llm-d's
+// indexer skips the stores and removals of a sliding-window or ring group.
+func (m *Manager) PrefixIndexable(g uint32) bool {
+	return int(g) < len(m.groups) && m.groups[g].spec.Kind == FullAttention
+}
+
 // PrefixReplayTokens is the scheduler's prefix_replay_tokens (vllm/v1/core/sched/scheduler.py:
 // 290-305@5df63a72): the window a bounded-replay group rebuilds after a prefix hit by recomputing
 // its trailing tokens (SlidingWindowMLASpec.prefix_replay_tokens, vllm/v1/kv_cache_interface.py:

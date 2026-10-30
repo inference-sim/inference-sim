@@ -567,7 +567,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 		}
 		res.Finished = append(res.Finished, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
 	}
-	res.KVEvents = kvEvents(e.s.TakeKVEvents())
+	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
 	e.finishStep(pb.b, emitted, fins, end)
 	// A request that finished here has had its final step consumed: its result and its metrics
 	// step are recorded, so its entry goes (the scheduler freed its own at the finish). Under a
@@ -661,6 +661,28 @@ func (e *Engine) Snapshot() engine.State {
 	return engine.State{Waiting: nw, Running: nr, InFlight: len(e.pending),
 		KVBlocksTotal: int64(pool.NumBlocks() - 1), KVBlocksUsed: int64(pool.NumBlocks() - 1 - pool.NumFree()),
 		KVBlockSize: e.s.BlockSize()}
+}
+
+// EnableKVEvents turns on the engine's KV cache events (kv_events_config.enable_kv_cache_events),
+// which a simulator calls when a router indexes them: each completed batch then reports its
+// prefix-cache changes in Result.KVEvents.
+func (e *Engine) EnableKVEvents() { e.s.EnableKVEvents() }
+
+// indexable keeps the events of the KV cache groups a router's prefix index takes. vLLM
+// publishes every group's events tagged with the group's kind, and llm-d's indexer drops a
+// sliding-window or ring group's stores and removals (pkg/kvevents/pool.go,
+// isPrefixIndexableSpecKind); the contract's KVEvent carries no group, so the engine drops them
+// here instead, leaving the router's index as vLLM's tagged stream leaves it. A window block
+// shares its full-attention block's hash, so a removal passed through would unindex a block the
+// full-attention group still caches.
+func (e *Engine) indexable(evs []kv.Event) []kv.Event {
+	out := evs[:0]
+	for _, ev := range evs {
+		if e.s.KV.PrefixIndexable(ev.Group) {
+			out = append(out, ev)
+		}
+	}
+	return out
 }
 
 // kvEvents is the scheduler's KV events in the contract's form: a hash is vLLM's published

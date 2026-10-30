@@ -262,6 +262,13 @@ func New(cfg Config) (*Scheduler, error) {
 	return s, nil
 }
 
+// EnableKVEvents turns KV cache events on after construction, as Config.KVEvents does at it: a
+// simulator switches them on when a router consumes them.
+func (s *Scheduler) EnableKVEvents() {
+	s.cfg.KVEvents = true
+	s.KV.Pool.EnableEvents()
+}
+
 // TakeKVEvents returns the KV cache events of the last step, in the order vLLM queues them
 // (kv_cache_manager.take_events, scheduler.py:2371@5df63a72).
 func (s *Scheduler) TakeKVEvents() []kv.Event { return s.KV.Pool.TakeEvents() }

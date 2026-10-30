@@ -53,10 +53,17 @@ type Event struct {
 	BlockSize int
 	// LoRA is BlockStored's lora_name, "" for the base model.
 	LoRA string
+	// Group is the event's group_idx: the KV cache group whose blocks it reports.
+	Group uint32
 }
 
-// EnableEvents makes the pool record KV cache events (enable_kv_cache_events).
-func (p *Pool) EnableEvents() { p.events = &[]Event{} }
+// EnableEvents makes the pool record KV cache events (enable_kv_cache_events). Turning them on
+// again keeps the events not yet taken.
+func (p *Pool) EnableEvents() {
+	if p.events == nil {
+		p.events = &[]Event{}
+	}
+}
 
 // TakeEvents returns the events since the last call (take_events, block_pool.py:890-901).
 func (p *Pool) TakeEvents() []Event {
@@ -223,7 +230,7 @@ func (p *Pool) CacheFullMaskedIn(g uint32, blocks []*Block, hashes []BlockHash, 
 		}
 		*p.events = append(*p.events, Event{Hashes: stored, Parent: parent,
 			Tokens:    append([]int64(nil), run.Tokens[numCached*blockSize:numFull*blockSize]...),
-			BlockSize: blockSize, LoRA: run.LoRA})
+			BlockSize: blockSize, LoRA: run.LoRA, Group: g})
 	}
 }
 
@@ -250,7 +257,9 @@ func (p *Pool) evict(b *Block) {
 		return
 	}
 	if p.events != nil {
-		*p.events = append(*p.events, Event{Removed: true, Hashes: []BlockHash{append(BlockHash(nil), b.Hash[:len(b.Hash)-4]...)}})
+		n := len(b.Hash) - 4
+		*p.events = append(*p.events, Event{Removed: true, Hashes: []BlockHash{append(BlockHash(nil), b.Hash[:n]...)},
+			Group: uint32(b.Hash[n])<<24 | uint32(b.Hash[n+1])<<16 | uint32(b.Hash[n+2])<<8 | uint32(b.Hash[n+3])})
 	}
 	k := string(b.Hash)
 	bs := p.cached[k]
