@@ -12,7 +12,7 @@ import (
 
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
@@ -125,7 +125,7 @@ func TestPoolEngineValueIsTheHarnessesLookup(t *testing.T) {
 	for _, dir := range []string{kernelmodel.DefaultScenarios(), filepath.Join("..", "..", "testdata", "scenarios")} {
 		files, _ := filepath.Glob(filepath.Join(dir, "*.yaml"))
 		for _, path := range files {
-			_, dep, err := latencykernel.LoadBundle(path)
+			_, dep, err := blisschemas.LoadBundle(path)
 			if err != nil {
 				continue
 			}
@@ -160,7 +160,7 @@ func TestStatedRunSettingsAreTheScenarios(t *testing.T) {
 	for _, dir := range []string{kernelmodel.DefaultScenarios(), filepath.Join("..", "..", "testdata", "scenarios")} {
 		files, _ := filepath.Glob(filepath.Join(dir, "*.yaml"))
 		for _, path := range files {
-			_, dep, err := latencykernel.LoadBundle(path)
+			_, dep, err := blisschemas.LoadBundle(path)
 			if err != nil {
 				continue
 			}

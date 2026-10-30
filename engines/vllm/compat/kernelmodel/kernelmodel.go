@@ -61,6 +61,7 @@ import (
 	"time"
 
 	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	blisschemas "github.com/inference-sim/blis-schemas"
 	"github.com/inference-sim/blis-schemas/kernel"
 	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
 	"github.com/inference-sim/blis-schemas/spec/acceptance"
@@ -374,7 +375,7 @@ func newModel(k kernel.Kernel, id identity) (*Model, error) {
 // a scenario that states one role in more than one pool. An engine.Spec selects its pool by this
 // index (Spec.Pool).
 func RolePools(scenario string, r Repos) (map[deployment.Role]int, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	_, dep, err := blisschemas.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +393,7 @@ func RolePools(scenario string, r Repos) (map[deployment.Role]int, error) {
 // OpenRole opens the pool of a scenario that serves role -- the prefill or the decode pool of
 // a disaggregated deployment -- refusing a scenario that states no such pool or more than one.
 func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
-	_, dep, err := latencykernel.LoadBundle(filepath.Join(r.Scenarios, scenario))
+	_, dep, err := blisschemas.LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return nil, err
 	}
@@ -940,7 +941,7 @@ func unmodelledSettings(e engineconfig.Engine) []string {
 // ShapeOf reads a scenario's Shape.
 func ShapeOf(scenario string, r Repos) (Shape, error) {
 	path := filepath.Join(r.Scenarios, scenario)
-	sc, dep, err := latencykernel.LoadBundle(path)
+	sc, dep, err := blisschemas.LoadBundle(path)
 	if err != nil {
 		return Shape{}, err
 	}
