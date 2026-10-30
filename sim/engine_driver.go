@@ -918,6 +918,16 @@ func (d *EngineDriver) SetKVEventSink(sink func(at int64, events []KVEvent)) err
 	return nil
 }
 
+// KVEventsRefusal is why a router cannot index the engine's KV events, for an engine that says
+// (a KVEventsRefusal method, blis-vllm's v0.32.0 engine for a full-attention group at a block size
+// other than its hash block size); nil otherwise.
+func (d *EngineDriver) KVEventsRefusal() error {
+	if q, ok := d.eng.(interface{ KVEventsRefusal() error }); ok {
+		return q.KVEventsRefusal()
+	}
+	return nil
+}
+
 func tokenIDs(in []int32) []TokenID {
 	out := make([]TokenID, len(in))
 	for i, v := range in {

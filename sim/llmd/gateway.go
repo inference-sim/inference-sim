@@ -1047,12 +1047,21 @@ func (g *Gateway) checkLatePod(inst *cluster.InstanceSimulator) error {
 	return nil
 }
 
-// checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters.
+// checkPreciseLoRA refuses a precise-prefix-cache-producer over an engine serving LoRA adapters, and a
+// router indexing KV events over an engine that says it cannot be indexed (KVEventsRefusal).
 func (g *Gateway) checkPreciseLoRA(inst *cluster.InstanceSimulator) error {
 	if len(g.req.PrefixIndexes) > 0 && inst.AdapterCapacity() > 0 {
 		return errors.New("the router configuration cannot be simulated faithfully: precise-prefix-cache-producer " +
 			"keys blocks by LoRA adapter, but the compatibility engine this simulator runs keys its prefix cache " +
 			"without the adapter, so its KV events cannot name the adapter a block belongs to")
+	}
+	if g.router.WantsKVEvents() {
+		// An engine whose KV events the router cannot key (a full-attention group at another
+		// block size, DeepSeek V4's packed groups) is refused rather than mis-indexed.
+		if err := inst.KVEventsRefusal(); err != nil {
+			return fmt.Errorf("the router configuration cannot be simulated faithfully: it indexes KV events, "+
+				"and instance %s's engine publishes events it cannot key: %w", inst.ID(), err)
+		}
 	}
 	return nil
 }
