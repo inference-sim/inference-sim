@@ -3778,7 +3778,7 @@ plugin policy, the types whose signals the simulation does not produce.</p>
 </tr>
 <tr>
 <td>Filters</td>
-<td><code>decode-filter</code>, <code>prefill-filter</code>, <code>encode-filter</code>, <code>label-selector-filter</code>, <code>topology-affinity-filter</code> (kernel-backed placement)</td>
+<td><code>decode-filter</code>, <code>prefill-filter</code>, <code>encode-filter</code>, <code>label-selector-filter</code>, <code>topology-affinity-filter</code> (kernel-backed placement), <code>prefix-cache-affinity-filter</code> (its TTFT gate on the in-flight load, <code>ttftSource: prefillThroughput</code>, the default)</td>
 </tr>
 <tr>
 <td>Scorers</td>
@@ -3838,7 +3838,7 @@ only through a reference such as a flow-control <code>fairnessPolicyRef</code>.<
 <td>It blocks a request on a sealing timer the hosting runtime does not model.</td>
 </tr>
 <tr>
-<td><code>predicted-latency-producer</code>, <code>latency-scorer</code>, <code>latency-slo-admitter</code>, <code>slo-headroom-tier-filter</code>, <code>prefix-cache-affinity-filter</code></td>
+<td><code>predicted-latency-producer</code>, <code>latency-scorer</code>, <code>latency-slo-admitter</code>, <code>slo-headroom-tier-filter</code>, and <code>prefix-cache-affinity-filter</code> with <code>ttftSource: latencyPredictor</code></td>
 <td>They call or consume an external latency-predictor service.</td>
 </tr>
 <tr>
