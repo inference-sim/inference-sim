@@ -1,0 +1,188 @@
+{
+ "name": "nixl-p-hybrid-swa",
+ "description": "Prefiller (kv_producer), full attention + one sliding window (8): a finished request's blocks are held until the decoder reads them, every group's, the window's below-window blocks freed first (_connector_finished's remove_skipped_blocks), and an abort frees at once.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 34,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 8
+   }
+  ],
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_producer",
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  }
+ },
+ "requests": [
+  {
+   "id": "p0",
+   "arrival_step": 0,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    4486,
+    3759,
+    1177,
+    2064,
+    1262,
+    3836,
+    1473,
+    3015,
+    3088,
+    1211
+   ],
+   "output": [
+    909
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 3
+  },
+  {
+   "id": "p1",
+   "arrival_step": 0,
+   "prompt": [
+    3808,
+    2669,
+    4865,
+    1413,
+    1059,
+    2180,
+    3698,
+    4531,
+    4949,
+    4662,
+    4451,
+    3783,
+    191,
+    3333,
+    3790,
+    4042,
+    3211,
+    1386,
+    1189,
+    616,
+    3258,
+    3283,
+    4260,
+    2508,
+    1354,
+    4239,
+    3715,
+    3793,
+    1786,
+    3361
+   ],
+   "output": [
+    4751
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 1
+  },
+  {
+   "id": "p2",
+   "arrival_step": 1,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    2546,
+    3637,
+    2181
+   ],
+   "output": [
+    4542
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2
+  },
+  {
+   "id": "p3",
+   "arrival_step": 2,
+   "prompt": [
+    986,
+    1932,
+    1235,
+    4158,
+    2516,
+    897,
+    2300,
+    42,
+    981,
+    3690,
+    3973,
+    4081,
+    4415,
+    2475,
+    2016,
+    4368,
+    4263,
+    2911
+   ],
+   "output": [
+    881
+   ],
+   "remote_decode": true,
+   "max_tokens": 1,
+   "send_delay": 2,
+   "abort_step": 3
+  },
+  {
+   "id": "l0",
+   "arrival_step": 1,
+   "prompt": [
+    2801,
+    2794,
+    2437,
+    2893,
+    290,
+    2634,
+    2501,
+    1403,
+    3135
+   ],
+   "output": [
+    4133,
+    3800,
+    301,
+    71,
+    515,
+    815,
+    4731
+   ]
+  }
+ ]
+}

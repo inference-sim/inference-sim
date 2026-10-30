@@ -8,7 +8,13 @@ and some get a whole-load failure or failed blocks; prefiller-side ones get a se
 same seed always gives the same scenario, from Python's random.Random alone. About one request
 in ten is aborted by its client a few steps after it arrives.
 
-Seeds 10000 and up also run requests into max_model_len (LENGTH_CAP_SEEDS).
+Seeds 10000 and up also run requests into max_model_len (LENGTH_CAP_SEEDS). Seeds 20000 and up
+(HYBRID_SEEDS) also draw a hybrid model's KV cache groups (full attention beside one or two
+sliding windows), a drafter (DSpark with up to 7 drafts and sample_from_anchor, the default; an
+EAGLE-family draft; a four-module MTP drafter, whose lookahead sets NIXL's prefill backoff) with
+a per-request acceptance plan, or both. A load's block-level failures ("invalid_blocks") are
+drawn only beside one group: NIXL's worker reports none under HMA (nixl/base_worker.py:2910-2914
+@5df63a72).
 
 Usage: python -I oracle/gen_connector_fuzz.py <out dir> <first seed> <count>
 """
@@ -20,6 +26,7 @@ import sys
 
 
 LENGTH_CAP_SEEDS = 10000
+HYBRID_SEEDS = 20000
 
 
 def out_len(rng: random.Random, max_len: int, plen: int, capped: bool) -> int:
@@ -31,12 +38,35 @@ def out_len(rng: random.Random, max_len: int, plen: int, capped: bool) -> int:
     return rng.randint(1, room)
 
 
+def hybrid_dims(rng: random.Random, block: int) -> dict:
+    """A hybrid seed's KV cache groups and drafter, from their own random stream."""
+    out = {}
+    roll = rng.random()
+    if roll < 0.7:
+        groups = [{"kind": "full"}, {"kind": "sliding_window", "sliding_window": rng.choice([block, 2 * block, 8, 10, 16])}]
+        if rng.random() < 0.25:
+            groups.append({"kind": "sliding_window", "sliding_window": rng.choice([4, 12, 24])})
+        out["kv_groups"] = groups
+    if roll >= 0.35 or "kv_groups" not in out:
+        out["speculative"] = rng.choice([
+            {"method": "dspark", "num_speculative_tokens": rng.choice([3, 5, 7, 7])},
+            {"method": "mtp", "num_speculative_tokens": rng.randint(2, 4), "draft": "ernie-mtp-4"},
+            {"method": "mtp", "num_speculative_tokens": 1, "draft": "ernie-mtp-4"},
+        ])
+    return out
+
+
 def scenario(seed: int) -> dict:
-    rng = random.Random(seed)
+    if seed >= HYBRID_SEEDS:
+        return hybrid_scenario(seed)
     # Seeds from LENGTH_CAP_SEEDS on let a request run past max_model_len: its assigned output
     # is longer than the room left, so vLLM's length cap (check_stop, scheduler.py:2506) ends it.
     # Earlier seeds keep every output inside the room, so their scenarios are unchanged.
-    capped = seed >= LENGTH_CAP_SEEDS
+    return base_scenario(random.Random(seed), seed, seed >= LENGTH_CAP_SEEDS)
+
+
+def base_scenario(rng: random.Random, seed: int, capped: bool) -> dict:
+    """The scenario a seed's stream draws, one group and no drafter."""
     role = rng.choice(["kv_consumer", "kv_consumer", "kv_producer"])
     policy = rng.choice(["fail", "recompute"])
     block = rng.choice([2, 4, 8])
@@ -96,6 +126,42 @@ def scenario(seed: int) -> dict:
                                  "extra_config": rng.choice([{}, {"kv_recompute_threshold": 0}])}},
         "requests": reqs, "max_steps": 400,
     }
+
+
+def hybrid_scenario(seed: int) -> dict:
+    """A seed from HYBRID_SEEDS: the base scenario's draw (a quarter of them into
+    max_model_len), then, from a second stream, a hybrid model's groups and a drafter with each
+    request's acceptance plan. Beside several groups the block-level failures are dropped."""
+    dims_rng = random.Random(seed * 7919 + 1)
+    sc = base_scenario(random.Random(seed), seed, dims_rng.random() < 0.25)
+    dims = hybrid_dims(dims_rng, sc["config"]["block_size"])
+    sc["config"].update(dims)
+    spec = dims.get("speculative")
+    if spec and spec["method"] == "mtp" and spec["num_speculative_tokens"] > 1 and sc["config"]["enable_prefix_caching"]:
+        # vLLM refuses multi-module MTP with prefix caching below a block of num_speculative_tokens
+        # (kv_cache_coordinator.py:146-155@5df63a72), so such a seed draws a block that holds them.
+        sc["config"]["block_size"] = max(sc["config"]["block_size"], 4)
+    if spec:
+        k = spec["num_speculative_tokens"]
+        # The budget must exceed the draft slots (vllm/config/vllm.py:2285-2290@5df63a72).
+        sc["config"]["max_num_batched_tokens"] = max(sc["config"]["max_num_batched_tokens"], 2 * k + 2)
+        sc["config"]["max_num_seqs"] = min(sc["config"]["max_num_seqs"], sc["config"]["max_num_batched_tokens"])
+        if 0 < sc["config"]["long_prefill_token_threshold"] < 1 + k:
+            # vLLM pads a first decode to 1 + K and then caps it at the long-prefill threshold,
+            # which its own assertion refuses (scheduler.py:1134-1156, 1371-1372@5df63a72): a
+            # cap below 1 + K crashes vLLM, so it is raised to 1 + K.
+            sc["config"]["long_prefill_token_threshold"] = 1 + k
+        for r in sc["requests"]:
+            r["accepted"] = [dims_rng.randint(0, k) for _ in range(len(r["output"]) + 2)]
+    ngroups = len(dims.get("kv_groups", [])) or 1
+    if ngroups > 1:
+        for r in sc["requests"]:
+            r.pop("invalid_blocks", None)
+    # Every group takes its own blocks from the one pool, and a drafter's lookahead slots take
+    # more: the base draw's pool is scaled so admissions still sometimes wait.
+    lookahead = -(-(spec["num_speculative_tokens"] + 1) // sc["config"]["block_size"]) if spec else 0
+    sc["config"]["num_blocks"] = ngroups * (sc["config"]["num_blocks"] + lookahead) + 1
+    return sc
 
 
 def main() -> None:

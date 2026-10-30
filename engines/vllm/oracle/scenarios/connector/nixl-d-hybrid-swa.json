@@ -1,0 +1,206 @@
+{
+ "name": "nixl-d-hybrid-swa",
+ "description": "Decoder (kv_consumer), full attention + one sliding window (8): pulls into both groups, a local prefix hit under a pull, a tight pool that preempts, the window's blocks freed to null slots as decodes advance.",
+ "config": {
+  "max_num_seqs": 3,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 30,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "kv_groups": [
+   {
+    "kind": "full"
+   },
+   {
+    "kind": "sliding_window",
+    "sliding_window": 8
+   }
+  ],
+  "connector": {
+   "name": "NixlConnector",
+   "kv_role": "kv_consumer",
+   "kv_load_failure_policy": "recompute",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    775,
+    4785,
+    4192,
+    1269,
+    791,
+    2247
+   ],
+   "output": [
+    2844,
+    13,
+    1270,
+    4292,
+    708,
+    502
+   ]
+  },
+  {
+   "id": "d0",
+   "arrival_step": 1,
+   "prompt": [
+    4334,
+    2926,
+    4799,
+    227,
+    1879,
+    246,
+    3188,
+    2988,
+    529,
+    3475,
+    2509,
+    2795,
+    3025,
+    2091,
+    4522,
+    490,
+    3169,
+    1367,
+    4824,
+    2540,
+    2392
+   ],
+   "output": [
+    3127,
+    2572,
+    1744,
+    1688,
+    3712,
+    4386,
+    1469,
+    4975
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2
+  },
+  {
+   "id": "d1",
+   "arrival_step": 2,
+   "prompt": [
+    1075,
+    4696,
+    3212,
+    4453,
+    3473,
+    1935,
+    2036,
+    917,
+    4760,
+    614,
+    3642,
+    2301,
+    3400,
+    959,
+    4762,
+    2318,
+    1621,
+    1432,
+    3322,
+    2802,
+    3696,
+    740,
+    4263
+   ],
+   "output": [
+    3887,
+    3442,
+    3784,
+    2971,
+    1073,
+    3638,
+    2255,
+    1149,
+    1916,
+    1285
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1
+  },
+  {
+   "id": "d2",
+   "arrival_step": 3,
+   "prompt": [
+    2427,
+    2549,
+    562,
+    2453,
+    4236,
+    855,
+    4790,
+    4298,
+    2435,
+    3330,
+    1864,
+    3341,
+    2535,
+    4354
+   ],
+   "output": [
+    2902,
+    4993,
+    3729,
+    534,
+    588
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0,
+   "abort_step": 4
+  },
+  {
+   "id": "l1",
+   "arrival_step": 4,
+   "prompt": [
+    402,
+    2754,
+    3356,
+    2629,
+    1421,
+    1525,
+    3406,
+    2801,
+    3949,
+    2978
+   ],
+   "output": [
+    2283,
+    18,
+    2130,
+    4196,
+    4361,
+    474,
+    1320,
+    2209,
+    968,
+    4108,
+    2154,
+    696
+   ]
+  }
+ ]
+}
