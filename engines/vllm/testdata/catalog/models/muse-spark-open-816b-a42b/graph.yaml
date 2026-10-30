@@ -32,6 +32,7 @@ layer_kinds:
     n_q: 128
     n_kv: 16
     d_h: 64
+    kv_heads_not_replicated: true
     window: 2048
   - op: Elementwise
     role: o_norm_gate
@@ -58,6 +59,9 @@ layer_kinds:
     n: 4096
     k: 8192
     tp: replicated
+    sharded_at_decode: &id001
+      capability_family: 10
+      max_tokens: 256
   - op: Elementwise
     role: pre_expert_norm
     bytes_per_token: 16384
@@ -78,7 +82,7 @@ layer_kinds:
     bytes_per_token: 65536
   - op: Elementwise
     role: post_expert_norm
-    bytes_per_token: 81920
+    bytes_per_token: 73728
     tp: replicated
   - op: AllReduce
     role: moe_combine
@@ -89,6 +93,10 @@ layer_kinds:
     n: 8192
     k: 4096
     tp: replicated
+    sharded_at_decode:
+      capability_family: 10
+      max_tokens: 256
+      min_tokens_across_nodes: 32
   edges:
   - - 0
     - 1
@@ -140,6 +148,7 @@ layer_kinds:
     n_q: 128
     n_kv: 16
     d_h: 64
+    kv_heads_not_replicated: true
   - op: Elementwise
     role: o_norm_gate
     bytes_per_token: 49152
@@ -165,6 +174,7 @@ layer_kinds:
     n: 4096
     k: 8192
     tp: replicated
+    sharded_at_decode: *id001
   - op: Elementwise
     role: pre_expert_norm
     bytes_per_token: 16384
@@ -185,7 +195,7 @@ layer_kinds:
     bytes_per_token: 65536
   - op: Elementwise
     role: post_expert_norm
-    bytes_per_token: 81920
+    bytes_per_token: 73728
     tp: replicated
   - op: AllReduce
     role: moe_combine
@@ -196,6 +206,10 @@ layer_kinds:
     n: 8192
     k: 4096
     tp: replicated
+    sharded_at_decode:
+      capability_family: 10
+      max_tokens: 256
+      min_tokens_across_nodes: 32
   edges:
   - - 0
     - 1
