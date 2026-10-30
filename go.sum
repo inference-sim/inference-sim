@@ -129,10 +129,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/inference-sim/blis-latency-kernel v0.4.0 h1:xTWvaWaqRMCIhlKGk7gSfO9CCkGjfUhZkHU6xEQHug4=
 github.com/inference-sim/blis-latency-kernel v0.4.0/go.mod h1:PijgT4tqAG8Epx0+reqm2M4hZpbvkgemqKjKsFsCje4=
-github.com/inference-sim/blis-schemas v0.9.1-0.20261030145448-5ce62d90aaf8 h1:SgwpaA7QBp+8D9SnP6jOE/d/mFb4PJi3bV02pbemB/c=
-github.com/inference-sim/blis-schemas v0.9.1-0.20261030145448-5ce62d90aaf8/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
-github.com/inference-sim/blis-schemas v0.9.1-0.20261030160652-4a20f189ceb4 h1:VT5m9877A8wcWzvy4JvkRhiF605n1Uvfq7I3XhCd6Ko=
-github.com/inference-sim/blis-schemas v0.9.1-0.20261030160652-4a20f189ceb4/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
+github.com/inference-sim/blis-schemas v0.9.1 h1:I7P0sY4X+Y96bXeE1BLB8ENLhWm7as2QuzXM+lq51js=
+github.com/inference-sim/blis-schemas v0.9.1/go.mod h1:RyL296oIGyK+JJtU74h6vh4PNmzxajVeKeuymZfGJOE=
 github.com/inference-sim/blis-vllm v0.32.0 h1:34wFUK+FTW4ehU12MuAF3DBX2gvNAKlI/S5OGPi7TBw=
 github.com/inference-sim/blis-vllm v0.32.0/go.mod h1:hraYV1W3c5dotPd+juHNiWssow8/Pb7NuJBrZPOY2r0=
 github.com/inference-sim/llm-d-router v1.0.0-blis.1 h1:0Y6ahFjM34IXq2eV2vwZKEF9lGYubBsn75Yn94umbKY=
