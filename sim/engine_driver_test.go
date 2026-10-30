@@ -461,7 +461,9 @@ func TestEngineDriver_PipelinedDecodeWaitsForItsPreviousToken(t *testing.T) {
 	if want := []int64{28, 36, 56}; ends[0] != want[0] || ends[1] != want[1] || ends[2] != want[2] {
 		t.Fatalf("batch ends %v, want %v (batch 2 waits for batch 0's token)", ends, want)
 	}
-	// A batch with none of the earlier batch's requests is not held back.
+	// A batch with none of the earlier batch's requests is held back too: the non-last rank
+	// waits on step T-pp's broadcast whenever it sampled for a live request
+	// (TestEngineDriver_PipelinedStepWaitsOnTheSampledStepPPBack).
 	d2 := NewEngineDriver(&unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}},
 		EngineDriverConfig{Horizon: 1 << 40})
 	var e2 []int64
@@ -469,8 +471,8 @@ func TestEngineDriver_PipelinedDecodeWaitsForItsPreviousToken(t *testing.T) {
 		_, e := d2.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: id, Tokens: 1}}}, 0)
 		e2 = append(e2, e)
 	}
-	if e2[2] != 44 {
-		t.Fatalf("an unrelated third batch ends at %d, want 44", e2[2])
+	if e2[2] != 56 {
+		t.Fatalf("an unrelated third batch ends at %d, want 56", e2[2])
 	}
 }
 
@@ -498,5 +500,48 @@ func TestEngineDriver_OneStageBatchDoesNotOvertakeThePipeline(t *testing.T) {
 	}
 	if d.BusyUntil() < ends[len(ends)-1] {
 		t.Fatalf("BusyUntil %d before the last batch ends at %d", d.BusyUntil(), ends[len(ends)-1])
+	}
+}
+
+// vLLM's non-last pipeline rank, before step T's forward, waits on step T-pp's sampled-token
+// broadcast whenever that step sampled for a request still live, whatever step T runs
+// (PPHandler.get_prev_sampled_outputs: the slot pp steps back, minus freed requests and those
+// that sampled nothing, vllm/v1/worker/gpu/pp_utils.py:125-152, 37-53; model_runner.py:1732
+// @5df63a72). A non-final prefill chunk samples nothing, so it holds no later step back, and a
+// request preempted after step T-pp is freed before step T (finish_requests, model_runner.py:
+// 1152-1166). Splits [8,20], [1,8], [20,8] at pp 2:
+//   - a decode of a at batch 0 holds batch 2 back even though batch 2 runs c: ends 28, 36, 56;
+//   - a non-final chunk of a at batch 0 does not hold a's next chunk at batch 2: 28, 36, 44;
+//   - a decode of a at batch 0, preempted at batch 1, does not hold batch 2: 28, 36, 44.
+func TestEngineDriver_PipelinedStepWaitsOnTheSampledStepPPBack(t *testing.T) {
+	decode := engine.Scheduled{ID: "a", Tokens: 1, Computed: 8, PromptLen: 8}
+	chunk := engine.Scheduled{ID: "a", Tokens: 4, Computed: 0, PromptLen: 12}
+	b := engine.Batch{Reqs: []engine.Scheduled{{ID: "b", Tokens: 1, Computed: 8, PromptLen: 8}}}
+	for _, c := range []struct {
+		name    string
+		batches []engine.Batch
+		want    int64
+	}{
+		{"unshared decode", []engine.Batch{{Reqs: []engine.Scheduled{decode}}, b,
+			{Reqs: []engine.Scheduled{{ID: "c", Tokens: 1, Computed: 8, PromptLen: 8}}}}, 56},
+		{"prefill chunk", []engine.Batch{{Reqs: []engine.Scheduled{chunk}}, b,
+			{Reqs: []engine.Scheduled{{ID: "a", Tokens: 4, Computed: 4, PromptLen: 12}}}}, 44},
+		{"preempted", []engine.Batch{{Reqs: []engine.Scheduled{decode}},
+			{Reqs: b.Reqs, Preempted: []string{"a"}},
+			{Reqs: []engine.Scheduled{{ID: "a", Tokens: 9, Computed: 0, PromptLen: 8}}}}, 44},
+	} {
+		fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 3, StepBaseUs: 1, Stages: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := NewEngineDriver(&unevenStages{FIFO: fifo, splits: [][]engine.Duration{{8, 20}, {1, 8}, {20, 8}}},
+			EngineDriverConfig{Horizon: 1 << 40})
+		var end int64
+		for _, bt := range c.batches {
+			_, end = d.timeBatch(bt, 0)
+		}
+		if end != c.want {
+			t.Errorf("%s: batch 2 ends at %d, want %d", c.name, end, c.want)
+		}
 	}
 }

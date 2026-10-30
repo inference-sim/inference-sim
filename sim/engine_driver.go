@@ -87,7 +87,8 @@ type EngineDriver struct {
 	// chaining its own transfers (startTierTransfer).
 	tierFreeAt map[engine.TransferKind]int64
 	// recentStages are the last pipelined batches scheduled, newest last, at most one per stage:
-	// each one's requests and when it leaves the last stage (timeBatch's T-pp dependency).
+	// each one's sampling requests, its preemptions and when it leaves the last stage (timeBatch's
+	// T-pp dependency).
 	recentStages []stagedBatch
 	// pipelineDrainsAt is when the last batch scheduled leaves the last stage, under a
 	// pipelined engine.
@@ -142,10 +143,11 @@ type driverBatch struct {
 	end int64
 }
 
-// stagedBatch is a pipelined batch's requests and when it left the last stage.
+// stagedBatch is a pipelined batch's sampling requests, the requests its schedule preempted, and
+// when it left the last stage.
 type stagedBatch struct {
-	reqs map[string]bool
-	end  int64
+	reqs, preempted map[string]bool
+	end             int64
 }
 
 // NewEngineDriver wraps an engine for the host's event loop, with an inert front end: a
@@ -643,16 +645,21 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 		d.stageFreeAt = make([]int64, len(stages))
 	}
 	start = max(now, d.stageFreeAt[0])
-	// A decode in step T samples from step T-pp's output: vLLM's runner reschedules a decode pp
-	// steps later (async_scheduler.py:52-57@5df63a72), and a non-last rank's forward waits on
-	// that step's sampled-token broadcast (update_pp_decode_requests, model_runner.py:1171-1179;
-	// get_prev_sampled_outputs' wait_event, pp_utils.py:125-152). So the batch pp steps back
-	// gates this one's first stage when it ran any of this batch's requests.
+	// vLLM's V2 runner holds a non-last pipeline rank's step T until step T-pp's sampled tokens
+	// are broadcast (update_pp_decode_requests before the forward, model_runner.py:1171-1179,
+	// 1732; PPHandler.get_prev_sampled_outputs' wait_event on the slot pp steps back,
+	// pp_utils.py:125-152@5df63a72). The wait is on the step, not on a shared request: it is
+	// skipped only when that step sampled for no request still live, its requests all non-final
+	// prefill chunks (compute_need_sampled_mask, pp_utils.py:37-53) or freed since (a preempted
+	// request's slot is freed by finish_requests, model_runner.py:1152-1166). So the first stage of
+	// this batch waits for the batch pp steps back to leave the last stage when it sampled for a
+	// request not preempted since. The async scheduler's own stagger (a decode is eligible again
+	// only pp steps later, async_scheduler.py:52-57) is the engine's.
 	pp := len(stages)
 	if n := len(d.recentStages); n >= pp {
 		prev := d.recentStages[n-pp]
-		for _, r := range b.Reqs {
-			if prev.reqs[r.ID] {
+		for id := range prev.reqs {
+			if !d.preemptedSince(id, n-pp) {
 				start = max(start, prev.end)
 				break
 			}
@@ -672,16 +679,37 @@ func (d *EngineDriver) timeBatch(b engine.Batch, now int64) (start, end int64) {
 }
 
 // noteStaged records a batch scheduled through the pipeline and when it leaves the last stage,
-// keeping the last pp (timeBatch's T-pp dependency).
+// keeping the last pp (timeBatch's T-pp dependency): the requests it sampled for (a decode or a
+// prompt's final chunk; a non-final chunk samples nothing) and those its schedule preempted.
 func (d *EngineDriver) noteStaged(b engine.Batch, end int64, pp int) {
-	ids := make(map[string]bool, len(b.Reqs))
+	ids := map[string]bool{}
 	for _, r := range b.Reqs {
-		ids[r.ID] = true
+		if r.Computed+r.Tokens >= r.PromptLen {
+			ids[r.ID] = true
+		}
 	}
-	d.recentStages = append(d.recentStages, stagedBatch{reqs: ids, end: end})
+	var preempted map[string]bool
+	if len(b.Preempted) > 0 {
+		preempted = make(map[string]bool, len(b.Preempted))
+		for _, id := range b.Preempted {
+			preempted[id] = true
+		}
+	}
+	d.recentStages = append(d.recentStages, stagedBatch{reqs: ids, preempted: preempted, end: end})
 	if len(d.recentStages) > pp {
 		d.recentStages = d.recentStages[len(d.recentStages)-pp:]
 	}
+}
+
+// preemptedSince reports whether a schedule after recentStages[i] preempted request id, which
+// frees its runner state, so recentStages[i]'s token for it no longer gates a step.
+func (d *EngineDriver) preemptedSince(id string, i int) bool {
+	for _, sb := range d.recentStages[i+1:] {
+		if sb.preempted[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // admit records a batch scheduled at now whose step starts at start: each request's first
