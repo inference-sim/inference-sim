@@ -3,7 +3,7 @@ module github.com/inference-sim/blis-vllm
 go 1.27.2
 
 require (
-	github.com/inference-sim/blis-latency-kernel v0.4.2-0.20261030204258-03fb54977f5a // TEMPORARY: the pushed head of inference-sim/blis-latency-kernel#99, until it is released
+	github.com/inference-sim/blis-latency-kernel v0.5.0
 	github.com/inference-sim/blis-schemas v0.10.0
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
