@@ -2,7 +2,7 @@ kind: Scenario
 name: muse-h200-ib-tep8
 engine_version: "0.32.0"
 model: muse-spark-open-816b-a42b-nvfp4
-coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 cluster:
   hardware: h200
   nodes: 1

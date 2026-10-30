@@ -51,7 +51,8 @@ invariant test. The companions are:
 `testdata/registry/` holds a tagged blis-registry release's coefficient sets. Both are pinned to
 the releases blis-latency-kernel's `testdata/upstream.lock` names, and a test fails if they
 drift. `testdata/upstream-prerelease.lock` can name an unreleased commit in a lock entry's place while
-a pinned kernel pre-release lags it; there is none now (blis-latency-kernel `v0.3.0` locks
-blis-catalog `0.3.0` and blis-registry `v0.2.0`). See `catalog/README.md` for what is included and how to update it. The kernel's scenario
+a pinned kernel pre-release lags it; there is none now. TEMPORARY: the kernel is pinned at the pushed head of
+inference-sim/blis-latency-kernel#99, whose lock names blis-catalog#47's and blis-registry#62's heads, and
+both directories equal those commits until they are released. See `catalog/README.md` for what is included and how to update it. The kernel's scenario
 fixtures are not copied: they are read from the blis-latency-kernel module `go.mod` pins.
 
