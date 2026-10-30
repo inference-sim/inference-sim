@@ -37,7 +37,9 @@ type scenario struct {
 		EnablePrefixCaching       *bool   `json:"enable_prefix_caching"`
 		EnableChunkedPrefill      *bool   `json:"enable_chunked_prefill"`
 		SchedulingPolicy          string  `json:"scheduling_policy"`
-		KVPage                    struct {
+		// TensorParallelSize is the engine's world size, the connector's num_workers.
+		TensorParallelSize int `json:"tensor_parallel_size"`
+		KVPage             struct {
 			NumKVHeads int `json:"num_kv_heads"`
 			HeadSize   int `json:"head_size"`
 		} `json:"kv_page"`
@@ -184,9 +186,10 @@ func configure(t *testing.T, sc scenario) (*sched.Scheduler, *Scheduler, int) {
 	// layer per group, so the worker's bytes per block are the groups' pages
 	// (_group_kv_bytes_per_block, offloading/config.py:46-58; config.py:221-224).
 	perBlock := int64(2*c.BlockSize*heads*head*4) * int64(len(groups))
-	chunks := NumChunks(int64(cpuBytes), perBlock, 1, bpc, pageSize)
+	workers := max(c.TensorParallelSize, 1)
+	chunks := NumChunks(int64(cpuBytes), perBlock, workers, bpc, pageSize)
 	conn, err := New(Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(), NumChunks: chunks,
-		OffloadPromptOnly: promptOnly, PrefixCaching: caching})
+		OffloadPromptOnly: promptOnly, PrefixCaching: caching, Workers: workers})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +329,11 @@ func run(t *testing.T, sc scenario) trace {
 		}
 		sort.Strings(o.FinishedRecving)
 		if len(done) > 0 {
-			o.WorkerMeta = done
+			cs := make([]Completion, len(done))
+			for k, j := range done {
+				cs[k] = Completion{Job: j, Workers: conn.Workers()}
+			}
+			o.WorkerMeta = cs
 		}
 		off.Completed = append([]int{}, done...)
 		var aborts []string
@@ -600,7 +607,7 @@ func TestOffloadingFuzzCorpusAgainstVLLM(t *testing.T) {
 // either spec.
 func TestCheckRefusesWhatIsNotModelled(t *testing.T) {
 	zero := 0
-	for _, o := range []Options{{}, {SpecName: "CPUOffloadingSpec"}, {SpecName: "TieringOffloadingSpec", EvictionPolicy: "lru", WorldSize: 1}} {
+	for _, o := range []Options{{}, {SpecName: "CPUOffloadingSpec"}, {SpecName: "TieringOffloadingSpec", EvictionPolicy: "lru"}} {
 		if err := Check(o); err != nil {
 			t.Errorf("Check(%+v) = %v, want nil", o, err)
 		}
@@ -613,7 +620,6 @@ func TestCheckRefusesWhatIsNotModelled(t *testing.T) {
 		{Options{SpecName: "TieringOffloadingSpec", SecondaryTiers: 1}, "issues/13"},
 		{Options{EvictionPolicy: "arc"}, "issues/1)"},
 		{Options{StoreThreshold: 2}, "store_threshold"},
-		{Options{WorldSize: 2}, "workers"},
 		{Options{RetentionInterval: &zero}, "issues/7"},
 	} {
 		if err := Check(c.o); err == nil || !strings.Contains(err.Error(), c.want) {

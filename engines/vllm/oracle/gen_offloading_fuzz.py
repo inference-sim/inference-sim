@@ -14,6 +14,8 @@ a 4 KiB-page and a 16 KiB-page host.
 
 Seeds below 20000 have one full-attention KV cache group; seeds 20000 and up add one or two
 sliding windows beside it (the hybrid groups the OffloadingConnector supports as SupportsHMA).
+Seeds 40000 and up also run 2, 3, 4 or 6 workers (divisors of the helper model's 12 heads) (tensor_parallel_size, the connector's num_workers:
+each job is pending on every worker, and the CPU tier holds a copy of a block per worker).
 
 Usage: python -I oracle/gen_offloading_fuzz.py <out dir> <first seed> <count>
 """
@@ -24,6 +26,7 @@ import random
 import sys
 
 HYBRID_SEEDS = 20000
+TP_SEEDS = 40000
 
 
 def scenario(seed: int) -> dict:
@@ -68,7 +71,8 @@ def scenario(seed: int) -> dict:
     biggest = max(len(r["prompt"]) + len(r["output"]) for r in reqs)
     need_one = (-(-min(biggest, max_len) // block) + 1) * len(groups)
     blocks = rng.randint(need_one, need_one + 3 * len(groups) * 4)
-    chunk_bytes = 16384 * len(groups) * bpc
+    tp = rng.choice([2, 3, 4, 6]) if seed >= TP_SEEDS else 1
+    chunk_bytes = 16384 * len(groups) * bpc * tp
     extra = {"cpu_bytes_to_use": chunk_bytes * rng.randint(1, 12), "offload_prompt_only": rng.random() < 0.5}
     if bpc > 1:
         extra["blocks_per_chunk"] = bpc
@@ -83,6 +87,8 @@ def scenario(seed: int) -> dict:
             r["priority"] = rng.randint(0, 3)
     if hybrid:
         cfg["kv_groups"] = groups
+    if tp > 1:
+        cfg["tensor_parallel_size"] = tp
     return {"name": f"ofuzz-{seed}", "seed": seed, "config": cfg, "requests": reqs, "max_steps": 400}
 
 

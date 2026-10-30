@@ -119,15 +119,17 @@ def build_config(cfg: dict, model: str):
                                prefix_cache_retention_interval=None)
     kv_transfer_config = KVTransferConfig(kv_connector=conn["name"], kv_role=conn.get("kv_role", "kv_both"),
                                           kv_connector_extra_config=conn.get("extra_config") or {})
-    kw = {}
+    from vllm.config import ParallelConfig  # noqa: E402
+
+    # The engine's world size, the connector's num_workers (offloading/scheduler.py:335): every
+    # job is pending on each worker, and the CPU tier holds a copy of a block per worker
+    # (cpu/spec.py:107-121).
+    kw = {"parallel_config": ParallelConfig(tensor_parallel_size=cfg.get("tensor_parallel_size", 1))}
     spec = cfg.get("speculative")
     if spec:
         args = {"method": spec["method"], "num_speculative_tokens": spec["num_speculative_tokens"]}
         if spec.get("draft"):
             args["model"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drafts", spec["draft"])
-        from vllm.config import ParallelConfig  # noqa: E402
-
-        kw["parallel_config"] = ParallelConfig()
         kw["speculative_config"] = SpeculativeConfig(target_model_config=model_config,
                                                      target_parallel_config=kw["parallel_config"], **args)
     return VllmConfig(scheduler_config=scheduler_config, model_config=model_config, cache_config=cache_config,
@@ -216,6 +218,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     assert scheduler.max_model_len == cfg["max_model_len"]
     cs = scheduler.connector.connector_scheduler
     manager = cs.manager
+    workers = cs.config.num_workers
     num_spec = scheduler.num_spec_tokens
     accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
     verify_steps = {r["id"]: 0 for r in sc["requests"]}
@@ -361,7 +364,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         if done:
             kv_out = KVConnectorOutput(
                 finished_recving=dict.fromkeys(recving).keys() if recving else None,
-                kv_connector_worker_meta=OffloadingWorkerMetadata(completed_jobs={j: 1 for j in done}))
+                kv_connector_worker_meta=OffloadingWorkerMetadata(completed_jobs={j: workers for j in done}))
         off["completed"] = done
         aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
         if aborts:

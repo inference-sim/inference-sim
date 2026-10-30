@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/3+ea15d51fe3e4",
+  "version": "gpu-mock/4+420a44386aa4",
   "description": "Everything the oracle replaces. Only the GPU, the clock, transports and external services may be replaced; check_mocks.py fails if an entry names decision code.",
   "mocks": [
     {
@@ -217,7 +217,7 @@
     {
       "symbol": "OffloadingConnector worker (OffloadingWorkerMetadata transport)",
       "kind": "transport",
-      "how": "oracle/run_offloading.py only: the worker side (OffloadingConnectorWorker, vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:40-323@5df63a72) is the transport mock. On each step's OffloadingConnectorMetadata it follows the worker's protocol: jobs_to_flush are submitted and waited for at once (handle_preemptions, :198-224), the stores the previous step deferred and this step's loads are submitted (start_kv_transfers, :226-238) and this step's stores are deferred to the next step (prepare_store_kv, :240-249). A submitted load completes load_delay steps later and a store store_delay steps later (the scenario's, per request or for all). Completions reach the scheduler as vLLM's own OffloadingWorkerMetadata(completed_jobs={job: 1}) (offloading/common.py:76-104) in the step's KVConnectorOutput.kv_connector_worker_meta, and a completed load's request in finished_recving (worker.py:273-309); the worker reports both as sets, so the mock fixes their order: jobs by job id, requests by request id. The Go side (core/connector/offloading) reports them in the same order",
+      "how": "oracle/run_offloading.py only: the worker side (OffloadingConnectorWorker, vllm/distributed/kv_transfer/kv_connector/v1/offloading/worker.py:40-323@5df63a72) is the transport mock. On each step's OffloadingConnectorMetadata it follows the worker's protocol: jobs_to_flush are submitted and waited for at once (handle_preemptions, :198-224), the stores the previous step deferred and this step's loads are submitted (start_kv_transfers, :226-238) and this step's stores are deferred to the next step (prepare_store_kv, :240-249). A submitted load completes load_delay steps later and a store store_delay steps later (the scenario's, per request or for all). Completions reach the scheduler as vLLM's own OffloadingWorkerMetadata(completed_jobs={job: num_workers}) (offloading/common.py:76-104): every worker of the engine's world size (the scenario's tensor_parallel_size, the connector's num_workers, offloading/scheduler.py:335) reports the job in the same step, merged as KVOutputAggregator merges the workers' counts (vllm/distributed/kv_transfer/kv_connector/utils.py:144-150; common.py:92-104) in the step's KVConnectorOutput.kv_connector_worker_meta, and a completed load's request in finished_recving (worker.py:273-309); the worker reports both as sets, so the mock fixes their order: jobs by job id, requests by request id. The Go side (core/connector/offloading) reports them in the same order",
       "sites": []
     },
     {

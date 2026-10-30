@@ -58,6 +58,9 @@ type Config struct {
 	// PrefixCaching is enable_prefix_caching: with it, a chunk being loaded is tracked so a
 	// second request does not load it again (scheduler.py:619-621).
 	PrefixCaching bool
+	// Workers is num_workers, the engine's world size (scheduler.py:335); 0 means 1. A job is
+	// pending on every worker until each reports it (TransferJobStatus.pending_count, :76-78).
+	Workers int
 }
 
 // groupCfg is GroupOffloadConfig with its derived sizes.
@@ -153,6 +156,9 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.BlocksPerChunk == 0 {
 		cfg.BlocksPerChunk = 1
 	}
+	if cfg.Workers == 0 {
+		cfg.Workers = 1
+	}
 	s := &Scheduler{cfg: cfg, manager: newCPUManager(cfg.NumChunks), reqs: map[string]*reqState{},
 		flush: map[int]bool{}, allocated: map[int]bool{}, jobs: map[int]*jobStatus{}, pendingOf: map[int]map[int]bool{}}
 	if cfg.PrefixCaching {
@@ -210,8 +216,6 @@ type Options struct {
 	EvictionPolicy string
 	// StoreThreshold is store_threshold (cpu/spec.py:139, default 0).
 	StoreThreshold int
-	// WorldSize is the parallel world size, the connector's num_workers (scheduler.py:335).
-	WorldSize int
 	// RetentionInterval is prefix_cache_retention_interval; nil is dense retention.
 	RetentionInterval *int
 }
@@ -238,10 +242,6 @@ func Check(o Options) error {
 		// The admission tracker (cpu/manager.py:123-142, 272-281); TieringOffloadingSpec refuses
 		// it itself (tiering/spec.py:340-343).
 		return fmt.Errorf("offloading: store_threshold %d is not modelled (%s)", o.StoreThreshold, Issue)
-	case o.WorldSize > 1:
-		// num_workers > 1: a job completes when every worker reports it (scheduler.py:1952-1965),
-		// which the oracle's one-worker transport mock has not run.
-		return fmt.Errorf("offloading: %d workers are not modelled, only one (%s)", o.WorldSize, Issue)
 	case o.RetentionInterval != nil:
 		// Sparse retention (reachable_block_mask with retention_interval, single_type_kv_cache_manager.
 		// py:1093-1131; scheduler.py:1608-1612) is https://github.com/inference-sim/blis-vllm/issues/7.
@@ -488,7 +488,7 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	job.ID = s.newJob()
 	s.loadJobs = append(s.loadJobs, job)
 	st.jobs[job.ID] = true
-	s.jobs[job.ID] = &jobStatus{req: r.ID, pending: 1, keys: keys}
+	s.jobs[job.ID] = &jobStatus{req: r.ID, pending: s.cfg.Workers, keys: keys}
 	if s.loading != nil {
 		for _, k := range keys {
 			s.loading[k] = true
@@ -777,7 +777,7 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 		for _, b := range fenced {
 			s.watch(b, job.ID)
 		}
-		s.jobs[job.ID] = &jobStatus{req: id, pending: 1, keys: stored, store: true, deferred: deferred, fenced: fenced}
+		s.jobs[job.ID] = &jobStatus{req: id, pending: s.cfg.Workers, keys: stored, store: true, deferred: deferred, fenced: fenced}
 		out = append(out, job)
 		if r.IsFinished() {
 			for _, b := range deferred {
@@ -840,15 +840,24 @@ func (s *Scheduler) BuildMeta(step sched.StepOutput) any {
 // HasPendingPushWork is has_pending_push_work (scheduler.py:1902-1908).
 func (s *Scheduler) HasPendingPushWork() bool { return len(s.jobs) > 0 }
 
+// Completion is one job's count in OffloadingWorkerMetadata.completed_jobs: how many workers
+// reported it (offloading/common.py:76-104, merged across workers as KVOutputAggregator merges
+// them, vllm/distributed/kv_transfer/kv_connector/utils.py:144-150@5df63a72).
+type Completion struct {
+	Job, Workers int
+}
+
 // Completed is update_connector_output's worker metadata (scheduler.py:1952-1988): each job the
-// worker finished, in job-id order (the transport's order, oracle/mocks.json).
-func (s *Scheduler) Completed(jobs []int) {
-	for _, j := range jobs {
+// workers reported, in job-id order (the transport's order, oracle/mocks.json). A job completes
+// once every worker has.
+func (s *Scheduler) Completed(done []Completion) {
+	for _, c := range done {
+		j := c.Job
 		js := s.jobs[j]
-		if js == nil {
-			panic(fmt.Sprintf("offloading: completed job %d is not in flight", j))
+		if js == nil || c.Workers < 1 || c.Workers > js.pending {
+			panic(fmt.Sprintf("offloading: job %d reported by %d worker(s), %d pending", j, c.Workers, s.pendingOfJob(j)))
 		}
-		js.pending--
+		js.pending -= c.Workers
 		if js.pending > 0 {
 			continue
 		}
@@ -876,12 +885,22 @@ func (s *Scheduler) Completed(jobs []int) {
 }
 
 // AfterOutput is update_connector_output (scheduler.py:1910-1988): the worker metadata is the
-// jobs the worker completed this step ([]int, in job-id order).
+// jobs the workers completed this step ([]Completion, in job-id order).
 func (s *Scheduler) AfterOutput(o sched.TransferOutcome) {
-	if jobs, ok := o.WorkerMeta.([]int); ok {
-		s.Completed(jobs)
+	if done, ok := o.WorkerMeta.([]Completion); ok {
+		s.Completed(done)
 	}
 }
+
+func (s *Scheduler) pendingOfJob(j int) int {
+	if js := s.jobs[j]; js != nil {
+		return js.pending
+	}
+	return 0
+}
+
+// Workers is num_workers.
+func (s *Scheduler) Workers() int { return s.cfg.Workers }
 
 // Jobs lists the jobs in flight (_jobs), by id.
 func (s *Scheduler) Jobs() []int {
