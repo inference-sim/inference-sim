@@ -5,8 +5,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-schemas/spec/acceptance"
 	"github.com/inference-sim/blis-schemas/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
@@ -123,6 +125,11 @@ func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptan
 	for _, f := range a.Ignored {
 		logrus.Warnf("--%s is ignored: scenario %q does not speculate", f, kernelScenario)
 	}
+	// The command line's and the workload's acceptance layers reach the engine's kernel too: a
+	// pool verifying adaptively sizes its draft budget from the run's acceptance
+	// (kernelmodel.SetAcceptanceOverrides, blis-latency-kernel#89), which must be the one the run
+	// resolved here. The engines are built after this (engineDriverFactory).
+	setAcceptanceOverrides(fl, k)
 	return a, speculating
 }
 
@@ -487,6 +494,42 @@ type (
 
 // setRoutingOverrides hands the command line's routing layer to the pools about to open.
 func setRoutingOverrides(o routingOverrides) { kernelmodel.SetRoutingOverrides(o) }
+
+// setAcceptanceOverrides hands the kernel the acceptance layers beyond the scenario file, the
+// ones build.ResolveAcceptance read: the command line's value, the workload's terms (a catalog
+// preset, with the command line's category and thinking mode applied), and the fallback category.
+func setAcceptanceOverrides(fl *pflag.FlagSet, k int) {
+	kernelmodel.SetAcceptanceOverrides(acceptanceOverridesOf(fl, k))
+}
+
+// acceptanceOverridesOf is the run's acceptance layers beyond the scenario file
+// (setAcceptanceOverrides).
+func acceptanceOverridesOf(fl *pflag.FlagSet, k int) kernelmodel.AcceptanceOverrides {
+	var o kernelmodel.AcceptanceOverrides
+	switch {
+	case fl.Changed(build.AcceptanceRateFlag):
+		r := speculativeAcceptance
+		o.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceRate: &r, Source: "--" + build.AcceptanceRateFlag}
+	case fl.Changed(build.AcceptanceLengthFlag):
+		l := speculativeAcceptanceLength
+		o.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + build.AcceptanceLengthFlag}
+	}
+	if workloadAcceptance != nil || fl.Changed(build.AcceptanceThinkingFlag) || fl.Changed(build.AcceptanceCategoryFlag) {
+		var w acceptance.Workload
+		if workloadAcceptance != nil {
+			w = *workloadAcceptance
+		}
+		if fl.Changed(build.AcceptanceThinkingFlag) {
+			w.Thinking = acceptance.Thinking(speculativeThinking)
+		}
+		if fl.Changed(build.AcceptanceCategoryFlag) {
+			w.Category = speculativeCategory
+		}
+		o.Workload = &w
+	}
+	o.FallbackCategory = speculativeFallbackCategory
+	return o
+}
 
 // currentRoutingOverridesOf is the routing layer the pools will open with.
 func currentRoutingOverridesOf() routingOverrides { return kernelmodel.CurrentRoutingOverrides() }
