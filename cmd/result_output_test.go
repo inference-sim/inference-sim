@@ -415,3 +415,45 @@ clients:
 		t.Errorf("a refused run printed to stdout:\n%s", stdout)
 	}
 }
+
+// A component's integer report survives into the document exactly: toGeneric keeps an integer
+// above 2^53 an integer rather than rounding it through float64.
+func TestResult_ComponentReportsKeepIntegersExact(t *testing.T) {
+	const big = int64(9007199254740993) // 2^53 + 1
+	g := toGeneric(struct {
+		N int64   `json:"n"`
+		F float64 `json:"f"`
+	}{big, 0.5}).(map[string]any)
+	if g["n"] != big || g["f"] != 0.5 {
+		t.Errorf("toGeneric = %#v, want n=%d (int64) and f=0.5", g, big)
+	}
+}
+
+// With no --output an absolute artifact path is recorded by its base name, so the document does
+// not carry the host's directory layout (INV-6); a relative one as given, cleaned; with
+// --output, relative to its directory.
+func TestResult_ArtifactRefsCarryNoHostLayout(t *testing.T) {
+	defer func(o string) { resultOutput = o }(resultOutput)
+	for _, tc := range []struct{ output, path, want string }{
+		{"", "/some/host/dir/trace.csv", "trace.csv"},
+		{"", "./sub/../sub/trace.csv", "sub/trace.csv"},
+		{"/out/r.json", "/out/run/trace.csv", "run/trace.csv"},
+	} {
+		resultOutput = tc.output
+		if got := artifactRef(tc.path); got != tc.want {
+			t.Errorf("output %q path %q: ref %q, want %q", tc.output, tc.path, got, tc.want)
+		}
+	}
+}
+
+// --output is written before stdout: a run that cannot write it fails with stdout empty, so a
+// consumer of stdout never sees a complete document from a failed run.
+func TestResult_AnUnwritableOutputLeavesStdoutEmpty(t *testing.T) {
+	stdout, stderr, err := runKernelCLI(t, resultRunArgs("--output", filepath.Join(t.TempDir(), "missing", "dir", "r.json"))...)
+	if err == nil || !strings.Contains(stderr, "--output") {
+		t.Fatalf("an unwritable --output did not fail naming it: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if stdout != "" {
+		t.Errorf("stdout carried a document from a failed run:\n%s", lastLines(stdout, 5))
+	}
+}

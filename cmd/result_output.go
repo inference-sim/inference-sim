@@ -79,14 +79,16 @@ func emitResult(r *result.Result, view *summaryView) {
 	if err != nil {
 		logrus.Fatalf("Result document: %v", err)
 	}
-	if _, err := os.Stdout.Write(data); err != nil {
-		logrus.Fatalf("writing the Result document to stdout: %v", err)
-	}
+	// --output is written first: a run that cannot write its file fails before stdout carries a
+	// complete document a consumer could take for a successful run.
 	if resultOutput != "" {
 		if err := os.WriteFile(resultOutput, data, 0o644); err != nil {
 			logrus.Fatalf("--output %s: %v", resultOutput, err)
 		}
 		logrus.Infof("Result written to: %s", resultOutput)
+	}
+	if _, err := os.Stdout.Write(data); err != nil {
+		logrus.Fatalf("writing the Result document to stdout: %v", err)
 	}
 	if resultView == viewSummary {
 		renderSummary(os.Stderr, r, view)

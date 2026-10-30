@@ -99,6 +99,8 @@ go build -o blis main.go
 
 BLIS prints per-instance metrics followed by a cluster-level summary. Here's the cluster output from the command above:
 
+*(This post records BLIS as of its date. Today the scenario fixes model, hardware and parallelism, and `blis run` prints one Result document; see [Metrics & Results](../../guide/results.md).)*
+
 ```json
 {
   "instance_id": "cluster",

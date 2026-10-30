@@ -4,6 +4,7 @@ package cmd
 // was given, the versions it read, and what the engine, router and kernel reported.
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -378,18 +379,46 @@ func kernelSection(p map[string]sim.KernelPoolProvenance) map[string]any {
 }
 
 // toGeneric re-expresses v as the generic maps and slices a YAML encoder writes, through
-// its JSON form: v's json tags are the keys these components report under. A value that
-// does not survive the trip is a programming error, so it panics.
+// its JSON form: v's json tags are the keys these components report under. Numbers are decoded
+// exactly: an integer stays an int64 (a float64 would round a count above 2^53), anything else
+// a float64. A value that does not survive the trip is a programming error, so it panics.
 func toGeneric(v any) any {
-	data, err := jsonMarshal(v)
+	data, err := json.Marshal(v)
 	if err != nil {
 		panic(fmt.Sprintf("toGeneric: %v", err))
 	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var out any
-	if err := jsonUnmarshal(data, &out); err != nil {
+	if err := dec.Decode(&out); err != nil {
 		panic(fmt.Sprintf("toGeneric: %v", err))
 	}
-	return out
+	return exactNumbers(out)
+}
+
+// exactNumbers replaces each json.Number in v with an int64 when it is an integer, else a
+// float64.
+func exactNumbers(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, e := range x {
+			x[k] = exactNumbers(e)
+		}
+	case []any:
+		for i, e := range x {
+			x[i] = exactNumbers(e)
+		}
+	case json.Number:
+		if i, err := x.Int64(); err == nil {
+			return i
+		}
+		f, err := x.Float64()
+		if err != nil {
+			panic(fmt.Sprintf("toGeneric: number %q: %v", x, err))
+		}
+		return f
+	}
+	return v
 }
 
 // resultRuntime is the host- and wall-clock-dependent block.
@@ -406,9 +435,6 @@ type resultDocs struct {
 	Scenario   *scenario.Scenario
 	Deployment *deployment.Deployment
 }
-
-func jsonMarshal(v any) ([]byte, error)      { return json.Marshal(v) }
-func jsonUnmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
 
 // artifactFile is a bulk output a run wrote: its role in the document, path and row count.
 type artifactFile struct {
@@ -440,21 +466,25 @@ func resultArtifacts(files []artifactFile) (map[string]result.Artifact, error) {
 }
 
 // artifactRef is path relative to the Result document, as blis-schemas states an artifact's
-// ref: relative to --output's directory. With no --output the document has no location, so the
-// path is recorded as the command was given it (a working-directory-dependent ref would make two
-// runs of one input differ, INV-6).
+// ref: relative to --output's directory. With no --output the document has no location, so a
+// relative path is recorded as the command was given it (cleaned) and an absolute one by its
+// base name: a host's directory layout is not part of the result (INV-6), and the sha256
+// identifies the file.
 func artifactRef(path string) string {
 	if resultOutput == "" {
+		if filepath.IsAbs(path) {
+			return filepath.Base(path)
+		}
 		return filepath.ToSlash(filepath.Clean(path))
 	}
 	absBase, err1 := filepath.Abs(filepath.Dir(resultOutput))
 	absPath, err2 := filepath.Abs(path)
 	if err1 != nil || err2 != nil {
-		return path
+		return filepath.Base(path)
 	}
 	rel, err := filepath.Rel(absBase, absPath)
 	if err != nil {
-		return path
+		return filepath.Base(path)
 	}
 	return filepath.ToSlash(rel)
 }
