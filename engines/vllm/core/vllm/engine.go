@@ -621,6 +621,11 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 		}
 		res.Finished = append(res.Finished, engine.Finished{ID: f.ID, Reason: why, OutputTokens: f.Output})
 	}
+	// The events since the last applied result: a schedule that ran no tokens can queue some (a
+	// decoder's admission of a remote prefill allocates the pull's blocks, evicting cached ones),
+	// and vLLM publishes them with that step's update_from_output (scheduler.py:2370-2385
+	// @5df63a72). The contract carries KV events only in a Result, so they ride the next one, in
+	// order, published that much later.
 	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
 	res.Handoffs = e.pd.handoffs(e.s, fins)
 	e.finishStep(pb.b, emitted, fins, end)

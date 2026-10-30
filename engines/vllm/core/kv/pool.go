@@ -97,6 +97,16 @@ func (p *Pool) NumBlocks() int { return len(p.blocks) }
 // NumFree is get_num_free_blocks (block_pool.py:868-875).
 func (p *Pool) NumFree() int { return p.free.n }
 
+// NumCached is how many blocks hold a cached prefix hash: what the published stores less the
+// published removals hold (KV events).
+func (p *Pool) NumCached() int {
+	n := 0
+	for _, bs := range p.cached {
+		n += len(bs)
+	}
+	return n
+}
+
 // Usage is get_usage (block_pool.py:877-888): one minus the free share of the blocks that
 // can hold KV, the null block excluded.
 func (p *Pool) Usage() float64 {
