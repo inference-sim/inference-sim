@@ -893,10 +893,10 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 		a := capSpec(t, 4, 20, capClient("chat", "critical", 1, 500, 64, ""))
 		b := capSpec(t, 2, 10, capClient("batch", "batch", 1, 3000, 32, ""))
 		merged := capFile(t, "merged.yaml", capRawCLI(t, "compose", "--from", a, "--from", b))
-		// compose drops num_requests (#1906), so the horizon bounds the run.
-		args := with(colocated(1)[:len(colocated(1))-2], "--horizon", "10000000")
+		// compose carries num_requests (20+10), so the run serves exactly 30 requests.
+		args := colocated(1)
 		o, rows := capRunRows(t, runArgs(args, "--workload-spec", merged)...)
-		o.conserves(t, int(o.num("injected_requests")))
+		o.conserves(t, 30)
 		_, n := meanTTFTBy(rows, bySLOClass)
 		if n["critical"] == 0 || n["batch"] == 0 {
 			t.Errorf("the composed spec served %v; both sources must contribute", n)

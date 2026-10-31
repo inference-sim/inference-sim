@@ -121,18 +121,31 @@ func ConvertInferencePerf(path string) (*WorkloadSpec, error) {
 // Each client's fraction is weighted by its original spec's rate contribution
 // to preserve absolute rates: a 10 req/s spec + 5 req/s spec → 15 req/s total,
 // with the first spec's clients receiving 10/15 of the merged rate.
+// num_requests is summed and horizon is the maximum. The inputs must share one seed
+// and set num_requests on all or none of them; otherwise the merge is refused.
 func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 	if len(specs) == 0 {
 		return nil, fmt.Errorf("at least one spec file required")
 	}
 
+	first := specs[0]
 	merged := &WorkloadSpec{
 		Version:  "2",
-		Category: specs[0].Category,
+		Seed:     first.Seed,
+		Category: first.Category,
 	}
 
 	var totalRate float64
-	for _, s := range specs {
+	for i, s := range specs {
+		if s.Seed != first.Seed {
+			return nil, fmt.Errorf("compose: spec %d has seed %d but spec 1 has seed %d; inputs must share one seed",
+				i+1, s.Seed, first.Seed)
+		}
+		if (s.NumRequests > 0) != (first.NumRequests > 0) {
+			return nil, fmt.Errorf("compose: num_requests must be set on every input or on none; spec %d differs from spec 1", i+1)
+		}
+		merged.NumRequests += s.NumRequests
+		merged.Horizon = max(merged.Horizon, s.Horizon)
 		totalRate += s.AggregateRate
 	}
 	if math.IsNaN(totalRate) || math.IsInf(totalRate, 0) {
