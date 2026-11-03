@@ -1230,7 +1230,7 @@ func TestLoadTraceV2SessionBlueprints_MixedInteriorThink_DerefDefensive(t *testi
 	trace := &TraceV2{Records: []TraceRecord{
 		// Arrival gaps would be [3000, 7000] if this fell back — it must NOT.
 		{RequestID: 1, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, ThinkTimeUs: nil},
-		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 3000, ThinkTimeUs: nil},      // interior nil
+		{RequestID: 2, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, ArrivalTimeUs: 3000, ThinkTimeUs: nil},         // interior nil
 		{RequestID: 3, SessionID: "A", RoundIndex: 2, InputTokens: 70, OutputTokens: 30, ArrivalTimeUs: 10000, ThinkTimeUs: i64p(5000)}, // recorded
 	}}
 	_, bps, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)

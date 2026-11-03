@@ -57,12 +57,12 @@ type SessionBlueprint struct {
 	DeadlineOffsetSampler LengthSampler
 	RNG                   *rand.Rand    // per-session, seeded deterministically from client RNG
 	ThinkTimeSampler      LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
-	Prefix            []sim.TokenID // shared system prompt tokens
-	TenantID          string
-	SLOClass          string
-	Model             string
-	Adapter           string // LoRA adapter id (registry key; #1464). "" = base-model-only.
-	SLOTargetUs       int64  // per-request SLO TTFT target in µs; 0 = no target
+	Prefix                []sim.TokenID // shared system prompt tokens
+	TenantID              string
+	SLOClass              string
+	Model                 string
+	Adapter               string // LoRA adapter id (registry key; #1464). "" = base-model-only.
+	SLOTargetUs           int64  // per-request SLO TTFT target in µs; 0 = no target
 }
 
 // activeSession tracks mutable per-session lifecycle state.

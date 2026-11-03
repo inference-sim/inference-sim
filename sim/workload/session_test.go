@@ -101,7 +101,7 @@ func TestSession_AccumulateContinuityGuard_RejectsMismatchedSlice(t *testing.T) 
 	req1Bad := &sim.Request{
 		ID: "r1", SessionID: "sess-cont-guard", RoundIndex: 1,
 		State: sim.StateCompleted, ProgressIndex: 99,
-		InputTokens: make([]sim.TokenID, 99), // wrong length — doesn't match buf
+		InputTokens:  make([]sim.TokenID, 99), // wrong length — doesn't match buf
 		OutputTokens: make([]sim.TokenID, 5),
 	}
 	defer func() {
@@ -423,9 +423,9 @@ func TestSession_AccumulateDoesNotReseed(t *testing.T) {
 	// should extend exactly once for output + new input, not re-seed.
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-no-reseed", RoundIndex: 1,
-		State: sim.StateCompleted,
+		State:         sim.StateCompleted,
 		ProgressIndex: int64(len(r1.InputTokens) + len(r1.OutputTokens)),
-		InputTokens: r1.InputTokens, OutputTokens: r1.OutputTokens,
+		InputTokens:   r1.InputTokens, OutputTokens: r1.OutputTokens,
 	}
 	follow2 := sm.OnComplete(req1, 10000)
 	if len(follow2) != 1 {
@@ -460,7 +460,7 @@ func TestSession_AccumulateSharesBackingArray(t *testing.T) {
 	req0 := &sim.Request{
 		ID: "r0", SessionID: "sess-share", RoundIndex: 0,
 		State: sim.StateCompleted, ProgressIndex: 15,
-		InputTokens: sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 10),
+		InputTokens:  sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 10),
 		OutputTokens: sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), 5),
 	}
 	follow1 := sm.OnComplete(req0, 5000)
@@ -471,9 +471,9 @@ func TestSession_AccumulateSharesBackingArray(t *testing.T) {
 
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-share", RoundIndex: 1,
-		State: sim.StateCompleted,
+		State:         sim.StateCompleted,
 		ProgressIndex: int64(len(r1.InputTokens) + len(r1.OutputTokens)),
-		InputTokens: r1.InputTokens, OutputTokens: r1.OutputTokens,
+		InputTokens:   r1.InputTokens, OutputTokens: r1.OutputTokens,
 	}
 	follow2 := sm.OnComplete(req1, 10000)
 	if len(follow2) != 1 {
@@ -543,7 +543,7 @@ func TestSession_TimeoutCancels_NoMoreRounds(t *testing.T) {
 	// Round 2 times out
 	req := &sim.Request{
 		ID: "r2", SessionID: "sess2", RoundIndex: 2,
-		State: sim.StateTimedOut,
+		State:       sim.StateTimedOut,
 		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 
@@ -634,9 +634,9 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-accum3", RoundIndex: 1,
-		State: sim.StateCompleted,
+		State:         sim.StateCompleted,
 		ProgressIndex: int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens)), // 25 + 5 = 30
-		InputTokens: follow1[0].InputTokens, OutputTokens: follow1[0].OutputTokens,
+		InputTokens:   follow1[0].InputTokens, OutputTokens: follow1[0].OutputTokens,
 	}
 	follow2 := sm.OnComplete(req1, 12000)
 	if len(follow2) != 1 {
@@ -656,7 +656,8 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 // from round-0's InputTokens, and once from the prefix-prepend block).
 //
 // Invariant: len(round1.InputTokens) == len(prefix) + len(input0) + len(output0) + len(newInput1)
-//            = 5 + 10 + 5 + 10 = 30, not 35.
+//
+//	= 5 + 10 + 5 + 10 = 30, not 35.
 func TestSession_ContextAccumulation_WithPrefix(t *testing.T) {
 	bp := makeTestBlueprint("sess-prefix", 3, 1000, "accumulate", 1_000_000)
 	bp.Prefix = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(7)), 5) // 5 prefix tokens
@@ -794,7 +795,7 @@ func TestSession_ContextAccumulation_ZeroSuffix(t *testing.T) {
 	req0 := &sim.Request{
 		ID: "r0", SessionID: "sess-zero-suffix", RoundIndex: 0,
 		State: sim.StateCompleted, ProgressIndex: 5,
-		InputTokens:  []sim.TokenID{}, OutputTokens: outputR0,
+		InputTokens: []sim.TokenID{}, OutputTokens: outputR0,
 	}
 	follow1 := sm.OnComplete(req0, 5000)
 	if len(follow1) != 1 {
@@ -869,7 +870,7 @@ func TestSession_DroppedFollowUp_CancelsSession(t *testing.T) {
 	// Simulate a dropped request (state is still StateQueued from construction)
 	req := &sim.Request{
 		ID: "r1", SessionID: "sess5", RoundIndex: 1,
-		State: sim.StateQueued,
+		State:       sim.StateQueued,
 		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 
@@ -890,7 +891,7 @@ func TestSession_LengthCapped_ContinuesSession(t *testing.T) {
 		ID: "r0", SessionID: "sess6", RoundIndex: 0,
 		State: sim.StateCompleted, LengthCapped: true,
 		ProgressIndex: 13, // 10 input + 3 actual output (out of 5 oracle)
-		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+		InputTokens:   make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 
 	follow := sm.OnComplete(req, 5000)
