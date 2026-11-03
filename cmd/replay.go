@@ -142,6 +142,11 @@ Example:
 		if replayThinkTimeMs < 0 {
 			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
 		}
+		// --timeout override (#2064): reject 0 the same way `blis run` does — positive sets
+		// a deadline, negative disables, 0 is ambiguous. Only meaningful when explicitly set.
+		if cmd.Flags().Changed("timeout") && requestTimeoutSecs == 0 {
+			logrus.Fatalf("--timeout must be positive (seconds) or negative to disable; got 0")
+		}
 		if replayConcurrentSessions < 0 {
 			logrus.Fatalf("--concurrent-sessions must be >= 0, got %d", replayConcurrentSessions)
 		}
@@ -263,6 +268,13 @@ Example:
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
+			// --timeout override (#2064): applied to the blueprints BEFORE they are consumed
+			// by NewSessionManager / BuildSessionPool, so every follow-up round picks it up
+			// via followUpDeadline's explicit-Timeout tier. The round-0 requests (r0Requests)
+			// are overridden with the rest of the `requests` slice after the switch.
+			if cmd.Flags().Changed("timeout") {
+				applyReplayTimeout(nil, blueprints, requestTimeoutSecs)
+			}
 			if len(blueprints) == 0 {
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
 				requests = r0Requests
@@ -317,6 +329,22 @@ Example:
 				logrus.Fatalf("Failed to build requests from trace: %v", bErr)
 			}
 			logrus.Infof("Built %d requests for replay", len(requests))
+		}
+
+		// --timeout override (#2064): set one client deadline for every replayed round.
+		// Blueprints (closed-loop follow-ups) were already overridden above, before they
+		// were consumed; here we override the injected requests slice (round-0 for
+		// closed-loop, every pre-baked round for fixed / fixed-accumulate, non-session
+		// rows). Applied only when explicitly set, so the trace's own deadlines stand by
+		// default (BC-4). An agentic replay has no trace deadlines to override and sets
+		// its own request timeout, so it is left untouched.
+		if cmd.Flags().Changed("timeout") && agx == nil {
+			applyReplayTimeout(requests, nil, requestTimeoutSecs)
+			if requestTimeoutSecs > 0 {
+				logrus.Infof("--timeout %ds: every replayed round uses a %ds client deadline (overriding the trace)", requestTimeoutSecs, requestTimeoutSecs)
+			} else {
+				logrus.Infof("--timeout %d: client deadlines disabled for every replayed round (overriding the trace)", requestTimeoutSecs)
+			}
 		}
 
 		// Compute horizon (BC-3)
@@ -581,6 +609,13 @@ Example:
 					un, poolDriver.TotalSessions())
 			}
 		}
+		// Cancelled-session count (#2064, BC-5): a timed-out (or dropped) round cancels its
+		// whole session, so every later round is never issued — the aggregate timed-out
+		// count alone understates the lost work. Report the sessions cut short alongside it.
+		if cancelled := replayCancelledSessions(sessionMgr, poolDriver); cancelled > 0 {
+			logrus.Warnf("[replay] %d session(s) were cancelled before serving every round (a round timed out or was dropped); later rounds of those sessions were never issued. Pass --timeout to lengthen or disable the deadline, or add KV offload tiers to relieve pressure.",
+				cancelled)
+		}
 
 		logrus.Infof("Replay wall-clock time: %.3fs", time.Since(startTime).Seconds())
 
@@ -706,6 +741,9 @@ func init() {
 	replayCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "Replay a fixed pool of N concurrent closed-loop sessions drawn from the trace corpus (0 = disabled). Implies closed-loop session semantics.")
 	replayCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "Total sessions to replay under --concurrent-sessions; duplicates the corpus (with cache-busting) to fill. 0 = replay each corpus session once.")
 	replayCmd.Flags().BoolVar(&replayShuffleCorpus, "shuffle-corpus", false, "Randomize the corpus step/admission order (seeded from --seed for reproducibility). Requires --concurrent-sessions > 0. With --total-sessions < corpus this yields a random subset; every session still runs otherwise.")
+	// --timeout (#2064): symmetric with `blis run --timeout`. Default 300 but only applied
+	// when explicitly set; unset leaves the trace's own per-round deadlines in force (BC-4).
+	replayCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds, overriding every round's trace deadline (issue #2064). Negative = disabled (no deadline); 0 is rejected. Applied to all rounds and all session modes only when explicitly set; unset keeps the trace's recorded deadlines. Consistent with `blis run --timeout`.")
 	replayCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	replayCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	replayCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")
@@ -716,6 +754,48 @@ func init() {
 	var replayLazyGenerationIgnored bool
 	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with 'blis run' (#1441); has no effect on replay.")
 	rootCmd.AddCommand(replayCmd)
+}
+
+// replayCancelledSessions returns the cancelled-session count from whichever session
+// driver is active (closed-loop manager or pool), 0 when neither is (fixed /
+// fixed-accumulate / agentic have no SessionManager). Used for the #2064 BC-5 warning.
+func replayCancelledSessions(sessionMgr *workload.SessionManager, poolDriver *workload.SessionPoolDriver) int {
+	switch {
+	case poolDriver != nil:
+		return poolDriver.CancelledSessions()
+	case sessionMgr != nil:
+		return sessionMgr.CancelledSessions()
+	default:
+		return 0
+	}
+}
+
+// applyReplayTimeout sets a single client deadline for every replayed round (#2064),
+// the replay counterpart of runCmd's applyTimeoutToRequests. timeoutSecs>0 sets each
+// request's Deadline to ArrivalTime+timeout and each session blueprint's Timeout to the
+// µs value (so follow-ups pick it up via followUpDeadline's explicit-Timeout tier);
+// timeoutSecs<0 disables deadlines (Deadline=0, blueprint Timeout=&0, an explicit
+// "no timeout"). It overwrites whatever the trace recorded — the caller only invokes it
+// when --timeout was explicitly set, so an unset flag leaves the trace rule intact (BC-4).
+// Applied across ALL replay modes (the requests slice holds round-0 for closed-loop and
+// every pre-baked round for fixed / fixed-accumulate), so the override never silently
+// no-ops on an open-loop trace.
+func applyReplayTimeout(requests []*sim.Request, blueprints []workload.SessionBlueprint, timeoutSecs int) {
+	var timeoutUs int64
+	if timeoutSecs > 0 {
+		timeoutUs = int64(timeoutSecs) * 1_000_000
+	}
+	for _, req := range requests {
+		if timeoutUs == 0 {
+			req.Deadline = 0
+		} else {
+			req.Deadline = req.ArrivalTime + timeoutUs
+		}
+	}
+	for i := range blueprints {
+		t := timeoutUs
+		blueprints[i].Timeout = &t
+	}
 }
 
 // computeHorizonFromMaxArrival maps a maximum injection time to a simulation

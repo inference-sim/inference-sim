@@ -434,12 +434,19 @@ func TestRunCmd_TimeoutFlag_RegisteredWithDefault300s(t *testing.T) {
 	}
 }
 
-// TestRunCmd_TimeoutFlag_NotOnReplay verifies that --timeout is NOT registered on replayCmd.
-// blis replay replays a pre-captured trace and has no HTTP client; timeouts for replay
-// are expressed via the workload spec's deadline_us field (#1127).
-func TestRunCmd_TimeoutFlag_NotOnReplay(t *testing.T) {
-	if replayCmd.Flags().Lookup("timeout") != nil {
-		t.Error("replayCmd must NOT have --timeout flag; replay has no HTTP client and uses workload spec deadlines")
+// TestRunCmd_TimeoutFlag_OnReplay verifies that --timeout IS registered on replayCmd
+// (issue #2064). The trace's deadline_us sets every round's deadline, but there was no
+// flag to override or disable it on replay — so a run trace with deadlines disabled
+// replayed with BLIS's 300s default on follow-up rounds. --timeout, symmetric with
+// `blis run --timeout`, now sets or disables one deadline for all rounds. (Supersedes
+// the pre-#2064 TestRunCmd_TimeoutFlag_NotOnReplay, which pinned the old limitation.)
+func TestRunCmd_TimeoutFlag_OnReplay(t *testing.T) {
+	f := replayCmd.Flags().Lookup("timeout")
+	if f == nil {
+		t.Fatal("replayCmd must have --timeout flag (issue #2064)")
+	}
+	if f.DefValue != "300" {
+		t.Errorf("--timeout default: got %q, want \"300\" (symmetric with blis run)", f.DefValue)
 	}
 }
 

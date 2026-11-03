@@ -2606,3 +2606,57 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 		t.Errorf("re-export captured no clone (_dup) sessions; the clone path must be captured, not dropped")
 	}
 }
+
+// --- Issue #2064: blis replay --timeout ---
+
+func TestReplayCmd_TimeoutFlag_Registered(t *testing.T) {
+	f := replayCmd.Flags().Lookup("timeout")
+	if f == nil {
+		t.Fatal("replayCmd missing --timeout flag (issue #2064)")
+	}
+	// Symmetric with blis run: default 300 but only applied when explicitly changed.
+	if f.DefValue != "300" {
+		t.Errorf("--timeout default = %q, want %q", f.DefValue, "300")
+	}
+}
+
+// TestApplyReplayTimeout_PositiveSetsRelativeDeadline verifies BC-3:
+// a positive --timeout sets each request's Deadline to arrival + timeout and
+// each blueprint's Timeout to the µs value.
+func TestApplyReplayTimeout_PositiveSetsRelativeDeadline(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 1000, Deadline: 0},
+		{ID: "request_1", ArrivalTime: 5000, Deadline: 999}, // overwritten
+	}
+	blueprints := []workload.SessionBlueprint{{SessionID: "A"}}
+
+	applyReplayTimeout(requests, blueprints, 2) // 2 seconds
+
+	if requests[0].Deadline != 1000+2_000_000 {
+		t.Errorf("request_0 deadline = %d, want %d", requests[0].Deadline, 1000+2_000_000)
+	}
+	if requests[1].Deadline != 5000+2_000_000 {
+		t.Errorf("request_1 deadline = %d, want %d", requests[1].Deadline, 5000+2_000_000)
+	}
+	if blueprints[0].Timeout == nil || *blueprints[0].Timeout != 2_000_000 {
+		t.Errorf("blueprint Timeout = %v, want 2000000", blueprints[0].Timeout)
+	}
+}
+
+// TestApplyReplayTimeout_NegativeDisablesDeadline verifies BC-3:
+// a negative --timeout disables deadlines (Deadline=0, blueprint Timeout=&0).
+func TestApplyReplayTimeout_NegativeDisablesDeadline(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 1000, Deadline: 7777},
+	}
+	blueprints := []workload.SessionBlueprint{{SessionID: "A"}}
+
+	applyReplayTimeout(requests, blueprints, -1)
+
+	if requests[0].Deadline != 0 {
+		t.Errorf("request_0 deadline = %d, want 0 (disabled)", requests[0].Deadline)
+	}
+	if blueprints[0].Timeout == nil || *blueprints[0].Timeout != 0 {
+		t.Errorf("blueprint Timeout = %v, want &0 (explicit no-timeout)", blueprints[0].Timeout)
+	}
+}
