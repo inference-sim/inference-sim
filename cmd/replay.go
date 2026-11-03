@@ -268,12 +268,17 @@ Example:
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
 			}
-			// --timeout override (#2064): applied to the blueprints BEFORE they are consumed
-			// by NewSessionManager / BuildSessionPool, so every follow-up round picks it up
-			// via followUpDeadline's explicit-Timeout tier. The round-0 requests (r0Requests)
-			// are overridden with the rest of the `requests` slice after the switch.
+			// --timeout override (#2064): apply to the round-0 requests AND the blueprints
+			// HERE, before BuildSessionPool / NewSessionManager consume them. Doing it on
+			// r0Requests (not just the post-switch `requests` slice) is required for pool
+			// mode: `requests` there is only the first `concurrent` round-0s, while the
+			// queued round-0s and the clones BuildSessionPool derives from r0Requests would
+			// otherwise keep the trace deadline. Blueprints carry it to every follow-up via
+			// followUpDeadline's explicit-Timeout tier. The post-switch applyReplayTimeout
+			// below skips closed-loop (handled here) and covers fixed / fixed-accumulate /
+			// default, whose requests slice is the complete pre-baked set.
 			if cmd.Flags().Changed("timeout") {
-				applyReplayTimeout(nil, blueprints, requestTimeoutSecs)
+				applyReplayTimeout(r0Requests, blueprints, requestTimeoutSecs)
 			}
 			if len(blueprints) == 0 {
 				logrus.Warnf("--session-mode closed-loop: no session records found in trace; all requests injected with fixed timing")
@@ -332,14 +337,22 @@ Example:
 		}
 
 		// --timeout override (#2064): set one client deadline for every replayed round.
-		// Blueprints (closed-loop follow-ups) were already overridden above, before they
-		// were consumed; here we override the injected requests slice (round-0 for
-		// closed-loop, every pre-baked round for fixed / fixed-accumulate, non-session
-		// rows). Applied only when explicitly set, so the trace's own deadlines stand by
-		// default (BC-4). An agentic replay has no trace deadlines to override and sets
-		// its own request timeout, so it is left untouched.
-		if cmd.Flags().Changed("timeout") && agx == nil {
+		// Closed-loop was fully handled at the load site above (round-0 requests AND
+		// blueprints, before the pool/manager consumed them). Here we cover the open-loop
+		// modes — fixed, fixed-accumulate, and the no-session closed-loop fallback — whose
+		// `requests` slice is the complete pre-baked set of rounds. Applied only when
+		// explicitly set, so the trace's own deadlines stand by default (BC-4). An agentic
+		// replay owns its request timeout, so it is left untouched.
+		// fixed / fixed-accumulate only. The closed-loop paths (manager, pool, and the
+		// no-session fallback where requests == the already-overridden r0Requests) were
+		// all covered at the load site; re-applying would be a harmless no-op but is
+		// clearer to scope out here.
+		overrideOpenLoop := cmd.Flags().Changed("timeout") && agx == nil &&
+			(replaySessionMode == "fixed" || replaySessionMode == "fixed-accumulate")
+		if overrideOpenLoop {
 			applyReplayTimeout(requests, nil, requestTimeoutSecs)
+		}
+		if cmd.Flags().Changed("timeout") && agx == nil {
 			if requestTimeoutSecs > 0 {
 				logrus.Infof("--timeout %ds: every replayed round uses a %ds client deadline (overriding the trace)", requestTimeoutSecs, requestTimeoutSecs)
 			} else {
