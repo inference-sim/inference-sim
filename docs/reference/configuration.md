@@ -498,6 +498,7 @@ Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`)
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
+| `--timeout` | int | 300 | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round (round 0 and every session follow-up) keeps its own recorded `deadline_us`, or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. See [observe/replay/calibrate](../guide/observe-replay-calibrate.md#replay-specific-flags). |
 | `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
 
 `blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under

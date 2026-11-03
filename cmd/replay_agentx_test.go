@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 const agentXSlice = "../sim/workload/testdata/agentx/weka_v7_slice.jsonl"
@@ -346,5 +348,43 @@ func TestReplayAgentX_ResultMeasuresTheProfilingWindow(t *testing.T) {
 	}
 	if r.Engine["cluster"].(map[string]any)["agentic"] == nil {
 		t.Error("the agentic replay's counts are not in engine.cluster.agentic")
+	}
+}
+
+// TestAgxRequestTimeoutUs_HonorsFlag covers qa-review F2 of PR #2069 (issue #2064):
+// --timeout must override the agentic driver's hard-coded 6h aiperf default, and an
+// unset flag must preserve it.
+func TestAgxRequestTimeoutUs_HonorsFlag(t *testing.T) {
+	origTimeout := requestTimeoutSecs
+	t.Cleanup(func() { requestTimeoutSecs = origTimeout })
+
+	newCmd := func() *cobra.Command {
+		c := &cobra.Command{}
+		c.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
+		return c
+	}
+
+	// Unset: keep aiperf's 6h default.
+	cUnset := newCmd()
+	if got := agxRequestTimeoutUs(cUnset); got != workload.AgentXRequestTimeoutUs {
+		t.Errorf("unset --timeout: got %d, want %d (aiperf 6h default)", got, workload.AgentXRequestTimeoutUs)
+	}
+
+	// Explicit positive: T seconds in µs.
+	cPos := newCmd()
+	if err := cPos.ParseFlags([]string{"--timeout", "30"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := agxRequestTimeoutUs(cPos); got != 30_000_000 {
+		t.Errorf("--timeout 30: got %d, want 30000000", got)
+	}
+
+	// Explicit negative: disabled (0).
+	cNeg := newCmd()
+	if err := cNeg.ParseFlags([]string{"--timeout", "-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := agxRequestTimeoutUs(cNeg); got != 0 {
+		t.Errorf("--timeout -1: got %d, want 0 (disabled)", got)
 	}
 }

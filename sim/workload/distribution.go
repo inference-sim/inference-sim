@@ -9,9 +9,18 @@ import (
 	"strings"
 )
 
-// LengthSampler generates token count samples.
+// LengthSampler generates integer samples per call. In its primary use — input/output
+// token-length sequences — Sample returns a positive token count (>= 1). The interface is
+// also reused as a per-round *sequence* channel for non-length quantities carried in
+// lockstep with the length samplers, where a sentinel value < 0 is meaningful: the
+// context-compaction reset target (#1609, -1 = "no reset") and the client-deadline offset
+// (#2064, -1 = "no deadline"). Those sequences are only ever *SequenceSampler (which returns
+// its stored values verbatim and ignores the RNG), so the ">= 1" guarantee binds the
+// distribution samplers, not these sentinel-bearing sequence reuses.
 type LengthSampler interface {
-	// Sample returns a positive token count (>= 1).
+	// Sample returns an integer sample: a positive token count (>= 1) for a length
+	// distribution, or a stored sequence value (which may be a negative sentinel) for a
+	// per-round *SequenceSampler. See the interface doc for the two uses.
 	Sample(rng *rand.Rand) int
 }
 

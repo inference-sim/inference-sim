@@ -214,13 +214,14 @@ func TestSessionPool_RefillAndConservation(t *testing.T) {
 // what a shared cursor would produce.
 func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	src := SessionBlueprint{
-		SessionID:         "s0",
-		MaxRounds:         3,
-		Horizon:           1 << 62,
-		ContextGrowth:     "accumulate",
-		InputSampler:      &SequenceSampler{values: []int{10, 20, 30}},
-		OutputSampler:     &SequenceSampler{values: []int{1, 2, 3}},
-		InputResetSampler: &SequenceSampler{values: []int{-1, 50, -1}}, // #1609: round-1 compaction reset
+		SessionID:             "s0",
+		MaxRounds:             3,
+		Horizon:               1 << 62,
+		ContextGrowth:         "accumulate",
+		InputSampler:          &SequenceSampler{values: []int{10, 20, 30}},
+		OutputSampler:         &SequenceSampler{values: []int{1, 2, 3}},
+		InputResetSampler:     &SequenceSampler{values: []int{-1, 50, -1}},   // #1609: round-1 compaction reset
+		DeadlineOffsetSampler: &SequenceSampler{values: []int{-1, 7000, -1}}, // #2064: round-1 deadline offset
 	}
 	srcR0 := &sim.Request{ID: "r_s0", SessionID: "s0", RoundIndex: 0, State: sim.StateQueued}
 
@@ -244,6 +245,20 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 		t.Fatalf("clone InputResetSampler sample #1 = %d, want -1 (independent cursor)", got)
 	}
 
+	// #2064: the deadline-offset sampler is likewise a stateful *SequenceSampler in
+	// lockstep with InputSampler, so each clone needs its own cursor — otherwise a
+	// source session and its duplicate consume each other's per-round deadline offsets.
+	if clone.DeadlineOffsetSampler == src.DeadlineOffsetSampler {
+		t.Fatalf("clone.DeadlineOffsetSampler shares the same object as src.DeadlineOffsetSampler")
+	}
+	// Advance the source's deadline cursor two steps (-1, 7000); the clone must still
+	// yield the FIRST value (-1), not the source's advanced position.
+	_ = src.DeadlineOffsetSampler.Sample(nil) // -1
+	_ = src.DeadlineOffsetSampler.Sample(nil) // 7000
+	if got := clone.DeadlineOffsetSampler.Sample(nil); got != -1 {
+		t.Fatalf("clone DeadlineOffsetSampler sample #1 = %d, want -1 (independent cursor) — a shared cursor would yield the source's advanced value", got)
+	}
+
 	// Advance the source's cursor two steps: 10, then 20.
 	if got := src.InputSampler.Sample(nil); got != 10 {
 		t.Fatalf("source InputSampler sample #1 = %d, want 10", got)
@@ -257,5 +272,34 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	// source has already advanced past index 0 and 1.
 	if got := clone.InputSampler.Sample(nil); got != 10 {
 		t.Fatalf("clone InputSampler sample #1 = %d, want 10 (independent cursor) — got the source's advanced value, indicating a shared cursor", got)
+	}
+}
+
+// TestSessionPool_OnUnserved_EvictedCancelsAndRefills covers PR #2069 re-review #1 for
+// the pool: an evicted round-0 request (StateCompleted tombstone) must cancel its session
+// AND admit the next queued session to refill the slot — the same terminate-then-refill
+// path OnComplete takes, despite the tombstone that OnComplete alone would misread.
+func TestSessionPool_OnUnserved_EvictedCancelsAndRefills(t *testing.T) {
+	bp0, r0 := makeBP("s0", 1)
+	bp1, r1 := makeBP("s1", 2)
+	d, initial, err := BuildSessionPool([]SessionBlueprint{bp0, bp1}, []*sim.Request{r0, r1}, 1, 2, 7)
+	if err != nil {
+		t.Fatalf("BuildSessionPool: %v", err)
+	}
+	if len(initial) != 1 || initial[0].SessionID != "s0" {
+		t.Fatalf("initial = %v, want [s0]", initial)
+	}
+
+	// s0's round-0 is evicted in flight → tombstoned StateCompleted.
+	initial[0].State = sim.StateCompleted
+	initial[0].ProgressIndex = int64(initial[0].InputLen())
+	next := d.OnUnserved(initial[0], 100_000)
+
+	// The slot must refill with s1 (cancellation freed the pool slot).
+	if len(next) != 1 || next[0].SessionID != "s1" {
+		t.Fatalf("OnUnserved must refill the pool with s1, got %v", next)
+	}
+	if got := d.CancelledSessions(); got != 1 {
+		t.Errorf("CancelledSessions = %d, want 1 (evicted s0 cancelled)", got)
 	}
 }

@@ -1336,11 +1336,21 @@ var runCmd = &cobra.Command{
 		// follow-up accumulation happens regardless so saturation analysis sees complete workloads.
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		var unservedHook func(*sim.Request, int64) []*sim.Request
 		if sessionMgr != nil {
 			// Always install callback to accumulate follow-ups (for saturation analysis + optional trace export)
-			baseCb := sessionMgr.OnComplete
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
-				followUps := baseCb(req, clock)
+				followUps := sessionMgr.OnComplete(req, clock)
+				followUpRequests = append(followUpRequests, followUps...)
+				return followUps
+			}
+			// Route pre-instance drops (gateway client-deadline expiry, admission/routing
+			// rejection, shed/evict) through OnUnserved so a cut-short session is cancelled,
+			// matching served completions (#2064 review, run/replay parity). OnUnserved
+			// drop-marks a copy so an evicted request's StateCompleted tombstone is not
+			// misread as a successful round.
+			unservedHook = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := sessionMgr.OnUnserved(req, clock)
 				followUpRequests = append(followUpRequests, followUps...)
 				return followUps
 			}
@@ -1355,6 +1365,9 @@ var runCmd = &cobra.Command{
 			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
 		}
 		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
+		if unservedHook != nil {
+			cs.SetUnservedHook(unservedHook)
+		}
 		router := resolveRouterInputs()
 		gw := newGateway(router, model)
 		cs.SetGateway(gw)
@@ -1411,6 +1424,16 @@ var runCmd = &cobra.Command{
 		if lazyRequestSource != nil {
 			if err := lazyRequestSource.Err(); err != nil {
 				logrus.Fatalf("Lazy workload sampler failure: %v", err)
+			}
+		}
+
+		// Cancelled-session count (#2064, BC-5): parity with blis replay. A timed-out or
+		// dropped round cancels its whole session, so every later round is never issued;
+		// the aggregate timed-out-request count alone understates the lost work.
+		if sessionMgr != nil {
+			if cancelled := sessionMgr.CancelledSessions(); cancelled > 0 {
+				logrus.Warnf("[run] %d session(s) were cancelled before serving every round (a round timed out or was dropped); later rounds of those sessions were never issued. Pass --timeout to lengthen or disable the deadline.",
+					cancelled)
 			}
 		}
 

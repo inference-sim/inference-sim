@@ -1797,6 +1797,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origConcurrentSessions := replayConcurrentSessions
 	origTotalSessions := replayTotalSessions
 	origShuffleCorpus := replayShuffleCorpus
+	origRequestTimeoutSecs := requestTimeoutSecs
 	t.Cleanup(func() {
 		resultsPath = origResultsPath
 		replayTraceOutput = origTraceOutput
@@ -1814,6 +1815,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		replayConcurrentSessions = origConcurrentSessions
 		replayTotalSessions = origTotalSessions
 		replayShuffleCorpus = origShuffleCorpus
+		requestTimeoutSecs = origRequestTimeoutSecs
 	})
 
 	resultsPath = ""
@@ -1829,6 +1831,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	replayThinkTimeDist = ""
 	replayConcurrentSessions, replayTotalSessions = 0, 0
 	replayShuffleCorpus = false
+	requestTimeoutSecs = 300 // default; ParseFlags overrides only when --timeout is in args
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -1840,6 +1843,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
 	testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
 	testCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "")
+	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -1950,6 +1954,86 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	}
 	if int(got) != 8 {
 		t.Errorf("completed_requests = %d, want 8 (pool truncated — self-drain horizon override missing)", int(got))
+	}
+}
+
+// TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd closes qa-review G5: an
+// end-to-end CLI replay in OPEN-LOOP (fixed) mode exercising --timeout, where the
+// override must reach the pre-baked requests slice (no session blueprints). The
+// trace records a 1µs deadline on a request that cannot finish that fast, so the
+// default replay times it out; --timeout -1 disables the deadline and the request
+// completes. This proves the post-switch request override (#2064) is wired for
+// fixed mode, not just unit-tested in applyReplayTimeout.
+func TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+
+	// One non-session request with a 1µs deadline (arrival 0) — far shorter than its
+	// service time, so it times out under the trace deadline.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, DeadlineUs: 1, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	base := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
+		"--defaults-filepath", defaultsPath,
+	}
+
+	// WITHOUT --timeout: the 1µs trace deadline stands → the request times out.
+	outDefault := runReplayCaptureStdout(t, base)
+	figDefault := clusterFigures(t, outDefault)
+	if figDefault["timed_out_requests"] != 1 {
+		t.Fatalf("precondition: timed_out_requests = %v, want 1 (1µs trace deadline should time out)", figDefault["timed_out_requests"])
+	}
+
+	// WITH --timeout -1: the deadline is disabled → the request completes, no timeout.
+	outDisabled := runReplayCaptureStdout(t, append(append([]string{}, base...), "--timeout", "-1"))
+	figDisabled := clusterFigures(t, outDisabled)
+	if figDisabled["timed_out_requests"] != 0 {
+		t.Errorf("--timeout -1 (fixed mode): timed_out_requests = %v, want 0 (deadline disabled)", figDisabled["timed_out_requests"])
+	}
+	if figDisabled["completed_requests"] != 1 {
+		t.Errorf("--timeout -1 (fixed mode): completed_requests = %v, want 1 (request should finish with no deadline)", figDisabled["completed_requests"])
+	}
+}
+
+// TestReplayCmd_Pool_TimeoutOverride_ReachesClones closes qa-review G5 for pool
+// mode: --timeout must reach not just the initially-injected round-0 requests but
+// the queued round-0s and the clones BuildSessionPool derives from them. A 1-session
+// corpus with deadline_us=0 (no deadline) expanded to 3 total (2 clones) under
+// --timeout 1 must time out all 3 — if the override missed the clones, their round-0
+// would keep the trace's no-deadline and they would complete instead.
+func TestReplayCmd_Pool_TimeoutOverride_ReachesClones(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+
+	// One single-round session, no recorded deadline; a long enough output that a 1s
+	// deadline cannot be met.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 1000, OutputTokens: 8000, ArrivalTimeUs: 0, DeadlineUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
+		"--defaults-filepath", defaultsPath,
+		"--concurrent-sessions", "2", "--total-sessions", "3", "--timeout", "1",
+	})
+	fig := clusterFigures(t, out)
+	if fig["timed_out_requests"] != 3 {
+		t.Errorf("pool --timeout 1: timed_out_requests = %v, want 3 (original + 2 clones all time out — a missed clone would keep the trace's no-deadline)", fig["timed_out_requests"])
 	}
 }
 
@@ -2604,5 +2688,87 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 	}
 	if clones == 0 {
 		t.Errorf("re-export captured no clone (_dup) sessions; the clone path must be captured, not dropped")
+	}
+}
+
+// --- Issue #2064: blis replay --timeout ---
+
+func TestReplayCmd_TimeoutFlag_Registered(t *testing.T) {
+	f := replayCmd.Flags().Lookup("timeout")
+	if f == nil {
+		t.Fatal("replayCmd missing --timeout flag (issue #2064)")
+	}
+	// Symmetric with blis run: default 300 but only applied when explicitly changed.
+	if f.DefValue != "300" {
+		t.Errorf("--timeout default = %q, want %q", f.DefValue, "300")
+	}
+}
+
+// TestApplyReplayTimeout_PositiveSetsRelativeDeadline verifies BC-3:
+// a positive --timeout sets each request's Deadline to arrival + timeout and
+// each blueprint's Timeout to the µs value.
+func TestApplyReplayTimeout_PositiveSetsRelativeDeadline(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 1000, Deadline: 0},
+		{ID: "request_1", ArrivalTime: 5000, Deadline: 999}, // overwritten
+	}
+	blueprints := []workload.SessionBlueprint{{SessionID: "A"}}
+
+	applyReplayTimeout(requests, blueprints, 2) // 2 seconds
+
+	if requests[0].Deadline != 1000+2_000_000 {
+		t.Errorf("request_0 deadline = %d, want %d", requests[0].Deadline, 1000+2_000_000)
+	}
+	if requests[1].Deadline != 5000+2_000_000 {
+		t.Errorf("request_1 deadline = %d, want %d", requests[1].Deadline, 5000+2_000_000)
+	}
+	if blueprints[0].Timeout == nil || *blueprints[0].Timeout != 2_000_000 {
+		t.Errorf("blueprint Timeout = %v, want 2000000", blueprints[0].Timeout)
+	}
+}
+
+// TestApplyReplayTimeout_NegativeDisablesDeadline verifies BC-3:
+// a negative --timeout disables deadlines (Deadline=0, blueprint Timeout=&0).
+func TestApplyReplayTimeout_NegativeDisablesDeadline(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 1000, Deadline: 7777},
+	}
+	blueprints := []workload.SessionBlueprint{{SessionID: "A"}}
+
+	applyReplayTimeout(requests, blueprints, -1)
+
+	if requests[0].Deadline != 0 {
+		t.Errorf("request_0 deadline = %d, want 0 (disabled)", requests[0].Deadline)
+	}
+	if blueprints[0].Timeout == nil || *blueprints[0].Timeout != 0 {
+		t.Errorf("blueprint Timeout = %v, want &0 (explicit no-timeout)", blueprints[0].Timeout)
+	}
+}
+
+// TestApplyReplayTimeout_OpenLoop_NilBlueprints verifies the open-loop wiring
+// (fixed / fixed-accumulate replay, issue #2064 qa-review G6): those modes build a
+// pre-baked `requests` slice and pass nil blueprints, so the override must apply to
+// every request's Deadline and tolerate a nil blueprint slice without panicking.
+func TestApplyReplayTimeout_OpenLoop_NilBlueprints(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 0, Deadline: 123},
+		{ID: "request_1", ArrivalTime: 50_000, Deadline: 0},
+		{ID: "request_2", ArrivalTime: 50_000, Deadline: 999},
+	}
+
+	// Positive: every round gets arrival + T, regardless of its recorded deadline.
+	applyReplayTimeout(requests, nil, 3)
+	for _, r := range requests {
+		if want := r.ArrivalTime + 3_000_000; r.Deadline != want {
+			t.Errorf("%s deadline = %d, want %d (arrival+3s)", r.ID, r.Deadline, want)
+		}
+	}
+
+	// Negative: every round's deadline disabled.
+	applyReplayTimeout(requests, nil, -1)
+	for _, r := range requests {
+		if r.Deadline != 0 {
+			t.Errorf("%s deadline = %d, want 0 (disabled)", r.ID, r.Deadline)
+		}
 	}
 }

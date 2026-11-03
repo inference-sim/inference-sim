@@ -885,17 +885,47 @@ func (c *ClusterSimulator) Run() error {
 		logrus.Warnf("[cluster] %d requests remain in the gateway at simulation end", n)
 	}
 
-	// Post-simulation diagnostic warnings (BC-2, BC-3)
+	// Post-simulation diagnostic warnings (BC-2, BC-3).
+	// A timeout is reported whenever ANY request times out, not only when every
+	// request fails (#2064): heavy sessions that silently time out past a deadline
+	// were previously invisible in the log when most requests completed.
+	if c.aggregatedMetrics.TimedOutRequests > 0 {
+		logrus.Warnf("[cluster] %d request(s) timed out (client deadline exceeded, likely KV pressure or a deadline shorter than the request's service time)",
+			c.aggregatedMetrics.TimedOutRequests)
+	}
 	if c.aggregatedMetrics.CompletedRequests == 0 {
-		if c.rejectedRequests > 0 {
+		// With zero completions every request that arrived ended in a non-completion
+		// bucket. An absolute "all requests <cause>" claim is only correct when a single
+		// bucket accounts for the ENTIRE non-completion total — otherwise a mixed run
+		// (e.g. one timeout + one request still held in the gateway) would be mislabeled.
+		// `total` spans the full canonical ledger: every arrival is either admission-
+		// rejected or injected, and every injected request ends in one of INV-1's ten
+		// non-completion terminal buckets (the eleven-term form minus `completed`; see
+		// sim/cluster/metrics.go and docs/contributing/standards/invariants.md). Keep this
+		// in sync with that ledger — a missing term silently makes the absolute claim
+		// over-fire (#2064 review). gatewayTimedOut is already folded into TimedOutRequests
+		// above; GatewayQueueDepth counts requests still held at the horizon.
+		admissionRej := c.rejectedRequests
+		timedOut := c.aggregatedMetrics.TimedOutRequests
+		total := admissionRej + timedOut +
+			c.aggregatedMetrics.DroppedUnservable +
+			c.aggregatedMetrics.StillQueued +
+			c.aggregatedMetrics.StillRunning +
+			c.routingRejections +
+			c.encodeRoutingRejections +
+			c.gatewayRejected +
+			c.gatewayExpired +
+			c.gatewayEvicted +
+			c.GatewayQueueDepth()
+		switch {
+		case total > 0 && admissionRej == total:
 			logrus.Warnf("[cluster] all %d requests rejected by the router's admission checks — no requests completed",
-				c.rejectedRequests)
-		} else if c.aggregatedMetrics.TimedOutRequests > 0 {
-			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
-				c.aggregatedMetrics.TimedOutRequests,
-				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
-		} else {
-			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
+				admissionRej)
+		case total > 0 && timedOut == total:
+			// The timeout count is already reported above; here it is the sole cause.
+			logrus.Warnf("[cluster] no requests completed — every request timed out before finishing")
+		default:
+			logrus.Warnf("[cluster] no requests completed — horizon may be too short, the workload too small, or requests timed out / were rejected, dropped, or still held before finishing")
 		}
 	}
 

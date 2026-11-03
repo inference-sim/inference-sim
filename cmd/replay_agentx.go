@@ -229,7 +229,7 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		WarmupRequestsPerLane: agxWarmupRequestsPerLane(spec),
 		MinRatio:              lo,
 		MaxRatio:              hi,
-		RequestTimeoutUs:      simworkload.AgentXRequestTimeoutUs,
+		RequestTimeoutUs:      agxRequestTimeoutUs(cmd),
 		MaxModelLen:           maxModelLen,
 		HorizonCapUs:          horizonCap(cmd),
 	})
@@ -240,6 +240,22 @@ func buildAgentXRun(cmd *cobra.Command) (*agentXRun, []*sim.Request) {
 		logrus.Warnf("agentic replay: built %d lanes for concurrency %d (too few spawnable traces)", drv.Lanes(), spec.Concurrency)
 	}
 	return &agentXRun{spec: spec, corpus: corpus, driver: drv, limit: limit}, drv.Start()
+}
+
+// agxRequestTimeoutUs is the agentic driver's per-request client timeout in µs (#2064).
+// Unset --timeout keeps aiperf's 6 h default (AgentXRequestTimeoutUs); an explicit
+// --timeout overrides it — positive T → T seconds in µs, negative → 0 (disabled). 0 is
+// rejected upstream in replayCmd before this is reached, so it is not special-cased here.
+func agxRequestTimeoutUs(cmd *cobra.Command) int64 {
+	if !cmd.Flags().Changed("timeout") {
+		return simworkload.AgentXRequestTimeoutUs
+	}
+	if requestTimeoutSecs < 0 {
+		logrus.Infof("--timeout %d: agentic replay client deadline disabled (overriding aiperf's 6h default)", requestTimeoutSecs)
+		return 0 // disabled
+	}
+	logrus.Infof("--timeout %ds: agentic replay uses a %ds client deadline (overriding aiperf's 6h default)", requestTimeoutSecs, requestTimeoutSecs)
+	return int64(requestTimeoutSecs) * 1_000_000
 }
 
 // agxTraceIdleCapUs is the per-trace idle cap in microseconds, 0 when the spec leaves it
