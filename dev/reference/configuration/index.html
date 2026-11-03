@@ -5199,6 +5199,12 @@
 <td>Path to TraceV2 data CSV file (required).</td>
 </tr>
 <tr>
+<td><code>--timeout</code></td>
+<td>int</td>
+<td>300</td>
+<td>Per-request deadline in seconds, overriding every round's trace deadline (<a href="https://github.com/inference-sim/inference-sim/issues/2064">#2064</a>). Negative disables the deadline; 0 is rejected. <strong>Applied only when explicitly set</strong> — unset, each round (round 0 and every session follow-up) keeps its own recorded <code>deadline_us</code>, or no deadline when <code>deadline_us</code> is 0. Symmetric with <code>blis run --timeout</code>. See <a href="../../guide/observe-replay-calibrate/#replay-specific-flags">observe/replay/calibrate</a>.</td>
+</tr>
+<tr>
 <td><code>--results-path</code></td>
 <td>string</td>
 <td>""</td>
