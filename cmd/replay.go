@@ -628,13 +628,15 @@ Example:
 			logrus.Infof("agentic replay: profiling %s -> %s, %+v", fmtUs(ps), fmtUs(pe), agx.driver.Stats())
 		}
 		if poolDriver != nil {
-			// KNOWN LIMITATION (follow-up): under an explicit --horizon hard cap that
-			// truncates mid-drain, a refill pushed by OnComplete but discarded by the
-			// cluster's horizon guard is still counted as started, so Unstarted() may
-			// undercount dropped sessions and this warning may not fire. The
-			// self-draining path (no --horizon) is exact. Tracked in #1483.
+			// KNOWN LIMITATION (#1483): under an explicit --horizon hard cap that truncates
+			// mid-drain, a refill pushed by a late termination but discarded by the cluster's
+			// horizon guard is still counted as started, so Unstarted() may undercount and this
+			// warning may not fire. The self-draining path (no --horizon) is exact: pre-instance
+			// drops (routing/gateway rejection, client-deadline expiry, shed/evict) now cancel
+			// the session and refill its slot via the unserved hook (#2064), so they no longer
+			// leave a session unstarted.
 			if un := poolDriver.Unstarted(); un > 0 {
-				logrus.Warnf("%d of %d pooled sessions never admitted — a --horizon cap truncated the drain, and/or admitted sessions were dropped before reaching an instance (routing/gateway rejection, which does not fire the per-instance completion hook). Omit --horizon to self-drain; check routing-rejection metrics for the second cause.",
+				logrus.Warnf("%d of %d pooled sessions never admitted — an explicit --horizon cap truncated the drain before every session started. Omit --horizon to self-drain (then every session is admitted; see #1483 for the horizon-cap accounting limitation).",
 					un, poolDriver.TotalSessions())
 			}
 		}

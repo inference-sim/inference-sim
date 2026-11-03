@@ -224,15 +224,16 @@ func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 // unservable drop, delegating to the wrapped SessionManager (#2064, BC-5).
 func (d *SessionPoolDriver) CancelledSessions() int { return d.mgr.CancelledSessions() }
 
-// Unstarted returns the number of sessions never admitted. It is nonzero when
-// either (a) a hard --horizon cap ends the run with sessions still queued, or
-// (b) an admitted session's request left the pipeline before reaching an instance
-// (routing rejection, gateway shed/evict/expire) — OnRequestDone is wired
-// per-instance, so those pre-instance drops never terminate the session and its
-// pool slot is not refilled. Case (b) can make Unstarted() > 0 even with no
-// --horizon set. The caller logs a warning and reports this alongside totalStarted
-// so accounting stays closed: totalStarted + Unstarted() == TotalSessions()
-// (INV-11 / INV-1).
+// Unstarted returns the number of sessions never admitted. In the self-draining
+// configuration (no --horizon) it is 0: every session either completes or is cancelled,
+// and a cancellation refills the slot — pre-instance drops (routing rejection, gateway
+// client-deadline expiry / shed / evict) now terminate the session too, because the
+// cluster routes them through SessionPoolDriver.OnUnserved (wired as the unserved hook,
+// #2064). Unstarted() is nonzero only under a hard --horizon cap that ends the run with
+// sessions still queued (a refill pushed by a late termination can be discarded by the
+// cluster's horizon guard yet still counted as started — the known-limitation case
+// tracked in #1483). The caller logs a warning and reports this alongside totalStarted so
+// accounting stays closed: totalStarted + Unstarted() == TotalSessions() (INV-11 / INV-1).
 func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.totalStarted }
 
 // hasUniqueSessionIDs is a test helper: true iff all pooled round-0 requests
