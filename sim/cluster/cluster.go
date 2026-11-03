@@ -894,21 +894,30 @@ func (c *ClusterSimulator) Run() error {
 			c.aggregatedMetrics.TimedOutRequests)
 	}
 	if c.aggregatedMetrics.CompletedRequests == 0 {
+		// With zero completions every injected request landed in exactly one terminal
+		// bucket. An absolute "all requests <cause>" claim is only correct when a single
+		// bucket accounts for the entire non-completion total — otherwise a mixed run
+		// (e.g. one timeout + one routing rejection) would be mislabeled. The buckets
+		// below span every non-completion term, INCLUDING the router/gateway counters
+		// (routingRejections, gatewayRejected/Expired/Evicted) that live outside
+		// aggregatedMetrics; gatewayTimedOut is already folded into TimedOutRequests above
+		// (#2064 review). Fall back to a generic line unless one bucket is the sole cause.
+		timedOut := c.aggregatedMetrics.TimedOutRequests
+		dropped := c.aggregatedMetrics.DroppedUnservable
+		queued := c.aggregatedMetrics.StillQueued
+		running := c.aggregatedMetrics.StillRunning
+		admissionRej := c.rejectedRequests
+		otherRouter := c.routingRejections + c.gatewayRejected + c.gatewayExpired + c.gatewayEvicted
+		total := timedOut + dropped + queued + running + admissionRej + otherRouter
 		switch {
-		case c.rejectedRequests > 0:
+		case total > 0 && admissionRej == total:
 			logrus.Warnf("[cluster] all %d requests rejected by the router's admission checks — no requests completed",
-				c.rejectedRequests)
-		case c.aggregatedMetrics.TimedOutRequests > 0 &&
-			c.aggregatedMetrics.DroppedUnservable == 0 &&
-			c.aggregatedMetrics.StillQueued == 0 &&
-			c.aggregatedMetrics.StillRunning == 0:
-			// Timeouts are the SOLE cause only when nothing else is outstanding; the
-			// count itself is already reported above. When drops/queued/running also
-			// contribute, fall through to the generic line rather than overclaiming
-			// that every request timed out (#2064 review).
+				admissionRej)
+		case total > 0 && timedOut == total:
+			// The timeout count is already reported above; here it is the sole cause.
 			logrus.Warnf("[cluster] no requests completed — every request timed out before finishing")
 		default:
-			logrus.Warnf("[cluster] no requests completed — horizon may be too short, the workload too small, or requests timed out / were dropped before finishing")
+			logrus.Warnf("[cluster] no requests completed — horizon may be too short, the workload too small, or requests timed out / were rejected or dropped before finishing")
 		}
 	}
 

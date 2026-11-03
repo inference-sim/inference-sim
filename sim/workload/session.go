@@ -359,6 +359,25 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	return []*sim.Request{nextReq}
 }
 
+// OnUnserved handles a request the cluster ended WITHOUT serving — a gateway
+// client-deadline expiry, an admission/routing rejection, a flow-control shed, or an
+// in-flight eviction (#2064 review). Every such drop must cancel the session, but the
+// cluster leaves the request in states OnComplete would misread: an evicted in-flight
+// request carries a StateCompleted tombstone (engine_driver.Evict), which OnComplete
+// would treat as a successful round and continue the session. So OnUnserved drives the
+// session with a shallow COPY forced to StateQueued — OnComplete's drop-cancel path —
+// leaving the real request's state untouched for the cluster's own metrics. Wire it as
+// ClusterSimulator.SetUnservedHook; it returns whatever follow-ups OnComplete does (nil
+// for a plain cancel; a pool refill is produced by SessionPoolDriver.OnUnserved).
+func (sm *SessionManager) OnUnserved(req *sim.Request, tick int64) []*sim.Request {
+	if req == nil || req.SessionID == "" {
+		return nil
+	}
+	drop := *req // shallow copy: do not disturb the real request's terminal state/metrics
+	drop.State = sim.StateQueued
+	return sm.OnComplete(&drop, tick)
+}
+
 // followUpDeadline derives a follow-up round's absolute client deadline (#2064).
 // Precedence, highest first:
 //  1. explicit bp.Timeout (set by `blis replay --timeout`, or a run client's timeout):

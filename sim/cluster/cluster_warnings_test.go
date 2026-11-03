@@ -2,6 +2,8 @@ package cluster
 
 import (
 	"bytes"
+	"math"
+	"math/rand"
 	"os"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // captureLogOutput runs fn and returns the log output as a string.
@@ -190,44 +193,113 @@ func TestClusterSimulator_MixedTimeoutAndDrop_NoOverclaim(t *testing.T) {
 	}
 }
 
-// TestClusterSimulator_ClientTimeoutInGateway_FiresUnservedHook covers issue #2064
-// review F3: a request whose client deadline expires while the gateway holds it (a
-// RejectedClientTimeout) is recorded unserved and must reach the unserved hook, so a
-// closed-loop/pool session driver can cancel the session and refill the pool slot.
-// Before the fix only AgentX installed the hook, so normal session/pool replay left
-// CancelledSessions()==0 and a pool slot unrefilled on a gateway-expired deadline.
-func TestClusterSimulator_ClientTimeoutInGateway_FiresUnservedHook(t *testing.T) {
-	config := newTestDeploymentConfig(1)
-	config.Horizon = 1_000_000
-	requests := []*sim.Request{
-		{ID: "s_r0", SessionID: "s", ArrivalTime: 0, State: sim.StateQueued,
-			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), MaxOutputLen: 5},
+// TestClusterSimulator_SessionUnserved_CancelsThroughHook covers PR #2069 re-review #1
+// end-to-end: a real SessionManager wired exactly as cmd wires it (OnComplete as
+// onRequestDone, OnUnserved as the unserved hook), with a gateway that ends the session's
+// round-0 request WITHOUT serving it — a client-deadline expiry in the gateway, the same
+// recordUnserved path an eviction, admission or routing rejection takes. The session must
+// be cancelled (not continued): no follow-up round is issued and CancelledSessions()==1.
+// (The eviction-tombstone case — where OnComplete alone would misread StateCompleted as a
+// successful round — is covered precisely at the unit level in
+// TestSession_OnUnserved_EvictedTombstoneCancels and the pool variant.)
+func TestClusterSimulator_SessionUnserved_CancelsThroughHook(t *testing.T) {
+	inputSampler, err := workload.NewLengthSampler(workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 10}})
+	if err != nil {
+		t.Fatalf("input sampler: %v", err)
+	}
+	outputSampler, err := workload.NewLengthSampler(workload.DistSpec{Type: "constant", Params: map[string]float64{"value": 5}})
+	if err != nil {
+		t.Fatalf("output sampler: %v", err)
+	}
+	const sessID = "unserved-sess"
+	bp := workload.SessionBlueprint{
+		SessionID: sessID, ClientID: "c", MaxRounds: 5, ThinkTimeUs: 1000,
+		Horizon: math.MaxInt64, InputSampler: inputSampler, OutputSampler: outputSampler,
+		RNG: rand.New(rand.NewSource(7)), Model: "test-model",
+	}
+	seed := &sim.Request{
+		ID: sessID + "_r0", ArrivalTime: 0, State: sim.StateQueued,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), MaxOutputLen: 5,
+		SessionID: sessID, RoundIndex: 0,
+	}
+	sm := workload.NewSessionManager([]workload.SessionBlueprint{bp})
+
+	rounds := 0
+	onDone := func(req *sim.Request, tick int64) []*sim.Request {
+		if req.SessionID == sessID {
+			rounds++
+		}
+		return sm.OnComplete(req, tick)
 	}
 
-	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
-	// The gateway rejects the request as a client-deadline expiry (the gateway-held timeout).
-	cs.SetGateway(&fakeGateway{
-		reject:   func(*sim.Request) bool { return true },
-		rejectAs: RejectedClientTimeout,
-	})
-
-	var unserved []*sim.Request
-	cs.SetUnservedHook(func(req *sim.Request, _ int64) []*sim.Request {
-		unserved = append(unserved, req)
-		return nil
-	})
+	config := newTestDeploymentConfig(1)
+	config.Horizon = 1_000_000
+	cs := newTestCluster(config, NewSliceRequestSource([]*sim.Request{seed}), onDone)
+	// Gateway ends the request unserved (client deadline expired while held).
+	cs.SetGateway(&fakeGateway{reject: func(*sim.Request) bool { return true }, rejectAs: RejectedClientTimeout})
+	cs.SetUnservedHook(sm.OnUnserved)
 
 	if err := cs.Run(); err != nil {
 		t.Fatalf("cs.Run: %v", err)
 	}
 
-	// The gateway-held client timeout must have reached the unserved hook (the route a
-	// session/pool driver uses to cancel/refill).
-	if len(unserved) != 1 || unserved[0].ID != "s_r0" {
-		t.Errorf("unserved hook saw %v, want exactly [s_r0] (gateway client-timeout must fire the hook)", unserved)
+	if sm.CancelledSessions() != 1 {
+		t.Errorf("CancelledSessions = %d, want 1 (an unserved round-0 must cancel the session)", sm.CancelledSessions())
 	}
-	if cs.AggregatedMetrics().TimedOutRequests != 1 {
-		t.Errorf("TimedOutRequests = %d, want 1 (gateway client deadline)", cs.AggregatedMetrics().TimedOutRequests)
+	if rounds != 0 {
+		t.Errorf("onRequestDone saw %d session rounds; an unserved round-0 reaches the unserved hook, not onRequestDone", rounds)
+	}
+	if cs.AggregatedMetrics().CompletedRequests != 0 {
+		t.Errorf("CompletedRequests = %d, want 0 (the only request was unserved)", cs.AggregatedMetrics().CompletedRequests)
+	}
+}
+
+// TestClusterSimulator_MixedTimeoutAndRoutingRejection_NoOverclaim covers PR #2069
+// re-review #2: the zero-completion diagnostic must not claim "every request timed out"
+// when a router/gateway rejection — counted in routingRejections, OUTSIDE
+// aggregatedMetrics — also contributed. One request times out; one is routing-rejected
+// (its model matches no instance). Before the fix this logged "every request timed out"
+// because DroppedUnservable/StillQueued/StillRunning and rejectedRequests were all 0.
+func TestClusterSimulator_MixedTimeoutAndRoutingRejection_NoOverclaim(t *testing.T) {
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
+			Horizon:             500_000_000,
+			Seed:                42,
+			KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(1, 2048, 0),
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0),
+		}, 0)
+		d.NumInstances = 1
+		return d
+	}()
+	requests := []*sim.Request{
+		// Times out: 5ms deadline, shorter than its service time.
+		{ID: "slow", ArrivalTime: 0, State: sim.StateQueued,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 50), MaxOutputLen: 50, Deadline: 5_000},
+		// Routing-rejected: its model matches no instance.
+		{ID: "wrongmodel", ArrivalTime: 0, State: sim.StateQueued,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), MaxOutputLen: 5, Model: "no-such-model"},
+	}
+
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
+	cs.SetGateway(&fakeGateway{})
+	output := captureLogOutput(func() {
+		if err := cs.Run(); err != nil {
+			t.Fatalf("cs.Run: %v", err)
+		}
+	})
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 0 || m.TimedOutRequests == 0 || cs.RoutingRejections() == 0 {
+		t.Fatalf("test setup: want 0 completed, >=1 timed out, >=1 routing-rejected; got completed=%d timed_out=%d routing_rej=%d",
+			m.CompletedRequests, m.TimedOutRequests, cs.RoutingRejections())
+	}
+	if strings.Contains(output, "every request timed out") {
+		t.Errorf("must not claim 'every request timed out' when a routing rejection also contributed, got: %q", output)
+	}
+	if strings.Contains(output, "all") && strings.Contains(output, "rejected by the router's admission") {
+		t.Errorf("must not claim 'all requests rejected' in a mixed timeout + routing-rejection run, got: %q", output)
 	}
 }
 

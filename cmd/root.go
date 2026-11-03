@@ -1336,16 +1336,24 @@ var runCmd = &cobra.Command{
 		// follow-up accumulation happens regardless so saturation analysis sees complete workloads.
 		var followUpRequests []*sim.Request
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
-		var sessionDrive func(*sim.Request, int64) []*sim.Request
+		var unservedHook func(*sim.Request, int64) []*sim.Request
 		if sessionMgr != nil {
 			// Always install callback to accumulate follow-ups (for saturation analysis + optional trace export)
-			baseCb := sessionMgr.OnComplete
-			sessionDrive = func(req *sim.Request, clock int64) []*sim.Request {
-				followUps := baseCb(req, clock)
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := sessionMgr.OnComplete(req, clock)
 				followUpRequests = append(followUpRequests, followUps...)
 				return followUps
 			}
-			onRequestDone = sessionDrive
+			// Route pre-instance drops (gateway client-deadline expiry, admission/routing
+			// rejection, shed/evict) through OnUnserved so a cut-short session is cancelled,
+			// matching served completions (#2064 review, run/replay parity). OnUnserved
+			// drop-marks a copy so an evicted request's StateCompleted tombstone is not
+			// misread as a successful round.
+			unservedHook = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := sessionMgr.OnUnserved(req, clock)
+				followUpRequests = append(followUpRequests, followUps...)
+				return followUps
+			}
 		}
 		// RequestSource: streaming in lazy mode, eager-slice otherwise.
 		// The workload package's lazy source satisfies cluster.RequestSource
@@ -1357,11 +1365,8 @@ var runCmd = &cobra.Command{
 			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
 		}
 		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
-		if sessionDrive != nil {
-			// Route pre-instance drops (gateway client-deadline expiry, admission/routing
-			// rejection, shed/evict) through the session driver so a cut-short session is
-			// cancelled, matching served completions (#2064 review F2, run/replay parity).
-			cs.SetUnservedHook(sessionDrive)
+		if unservedHook != nil {
+			cs.SetUnservedHook(unservedHook)
 		}
 		router := resolveRouterInputs()
 		gw := newGateway(router, model)

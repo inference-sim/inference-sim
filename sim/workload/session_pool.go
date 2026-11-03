@@ -200,6 +200,23 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 	return nil
 }
 
+// OnUnserved handles a pooled request the cluster ended without serving (#2064 review):
+// a gateway client-deadline expiry, admission/routing rejection, shed, or in-flight
+// eviction. It drives the same terminate-then-refill path as OnComplete, but with a
+// shallow COPY forced to StateQueued so the inner SessionManager takes its drop-cancel
+// branch regardless of the terminal state the cluster left on the real request (an
+// evicted in-flight request carries a StateCompleted tombstone that OnComplete would
+// otherwise read as a successful round). The real request is untouched (cluster metrics).
+// Returns the pool refill, if any, exactly as OnComplete would.
+func (d *SessionPoolDriver) OnUnserved(req *sim.Request, tick int64) []*sim.Request {
+	if req == nil || !isSessionRequest(req) {
+		return nil
+	}
+	drop := *req // shallow copy; preserve the real request's terminal state for metrics
+	drop.State = sim.StateQueued
+	return d.OnComplete(&drop, tick)
+}
+
 // TotalSessions returns the total number of sessions in the pool (after duplication).
 func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 

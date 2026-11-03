@@ -564,33 +564,40 @@ Example:
 			}
 		}
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
-		// sessionDrive is the base driver callback for the closed-loop / pool paths. It is
-		// wired both as onRequestDone (served completions) AND as the cluster's unserved hook
-		// (#2064 review F2): a client deadline that expires while the gateway holds a request
-		// — or any other pre-instance drop — calls recordUnserved, which never reaches
-		// onRequestDone, so without the hook the session would not be cancelled and a pool
-		// slot would not refill. OnComplete's duplicate-completion guard makes the two wirings
-		// safe: a request only ever travels one of the two paths.
-		var sessionDrive func(*sim.Request, int64) []*sim.Request
+		// unservedHook routes a request the cluster ended WITHOUT serving (gateway
+		// client-deadline expiry, admission/routing rejection, shed, in-flight eviction)
+		// into the session driver's OnUnserved, which cancels the session and refills a
+		// pool slot (#2064 review). recordUnserved never reaches onRequestDone, so without
+		// this hook a cut-short session would not be cancelled and a pool slot would not
+		// refill. OnUnserved drop-marks a copy so an evicted request's StateCompleted
+		// tombstone is not misread as a successful round. Both callbacks capture follow-ups
+		// for the faithful trace re-export.
+		var unservedHook func(*sim.Request, int64) []*sim.Request
 		switch {
 		case agx != nil:
 			onRequestDone = agx.driver.OnComplete
 		case poolDriver != nil:
-			baseCb := poolDriver.OnComplete
-			sessionDrive = func(req *sim.Request, clock int64) []*sim.Request {
-				followUps := baseCb(req, clock)
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := poolDriver.OnComplete(req, clock)
 				captureFollowUps(followUps, clock)
 				return followUps
 			}
-			onRequestDone = sessionDrive
+			unservedHook = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := poolDriver.OnUnserved(req, clock)
+				captureFollowUps(followUps, clock)
+				return followUps
+			}
 		case sessionMgr != nil:
-			baseCb := sessionMgr.OnComplete
-			sessionDrive = func(req *sim.Request, clock int64) []*sim.Request {
-				followUps := baseCb(req, clock)
+			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := sessionMgr.OnComplete(req, clock)
 				captureFollowUps(followUps, clock)
 				return followUps
 			}
-			onRequestDone = sessionDrive
+			unservedHook = func(req *sim.Request, clock int64) []*sim.Request {
+				followUps := sessionMgr.OnUnserved(req, clock)
+				captureFollowUps(followUps, clock)
+				return followUps
+			}
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 		// INV-13: the router the trace was recorded with, unless the command line names one.
@@ -601,11 +608,8 @@ Example:
 			cs.SetArrivalGate(agx.driver.Gate)
 			cs.SetUnservedHook(agx.driver.OnUnserved)
 			agx.driver.BindHorizon(cs.SetHorizon)
-		} else if sessionDrive != nil {
-			// Route pre-instance drops (gateway client-deadline expiry, admission/routing
-			// rejection, shed/evict) through the session driver so the session is cancelled
-			// and a pool slot refills (#2064 review F2).
-			cs.SetUnservedHook(sessionDrive)
+		} else if unservedHook != nil {
+			cs.SetUnservedHook(unservedHook)
 		}
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /

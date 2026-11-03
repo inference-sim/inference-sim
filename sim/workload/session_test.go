@@ -1221,3 +1221,44 @@ func TestSession_CancelledSessions_CountsTimedOut(t *testing.T) {
 		t.Errorf("BC-5: CancelledSessions=%d, want 1 after a timeout", got)
 	}
 }
+
+// TestSession_OnUnserved_EvictedTombstoneCancels covers PR #2069 re-review #1:
+// an in-flight eviction leaves the request StateCompleted (engine_driver.Evict's
+// tombstone). Routed through OnComplete it would read as a successful round and
+// continue the session; OnUnserved must instead cancel it.
+func TestSession_OnUnserved_EvictedTombstoneCancels(t *testing.T) {
+	bp := makeTestBlueprint("evict-sess", 5, 1000, "", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0 evicted in flight: the cluster tombstones it StateCompleted.
+	evicted := &sim.Request{
+		ID: "r0", SessionID: "evict-sess", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+
+	follow := sm.OnUnserved(evicted, 5000)
+	if follow != nil {
+		t.Errorf("OnUnserved on an evicted (tombstoned) request must cancel, got %d follow-ups", len(follow))
+	}
+	if got := sm.CancelledSessions(); got != 1 {
+		t.Errorf("CancelledSessions = %d, want 1 (eviction must cancel the session)", got)
+	}
+	// Sanity: the real request's state is untouched (cluster metrics rely on it).
+	if evicted.State != sim.StateCompleted {
+		t.Errorf("OnUnserved mutated the real request state to %v, want StateCompleted preserved", evicted.State)
+	}
+}
+
+// TestSession_OnUnserved_NonSessionAndNil is a defensive guard: OnUnserved ignores
+// a nil request and a non-session request (empty SessionID).
+func TestSession_OnUnserved_NonSessionAndNil(t *testing.T) {
+	bp := makeTestBlueprint("u2", 3, 1000, "", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+	if got := sm.OnUnserved(nil, 0); got != nil {
+		t.Errorf("OnUnserved(nil) = %v, want nil", got)
+	}
+	if got := sm.OnUnserved(&sim.Request{ID: "x", SessionID: ""}, 0); got != nil {
+		t.Errorf("OnUnserved(non-session) = %v, want nil", got)
+	}
+}

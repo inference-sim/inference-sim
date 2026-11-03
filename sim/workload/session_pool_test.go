@@ -274,3 +274,32 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 		t.Fatalf("clone InputSampler sample #1 = %d, want 10 (independent cursor) — got the source's advanced value, indicating a shared cursor", got)
 	}
 }
+
+// TestSessionPool_OnUnserved_EvictedCancelsAndRefills covers PR #2069 re-review #1 for
+// the pool: an evicted round-0 request (StateCompleted tombstone) must cancel its session
+// AND admit the next queued session to refill the slot — the same terminate-then-refill
+// path OnComplete takes, despite the tombstone that OnComplete alone would misread.
+func TestSessionPool_OnUnserved_EvictedCancelsAndRefills(t *testing.T) {
+	bp0, r0 := makeBP("s0", 1)
+	bp1, r1 := makeBP("s1", 2)
+	d, initial, err := BuildSessionPool([]SessionBlueprint{bp0, bp1}, []*sim.Request{r0, r1}, 1, 2, 7)
+	if err != nil {
+		t.Fatalf("BuildSessionPool: %v", err)
+	}
+	if len(initial) != 1 || initial[0].SessionID != "s0" {
+		t.Fatalf("initial = %v, want [s0]", initial)
+	}
+
+	// s0's round-0 is evicted in flight → tombstoned StateCompleted.
+	initial[0].State = sim.StateCompleted
+	initial[0].ProgressIndex = int64(initial[0].InputLen())
+	next := d.OnUnserved(initial[0], 100_000)
+
+	// The slot must refill with s1 (cancellation freed the pool slot).
+	if len(next) != 1 || next[0].SessionID != "s1" {
+		t.Fatalf("OnUnserved must refill the pool with s1, got %v", next)
+	}
+	if got := d.CancelledSessions(); got != 1 {
+		t.Errorf("CancelledSessions = %d, want 1 (evicted s0 cancelled)", got)
+	}
+}
