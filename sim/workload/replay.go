@@ -321,6 +321,26 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			outputSeq[i] = rec.OutputTokens
 		}
 
+		// Per-round client-deadline offsets (#2064), aligned with inputSeq. The trace's
+		// deadline_us is absolute on the same origin as arrival_time_us, so a round's
+		// offset is deadline_us - arrival_time_us: a value re-anchored to whatever
+		// simulated arrival the follow-up lands on (see session.go followUpDeadline).
+		// A round with deadline_us == 0 (no deadline), or a defensively negative result,
+		// gets the -1 "no deadline" sentinel. Unlike InputResetSampler this is ALWAYS set
+		// on the replay path (even when every round is -1): leaving it nil would fall the
+		// follow-up back to computeDeadline's 300 s session-client default — exactly the
+		// #2064 bug. The run path never reaches this loader, so its blueprints keep a nil
+		// sampler and the 300 s default (INV-6).
+		deadlineOffsetSeq := make([]int, len(rounds))
+		for i, rec := range rounds {
+			if rec.DeadlineUs > 0 && rec.DeadlineUs >= rec.ArrivalTimeUs {
+				deadlineOffsetSeq[i] = int(rec.DeadlineUs - rec.ArrivalTimeUs)
+			} else {
+				deadlineOffsetSeq[i] = -1 // no deadline this round
+			}
+		}
+		deadlineOffsetSampler := &SequenceSampler{values: deadlineOffsetSeq[1:]} // rounds 1..N, lockstep with InputSampler
+
 		// Context-compaction reset targets (#1609), aligned with inputSeq. A round's
 		// input_tokens_reset marker (non-nil) becomes its absolute re-seed length; a
 		// round without one gets the -1 "no reset" sentinel. Only meaningful in
@@ -435,22 +455,23 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		requests = append(requests, req)
 
 		bp := SessionBlueprint{
-			SessionID:         sessionID,
-			ClientID:          r0.ClientID,
-			MaxRounds:         len(rounds),
-			ContextGrowth:     contextGrowth,
-			ThinkTimeSampler:  sessionThinkTimeSampler,
-			Horizon:           horizon,
-			InputSampler:      &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
-			OutputSampler:     &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
-			InputResetSampler: inputResetSampler,                       // #1609; nil unless a round compacts
-			RNG:               sessionRNG,
-			Prefix:            prefix,
-			TenantID:          r0.TenantID,
-			SLOClass:          r0.SLOClass,
-			Model:             r0.Model,
-			SLOTargetUs:       r0.SLOTargetUs,
-			Adapter:           r0.Adapter, // #1464: adapter threads through session follow-up rounds
+			SessionID:             sessionID,
+			ClientID:              r0.ClientID,
+			MaxRounds:             len(rounds),
+			ContextGrowth:         contextGrowth,
+			ThinkTimeSampler:      sessionThinkTimeSampler,
+			Horizon:               horizon,
+			InputSampler:          &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N
+			OutputSampler:         &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
+			InputResetSampler:     inputResetSampler,                       // #1609; nil unless a round compacts
+			DeadlineOffsetSampler: deadlineOffsetSampler,                   // #2064; always set on replay so follow-ups honor the trace deadline
+			RNG:                   sessionRNG,
+			Prefix:                prefix,
+			TenantID:              r0.TenantID,
+			SLOClass:              r0.SLOClass,
+			Model:                 r0.Model,
+			SLOTargetUs:           r0.SLOTargetUs,
+			Adapter:               r0.Adapter, // #1464: adapter threads through session follow-up rounds
 		}
 		blueprints = append(blueprints, bp)
 	}
