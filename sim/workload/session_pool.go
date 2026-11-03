@@ -59,6 +59,11 @@ func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, 
 	// lockstep with InputSampler, so each clone needs its own cursor (cloneSampler
 	// passes nil through unchanged for monotone sessions).
 	bp.InputResetSampler = cloneSampler(src.InputResetSampler)
+	// #2064: the per-round deadline-offset sampler is likewise a stateful
+	// *SequenceSampler in lockstep with InputSampler (always set on the replay path),
+	// so each clone needs its own cursor — without this, a source session and its
+	// duplicate would consume each other's per-round deadline offsets.
+	bp.DeadlineOffsetSampler = cloneSampler(src.DeadlineOffsetSampler)
 
 	// Cache-busting token prepended to the clone's round-0 input so the block
 	// hash chain diverges immediately from the source session (design §6).

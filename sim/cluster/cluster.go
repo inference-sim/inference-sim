@@ -890,9 +890,8 @@ func (c *ClusterSimulator) Run() error {
 	// request fails (#2064): heavy sessions that silently time out past a deadline
 	// were previously invisible in the log when most requests completed.
 	if c.aggregatedMetrics.TimedOutRequests > 0 {
-		logrus.Warnf("[cluster] %d of %d requests timed out (client deadline exceeded, likely KV pressure or a deadline shorter than the request's service time)",
-			c.aggregatedMetrics.TimedOutRequests,
-			c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
+		logrus.Warnf("[cluster] %d request(s) timed out (client deadline exceeded, likely KV pressure or a deadline shorter than the request's service time)",
+			c.aggregatedMetrics.TimedOutRequests)
 	}
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {

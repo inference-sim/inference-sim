@@ -2660,3 +2660,31 @@ func TestApplyReplayTimeout_NegativeDisablesDeadline(t *testing.T) {
 		t.Errorf("blueprint Timeout = %v, want &0 (explicit no-timeout)", blueprints[0].Timeout)
 	}
 }
+
+// TestApplyReplayTimeout_OpenLoop_NilBlueprints verifies the open-loop wiring
+// (fixed / fixed-accumulate replay, issue #2064 qa-review G6): those modes build a
+// pre-baked `requests` slice and pass nil blueprints, so the override must apply to
+// every request's Deadline and tolerate a nil blueprint slice without panicking.
+func TestApplyReplayTimeout_OpenLoop_NilBlueprints(t *testing.T) {
+	requests := []*sim.Request{
+		{ID: "request_0", ArrivalTime: 0, Deadline: 123},
+		{ID: "request_1", ArrivalTime: 50_000, Deadline: 0},
+		{ID: "request_2", ArrivalTime: 50_000, Deadline: 999},
+	}
+
+	// Positive: every round gets arrival + T, regardless of its recorded deadline.
+	applyReplayTimeout(requests, nil, 3)
+	for _, r := range requests {
+		if want := r.ArrivalTime + 3_000_000; r.Deadline != want {
+			t.Errorf("%s deadline = %d, want %d (arrival+3s)", r.ID, r.Deadline, want)
+		}
+	}
+
+	// Negative: every round's deadline disabled.
+	applyReplayTimeout(requests, nil, -1)
+	for _, r := range requests {
+		if r.Deadline != 0 {
+			t.Errorf("%s deadline = %d, want 0 (disabled)", r.ID, r.Deadline)
+		}
+	}
+}

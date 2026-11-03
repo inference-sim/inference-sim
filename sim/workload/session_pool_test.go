@@ -218,9 +218,10 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 		MaxRounds:         3,
 		Horizon:           1 << 62,
 		ContextGrowth:     "accumulate",
-		InputSampler:      &SequenceSampler{values: []int{10, 20, 30}},
-		OutputSampler:     &SequenceSampler{values: []int{1, 2, 3}},
-		InputResetSampler: &SequenceSampler{values: []int{-1, 50, -1}}, // #1609: round-1 compaction reset
+		InputSampler:          &SequenceSampler{values: []int{10, 20, 30}},
+		OutputSampler:         &SequenceSampler{values: []int{1, 2, 3}},
+		InputResetSampler:     &SequenceSampler{values: []int{-1, 50, -1}}, // #1609: round-1 compaction reset
+		DeadlineOffsetSampler: &SequenceSampler{values: []int{-1, 7000, -1}}, // #2064: round-1 deadline offset
 	}
 	srcR0 := &sim.Request{ID: "r_s0", SessionID: "s0", RoundIndex: 0, State: sim.StateQueued}
 
@@ -242,6 +243,20 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	_ = src.InputResetSampler.Sample(nil) // -1
 	if got := clone.InputResetSampler.Sample(nil); got != -1 {
 		t.Fatalf("clone InputResetSampler sample #1 = %d, want -1 (independent cursor)", got)
+	}
+
+	// #2064: the deadline-offset sampler is likewise a stateful *SequenceSampler in
+	// lockstep with InputSampler, so each clone needs its own cursor — otherwise a
+	// source session and its duplicate consume each other's per-round deadline offsets.
+	if clone.DeadlineOffsetSampler == src.DeadlineOffsetSampler {
+		t.Fatalf("clone.DeadlineOffsetSampler shares the same object as src.DeadlineOffsetSampler")
+	}
+	// Advance the source's deadline cursor two steps (-1, 7000); the clone must still
+	// yield the FIRST value (-1), not the source's advanced position.
+	_ = src.DeadlineOffsetSampler.Sample(nil) // -1
+	_ = src.DeadlineOffsetSampler.Sample(nil) // 7000
+	if got := clone.DeadlineOffsetSampler.Sample(nil); got != -1 {
+		t.Fatalf("clone DeadlineOffsetSampler sample #1 = %d, want -1 (independent cursor) — a shared cursor would yield the source's advanced value", got)
 	}
 
 	// Advance the source's cursor two steps: 10, then 20.
