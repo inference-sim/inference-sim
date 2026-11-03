@@ -303,6 +303,45 @@ func TestClusterSimulator_MixedTimeoutAndRoutingRejection_NoOverclaim(t *testing
 	}
 }
 
+// TestClusterSimulator_MixedTimeoutAndGatewayHeld_NoOverclaim covers PR #2069 re-review #3:
+// a request still held in the gateway at the horizon is counted in GatewayQueueDepth() — a
+// ledger term OUTSIDE aggregatedMetrics and the earlier bucket list — so a timeout + a
+// gateway-held request must not log "every request timed out". Request A dispatches and
+// times out; request B arrives just before a short horizon and is still held (holdUs) when
+// the run ends: CompletedRequests=0, TimedOutRequests=1, GatewayQueueDepth()=1.
+func TestClusterSimulator_MixedTimeoutAndGatewayHeld_NoOverclaim(t *testing.T) {
+	config := func() DeploymentConfig {
+		d := compatDeployment(newTestSimConfig(), 1)
+		d.Horizon = 2000 // ends before B (held 1000µs after its 1500µs arrival) can dispatch
+		return d
+	}()
+	requests := []*sim.Request{
+		// A: dispatches immediately, 500µs deadline shorter than its service time → times out.
+		{ID: "A", ArrivalTime: 0, State: sim.StateQueued,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 50), MaxOutputLen: 50, Deadline: 500},
+		// B: arrives at 1500µs, the gateway holds it 1000µs → still held at horizon 2000µs.
+		{ID: "B", ArrivalTime: 1500, State: sim.StateQueued,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), MaxOutputLen: 5},
+	}
+
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
+	cs.SetGateway(&fakeGateway{holdUs: 1000})
+	output := captureLogOutput(func() {
+		if err := cs.Run(); err != nil {
+			t.Fatalf("cs.Run: %v", err)
+		}
+	})
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 0 || m.TimedOutRequests == 0 || cs.GatewayQueueDepth() == 0 {
+		t.Fatalf("test setup: want 0 completed, >=1 timed out, >=1 gateway-held; got completed=%d timed_out=%d gw_depth=%d",
+			m.CompletedRequests, m.TimedOutRequests, cs.GatewayQueueDepth())
+	}
+	if strings.Contains(output, "every request timed out") {
+		t.Errorf("must not claim 'every request timed out' when a request is still held in the gateway, got: %q", output)
+	}
+}
+
 func TestClusterSimulator_NormalOperation_NoPostSimWarning(t *testing.T) {
 	// GIVEN a properly configured cluster that will complete requests
 	config := newTestDeploymentConfig(1)
