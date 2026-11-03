@@ -885,15 +885,22 @@ func (c *ClusterSimulator) Run() error {
 		logrus.Warnf("[cluster] %d requests remain in the gateway at simulation end", n)
 	}
 
-	// Post-simulation diagnostic warnings (BC-2, BC-3)
+	// Post-simulation diagnostic warnings (BC-2, BC-3).
+	// A timeout is reported whenever ANY request times out, not only when every
+	// request fails (#2064): heavy sessions that silently time out past a deadline
+	// were previously invisible in the log when most requests completed.
+	if c.aggregatedMetrics.TimedOutRequests > 0 {
+		logrus.Warnf("[cluster] %d of %d requests timed out (client deadline exceeded, likely KV pressure or a deadline shorter than the request's service time)",
+			c.aggregatedMetrics.TimedOutRequests,
+			c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
+	}
 	if c.aggregatedMetrics.CompletedRequests == 0 {
 		if c.rejectedRequests > 0 {
 			logrus.Warnf("[cluster] all %d requests rejected by the router's admission checks — no requests completed",
 				c.rejectedRequests)
 		} else if c.aggregatedMetrics.TimedOutRequests > 0 {
-			logrus.Warnf("[cluster] no requests completed — %d of %d requests timed out (client timeout exceeded, likely KV pressure)",
-				c.aggregatedMetrics.TimedOutRequests,
-				c.aggregatedMetrics.TimedOutRequests+c.aggregatedMetrics.DroppedUnservable)
+			// The timeout count is already reported above; add the no-completion context.
+			logrus.Warnf("[cluster] no requests completed — every request timed out before finishing")
 		} else {
 			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
 		}
