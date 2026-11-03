@@ -2003,6 +2003,40 @@ func TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestReplayCmd_Pool_TimeoutOverride_ReachesClones closes qa-review G5 for pool
+// mode: --timeout must reach not just the initially-injected round-0 requests but
+// the queued round-0s and the clones BuildSessionPool derives from them. A 1-session
+// corpus with deadline_us=0 (no deadline) expanded to 3 total (2 clones) under
+// --timeout 1 must time out all 3 — if the override missed the clones, their round-0
+// would keep the trace's no-deadline and they would complete instead.
+func TestReplayCmd_Pool_TimeoutOverride_ReachesClones(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+
+	// One single-round session, no recorded deadline; a long enough output that a 1s
+	// deadline cannot be met.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 1000, OutputTokens: 8000, ArrivalTimeUs: 0, DeadlineUs: 0, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	out := runReplayCaptureStdout(t, []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
+		"--defaults-filepath", defaultsPath,
+		"--concurrent-sessions", "2", "--total-sessions", "3", "--timeout", "1",
+	})
+	fig := clusterFigures(t, out)
+	if fig["timed_out_requests"] != 3 {
+		t.Errorf("pool --timeout 1: timed_out_requests = %v, want 3 (original + 2 clones all time out — a missed clone would keep the trace's no-deadline)", fig["timed_out_requests"])
+	}
+}
+
 // TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon targets the
 // FIRST self-drain override site specifically (Task 4, Step 5's
 // replayHorizonPrelim edit, which becomes each SessionBlueprint's bp.Horizon).
