@@ -1414,6 +1414,16 @@ var runCmd = &cobra.Command{
 			}
 		}
 
+		// Cancelled-session count (#2064, BC-5): parity with blis replay. A timed-out or
+		// dropped round cancels its whole session, so every later round is never issued;
+		// the aggregate timed-out-request count alone understates the lost work.
+		if sessionMgr != nil {
+			if cancelled := sessionMgr.CancelledSessions(); cancelled > 0 {
+				logrus.Warnf("[run] %d session(s) were cancelled before serving every round (a round timed out or was dropped); later rounds of those sessions were never issued. Pass --timeout to lengthen or disable the deadline.",
+					cancelled)
+			}
+		}
+
 		// Wall-clock timing on stderr (BC-6); stdout remains deterministic (BC-7)
 		logrus.Infof("Simulation wall-clock time: %.3fs", time.Since(startTime).Seconds())
 

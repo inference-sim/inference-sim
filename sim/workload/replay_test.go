@@ -1594,3 +1594,44 @@ func TestLoadTraceV2SessionBlueprints_DeadlineOffset_Relative(t *testing.T) {
 		t.Errorf("offsets = [%d, %d], want [1000000, 2000000]", o1, o2)
 	}
 }
+
+// TestReplay2064_ClosedLoopFollowUp_NoDeadline_Integration is the end-to-end
+// reproduction of issue #2064 at the library boundary: a 2-round session with
+// deadline_us=0 on every round, loaded by LoadTraceV2SessionBlueprints and driven
+// by a SessionManager, must produce a follow-up request with NO deadline — not the
+// 300s default that cancelled heavy sessions before the fix.
+func TestReplay2064_ClosedLoopFollowUp_NoDeadline_Integration(t *testing.T) {
+	trace := &TraceV2{
+		Records: []TraceRecord{
+			{RequestID: 0, SessionID: "s:long", RoundIndex: 0, InputTokens: 1000, OutputTokens: 60000, ArrivalTimeUs: 0, DeadlineUs: 0},
+			{RequestID: 1, SessionID: "s:long", RoundIndex: 1, InputTokens: 1000, OutputTokens: 60000, ArrivalTimeUs: 1_000_000, DeadlineUs: 0},
+		},
+	}
+	r0Requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 1_000_000_000_000)
+	if err != nil {
+		t.Fatalf("LoadTraceV2SessionBlueprints: %v", err)
+	}
+	if len(r0Requests) != 1 || len(blueprints) != 1 {
+		t.Fatalf("want 1 round-0 request + 1 blueprint, got %d, %d", len(r0Requests), len(blueprints))
+	}
+	// Round 0 carries no deadline (matches the trace).
+	if r0Requests[0].Deadline != 0 {
+		t.Errorf("round 0 deadline = %d, want 0 (trace deadline_us=0)", r0Requests[0].Deadline)
+	}
+
+	sm := NewSessionManager(blueprints)
+	// Simulate round 0 completing well past 300s (a long reasoning step) — under the bug
+	// the follow-up would be stamped with a 300s deadline relative to its arrival; here it
+	// must get no deadline at all.
+	req0 := r0Requests[0]
+	req0.State = sim.StateCompleted
+	req0.ProgressIndex = req0.InputLen() + int64(len(req0.OutputTokens))
+	follow := sm.OnComplete(req0, 576_000_000) // round 0 finished at 576s
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up round, got %d", len(follow))
+	}
+	if follow[0].Deadline != 0 {
+		t.Errorf("issue #2064: follow-up round deadline = %d, want 0 (trace recorded no deadline); "+
+			"a non-zero value is the 300s default bug", follow[0].Deadline)
+	}
+}
