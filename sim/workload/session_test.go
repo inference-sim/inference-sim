@@ -101,7 +101,7 @@ func TestSession_AccumulateContinuityGuard_RejectsMismatchedSlice(t *testing.T) 
 	req1Bad := &sim.Request{
 		ID: "r1", SessionID: "sess-cont-guard", RoundIndex: 1,
 		State: sim.StateCompleted, ProgressIndex: 99,
-		InputTokens: make([]sim.TokenID, 99), // wrong length — doesn't match buf
+		InputTokens:  make([]sim.TokenID, 99), // wrong length — doesn't match buf
 		OutputTokens: make([]sim.TokenID, 5),
 	}
 	defer func() {
@@ -423,9 +423,9 @@ func TestSession_AccumulateDoesNotReseed(t *testing.T) {
 	// should extend exactly once for output + new input, not re-seed.
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-no-reseed", RoundIndex: 1,
-		State: sim.StateCompleted,
+		State:         sim.StateCompleted,
 		ProgressIndex: int64(len(r1.InputTokens) + len(r1.OutputTokens)),
-		InputTokens: r1.InputTokens, OutputTokens: r1.OutputTokens,
+		InputTokens:   r1.InputTokens, OutputTokens: r1.OutputTokens,
 	}
 	follow2 := sm.OnComplete(req1, 10000)
 	if len(follow2) != 1 {
@@ -460,7 +460,7 @@ func TestSession_AccumulateSharesBackingArray(t *testing.T) {
 	req0 := &sim.Request{
 		ID: "r0", SessionID: "sess-share", RoundIndex: 0,
 		State: sim.StateCompleted, ProgressIndex: 15,
-		InputTokens: sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 10),
+		InputTokens:  sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 10),
 		OutputTokens: sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), 5),
 	}
 	follow1 := sm.OnComplete(req0, 5000)
@@ -471,9 +471,9 @@ func TestSession_AccumulateSharesBackingArray(t *testing.T) {
 
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-share", RoundIndex: 1,
-		State: sim.StateCompleted,
+		State:         sim.StateCompleted,
 		ProgressIndex: int64(len(r1.InputTokens) + len(r1.OutputTokens)),
-		InputTokens: r1.InputTokens, OutputTokens: r1.OutputTokens,
+		InputTokens:   r1.InputTokens, OutputTokens: r1.OutputTokens,
 	}
 	follow2 := sm.OnComplete(req1, 10000)
 	if len(follow2) != 1 {
@@ -543,7 +543,7 @@ func TestSession_TimeoutCancels_NoMoreRounds(t *testing.T) {
 	// Round 2 times out
 	req := &sim.Request{
 		ID: "r2", SessionID: "sess2", RoundIndex: 2,
-		State: sim.StateTimedOut,
+		State:       sim.StateTimedOut,
 		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 
@@ -634,9 +634,9 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 
 	req1 := &sim.Request{
 		ID: "r1", SessionID: "sess-accum3", RoundIndex: 1,
-		State: sim.StateCompleted,
+		State:         sim.StateCompleted,
 		ProgressIndex: int64(len(follow1[0].InputTokens) + len(follow1[0].OutputTokens)), // 25 + 5 = 30
-		InputTokens: follow1[0].InputTokens, OutputTokens: follow1[0].OutputTokens,
+		InputTokens:   follow1[0].InputTokens, OutputTokens: follow1[0].OutputTokens,
 	}
 	follow2 := sm.OnComplete(req1, 12000)
 	if len(follow2) != 1 {
@@ -656,7 +656,8 @@ func TestSession_ContextAccumulation_MultiStep(t *testing.T) {
 // from round-0's InputTokens, and once from the prefix-prepend block).
 //
 // Invariant: len(round1.InputTokens) == len(prefix) + len(input0) + len(output0) + len(newInput1)
-//            = 5 + 10 + 5 + 10 = 30, not 35.
+//
+//	= 5 + 10 + 5 + 10 = 30, not 35.
 func TestSession_ContextAccumulation_WithPrefix(t *testing.T) {
 	bp := makeTestBlueprint("sess-prefix", 3, 1000, "accumulate", 1_000_000)
 	bp.Prefix = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(7)), 5) // 5 prefix tokens
@@ -794,7 +795,7 @@ func TestSession_ContextAccumulation_ZeroSuffix(t *testing.T) {
 	req0 := &sim.Request{
 		ID: "r0", SessionID: "sess-zero-suffix", RoundIndex: 0,
 		State: sim.StateCompleted, ProgressIndex: 5,
-		InputTokens:  []sim.TokenID{}, OutputTokens: outputR0,
+		InputTokens: []sim.TokenID{}, OutputTokens: outputR0,
 	}
 	follow1 := sm.OnComplete(req0, 5000)
 	if len(follow1) != 1 {
@@ -869,7 +870,7 @@ func TestSession_DroppedFollowUp_CancelsSession(t *testing.T) {
 	// Simulate a dropped request (state is still StateQueued from construction)
 	req := &sim.Request{
 		ID: "r1", SessionID: "sess5", RoundIndex: 1,
-		State: sim.StateQueued,
+		State:       sim.StateQueued,
 		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 
@@ -890,7 +891,7 @@ func TestSession_LengthCapped_ContinuesSession(t *testing.T) {
 		ID: "r0", SessionID: "sess6", RoundIndex: 0,
 		State: sim.StateCompleted, LengthCapped: true,
 		ProgressIndex: 13, // 10 input + 3 actual output (out of 5 oracle)
-		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+		InputTokens:   make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
 	}
 
 	follow := sm.OnComplete(req, 5000)
@@ -1101,5 +1102,163 @@ func TestSession_NoContextAccumulation_FreshTokens(t *testing.T) {
 	}
 	if len(follow[0].InputTokens) != 10 {
 		t.Errorf("BC-6: follow-up input length = %d, want 10 (fresh, no accumulation)", len(follow[0].InputTokens))
+	}
+}
+
+// --- Issue #2064: follow-up rounds honor the trace's per-round deadline ---
+
+// TestSession_FollowUpDeadline_NilSamplerNilTimeout_Uses300sDefault verifies BC-6:
+// the run path (no DeadlineOffsetSampler, nil Timeout) keeps the historical 300s
+// session-client default, so blis run stays byte-identical.
+func TestSession_FollowUpDeadline_NilSamplerNilTimeout_Uses300sDefault(t *testing.T) {
+	bp := makeTestBlueprint("dl-default", 2, 1000, "", 1_000_000_000_000)
+	// DeadlineOffsetSampler nil, Timeout nil — exactly the run-path blueprint.
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-default", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// arrival = 5000 + 1000 = 6000; default 300s => 6000 + 300_000_000
+	want := int64(6000) + DefaultTimeoutUs
+	if follow[0].Deadline != want {
+		t.Errorf("BC-6: follow-up deadline = %d, want %d (300s default preserved)", follow[0].Deadline, want)
+	}
+}
+
+// TestSession_FollowUpDeadline_ZeroOffset_NoDeadline verifies BC-2:
+// a trace recording deadline_us=0 (no deadline) yields a follow-up with no deadline,
+// NOT the 300s default — this is the core of issue #2064.
+func TestSession_FollowUpDeadline_ZeroOffset_NoDeadline(t *testing.T) {
+	bp := makeTestBlueprint("dl-none", 3, 1000, "", 1_000_000_000_000)
+	// -1 sentinel per round means "no deadline this round".
+	bp.DeadlineOffsetSampler = &SequenceSampler{values: []int{-1, -1}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-none", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if follow[0].Deadline != 0 {
+		t.Errorf("BC-2: follow-up deadline = %d, want 0 (trace said no deadline)", follow[0].Deadline)
+	}
+}
+
+// TestSession_FollowUpDeadline_PositiveOffset_RelativeToArrival verifies BC-1:
+// a recorded per-round deadline offset is applied relative to the follow-up's
+// own computed arrival time.
+func TestSession_FollowUpDeadline_PositiveOffset_RelativeToArrival(t *testing.T) {
+	bp := makeTestBlueprint("dl-rel", 3, 1000, "", 1_000_000_000_000)
+	bp.DeadlineOffsetSampler = &SequenceSampler{values: []int{2_000_000, 2_000_000}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-rel", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// arrival = 5000 + 1000 = 6000; deadline = arrival + 2_000_000
+	want := int64(6000) + 2_000_000
+	if follow[0].Deadline != want {
+		t.Errorf("BC-1: follow-up deadline = %d, want %d (arrival + offset)", follow[0].Deadline, want)
+	}
+}
+
+// TestSession_FollowUpDeadline_ExplicitTimeoutOverridesSampler verifies BC-3 precedence:
+// an explicit blueprint Timeout (from replay --timeout) wins over the trace's
+// per-round offset sampler.
+func TestSession_FollowUpDeadline_ExplicitTimeoutOverridesSampler(t *testing.T) {
+	bp := makeTestBlueprint("dl-override", 3, 1000, "", 1_000_000_000_000)
+	bp.DeadlineOffsetSampler = &SequenceSampler{values: []int{2_000_000, 2_000_000}}
+	disabled := int64(0) // explicit "no timeout" override
+	bp.Timeout = &disabled
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-override", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if follow[0].Deadline != 0 {
+		t.Errorf("BC-3: explicit Timeout=0 override => deadline = %d, want 0 (override beats sampler)", follow[0].Deadline)
+	}
+}
+
+// TestSession_CancelledSessions_CountsTimedOut verifies BC-5:
+// the SessionManager exposes a count of cancelled (e.g. timed-out) sessions.
+func TestSession_CancelledSessions_CountsTimedOut(t *testing.T) {
+	bp := makeTestBlueprint("cancel1", 5, 1000, "", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	if got := sm.CancelledSessions(); got != 0 {
+		t.Fatalf("precondition: CancelledSessions=%d, want 0", got)
+	}
+	req := &sim.Request{
+		ID: "r2", SessionID: "cancel1", RoundIndex: 2,
+		State:       sim.StateTimedOut,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	sm.OnComplete(req, 10000)
+	if got := sm.CancelledSessions(); got != 1 {
+		t.Errorf("BC-5: CancelledSessions=%d, want 1 after a timeout", got)
+	}
+}
+
+// TestSession_OnUnserved_EvictedTombstoneCancels covers PR #2069 re-review #1:
+// an in-flight eviction leaves the request StateCompleted (engine_driver.Evict's
+// tombstone). Routed through OnComplete it would read as a successful round and
+// continue the session; OnUnserved must instead cancel it.
+func TestSession_OnUnserved_EvictedTombstoneCancels(t *testing.T) {
+	bp := makeTestBlueprint("evict-sess", 5, 1000, "", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	// Round 0 evicted in flight: the cluster tombstones it StateCompleted.
+	evicted := &sim.Request{
+		ID: "r0", SessionID: "evict-sess", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+
+	follow := sm.OnUnserved(evicted, 5000)
+	if follow != nil {
+		t.Errorf("OnUnserved on an evicted (tombstoned) request must cancel, got %d follow-ups", len(follow))
+	}
+	if got := sm.CancelledSessions(); got != 1 {
+		t.Errorf("CancelledSessions = %d, want 1 (eviction must cancel the session)", got)
+	}
+	// Sanity: the real request's state is untouched (cluster metrics rely on it).
+	if evicted.State != sim.StateCompleted {
+		t.Errorf("OnUnserved mutated the real request state to %v, want StateCompleted preserved", evicted.State)
+	}
+}
+
+// TestSession_OnUnserved_NonSessionAndNil is a defensive guard: OnUnserved ignores
+// a nil request and a non-session request (empty SessionID).
+func TestSession_OnUnserved_NonSessionAndNil(t *testing.T) {
+	bp := makeTestBlueprint("u2", 3, 1000, "", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+	if got := sm.OnUnserved(nil, 0); got != nil {
+		t.Errorf("OnUnserved(nil) = %v, want nil", got)
+	}
+	if got := sm.OnUnserved(&sim.Request{ID: "x", SessionID: ""}, 0); got != nil {
+		t.Errorf("OnUnserved(non-session) = %v, want nil", got)
 	}
 }

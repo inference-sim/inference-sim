@@ -59,6 +59,11 @@ func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, 
 	// lockstep with InputSampler, so each clone needs its own cursor (cloneSampler
 	// passes nil through unchanged for monotone sessions).
 	bp.InputResetSampler = cloneSampler(src.InputResetSampler)
+	// #2064: the per-round deadline-offset sampler is likewise a stateful
+	// *SequenceSampler in lockstep with InputSampler (always set on the replay path),
+	// so each clone needs its own cursor — without this, a source session and its
+	// duplicate would consume each other's per-round deadline offsets.
+	bp.DeadlineOffsetSampler = cloneSampler(src.DeadlineOffsetSampler)
 
 	// Cache-busting token prepended to the clone's round-0 input so the block
 	// hash chain diverges immediately from the source session (design §6).
@@ -195,18 +200,40 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 	return nil
 }
 
+// OnUnserved handles a pooled request the cluster ended without serving (#2064 review):
+// a gateway client-deadline expiry, admission/routing rejection, shed, or in-flight
+// eviction. It drives the same terminate-then-refill path as OnComplete, but with a
+// shallow COPY forced to StateQueued so the inner SessionManager takes its drop-cancel
+// branch regardless of the terminal state the cluster left on the real request (an
+// evicted in-flight request carries a StateCompleted tombstone that OnComplete would
+// otherwise read as a successful round). The real request is untouched (cluster metrics).
+// Returns the pool refill, if any, exactly as OnComplete would.
+func (d *SessionPoolDriver) OnUnserved(req *sim.Request, tick int64) []*sim.Request {
+	if req == nil || !isSessionRequest(req) {
+		return nil
+	}
+	drop := *req // shallow copy; preserve the real request's terminal state for metrics
+	drop.State = sim.StateQueued
+	return d.OnComplete(&drop, tick)
+}
+
 // TotalSessions returns the total number of sessions in the pool (after duplication).
 func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 
-// Unstarted returns the number of sessions never admitted. It is nonzero when
-// either (a) a hard --horizon cap ends the run with sessions still queued, or
-// (b) an admitted session's request left the pipeline before reaching an instance
-// (routing rejection, gateway shed/evict/expire) — OnRequestDone is wired
-// per-instance, so those pre-instance drops never terminate the session and its
-// pool slot is not refilled. Case (b) can make Unstarted() > 0 even with no
-// --horizon set. The caller logs a warning and reports this alongside totalStarted
-// so accounting stays closed: totalStarted + Unstarted() == TotalSessions()
-// (INV-11 / INV-1).
+// CancelledSessions returns the number of pooled sessions cancelled by a timeout or
+// unservable drop, delegating to the wrapped SessionManager (#2064, BC-5).
+func (d *SessionPoolDriver) CancelledSessions() int { return d.mgr.CancelledSessions() }
+
+// Unstarted returns the number of sessions never admitted. In the self-draining
+// configuration (no --horizon) it is 0: every session either completes or is cancelled,
+// and a cancellation refills the slot — pre-instance drops (routing rejection, gateway
+// client-deadline expiry / shed / evict) now terminate the session too, because the
+// cluster routes them through SessionPoolDriver.OnUnserved (wired as the unserved hook,
+// #2064). Unstarted() is nonzero only under a hard --horizon cap that ends the run with
+// sessions still queued (a refill pushed by a late termination can be discarded by the
+// cluster's horizon guard yet still counted as started — the known-limitation case
+// tracked in #1483). The caller logs a warning and reports this alongside totalStarted so
+// accounting stays closed: totalStarted + Unstarted() == TotalSessions() (INV-11 / INV-1).
 func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.totalStarted }
 
 // hasUniqueSessionIDs is a test helper: true iff all pooled round-0 requests

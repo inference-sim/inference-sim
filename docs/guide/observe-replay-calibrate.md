@@ -229,6 +229,17 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 | `--scenarios` | `string` | `""` | Directory of scenario YAMLs (required) |
 | `--registry` | `string` | `""` | blis-registry clone root (required) |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
+| `--timeout` | `int` | `300` | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round keeps its own recorded `deadline_us` (round 0 and every follow-up alike), or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. |
+
+!!! note "Follow-up rounds honor the trace deadline (#2064)"
+    In a closed-loop replay, each session follow-up round now takes its deadline from the
+    trace — the recorded `deadline_us` relative to that round's arrival, or no deadline when
+    `deadline_us` is 0 — the same rule round 0 already followed. Before #2064 follow-ups
+    silently received BLIS's 300 s default, so heavy agentic sessions (a long reasoning step
+    or a large prefill under load) timed out at 300 s, cancelling the session and dropping
+    every later round with nothing in the log. A timeout is now always warned about (with the
+    timed-out-request count and a cancelled-session count), and `--timeout` sets or disables
+    one deadline for all rounds.
 
 Replay also accepts the shared simulation flags `blis run` keeps — the llm-d router's environment flags (`--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay`; its deployment inputs are the scenario's `router:` block and pool labels), scheduling, saturation detection, `--num-instances`, P/D topology, LoRA, the speculative acceptance flags (`--speculative-acceptance-rate`/`-length` and the selectors; a run's `--workload` preset terms are not in the trace, so a replay passes them as selectors), KV offload, seed and horizon. Engine settings (block size, batch limits, max model length, prefix caching, cache dtype, parallelism, speculative draft length) come from the scenario. See [Configuration](../reference/configuration.md) for the full list.
 
