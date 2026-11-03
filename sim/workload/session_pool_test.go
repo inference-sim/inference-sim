@@ -214,13 +214,13 @@ func TestSessionPool_RefillAndConservation(t *testing.T) {
 // what a shared cursor would produce.
 func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	src := SessionBlueprint{
-		SessionID:         "s0",
-		MaxRounds:         3,
-		Horizon:           1 << 62,
-		ContextGrowth:     "accumulate",
+		SessionID:             "s0",
+		MaxRounds:             3,
+		Horizon:               1 << 62,
+		ContextGrowth:         "accumulate",
 		InputSampler:          &SequenceSampler{values: []int{10, 20, 30}},
 		OutputSampler:         &SequenceSampler{values: []int{1, 2, 3}},
-		InputResetSampler:     &SequenceSampler{values: []int{-1, 50, -1}}, // #1609: round-1 compaction reset
+		InputResetSampler:     &SequenceSampler{values: []int{-1, 50, -1}},   // #1609: round-1 compaction reset
 		DeadlineOffsetSampler: &SequenceSampler{values: []int{-1, 7000, -1}}, // #2064: round-1 deadline offset
 	}
 	srcR0 := &sim.Request{ID: "r_s0", SessionID: "s0", RoundIndex: 0, State: sim.StateQueued}

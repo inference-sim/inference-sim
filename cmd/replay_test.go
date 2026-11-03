@@ -1797,6 +1797,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origConcurrentSessions := replayConcurrentSessions
 	origTotalSessions := replayTotalSessions
 	origShuffleCorpus := replayShuffleCorpus
+	origRequestTimeoutSecs := requestTimeoutSecs
 	t.Cleanup(func() {
 		resultsPath = origResultsPath
 		replayTraceOutput = origTraceOutput
@@ -1814,6 +1815,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		replayConcurrentSessions = origConcurrentSessions
 		replayTotalSessions = origTotalSessions
 		replayShuffleCorpus = origShuffleCorpus
+		requestTimeoutSecs = origRequestTimeoutSecs
 	})
 
 	resultsPath = ""
@@ -1829,6 +1831,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	replayThinkTimeDist = ""
 	replayConcurrentSessions, replayTotalSessions = 0, 0
 	replayShuffleCorpus = false
+	requestTimeoutSecs = 300 // default; ParseFlags overrides only when --timeout is in args
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
@@ -1840,6 +1843,7 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
 	testCmd.Flags().IntVar(&replayConcurrentSessions, "concurrent-sessions", 0, "")
 	testCmd.Flags().IntVar(&replayTotalSessions, "total-sessions", 0, "")
+	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	if err := testCmd.ParseFlags(args); err != nil {
 		t.Fatalf("ParseFlags failed: %v", err)
 	}
@@ -1950,6 +1954,52 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	}
 	if int(got) != 8 {
 		t.Errorf("completed_requests = %d, want 8 (pool truncated — self-drain horizon override missing)", int(got))
+	}
+}
+
+// TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd closes qa-review G5: an
+// end-to-end CLI replay in OPEN-LOOP (fixed) mode exercising --timeout, where the
+// override must reach the pre-baked requests slice (no session blueprints). The
+// trace records a 1µs deadline on a request that cannot finish that fast, so the
+// default replay times it out; --timeout -1 disables the deadline and the request
+// completes. This proves the post-switch request override (#2064) is wired for
+// fixed mode, not just unit-tested in applyReplayTimeout.
+func TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	headerPath := filepath.Join(dir, "h.yaml")
+	dataPath := filepath.Join(dir, "d.csv")
+	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
+
+	// One non-session request with a 1µs deadline (arrival 0) — far shorter than its
+	// service time, so it times out under the trace deadline.
+	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []workload.TraceRecord{
+		{RequestID: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, DeadlineUs: 1, Status: "ok"},
+	}
+	if err := workload.ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	base := []string{
+		"--trace-header", headerPath, "--trace-data", dataPath,
+		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
+		"--defaults-filepath", defaultsPath,
+	}
+
+	// WITHOUT --timeout: the 1µs trace deadline stands → the request times out.
+	outDefault := runReplayCaptureStdout(t, base)
+	figDefault := clusterFigures(t, outDefault)
+	if figDefault["timed_out_requests"] != 1 {
+		t.Fatalf("precondition: timed_out_requests = %v, want 1 (1µs trace deadline should time out)", figDefault["timed_out_requests"])
+	}
+
+	// WITH --timeout -1: the deadline is disabled → the request completes, no timeout.
+	outDisabled := runReplayCaptureStdout(t, append(append([]string{}, base...), "--timeout", "-1"))
+	figDisabled := clusterFigures(t, outDisabled)
+	if figDisabled["timed_out_requests"] != 0 {
+		t.Errorf("--timeout -1 (fixed mode): timed_out_requests = %v, want 0 (deadline disabled)", figDisabled["timed_out_requests"])
+	}
+	if figDisabled["completed_requests"] != 1 {
+		t.Errorf("--timeout -1 (fixed mode): completed_requests = %v, want 1 (request should finish with no deadline)", figDisabled["completed_requests"])
 	}
 }
 
