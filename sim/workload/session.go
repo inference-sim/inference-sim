@@ -45,8 +45,18 @@ type SessionBlueprint struct {
 	// blueprints) means no round resets, so the accumulate path is byte-identical to
 	// pre-#1609 (INV-6). Only consulted in ContextGrowth == "accumulate" mode.
 	InputResetSampler LengthSampler
-	RNG               *rand.Rand    // per-session, seeded deterministically from client RNG
-	ThinkTimeSampler  LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
+	// DeadlineOffsetSampler yields a per-follow-up-round client-deadline OFFSET in µs
+	// (#2064), in lockstep with InputSampler: a value >= 0 means "this follow-up's
+	// deadline is arrival + offset", and a value < 0 (the -1 sentinel) means "no
+	// deadline this round". It carries the trace's recorded per-round deadline_us
+	// (relative to that round's arrival_time_us, so it re-anchors to the follow-up's
+	// simulated arrival) on the closed-loop REPLAY path. nil (the common case: spec-
+	// built `blis run` blueprints) means "fall back to computeDeadline", so the run
+	// path is byte-identical to pre-#2064 (INV-6). An explicit Timeout takes precedence
+	// over this sampler (set by `blis replay --timeout`); see followUpDeadline.
+	DeadlineOffsetSampler LengthSampler
+	RNG                   *rand.Rand    // per-session, seeded deterministically from client RNG
+	ThinkTimeSampler      LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
 	Prefix            []sim.TokenID // shared system prompt tokens
 	TenantID          string
 	SLOClass          string
@@ -192,6 +202,16 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	// Generate round N+1
 	inputLen := bp.InputSampler.Sample(bp.RNG)
 	outputLen := bp.OutputSampler.Sample(bp.RNG)
+	// Per-round client-deadline offset (#2064): drawn UNCONDITIONALLY, in lockstep
+	// with the input/output samplers, so its SequenceSampler index stays aligned with
+	// rounds 1..N even on rounds that carry no deadline (offset -1). SequenceSampler.Sample
+	// ignores the RNG, so this consumes no randomness and cannot perturb byte-identity of
+	// the run path (INV-6). nil sampler => -1 (no per-round offset; followUpDeadline falls
+	// back to computeDeadline). See SessionBlueprint.DeadlineOffsetSampler.
+	deadlineOffset := -1
+	if bp.DeadlineOffsetSampler != nil {
+		deadlineOffset = bp.DeadlineOffsetSampler.Sample(bp.RNG)
+	}
 	// Context-compaction reset target for this round (#1609): accumulate mode only,
 	// -1 = no reset. SequenceSampler.Sample ignores the RNG, so sampling it consumes
 	// no randomness and cannot perturb byte-identity of the non-compaction path (INV-6).
@@ -323,7 +343,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		OutputTokens: outputTokens,
 		MaxOutputLen: len(outputTokens),
 		State:        sim.StateQueued,
-		Deadline:     computeDeadline(arrivalTime, bp.Timeout, true), // session follow-up always gets default timeout
+		Deadline:     followUpDeadline(bp, arrivalTime, deadlineOffset), // #2064: explicit Timeout > trace per-round offset > default
 		SLOTargetUs:  bp.SLOTargetUs,
 		TenantID:     bp.TenantID,
 		SLOClass:     bp.SLOClass,
@@ -337,4 +357,46 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 		sm.followUpCount++
 	}
 	return []*sim.Request{nextReq}
+}
+
+// followUpDeadline derives a follow-up round's absolute client deadline (#2064).
+// Precedence, highest first:
+//  1. explicit bp.Timeout (set by `blis replay --timeout`, or a run client's timeout):
+//     delegate to computeDeadline so a nil, zero (disabled) or positive value is honored
+//     exactly as everywhere else.
+//  2. per-round trace offset (replay): offset >= 0 => arrival + offset; offset < 0
+//     (the -1 sentinel) => no deadline (0). This is the trace's recorded deadline_us
+//     expressed relative to that round's arrival, re-anchored to the simulated arrival.
+//  3. neither (the run path, nil Timeout AND nil sampler => offset -1 is NOT reached here
+//     because the caller passes -1 only when the sampler is nil): fall back to
+//     computeDeadline's session-client default (300s), preserving pre-#2064 behavior.
+//
+// Note offset is only >= 0 when a DeadlineOffsetSampler is present, so a nil-sampler run
+// blueprint (offset -1, nil Timeout) correctly lands on the computeDeadline default rather
+// than "no deadline".
+func followUpDeadline(bp *SessionBlueprint, arrivalTime int64, offset int) int64 {
+	if bp.Timeout != nil {
+		return computeDeadline(arrivalTime, bp.Timeout, true)
+	}
+	if bp.DeadlineOffsetSampler != nil {
+		if offset >= 0 {
+			return arrivalTime + int64(offset)
+		}
+		return 0 // trace recorded no deadline for this round
+	}
+	return computeDeadline(arrivalTime, nil, true) // run default (300s), unchanged
+}
+
+// CancelledSessions returns the number of sessions that reached the cancelled
+// terminal state (a round timed out, or a follow-up was dropped unservable). Used by
+// the CLI to report cancelled-session counts alongside the timed-out-request count
+// (#2064, BC-5). Deterministic: a simple tally, no map-order dependence (INV-6).
+func (sm *SessionManager) CancelledSessions() int {
+	n := 0
+	for _, sess := range sm.sessions {
+		if sess.state == sessionCancelled {
+			n++
+		}
+	}
+	return n
 }

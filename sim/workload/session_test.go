@@ -1103,3 +1103,120 @@ func TestSession_NoContextAccumulation_FreshTokens(t *testing.T) {
 		t.Errorf("BC-6: follow-up input length = %d, want 10 (fresh, no accumulation)", len(follow[0].InputTokens))
 	}
 }
+
+// --- Issue #2064: follow-up rounds honor the trace's per-round deadline ---
+
+// TestSession_FollowUpDeadline_NilSamplerNilTimeout_Uses300sDefault verifies BC-6:
+// the run path (no DeadlineOffsetSampler, nil Timeout) keeps the historical 300s
+// session-client default, so blis run stays byte-identical.
+func TestSession_FollowUpDeadline_NilSamplerNilTimeout_Uses300sDefault(t *testing.T) {
+	bp := makeTestBlueprint("dl-default", 2, 1000, "", 1_000_000_000_000)
+	// DeadlineOffsetSampler nil, Timeout nil — exactly the run-path blueprint.
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-default", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// arrival = 5000 + 1000 = 6000; default 300s => 6000 + 300_000_000
+	want := int64(6000) + DefaultTimeoutUs
+	if follow[0].Deadline != want {
+		t.Errorf("BC-6: follow-up deadline = %d, want %d (300s default preserved)", follow[0].Deadline, want)
+	}
+}
+
+// TestSession_FollowUpDeadline_ZeroOffset_NoDeadline verifies BC-2:
+// a trace recording deadline_us=0 (no deadline) yields a follow-up with no deadline,
+// NOT the 300s default — this is the core of issue #2064.
+func TestSession_FollowUpDeadline_ZeroOffset_NoDeadline(t *testing.T) {
+	bp := makeTestBlueprint("dl-none", 3, 1000, "", 1_000_000_000_000)
+	// -1 sentinel per round means "no deadline this round".
+	bp.DeadlineOffsetSampler = &SequenceSampler{values: []int{-1, -1}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-none", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if follow[0].Deadline != 0 {
+		t.Errorf("BC-2: follow-up deadline = %d, want 0 (trace said no deadline)", follow[0].Deadline)
+	}
+}
+
+// TestSession_FollowUpDeadline_PositiveOffset_RelativeToArrival verifies BC-1:
+// a recorded per-round deadline offset is applied relative to the follow-up's
+// own computed arrival time.
+func TestSession_FollowUpDeadline_PositiveOffset_RelativeToArrival(t *testing.T) {
+	bp := makeTestBlueprint("dl-rel", 3, 1000, "", 1_000_000_000_000)
+	bp.DeadlineOffsetSampler = &SequenceSampler{values: []int{2_000_000, 2_000_000}}
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-rel", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	// arrival = 5000 + 1000 = 6000; deadline = arrival + 2_000_000
+	want := int64(6000) + 2_000_000
+	if follow[0].Deadline != want {
+		t.Errorf("BC-1: follow-up deadline = %d, want %d (arrival + offset)", follow[0].Deadline, want)
+	}
+}
+
+// TestSession_FollowUpDeadline_ExplicitTimeoutOverridesSampler verifies BC-3 precedence:
+// an explicit blueprint Timeout (from replay --timeout) wins over the trace's
+// per-round offset sampler.
+func TestSession_FollowUpDeadline_ExplicitTimeoutOverridesSampler(t *testing.T) {
+	bp := makeTestBlueprint("dl-override", 3, 1000, "", 1_000_000_000_000)
+	bp.DeadlineOffsetSampler = &SequenceSampler{values: []int{2_000_000, 2_000_000}}
+	disabled := int64(0) // explicit "no timeout" override
+	bp.Timeout = &disabled
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	req0 := &sim.Request{
+		ID: "r0", SessionID: "dl-override", RoundIndex: 0,
+		State: sim.StateCompleted, ProgressIndex: 15,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	follow := sm.OnComplete(req0, 5000)
+	if len(follow) != 1 {
+		t.Fatalf("expected 1 follow-up, got %d", len(follow))
+	}
+	if follow[0].Deadline != 0 {
+		t.Errorf("BC-3: explicit Timeout=0 override => deadline = %d, want 0 (override beats sampler)", follow[0].Deadline)
+	}
+}
+
+// TestSession_CancelledSessions_CountsTimedOut verifies BC-5:
+// the SessionManager exposes a count of cancelled (e.g. timed-out) sessions.
+func TestSession_CancelledSessions_CountsTimedOut(t *testing.T) {
+	bp := makeTestBlueprint("cancel1", 5, 1000, "", 1_000_000)
+	sm := NewSessionManager([]SessionBlueprint{bp})
+
+	if got := sm.CancelledSessions(); got != 0 {
+		t.Fatalf("precondition: CancelledSessions=%d, want 0", got)
+	}
+	req := &sim.Request{
+		ID: "r2", SessionID: "cancel1", RoundIndex: 2,
+		State:       sim.StateTimedOut,
+		InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5),
+	}
+	sm.OnComplete(req, 10000)
+	if got := sm.CancelledSessions(); got != 1 {
+		t.Errorf("BC-5: CancelledSessions=%d, want 1 after a timeout", got)
+	}
+}

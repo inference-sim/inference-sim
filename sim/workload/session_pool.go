@@ -198,6 +198,10 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 // TotalSessions returns the total number of sessions in the pool (after duplication).
 func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 
+// CancelledSessions returns the number of pooled sessions cancelled by a timeout or
+// unservable drop, delegating to the wrapped SessionManager (#2064, BC-5).
+func (d *SessionPoolDriver) CancelledSessions() int { return d.mgr.CancelledSessions() }
+
 // Unstarted returns the number of sessions never admitted. It is nonzero when
 // either (a) a hard --horizon cap ends the run with sessions still queued, or
 // (b) an admitted session's request left the pipeline before reaching an instance
