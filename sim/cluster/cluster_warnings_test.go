@@ -131,6 +131,106 @@ func TestClusterSimulator_SomeTimeouts_WarnsEvenWithCompletions(t *testing.T) {
 	}
 }
 
+// TestClusterSimulator_MixedTimeoutAndDrop_NoOverclaim covers issue #2064 review F3:
+// with zero completions, the diagnostic must NOT assert "every request timed out" when
+// a dropped-unservable request also contributed. One request times out (5ms deadline
+// behind a slow r0 that itself is dropped), one is dropped by the MaxModelLen guard.
+func TestClusterSimulator_MixedTimeoutAndDrop_NoOverclaim(t *testing.T) {
+	const maxModelLen = 200
+	config := func() DeploymentConfig {
+		d := compatDeployment(cengine.SimConfig{
+			Horizon:             500_000_000,
+			Seed:                42,
+			KVCacheConfig:       cengine.NewKVCacheConfig(10000, 16, 0, 0, 0, 0),
+			BatchConfig:         cengine.NewBatchConfig(1, 2048, 0), // max 1 running — forces queuing
+			LatencyModel:        testFakeZeroQueueing(),
+			ModelHardwareConfig: cengine.NewModelHardwareConfig(testModelConfig(), "test", "H100", 1, 1, false, maxModelLen),
+		}, 0)
+		d.NumInstances = 1
+		return d
+	}()
+
+	requests := []*sim.Request{
+		// Fits and runs, but its 5ms deadline is shorter than its service time → times out.
+		{
+			ID: "slow", ArrivalTime: 0,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 50),
+			State: sim.StateQueued, MaxOutputLen: 50,
+			Deadline: 5_000,
+		},
+		// Dropped unservable: input == MaxModelLen (Guard 1a).
+		{
+			ID: "toobig", ArrivalTime: 0,
+			InputTokens: make([]sim.TokenID, maxModelLen), OutputTokens: make([]sim.TokenID, 10),
+			State: sim.StateQueued, MaxOutputLen: 10,
+		},
+	}
+
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
+	output := captureLogOutput(func() {
+		if err := cs.Run(); err != nil {
+			t.Fatalf("cs.Run: %v", err)
+		}
+	})
+
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 0 || m.TimedOutRequests == 0 || m.DroppedUnservable == 0 {
+		t.Fatalf("test setup: want 0 completed, >=1 timed out, >=1 dropped; got completed=%d timed_out=%d dropped=%d",
+			m.CompletedRequests, m.TimedOutRequests, m.DroppedUnservable)
+	}
+
+	// The timeout count is still reported...
+	if !strings.Contains(output, "timed out") {
+		t.Errorf("expected a timeout warning, got: %q", output)
+	}
+	// ...but the no-completion line must NOT overclaim that EVERY request timed out,
+	// because a drop also contributed.
+	if strings.Contains(output, "every request timed out") {
+		t.Errorf("must not claim 'every request timed out' when a drop also contributed, got: %q", output)
+	}
+}
+
+// TestClusterSimulator_ClientTimeoutInGateway_FiresUnservedHook covers issue #2064
+// review F3: a request whose client deadline expires while the gateway holds it (a
+// RejectedClientTimeout) is recorded unserved and must reach the unserved hook, so a
+// closed-loop/pool session driver can cancel the session and refill the pool slot.
+// Before the fix only AgentX installed the hook, so normal session/pool replay left
+// CancelledSessions()==0 and a pool slot unrefilled on a gateway-expired deadline.
+func TestClusterSimulator_ClientTimeoutInGateway_FiresUnservedHook(t *testing.T) {
+	config := newTestDeploymentConfig(1)
+	config.Horizon = 1_000_000
+	requests := []*sim.Request{
+		{ID: "s_r0", SessionID: "s", ArrivalTime: 0, State: sim.StateQueued,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5), MaxOutputLen: 5},
+	}
+
+	cs := newTestCluster(config, NewSliceRequestSource(requests), nil)
+	// The gateway rejects the request as a client-deadline expiry (the gateway-held timeout).
+	cs.SetGateway(&fakeGateway{
+		reject:   func(*sim.Request) bool { return true },
+		rejectAs: RejectedClientTimeout,
+	})
+
+	var unserved []*sim.Request
+	cs.SetUnservedHook(func(req *sim.Request, _ int64) []*sim.Request {
+		unserved = append(unserved, req)
+		return nil
+	})
+
+	if err := cs.Run(); err != nil {
+		t.Fatalf("cs.Run: %v", err)
+	}
+
+	// The gateway-held client timeout must have reached the unserved hook (the route a
+	// session/pool driver uses to cancel/refill).
+	if len(unserved) != 1 || unserved[0].ID != "s_r0" {
+		t.Errorf("unserved hook saw %v, want exactly [s_r0] (gateway client-timeout must fire the hook)", unserved)
+	}
+	if cs.AggregatedMetrics().TimedOutRequests != 1 {
+		t.Errorf("TimedOutRequests = %d, want 1 (gateway client deadline)", cs.AggregatedMetrics().TimedOutRequests)
+	}
+}
+
 func TestClusterSimulator_NormalOperation_NoPostSimWarning(t *testing.T) {
 	// GIVEN a properly configured cluster that will complete requests
 	config := newTestDeploymentConfig(1)

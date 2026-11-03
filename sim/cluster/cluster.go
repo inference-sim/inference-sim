@@ -894,14 +894,21 @@ func (c *ClusterSimulator) Run() error {
 			c.aggregatedMetrics.TimedOutRequests)
 	}
 	if c.aggregatedMetrics.CompletedRequests == 0 {
-		if c.rejectedRequests > 0 {
+		switch {
+		case c.rejectedRequests > 0:
 			logrus.Warnf("[cluster] all %d requests rejected by the router's admission checks — no requests completed",
 				c.rejectedRequests)
-		} else if c.aggregatedMetrics.TimedOutRequests > 0 {
-			// The timeout count is already reported above; add the no-completion context.
+		case c.aggregatedMetrics.TimedOutRequests > 0 &&
+			c.aggregatedMetrics.DroppedUnservable == 0 &&
+			c.aggregatedMetrics.StillQueued == 0 &&
+			c.aggregatedMetrics.StillRunning == 0:
+			// Timeouts are the SOLE cause only when nothing else is outstanding; the
+			// count itself is already reported above. When drops/queued/running also
+			// contribute, fall through to the generic line rather than overclaiming
+			// that every request timed out (#2064 review).
 			logrus.Warnf("[cluster] no requests completed — every request timed out before finishing")
-		} else {
-			logrus.Warnf("[cluster] no requests completed — horizon may be too short or workload too small")
+		default:
+			logrus.Warnf("[cluster] no requests completed — horizon may be too short, the workload too small, or requests timed out / were dropped before finishing")
 		}
 	}
 

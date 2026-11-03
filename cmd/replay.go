@@ -337,16 +337,13 @@ Example:
 		}
 
 		// --timeout override (#2064): set one client deadline for every replayed round.
-		// Closed-loop was fully handled at the load site above (round-0 requests AND
-		// blueprints, before the pool/manager consumed them). Here we cover the open-loop
-		// modes — fixed, fixed-accumulate, and the no-session closed-loop fallback — whose
-		// `requests` slice is the complete pre-baked set of rounds. Applied only when
-		// explicitly set, so the trace's own deadlines stand by default (BC-4). An agentic
-		// replay owns its request timeout, so it is left untouched.
-		// fixed / fixed-accumulate only. The closed-loop paths (manager, pool, and the
-		// no-session fallback where requests == the already-overridden r0Requests) were
-		// all covered at the load site; re-applying would be a harmless no-op but is
-		// clearer to scope out here.
+		// Scoped here to fixed / fixed-accumulate only, whose `requests` slice is the
+		// complete pre-baked set of rounds. The closed-loop paths (manager, pool, and the
+		// no-session fallback where requests == the already-overridden r0Requests) were all
+		// handled at the load site above, before the pool/manager consumed the blueprints.
+		// An agentic replay carries no trace deadlines; its override is applied to the
+		// AgentX driver's RequestTimeoutUs in buildAgentXRun (agx != nil here). Applied only
+		// when explicitly set, so the trace's own deadlines stand by default (BC-4).
 		overrideOpenLoop := cmd.Flags().Changed("timeout") && agx == nil &&
 			(replaySessionMode == "fixed" || replaySessionMode == "fixed-accumulate")
 		if overrideOpenLoop {
@@ -567,23 +564,33 @@ Example:
 			}
 		}
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
+		// sessionDrive is the base driver callback for the closed-loop / pool paths. It is
+		// wired both as onRequestDone (served completions) AND as the cluster's unserved hook
+		// (#2064 review F2): a client deadline that expires while the gateway holds a request
+		// — or any other pre-instance drop — calls recordUnserved, which never reaches
+		// onRequestDone, so without the hook the session would not be cancelled and a pool
+		// slot would not refill. OnComplete's duplicate-completion guard makes the two wirings
+		// safe: a request only ever travels one of the two paths.
+		var sessionDrive func(*sim.Request, int64) []*sim.Request
 		switch {
 		case agx != nil:
 			onRequestDone = agx.driver.OnComplete
 		case poolDriver != nil:
 			baseCb := poolDriver.OnComplete
-			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+			sessionDrive = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := baseCb(req, clock)
 				captureFollowUps(followUps, clock)
 				return followUps
 			}
+			onRequestDone = sessionDrive
 		case sessionMgr != nil:
 			baseCb := sessionMgr.OnComplete
-			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
+			sessionDrive = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := baseCb(req, clock)
 				captureFollowUps(followUps, clock)
 				return followUps
 			}
+			onRequestDone = sessionDrive
 		}
 		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
 		// INV-13: the router the trace was recorded with, unless the command line names one.
@@ -594,6 +601,11 @@ Example:
 			cs.SetArrivalGate(agx.driver.Gate)
 			cs.SetUnservedHook(agx.driver.OnUnserved)
 			agx.driver.BindHorizon(cs.SetHorizon)
+		} else if sessionDrive != nil {
+			// Route pre-instance drops (gateway client-deadline expiry, admission/routing
+			// rejection, shed/evict) through the session driver so the session is cancelled
+			// and a pool slot refills (#2064 review F2).
+			cs.SetUnservedHook(sessionDrive)
 		}
 
 		// Resolve the saturation tracer BEFORE the run so a bad flag / config /
