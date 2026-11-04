@@ -1030,17 +1030,19 @@ func (c *ClusterSimulator) maybeFastForward(bound int64) {
 	if cb, ok := c.clusterEvents[0].event.(*CallbackEvent); !ok || !cb.daemon {
 		return
 	}
-	if next := min(c.nextRequestWork(), bound); next != math.MaxInt64 && next > c.clock {
+	if next := c.nextRequestWork(bound); next != math.MaxInt64 && next > c.clock {
 		ff.FastForwardIdle(next)
 	}
 }
 
-// nextRequestWork is the time of the earliest cluster event that is not a daemon callback
-// (math.MaxInt64 when none is queued). It walks the heap from the root and stops at the first
-// such event on each path: heap order puts every event below it no earlier, so only the daemon
-// events above the earliest ones are visited, not the whole queue (#2072).
-func (c *ClusterSimulator) nextRequestWork() int64 {
-	next := int64(math.MaxInt64)
+// nextRequestWork is the time of the earliest cluster event that is not a daemon callback, or
+// bound when none comes before it. It walks the heap from the root and stops at the first such
+// event on each path and at bound: heap order puts every event below a node no earlier than it,
+// so only the daemon events before both are visited, not the whole queue (#2072). Gateway client
+// deadlines are daemon events cancelled lazily, so without bound an unbounded walk would visit
+// one per request.
+func (c *ClusterSimulator) nextRequestWork(bound int64) int64 {
+	next := bound
 	stack := append(c.ffStack[:0], 0)
 	for len(stack) > 0 {
 		i := stack[len(stack)-1]

@@ -14,7 +14,7 @@ func (e *plainEvent) Priority() int             { return 0 }
 func (e *plainEvent) Execute(*ClusterSimulator) {}
 
 // nextRequestWork walks the heap from its root and prunes below the first non-daemon event on
-// each path (#2072). On random queues it must agree with a scan of every event.
+// each path and at its bound (#2072). On random queues it must agree with a scan of every event.
 func TestNextRequestWork_MatchesLinearScan(t *testing.T) {
 	rng := rand.New(rand.NewSource(1))
 	for trial := 0; trial < 2000; trial++ {
@@ -39,8 +39,10 @@ func TestNextRequestWork_MatchesLinearScan(t *testing.T) {
 			}
 			want = min(want, e.event.Timestamp())
 		}
-		if got := c.nextRequestWork(); got != want {
-			t.Fatalf("trial %d (%d events): nextRequestWork = %d, linear scan = %d", trial, len(c.clusterEvents), got, want)
+		for _, bound := range []int64{math.MaxInt64, rng.Int63n(1100)} {
+			if got := c.nextRequestWork(bound); got != min(want, bound) {
+				t.Fatalf("trial %d (%d events, bound %d): nextRequestWork = %d, linear scan = %d", trial, len(c.clusterEvents), bound, got, want)
+			}
 		}
 	}
 }
