@@ -254,16 +254,21 @@ func (d *EngineDriver) PeekNextEventTime() int64 { return d.eventQueue[0].event.
 func (d *EngineDriver) ProcessNextEvent() Event {
 	entry := heap.Pop(&d.eventQueue).(eventEntry)
 	shim := entry.event.(*driverShim)
-	if w, ok := shim.ev.(*driverWakeEvent); ok && w.cancelled {
-		return entry.event
-	}
-	if te, ok := shim.ev.(*driverTimeoutEvent); ok && te.dead(d) {
+	if shim.Skipped() {
 		return entry.event
 	}
 	d.preEventClock = d.Clock
 	d.Clock = shim.Timestamp()
 	shim.ev.run(d)
 	return entry.event
+}
+
+// HeadIsNoop reports whether the earliest queued event is one ProcessNextEvent drops without
+// running: a superseded wake, or the timeout of a request that already left the engine. Both stay
+// no-ops, so a host may treat the queue as holding no work before the next event after it (#2072).
+// Callers check HasPendingEvents first.
+func (d *EngineDriver) HeadIsNoop() bool {
+	return d.eventQueue[0].event.(*driverShim).Skipped()
 }
 
 // Skipped reports whether ev, an event ProcessNextEvent returned, was dropped without running

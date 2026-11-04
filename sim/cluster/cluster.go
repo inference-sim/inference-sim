@@ -37,6 +37,7 @@ type ClusterSimulator struct {
 	seqCounter        int64
 	gateway           Gateway
 	daemonQueued      int            // daemon gateway callbacks in clusterEvents (they do not keep the run alive)
+	ffStack           []int          // nextRequestWork's scratch stack of heap indices
 	rejectedRequests  int            // INV-1: requests an admission check refused
 	routingRejections int            // INV-1: requests no endpoint could serve
 	gatewayRejected   int            // INV-1: requests flow control rejected at capacity
@@ -752,7 +753,13 @@ func (c *ClusterSimulator) Run() error {
 		// BC-4: Cluster events at time T processed before instance events at time T
 		// Using <= ensures cluster events drain first when timestamps are equal
 		if instanceIdx == -1 && clusterTime != math.MaxInt64 {
-			c.maybeFastForward()
+			c.maybeFastForward(math.MaxInt64)
+			clusterTime = c.clusterEvents[0].event.Timestamp()
+		} else if instanceIdx != -1 && clusterTime <= instanceTime && c.instances[instanceIdx].HeadIsNoop() {
+			// The earliest instance event does no work (a superseded wake or a completed
+			// request's timeout, #2072). Every other instance event is at or after instanceTime,
+			// so no engine works before it: the gateway's idle loops may be advanced up to it.
+			c.maybeFastForward(instanceTime)
 			clusterTime = c.clusterEvents[0].event.Timestamp()
 		}
 		if c.abortErr != nil {
@@ -1013,8 +1020,9 @@ func (c *ClusterSimulator) afterInstanceEvent(inst *InstanceSimulator, before in
 }
 
 // maybeFastForward lets an idle gateway advance its background work to the next request work
-// when nothing but gateway background events comes before it.
-func (c *ClusterSimulator) maybeFastForward() {
+// when nothing but gateway background events comes before it. bound caps the target: no
+// instance does work before it.
+func (c *ClusterSimulator) maybeFastForward(bound int64) {
 	ff, ok := c.gateway.(IdleFastForwarder)
 	if !ok {
 		return
@@ -1022,16 +1030,38 @@ func (c *ClusterSimulator) maybeFastForward() {
 	if cb, ok := c.clusterEvents[0].event.(*CallbackEvent); !ok || !cb.daemon {
 		return
 	}
-	next := int64(math.MaxInt64)
-	for _, e := range c.clusterEvents {
-		if cb, ok := e.event.(*CallbackEvent); ok && cb.daemon {
-			continue
-		}
-		next = min(next, e.event.Timestamp())
-	}
-	if next != math.MaxInt64 && next > c.clock {
+	if next := c.nextRequestWork(bound); next != math.MaxInt64 && next > c.clock {
 		ff.FastForwardIdle(next)
 	}
+}
+
+// nextRequestWork is the time of the earliest cluster event that is not a daemon callback, or
+// bound when none comes before it. It walks the heap from the root and stops at the first such
+// event on each path and at bound: heap order puts every event below a node no earlier than it,
+// so only the daemon events before both are visited, not the whole queue (#2072). Gateway client
+// deadlines are daemon events cancelled lazily, so without bound an unbounded walk would visit
+// one per request.
+func (c *ClusterSimulator) nextRequestWork(bound int64) int64 {
+	next := bound
+	stack := append(c.ffStack[:0], 0)
+	for len(stack) > 0 {
+		i := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if i >= len(c.clusterEvents) {
+			continue
+		}
+		e := c.clusterEvents[i].event
+		if e.Timestamp() >= next {
+			continue
+		}
+		if cb, ok := e.(*CallbackEvent); ok && cb.daemon {
+			stack = append(stack, 2*i+1, 2*i+2)
+			continue
+		}
+		next = e.Timestamp()
+	}
+	c.ffStack = stack
+	return next
 }
 
 // gatewayHeldUntil is the latest time the gateway's own timers can still release a request it
