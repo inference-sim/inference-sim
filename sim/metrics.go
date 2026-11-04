@@ -31,7 +31,7 @@ type Metrics struct {
 	KVThrashingRate      float64 // KV thrashing rate at finalization (PR12)
 	StillQueued          int     // Requests still in wait queue at sim end
 	StillRunning         int     // Requests still in running batch at sim end
-	DroppedUnservable    int     // Requests dropped at enqueue: negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
+	DroppedUnservable    int     // Requests rejected as unservable: empty gateway prompt, negative MaxOutputLen (R3), MaxModelLen violation, or input exceeds KV capacity (R19)
 	LengthCappedRequests int     // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
 	TimedOutRequests     int     // Requests cancelled by client timeout
 

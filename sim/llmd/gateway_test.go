@@ -130,6 +130,42 @@ func TestGateway_EmptyPromptAtDeadlineTimesOut(t *testing.T) {
 	}
 }
 
+func TestGateway_EmptyPromptWithLatencyBypassesFlowControl(t *testing.T) {
+	reqs := testRequests(3, 7, 0, 0)
+	reqs[1].InputTokens = nil
+	cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{
+		Model:            "test-model",
+		GatewayLatencyUs: 100,
+		EPPFlags:         append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+globalStrictConfig),
+	})
+	routerRequests := make(map[string]bool)
+	gw.observe = func(kind, detail string) {
+		if kind == "request" {
+			routerRequests[detail] = true
+		}
+	}
+	cs.SetGateway(gw)
+
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if m := cs.AggregatedMetrics(); m.CompletedRequests != 2 || m.DroppedUnservable != 1 {
+		t.Fatalf("completed=%d dropped=%d, want 2 and 1", m.CompletedRequests, m.DroppedUnservable)
+	}
+	if routerRequests[reqs[1].ID] || reqs[1].GatewayEnqueueTime != 0 {
+		t.Errorf("empty prompt reached flow control: observed=%v enqueue_time=%d", routerRequests[reqs[1].ID], reqs[1].GatewayEnqueueTime)
+	}
+	for _, req := range []*sim.Request{reqs[0], reqs[2]} {
+		if !routerRequests[req.ID] {
+			t.Errorf("valid request %s did not reach the router", req.ID)
+		}
+		if req.GatewayEnqueueTime != 100 {
+			t.Errorf("valid request %s entered flow control at %d, want 100", req.ID, req.GatewayEnqueueTime)
+		}
+	}
+}
+
 func TestGateway_Deterministic(t *testing.T) {
 	a := runCluster(t, 4, 80, Options{})
 	b := runCluster(t, 4, 80, Options{})
