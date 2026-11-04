@@ -55,7 +55,7 @@ Requests follow a linear state machine with one exception (preemption):
 stateDiagram-v2
     [*] --> Arrival
     Arrival --> Queued : host queueing delay
-    Arrival --> DroppedUnservable : exceeds MaxModelLen or KV capacity
+    Arrival --> DroppedUnservable : empty prompt, exceeds MaxModelLen or KV capacity
 
     state "Queued" as Queued
     note right of Queued
@@ -124,12 +124,13 @@ Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and the
 
 ### Dropped Requests
 
-Requests are dropped as unservable at enqueue time (incrementing `DroppedUnservable`) via two guards:
+The run-wide `DroppedUnservable` counter includes a gateway rejection and two engine-side guards:
 
-1. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the engine's runtime stop handles output growth).
-2. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
+1. **Gateway empty-prompt guard** — requests with no input tokens are rejected before router dispatch.
+2. **MaxModelLen guard** — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (`MaxOutputLen > 0`), the check is `input + budget > maxModelLen`. Otherwise, input length alone is checked (vLLM defaults `max_tokens` to `max_model_len - seq_len`; the engine's runtime stop handles output growth).
+3. **KV capacity guard** — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.
 
-Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Past admission, the engine caps a request at `max_model_len` as vLLM's `check_stop` does (`num_tokens >= max_model_len`): a length-capped request emits `MaxModelLen - len(InputTokens)` output tokens.
+The two engine guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. The gateway guard runs before router dispatch. Past admission, the engine caps a request at `max_model_len` as vLLM's `check_stop` does (`num_tokens >= max_model_len`): a length-capped request emits `MaxModelLen - len(InputTokens)` output tokens.
 
 ## Latency Models
 

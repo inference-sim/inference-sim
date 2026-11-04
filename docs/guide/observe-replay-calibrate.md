@@ -455,10 +455,10 @@ corpus, not a clock.
     prompts — tens of thousands to well over 100K input tokens per call, growing
     further each round as the shared prefix accumulates — which can exceed a
     scenario's `max_model_len`. If the run completes cleanly but reports
-    `completed_requests: 0` with a matching `dropped_unservable` count, the prompts
-    didn't fit: use a scenario whose `max_model_len` covers the largest round, on a
-    deployment whose KV budget (computed by the kernel from the scenario) can hold the
-    growing sessions.
+    `completed_requests: 0` with a matching `dropped_unservable` count, inspect the
+    trace for empty prompts as well as requests that exceed the context window or KV
+    budget. For oversized prompts, use a scenario whose `max_model_len` covers the
+    largest round and whose computed KV budget can hold the growing sessions.
 
 ### Weka CC traces (`blis convert weka`)
 

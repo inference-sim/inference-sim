@@ -82,6 +82,90 @@ func TestGateway_DefaultRouterServesEveryRequest(t *testing.T) {
 	}
 }
 
+func TestGateway_EmptyPromptDoesNotAbortOtherRequests(t *testing.T) {
+	reqs := testRequests(3, 7, 500, 0)
+	reqs[1].InputTokens = nil
+	var done []string
+	cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(reqs[:2]), func(req *sim.Request, now int64) []*sim.Request {
+		done = append(done, req.ID)
+		if req.ID == reqs[1].ID {
+			reqs[2].ArrivalTime = now
+			return []*sim.Request{reqs[2]}
+		}
+		return nil
+	})
+	cs.SetGateway(New(Options{Model: "test-model"}))
+	var unserved []string
+	cs.SetUnservedHook(func(req *sim.Request, _ int64) []*sim.Request {
+		unserved = append(unserved, req.ID)
+		return nil
+	})
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := cs.AggregatedMetrics()
+	if m.CompletedRequests != 2 || m.DroppedUnservable != 1 {
+		t.Fatalf("completed=%d dropped=%d, want 2 and 1", m.CompletedRequests, m.DroppedUnservable)
+	}
+	if len(done) != 3 {
+		t.Fatalf("terminal callbacks=%v, want all three requests", done)
+	}
+	if len(unserved) != 1 || unserved[0] != reqs[1].ID {
+		t.Fatalf("unserved callbacks=%v, want only %s", unserved, reqs[1].ID)
+	}
+}
+
+func TestGateway_EmptyPromptAtDeadlineTimesOut(t *testing.T) {
+	reqs := testRequests(1, 7, 500, 0)
+	reqs[0].InputTokens = nil
+	reqs[0].Deadline = 100
+	cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+	cs.SetGateway(New(Options{Model: "test-model", GatewayLatencyUs: 100}))
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := cs.AggregatedMetrics()
+	if m.TimedOutRequests != 1 || m.DroppedUnservable != 0 {
+		t.Fatalf("timed out=%d dropped=%d, want 1 and 0", m.TimedOutRequests, m.DroppedUnservable)
+	}
+}
+
+func TestGateway_EmptyPromptWithLatencyBypassesFlowControl(t *testing.T) {
+	reqs := testRequests(3, 7, 0, 0)
+	reqs[1].InputTokens = nil
+	cs := newCluster(testDeployment(1), cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{
+		Model:            "test-model",
+		GatewayLatencyUs: 100,
+		EPPFlags:         append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+globalStrictConfig),
+	})
+	routerRequests := make(map[string]bool)
+	gw.observe = func(kind, detail string) {
+		if kind == "request" {
+			routerRequests[detail] = true
+		}
+	}
+	cs.SetGateway(gw)
+
+	if err := cs.Run(); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if m := cs.AggregatedMetrics(); m.CompletedRequests != 2 || m.DroppedUnservable != 1 {
+		t.Fatalf("completed=%d dropped=%d, want 2 and 1", m.CompletedRequests, m.DroppedUnservable)
+	}
+	if routerRequests[reqs[1].ID] || reqs[1].GatewayEnqueueTime != 0 {
+		t.Errorf("empty prompt reached flow control: observed=%v enqueue_time=%d", routerRequests[reqs[1].ID], reqs[1].GatewayEnqueueTime)
+	}
+	for _, req := range []*sim.Request{reqs[0], reqs[2]} {
+		if !routerRequests[req.ID] {
+			t.Errorf("valid request %s did not reach the router", req.ID)
+		}
+		if req.GatewayEnqueueTime != 100 {
+			t.Errorf("valid request %s entered flow control at %d, want 100", req.ID, req.GatewayEnqueueTime)
+		}
+	}
+}
+
 func TestGateway_Deterministic(t *testing.T) {
 	a := runCluster(t, 4, 80, Options{})
 	b := runCluster(t, 4, 80, Options{})

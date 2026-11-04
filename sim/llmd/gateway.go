@@ -562,6 +562,17 @@ func (g *Gateway) handleRequest(f *flight) {
 	if f.done { // its client deadline passed on the way to the router
 		return
 	}
+	if f.req.InputLen() == 0 {
+		if f.req.Deadline > 0 && f.req.Deadline <= g.host.Now() {
+			g.clientDeadline(f)
+			return
+		}
+		f.held = false
+		g.pending--
+		g.host.Reject(f.req, cluster.RejectedUnservable, "the decoder prompt cannot be empty")
+		g.endFlight(f)
+		return
+	}
 	// A stdlib cancel context over the gateway's own (itself over Background): the router derives
 	// the request's context from it, and cancellation propagates synchronously only through stdlib
 	// cancel contexts, so a client deadline reaches the router at its simulated instant (INV-6).

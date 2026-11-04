@@ -65,12 +65,12 @@ nothing to reuse. That is the case for the AISimulate accuracy corpus, whose spe
 ## Minimum KV Block Requirements
 
 !!! danger "DroppedUnservable rejection"
-    Requests are dropped as **unservable** (incrementing `DroppedUnservable`) in two cases:
+    The run-wide `DroppedUnservable` count also includes empty prompts rejected by the gateway before router dispatch. The engine drops requests as **unservable** in two KV-related cases:
 
     1. **MaxModelLen guard** — requests whose total sequence length (input + output budget) exceeds the scenario's `max_model_len` are rejected before entering the queue. This mirrors vLLM's `--max-model-len` validation.
     2. **KV capacity guard** — when `ceil(inputTokens / blockSize) > TotalCapacity()`, the request physically cannot fit in GPU memory. This mirrors vLLM's pre-engine rejection path.
 
-    Both guards fire at enqueue time, before the request enters the wait queue.
+    Both engine guards fire at enqueue time, before the request enters the wait queue. The gateway's empty-prompt rejection happens before router flow control and shares the counter, but is not a KV-capacity failure.
 
 !!! info "Proactive MaxModelLen cap"
     A three-part enforcement of the scenario's `max_model_len` matches vLLM's scheduler semantics: (1) `FormBatch` proactively clamps token scheduling to `maxModelLen - 1 - ProgressIndex`, (2) `executeBatchStep` skips decode when no tokens are allocated, and (3) `processCompletions` force-completes requests at the `maxModelLen - 1` boundary. Output per length-capped request: `maxModelLen - inputLen` tokens — `ProgressIndex` is BLIS's `num_computed_tokens` and lags the generated-token count by one (the first output token is charged to prefill), so stopping at `maxModelLen - 1` is exactly vLLM's `check_stop` (`num_tokens >= max_model_len`) and the boundary token is counted.

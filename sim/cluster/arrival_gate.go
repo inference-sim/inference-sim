@@ -52,11 +52,11 @@ func (cs *ClusterSimulator) gateArrival(req *sim.Request, now int64) bool {
 }
 
 // SetUnservedHook installs a callback told of every request the cluster itself ends
-// without serving -- admission and routing rejections, flow-control rejections, sheds,
-// TTL expiries, in-flight evictions and P/D decode-KV drops: every site that records the
-// request as unserved (recordUnserved). The engine's own refusals and every completion
-// still reach onRequestDone. Follow-ups it returns are routed like onRequestDone's. Must be
-// called before Run(); nil clears it.
+// without serving -- gateway empty-prompt rejections, admission and routing rejections,
+// flow-control rejections, sheds, TTL expiries, in-flight evictions and P/D decode-KV
+// drops: every site that records the request as unserved (recordUnserved). The engine's
+// own refusals and every completion still reach onRequestDone. Follow-ups it returns are
+// routed like onRequestDone's. Must be called before Run(); nil clears it.
 func (cs *ClusterSimulator) SetUnservedHook(h func(req *sim.Request, now int64) []*sim.Request) {
 	if cs.hasRun {
 		panic("ClusterSimulator: SetUnservedHook must be called before Run()")
