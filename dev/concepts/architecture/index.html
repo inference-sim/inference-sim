@@ -3631,8 +3631,9 @@ cluster's event loop:</p>
   own.</li>
 <li><strong>Idle fast-forward.</strong> When no request is anywhere in the router or the engines and the next
   non-daemon event is in the future, the router's loops run only their last ticks before it,
-  each keeping its phase (<code>FastForwardIdle</code>). It is skipped when a data source polls at its own
-  cadence.</li>
+  each keeping its phase (<code>FastForwardIdle</code>). An engine event that does no work (a superseded
+  wake, or the timeout of a request that already finished) does not block it (#2072). It is
+  skipped when a data source polls at its own cadence.</li>
 <li><strong>Simulated HTTP.</strong> Outbound calls are served in-process: <code>/metrics</code> returns an engine's
   published series, <code>/v1/completions/render</code> the prompt's token IDs (<code>sim/llmd/server.go</code>).</li>
 </ul>
