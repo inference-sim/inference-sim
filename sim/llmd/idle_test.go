@@ -128,3 +128,94 @@ func checkStatefulUsageLimitExact(t *testing.T, extraFlags []string) {
 		t.Fatal("the idle fast-forward changed routing or latency with a stateful usage-limit policy and two bands")
 	}
 }
+
+// TestFastForwardIdle_DeadTimeoutsDoNotBlockIt (#2072): every request carries a client deadline
+// far past the run, so each completed request leaves a dead timeout in its engine's queue. The
+// idle fast-forward must still skip the gaps between bursts, and give exactly the routing,
+// dispatch times, latencies, timeouts and KV-event deliveries of ticking through every gap. It
+// runs colocated, with lockstep data-parallel ranks, and disaggregated.
+func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
+	type outcome struct {
+		placed           map[string]string
+		ttft, e2e        map[string]float64
+		completed, timed int
+		kv               []string
+		scrapes          int
+	}
+	burstsWithDeadlines := func() []*sim.Request {
+		var reqs []*sim.Request
+		for b, start := range []int64{0, 30_000_000, 95_000_000} { // bursts 30 s and 65 s apart
+			for i, r := range testRequests(40, int64(3+b), 400, 32) {
+				r.ID = fmt.Sprintf("%s_b%d", r.ID, b)
+				r.ArrivalTime += start
+				r.Deadline = r.ArrivalTime + 200_000_000 // far past the run, as aiperf's 6 h client timeout is
+				if b == 2 && i%10 == 0 {
+					r.Deadline = r.ArrivalTime + 2_000 // a few live timeouts that must still fire
+				}
+				reqs = append(reqs, r)
+			}
+		}
+		return reqs
+	}
+	for name, setup := range map[string]func(*cluster.DeploymentConfig, *Options){
+		"colocated": func(*cluster.DeploymentConfig, *Options) {},
+		"dp-lockstep": func(d *cluster.DeploymentConfig, _ *Options) {
+			*d = testDeployment(4)
+			d.DPLockstepRanks = 2
+		},
+		"disaggregated": func(d *cluster.DeploymentConfig, o *Options) {
+			*d = testDeployment(4)
+			d.PrefillInstances, d.DecodeInstances = 2, 2
+			d.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+			o.PodLabels = roleLabels
+			o.EPPFlags = append(o.EPPFlags, "--config-text="+pdConfig)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			run := func(neverSkip bool) outcome {
+				reqs := burstsWithDeadlines()
+				dep := testDeployment(3)
+				opts := Options{Model: "test-model", EPPFlags: DefaultEPPFlags()}
+				setup(&dep, &opts)
+				editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
+				cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
+				gw := New(opts)
+				gw.neverSkipIdle = neverSkip
+				var o outcome
+				gw.observe = func(kind, detail string) {
+					switch kind {
+					case "scrape":
+						o.scrapes++
+					case "kvdeliver":
+						o.kv = append(o.kv, detail)
+					}
+				}
+				cs.SetGateway(gw)
+				if err := cs.Run(); err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				o.placed = map[string]string{}
+				for _, r := range reqs {
+					o.placed[r.ID] = fmt.Sprintf("%s@%d", r.AssignedInstance, r.GatewayDispatchTime)
+				}
+				m := cs.AggregatedMetrics()
+				o.ttft, o.e2e, o.completed, o.timed = m.RequestTTFTs, m.RequestE2Es, m.CompletedRequests, m.TimedOutRequests
+				return o
+			}
+			ff, tick := run(false), run(true)
+			if !reflect.DeepEqual(ff.placed, tick.placed) || !reflect.DeepEqual(ff.ttft, tick.ttft) ||
+				!reflect.DeepEqual(ff.e2e, tick.e2e) || ff.completed != tick.completed || ff.timed != tick.timed ||
+				!reflect.DeepEqual(ff.kv, tick.kv) {
+				t.Fatal("the idle fast-forward changed routing, latency, timeouts or KV-event delivery")
+			}
+			if ff.completed+ff.timed != 120 || ff.timed == 0 {
+				t.Fatalf("completed %d, timed out %d of 120; want all accounted and some live timeouts", ff.completed, ff.timed)
+			}
+			// Ticking scrapes every 50 ms through about 95 s of gaps; the fast-forward skips them.
+			if ff.scrapes*4 > tick.scrapes {
+				t.Fatalf("scrapes: %d with the fast-forward, %d ticking; dead timeouts still block it", ff.scrapes, tick.scrapes)
+			}
+			t.Logf("scrapes: %d with the fast-forward, %d ticking", ff.scrapes, tick.scrapes)
+		})
+	}
+}
