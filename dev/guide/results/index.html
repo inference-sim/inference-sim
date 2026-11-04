@@ -4365,7 +4365,7 @@ digest under <code>artifacts</code>. They are then removed.</p>
 <tr>
 <td><code>dropped_unservable</code></td>
 <td>count</td>
-<td>Requests dropped at enqueue due to context limit violations</td>
+<td>Requests rejected as unservable: empty prompts at the gateway or invalid output budgets, context lengths, or KV requirements at enqueue</td>
 </tr>
 <tr>
 <td><code>length_capped_requests</code></td>
@@ -4725,8 +4725,8 @@ tune them with <code>--saturation-config</code>, and write the per-event verdict
 </tr>
 <tr>
 <td><strong>Dropped Unservable</strong></td>
-<td>Request exceeds the context window (the scenario's <code>max_model_len</code>) or needs more KV blocks than exist</td>
-<td>Check the scenario's <code>max_model_len</code>; deploy more GPUs per instance or reduce max input tokens</td>
+<td>Empty prompt rejected by the gateway, or a request exceeds the context window (the scenario's <code>max_model_len</code>) or needs more KV blocks than exist</td>
+<td>Check for empty inputs first; otherwise check <code>max_model_len</code>, deploy more GPUs per instance, or reduce max input tokens</td>
 </tr>
 <tr>
 <td><strong>Timed Out Requests</strong></td>

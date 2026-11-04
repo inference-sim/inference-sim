@@ -4734,10 +4734,10 @@ with every session still running.</p>
 prompts — tens of thousands to well over 100K input tokens per call, growing
 further each round as the shared prefix accumulates — which can exceed a
 scenario's <code>max_model_len</code>. If the run completes cleanly but reports
-<code>completed_requests: 0</code> with a matching <code>dropped_unservable</code> count, the prompts
-didn't fit: use a scenario whose <code>max_model_len</code> covers the largest round, on a
-deployment whose KV budget (computed by the kernel from the scenario) can hold the
-growing sessions.</p>
+<code>completed_requests: 0</code> with a matching <code>dropped_unservable</code> count, inspect the
+trace for empty prompts as well as requests that exceed the context window or KV
+budget. For oversized prompts, use a scenario whose <code>max_model_len</code> covers the
+largest round and whose computed KV budget can hold the growing sessions.</p>
 </div>
 <h3 id="weka-cc-traces-blis-convert-weka">Weka CC traces (<code>blis convert weka</code>)<a class="headerlink" href="#weka-cc-traces-blis-convert-weka" title="Permanent link">&para;</a></h3>
 <p>The <a href="https://huggingface.co/datasets/semianalysisai/cc-traces-weka-with-subagents-051926">SemiAnalysis WekaTrace</a>

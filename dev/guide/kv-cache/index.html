@@ -3508,12 +3508,12 @@ nothing to reuse. That is the case for the AISimulate accuracy corpus, whose spe
 <h2 id="minimum-kv-block-requirements">Minimum KV Block Requirements<a class="headerlink" href="#minimum-kv-block-requirements" title="Permanent link">&para;</a></h2>
 <div class="admonition danger">
 <p class="admonition-title">DroppedUnservable rejection</p>
-<p>Requests are dropped as <strong>unservable</strong> (incrementing <code>DroppedUnservable</code>) in two cases:</p>
+<p>The run-wide <code>DroppedUnservable</code> count also includes empty prompts rejected by the gateway before router dispatch. The engine drops requests as <strong>unservable</strong> in two KV-related cases:</p>
 <ol>
 <li><strong>MaxModelLen guard</strong> — requests whose total sequence length (input + output budget) exceeds the scenario's <code>max_model_len</code> are rejected before entering the queue. This mirrors vLLM's <code>--max-model-len</code> validation.</li>
 <li><strong>KV capacity guard</strong> — when <code>ceil(inputTokens / blockSize) &gt; TotalCapacity()</code>, the request physically cannot fit in GPU memory. This mirrors vLLM's pre-engine rejection path.</li>
 </ol>
-<p>Both guards fire at enqueue time, before the request enters the wait queue.</p>
+<p>Both engine guards fire at enqueue time, before the request enters the wait queue. The gateway's empty-prompt rejection happens before router flow control and shares the counter, but is not a KV-capacity failure.</p>
 </div>
 <div class="admonition info">
 <p class="admonition-title">Proactive MaxModelLen cap</p>

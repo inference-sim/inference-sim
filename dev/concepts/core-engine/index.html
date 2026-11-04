@@ -3576,7 +3576,7 @@ decoding, data parallelism and the KV cache are the engine's: see blis-vllm's
 <pre class="mermaid"><code>stateDiagram-v2
     [*] --&gt; Arrival
     Arrival --&gt; Queued : host queueing delay
-    Arrival --&gt; DroppedUnservable : exceeds MaxModelLen or KV capacity
+    Arrival --&gt; DroppedUnservable : empty prompt, exceeds MaxModelLen or KV capacity
 
     state "Queued" as Queued
     note right of Queued
@@ -3680,12 +3680,13 @@ decoding, data parallelism and the KV cache are the engine's: see blis-vllm's
 4. A debug log is emitted and <code>PreemptionCount</code> is incremented</p>
 <p>Preempted requests reset to the beginning of prefill (ProgressIndex = 0) and their KV blocks are freed. However, the freed blocks' prefix hashes are preserved in the KV cache's free list — when the request is re-scheduled, prefix caching may find these blocks (if not yet evicted by LRU), reducing recomputation. This matches vLLM's "recompute" preemption mode.</p>
 <h3 id="dropped-requests">Dropped Requests<a class="headerlink" href="#dropped-requests" title="Permanent link">&para;</a></h3>
-<p>Requests are dropped as unservable at enqueue time (incrementing <code>DroppedUnservable</code>) via two guards:</p>
+<p>The run-wide <code>DroppedUnservable</code> counter includes a gateway rejection and two engine-side guards:</p>
 <ol>
+<li><strong>Gateway empty-prompt guard</strong> — requests with no input tokens are rejected before router dispatch.</li>
 <li><strong>MaxModelLen guard</strong> — requests whose total sequence length exceeds the context window are rejected. When the request declares an output budget (<code>MaxOutputLen &gt; 0</code>), the check is <code>input + budget &gt; maxModelLen</code>. Otherwise, input length alone is checked (vLLM defaults <code>max_tokens</code> to <code>max_model_len - seq_len</code>; the engine's runtime stop handles output growth).</li>
 <li><strong>KV capacity guard</strong> — requests whose input tokens require more KV blocks than the total cache capacity are rejected. This prevents livelock where the simulator would endlessly preempt and re-enqueue a request that can never fit.</li>
 </ol>
-<p>Both guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. Past admission, the engine caps a request at <code>max_model_len</code> as vLLM's <code>check_stop</code> does (<code>num_tokens &gt;= max_model_len</code>): a length-capped request emits <code>MaxModelLen - len(InputTokens)</code> output tokens.</p>
+<p>The two engine guards fire before the request enters the wait queue, mirroring vLLM's pre-engine rejection. The gateway guard runs before router dispatch. Past admission, the engine caps a request at <code>max_model_len</code> as vLLM's <code>check_stop</code> does (<code>num_tokens &gt;= max_model_len</code>): a length-capped request emits <code>MaxModelLen - len(InputTokens)</code> output tokens.</p>
 <h2 id="latency-models">Latency Models<a class="headerlink" href="#latency-models" title="Permanent link">&para;</a></h2>
 <p>Step time and host overheads come from <strong>blis-latency-kernel</strong>. The engine asks the kernel to
 price each batch it forms (blis-vllm's kernel adapter, <code>compat/kernelmodel</code>), from the model
