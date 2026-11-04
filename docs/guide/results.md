@@ -173,7 +173,7 @@ The `--metrics-path` file contains:
 | `scheduling_delay_p99_ms` | ms | 99th percentile scheduling delay — queue wait time |
 | `kv_allocation_failures` | count | KV cache allocation failures (omitted when zero) |
 | `preemption_count` | count | Total preemption events (integer; see also KV Cache Metrics for the rate) |
-| `dropped_unservable` | count | Requests dropped at enqueue due to context limit violations |
+| `dropped_unservable` | count | Requests rejected as unservable: empty prompts at the gateway or invalid output budgets, context lengths, or KV requirements at enqueue |
 | `length_capped_requests` | count | Requests force-completed at `MaxModelLen` |
 | `timed_out_requests` | count | Requests that exceeded their deadline |
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
@@ -371,7 +371,7 @@ When anomalies are detected, `--view summary` prints `=== Anomaly Counters ===`:
 | **Rejected Requests (Admission)** | The llm-d router denied admission: an admitter plugin, or the legacy admission controller shedding a sheddable request (priority < 0) from a saturated pool | Check the `InferenceObjective` priorities and the saturation detector's parameters; see [Admission Control](admission.md) |
 | **Shed (tier)** | Per-SLO-class count of requests the router shed (admission denials and flow-control TTL expiries) — printed as indented sub-items beneath Rejected Requests (Admission) | Raise the class's `InferenceObjective` priority, or the detector's thresholds |
 | **Rejected Requests (Routing)** | No endpoint could serve the request: no ready candidates (all instances `Loading` or `Draining`), or every filter eliminated all | Increase `initial_nodes`, reduce `loading_delay.mean`, stagger drain operations, or check the router configuration's filters |
-| **Dropped Unservable** | Request exceeds the context window (the scenario's `max_model_len`) or needs more KV blocks than exist | Check the scenario's `max_model_len`; deploy more GPUs per instance or reduce max input tokens |
+| **Dropped Unservable** | Empty prompt rejected by the gateway, or a request exceeds the context window (the scenario's `max_model_len`) or needs more KV blocks than exist | Check for empty inputs first; otherwise check `max_model_len`, deploy more GPUs per instance, or reduce max input tokens |
 | **Timed Out Requests** | Request exceeded its client deadline before completing | Increase `--timeout` or reduce load |
 | **Length-Capped Requests** | Request was force-completed when it reached `MaxModelLen` tokens during decode | Expected if workloads push against the scenario's `max_model_len` |
 | **Gateway Queue Depth (horizon)** | Requests still waiting in the router's flow control when the simulation ended — printed only when `> 0` | Reduce arrival rate or increase cluster capacity |

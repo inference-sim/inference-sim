@@ -89,6 +89,7 @@ type ClusterSimulator struct {
 	pdDecodeCompletedCount int // decode sub-requests that completed (for INV-1 in-flight tracking)
 	pdDecodeTimedOutCount  int // decode sub-requests that timed out (for INV-1 in-flight tracking)
 	droppedAtDecodeKV      int // requests dropped due to insufficient KV at decode
+	gatewayUnservable      int // requests refused before dispatch because they cannot be served
 	// pdLinks arbitrates the links concurrent handoffs share (PDTransferContention, #1922);
 	// nil when handoffs are priced as if alone. pdLinkFlows maps each handoff in it to its
 	// parent, and pdLinkWakeGen invalidates every wake but the latest scheduled.
@@ -849,6 +850,7 @@ func (c *ClusterSimulator) Run() error {
 	if c.droppedAtDecodeKV > 0 {
 		c.aggregatedMetrics.DroppedUnservable += c.droppedAtDecodeKV
 	}
+	c.aggregatedMetrics.DroppedUnservable += c.gatewayUnservable
 	// In-flight PD transfers: requests whose prefill completed but decode hasn't
 	// finished or been dropped yet (e.g., simulation ended at bounded horizon while
 	// KV transfer was in progress). These requests were subtracted from CompletedRequests
@@ -1154,7 +1156,7 @@ func (c *ClusterSimulator) timedOutRequestsTotal() int {
 }
 
 func (c *ClusterSimulator) droppedRequestsTotal() int {
-	total := 0
+	total := c.gatewayUnservable
 	for _, inst := range c.instances {
 		total += inst.Metrics().DroppedUnservable
 	}

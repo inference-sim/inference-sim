@@ -64,6 +64,7 @@ const (
 	RejectedGatewayCapacity                  // flow control rejected it: queues at capacity
 	RejectedGatewayExpired                   // it waited in flow control past its TTL
 	RejectedClientTimeout                    // its client deadline passed while the gateway held it
+	RejectedUnservable                       // the model cannot serve the request
 )
 
 // Placement is where the gateway sends a request. Decode is the endpoint that serves the
@@ -241,11 +242,18 @@ func (cs *ClusterSimulator) Reject(req *sim.Request, why Rejection, reason strin
 		cs.gatewayExpired++
 	case RejectedClientTimeout:
 		cs.gatewayTimedOut++
+	case RejectedUnservable:
+		cs.gatewayUnservable++
 	default:
 		panic(fmt.Sprintf("ClusterSimulator.Reject: unknown rejection %d", why))
 	}
 	cs.recordRejection(req, why, reason)
 	cs.recordUnserved(req) // measured failed_requests and closed-loop drivers (#1938, #1937)
+	if why == RejectedUnservable && cs.sessionCallback != nil {
+		for _, next := range cs.sessionCallback(req, cs.clock) {
+			cs.pushArrival(next, next.ArrivalTime)
+		}
+	}
 }
 
 // Abort implements GatewayHost.
