@@ -126,6 +126,12 @@ func (i *InstanceSimulator) PeekNextEventTime() int64 {
 	return i.drv.PeekNextEventTime()
 }
 
+// HeadIsNoop reports whether the earliest pending event does no work when processed (a superseded
+// wake or a completed request's timeout). Caller MUST check HasPendingEvents() first.
+func (i *InstanceSimulator) HeadIsNoop() bool {
+	return i.drv.HeadIsNoop()
+}
+
 // ProcessNextEvent pops and executes the earliest event, returning it.
 // Caller MUST check HasPendingEvents() first; panics on empty queue.
 func (i *InstanceSimulator) ProcessNextEvent() sim.Event {
