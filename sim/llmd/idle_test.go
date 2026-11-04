@@ -3,6 +3,7 @@ package llmd
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,15 +133,15 @@ func checkStatefulUsageLimitExact(t *testing.T, extraFlags []string) {
 // TestFastForwardIdle_DeadTimeoutsDoNotBlockIt (#2072): every request carries a client deadline
 // far past the run, so each completed request leaves a dead timeout in its engine's queue. The
 // idle fast-forward must still skip the gaps between bursts, and give exactly the routing,
-// dispatch times, latencies, timeouts and KV-event deliveries of ticking through every gap. It
-// runs colocated, with lockstep data-parallel ranks, and disaggregated.
+// dispatch times, metrics and router event streams (KV events, dispatches, usage) of ticking
+// through every gap. It runs colocated, with lockstep data-parallel ranks, disaggregated, and
+// with AgentX-style sessions whose follow-up rounds arrive after a think time.
 func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 	type outcome struct {
-		placed           map[string]string
-		ttft, e2e        map[string]float64
-		completed, timed int
-		kv               []string
-		scrapes          int
+		placed  map[string]string
+		metrics sim.Metrics
+		events  []string // KV events, dispatches and usage, in the router's order
+		scrapes int
 	}
 	burstsWithDeadlines := func() []*sim.Request {
 		var reqs []*sim.Request
@@ -157,8 +158,10 @@ func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 		}
 		return reqs
 	}
+	sessions := false
 	for name, setup := range map[string]func(*cluster.DeploymentConfig, *Options){
 		"colocated": func(*cluster.DeploymentConfig, *Options) {},
+		"sessions":  func(*cluster.DeploymentConfig, *Options) { sessions = true },
 		"dp-lockstep": func(d *cluster.DeploymentConfig, _ *Options) {
 			*d = testDeployment(4)
 			d.DPLockstepRanks = 2
@@ -176,9 +179,26 @@ func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 				reqs := burstsWithDeadlines()
 				dep := testDeployment(3)
 				opts := Options{Model: "test-model", EPPFlags: DefaultEPPFlags()}
+				sessions = false
 				setup(&dep, &opts)
 				editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(4, 2048, 0) })
-				cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
+				var onDone func(*sim.Request, int64) []*sim.Request
+				if sessions {
+					// Each completed first round sends one follow-up after a 7 s think time, with
+					// the whole context as its prompt and the same far-off deadline.
+					onDone = func(r *sim.Request, now int64) []*sim.Request {
+						if r.State != sim.StateCompleted || strings.HasSuffix(r.ID, "_r2") {
+							return nil
+						}
+						next := &sim.Request{ID: r.ID + "_r2", ArrivalTime: now + 7_000_000,
+							InputTokens:  append(append([]sim.TokenID{}, r.InputTokens...), r.OutputTokens...),
+							OutputTokens: r.OutputTokens[:16], State: sim.StateQueued}
+						next.Deadline = next.ArrivalTime + 200_000_000
+						reqs = append(reqs, next)
+						return []*sim.Request{next}
+					}
+				}
+				cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), onDone)
 				gw := New(opts)
 				gw.neverSkipIdle = neverSkip
 				var o outcome
@@ -186,8 +206,8 @@ func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 					switch kind {
 					case "scrape":
 						o.scrapes++
-					case "kvdeliver":
-						o.kv = append(o.kv, detail)
+					case "kvdeliver", "kvevent", "dispatch", "usage":
+						o.events = append(o.events, kind+" "+detail)
 					}
 				}
 				cs.SetGateway(gw)
@@ -198,18 +218,22 @@ func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 				for _, r := range reqs {
 					o.placed[r.ID] = fmt.Sprintf("%s@%d", r.AssignedInstance, r.GatewayDispatchTime)
 				}
-				m := cs.AggregatedMetrics()
-				o.ttft, o.e2e, o.completed, o.timed = m.RequestTTFTs, m.RequestE2Es, m.CompletedRequests, m.TimedOutRequests
+				o.metrics = *cs.AggregatedMetrics()
 				return o
 			}
 			ff, tick := run(false), run(true)
-			if !reflect.DeepEqual(ff.placed, tick.placed) || !reflect.DeepEqual(ff.ttft, tick.ttft) ||
-				!reflect.DeepEqual(ff.e2e, tick.e2e) || ff.completed != tick.completed || ff.timed != tick.timed ||
-				!reflect.DeepEqual(ff.kv, tick.kv) {
-				t.Fatal("the idle fast-forward changed routing, latency, timeouts or KV-event delivery")
+			if !reflect.DeepEqual(ff.placed, tick.placed) || !reflect.DeepEqual(ff.events, tick.events) {
+				t.Fatal("the idle fast-forward changed routing, dispatch times or the router's event stream")
 			}
-			if ff.completed+ff.timed != 120 || ff.timed == 0 {
-				t.Fatalf("completed %d, timed out %d of 120; want all accounted and some live timeouts", ff.completed, ff.timed)
+			if !reflect.DeepEqual(ff.metrics, tick.metrics) {
+				t.Fatal("the idle fast-forward changed the run's metrics")
+			}
+			want := len(ff.placed) // 120 first rounds, plus the follow-ups of a session run
+			if sessions && want <= 120 {
+				t.Fatal("no session sent a follow-up round")
+			}
+			if done, timed := ff.metrics.CompletedRequests, ff.metrics.TimedOutRequests; done+timed != want || timed == 0 {
+				t.Fatalf("completed %d, timed out %d of %d; want all accounted and some live timeouts", done, timed, want)
 			}
 			// Ticking scrapes every 50 ms through about 95 s of gaps; the fast-forward skips them.
 			if ff.scrapes*4 > tick.scrapes {
