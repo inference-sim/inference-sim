@@ -816,27 +816,6 @@ func TestDisaggregation_TTFT_IncludesTransferAndDecode(t *testing.T) {
 	if verified == 0 {
 		t.Fatal("no completed PD parents found to verify")
 	}
-
-	// BC-3: the aggregate TTFTSum must stay consistent with the per-request RequestTTFTs
-	// after projection — the full-pipeline law that reported mean TTFT (TTFTSum/n, as
-	// surfaced in MetricsOutput) equals the mean of the projected per-request values.
-	// Tolerance is 1.0 (1 µs) rather than 1e-9 because TTFTSum is int64 (truncated per
-	// accumulation) while manualSum accumulates float64 values; rounding is expected.
-	var manualSum float64
-	for _, k := range sortedKeys(m.RequestTTFTs) {
-		manualSum += m.RequestTTFTs[k]
-	}
-	if math.Abs(float64(m.TTFTSum)-manualSum) > 1.0 {
-		t.Errorf("BC-3: TTFTSum (%d) != sum(RequestTTFTs) (%.1f)", m.TTFTSum, manualSum)
-	}
-	// Mean law, stated explicitly: sum/n must match TTFTSum/n within the same rounding.
-	if n := len(m.RequestTTFTs); n > 0 {
-		wantMean := manualSum / float64(n)
-		gotMean := float64(m.TTFTSum) / float64(n)
-		if math.Abs(gotMean-wantMean) > 1.0 {
-			t.Errorf("BC-3: mean TTFT from TTFTSum (%.3f) != mean(RequestTTFTs) (%.3f)", gotMean, wantMean)
-		}
-	}
 }
 
 // TestDisaggregation_TTFT_IncludesDecodeQueueWait verifies BC-2 (issue #1510, defect 2):
@@ -956,7 +935,7 @@ func TestDisaggregation_TTFT_NoSilentDrops(t *testing.T) {
 // the TTFT block in projectPDMetrics (issue #1510). It drives projectPDMetrics directly
 // on stub ParentRequests so each branch's trigger is isolated:
 //   - PRIMARY: prefill TTFT present, decode scheduling delay present, non-empty decode ITL
-//     ⇒ TTFT = decodeDelay + ITL[0], and TTFTSum tracks the delta vs the prefill baseline.
+//     ⇒ TTFT = decodeDelay + ITL[0].
 //   - FALLBACK (prefill-only): prefill TTFT present but decode data unavailable
 //     (missing decode scheduling delay, nil DecodeSubReq, or empty ITL) ⇒ TTFT = prefillTTFT.
 //   - BRANCH C (no entry): completed parent with no prefill TTFT key ⇒ no TTFT entry.
@@ -977,12 +956,6 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 		decodeDelay    int64   // value for the decode scheduling delay
 		wantEntry      bool    // whether a parent-keyed TTFT entry is expected
 		wantTTFT       float64 // expected projected TTFT (when wantEntry)
-		// wantSum is the expected TTFTSum after projection (pre-projection baseline is 0
-		// in these stubs). It is stated explicitly per case rather than derived: the
-		// primary branch applies +（newTTFT − prefillTTFT); a served-token fallback (incl.
-		// the negative-TTFT guard) leaves TTFTSum untouched; and a no-token terminal parent
-		// rolls the deleted prefill TTFT out, applying −prefillTTFT (issue #1511).
-		wantSum int64
 	}{
 		{
 			// PRIMARY: full decode data present ⇒ TTFT = decodeDelay + ITL[0].
@@ -996,7 +969,6 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300
-			wantSum: 4300 - 2500, // primary branch: newTTFT − prefillTTFT = 1800
 		},
 		{
 			// FALLBACK: decode scheduling delay never recorded ⇒ prefill-only.
@@ -1016,8 +988,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 		{
 			// NO-TOKEN: empty decode ITL (timeout-while-queued shape) ⇒ NO entry (#1511).
 			// The decode sub-request is non-nil but never ran a step, so it emitted no
-			// token. The deleted prefill TTFT is rolled out of TTFTSum (wantSum is the
-			// −prefillTTFT rollback delta off this stub's 0 baseline).
+			// token. Its deleted prefill TTFT leaves no sample behind.
 			name: "no-token: empty DecodeSubReq.ITL ⇒ no entry",
 			parent: &ParentRequest{
 				ID: "p2", PrefillSubReqID: "p2_prefill", DecodeSubReqID: "p2_decode",
@@ -1027,11 +998,11 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				DecodeSubReq: &sim.Request{ITL: nil},
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
-			wantEntry: false, wantSum: -int64(prefillTTFT),
+			wantEntry: false,
 		},
 		{
 			// NO-TOKEN: nil DecodeSubReq (decode-side drop) ⇒ NO entry (#1511). The deleted
-			// prefill TTFT is rolled out of TTFTSum (−prefillTTFT off this stub's 0 baseline).
+			// prefill TTFT leaves no sample behind.
 			name: "no-token: nil DecodeSubReq ⇒ no entry",
 			parent: &ParentRequest{
 				ID: "p3", PrefillSubReqID: "p3_prefill", DecodeSubReqID: "p3_decode",
@@ -1041,7 +1012,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				DecodeSubReq: nil,
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
-			wantEntry: false, wantSum: -int64(prefillTTFT),
+			wantEntry: false,
 		},
 		{
 			// BRANCH C: no prefill TTFT key ⇒ no entry (even with full decode data).
@@ -1060,7 +1031,7 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 		{
 			// NEGATIVE-TTFT DEFENSIVE GUARD: a negative decodeDelay (only reachable via a
 			// hypothetical shared-clock regression) makes newTTFT < 0. The guard must fall
-			// back to prefillTTFT with TTFTSum untouched (delta 0), never emit a negative
+			// back to prefillTTFT, never emit a negative
 			// headline metric. This exercises the otherwise-unreachable defensive branch.
 			name: "negative guard: negative decodeDelay ⇒ prefill fallback",
 			parent: &ParentRequest{
@@ -1072,7 +1043,6 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: -5000, // newTTFT = -5000 + 100 = -4900 < 0
 			wantEntry: true, wantTTFT: prefillTTFT,
-			wantSum: 0, // negative guard falls back to prefillTTFT WITHOUT the delta: TTFTSum stays 0
 		},
 		{
 			// TIMED-OUT WITH PARTIAL ITL: a decode sub-request that emitted a first token
@@ -1093,7 +1063,6 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 			},
 			setDecodeDelay: true, decodeDelay: 4000,
 			wantEntry: true, wantTTFT: 4000 + 300, // = 4300, same as a normal primary parent
-			wantSum: 4300 - 2500, // primary branch delta = 1800
 		},
 	}
 
@@ -1122,20 +1091,9 @@ func TestDisaggregation_TTFT_ProjectionBranches(t *testing.T) {
 				if math.Abs(got-tc.wantTTFT) > 1e-9 {
 					t.Errorf("parent %s: TTFT = %.1f, want %.1f", tc.parent.ID, got, tc.wantTTFT)
 				}
-				// TTFTSum after projection: pre-projection baseline is 0 in these stubs.
-				// wantSum is stated explicitly per case (delta applied only when the primary
-				// branch takes the newTTFT path; every fallback — incl. the negative-TTFT
-				// guard — leaves TTFTSum at 0), so it models production exactly rather than
-				// re-deriving it from the input presence.
-				if m.TTFTSum != tc.wantSum {
-					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
-				}
 			} else {
 				if ok {
 					t.Errorf("parent %s: unexpected TTFT entry (no entry expected: no prefill key, or no-token terminal parent #1511)", tc.parent.ID)
-				}
-				if m.TTFTSum != tc.wantSum {
-					t.Errorf("parent %s: TTFTSum = %d, want %d", tc.parent.ID, m.TTFTSum, tc.wantSum)
 				}
 			}
 

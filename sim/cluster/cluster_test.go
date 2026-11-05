@@ -243,9 +243,6 @@ func TestClusterSimulator_MultiInstance_Determinism(t *testing.T) {
 		if m1.TotalOutputTokens != m2.TotalOutputTokens {
 			t.Errorf("instance %d TotalOutputTokens differ: %d vs %d", i, m1.TotalOutputTokens, m2.TotalOutputTokens)
 		}
-		if m1.TTFTSum != m2.TTFTSum {
-			t.Errorf("instance %d TTFTSum differ: %d vs %d", i, m1.TTFTSum, m2.TTFTSum)
-		}
 		if m1.SimEndedTime != m2.SimEndedTime {
 			t.Errorf("instance %d SimEndedTime differ: %d vs %d", i, m1.SimEndedTime, m2.SimEndedTime)
 		}
@@ -389,7 +386,7 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 
 	// Verify per-request map merging
 	var sumRequests, sumTTFTs, sumE2Es, sumITLs, sumAllITLs int
-	var sumTTFTSum, sumITLSum int64
+	var sumITLSum int64
 	for _, inst := range cs.Instances() {
 		m := inst.Metrics()
 		sumRequests += len(m.Requests)
@@ -397,7 +394,6 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 		sumE2Es += len(m.RequestE2Es)
 		sumITLs += len(m.RequestITLs)
 		sumAllITLs += len(m.AllITLs)
-		sumTTFTSum += m.TTFTSum
 		sumITLSum += m.ITLSum
 	}
 	if len(agg.Requests) != sumRequests {
@@ -411,9 +407,6 @@ func TestClusterSimulator_AggregatedMetrics_Correctness(t *testing.T) {
 	}
 	if len(agg.AllITLs) != sumAllITLs {
 		t.Errorf("aggregated len(AllITLs): got %d, want %d (sum)", len(agg.AllITLs), sumAllITLs)
-	}
-	if agg.TTFTSum != sumTTFTSum {
-		t.Errorf("aggregated TTFTSum: got %d, want %d (sum)", agg.TTFTSum, sumTTFTSum)
 	}
 	if agg.ITLSum != sumITLSum {
 		t.Errorf("aggregated ITLSum: got %d, want %d (sum)", agg.ITLSum, sumITLSum)
@@ -904,9 +897,6 @@ func TestClusterSimulator_Determinism_ByteIdenticalAggregation(t *testing.T) {
 	}
 	if m1.SimEndedTime != m2.SimEndedTime {
 		t.Errorf("determinism: SimEndedTime %d vs %d", m1.SimEndedTime, m2.SimEndedTime)
-	}
-	if m1.TTFTSum != m2.TTFTSum {
-		t.Errorf("determinism: TTFTSum %d vs %d", m1.TTFTSum, m2.TTFTSum)
 	}
 	if m1.ITLSum != m2.ITLSum {
 		t.Errorf("determinism: ITLSum %d vs %d", m1.ITLSum, m2.ITLSum)
@@ -1581,8 +1571,8 @@ func TestNewClusterSimulator_NoNodePools_DeterminismPreserved(t *testing.T) {
 	if m1.TimedOutRequests != m2.TimedOutRequests {
 		t.Errorf("TimedOutRequests: run1=%d, run2=%d (INV-6 violation)", m1.TimedOutRequests, m2.TimedOutRequests)
 	}
-	if m1.TTFTSum != m2.TTFTSum {
-		t.Errorf("TTFTSum: run1=%d, run2=%d (INV-6 violation)", m1.TTFTSum, m2.TTFTSum)
+	if !reflect.DeepEqual(m1.RequestTTFTs, m2.RequestTTFTs) {
+		t.Errorf("RequestTTFTs: run1 and run2 differ (INV-6 violation)")
 	}
 	if m1.ITLSum != m2.ITLSum {
 		t.Errorf("ITLSum: run1=%d, run2=%d (INV-6 violation)", m1.ITLSum, m2.ITLSum)
@@ -2134,8 +2124,8 @@ func TestBatchRequestsNotSerialized(t *testing.T) {
 			if base.CompletedRequests != 10 {
 				t.Fatalf("baseline completed %d requests, want 10", base.CompletedRequests)
 			}
-			ttftMean := float64(m.TTFTSum) / float64(m.CompletedRequests)
-			baseMean := float64(base.TTFTSum) / float64(base.CompletedRequests)
+			ttftMean := meanTTFT(m)
+			baseMean := meanTTFT(base)
 			if ttftMean > 1.5*baseMean {
 				t.Errorf("mean TTFT %.0fµs > 1.5x the standard-class baseline %.0fµs: %s requests are being serialized (regression: #965)",
 					ttftMean, baseMean, sloClass)
@@ -2367,4 +2357,14 @@ func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
 			}
 		}
 	}
+}
+
+// meanTTFT is the mean of a run's TTFT samples (DEV-9: every latency statistic is derived from
+// the per-request samples).
+func meanTTFT(m *sim.Metrics) float64 {
+	var sum float64
+	for _, id := range sortedKeys(m.RequestTTFTs) {
+		sum += m.RequestTTFTs[id]
+	}
+	return sum / float64(len(m.RequestTTFTs))
 }

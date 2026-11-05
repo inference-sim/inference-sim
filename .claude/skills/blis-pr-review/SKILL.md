@@ -54,7 +54,7 @@ Default values that differ between paths without justification
 
 Preemption (request evicted from RunningBatch, ProgressIndex reset to 0, re-queued) is the #1 source of metric bugs. For any change that touches:
 
-Per-request metrics (TTFT, ITL, E2E, TotalOutputTokens, TTFTSum)
+Per-request metrics (TTFT, ITL, E2E, TotalOutputTokens)
 Request state transitions (StateQueued, StateRunning, StateCompleted, StateTimedOut)
 Aggregate counters (CompletedRequests, TimedOutRequests)
 

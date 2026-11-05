@@ -30,8 +30,7 @@ type Metrics struct {
 	LengthCappedRequests int     // Requests force-completed at MaxModelLen-1 boundary (proactive cap)
 	TimedOutRequests     int     // Requests cancelled by client timeout
 
-	TTFTSum int64 // Total time-to-first-token sum (in ticks)
-	ITLSum  int64 // Total ITL sum across requests (in ticks)
+	ITLSum int64 // Total ITL sum across requests (in ticks)
 
 	RequestTTFTs            map[string]float64 // list of all requests' TTFT
 	RequestITLs             map[string]float64 // list of all requests' ITL
