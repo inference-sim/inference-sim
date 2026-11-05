@@ -196,6 +196,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64)
 func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, outcome NIXLOutcome) {
 	cs.releasePrefillOnDrop(e.parentReq, outcome, e.time)
 	cs.droppedAtDecodeKV++
+	cs.endRequest(e.parentReq.OriginalRequest, sim.FateDropped, sim.DropDecodeKV, e.time)
 	cs.recordUnserved(e.parentReq.OriginalRequest)
 	cs.parentDone(e.parentReq, e.time, DoneDropped)
 	cs.transfersInitiated++
@@ -365,6 +366,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances at transfer complete — routing invariant violated; KV cannot be released",
 			decodeInstID, e.parentReq.ID)
 		cs.droppedAtDecodeKV++
+		cs.endRequest(e.parentReq.OriginalRequest, sim.FateDropped, sim.DropDecodeKV, e.time)
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time
@@ -379,6 +381,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 			decodeInstID, e.parentReq.ID)
 		decodeInst.ReleaseReservedKV(decodeSubReq, e.time)
 		cs.droppedAtDecodeKV++
+		cs.endRequest(e.parentReq.OriginalRequest, sim.FateDropped, sim.DropDecodeKV, e.time)
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time

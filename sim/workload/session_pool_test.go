@@ -303,3 +303,52 @@ func TestSessionPool_OnUnserved_EvictedCancelsAndRefills(t *testing.T) {
 		t.Errorf("CancelledSessions = %d, want 1 (evicted s0 cancelled)", got)
 	}
 }
+
+// #1483: a refill pushed by a termination near the horizon and discarded by the cluster's
+// horizon guard is not a started session. The fate ledger gives it not_started, and
+// ArrivedSessions does not count it. Pool of 1, two sessions: the first completes, the second is
+// pushed at a tick the horizon has passed.
+func TestSessionPool_RefillPastTheHorizonIsNotStarted(t *testing.T) {
+	var bps []SessionBlueprint
+	var r0s []*sim.Request
+	for i := 0; i < 2; i++ {
+		bp, r := makeBP(fmt.Sprintf("s%d", i), int64(i))
+		bps = append(bps, bp)
+		r0s = append(r0s, r)
+	}
+	d, initial, err := BuildSessionPool(bps, r0s, 1, 2, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fates := sim.NewFateLedger()
+	end := func(r *sim.Request, f sim.Fate, at int64) {
+		t.Helper()
+		if err := fates.Create(r.ID); err != nil {
+			t.Fatal(err)
+		}
+		if f != sim.FateNotStarted {
+			if err := fates.Arrive(r.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := fates.End(r.ID, f, "", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first := initial[0]
+	end(first, sim.FateCompleted, 1000)
+	first.State = sim.StateCompleted
+	first.ProgressIndex = int64(first.InputLen())
+	refill := d.OnComplete(first, 1000)
+	if len(refill) != 1 {
+		t.Fatalf("premise: the termination admits the second session (got %d)", len(refill))
+	}
+	// The horizon is before the refill's arrival: the cluster never runs it.
+	end(refill[0], sim.FateNotStarted, 900)
+	if d.Unstarted() != 0 {
+		t.Errorf("Unstarted() = %d, want 0: both sessions were pushed", d.Unstarted())
+	}
+	if got := d.ArrivedSessions(fates); got != 1 {
+		t.Errorf("ArrivedSessions = %d, want 1: the refill past the horizon never arrived", got)
+	}
+}

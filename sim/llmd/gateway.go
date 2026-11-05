@@ -503,7 +503,11 @@ func (g *Gateway) Stop() {
 		return
 	}
 	for _, id := range g.sortedFlights() {
-		g.flights[id].cancel()
+		// A flight still on its way to the router (the gateway latency) has no context yet:
+		// nothing of it runs in the router to end (#2002).
+		if f := g.flights[id]; f.cancel != nil {
+			f.cancel()
+		}
 	}
 	g.cancel()
 	if g.router != nil {

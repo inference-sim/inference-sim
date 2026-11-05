@@ -247,6 +247,8 @@ func (cs *ClusterSimulator) Reject(req *sim.Request, why Rejection, reason strin
 	default:
 		panic(fmt.Sprintf("ClusterSimulator.Reject: unknown rejection %d", why))
 	}
+	f, dropReason := rejectionFate(why)
+	cs.endRequest(req, f, dropReason, cs.clock)
 	cs.recordRejection(req, why, reason)
 	cs.recordUnserved(req) // measured failed_requests and closed-loop drivers (#1938, #1937)
 	if why == RejectedUnservable && cs.sessionCallback != nil {
@@ -270,6 +272,7 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 			return false
 		}
 		cs.gatewayEvicted++
+		cs.endRequest(req, sim.FateDropped, sim.DropGatewayEvicted, cs.clock)
 		cs.recordShed(req)
 		cs.recordUnserved(req)
 		cs.parentDone(parent, cs.clock, DoneEvicted)
@@ -281,6 +284,7 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 	}
 	cs.releaseInFlight(req.AssignedInstance)
 	cs.gatewayEvicted++
+	cs.endRequest(req, sim.FateDropped, sim.DropGatewayEvicted, cs.clock)
 	cs.recordShed(req)
 	cs.recordUnserved(req)
 	cs.gateway.OnDone(req, cs.clock, DoneEvicted)
@@ -415,7 +419,8 @@ func (cs *ClusterSimulator) parentOf(req *sim.Request) *ParentRequest {
 	return nil
 }
 
-// parentDone reports the end of a disaggregated request to the gateway.
+// parentDone reports the end of a disaggregated request to the gateway. Its caller has written
+// the request's fate first (endRequest).
 func (cs *ClusterSimulator) parentDone(parent *ParentRequest, at int64, outcome DoneOutcome) {
 	if parent == nil || parent.OriginalRequest == nil || parent.gatewayDone {
 		return

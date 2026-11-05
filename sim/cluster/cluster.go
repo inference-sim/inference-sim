@@ -49,7 +49,13 @@ type ClusterSimulator struct {
 	// arrival gate), each once: a drain redirect re-arrives a request and is not counted again.
 	// It is observed independently of INV-1's terminal buckets, so generated == arrivals and
 	// injected == arrivals - rejected can be checked against their sum (#1871).
-	arrivals         int
+	arrivals int
+	// fates is the run's fate ledger (DEV-9, SIM-8): every request created, and the one fate
+	// each ends with. liveRequests are the requests that have arrived and have no fate yet, by
+	// ID; fateErr is the first ledger error, which fails the run.
+	fates            *sim.FateLedger
+	liveRequests     map[string]*sim.Request
+	fateErr          error
 	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	requestSource    RequestSource          // Source of requests to inject as arrival events. Drained once by Run().
 	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -275,6 +281,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		inFlightRequests: make(map[string]int, config.NumInstances),
 		shedByTier:       make(map[string]int),
 		injectedByClass:  make(map[string]int64),
+		fates:            sim.NewFateLedger(),
+		liveRequests:     make(map[string]*sim.Request),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above). The gateway
@@ -523,11 +531,21 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		if parent := cs.parentOf(req); parent != nil {
 			// Decode completions report in detectDecodeCompletions, at parent granularity; a
 			// prefill that does not complete ends its parent here.
-			if !req.IsDecodeSubRequest && req.State != sim.StateCompleted {
+			switch {
+			case !req.IsDecodeSubRequest && req.State != sim.StateCompleted:
+				// Its prefill engine timed it out or could not serve it.
+				cs.endByOutcome(parent.OriginalRequest, doneOutcome(req), sim.DropUnservable, tick)
 				cs.parentDone(parent, tick, doneOutcome(req))
+			case req.IsDecodeSubRequest && doneOutcome(req) == DoneDropped:
+				// Its decode engine failed it before it emitted anything (the decode instance
+				// counts it dropped_unservable); no detector below reports it.
+				cs.endByOutcome(parent.OriginalRequest, DoneDropped, sim.DropUnservable, tick)
+				cs.parentDone(parent, tick, DoneDropped)
 			}
 		} else {
-			cs.gateway.OnDone(req, doneTime(inst, req, tick), doneOutcome(req))
+			at := doneTime(inst, req, tick)
+			cs.endByOutcome(req, doneOutcome(req), sim.DropUnservable, at)
+			cs.gateway.OnDone(req, at, doneOutcome(req))
 		}
 		if cs.sessionCallback == nil {
 			return nil
@@ -580,6 +598,7 @@ func doneOutcome(req *sim.Request) DoneOutcome {
 // coordinator rather than calling pushArrival directly, preserving this method
 // as the single enforcement point. See also issue #1041.
 func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
+	cs.createRequest(req)
 	heap.Push(&cs.clusterEvents, clusterEventEntry{
 		event: &ClusterArrivalEvent{time: timeUs, request: req},
 		seqID: cs.nextSeqID(),
@@ -711,6 +730,7 @@ func (c *ClusterSimulator) Run() error {
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
 	var lastProgress int64
+	stoppedAtHorizon := false
 	for {
 		// Find earliest cluster event time
 		clusterTime := int64(math.MaxInt64)
@@ -769,6 +789,7 @@ func (c *ClusterSimulator) Run() error {
 			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
 			c.clock = entry.event.Timestamp()
 			if c.clock > c.config.Horizon {
+				stoppedAtHorizon = true
 				break
 			}
 			if cb, ok := entry.event.(*CallbackEvent); !ok || !cb.daemon {
@@ -779,6 +800,7 @@ func (c *ClusterSimulator) Run() error {
 			prevClusterClock := c.clock
 			c.clock = instanceTime
 			if c.clock > c.config.Horizon {
+				stoppedAtHorizon = true
 				break
 			}
 			inst := c.instances[instanceIdx]
@@ -804,6 +826,9 @@ func (c *ClusterSimulator) Run() error {
 
 			for i, m := range members {
 				c.afterInstanceEvent(m, before[i])
+				if err := m.StallErr(); err != nil {
+					return fmt.Errorf("instance %s: %w", m.ID(), err)
+				}
 			}
 		}
 
@@ -889,6 +914,18 @@ func (c *ClusterSimulator) Run() error {
 	// (req_N_prefill, req_N_decode). Replace with parent-keyed entries so
 	// user-facing distributions reflect the full request lifecycle.
 	c.projectPDMetrics()
+
+	// DEV-9: the requests the horizon caught take their fate from where they are, and the fates
+	// must account for every request created, in agreement with INV-1's buckets. A run that
+	// drained without reaching its horizon leaves no request without a fate.
+	if stoppedAtHorizon {
+		c.endAtHorizon()
+	} else if err := c.stalled(); err != nil {
+		return err
+	}
+	if err := c.checkFates(); err != nil {
+		return err
+	}
 
 	if n := c.GatewayQueueDepth(); n > 0 {
 		logrus.Warnf("[cluster] %d requests remain in the gateway at simulation end", n)
@@ -1384,6 +1421,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent.CompletionTime = parent.DecodeSubReq.DepartureTime + inst.PostDecodeFixedOverhead()
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
+		c.endRequest(parent.OriginalRequest, sim.FateCompleted, "", parent.CompletionTime)
 		c.parentDone(parent, parent.CompletionTime, DoneCompleted)
 
 		// Issue #884: trigger session follow-up for the original (parent) request.
@@ -1429,6 +1467,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeTimedOutCount++
+		c.endRequest(parent.OriginalRequest, sim.FateTimedOut, "", c.clock)
 		c.parentDone(parent, c.clock, DoneTimedOut)
 
 		if c.sessionCallback != nil {
