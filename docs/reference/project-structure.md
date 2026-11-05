@@ -67,7 +67,7 @@ inference-sim/
 │   └── node_topology.go       # zone/region from explicit Node manifests, overlaid on the simulated placement
 │   └── support.go             # BLIS's signal policy (embed.Config.Allow) and the checks of the router's Requirements against what the simulated engines produce
 ├── sim/workload/              # ServeGen-informed workload generation
-│   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
+│   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, version 1 read as version 2 (UpgradeV1ToV2; the v1 SLO class names were removed in v0.16.0), IsValidSLOClass accessor
 │   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection), Constant (fixed-interval)
 │   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
 │   ├── client.go              # Rate normalization, prefix group management
