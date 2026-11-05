@@ -94,7 +94,10 @@ The hook `docs/hooks/registry.py` reads `registry/` and replaces each directive 
 count. Its module docstring lists the directives. An unknown directive, a set with no
 reference page, or data a table cannot represent exactly fails the build.
 
-Both hooks render only their own section's pages. Their tests run with:
+Both hooks render only their own section's pages. `docs/hooks/test_pages.py` checks every
+page's tables: a run of `|` lines that is not a table, such as a row left between two lines of
+prose, and a row repeated within one table, both fail. The hooks' tests and this one run
+with:
 
 ```sh
 DOCS_RELEASE=main python3 -m pytest docs/hooks -q
