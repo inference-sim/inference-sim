@@ -612,6 +612,9 @@ func parseTraceRecord(row []string, hasSLOTarget bool, adapterIdx, thinkTimeUsId
 	if err := check.DurationUs("deadline_us", deadlineUs); err != nil {
 		return nil, rowError(requestID, err)
 	}
+	// The string columns before deadline_us are read here, before slo_target_us moves the offset:
+	// slo_target_us sits after deadline_us, so it shifts only the columns after it.
+	sessionID, prefixGroup, model := row[4+offset], row[6+offset], row[16+offset]
 	// Parse optional slo_target_us (appears after deadline_us when present)
 	var sloTargetUs int64
 	if hasSLOTarget {
@@ -720,9 +723,9 @@ func parseTraceRecord(row []string, hasSLOTarget bool, adapterIdx, thinkTimeUsId
 		ClientID:          row[1],
 		TenantID:          row[2],
 		SLOClass:          row[3],
-		SessionID:         row[4+offset],
+		SessionID:         sessionID,
 		RoundIndex:        roundIndex,
-		PrefixGroup:       row[6+offset],
+		PrefixGroup:       prefixGroup,
 		PrefixLength:      prefixLength,
 		Streaming:         streaming,
 		InputTokens:       inputTokens,
@@ -732,7 +735,7 @@ func parseTraceRecord(row []string, hasSLOTarget bool, adapterIdx, thinkTimeUsId
 		AudioTokens:       audioTokens,
 		VideoTokens:       videoTokens,
 		ReasonRatio:       reasonRatio,
-		Model:             row[16+offset],
+		Model:             model,
 		DeadlineUs:        deadlineUs,
 		SLOTargetUs:       sloTargetUs,
 		ServerInputTokens: serverInputTokens,

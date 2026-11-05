@@ -76,6 +76,42 @@ spec:
 `, app)
 }
 
+// sim11SLODeadline is the router a request's SLO target is read under: flow control ordering its
+// queue by slo-deadline-ordering-policy, which reads the target as x-llm-d-slo-ttft-ms, behind a
+// concurrency detector that admits four requests at a time, so the fixture's 120 requests queue
+// at the gateway and the ordering decides who waits.
+func sim11SLODeadline(h *workload.TraceHeader, _ []workload.TraceRecord) {
+	h.Router = &workload.TraceRouterConfig{EPPFlags: []string{"--endpoint-selector=llm-d.ai/inference-serving=true",
+		"--endpoint-target-ports=8000", "--config-text=" + sim11SLODeadlineConfig}}
+}
+
+const sim11SLODeadlineConfig = `apiVersion: llm-d.ai/v1
+kind: EndpointPickerConfig
+featureGates:
+- flowControl
+plugins:
+- type: queue-scorer
+- type: max-score-picker
+- type: single-profile-handler
+- type: global-strict-fairness-policy
+- type: slo-deadline-ordering-policy
+- type: concurrency-detector
+  parameters:
+    maxConcurrency: 4
+schedulingProfiles:
+- name: default
+  plugins:
+  - pluginRef: queue-scorer
+  - pluginRef: max-score-picker
+flowControl:
+  saturationDetector:
+    pluginRef: concurrency-detector
+  priorityBands:
+  - priority: 0
+    fairnessPolicyRef: global-strict-fairness-policy
+    orderingPolicyRef: slo-deadline-ordering-policy
+`
+
 // sim11Precise is the router a field the precise prefix producer alone reads is toggled under:
 // llm-d's KV-events configuration (testdata/epp/precise.yaml), with prefix groups so that its
 // scorer separates the endpoints.
@@ -103,6 +139,8 @@ func sim11Precise(t *testing.T, speculative bool) func(*workload.TraceHeader, []
 // consumed field is toggled from the fixture's value under the configuration that reads it, and
 // the Result of that replay is compared with the Result of the configuration's own baseline. A
 // consumed field this test does not toggle fails it, so the table and the test cannot drift.
+// Record.SLOTargetUs is toggled under the slo-deadline router, the one configuration that reads
+// it, which the test checks queues at the gateway.
 //
 // Not toggled here, each for a stated reason:
 //   - Header.KVOffload, and every field of TraceKVOffloadConfig and TraceKVOffloadTier: the block
@@ -128,11 +166,12 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	// The configurations a field is read under, each applied to sim11Trace's fixture; "plain" is
 	// the fixture itself.
 	bases := map[string]mutate{
-		"plain":       func(*workload.TraceHeader, []workload.TraceRecord) {},
-		"precise":     precise,
-		"events-only": eventsOnly,
-		"pool":        sim11Pool,
-		"lengths":     func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].PrefixLength, r[1].PrefixLength = 64, 64 },
+		"plain":        func(*workload.TraceHeader, []workload.TraceRecord) {},
+		"precise":      precise,
+		"events-only":  eventsOnly,
+		"pool":         sim11Pool,
+		"lengths":      func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].PrefixLength, r[1].PrefixLength = 64, 64 },
+		"slo-deadline": sim11SLODeadline,
 		"goodput": func(h *workload.TraceHeader, _ []workload.TraceRecord) {
 			h.GoodputSLOTargets = map[string]workload.SLODimTargets{"critical": {TTFTMs: 5}, "standard": {TTFTMs: 5}}
 		},
@@ -170,7 +209,12 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 		"TraceRecord.OutputTokens": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].OutputTokens = 90 }},
 		"TraceRecord.Model":        {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].Model = "other" }},
 		"TraceRecord.DeadlineUs":   {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].DeadlineUs = 100 }},
-		"TraceRecord.SLOTargetUs":  {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].SLOTargetUs = 1000 }},
+		// Every other request has a 1 ms TTFT target, so the slo-deadline queue serves them first.
+		"TraceRecord.SLOTargetUs": {"slo-deadline", func(_ *workload.TraceHeader, r []workload.TraceRecord) {
+			for i := 1; i < len(r); i += 2 {
+				r[i].SLOTargetUs = 1000
+			}
+		}},
 		// #1308: a server-reported prompt length is the one the simulation uses.
 		"TraceRecord.ServerInputTokens": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].ServerInputTokens = 900 }},
 		"TraceRecord.ArrivalTimeUs": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) {
@@ -200,7 +244,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	sort.Strings(consumed)
 
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
-	replay := func(muts ...mutate) string {
+	raw := func(muts ...mutate) string {
 		h, r := sim11Trace()
 		for _, m := range muts {
 			m(h, r)
@@ -210,10 +254,16 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 		if err := workload.ExportTraceV2(h, r, hp, dp); err != nil {
 			t.Fatal(err)
 		}
-		return simulated(t, runReplayCaptureStdout(t, []string{"--trace-header", hp, "--trace-data", dp,
+		return runReplayCaptureStdout(t, []string{"--trace-header", hp, "--trace-data", dp,
 			"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t),
 			"--registry", kernelRegistryDir(t), "--defaults-filepath", defaultsPath,
-			"--num-instances", "2", "--horizon", "60000000"}))
+			"--num-instances", "2", "--horizon", "60000000"})
+	}
+	replay := func(muts ...mutate) string { return simulated(t, raw(muts...)) }
+	// Non-vacuity of the slo-deadline base: its requests wait in the gateway's queue, so the
+	// ordering policy, the one reader of an SLO target there, decides something.
+	if d, _ := resultValue(resultDoc(t, raw(bases["slo-deadline"])), "engine.cluster.gateway_queue_delay_mean_ms"); d == nil || d.(float64) <= 0 {
+		t.Fatalf("the slo-deadline base queues nothing at the gateway (mean delay %v): its toggle would be vacuous", d)
 	}
 	baselines := map[string]string{}
 	baseline := func(name string, m mutate) string {

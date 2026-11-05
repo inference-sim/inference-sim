@@ -1542,3 +1542,38 @@ func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
 		t.Fatal("expected strict-parse error for unknown kv_offload sub-key, got nil")
 	}
 }
+
+// TestTraceV2_SLOTargetUs_KeepsTheColumnsBeforeIt: slo_target_us sits after deadline_us, so the
+// columns before it are read where they are. A record with a target keeps its session_id,
+// prefix_group and model through a round trip, and so does a record without one in the same
+// file (the column is in every row once one row carries it). Before this was fixed, the loader
+// read those three one column to the right: session_id took round_index's value, prefix_group
+// prefix_length's, and model deadline_us's. The writer was correct.
+func TestTraceV2_SLOTargetUs_KeepsTheColumnsBeforeIt(t *testing.T) {
+	dir := t.TempDir()
+	headerPath, dataPath := filepath.Join(dir, "h.yaml"), filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, ClientID: "c", TenantID: "t", SLOClass: "critical", SessionID: "s0", PrefixGroup: "g",
+			PrefixLength: 16, Model: "m", DeadlineUs: 900000, SLOTargetUs: 150000, InputTokens: 30, OutputTokens: 5,
+			ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 1, ClientID: "c", TenantID: "t", SLOClass: "standard", SessionID: "s1", PrefixGroup: "",
+			Model: "", InputTokens: 31, OutputTokens: 6, ArrivalTimeUs: 2000, Status: "ok"},
+	}
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	for i, want := range records {
+		got := loaded.Records[i]
+		if got.SessionID != want.SessionID || got.PrefixGroup != want.PrefixGroup || got.Model != want.Model ||
+			got.SLOTargetUs != want.SLOTargetUs || got.DeadlineUs != want.DeadlineUs || got.Status != want.Status {
+			t.Errorf("record %d: session %q prefix %q model %q slo %d deadline %d status %q; want %q %q %q %d %d %q", i,
+				got.SessionID, got.PrefixGroup, got.Model, got.SLOTargetUs, got.DeadlineUs, got.Status,
+				want.SessionID, want.PrefixGroup, want.Model, want.SLOTargetUs, want.DeadlineUs, want.Status)
+		}
+	}
+}
