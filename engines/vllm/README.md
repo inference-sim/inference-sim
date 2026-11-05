@@ -61,13 +61,24 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   `python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json`, which
   fails while a name vLLM reads has no entry, an entry names a field vLLM does not have, or a
   dynamic read is unlisted.
+- **The Rust front end is scanned** because `VLLM_USE_RUST_FRONTEND=1` selects it on any platform,
+  CUDA included (`vllm/entrypoints/cli/serve.py`, `vllm/envs.py`), and it runs in the serving
+  process. Eighteen variables are read there; the ones read nowhere else are `RUST_LOG`,
+  `TOKIO_WORKER_THREADS`, the `VLLM_RS_*` thread and tokenizer settings, and the Hugging Face
+  cache, offline and token variables, which also change what a run loads.
 - **Status, evidence and estimation** are in `fields/status.json`, edited by hand. A field is
   `modelled` only with VLM-3's evidence: an oracle trace that sets it and that the port
   reproduces, or a test that sets it and checks the result against vLLM's own. A field the port
   does not read, or reads without such evidence, is `not_modelled` and cites an open issue
   (X28). The first version was seeded from accuracy-dashboard's `vllm_arg_policy.yaml`, as
   release plan §3.3 says: "Fields that table marked inert are entered as 'inert, unproven'."
-  Estimation rules start from accuracy-dashboard discussion #33.
+  Estimation rules start from accuracy-dashboard discussion #33. `leave_unset` means the engine
+  resolves the upstream's default (X19), so a rule is `leave_unset` only where blis-vllm resolves
+  it for every value: `max_num_seqs` and `max_num_batched_tokens`, by `ResolveBatch` in
+  `core/vllm/batchdefaults.go`. `block_size` is `none`: the engine resolves an unstated one only
+  for the models, GPUs and KV dtypes in `oracle/blocksize/TABLE.tsv` (`ResolveBlockSize` in
+  `core/vllm/blocksize.go`) and refuses the rest, citing blis-vllm#68, and a field has one
+  estimation rule, which cannot say that.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
   other checks are M2 work and are not here yet: the inertness proofs that turn each
   `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every
