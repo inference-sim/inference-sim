@@ -45,7 +45,7 @@ func (sim *EngineCore) AdmitRemoteKV(waiting []*Request) []RemoteKVAdmission {
 // scheduling_policy: under priority, by (priority, arrival, request id)
 // (vllm/v1/core/sched/request_queue.py:202-205@5df63a72, Request.__lt__ in
 // vllm/v1/request.py:357-367@5df63a72), so a priority decode pool admits pulls in another order.
-// That parity is https://github.com/inference-sim/blis-vllm/issues/30.
+// The divergence ends when compat/ is removed: https://github.com/inference-sim/inference-sim/issues/2027.
 func (sim *EngineCore) remoteKVOrder(waiting []*Request) []*Request { return waiting }
 
 // notePullInFlight records an admitted pull's first-step blocks as in flight.

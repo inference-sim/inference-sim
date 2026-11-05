@@ -95,9 +95,9 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 		}
 	}
 	if !trimmedAny {
-		// The kernel's adaptive budget (blis-latency-kernel#89) has not landed: it verifies every
-		// draft at the recipe's acceptance, so there is no trimmed price to compare.
-		t.Skip("the kernel verifies every scheduled draft under adaptive verification: no trimmed budget to price yet")
+		// The kernel prices the adaptive budget (blis-latency-kernel#89, closed), so a run that
+		// trims nothing means the budget stopped reaching the engine.
+		t.Error("the kernel verified every scheduled draft under adaptive verification: no trimmed budget was priced")
 	}
 }
 

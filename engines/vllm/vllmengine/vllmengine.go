@@ -128,11 +128,13 @@ func open(s engine.Spec) (pool, error) {
 		role: m.Role(), connector: shape.PDConnector, offload: off}, nil
 }
 
-// offloadIssue tracks the offload hierarchies the engine does not model; secondaryTierIssue the
-// tiers below the CPU one.
+// offloadIssue tracks the offload connectors and options the engine does not model (the tier-4
+// connector and offload work); secondaryTierIssue the tiers below the CPU one; prefetchIssue the
+// deployment's offload description, whose prefetch_depth is not a vLLM setting.
 const (
-	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/14"
+	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/4"
 	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/13"
+	prefetchIssue      = "https://github.com/inference-sim/inference-sim/issues/1910"
 )
 
 // cpuTier is the catalog device class of host DRAM, the OffloadingConnector's CPU tier.
@@ -158,7 +160,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	}
 	if o.PrefetchDepth != 0 {
 		return nil, fmt.Errorf("offload.prefetch_depth %d is not a vLLM setting: the OffloadingConnector loads a hit "+
-			"when the scheduler admits the request (%s)", o.PrefetchDepth, offloadIssue)
+			"when the scheduler admits the request (%s)", o.PrefetchDepth, prefetchIssue)
 	}
 	var cpu int64
 	for i, t := range o.Tiers {

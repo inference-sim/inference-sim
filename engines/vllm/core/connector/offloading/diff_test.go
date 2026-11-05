@@ -905,7 +905,11 @@ func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 		}
 	}
 	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 4, Window: 8}}, TokensPerHash: 4, NumChunks: 4,
-		EagleGroups: []bool{false, true}}); err == nil || !strings.Contains(err.Error(), "issues/14") {
-		t.Errorf("a drafter's own group: %v, want refused with blis-vllm#14", err)
+		EagleGroups: []bool{false, true}}); err == nil || !strings.Contains(err.Error(), Issue) {
+		t.Errorf("a drafter's own group: %v, want refused with %s", err, Issue)
+	}
+	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err == nil ||
+		!strings.Contains(err.Error(), GroupIssue) {
+		t.Errorf("groups of several block sizes: %v, want refused with %s", err, GroupIssue)
 	}
 }

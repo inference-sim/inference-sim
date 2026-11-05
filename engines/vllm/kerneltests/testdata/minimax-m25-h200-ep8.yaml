@@ -5,13 +5,13 @@
 # sharding, the routed-term split and the all-to-all path are all reachable. Thirty-one
 # of them need nothing more specific than that.
 #
-# It is EP=8 rather than EP=16 because 8 is a width the registry carries an alltoall
-# sweep for on h200 and 16 is not, on any part. A fixture at an unmeasured width cannot
+# It is EP=8 rather than EP=16 because, when it was written, 8 was a width the registry
+# carried an alltoall sweep for on h200 and 16 was not, on any part. A fixture at an unmeasured width cannot
 # build a kernel at all -- groupWidth refuses rather than borrowing a narrower width's
 # floor, which would understate the collective by up to 1.9x -- so every test using one
 # fails for a reason that has nothing to do with what it asserts. The two tests that
-# genuinely need a 16-wide group spanning two nodes keep minimax-m25-h200-ep16.yaml and
-# are skipped against inference-sim/blis-registry#27 until the coefficient exists.
+# genuinely need a 16-wide group spanning two nodes use minimax-m25-h200-ep16.yaml, which
+# the registry has priced since its 16-rank h200 alltoall sweep landed.
 #
 # tp=8 with dp=1 and expert parallelism enabled is a real deployment shape, not a
 # contrivance to reach a measured width: the InferenceX corpus measures it directly

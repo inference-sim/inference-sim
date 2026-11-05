@@ -116,7 +116,7 @@ func TestAdmitRemoteKVLeavesTheFirstStepOfLandedPullsWaitingToRun(t *testing.T) 
 
 // The engine, not its caller, decides the order its waiting pulls are admitted in. The
 // compatibility engine keeps the order the handoffs reached it under every scheduling policy
-// (blis-vllm#30 tracks vLLM's priority order): a later, more urgent request does not overtake.
+// (the divergence from vLLM's priority order ends with compat/, inference-sim#2027): a later, more urgent request does not overtake.
 func TestAdmitRemoteKVKeepsTheArrivalOrderUnderEveryPolicy(t *testing.T) {
 	for _, policy := range []string{"fcfs", "priority-fcfs"} {
 		cfg := engine.SimConfig{

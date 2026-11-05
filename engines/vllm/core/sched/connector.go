@@ -71,7 +71,7 @@ type TransferParams struct {
 }
 
 // Capabilities are the configurations beside which a connector's scheduler side is modelled
-// and diff-tested against vLLM; SetConnector refuses the rest (https://github.com/inference-sim/blis-vllm/issues/34).
+// and diff-tested against vLLM; SetConnector refuses the rest (connectorCapabilityIssue).
 type Capabilities struct {
 	// HybridGroups: several KV cache groups (full attention and sliding windows); the
 	// connector must also be SupportsHMA.

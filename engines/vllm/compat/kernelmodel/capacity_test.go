@@ -261,7 +261,7 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 //
 // End to end BLIS's own pool is smaller, so it admits about 11% fewer tokens (25.5M): the
 // kernel's fixed occupancy leaves about 54.4 GiB, not 61.18, its weights being 48.2 GiB
-// against vLLM's logged 45.8. That gap is the kernel's FixedBytes (blis-latency-kernel#46), not
+// against vLLM's logged 45.8. That gap is the kernel's FixedBytes (blis-latency-kernel#55), not
 // the admission sizing this pins; the test logs it.
 func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 	const (

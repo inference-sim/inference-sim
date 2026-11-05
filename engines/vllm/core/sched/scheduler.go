@@ -326,8 +326,8 @@ func (s *Scheduler) Add(r *Request) error {
 // scheduler.py:170-182). Call before any request is added. A connector is modelled beside
 // what its Capabilities (ConnectorCapabilities) state it is diff-tested beside; one that states
 // none is modelled for one full-attention KV cache group, synchronous scheduling and no
-// drafter. The rest is refused until connectorRefusalIssue lands (docs/feature-matrix.md,
-// "KV connectors and offload").
+// drafter. The rest is refused, citing connectorCapabilityIssue or connectorGroupIssue
+// (docs/feature-matrix.md, "KV connectors and offload").
 func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 	var caps Capabilities
 	if cc, ok := c.(ConnectorCapabilities); ok {
@@ -338,7 +338,7 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 			// vLLM turns the hybrid manager off for a connector that is not SupportsHMA
 			// (vllm/config/vllm.py:2170-2192@5df63a72) and asserts one group (scheduler.py:3045-3050).
 			return fmt.Errorf("sched: a KV connector with %d KV cache groups is not modelled for this connector (%s)",
-				n, connectorRefusalIssue)
+				n, connectorCapabilityIssue)
 		}
 	}
 	for g := 0; g < s.KV.NumGroups(); g++ {
@@ -350,17 +350,17 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 			// backoff floor for it (nixl/base_scheduler.py:379-394) and the per-group transfer
 			// clipping (:262-300). Mamba groups are not modelled at all (blis-vllm#7).
 			return fmt.Errorf("sched: a KV connector beside KV cache group %d (%+v) is not modelled: only full "+
-				"attention and sliding windows at the engine's block size are (%s)", g, spec, connectorRefusalIssue)
+				"attention and sliding windows at the engine's block size are (%s)", g, spec, connectorGroupIssue)
 		}
 	}
 	switch {
 	case (s.cfg.Async || s.cfg.MaxConcurrentBatches > 1) && !caps.ConcurrentBatches:
 		// defer_block_free and requires_kv_delivery (scheduler.py:184-194) apply there.
 		return fmt.Errorf("sched: a KV connector with async scheduling or concurrent batches is not modelled "+
-			"for this connector (%s)", connectorRefusalIssue)
+			"for this connector (%s)", connectorCapabilityIssue)
 	case s.cfg.Spec.NumTokens > 0 && !caps.Drafters:
 		return fmt.Errorf("sched: a KV connector with speculative decoding is not modelled for this connector (%s)",
-			connectorRefusalIssue)
+			connectorCapabilityIssue)
 	}
 	s.connector, s.conf = c, conf
 	// defer_block_free and requires_kv_delivery (scheduler.py:184-194@5df63a72).
@@ -372,8 +372,16 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 	return nil
 }
 
-// connectorRefusalIssue tracks the connector combinations SetConnector refuses.
-const connectorRefusalIssue = "https://github.com/inference-sim/blis-vllm/issues/34"
+// The issues SetConnector's refusals cite. connectorGroupIssue covers a connector beside a KV
+// cache group other than full attention or a sliding window at the engine's block size (Mamba
+// groups, bounded-replay windows, a group of its own block size). connectorCapabilityIssue
+// covers a connector that does not state a capability (hybrid groups, concurrent batches,
+// drafters): both modelled connectors state all three, so it applies to a connector not yet
+// ported, which the tier-4 connector work covers.
+const (
+	connectorGroupIssue      = "https://github.com/inference-sim/blis-vllm/issues/7"
+	connectorCapabilityIssue = "https://github.com/inference-sim/blis-vllm/issues/4"
+)
 
 // Counts is get_request_counts: (running, waiting) (scheduler.py:2608-2610).
 func (s *Scheduler) Counts() (int, int) { return len(s.running), s.waiting.len() + s.holding.len() }

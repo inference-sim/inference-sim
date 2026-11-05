@@ -325,17 +325,17 @@ func resolve(c Config) (settings, error) {
 	if s.offload != nil && s.connector != nil {
 		// Both at once is vLLM's MultiConnector, which is not modelled.
 		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
-			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/14")
+			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/15")
 	}
 	if s.connector != nil && c.DataParallelSize > 1 {
 		// The data-parallel group starts no transfers and holds no handoffs (DPGroup): a P/D pool
 		// at dp > 1 would never pull or release its KV.
 		return settings{}, fmt.Errorf("vllm: kv_transfer with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/44")
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
 	if s.offload != nil && c.DataParallelSize > 1 {
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/14")
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}

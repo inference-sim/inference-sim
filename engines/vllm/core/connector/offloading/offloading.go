@@ -32,8 +32,13 @@ import (
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
-// Issue tracks what this package does not model yet.
-const Issue = "https://github.com/inference-sim/blis-vllm/issues/14"
+// Issue tracks the OffloadingConnector configurations this package does not model yet: the
+// tier-4 connector and offload work. GroupIssue tracks KV cache groups of several block sizes,
+// which are part of the hybrid KV work.
+const (
+	Issue      = "https://github.com/inference-sim/blis-vllm/issues/4"
+	GroupIssue = "https://github.com/inference-sim/blis-vllm/issues/7"
+)
 
 // Group is one KV cache group as the connector sees it (GroupOffloadConfig,
 // offloading/scheduler.py:88-126): its block size, and for a sliding window the window and its
@@ -186,7 +191,7 @@ func New(cfg Config) (*Scheduler, error) {
 		if g.BlockSize != cfg.Groups[0].BlockSize {
 			// Groups of several block sizes reach the partial-tail and mamba-alignment paths
 			// (scheduler.py:155-173, 295-315) the oracle has not run.
-			return nil, fmt.Errorf("offloading: KV cache groups of several block sizes are not modelled (%s)", Issue)
+			return nil, fmt.Errorf("offloading: KV cache groups of several block sizes are not modelled (%s)", GroupIssue)
 		}
 		if g.BlockSize%cfg.TokensPerHash != 0 {
 			return nil, fmt.Errorf("offloading: block size %d is not a multiple of the hash block size %d", g.BlockSize, cfg.TokensPerHash)

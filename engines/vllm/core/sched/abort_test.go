@@ -154,9 +154,16 @@ func TestSetConnectorRefusesWhatItDoesNotModel(t *testing.T) {
 		switch {
 		case c.want == "" && err != nil:
 			t.Errorf("%s: refused: %v", c.name, err)
-		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want) ||
-			!strings.Contains(err.Error(), "https://github.com/inference-sim/blis-vllm/issues/34")):
-			t.Errorf("%s: %v, want a refusal naming %q and blis-vllm#34", c.name, err, c.want)
+		case c.want != "":
+			// A group kind the connector oracle has not run is #7's; a capability a connector
+			// does not state is the tier-4 connector work, #4.
+			issue := connectorCapabilityIssue
+			if c.want == "is not modelled" {
+				issue = connectorGroupIssue
+			}
+			if err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), issue) {
+				t.Errorf("%s: %v, want a refusal naming %q and %s", c.name, err, c.want, issue)
+			}
 		}
 	}
 }
