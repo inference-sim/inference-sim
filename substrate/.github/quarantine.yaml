@@ -24,9 +24,8 @@
     26cad6ccbdaa) answer 404
 - test: test_marlin_nvfp4_grouped_ramp_reproduces_from_operatorx
   package: registry/validator/test_operatorx.py
-  issue: inference-sim/blis-registry#57
+  issue: inference-sim/blis-substrate#11
   expires: 2026-12-05
   reason: >-
     fit_marlin_nvfp4_grouped_ramp.py refuses; the OperatorX MoE MiniMax-M3 response its
-    entries cite (sha256 ea8fb4078168) is no longer served. #57 owns the rederive gate's
-    unrunnable tests until an issue of this test's own is filed
+    entries cite (sha256 ea8fb4078168) is no longer served
