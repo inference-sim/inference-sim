@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
-	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 )
 
 // populate sets every settable field of v, recursively, to a non-zero value, so a conversion that

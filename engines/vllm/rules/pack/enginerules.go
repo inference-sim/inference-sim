@@ -5,7 +5,7 @@ package pack
 import (
 	"sort"
 
-	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
 )
 
 var _ rules.EngineRules = (*Pack)(nil)

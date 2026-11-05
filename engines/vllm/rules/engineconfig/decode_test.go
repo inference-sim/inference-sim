@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,10 +91,10 @@ func TestDecodeRefusesAnUnknownKey(t *testing.T) {
 	}
 }
 
-// engineconfig imports only blis-schemas and yaml.v3 beside the standard library: a cost
+// engineconfig imports only blis-substrate's contracts/ and yaml.v3 beside the standard library: a cost
 // model reads it, and the rules packs build on it, so it may import neither a pack nor a cost
 // model.
-func TestEngineconfigImportsOnlyBlisSchemasAndYAML(t *testing.T) {
+func TestEngineconfigImportsOnlyContractsAndYAML(t *testing.T) {
 	pkg, err := build.ImportDir(".", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestEngineconfigImportsOnlyBlisSchemasAndYAML(t *testing.T) {
 		if !strings.Contains(imp, ".") {
 			continue // the standard library
 		}
-		if !strings.HasPrefix(imp, "github.com/inference-sim/blis-schemas/") && imp != "gopkg.in/yaml.v3" {
+		if !strings.HasPrefix(imp, "github.com/inference-sim/blis-substrate/contracts/") && imp != "gopkg.in/yaml.v3" {
 			t.Errorf("engineconfig imports %s", imp)
 		}
 	}

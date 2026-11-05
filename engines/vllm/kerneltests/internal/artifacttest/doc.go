@@ -10,6 +10,6 @@
 // is the only place all three test packages can share one copy.
 //
 // One copy matters here. The first attempt at this fix put the rule in the root package's
-// own test file, which left cmd/shape and cmd/score still turning a corrupt vendored
+// own test file, which left two commands still turning a corrupt pinned
 // catalog into a green "ok" with their assertions silently skipped.
 package artifacttest

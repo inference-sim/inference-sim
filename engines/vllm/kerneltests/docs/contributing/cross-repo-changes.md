@@ -18,11 +18,10 @@ blis-schemas and before inference-sim.
 
 ## When the tests need a newer catalog or registry
 
-Edit the line in `testdata/upstream.lock` (repository, tag, full commit), run
-`scripts/fetch-testdata.sh`, and run `go test ./...`. A renamed chip or coefficient is meant to
-break the fixtures that name it. While the catalog or registry is unreleased, inference-sim
-overlays its own `testdata/upstream-prerelease.lock` instead; the kernel's lock moves to the
-release tags before the kernel merges.
+The catalog and registry are part of blis-substrate, so a newer one is a newer blis-substrate
+pin in `go.mod`, then `go test ./...`. A renamed chip or coefficient is meant to break the
+fixtures that name it. To test against an unreleased catalog or registry, set `BLIS_CATALOG` or
+`BLIS_REGISTRY` to its directory.
 
 ## Evidence a kernel pull request carries
 

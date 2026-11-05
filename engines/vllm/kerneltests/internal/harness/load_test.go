@@ -139,31 +139,30 @@ func TestLoadBundleReportsAMissingFile(t *testing.T) {
 	}
 }
 
-// TestDefaultRootsPointAtTheVendoredCopy is the hermeticity check.
+// TestDefaultRootsAreThePinnedSubstratesData is the hermeticity check.
 //
-// The suite reads a catalog and registry pinned under testdata (fetched by
-// scripts/fetch-testdata.sh). It used to read absolute
-// paths in one developer's home directory and SKIP when that failed, which is how a real
-// incompatibility stayed hidden for the life of a dependency pin. If these defaults ever
-// resolve somewhere else, that silence comes back.
-func TestDefaultRootsPointAtTheVendoredCopy(t *testing.T) {
+// The suite reads the catalog and registry of the blis-substrate release go.mod pins. It used
+// to read absolute paths in one developer's home directory and SKIP when that failed, which is
+// how a real incompatibility stayed hidden for the life of a dependency pin. If these
+// defaults ever resolve somewhere else, that silence comes back.
+func TestDefaultRootsAreThePinnedSubstratesData(t *testing.T) {
 	t.Setenv("BLIS_CATALOG", "")
 	t.Setenv("BLIS_REGISTRY", "")
 
-	for _, c := range []struct{ what, got, wantSuffix, probe string }{
-		{"catalog", DefaultCatalog(), filepath.Join("testdata", "catalog"),
-			filepath.Join("devices", "storage.yaml")},
-		{"registry", DefaultRegistry(), filepath.Join("testdata", "registry"),
+	for _, c := range []struct{ what, got, base, probe string }{
+		{"catalog", DefaultCatalog(), "catalog", filepath.Join("devices", "storage.yaml")},
+		{"registry", DefaultRegistry(), "registry",
 			filepath.Join("coefficients", "cost-model-primitives.yaml")},
 	} {
 		t.Run(c.what, func(t *testing.T) {
-			if !strings.HasSuffix(c.got, c.wantSuffix) {
-				t.Errorf("%s root is %q, want it to end in %q", c.what, c.got, c.wantSuffix)
+			if !strings.Contains(c.got, "github.com/inference-sim/blis-substrate@") ||
+				filepath.Base(c.got) != c.base {
+				t.Errorf("%s root is %q, want the pinned blis-substrate module's %s/", c.what,
+					c.got, c.base)
 			}
 			// Resolving to a path is not enough; the artifacts have to be there.
 			if _, err := os.Stat(filepath.Join(c.got, c.probe)); err != nil {
-				t.Errorf("%s root %q does not hold %s (run scripts/fetch-testdata.sh): %v",
-					c.what, c.got, c.probe, err)
+				t.Errorf("%s root %q does not hold %s: %v", c.what, c.got, c.probe, err)
 			}
 		})
 	}

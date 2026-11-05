@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // Muse-Spark-Open-816B-A42B's KV layers, as vLLM v0.32.0 registers them: 16 full-attention and

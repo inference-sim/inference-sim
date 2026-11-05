@@ -3,8 +3,8 @@ package vllm
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // cpuTier is an OffloadingConnector beside the base block's 64 GPU blocks of 16 tokens: a CPU

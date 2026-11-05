@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
 )
 
 // CUDAGraphCaptureSizes resolves the CUDA graph capture a deployment's stated knobs give,

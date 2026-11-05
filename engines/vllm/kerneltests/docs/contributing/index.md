@@ -7,14 +7,13 @@ still produces a plausible number.</p>
 ## Set up
 
 ```sh
-git clone https://github.com/inference-sim/blis-latency-kernel
-cd blis-latency-kernel
-scripts/fetch-testdata.sh
-go test ./...
+git clone https://github.com/inference-sim/blis-vllm
+cd blis-vllm
+go test ./kerneltests/...
 ```
 
-The fetch script brings in the catalog and registry at the commits the tests are pinned to;
-`testdata/README.md` describes what else is in `testdata/` and why some of it is not
+The tests read the catalog and registry of the blis-substrate release `go.mod` pins, from the
+Go module cache; `testdata/README.md` describes what else is in `testdata/` and why some of it is not
 committed. CI runs the same tests on every pull request, with `gofmt` and `go vet`.
 
 ## Layout

@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-vllm/compat/engine"

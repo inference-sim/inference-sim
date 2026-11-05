@@ -3,10 +3,10 @@
 package harness
 
 import (
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 )
 
 // LoadBundle forwards to blis-schemas' LoadBundle, which is where the reader now lives (the

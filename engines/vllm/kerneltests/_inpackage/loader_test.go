@@ -3,43 +3,24 @@
 package latencykernel
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/artifacttest"
+	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
 	"github.com/inference-sim/blis-vllm/rules/v0_29"
 )
 
-// The catalog and registry are pinned copies under testdata, fetched by
-// scripts/fetch-testdata.sh at the commits testdata/upstream.lock names, so these tests read
-// real artifacts at a known version. See testdata/README.md for what is fetched and why.
-//
-// They are relative paths because a Go test runs with its own package directory as the
-// working directory, and this package is the repository root. Overridable so a working
-// copy can be scored against a live upstream checkout:
-//
-//	BLIS_CATALOG=../blis-catalog go test ./...
-var (
-	catalogRoot  = envOr("BLIS_CATALOG", filepath.Join("testdata", "catalog"))
-	registryRoot = envOr("BLIS_REGISTRY", filepath.Join("testdata", "registry"))
-)
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
+// catalogRoot, registryRoot and envOr are the kernel package's own (loader_test.go there):
+// blis-substrate's catalog/ and registry/, beside the package, which these tests read too.
 
 // fixture builds a kernel from a committed scenario and the real catalog and registry.
 //

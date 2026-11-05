@@ -13,7 +13,7 @@ import (
 	_ "embed"
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/spec/connector"
+	"github.com/inference-sim/blis-substrate/contracts/spec/connector"
 	"gopkg.in/yaml.v3"
 )
 

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )

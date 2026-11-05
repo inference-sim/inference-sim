@@ -3,130 +3,53 @@
 package kernelmodel
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
 )
 
 // The artifact roots a kernel-path command or test reads: the scenario+deployment
-// fixtures, the catalog, the coefficient registry, and the measurement corpora. Each is
-// pinned to the tagged release of the repository that owns it, and none is read from a
-// path outside this repository or the Go module cache:
+// fixtures, the catalog, the coefficient registry, and the measurement corpora. None is read
+// from a path outside this repository, or outside the repository that names itself with
+// SetVendoredRoot:
 //
-//   - Scenarios are blis-latency-kernel's own testdata/aisimulate, read from the module
-//     go.mod pins. The fixtures and the kernel that prices them therefore come from one
-//     revision by construction: bumping the kernel in go.mod moves both.
-//   - The catalog and the registry are verbatim subsets of their tagged releases, vendored
-//     at testdata/catalog and testdata/registry (blis-schemas vendors the catalog the same
-//     way). WHICH releases is not decided here: blis-latency-kernel's testdata/upstream.lock
-//     pins the catalog and registry its fixtures resolve against, it ships in the module,
-//     and TestTheVendoredCatalogAndRegistryAreTheLockedReleases holds the vendored copies to
-//     it. So the go.mod pin decides all three.
-//   - The measurement corpora are third-party publications blis-latency-kernel does not
-//     redistribute, so neither does this repository. BLIS_MEASUREMENTS names them, and the
-//     tests that need them run under the `scoring` build tag.
+//   - Scenarios are the cost model's fixtures under kerneltests/testdata/aisimulate, which
+//     this package's tests price (SetScenarioRoot names another directory).
+//   - The catalog and the registry are verbatim subsets of blis-substrate's catalog/ and
+//     registry/ at the release go.mod pins, vendored at testdata/catalog and
+//     testdata/registry. They go once blis-substrate's loader is released, and the adapter
+//     reads the substrate's embedded data instead.
+//   - The measurement corpora are third-party publications this repository does not
+//     redistribute. BLIS_MEASUREMENTS names them.
 //
-// Every root is overridable by its variable, so a working copy can be scored against live
-// upstream checkouts. An unresolvable root is never a skip: these were once absolute paths
-// under one developer's home directory, and every affected test turned a failed read into
-// a SKIP, so a wrong root was indistinguishable from a passing suite.
+// Every root is overridable by its variable. An unresolvable root is never a skip: these were
+// once absolute paths under one developer's home directory, and every affected test turned a
+// failed read into a SKIP, so a wrong root was indistinguishable from a passing suite.
 const (
 	catalogEnv      = "BLIS_CATALOG"
 	registryEnv     = "BLIS_REGISTRY"
 	scenariosEnv    = "BLIS_SCENARIOS"
 	measurementsEnv = "BLIS_MEASUREMENTS"
-
-	kernelModule = "github.com/inference-sim/blis-latency-kernel"
 )
 
 const measurementsHow = "export BLIS_MEASUREMENTS=<directory holding the AISimulate and " +
-	"InferenceX corpora>\n  (blis-latency-kernel's testdata/README.md says how they are extracted)"
+	"InferenceX corpora>"
 
-// Upstream is one release blis-latency-kernel's testdata/upstream.lock pins.
-type Upstream struct {
-	Repository string // clone URL
-	Tag        string // release tag, for the reader
-	Commit     string // the commit the tag names, which is what is verified
-}
-
-// LockedUpstreams reads blis-latency-kernel's testdata/upstream.lock from the module
-// go.mod pins, keyed by its destination name ("catalog", "registry").
-func LockedUpstreams() (map[string]Upstream, error) {
-	dir, err := kernelModuleDir()
-	if err != nil {
-		return nil, err
-	}
-	return parseLock(filepath.Join(dir, "testdata", "upstream.lock"))
-}
-
-// PrereleaseUpstreams reads this repository's testdata/upstream-prerelease.lock, the same
-// format: upstreams vendored ahead of blis-latency-kernel's lock, at the unreleased commits
-// a pinned kernel pre-release was developed against (Tag names the branch). An absent file
-// is no entries. TestTheVendoredCatalogAndRegistryAreTheLockedReleases lets an entry here
-// stand in for the kernel's only while the two differ, so the file empties once the kernel's
-// lock catches up.
-func PrereleaseUpstreams() (map[string]Upstream, error) {
-	path := filepath.Join(repoRoot(), "testdata", "upstream-prerelease.lock")
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return map[string]Upstream{}, nil
-	}
-	return parseLock(path)
-}
-
-func parseLock(path string) (map[string]Upstream, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	locked := map[string]Upstream{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		f := strings.Fields(line)
-		if len(f) == 0 || strings.HasPrefix(f[0], "#") {
-			continue
-		}
-		if len(f) < 4 {
-			return nil, fmt.Errorf("%s: malformed line %q", path, line)
-		}
-		locked[f[0]] = Upstream{Repository: f[1], Tag: f[2], Commit: f[3]}
-	}
-	return locked, nil
-}
-
-// cloneHow is the command that provides a locked upstream's root as a live checkout.
-func cloneHow(dest, env string) string {
-	locked, err := LockedUpstreams()
-	if err != nil {
-		return fmt.Sprintf("export %s=<clone root> (reading blis-latency-kernel's "+
-			"upstream.lock failed: %v)", env, err)
-	}
-	u, ok := locked[dest]
-	if !ok {
-		return fmt.Sprintf("export %s=<clone root> (blis-latency-kernel's upstream.lock "+
-			"pins no %s)", env, dest)
-	}
-	name := strings.TrimSuffix(filepath.Base(u.Repository), ".git")
-	return fmt.Sprintf("git clone --branch %s --depth 1 %s\n  export %s=$PWD/%s",
-		u.Tag, u.Repository, env, name)
-}
-
-// DefaultCatalog is the blis-catalog root: BLIS_CATALOG when set, else the vendored
+// DefaultCatalog is the catalog root: BLIS_CATALOG when set, else the vendored
 // testdata/catalog.
 func DefaultCatalog() string { return vendored(catalogEnv, "catalog") }
 
-// DefaultRegistry is the blis-registry root: BLIS_REGISTRY when set, else the vendored
+// DefaultRegistry is the registry root: BLIS_REGISTRY when set, else the vendored
 // testdata/registry.
 func DefaultRegistry() string { return vendored(registryEnv, "registry") }
 
-// vendored resolves a root to its variable, else to testdata/<name> in this repository,
-// located from this file's compiled-in path rather than the working directory: tests in
-// several packages and commands under cmd/ each run with a different one.
+// vendored resolves a root to its variable, else to testdata/<name> in the vendoring
+// repository, located from this file's compiled-in path rather than the working directory:
+// tests in several packages and commands under cmd/ each run with a different one.
 func vendored(env, name string) string {
 	if p := os.Getenv(env); p != "" {
 		return p
@@ -134,22 +57,26 @@ func vendored(env, name string) string {
 	return filepath.Join(repoRoot(), "testdata", name)
 }
 
-// vendoredRoot is the repository that vendors the catalog and registry and runs `go list -m`
-// for the kernel module (SetVendoredRoot); empty means this file's own repository.
+// vendoredRoot is the repository that vendors the catalog and registry (SetVendoredRoot);
+// empty means this file's own repository.
 var vendoredRoot string
 
-// SetVendoredRoot names the repository whose testdata/catalog, testdata/registry and
-// testdata/upstream-prerelease.lock are the defaults, and whose go.mod pins the kernel module.
-// A caller that builds this adapter from another module (the simulator, once the adapter
-// lives in blis-vllm) sets it to its own root, once, before opening a kernel.
+// SetVendoredRoot names the repository whose testdata/catalog and testdata/registry are the
+// defaults. A caller that builds this adapter from another module (the simulator) sets it to
+// its own root, once, before opening a kernel.
 func SetVendoredRoot(dir string) { vendoredRoot = dir }
 
 // repoRoot is the vendoring repository: SetVendoredRoot's, else this file's own. self is
-// <repo>/sim/kernelmodel/roots.go.
+// <repo>/compat/kernelmodel/roots.go.
 func repoRoot() string {
 	if vendoredRoot != "" {
 		return vendoredRoot
 	}
+	return ownRoot()
+}
+
+// ownRoot is this file's own repository.
+func ownRoot() string {
 	_, self, _, ok := runtime.Caller(0)
 	if !ok {
 		// Only reachable in a binary built without file information. The working directory
@@ -159,32 +86,29 @@ func repoRoot() string {
 	return filepath.Dir(filepath.Dir(filepath.Dir(self)))
 }
 
-// VendoredCommit is the upstream commit a vendored root was copied from, as recorded in its
-// .upstream-commit stamp.
-func VendoredCommit(root string) (string, error) {
-	raw, err := os.ReadFile(filepath.Join(root, ".upstream-commit"))
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(raw)), nil
-}
+// scenarioRoot is the fixture directory SetScenarioRoot named; empty means this repository's
+// kerneltests/testdata/aisimulate.
+var scenarioRoot string
+
+// SetScenarioRoot names the directory DefaultScenarios returns when BLIS_SCENARIOS is unset.
+// A caller that holds the cost model's fixtures elsewhere (the simulator) sets it once.
+func SetScenarioRoot(dir string) { scenarioRoot = dir }
 
 // DefaultMeasurements is the measurement-corpus directory, or "" when BLIS_MEASUREMENTS
 // is unset.
 func DefaultMeasurements() string { return os.Getenv(measurementsEnv) }
 
 // DefaultScenarios is the directory holding the scenario+deployment fixtures:
-// BLIS_SCENARIOS when set, else testdata/aisimulate inside the blis-latency-kernel module
-// this build pins, or "" when that module cannot be located.
+// BLIS_SCENARIOS when set, else SetScenarioRoot's directory, else this repository's
+// kerneltests/testdata/aisimulate.
 func DefaultScenarios() string {
 	if p := os.Getenv(scenariosEnv); p != "" {
 		return p
 	}
-	dir, err := kernelModuleDir()
-	if err != nil {
-		return ""
+	if scenarioRoot != "" {
+		return scenarioRoot
 	}
-	return filepath.Join(dir, "testdata", "aisimulate")
+	return filepath.Join(ownRoot(), "kerneltests", "testdata", "aisimulate")
 }
 
 // DefaultRepos is the three artifact roots together, with the engine rules, which is how
@@ -198,9 +122,8 @@ func DefaultRepos() Repos {
 }
 
 // RequireRepos checks that every root in r is set and exists, and otherwise returns one
-// error naming each missing root with the commands that provide it. With no variable set
-// only the scenario root can fail -- the catalog and registry are vendored -- so in practice
-// this reports a bad override or a module that has not been downloaded.
+// error naming each missing root with the command that provides it. With no variable set
+// every root is in this repository, so in practice this reports a bad override.
 func RequireRepos(r Repos) error {
 	var errs []error
 	check := func(name, path, how string) {
@@ -213,14 +136,10 @@ func RequireRepos(r Repos) error {
 				name, path, err, how))
 		}
 	}
-	scenariosHow := "the " + kernelModule + " module pinned in go.mod provides them " +
-		"(run `go mod download`), or export " + scenariosEnv + "=<directory>"
-	if _, err := kernelModuleDir(); err != nil && os.Getenv(scenariosEnv) == "" {
-		scenariosHow += fmt.Sprintf("\n  (locating the module failed: %v)", err)
-	}
+	scenariosHow := "export " + scenariosEnv + "=<directory>"
 	check("scenarios", r.Scenarios, scenariosHow)
-	check("catalog", r.Catalog, cloneHow("catalog", catalogEnv))
-	check("registry", r.Registry, cloneHow("registry", registryEnv))
+	check("catalog", r.Catalog, "export "+catalogEnv+"=<a blis-substrate catalog/ directory>")
+	check("registry", r.Registry, "export "+registryEnv+"=<a blis-substrate registry/ directory>")
 	return errors.Join(errs...)
 }
 
@@ -234,36 +153,6 @@ func RequireMeasurements(dir string) error {
 			dir, err, measurementsHow)
 	}
 	return nil
-}
-
-var (
-	moduleDirOnce sync.Once
-	moduleDir     string
-	moduleDirErr  error
-)
-
-// kernelModuleDir is the on-disk directory of the blis-latency-kernel module this build
-// pins, as `go list -m` reports it -- a path in the Go module cache, never a sibling
-// checkout. It runs from this repository's root, so the answer is the go.mod pin whatever
-// the caller's working directory.
-func kernelModuleDir() (string, error) {
-	moduleDirOnce.Do(func() {
-		cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", kernelModule)
-		cmd.Dir = repoRoot()
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		if err != nil {
-			moduleDirErr = fmt.Errorf("go list -m %s: %v: %s", kernelModule, err,
-				strings.TrimSpace(stderr.String()))
-			return
-		}
-		if moduleDir = strings.TrimSpace(string(out)); moduleDir == "" {
-			moduleDirErr = fmt.Errorf("go list -m %s reports no directory; run `go mod download`",
-				kernelModule)
-		}
-	})
-	return moduleDir, moduleDirErr
 }
 
 // MeasurementPath is the path of one measurement corpus under BLIS_MEASUREMENTS, or ""

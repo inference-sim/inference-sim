@@ -5,7 +5,7 @@ package latencykernel_test
 // The Go examples on the documentation site are sections of this file, included between the
 // --8<-- markers. Go runs each Example and compares what it prints with its // Output:
 // comment, so a page cannot show a call that no longer compiles or a number this kernel no
-// longer computes. They read the fetched catalog and registry (scripts/fetch-testdata.sh).
+// longer computes. They read the catalog and registry of the blis-substrate release go.mod pins.
 
 import (
 	"fmt"
@@ -13,10 +13,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -25,8 +26,8 @@ import (
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
 	Scenarios:      "../testdata",
-	Catalog:        "../testdata/catalog",
-	Registry:       "../testdata/registry",
+	Catalog:        harness.DefaultCatalog(),  // blis-substrate's catalog/, at the pinned release
+	Registry:       harness.DefaultRegistry(), // blis-substrate's registry/
 	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
 	RulesVersions:  vllmrules.Versions,
 	EngineSettings: vllmsettings.OfPool,

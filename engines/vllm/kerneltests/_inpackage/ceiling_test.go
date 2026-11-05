@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/vocab"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
-	"github.com/inference-sim/blis-latency-kernel/internal/resolve"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 

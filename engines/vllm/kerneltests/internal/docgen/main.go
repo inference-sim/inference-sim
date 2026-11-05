@@ -12,8 +12,7 @@
 //	go run ./internal/docgen
 //
 // TestGeneratedDocsAreCurrent fails while a committed file differs from what this would write.
-// It needs the fetched catalog and registry (scripts/fetch-testdata.sh), because the figure is
-// priced from them.
+// The figure is priced from the catalog and registry of the blis-substrate release go.mod pins.
 package main
 
 import (
@@ -31,13 +30,17 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
 )
 
-const repoURL = "https://github.com/inference-sim/blis-latency-kernel"
+// repoURL is where the cost model's source lives; the notes link into its kernel/ directory.
+const (
+	repoURL         = "https://github.com/inference-sim/blis-substrate"
+	substrateModule = "github.com/inference-sim/blis-substrate"
+)
 
 func main() {
 	root := repoRoot()
@@ -64,14 +67,19 @@ func main() {
 // docs/generated/ this writes.
 func repoRoot() string { return filepath.Dir(harness.DefaultScenarios()) }
 
-// kernelSource is the kernel module's source, as the go command resolved it for this build: the
-// marked notes are the kernel's, and its go.mod names the pins sources.md lists.
-func kernelSource() (string, error) {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/inference-sim/blis-latency-kernel").Output()
+// kernelSource is the blis-substrate module's source and version, as the go command resolved
+// them for this build: the marked notes are in its kernel/, and its version is the pin
+// sources.md lists.
+func kernelSource() (dir, version string, err error) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}} {{.Version}}", substrateModule).Output()
 	if err != nil {
-		return "", fmt.Errorf("go list -m blis-latency-kernel: %w", err)
+		return "", "", fmt.Errorf("go list -m %s: %w", substrateModule, err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	f := strings.Fields(string(out))
+	if len(f) != 2 {
+		return "", "", fmt.Errorf("go list -m %s printed %q, want a directory and a version", substrateModule, out)
+	}
+	return f[0], f[1], nil
 }
 
 // generate returns every generated file, by name.
@@ -80,15 +88,15 @@ func generate(root string) (map[string][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("step-anatomy.html: %w", err)
 	}
-	kernelDir, err := kernelSource()
+	substrateDir, version, err := kernelSource()
 	if err != nil {
 		return nil, err
 	}
-	div, err := divergences(kernelDir)
+	div, err := divergences(filepath.Join(substrateDir, "kernel"))
 	if err != nil {
 		return nil, fmt.Errorf("divergences.md: %w", err)
 	}
-	src, err := sources(kernelDir, root)
+	src, err := sources(version)
 	if err != nil {
 		return nil, fmt.Errorf("sources.md: %w", err)
 	}
@@ -397,7 +405,7 @@ func divergences(root string) ([]byte, error) {
 		s := summaries[n.key()]
 		fmt.Fprintf(&b, "### %s\n\n", s.title)
 		fmt.Fprintf(&b, "*%s, in `%s` in [`%s`](%s/blob/main/%s).*\n\n",
-			n.heading, n.decl, n.file, repoURL, n.file)
+			n.heading, n.decl, n.file, repoURL, "kernel/"+n.file)
 		fmt.Fprintf(&b, "%s\n\n", s.summary)
 		b.WriteString("??? quote \"The note in the source\"\n")
 		for _, line := range strings.Split(n.text, "\n") {
@@ -526,46 +534,15 @@ func exprString(e ast.Expr) string {
 // ---------------------------------------------------------------------------------------------
 // The pins.
 
-func sources(kernelDir, root string) ([]byte, error) {
-	gomod, err := os.ReadFile(filepath.Join(kernelDir, "go.mod"))
-	if err != nil {
-		return nil, err
-	}
-	required := map[string]string{}
-	for _, line := range strings.Split(string(gomod), "\n") {
-		// Either form: inside a require block, or a single `require` line.
-		f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "require "))
-		if len(f) >= 2 && strings.HasPrefix(f[0], "github.com/inference-sim/") {
-			required[f[0]] = f[1]
-		}
-	}
-	schemas := required["github.com/inference-sim/blis-schemas"]
-	if schemas == "" {
-		return nil, fmt.Errorf("go.mod requires no github.com/inference-sim/blis-schemas")
-	}
-	lock, err := os.ReadFile(filepath.Join(root, "testdata", "upstream.lock"))
-	if err != nil {
-		return nil, err
-	}
+func sources(substrateVersion string) ([]byte, error) {
 	type pin struct{ what, version, commit, where string }
 	pins := []pin{
 		{"Engine behavior: [vLLM](https://github.com/vllm-project/vllm/tree/v" +
 			latencykernel.EngineBehaviourVersion + ")", "v" + latencykernel.EngineBehaviourVersion,
 			latencykernel.EngineBehaviourCommit,
-			"`EngineBehaviourVersion`, `EngineBehaviourCommit` in `new.go`"},
-		{"Interfaces and document types: [blis-schemas](https://github.com/inference-sim/blis-schemas/tree/" +
-			schemas + ")", schemas, "", "`go.mod`"},
-	}
-	names := map[string]string{"catalog": "Declared facts", "registry": "Coefficients"}
-	for _, line := range strings.Split(string(lock), "\n") {
-		f := strings.Fields(line)
-		if len(f) < 5 || strings.HasPrefix(f[0], "#") {
-			continue
-		}
-		repo := strings.TrimPrefix(f[1], "https://github.com/inference-sim/")
-		pins = append(pins, pin{
-			fmt.Sprintf("%s: [%s](%s/tree/%s)", names[f[0]], repo, f[1], f[3]),
-			f[2], f[3], "`testdata/upstream.lock`"})
+			"`EngineBehaviourVersion`, `EngineBehaviourCommit` in `kernel/new.go`"},
+		{"Contracts, catalog, registry and cost model: [blis-substrate](" + repoURL + ")",
+			substrateVersion, "", "`go.mod`"},
 	}
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "<!-- %s -->\n\n", generatedNote)

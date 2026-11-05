@@ -5,12 +5,12 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
-	"github.com/inference-sim/blis-latency-kernel/internal/resolve"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
 
 // These tests are about THIS REPOSITORY'S LOGIC under a changing registry, not about what

@@ -99,6 +99,10 @@ func TestTheMovedPacksAreTheOnesThisKernelReadBefore(t *testing.T) {
 			}
 		}
 		before = bytes.ReplaceAll(bytes.Join(kept, nil), []byte("validate.Problems"), []byte("rules.Problems"))
+		// Undo the substrate move: blis-schemas' packages are blis-substrate's contracts/
+		// packages under the same names (blis-substrate 4eb16d8).
+		before = bytes.ReplaceAll(before, []byte(`"github.com/inference-sim/blis-schemas/`),
+			[]byte(`"github.com/inference-sim/blis-substrate/contracts/`))
 		if !bytes.Equal(before, now) {
 			t.Errorf("%s/pack.go differs from the pack %s shipped, beyond the move's header "+
 				"and import rewrite: a rules change reached this kernel through the move, and "+

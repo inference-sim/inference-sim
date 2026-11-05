@@ -5,10 +5,10 @@ package kernelmodel
 import (
 	"sort"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/vocab"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 )

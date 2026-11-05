@@ -4,36 +4,10 @@ package kernelmodel
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
-
-// The scenario fixtures default to blis-latency-kernel's own testdata/aisimulate, in the
-// module go.mod pins -- not a copy here and not a sibling checkout. That is what makes the
-// fixtures and the kernel pricing them one revision.
-func TestDefaultScenariosAreThePinnedKernelModulesFixtures(t *testing.T) {
-	t.Setenv(scenariosEnv, "")
-	got := DefaultScenarios()
-	if got == "" {
-		_, err := kernelModuleDir()
-		t.Fatalf("the scenario root did not resolve: %v", err)
-	}
-	if out, err := exec.Command("go", "list", "-m", "-f", "{{if .Replace}}{{.Replace.Path}}{{end}}", kernelModule).Output(); err == nil {
-		if r := strings.TrimSpace(string(out)); r != "" && !strings.Contains(r, "@") && strings.HasPrefix(got, filepath.Clean(filepath.Join(repoRoot(), r))) {
-			t.Skipf("go.mod replaces %s with the local checkout %s (a development pin); the "+
-				"module-cache check applies to a released pin", kernelModule, r)
-		}
-	}
-	if !strings.Contains(got, kernelModule+"@") {
-		t.Errorf("scenario root %q is not inside the module cache's %s@<version>", got,
-			kernelModule)
-	}
-	if _, err := os.Stat(filepath.Join(got, "glm-5-h200-fp8-sglang-tp8.yaml")); err != nil {
-		t.Errorf("scenario root %q lacks a fixture this package reads: %v", got, err)
-	}
-}
 
 // The catalog and registry default to the copies vendored in this repository, which exist
 // and are the trees this package reads.
@@ -62,19 +36,15 @@ func TestTheCatalogAndRegistryDefaultToTheVendoredCopies(t *testing.T) {
 
 // An unset root fails naming itself and the command that provides it -- never a skip, and
 // never a bare "no such file" that leaves the reader to work out which repository is
-// meant. The clone command quotes the release blis-latency-kernel's upstream.lock pins.
+// meant.
 func TestRequireReposNamesEachMissingRootAndHowToSetIt(t *testing.T) {
-	locked, err := LockedUpstreams()
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = RequireRepos(Repos{Scenarios: t.TempDir()})
+	err := RequireRepos(Repos{Scenarios: t.TempDir()})
 	if err == nil {
 		t.Fatal("unset catalog and registry roots were accepted")
 	}
 	for _, want := range []string{
-		"catalog root is not set", "--branch " + locked["catalog"].Tag, catalogEnv,
-		"registry root is not set", "--branch " + locked["registry"].Tag, registryEnv,
+		"catalog root is not set", catalogEnv,
+		"registry root is not set", registryEnv,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error does not mention %q:\n%v", want, err)
@@ -87,58 +57,6 @@ func TestRequireReposNamesEachMissingRootAndHowToSetIt(t *testing.T) {
 		!strings.Contains(err.Error(), measurementsEnv) {
 		t.Errorf("an unset measurements root was not reported naming %s: %v",
 			measurementsEnv, err)
-	}
-}
-
-// The vendored catalog and registry must be the releases blis-latency-kernel's lock pins.
-// A copy of another release builds kernels too, and a renamed chip or a refitted
-// coefficient would then show up as a score that moved for no stated reason. Bumping the
-// kernel in go.mod moves the lock, and this fails until the copies are re-vendored.
-// An entry in testdata/upstream-prerelease.lock stands in for the kernel's while a pinned
-// kernel pre-release lags the unreleased upstreams it was developed against; it must name
-// the same repository and a different commit, so it cannot outlive the kernel's catching up.
-func TestTheVendoredCatalogAndRegistryAreTheLockedReleases(t *testing.T) {
-	t.Setenv(catalogEnv, "")
-	t.Setenv(registryEnv, "")
-	locked, err := LockedUpstreams()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pre, err := PrereleaseUpstreams()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pre) > 0 {
-		t.Logf("TEMPORARY testdata/upstream-prerelease.lock: pre-release pins of PR heads; replace with release tags before merge")
-	}
-	for dest, p := range pre {
-		k, ok := locked[dest]
-		switch {
-		case !ok:
-			t.Errorf("upstream-prerelease.lock names %s, which blis-latency-kernel's lock does not", dest)
-		case p.Repository != k.Repository:
-			t.Errorf("upstream-prerelease.lock: %s is %s, the kernel locks %s", dest, p.Repository, k.Repository)
-		case p.Commit == k.Commit:
-			t.Errorf("TEMPORARY upstream-prerelease.lock (pre-release pins of PR heads; replace with release tags before merge) restates the kernel's %s lock (%s); delete the line", dest, k.Commit)
-		}
-		locked[dest] = p
-	}
-	for _, c := range []struct{ dest, root string }{
-		{"catalog", DefaultCatalog()},
-		{"registry", DefaultRegistry()},
-	} {
-		u, ok := locked[c.dest]
-		if !ok {
-			t.Fatalf("blis-latency-kernel's upstream.lock pins no %s", c.dest)
-		}
-		got, err := VendoredCommit(c.root)
-		if err != nil {
-			t.Fatalf("%s: %v", c.dest, err)
-		}
-		if got != u.Commit {
-			t.Errorf("vendored %s is %s; the lock pins %s (%s) -- re-vendor it from that release "+
-				"(testdata/README.md says how)%s", c.dest, got, u.Tag, u.Commit, temporaryNote(pre, c.dest))
-		}
 	}
 }
 
@@ -207,17 +125,9 @@ func TestDefaultReposMatchesTheIndividualRoots(t *testing.T) {
 	}
 }
 
-// temporaryNote marks a lock failure that involves a TEMPORARY pre-release pin.
-func temporaryNote(pre map[string]Upstream, dest string) string {
-	if _, ok := pre[dest]; !ok {
-		return ""
-	}
-	return " [TEMPORARY testdata/upstream-prerelease.lock: pre-release pins of PR heads; replace with release tags before merge]"
-}
-
 // The vendored defaults come from the repository the caller names (SetVendoredRoot), not from
-// wherever this adapter's source lives: once the adapter moves to blis-vllm, its source sits in
-// the Go module cache, which vendors no catalog. With no variable set, DefaultCatalog and
+// wherever this adapter's source lives: built from another module, its source sits in the Go
+// module cache, which vendors no catalog. With no variable set, DefaultCatalog and
 // DefaultRegistry are testdata/catalog and testdata/registry under that root; with none set,
 // they are under this file's own repository.
 func TestTheVendoredDefaultsComeFromTheCallersRoot(t *testing.T) {
@@ -236,5 +146,24 @@ func TestTheVendoredDefaultsComeFromTheCallersRoot(t *testing.T) {
 	SetVendoredRoot("")
 	if got := DefaultCatalog(); got != own {
 		t.Errorf("DefaultCatalog() = %q after SetVendoredRoot(\"\"), want this repository's %q", got, own)
+	}
+}
+
+// The scenario fixtures default to this repository's kerneltests/testdata/aisimulate, and
+// follow SetScenarioRoot.
+func TestDefaultScenariosAreThisRepositorysFixtures(t *testing.T) {
+	t.Setenv(scenariosEnv, "")
+	got := DefaultScenarios()
+	if want := filepath.Join(ownRoot(), "kerneltests", "testdata", "aisimulate"); got != want {
+		t.Errorf("scenario root %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(got, "glm-5-h200-fp8-sglang-tp8.yaml")); err != nil {
+		t.Errorf("scenario root %q lacks a fixture this package reads: %v", got, err)
+	}
+	dir := t.TempDir()
+	SetScenarioRoot(dir)
+	defer SetScenarioRoot("")
+	if got := DefaultScenarios(); got != dir {
+		t.Errorf("DefaultScenarios() = %q under SetScenarioRoot(%q)", got, dir)
 	}
 }

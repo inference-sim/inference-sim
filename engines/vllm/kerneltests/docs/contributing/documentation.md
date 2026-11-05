@@ -39,11 +39,11 @@ the source for detail rather than reproducing it.
 
 ## What keeps the pages correct
 
-All of these run in `go test ./...`, after `scripts/fetch-testdata.sh`.
+All of these run in `go test ./...`.
 
 **Generated files.** blis-vllm's `go run ./kerneltests/internal/docgen` writes this repository's `docs/generated/`: the step figure,
 priced by this kernel; the known divergences, read from the source comments; and the pins,
-read from `go.mod`, `testdata/upstream.lock` and the constants in `new.go`.
+read from `go.mod` and the constants in `kernel/new.go`.
 `TestGeneratedDocsAreCurrent` fails while a committed file differs from what the generator
 would write. A change to pricing therefore moves the figure, and the test says to regenerate
 it.

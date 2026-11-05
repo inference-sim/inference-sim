@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 )
 
 // catalogEnvVar names the environment variable that locates the model catalog, for the

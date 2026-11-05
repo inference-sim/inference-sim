@@ -3,8 +3,6 @@
 __pycache__/
 *.pyc
 
-# The kernel tests' upstream catalog and registry, fetched by kerneltests/scripts/fetch-testdata.sh
-# at the commits kerneltests/testdata/upstream.lock pins, and their measurement corpora.
-/kerneltests/testdata/catalog/
-/kerneltests/testdata/registry/
+# The measurement corpora the kernel tests score against, which this repository does not
+# redistribute (kerneltests/testdata/README.md).
 /kerneltests/testdata/measurements/

@@ -17,9 +17,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # The kernel tests read the catalog and registry at the commits kerneltests/testdata/upstream.lock pins.
-      - name: fetch the kernel tests' catalog and registry
-        run: kerneltests/scripts/fetch-testdata.sh
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
@@ -40,7 +37,7 @@ jobs:
       - name: go test
         run: go test -race -timeout 30m ./...
       # The kernel tests that read the kernel's unexported state run inside the kernel package
-      # this module pins (kerneltests/_inpackage).
+      # of the blis-substrate this module pins (kerneltests/_inpackage).
       - name: kernel tests in the kernel package
         run: kerneltests/scripts/run-inpackage.sh
 

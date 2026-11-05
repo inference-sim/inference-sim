@@ -11,10 +11,10 @@ import (
 	"sort"
 	"strings"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/routing"
-	"github.com/inference-sim/blis-schemas/spec/workload"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 

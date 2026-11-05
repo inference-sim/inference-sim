@@ -2,7 +2,7 @@
 
 package engineconfig
 
-import "github.com/inference-sim/blis-schemas/rules"
+import "github.com/inference-sim/blis-substrate/contracts/rules"
 
 // engineOnly is what the moved tests validated: one pool's engine block, at pools[0], as
 // blis-schemas' deployment validation reported it for a one-pool deployment.

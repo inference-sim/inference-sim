@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 )
 
 const epScenario = "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"

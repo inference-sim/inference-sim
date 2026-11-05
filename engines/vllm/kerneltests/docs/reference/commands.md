@@ -4,8 +4,7 @@
 kernel from a scenario's vLLM engine block, which blis-vllm decodes, so they live with the engine
 model. Two score the kernel against published measurements; three print what the kernel
 computes, for checking it or for use by another tool. Each runs with
-<code>go run ./kerneltests/cmd/&lt;name&gt;</code> from blis-vllm's root, after
-<code>kerneltests/scripts/fetch-testdata.sh</code>.</p>
+<code>go run ./kerneltests/cmd/&lt;name&gt;</code> from blis-vllm's root.</p>
 
 Every command takes `-catalog` and `-registry` to read a catalog or registry other than the
 fetched one; `BLIS_CATALOG` and `BLIS_REGISTRY` set the same defaults for all of them.

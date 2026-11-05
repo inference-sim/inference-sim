@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 )

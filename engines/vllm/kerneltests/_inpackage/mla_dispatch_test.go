@@ -5,10 +5,10 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
 
 // An MLA layer and a full-attention layer are different kernels and must not price

@@ -5,7 +5,7 @@ package pack
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // ModelSequenceParallel evaluates a condition as data, so its meaning is checked over every

@@ -5,7 +5,7 @@ package build
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )

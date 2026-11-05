@@ -3,45 +3,43 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	. "github.com/inference-sim/blis-substrate/kernel"
 
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/internal/substratedata"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/artifacttest"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
 	"github.com/inference-sim/blis-vllm/rules/v0_29"
 )
 
-// The catalog and registry are pinned copies under testdata, fetched by
-// scripts/fetch-testdata.sh at the commits testdata/upstream.lock names, so these tests read
-// real artifacts at a known version. See testdata/README.md for what is fetched and why.
+// The catalog and registry are blis-substrate's catalog/ and registry/ at the release go.mod
+// pins (internal/substratedata), so these tests read the data that release carries.
+// BLIS_CATALOG and BLIS_REGISTRY override them, so a working copy can be tested against a
+// candidate:
 //
-// They are relative paths because a Go test runs with its own package directory as the
-// working directory, and this package is the repository root. Overridable so a working
-// copy can be scored against a live upstream checkout:
-//
-//	BLIS_CATALOG=../blis-catalog go test ./...
-var (
-	catalogRoot  = envOr("BLIS_CATALOG", filepath.Join("testdata", "catalog"))
-	registryRoot = envOr("BLIS_REGISTRY", filepath.Join("testdata", "registry"))
-)
+//	BLIS_REGISTRY=/path/to/candidate/registry go test ./kerneltests/...
+var catalogRoot, registryRoot = mustRoots()
 
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func mustRoots() (catalog, registry string) {
+	var err error
+	if catalog, err = substratedata.Catalog(); err != nil {
+		panic(err)
 	}
-	return fallback
+	if registry, err = substratedata.Registry(); err != nil {
+		panic(err)
+	}
+	return catalog, registry
 }
 
 // fixture builds a kernel from a committed scenario and the real catalog and registry.

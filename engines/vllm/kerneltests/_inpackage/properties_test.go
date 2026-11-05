@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // Properties that must hold for EVERY deployment the catalog can price, checked across a

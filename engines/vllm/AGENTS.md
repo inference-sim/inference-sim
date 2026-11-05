@@ -5,9 +5,9 @@ same rules; they are written here so an agent reads them first.
 
 ## Cross-repository rules (all BLIS repositories)
 
-blis-vllm sits between blis-schemas (and blis-latency-kernel) and inference-sim. A change that
-touches more than one repository follows
-[Changes across the repositories](https://github.com/inference-sim/blis-schemas/blob/main/docs/contributing/cross-repo-changes.md).
+blis-vllm sits between blis-substrate and inference-sim. A change that touches more than one
+repository follows
+[Changes across the repositories](https://github.com/inference-sim/blis-substrate/blob/main/docs/contracts/contributing/cross-repo-changes.md).
 In short:
 
 1. **Public artifacts.** Never write internal project, customer or colleague names in a commit,

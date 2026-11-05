@@ -5,8 +5,8 @@ package kernelmodel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 

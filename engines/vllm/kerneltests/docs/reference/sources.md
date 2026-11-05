@@ -35,9 +35,8 @@ citation before it.
 - **vLLM.** Moving to a newer release is a review of every behavior the kernel encodes, not a
   version bump: each citation must be checked against the new release, and the constants
   `EngineBehaviourVersion` and `EngineBehaviourCommit` in `new.go` changed with them.
-- **blis-schemas.** A Go module dependency: change `go.mod`.
-- **blis-catalog and blis-registry.** Edit `testdata/upstream.lock`, run
-  `scripts/fetch-testdata.sh`, and run `go test ./...`. A renamed chip or coefficient is
-  supposed to break the scenarios that name it.
+- **blis-substrate** (contracts, catalog, registry and cost model). A Go module dependency:
+  change `go.mod`, and run `go test ./...`. A renamed chip or coefficient is supposed to break
+  the scenarios that name it.
 
 After any of these, run `go run ./internal/docgen` so this table and the figures follow.

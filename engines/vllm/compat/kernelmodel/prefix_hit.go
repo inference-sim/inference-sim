@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 

@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
 )

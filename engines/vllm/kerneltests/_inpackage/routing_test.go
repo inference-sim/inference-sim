@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 )
 
 func routingValue(tok, exp float64) *routing.Resolution {

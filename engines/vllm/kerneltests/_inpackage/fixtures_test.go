@@ -34,11 +34,6 @@ func fixturePaths(t *testing.T) []string {
 			// The corpora the fixtures are scored against, not fixtures.
 			case filepath.Join("testdata", "measurements"):
 				return filepath.SkipDir
-			// The pinned upstream copies: chips, fabrics, model graphs and coefficient
-			// sets. They are catalog and registry documents with their own schemas, so
-			// they are not scenario+deployment pairs and must not be held to that shape.
-			case filepath.Join("testdata", "catalog"), filepath.Join("testdata", "registry"):
-				return filepath.SkipDir
 			}
 		}
 		// Both spellings: a fixture written as .yml would otherwise be invisible to every

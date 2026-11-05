@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/artifacttest"
-	"github.com/inference-sim/blis-latency-kernel/internal/resolve"
+	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
+	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
 
 // skipUntilSixteenRankAllToAllExists skips a test that can only be written against a

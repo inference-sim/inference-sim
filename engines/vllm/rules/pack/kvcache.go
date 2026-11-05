@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 )
 
 // KVCachePacking is how a release groups a model's stated caches into KV cache groups

@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/artifacttest"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
 )
