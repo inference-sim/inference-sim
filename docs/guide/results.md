@@ -1,68 +1,115 @@
 # Metrics & Results
 
-`blis run` and `blis replay` print one document to stdout and nothing else: a blis-schemas
-**Result** (`kind: Result`, schema reference: blis-schemas `docs/reference/result.md`). It is
-JSON by default; `--format yaml` prints the same document as YAML; `--output <file>` writes
-the same bytes to a file. The document is validated with blis-schemas' own validator before it
-is printed, and a document that does not validate is a fatal error naming the problem.
-Diagnostics go to stderr.
+`blis run` and `blis replay` print one document to stdout and nothing else: a **Result**
+(`kind: Result`, `schema_version: 2`), the document blis-substrate's `contracts/spec/result`
+defines (`blis schema` prints its JSON Schema). It is JSON by default; `--format yaml` prints the
+same document as YAML; `--output <file>` writes the same bytes to a file. The document is
+checked with contracts' own validator before it is printed, and a document that does not
+validate is a fatal error naming the problem. Diagnostics go to stderr.
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --scenarios testdata/scenarios \
   --num-instances 4 --rate 200 --num-requests 1000 --output result.json
 
 # The same, for a person: the text sections, rendered to stderr from the Result.
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --scenarios testdata/scenarios \
   --num-instances 4 --rate 200 --num-requests 1000 --view summary
 
-# Read a metric
-jq '.metrics.ttft_p99_ms' result.json
+# Read a metric: each is a figure, its value and the samples it is computed over
+jq '.metrics.ttft_p99_ms.value' result.json
 ```
 
 ## The Result document
 
 | Section | What it holds |
 |---|---|
-| `input` | The resolved `scenario` and `deployment`, the run controls under `run` (`load`, `num_requests`, `seed` (`--seed`, which seeds the engines and the router), `horizon_s` (for a replay, the horizon it ran to: `--horizon`, or 2x the trace's last arrival), `workload`: a catalog preset as `shape`, a replayed trace as `trace` pinned by sha256, an agentic replay as `replay`), and a `--policy-config` bundle verbatim under `policy`. |
-| `revisions` | The BLIS build, the blis-schemas, blis-latency-kernel and llm-d router releases it was built against, the engine model, and the catalog and registry git revisions (`-dirty` when the checkout has uncommitted content; `unknown` when it is not a git checkout). |
-| `metric_defs`, `metrics` | Standard-named metrics over the measured `window`, each defined in blis-schemas' measurement vocabulary on the `simulated` clock (below). |
-| `window` | The measured window: requests not in warm-up, first arrival to last completion (or a replay's explicit profiling window). A run in which no measured request completed states its zero rates over the simulated run (`simulation_start` to `simulation_end`). |
-| `requests` | INV-1's ledger: `generated`, `rejected`, `injected` and the eleven terminal buckets, plus `length_capped`. `generated` is the cluster's own arrival count, so blis-schemas' check that `injected` equals the sum of the buckets is not a restatement of a sum. |
-| `goodput` | With SLO targets: the targets, `goodput_rps`, `slo_attainment`, and per class `completed` and `met`. Unlike every other rate, `goodput_rps` is over the whole simulated run (`engine.cluster.simulated_duration_s`), not the measured window, as the results file always computed it. |
+| `engine` | The engine the scenario names: `kind` (`vllm`) and the upstream `version` it runs (`0.32.0`). |
+| `data` | The catalog and registry the run read (design §3.3, SIM-6): for each, `source` (`embedded`, the copy compiled into the pinned blis-substrate, or `path` with `--catalog`/`--registry`), its content `hash`, the `overlays` applied with their hashes, and the `combined_hash`; `released_data` (true only for a tagged build reading both embedded copies with no overlay); and `build`, the release tag or `unreleased`. |
+| `selected_entries` | The catalog and registry entries the run read, each by identity and hash, and the `unread_files` the loader opened but no reader used (VAL-6). |
+| `input` | The resolved `scenario` and `deployment`, and a `--policy-config` bundle verbatim under `policy`. |
+| `frame` | The run's experimental frame (design §8.6, DEV-7): `kind` (`terminating`); `generator` (`workload`: a catalog preset as `shape`, a replayed trace as `trace`, pinned by sha256 and carrying its header, an agentic replay as `replay`; `load`, the offered load; `seed`, the seed the workload's draws used; `rng`, the random-number generator and how its streams are seeded); `initial_state` (every engine's caches start `empty`); `phases` (`warmup`, `measured` with the window's `start` and `stop` rules, `drain`); `stop` (`requests`, the request cap, and `horizon_s`, for a replay the horizon it ran to); `acceptance` (each condition, its threshold, what was observed and whether it was met); and `metrics` (the identifiers of `metrics`). |
+| `revisions` | The `simulator` build, the `substrate`, `router` and `engine_module` (blis-vllm) versions it was built against. |
+| `window` | The measured window, `start_us` to `end_us`: requests not in warm-up, first arrival to last completion (or a replay's explicit profiling window), with its `duration_s` and the `requests` completed in it. A run in which no measured request completed states its zero rates over the simulated run. |
+| `metrics` | Standard metrics over the window, keyed by contracts/metrics registry identifier (below). Each is a figure: its `value` and the `samples` it is computed over. |
+| `requests` | Each generated request's fate (DEV-9): `completed`, `timed_out`, `dropped` (by reason: `admission_rejected`, `routing_rejected`, `gateway_queue_rejected`, `gateway_expired`, `gateway_evicted`, `unservable`, `decode_kv_unavailable`), `in_flight_at_horizon`, `queued_at_horizon`, `not_started`, and `length_capped`. `generated` is the cluster's own count, so the validator's check that the fates sum to it is not a restatement of a sum. |
+| `goodput` | With SLO targets: the targets, and per class `completed` and `met`; `goodput_rps` and `slo_attainment` are in `metrics`. Unlike every other rate, `goodput_rps` is over the whole simulated run (`reports.engine.cluster.simulated_duration_s`), not the measured window, as the results file always computed it. |
 | `breakdowns` | `per_model`, `per_tenant`, `per_adapter` (the run's own metrics over each key's requests), `pd` (the prefill/decode split, in ms), `sessions`. |
-| `engine` | What the engines reported: under `cluster` the step-interval series, preemptions, KV figures, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own figures. |
-| `engine.frame` | The run's experimental frame (design §8.6, DEV-7): `generator` (`kind`: `workload_spec`, `distribution`, `preset`, `concurrency`, `trace` or `agentic_replay`; `source`, the spec's or trace data file's sha256 or the preset's name; the `seed` its draws used; a replay's `session_mode`; and `random`, the random-number generator and how its streams are seeded), `initial_state` (every engine's caches start `empty`), `phases` (the `warmup` rule, the measured window's `measured_start` and `measured_stop`, and the `drain` rule), `stop_rule` (`request_count`, `horizon`, `both` or `exhaustion`, with the cap and the horizon), `acceptance` (the conditions under which the run produces figures, and the requests `unfinished_at_stop`), and `metrics` (the identifiers of `metric_defs`). It is under `engine` because blis-schemas v0.10.0's Result has no frame field; it moves to the contracts Result's own field. |
-| `router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness` (`score`, `components`, `weights`); with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
-| `kernel` | blis-latency-kernel's coefficient provenance per pool role. |
-| `saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
+| `reports.engine` | What the engines reported: under `cluster` the per-step and KV figures, preemptions, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own figures. |
+| `reports.router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness`; with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
+| `reports.kernel` | The cost model's coefficient provenance per pool role. |
+| `reports.saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
 | `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`, `--lazy-generation`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
 | `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
 ### Standard metrics
 
-| Name | Definition (`formula`) |
+Each identifier is a contracts/metrics registry entry (`blis metrics` lists the registry).
+
+| Identifier | Definition |
 |---|---|
-| `ttft_{mean,p50,p90,p95,p99}_ms` | arrival to first output token (`ttft`) |
-| `itl_{mean,p50,p90,p99}_ms` | per request `(latency - ttft) / (output_tokens - 1)`, per **token** (`tpot_excl_first`) |
-| `e2e_{mean,p50,p90,p95,p99}_ms` | arrival to last streamed token (`e2el`) |
-| `interactivity_mean` | mean of `1000 / itl_ms` over requests (`user_tps`) |
-| `interactivity_p50`, `interactivity_p90` | `1000 / itl_p50_ms`, `1000 / itl_p90_ms` (`interactivity`) |
-| `output_tok_s` | output tokens over the window (`output_throughput`, `profiling_window`) |
-| `output_tok_s_per_gpu` | `output_tok_s` over the GPUs the run's instances occupy (`per_gpu`) |
-| `request_throughput` | completed requests over the window (`request_throughput`) |
+| `ttft_{mean,p50,p90,p95,p99}_ms` | arrival to first output token |
+| `tpot_{mean,p50,p90,p99}_ms` | per request `(latency - ttft) / (output_tokens - 1)`: time per output token after the first |
+| `e2e_{mean,p50,p90,p95,p99}_ms` | arrival to last streamed token |
+| `step_interval_{mean,p50,p90,p95,p99}_ms` | the engines' per-decode-step interval, over measured requests completing in the window |
+| `interactivity_mean` | mean of `1000 / tpot_ms` over requests |
+| `interactivity_p50`, `interactivity_p90` | `1000 / tpot_p50_ms`, `1000 / tpot_p90_ms` |
+| `output_tok_s` | output tokens over the window |
+| `output_tok_s_per_gpu` | `output_tok_s` over the GPUs the run's instances occupy |
+| `request_throughput` | completed requests over the window |
+| `goodput_rps`, `slo_attainment` | with SLO targets: requests meeting every target, per second of the simulated run, and as a fraction of completed |
 
 A latency family is stated only when it has a sample: a run that completed nothing states no
-latency rather than a zero. The ITL family needs a request with two or more output tokens;
-`interactivity_p50` and `interactivity_p90` additionally need that percentile of ITL to be
+latency rather than a zero. The TPOT family needs a request with two or more output tokens;
+`interactivity_p50` and `interactivity_p90` additionally need that percentile of TPOT to be
 positive (they are its reciprocal), and `interactivity_mean` needs a request with a positive
-ITL. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are numpy-linear.
+TPOT. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are
+numpy-linear.
 
-`itl_*` is always per token. Under speculative decoding one decode step emits several tokens, so
-the per-decode-step interval (the legacy `itl_*` keys of `MetricsOutput`) is longer by the
-accepted length; it is the engine's `step_interval_*`, never `itl_*`.
+No `itl_*` is reported. The registry's `itl` pools every gap between consecutive tokens, across
+requests, which BLIS does not compute. Schema 1's `itl_*` was the per-request time per output
+token, which schema 2 names `tpot_*`. Under speculative decoding one decode step emits several
+tokens, so `step_interval_*` is longer than `tpot_*` by the accepted length.
+
+### From schema 1 to schema 2
+
+The Result moved from blis-schemas' schema 1 to contracts/spec/result's schema 2. Each schema 1
+member has a schema 2 home, or is listed as dropped with the reason.
+
+| Schema 1 | Schema 2 |
+|---|---|
+| `metric_defs` | dropped: every metric is a contracts/metrics registry identifier, defined once there (`blis metrics`) |
+| `metrics.<id>` (a number) | `metrics.<id>.value`, with `metrics.<id>.samples` |
+| `metrics.itl_{mean,p50,p90,p99}_ms` | `metrics.tpot_*_ms` |
+| `engine.cluster.step_interval_*_ms` | `metrics.step_interval_*_ms`, and still in `reports.engine.cluster` |
+| `goodput.goodput_rps`, `goodput.slo_attainment` | `metrics.goodput_rps`, `metrics.slo_attainment` |
+| `input.run.load` | `frame.generator.load` |
+| `input.run.seed` | `frame.generator.seed` (the seed the workload's draws used; `--seed` when it is not the spec's is an `overrides` row) |
+| `input.run.workload` | `frame.generator.workload` |
+| `input.run.num_requests` | `frame.stop.requests`, the cap as given; a cap below `requests.generated` (closed-loop follow-ups) is an `overrides` row, `num_requests_cap` |
+| `input.run.horizon_s` | `frame.stop.horizon_s` |
+| `engine.frame.*` | `frame.*`: `stop_rule` is `stop`, `generator.random` is `generator.rng`, `phases.measured_start`/`measured_stop` are `phases.measured.start`/`stop`, `acceptance[].unfinished_at_stop` is the condition's `observed` |
+| `engine` (the reports) | `reports.engine` |
+| `router` | `reports.router` |
+| `kernel` | `reports.kernel` |
+| `saturation` | `reports.saturation` |
+| `revisions.blis` | `revisions.simulator` |
+| `revisions.blis_schemas`, `revisions.blis_latency_kernel` | `revisions.substrate` (one module holds both) |
+| `revisions.llm_d_router` | `revisions.router` |
+| `revisions.engine.kind`, `.upstream_version` | `engine.kind`, `engine.version` |
+| `revisions.engine.release` | `revisions.engine_module` |
+| `revisions.catalog`, `revisions.registry` | `data.catalog`, `data.registry`, by content hash and source instead of a git revision |
+| `window.start`, `window.stop` | `frame.phases.measured.start`, `.stop`; the window itself is `window.start_us`, `window.end_us` |
+| `requests.injected` | dropped: the fates of the generated requests sum to `requests.generated` |
+| `requests.rejected` | `requests.dropped.admission_rejected` |
+| `requests.routing_rejections`, `requests.encode_routing_rejections` | `requests.dropped.routing_rejected` |
+| `requests.gateway_queue_rejected`, `gateway_expired`, `gateway_evicted` | `requests.dropped.gateway_queue_rejected`, `.gateway_expired`, `.gateway_evicted` |
+| `requests.dropped_unservable` | `requests.dropped.unservable` |
+| `requests.still_running` | `requests.in_flight_at_horizon` |
+| `requests.still_queued`, `requests.gateway_queue_depth` | `requests.queued_at_horizon` |
+| (none) | `requests.not_started`, `requests.dropped.decode_kv_unavailable`, `selected_entries`, `data.released_data`, `data.build` |
 
 ### Where each `MetricsOutput` field went
 
@@ -73,65 +120,63 @@ document, or is listed here as dropped with the reason.
 <!-- result-field-map -->
 | `MetricsOutput` field | Result home |
 |---|---|
-| `instance_id` | dropped: the document is the cluster's; in a run of more than one instance each instance's own figures are keyed by id under `engine.instances` |
+| `instance_id` | dropped: the document is the cluster's; in a run of more than one instance each instance's own figures are keyed by id under `reports.engine.instances` |
 | `completed_requests` | `requests.completed` |
-| `still_queued` | `requests.still_queued` |
-| `still_running` | `requests.still_running` |
-| `injected_requests` | `requests.injected` |
-| `dropped_unservable` | `requests.dropped_unservable` |
+| `still_queued` | `requests.queued_at_horizon` |
+| `still_running` | `requests.in_flight_at_horizon` |
+| `injected_requests` | `requests.generated` (the fates sum to it) |
+| `dropped_unservable` | `requests.dropped.unservable` |
 | `timed_out_requests` | `requests.timed_out` |
 | `length_capped_requests` | `requests.length_capped` |
-| `total_input_tokens` | `engine.cluster.total_input_tokens` |
-| `total_output_tokens` | `engine.cluster.total_output_tokens` |
-| `vllm_estimated_duration_s` | `engine.cluster.simulated_duration_s` |
-| `responses_per_sec` | `metrics.request_throughput` over the window; whole run `engine.cluster.whole_run.responses_per_sec` |
-| `tokens_per_sec` | `metrics.output_tok_s` over the window; whole run `engine.cluster.whole_run.tokens_per_sec` |
-| `ttft_mean_ms`, `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms` | `metrics.ttft_*_ms` over the window; whole run `engine.cluster.whole_run.ttft_*_ms` |
-| `e2e_mean_ms`, `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms` | `metrics.e2e_*_ms` over the window; whole run `engine.cluster.whole_run.e2e_*_ms` |
-| `itl_mean_ms`, `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms` | per decode step, so `engine.cluster.step_interval_*_ms` (window) and `engine.cluster.whole_run.step_interval_*_ms`; the Result's `itl_*_ms` is per token |
-| `scheduling_delay_p99_ms` | `engine.cluster.scheduling_delay_p99_ms` |
-| `kv_allocation_failures` | `engine.cluster.kv_allocation_failures` |
-| `preemption_count` | `engine.cluster.preemptions` |
-| `cache_hit_rate` | `engine.cluster.cache_hit_rate` (window); `engine.cluster.cache_hit_rate_whole_run` |
+| `total_input_tokens` | `reports.engine.cluster.total_input_tokens` |
+| `total_output_tokens` | `reports.engine.cluster.total_output_tokens` |
+| `vllm_estimated_duration_s` | `reports.engine.cluster.simulated_duration_s` |
+| `responses_per_sec` | `metrics.request_throughput` over the window; whole run `reports.engine.cluster.whole_run.responses_per_sec` |
+| `tokens_per_sec` | `metrics.output_tok_s` over the window; whole run `reports.engine.cluster.whole_run.tokens_per_sec` |
+| `ttft_mean_ms`, `ttft_p90_ms`, `ttft_p95_ms`, `ttft_p99_ms` | `metrics.ttft_*_ms` over the window; whole run `reports.engine.cluster.whole_run.ttft_*_ms` |
+| `e2e_mean_ms`, `e2e_p90_ms`, `e2e_p95_ms`, `e2e_p99_ms` | `metrics.e2e_*_ms` over the window; whole run `reports.engine.cluster.whole_run.e2e_*_ms` |
+| `itl_mean_ms`, `itl_p90_ms`, `itl_p95_ms`, `itl_p99_ms` | per decode step, so `reports.engine.cluster.step_interval_*_ms` (window) and `reports.engine.cluster.whole_run.step_interval_*_ms`; the Result's `tpot_*_ms` is per token |
+| `scheduling_delay_p99_ms` | `reports.engine.cluster.scheduling_delay_p99_ms` |
+| `kv_allocation_failures` | `reports.engine.cluster.kv_allocation_failures` |
+| `preemption_count` | `reports.engine.cluster.preemptions` |
+| `cache_hit_rate` | `reports.engine.cluster.cache_hit_rate` (window); `reports.engine.cluster.cache_hit_rate_whole_run` |
 | `requests` | `artifacts.metrics_file` (the deprecated file's per-request rows, by digest) |
-| `saturation` | `saturation.final` |
-| `goodput_rps`, `slo_attainment` | `goodput.goodput_rps`, `goodput.slo_attainment` |
+| `saturation` | `reports.saturation.final` |
+| `goodput_rps`, `slo_attainment` | `metrics.goodput_rps`, `metrics.slo_attainment` |
 | `per_class` | `goodput.per_class` (`completed`, `met`); the per-class latency summaries are `--view summary`'s Per-SLO section |
-| `adapters` | `engine.cluster.adapters`, and `breakdowns.per_adapter` |
-| `catalog` | `revisions.catalog` (the revision, `-dirty` when uncommitted); the path is dropped: where a catalog sits is a fact of the host, not of the result |
+| `adapters` | `reports.engine.cluster.adapters`, and `breakdowns.per_adapter` |
+| `catalog` | `data.catalog` (its source, content hash and overlays); the path is dropped: where a catalog sits is a fact of the host, not of the result |
 | `overrides` | `overrides` |
-| `agentic` | `engine.cluster.agentic` |
+| `agentic` | `reports.engine.cluster.agentic` |
 | `pd` | `breakdowns.pd` |
-| `server_series` | `engine.cluster.server_series` |
-| `percentile_method` | each percentile's `metric_defs` entry (`percentile_method: numpy_linear`) |
+| `server_series` | `reports.engine.cluster.server_series` |
+| `percentile_method` | the contracts/metrics registry entry of each percentile (numpy-linear) |
 | `ttft_p50_ms`, `e2e_p50_ms` | `metrics.ttft_p50_ms`, `metrics.e2e_p50_ms` |
-| `request_itl_mean_ms`, `request_itl_p50_ms`, `request_itl_p90_ms`, `request_itl_p99_ms` | `metrics.itl_*_ms` |
+| `request_itl_mean_ms`, `request_itl_p50_ms`, `request_itl_p90_ms`, `request_itl_p99_ms` | `metrics.tpot_*_ms` |
 | `interactivity_p50`, `interactivity_p90` | `metrics.interactivity_p50`, `metrics.interactivity_p90` |
 | `output_tok_per_user_mean` | `metrics.interactivity_mean` |
-| `step_interval_mean_ms`, `step_interval_p90_ms`, `step_interval_p99_ms` | `engine.cluster.step_interval_*_ms` (with `p50`, `p95`) |
+| `step_interval_mean_ms`, `step_interval_p90_ms`, `step_interval_p99_ms` | `metrics.step_interval_*_ms` (with `p50`, `p95`) |
 | `output_throughput_tok_s` | `metrics.output_tok_s` |
 | `measured_window_s` | `window.duration_s` |
-| `measured_window_source` | `window.start` and `window.stop` (`first_arrival_after_warmup`/`last_completion` derived, `profiling_start`/`profiling_end` explicit) |
+| `measured_window_source` | `frame.phases.measured.start` and `.stop` (`first_arrival_after_warmup`/`last_completion` derived, `profiling_start`/`profiling_end` explicit) |
 | `measured_completed_requests` | `window.requests` |
-| `cancelled_requests`, `context_overflow_requests`, `failed_requests` | `engine.cluster.measured_cancelled_requests`, `..._context_overflow_requests`, `..._failed_requests` |
-| `cpu_tier_hit_rate` | `engine.cluster.cpu_tier_hit_rate` |
-| `gateway_queue_delay_mean_ms`, `gateway_queue_delay_p90_ms` | `engine.cluster.gateway_queue_delay_*_ms` |
-| `in_flight_requests_mean`, `in_flight_requests_max` | `engine.cluster.in_flight_requests_*` |
-| `kv_capacity_tokens_per_replica` | `engine.cluster.kv_capacity_tokens_per_replica` |
-| `whole_run` | `engine.cluster.whole_run` |
-| `kernel_provenance` | `kernel` |
-| `blis_version`, `kernel_version`, `schemas_version` | `revisions.blis`, `revisions.blis_latency_kernel`, `revisions.blis_schemas` |
-| `acceptance` | `engine.cluster.acceptance` |
-| `prefix_cache` | `engine.<pool role>.prefix_cache` |
+| `cancelled_requests`, `context_overflow_requests`, `failed_requests` | `reports.engine.cluster.measured_cancelled_requests`, `..._context_overflow_requests`, `..._failed_requests` |
+| `cpu_tier_hit_rate` | `reports.engine.cluster.cpu_tier_hit_rate` |
+| `gateway_queue_delay_mean_ms`, `gateway_queue_delay_p90_ms` | `reports.engine.cluster.gateway_queue_delay_*_ms` |
+| `in_flight_requests_mean`, `in_flight_requests_max` | `reports.engine.cluster.in_flight_requests_*` |
+| `kv_capacity_tokens_per_replica` | `reports.engine.cluster.kv_capacity_tokens_per_replica` |
+| `whole_run` | `reports.engine.cluster.whole_run` |
+| `kernel_provenance` | `reports.kernel` |
+| `blis_version`, `kernel_version`, `schemas_version` | `revisions.simulator`, `revisions.substrate` (one module holds the kernel and the schemas) |
+| `acceptance` | `reports.engine.cluster.acceptance` |
+| `prefix_cache` | `reports.engine.<pool role>.prefix_cache` |
 <!-- /result-field-map -->
 
-`input.run.num_requests` is the bound the run kept: `--num-requests` (or the spec's
-`num_requests`). When closed-loop session rounds generated more during the run (they are
-generated on top of the cap, and blis-schemas v0.9.1 states no separate follow-up count), it is
-raised to `requests.generated` and the cap as given is an `overrides` row, `num_requests_cap`;
-an uncapped run in which nothing arrived records 1, the smallest bound the
-schema accepts. A run in which nothing arrived and no `--horizon` bounded simulated time has no
-span to report over and is refused.
+`frame.stop.requests` is the cap as given: `--num-requests` (or the spec's `num_requests`), 0
+for none. When closed-loop session rounds generated more during the run (they are generated on
+top of the cap), `requests.generated` exceeds it and the cap is an `overrides` row,
+`num_requests_cap`. A run in which nothing arrived and no `--horizon` bounded simulated time has
+no span to report over and is refused.
 
 The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,
 sessions, P/D, fitness, trace summary) are what `--view summary` renders to stderr.
@@ -177,7 +222,7 @@ The `--metrics-path` file contains:
 | `length_capped_requests` | count | Requests force-completed at `MaxModelLen` |
 | `timed_out_requests` | count | Requests that exceeded their deadline |
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
-| `catalog` | object | Model-catalog provenance: path, git revision, dirty flag (see [Catalog Provenance](#catalog-provenance)); the Result records the revision under `revisions.catalog` |
+| `catalog` | object | Model-catalog provenance: path, git revision, dirty flag (see [Catalog Provenance](#catalog-provenance)); the Result records the catalog by content hash under `data.catalog` |
 | `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}`; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)); the Result carries the same list under `overrides` |
 | `cache_hit_rate` | fraction | GPU prefix-cache hit rate: prompt hit tokens over prompt query tokens summed across instances, as vLLM counts them (#1904); the measured window's in the file — **file only**; the Result carries the whole run's as `engine.cluster.cache_hit_rate_whole_run` |
 | measured-window keys | — | `ttft_p50_ms`, `request_itl_*`, `interactivity_*`, `step_interval_*`, `output_throughput_tok_s`, … — **file only**; see [Measured-Window Aggregates](#measured-window-aggregates-metrics-path-file) |
@@ -216,7 +261,7 @@ run-wide INV-1 count. Invariants: INV-M1 … INV-M4.
 
 **Comparing a hit rate with aiperf 0.12.0.** Compare aiperf's `server_metrics_export.json`
 `vllm:prefix_cache_hits` / `vllm:prefix_cache_queries` "profiling" totals with the Result's
-`engine.cluster.cache_hit_rate_whole_run`, not with the measured-window `cache_hit_rate`. aiperf takes that
+`reports.engine.cluster.cache_hit_rate_whole_run`, not with the measured-window `cache_hit_rate`. aiperf takes that
 total as last-profiling-scrape minus the scrape before the first PROFILING-tagged scrape
 (`server_metrics/accumulator.py:190-194, 387-401`), and in 0.12.0 a scrape at warmup start
 already carries the PROFILING tag. So the baseline precedes warmup, and the exported total
@@ -286,37 +331,32 @@ A warning on stderr says the same. The Result carries the same list under `overr
 ### Catalog Provenance
 
 The `catalog` field records **which model catalog produced the result** (#1732), so a results
-file is attributable and an *experiment* is distinguishable from a *reproducible run*. It is
-written by both `blis run --metrics-path` and `blis replay --metrics-path`:
+file is attributable. It is written by both `blis run --metrics-path` and
+`blis replay --metrics-path`, and carries the same source and hash as the Result's
+`data.catalog`:
 
 ```json
 {
   "catalog": {
-    "path": "/home/me/blis-catalog",
-    "revision": "63a9a5010a3f0c1d9f6b2e4a7c8d5b1e2f3a4b5c",
+    "path": "embedded",
+    "revision": "<the catalog's combined content hash>",
     "dirty": false
   }
 }
 ```
 
-- `path` — the catalog **clone root** that was located by `--catalog` / `BLIS_CATALOG`,
-  recorded **verbatim as supplied**: a relative value stays relative and an absolute value
-  stays absolute, neither is rewritten. So the field is not categorically CWD-relative — a
-  relative value is only interpretable alongside the working directory the run was launched
-  from, which is a reason to prefer an absolute `--catalog` / `BLIS_CATALOG` when the
-  results file needs to be attributable later.
-- `revision` — the catalog's git commit, or `"unknown"` when the catalog is not a git
-  checkout (a revision is never invented).
-- `dirty` — `true` when the catalog **subtree** has uncommitted or untracked content, i.e.
-  the run used a config the recorded revision does not contain. A catalog inside a larger
-  repository is judged on its own subtree, so an unrelated edit elsewhere in that repository
-  does not mark the run an experiment. `dirty` is always `false` alongside an unknown
-  revision — there is no committed state to differ from.
+- `path` — `embedded` when the run read the catalog embedded in the pinned blis-substrate
+  module, or the directory `--catalog` / `BLIS_CATALOG` named.
+- `revision` — the catalog's combined content hash. A git revision is not recorded: the
+  content hash identifies the data whatever directory holds it.
+- `dirty` — `true` when a `--catalog-overlay` changed the catalog, so the data is not the
+  source's own.
 
 !!! note "In the Result"
-    The Result records the catalog's revision (and `-dirty`) under `revisions.catalog`: a
-    revision is an input of the run, so two runs on catalogs at different revisions are
-    different inputs (INV-6). It never records the path, a fact of the host.
+    The Result records the catalog and registry under `data`: each one's source (`embedded`
+    or `path`), content hash and overlays (SIM-6, X8). The data is an input of the run, so two
+    runs on different data are different inputs (INV-6). It never records the path, a fact of
+    the host.
 
 ### Saturation Detection
 
@@ -329,7 +369,7 @@ tune them with `--saturation-config`, and write the per-event verdict trace with
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --rate 10 --num-requests 100 --detectors all --saturation-report sat.json
 ```
 
@@ -523,7 +563,7 @@ For detailed analysis, save per-request data:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --rate 100 --num-requests 500 --metrics-path metrics.json
 ```
 

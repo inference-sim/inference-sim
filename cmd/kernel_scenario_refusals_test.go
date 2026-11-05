@@ -68,15 +68,15 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 	}{
 		{"two colocated pools", "states 2 colocated pools",
 			run(writeColocatedVariant(t,
-				"  nodes: 1\n  gpus_per_node: 8\n", "  nodes: 2\n  gpus_per_node: 8\n  fabric: ib-400g\n",
-				"      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+secondPool))},
+				"  nodes: 1\n  # gpus_per_node: 8 assumed: the corpus states none; every chip in it is an 8-GPU HGX board.\n  gpus_per_node: 8\n", "  nodes: 2\n  gpus_per_node: 8\n  fabric: ib-400g\n",
+				"      max_model_len: 32768\n", "      max_model_len: 32768\n"+secondPool))},
 		// vLLM refuses to start an engine whose window one request cannot fit in its KV, with
 		// its start-up message (vllm/v1/core/kv_cache_utils.py:917-935 at v0.31.0).
 		{"a window larger than the KV budget", "To serve at least one request with the model's max seq len (4000000)",
 			run(writeColocatedVariant(t, "max_model_len: 32768", "max_model_len: 4000000"))},
 		{"an unsimulated scheduling policy", `engine.scheduling_policy \"lifo\"`,
-			run(writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
-				"      gpu_memory_utilization: 0.92\n      scheduling_policy: lifo\n"))},
+			run(writeColocatedVariant(t, "      max_model_len: 32768\n",
+				"      max_model_len: 32768\n      scheduling_policy: lifo\n"))},
 		// A shared-only or encode+shared topology states no dedicated prefill or decode
 		// instance yet is disaggregated; it is refused, not run into a missing handoff pricer.
 		{"shared prefill-decode instances only", "--prefill-decode-instances and --encode-instances are not supported",
@@ -93,11 +93,11 @@ func TestRunCmd_KernelBackend_ScenarioRefusals(t *testing.T) {
 		// vLLM's own floor on the batch caps (ge=1, vllm/config/scheduler.py:48,62@5df63a72) is the
 		// engine's to apply: blis-vllm's kernel model refuses a deployment that states none
 		// (compat/kernelmodel Model.Engine), when the build site sizes the pool, and cmd keeps no
-		// copy of the check.
-		{"max_num_seqs 0", "deployment states no max_num_seqs",
-			run(writeColocatedVariant(t, "      max_num_seqs: 256\n", "      max_num_seqs: 0\n"))},
-		{"max_num_batched_tokens 0", "deployment states no max_num_batched_tokens",
-			run(writeColocatedVariant(t, "      max_num_batched_tokens: 8192\n", "      max_num_batched_tokens: 0\n"))},
+		// copy of the check. The fixture states neither, so each case states the zero.
+		{"max_num_seqs 0", "max_num_seqs",
+			run(writeColocatedVariant(t, "      max_model_len: 32768\n", "      max_num_seqs: 0\n      max_model_len: 32768\n"))},
+		{"max_num_batched_tokens 0", "max_num_batched_tokens",
+			run(writeColocatedVariant(t, "      max_model_len: 32768\n", "      max_num_batched_tokens: 0\n      max_model_len: 32768\n"))},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, stderr, err := runKernelCLI(t, tt.args...)
@@ -164,8 +164,8 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 		totalKVBlocks, blockSizeTokens, maxNumSeqs = saved[0].(int64), saved[1].(int64), saved[2].(int64)
 		maxNumBatchedTokens, maxModelLen, tensorParallelism = saved[3].(int64), saved[4].(int64), saved[5].(int)
 	})
-	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
-		"      gpu_memory_utilization: 0.92\n      scheduling_policy: priority\n")
+	priority := writeColocatedVariant(t, "      max_model_len: 32768\n",
+		"      max_model_len: 32768\n      scheduling_policy: priority\n")
 	plain := writeColocatedVariant(t)
 	for _, tt := range []struct {
 		name, dir string
@@ -190,8 +190,8 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 		})
 	}
 	// An explicit --scheduler that departs from the scenario is kept, and says so.
-	fcfs := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
-		"      gpu_memory_utilization: 0.92\n      scheduling_policy: fcfs\n")
+	fcfs := writeColocatedVariant(t, "      max_model_len: 32768\n",
+		"      max_model_len: 32768\n      scheduling_policy: fcfs\n")
 	args := []string{"run", "--scenarios", fcfs, "--scenario", "variant.yaml", "--num-requests", "4", "--rate", "2"}
 	_, stderr, err := runKernelCLI(t, append(args, "--scheduler", "sjf")...)
 	if err != nil || !strings.Contains(stderr, "overriding scenario") {
@@ -209,8 +209,8 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 // two values and what chose the run's. A run that follows its scenario records nothing, and the
 // block never reaches stdout (INV-6).
 func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
-	fcfs := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
-		"      gpu_memory_utilization: 0.92\n      scheduling_policy: fcfs\n")
+	fcfs := writeColocatedVariant(t, "      max_model_len: 32768\n",
+		"      max_model_len: 32768\n      scheduling_policy: fcfs\n")
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
 	if err := os.WriteFile(bundle, []byte("scheduler: sjf\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -275,8 +275,8 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 // runs is refused before anything runs. The message names the release asked for, the one this
 // build runs, and the newest inference-sim release that runs the one asked for, or says that
 // none does. The closest accepted scenario, the same file naming vllm 0.32.0, runs (SIM-9).
-// The accepted scenario names its engine with engine_version: blis-schemas v0.10.0's scenario
-// type, which the engine decodes strictly, has no engine field yet (engine_select.go).
+// The accepted scenario names its engine with engine: {kind, version}; each case replaces that
+// block with its own statement (engine_select.go).
 func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 	cases := []struct {
 		name, edit string
@@ -293,7 +293,7 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := writeColocatedVariant(t, `engine_version: "0.32.0"`, c.edit)
+			dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.32.0\"\n", c.edit+"\n")
 			_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 				"--rate", "4", "--num-requests", "4", "--seed", "1")
 			if err == nil {
@@ -318,9 +318,7 @@ func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
 
 // A 0.32.0 scenario runs blis-vllm's translated v0.32.0 engine through blis-schemas' engine.Engine
 // contract: every request completes, and the latency kernel's 0.31.0 tuning, which prices the
-// step, is disclosed on stderr. A scenario that names its engine with the deprecated
-// engine_version is accepted until M4 (release plan §3.3) with a warning naming
-// engine: {kind, version}.
+// step, is disclosed on stderr.
 func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	dir := writeColocatedVariant(t)
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
@@ -334,10 +332,6 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	if !strings.Contains(stderr, "engine assumption: engine_version = 0.31.0") {
 		t.Errorf("the kernel's 0.31.0 tuning must be disclosed; stderr:\n%s", lastLines(stderr, 6))
 	}
-	if !strings.Contains(stderr, `state engine: {kind: vllm, version: \"0.32.0\"} instead`) {
-		t.Errorf("engine_version must draw a deprecation warning naming engine: {kind, version}; stderr:\n%s",
-			lastLines(stderr, 6))
-	}
 }
 
 // The Result records the engine the scenario selected, by kind and upstream release (SIM-1).
@@ -349,19 +343,8 @@ func TestRunCmd_TheResultRecordsTheSelectedEngine(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v\n%s", err, lastLines(stderr, 3))
 		}
-		var doc struct {
-			Revisions struct {
-				Engine struct {
-					Kind            string `json:"kind"`
-					UpstreamVersion string `json:"upstream_version"`
-				} `json:"engine"`
-			} `json:"revisions"`
-		}
-		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
-			t.Fatal(err)
-		}
-		if e := doc.Revisions.Engine; e.Kind != "vllm" || e.UpstreamVersion != "0.32.0" {
-			t.Errorf("revisions.engine = %+v, want vllm 0.32.0", e)
+		if e := parseResult(t, stdout).Engine; e.Kind != "vllm" || e.Version != "0.32.0" {
+			t.Errorf("engine = %+v, want vllm 0.32.0", e)
 		}
 	}
 }
@@ -495,7 +478,7 @@ func TestRunCmd_MultiConnectorWarningSurvivesARefusal(t *testing.T) {
 // exit 1 with the engine's message naming the missing piece, not a panic out of the cluster's
 // construction.
 func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
-	body := readFile(t, filepath.Join(testScenarios, "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"))
+	body := readFile(t, filepath.Join("..", "testdata", "scenarios", "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"))
 	if !strings.Contains(body, "      max_model_len: 1048576\n") {
 		t.Fatal("fixture states no max_model_len 1048576 to edit")
 	}
@@ -525,7 +508,7 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
 	priority := func(policy string) []string {
 		dir := writeColocatedVariant(t,
-			"      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n      scheduling_policy: "+policy+"\n")
+			"      max_model_len: 32768\n", "      max_model_len: 32768\n      scheduling_policy: "+policy+"\n")
 		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--rate", "4", "--num-requests", "4", "--seed", "1"}
 	}
@@ -586,7 +569,7 @@ func dp032Variant(t *testing.T, extra string) string {
 	t.Helper()
 	scenarios, _, _ := kernelRepos(t)
 	body := readFile(t, filepath.Join(scenarios, dpScenario))
-	const anchor = "      gpu_memory_utilization: 0.92\n"
+	const anchor = "      max_model_len: 32768\n"
 	if !strings.Contains(body, anchor) {
 		t.Fatalf("fixture %s has no %q to edit", dpScenario, anchor)
 	}
@@ -662,5 +645,21 @@ func TestRunCmd_A032DataParallelGroupRendersOnOneAPIServerPerRank(t *testing.T) 
 	if one := ttft("--api-server-count", "1"); one <= stated {
 		t.Fatalf("one API server gives %.3f ms against %.3f ms with 2; the workload no longer exercises "+
 			"render contention", one, stated)
+	}
+}
+
+// A scenario that names its engine with the deprecated engine_version is accepted until M4
+// (release plan §3.3) with a warning naming engine: {kind, version}; the fixture states
+// engine: {kind, version}, so this variant states the old field.
+func TestRunCmd_EngineVersionDrawsADeprecationWarning(t *testing.T) {
+	dir := writeColocatedVariant(t, "engine:\n  kind: vllm\n  version: \"0.32.0\"\n", "engine_version: \"0.32.0\"\n")
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+		"--rate", "4", "--num-requests", "4", "--seed", "1")
+	if err != nil {
+		t.Fatalf("a scenario stating engine_version must still run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	if !strings.Contains(stderr, `state engine: {kind: vllm, version: \"0.32.0\"} instead`) {
+		t.Errorf("engine_version must draw a deprecation warning naming engine: {kind, version}; stderr:\n%s",
+			lastLines(stderr, 6))
 	}
 }

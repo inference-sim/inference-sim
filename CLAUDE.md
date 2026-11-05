@@ -21,18 +21,18 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `docs/reference/configuration.md` for detail.
 
-1. **Locate the catalog** with `--catalog <path>` or the `BLIS_CATALOG` env var — no default, no search path, no remote fetch (`--catalog` wins, announced on stderr; neither is refused). Both name a directory with the layout of blis-substrate's `catalog/`. Check out blis-substrate at the commit `stack.json` names and export it once (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
+1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (refused until the engine reads overlays). The Result records the data under `data`. To use a checkout (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
 2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
-3. **A scenario and the registry are required** on both `run` and `replay`: `--scenario <file> --scenarios <dir> --registry <blis-substrate registry/ directory>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
-4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload` and `convert preset --name` (both take `--catalog`/`BLIS_CATALOG`).
+3. **A scenario is required** on both `run` and `replay`: `--scenario <file> --scenarios <dir>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
+4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload` and `convert preset --name` (both read the catalog in use).
 
 ## Build and Run Commands
 
@@ -49,15 +49,15 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 # Build
 go build -o blis main.go
 
-# Run. Scenario + registry required; catalog located via BLIS_CATALOG.
+# Run. Scenario required; catalog and registry default to the embedded copies.
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-substrate/registry --rate 10 --num-requests 100
+  --scenarios testdata/kernel/aisimulate --rate 10 --num-requests 100
 
 # Run and export the workload as a TraceV2 (prefix auto-appends .yaml/.csv)
-./blis run --scenario <file> --scenarios <dir> --registry <root> --trace-output traces/run1
+./blis run --scenario <file> --scenarios <dir> --trace-output traces/run1
 
 # Replay a captured TraceV2 through the DES (identical flags reproduce run metrics — INV-13)
-./blis replay --trace-header t.yaml --trace-data d.csv --scenario <file> --scenarios <dir> --registry <root>
+./blis replay --trace-header t.yaml --trace-data d.csv --scenario <file> --scenarios <dir>
 
 # Convert a workload/agentic trace to a TraceV2 (preset | servegen | inference-perf | otel | weka)
 ./blis convert preset --name chatbot --rate 10 --num-requests 100

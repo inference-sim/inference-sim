@@ -15,7 +15,9 @@
 # report and which did not.
 kind: Scenario
 name: nemotron3-ultra-h100-agg
-engine_version: "0.29.0"
+engine:
+  kind: vllm
+  version: "0.32.0"
 
 model: nemotron-3-ultra-550b-a55b-nvfp4
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/llmd"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -334,7 +335,7 @@ func TestINV13_RunReplayParity_LLMDRouterInputs(t *testing.T) {
 	if completed := clusterMetricInt(t, runOut, "completed_requests"); completed <= 0 {
 		t.Fatalf("parity check would be vacuous: the run completed %d requests", completed)
 	}
-	if parseResult(t, runOut).Requests.GatewayQueueRejected == 0 {
+	if parseResult(t, runOut).Requests.Dropped[result.DropGatewayQueueRejected] == 0 {
 		t.Errorf("the bounded flow-control queue never rejected; the router inputs may not have taken effect\n%s", runOut)
 	}
 	header, err := os.ReadFile(prefix + ".yaml")
@@ -463,7 +464,7 @@ func TestINV13_RunReplayParity_InFlightEviction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
-	if parseResult(t, runOut).Requests.GatewayEvicted == 0 {
+	if parseResult(t, runOut).Requests.Dropped[result.DropGatewayEvicted] == 0 {
 		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
 	}
 	replayOut, stderr, err := runKernelCLI(t, "replay", "--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
@@ -517,7 +518,7 @@ func TestINV13_RunReplayParity_InFlightEvictionDisaggregated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 15))
 	}
-	if parseResult(t, runOut).Requests.GatewayEvicted == 0 {
+	if parseResult(t, runOut).Requests.Dropped[result.DropGatewayEvicted] == 0 {
 		t.Fatalf("no request was evicted in flight; the test does not exercise the path\n%s", runOut)
 	}
 	header := readFile(t, prefix+".yaml")

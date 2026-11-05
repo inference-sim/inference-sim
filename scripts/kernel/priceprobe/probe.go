@@ -5,12 +5,13 @@
 // reported").
 //
 // It uses only kernel APIs both builds have (blis-vllm compat/kernelmodel's Open and
-// Kernel(), the contracts kernel's StepTime, SequenceVariableBytes and FixedBytes), so the
-// same file builds in both. The steps are those blis-vllm's own fixture move reported
+// Kernel(), the contracts kernel's StepTime, SequenceVariableBytes and FixedBytes), so this
+// file builds in both. repos.go, the one file that differs, builds the adapter's roots: from
+// directories at v0.15.0, through blis-substrate's loader here. The steps are those blis-vllm's own fixture move reported
 // (blis-vllm fe56e4b): decode batches of 1, 32 and 256 sequences at context 4096, one
 // prefill of 2048 tokens, the per-sequence KV bytes at 1024 tokens, and the fixed bytes.
 //
-// Usage: go run ./scripts/kernel/priceprobe -scenarios <dir> -catalog <dir> -registry <dir>
+// Usage: go run ./scripts/kernel/priceprobe -scenarios <dir> [-catalog <dir>] [-registry <dir>]
 package main
 
 import (
@@ -36,11 +37,11 @@ type Price struct {
 
 func main() {
 	scenarios := flag.String("scenarios", "", "directory of fixtures (searched recursively)")
-	catalog := flag.String("catalog", "", "catalog directory")
-	registry := flag.String("registry", "", "registry directory")
+	catalog := flag.String("catalog", "", "catalog directory (empty: the embedded copy, where the build has one)")
+	registry := flag.String("registry", "", "registry directory (empty: the embedded copy, where the build has one)")
 	flag.Parse()
-	if *scenarios == "" || *catalog == "" || *registry == "" {
-		fmt.Fprintln(os.Stderr, "priceprobe: -scenarios, -catalog and -registry are required")
+	if *scenarios == "" {
+		fmt.Fprintln(os.Stderr, "priceprobe: -scenarios is required")
 		os.Exit(2)
 	}
 	var files []string
@@ -73,7 +74,11 @@ func price(dir, name, catalog, registry string) (p Price) {
 			p = Price{Err: fmt.Sprintf("panic: %v", r)}
 		}
 	}()
-	m, err := kernelmodel.Open(name, kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry})
+	repos, err := reposFor(dir, catalog, registry)
+	if err != nil {
+		return Price{Err: err.Error()}
+	}
+	m, err := kernelmodel.Open(name, repos)
 	if err != nil {
 		return Price{Err: err.Error()}
 	}

@@ -13,39 +13,43 @@ alpha/beta coefficients, `hardware_config.json` calibration, and the
 inference-sim simulates the cluster: arrivals, admission, routing, scheduling, KV block
 accounting, placement and metrics. blis-latency-kernel prices: step time, KV and fixed
 memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs,
-chips, fabrics and storage devices from **blis-catalog** and fitted coefficients from
-**blis-registry**; every file format involved, the scenario included, is defined by
+chips, fabrics and storage devices from blis-substrate's **catalog** and fitted coefficients
+from its **registry**; every file format involved, the scenario included, is defined by
 **blis-schemas**. See [The BLIS repositories](../concepts/architecture.md#the-blis-repositories).
 
 ## Running
 
+```bash
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios testdata/kernel/aisimulate \
+  --rate 10 --num-requests 100
+```
+
+The run reads the catalog and registry embedded in the blis-substrate module this build pins.
+To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
+
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
-
-```bash
-./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-substrate/registry \
-  --rate 10 --num-requests 100
-```
 
 The pinned releases are explained in
 [Catalog compatibility](../getting-started/installation.md#catalog-compatibility).
 
 ## Inputs
 
-Four roots, all required on `blis run` and `blis replay`:
+`--scenario` and `--scenarios` are required on `blis run` and `blis replay`. The catalog and
+registry default to the embedded copies:
 
 | input | what it names |
 |---|---|
-| `--scenario` | a scenario **file name** inside `--scenarios` |
-| `--scenarios` | a directory of scenario YAML files |
-| `--registry` | a `blis-registry` clone root, holding the coefficient sets a scenario names |
-| `--catalog` / `BLIS_CATALOG` | a `blis-catalog` clone root |
+| `--scenario` | a scenario **file name** inside `--scenarios` (required) |
+| `--scenarios` | a directory of scenario YAML files (required) |
+| `--registry` / `BLIS_REGISTRY` | a directory with the layout of blis-substrate's `registry/`, holding the coefficient sets a scenario names; replaces the embedded registry |
+| `--catalog` / `BLIS_CATALOG` | a directory with the layout of blis-substrate's `catalog/`; replaces the embedded catalog |
 
 A scenario directory can be any directory of scenario YAMLs. The kernel module ships the
 scenarios it was scored on, at
@@ -423,7 +427,7 @@ The LoRA cost coefficients come from `--defaults-filepath` (the `lora:` block of
 - Model vLLM's async scheduling: an engine runs one forward pass at a time and schedules the
   next only when the current one ends (INV-8), with no overlap of scheduling and execution.
 - Run a model or chip absent from the catalog, or a coefficient set absent from the
-  registry. Adding either is a change to blis-catalog or blis-registry, not to this repo.
+  registry. Adding either is a change to blis-substrate's `catalog/` or `registry/`, not to this repo.
 
 ## The published accuracy figures
 
@@ -460,8 +464,8 @@ Its flags are `-blis`, `-gaps`, `-corpus`, `-scenarios`, `-catalog`, `-registry`
 `-gaps <file>` (default: stderr) lists every point that cannot be scored as the measured run was,
 with the repository whose change would close the gap. Possible gaps:
 
-- a model, chip or fabric missing from blis-catalog;
-- coefficients missing from blis-registry;
+- a model, chip or fabric missing from the catalog;
+- coefficients missing from the registry;
 - a run setting blis-schemas cannot express;
 - a setting the measured run did not record;
 - sent prompt lengths not verified equal to the targets;
@@ -493,7 +497,7 @@ The engine consumes latency through blis-vllm's `LatencyModel` interface
 `OutputTokenProcessingTime()` and `PostDecodeFixedOverhead()`, all in microseconds (ticks).
 blis-vllm `compat/kernelmodel` is its only production implementation; the simulator reaches the
 engine, and so its step times, only through blis-schemas' `engine.Engine` interface. Improving or extending latency
-pricing is done in blis-latency-kernel (the cost model) and blis-registry (its
+pricing is done in blis-latency-kernel (the cost model) and blis-substrate's `registry/` (its
 coefficients), not here; see [Extension Recipes](../contributing/extension-recipes.md).
 
 ## Further Reading

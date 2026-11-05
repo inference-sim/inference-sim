@@ -203,8 +203,7 @@ func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 	if err := os.WriteFile(offloadPath, []byte(offloadYAML), 0644); err != nil {
 		t.Fatal(err)
 	}
-	_, catalog, _ := kernelRepos(t)
-	devices, err := loadCatalogStorageDevices(catalog)
+	devices, err := loadCatalogStorageDevices(testData())
 	if err != nil {
 		t.Fatal(err)
 	}

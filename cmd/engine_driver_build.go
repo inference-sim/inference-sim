@@ -64,6 +64,10 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
+	roots, err := contractRoots(dataOptions(), scenarioPath)
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
 	frontend := groupFrontendConfigFromCLI(dataParallelism)
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		// The Spec carries no configuration: the factory reads the pool's engine block from the
@@ -71,7 +75,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		eng, err := engine.New(engine.Spec{
 			Kind:            ref.Kind,
 			UpstreamVersion: ref.Version,
-			Roots:           contractRoots(resolvedCatalogRoot, kernelRegistry, scenarioPath),
+			Roots:           roots,
 			Pool:            poolOf(ic),
 			Seed:            seed,
 		})

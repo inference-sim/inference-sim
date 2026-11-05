@@ -9,25 +9,27 @@ package cmd
 //	      runtime.
 //	BC-R4 INV-13: a run that exports a trace and its replay with the same scenario and run
 //	      controls yield equal metrics, requests and breakdowns.
-//	BC-R5 itl_*_ms is per token (today's request_itl_*), never the per-decode-step interval,
-//	      which is engine step_interval_*.
-//	BC-R6 requests carries every INV-1 term plus rejected and generated, observed independently
-//	      (generated is the cluster's arrival count, not a sum of buckets).
+//	BC-R5 tpot_*_ms is the per-request time per output token (schema 1's itl_*), and
+//	      step_interval_*_ms the engine's per-step interval; no itl_* is reported (the registry's
+//	      itl pools every token gap, which BLIS does not compute).
+//	BC-R6 requests counts each generated request's fate (DEV-9): the fates sum to generated, and
+//	      generated is the cluster's own count, not a sum of fates.
 //	BC-R7 --view summary renders the text sections to stderr and leaves stdout unchanged.
-//	BC-R8 input records the resolved scenario, deployment and run controls, and the
-//	      --policy-config bundle verbatim.
+//	BC-R8 input records the resolved scenario, deployment and the --policy-config bundle
+//	      verbatim; frame records the run controls; engine, revisions and data what the run read.
 //	BC-R9 --metrics-path keeps its content and logs a deprecation pointing at --output.
 //	BC-R10 a document blis-schemas refuses is fatal, naming the problem.
 
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -149,8 +151,8 @@ func TestResult_RunAndReplayAgreeOnMetricsRequestsAndBreakdowns(t *testing.T) {
 		t.Errorf("the run's artifacts do not reference its exported trace: %+v", run.Artifacts)
 	}
 	// The replay records the trace it read as its workload.
-	if w := rep.Input.Run.Workload; w == nil || w.Trace == nil || w.Trace.Rows != 30 {
-		t.Errorf("the replay's input.run.workload does not reference its trace: %+v", w)
+	if w := rep.Frame.Generator.Workload; w == nil || w.Trace == nil || w.Trace.Rows != 30 {
+		t.Errorf("the replay's frame.generator.workload does not reference its trace: %+v", w)
 	}
 }
 
@@ -167,10 +169,10 @@ func jsonEqual(t *testing.T, a, b any) bool {
 	return bytes.Equal(x, y)
 }
 
-// BC-R5: itl_*_ms is the per-token request ITL; the per-step interval the legacy itl_* keys
-// held is the engine's step_interval_*. Under speculative decoding they differ by the accepted
-// length, which is what makes the distinction observable.
-func TestResult_ITLIsPerTokenAndTheStepIntervalIsTheEngines(t *testing.T) {
+// BC-R5: tpot_*_ms is the per-request time per output token (schema 1's itl_*, the file's
+// request_itl_*); the per-step interval is step_interval_*_ms. Under speculative decoding they
+// differ by the accepted length, which is what makes the distinction observable.
+func TestResult_TPOTIsPerTokenAndTheStepIntervalIsPerStep(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metrics.json")
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", dsparkScenario,
 		"--num-requests", "20", "--rate", "0.5", "--seed", "42", "--speculative-acceptance-rate", "0.502",
@@ -188,33 +190,31 @@ func TestResult_ITLIsPerTokenAndTheStepIntervalIsTheEngines(t *testing.T) {
 	}
 	r := parseResult(t, stdout)
 	for _, stat := range []string{"mean", "p50", "p90", "p99"} {
-		name := "itl_" + stat + "_ms"
-		if got, want := r.Metrics[name], file["request_itl_"+stat+"_ms"].(float64); got != want {
+		name := "tpot_" + stat + "_ms"
+		if got, want := r.Metrics[name].Value, file["request_itl_"+stat+"_ms"].(float64); got != want {
 			t.Errorf("%s = %v, want the per-token request_itl_%s_ms %v", name, got, stat, want)
 		}
-		if d := r.MetricDefs[name]; d.Formula != measurement.FormulaTPOTExclFirst || d.Population != measurement.PopulationPerRequest {
-			t.Errorf("%s is defined %+v, want tpot_excl_first per request", name, d)
+		if d, ok := metrics.Lookup(name); !ok || d.Formula != metrics.FormulaTPOT {
+			t.Errorf("%s is defined %+v, want the registry's per-request tpot", name, d)
+		}
+		if _, ok := r.Metrics["itl_"+stat+"_ms"]; ok {
+			t.Errorf("itl_%s_ms is reported: the registry's itl pools token gaps, which BLIS does not compute", stat)
 		}
 	}
-	step := resultNum(t, stdout, "engine.cluster.step_interval_p90_ms")
+	step := metric(t, stdout, "step_interval_p90_ms")
 	if step != file["step_interval_p90_ms"].(float64) {
-		t.Errorf("engine step_interval_p90_ms %v, want the file's %v", step, file["step_interval_p90_ms"])
+		t.Errorf("step_interval_p90_ms %v, want the file's %v", step, file["step_interval_p90_ms"])
 	}
 	// Non-vacuity: with drafts accepted, a step emits more than one token, so the two differ.
-	if step <= r.Metrics["itl_p90_ms"] {
-		t.Errorf("under speculation the step interval %v must exceed the per-token ITL %v", step, r.Metrics["itl_p90_ms"])
-	}
-	for name := range r.Metrics {
-		if strings.HasPrefix(name, "step_interval") {
-			t.Errorf("the per-step interval %s is a metric; it is the engine's", name)
-		}
+	if tpot := r.Metrics["tpot_p90_ms"].Value; step <= tpot {
+		t.Errorf("under speculation the step interval %v must exceed the per-token TPOT %v", step, tpot)
 	}
 }
 
-// BC-R6: the ledger carries every INV-1 term plus rejected and generated, and generated is the
-// cluster's own arrival count: under a bounded flow-control queue some arrivals are rejected,
-// and the clauses still hold against a count the buckets do not define.
-func TestResult_RequestsLedgerIsTheElevenTermFormPlusRejectedAndGenerated(t *testing.T) {
+// BC-R6: requests counts each generated request's fate, the drops by reason, and generated is
+// the cluster's own count: under a bounded flow-control queue some arrivals are rejected, and the
+// fates still sum to a count they do not define.
+func TestResult_RequestsCountEveryFateAndGenerated(t *testing.T) {
 	// TestINV13_RunReplayParity_LLMDRouterInputs's router: flow control bounded at 8 requests.
 	dir := colocatedRouterVariant(t, "router:\n  epp_flags: [--pool-name=vllm, --refresh-metrics-interval=20ms]\n"+
 		"  endpoint_picker_config: epp-config.yaml\n  manifests: [pool.yaml]\n", "      app: vllm\n",
@@ -231,17 +231,15 @@ func TestResult_RequestsLedgerIsTheElevenTermFormPlusRejectedAndGenerated(t *tes
 	if q.Generated != n {
 		t.Errorf("generated = %d, want the %d the workload produced", q.Generated, n)
 	}
-	if q.GatewayQueueRejected == 0 {
-		t.Fatalf("non-vacuity: the bounded queue rejected nothing; the cluster-only buckets are not exercised: %+v", q)
+	if q.Dropped[result.DropGatewayQueueRejected] == 0 {
+		t.Fatalf("non-vacuity: the bounded queue rejected nothing; the gateway drop is not exercised: %+v", q)
 	}
-	if q.Terminal() != q.Injected || q.Generated != q.Injected+q.Rejected {
-		t.Errorf("INV-1 does not close: %+v", q)
+	if q.Sum() != q.Generated {
+		t.Errorf("DEV-9 does not close: %+v", q)
 	}
-	// Every key of the eleven-term form and the pipeline clause is in the document.
 	doc := resultDoc(t, stdout)
-	for _, k := range []string{"generated", "rejected", "injected", "completed", "still_queued", "still_running",
-		"dropped_unservable", "timed_out", "routing_rejections", "gateway_queue_depth", "gateway_queue_rejected",
-		"gateway_evicted", "gateway_expired", "encode_routing_rejections", "length_capped"} {
+	for _, k := range []string{"generated", "completed", "timed_out", "in_flight_at_horizon", "queued_at_horizon",
+		"not_started", "length_capped", "dropped.gateway_queue_rejected"} {
 		if _, ok := resultValue(doc, "requests."+k); !ok {
 			t.Errorf("requests has no %s", k)
 		}
@@ -287,16 +285,22 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	if in.Scenario.Name == "" || len(in.Deployment.Pools) == 0 || in.Scenario.Model == "" {
 		t.Errorf("input does not record the scenario and deployment: %+v", in)
 	}
-	run := in.Run
-	if run.Load.RequestRate != 10 || run.NumRequests != 30 || run.Seed != 7 || run.HorizonS == nil || *run.HorizonS != 600 {
-		t.Errorf("input.run = %+v, want rate 10, 30 requests, seed 7, horizon 600 s", run)
+	g, stop := r.Frame.Generator, r.Frame.Stop
+	if g.Load.RequestRate != 10 || stop.Requests != 30 || g.Seed != 7 || stop.HorizonS == nil || *stop.HorizonS != 600 {
+		t.Errorf("frame generator %+v, stop %+v; want rate 10, 30 requests, seed 7, horizon 600 s", g, stop)
 	}
 	if in.Policy["scheduler"] != "fcfs" {
 		t.Errorf("input.policy = %v, want the bundle verbatim", in.Policy)
 	}
-	if r.Revisions.BLIS == "" || r.Revisions.BLISSchemas == "" || r.Revisions.Engine == nil ||
-		r.Revisions.Engine.UpstreamVersion != in.Scenario.EngineVersion {
-		t.Errorf("revisions = %+v", r.Revisions)
+	if r.Revisions.Simulator == "" || r.Revisions.Substrate == "" || r.Engine.Kind != "vllm" ||
+		r.Engine.Version != in.Scenario.EngineRelease() {
+		t.Errorf("revisions %+v, engine %+v", r.Revisions, r.Engine)
+	}
+	if r.Data.Catalog.Hash == "" || r.Data.Registry.Hash == "" || r.Data.Build == "" {
+		t.Errorf("data record %+v, want both sources with their hashes and the build", r.Data)
+	}
+	if len(r.SelectedEntries.Coefficients) == 0 {
+		t.Errorf("selected_entries names no coefficient, though the kernel priced the run")
 	}
 }
 
@@ -357,10 +361,10 @@ func TestResult_ARunWithNoArrivalsBeforeTheHorizonStillEmits(t *testing.T) {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
 	}
 	r := parseResult(t, stdout)
-	if r.Requests.Generated != 0 || r.Input.Run.NumRequests != 50 {
-		t.Errorf("generated %d, num_requests %d; want 0 and the 50 asked for", r.Requests.Generated, r.Input.Run.NumRequests)
+	if r.Requests.Generated != 0 || r.Frame.Stop.Requests != 50 {
+		t.Errorf("generated %d, frame.stop.requests %d; want 0 and the 50 asked for", r.Requests.Generated, r.Frame.Stop.Requests)
 	}
-	if r.Window.DurationS != 10e-6 || r.Metrics["request_throughput"] != 0 {
+	if r.Window.DurationS != 10e-6 || r.Metrics["request_throughput"].Value != 0 {
 		t.Errorf("window %+v, request_throughput %v; want the 10 us horizon and 0", r.Window, r.Metrics["request_throughput"])
 	}
 }
@@ -483,9 +487,9 @@ func TestResult_ADefaultReplayRecordsTheHorizonItRanTo(t *testing.T) {
 		return parseResult(t, out)
 	}
 	def := replay()
-	h := def.Input.Run.HorizonS
+	h := def.Frame.Stop.HorizonS
 	if h == nil || *h <= 0 {
-		t.Fatalf("a default replay records no horizon: %+v", def.Input.Run)
+		t.Fatalf("a default replay records no horizon: %+v", def.Frame.Stop)
 	}
 	trace, err := workload.LoadTraceV2(prefix+".yaml", prefix+".csv")
 	if err != nil {
@@ -500,8 +504,8 @@ func TestResult_ADefaultReplayRecordsTheHorizonItRanTo(t *testing.T) {
 	}
 	// The run had no horizon; the replay given the same (unbounded) horizon reproduces it.
 	run := parseResult(t, runOut)
-	if run.Input.Run.HorizonS != nil {
-		t.Fatalf("non-vacuity: the run states a horizon %v", *run.Input.Run.HorizonS)
+	if run.Frame.Stop.HorizonS != nil {
+		t.Fatalf("non-vacuity: the run states a horizon %v", *run.Frame.Stop.HorizonS)
 	}
 	same := replay("--horizon", "9223372036854775807")
 	if !jsonEqual(t, run.Metrics, same.Metrics) || !jsonEqual(t, run.Requests, same.Requests) {
@@ -528,30 +532,31 @@ func TestResult_GeneratedIsTheArrivalCountOnAHorizonCutRun(t *testing.T) {
 	if q.Generated != len(trace.Records) {
 		t.Errorf("generated = %d, want the %d arrivals the trace recorded", q.Generated, len(trace.Records))
 	}
-	if q.StillQueued == 0 || q.Generated >= 200 {
+	if q.Unfinished() == 0 || q.Generated >= 200 {
 		t.Fatalf("non-vacuity: the horizon did not cut the run with requests waiting: %+v", q)
 	}
-	if q.Terminal() != q.Injected {
-		t.Errorf("INV-1: injected %d, buckets %d: %+v", q.Injected, q.Terminal(), q)
+	if q.Sum() != q.Generated {
+		t.Errorf("DEV-9: generated %d, fates %d: %+v", q.Generated, q.Sum(), q)
 	}
 }
 
-// resultLedger states generated from the cluster's arrival count, never from its own buckets: on a
-// cluster whose engine lost track of a request (its terminal buckets sum short), the ledger still
-// states every arrival, so blis-schemas' INV-1 clause sees the gap instead of a restated sum.
-func TestResult_TheLedgerDoesNotRestateItsBucketSum(t *testing.T) {
+// resultLedger states generated from the fate ledger's count of requests created, never from
+// the fates: on a run whose ledger lost a fate, generated still states every request, so the
+// contracts' validator sees the gap instead of a restated sum.
+func TestResult_TheLedgerDoesNotRestateItsFateSum(t *testing.T) {
 	reqs := makeSharedPrefixRequests(4)
 	cs := newRoutedCluster(newKernelDeployment(t, 1, nil).Config, reqs)
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}
-	cs.AggregatedMetrics().CompletedRequests-- // a bucket loses a request
 	q := resultLedger(cs)
-	if q.Generated != len(reqs) || q.Injected != len(reqs) {
-		t.Errorf("generated %d, injected %d, want the %d requests that arrived", q.Generated, q.Injected, len(reqs))
+	if q.Generated != len(reqs) || q.Sum() != len(reqs) {
+		t.Errorf("generated %d, fates %d, want the %d requests created", q.Generated, q.Sum(), len(reqs))
 	}
-	if q.Terminal() == q.Injected {
-		t.Error("non-vacuity: the buckets still sum to injected")
+	q.Completed-- // a fate lost
+	r := &result.Result{Requests: q}
+	if p := r.Validate(); !strings.Contains(fmt.Sprint(p.All()), "fates sum to") {
+		t.Errorf("a ledger whose fates do not sum to generated validates: %v", p.All())
 	}
 }
 
@@ -608,8 +613,8 @@ func TestResult_InputRecordsTheTraceTheSeedsAndTheCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if d := parseResult(t, rep).Input.Run.Workload.Trace.Data; d != "trace.csv" {
-		t.Errorf("input.run.workload.trace.data = %q, want the file name only", d)
+	if d := parseResult(t, rep).Frame.Generator.Workload.Trace.Data; d != "trace.csv" {
+		t.Errorf("frame.generator.workload.trace.data = %q, want the file name only", d)
 	}
 
 	spec := filepath.Join(t.TempDir(), "spec.yaml")
@@ -641,14 +646,14 @@ clients:
 	for _, o := range r.Overrides {
 		rows[o.Setting] = o.Run
 	}
-	if r.Input.Run.Seed != 42 || rows["workload_seed"] != "99" {
-		t.Errorf("seed %d, workload_seed %q; want --seed's 42 and the spec's 99", r.Input.Run.Seed, rows["workload_seed"])
+	if r.Frame.Generator.Seed != 99 || rows["workload_seed"] != "99" {
+		t.Errorf("frame seed %d, workload_seed %q; want the spec's 99, which its draws used", r.Frame.Generator.Seed, rows["workload_seed"])
 	}
 	if !strings.HasPrefix(rows["workload-spec"], "sha256:") {
 		t.Errorf("the spec is not pinned by sha256: %v", rows)
 	}
-	if r.Requests.Generated <= 6 || rows["num_requests_cap"] != "6" || r.Input.Run.NumRequests != r.Requests.Generated {
-		t.Errorf("generated %d, num_requests %d, cap row %q; want follow-ups past the 6 cap, kept as an override",
-			r.Requests.Generated, r.Input.Run.NumRequests, rows["num_requests_cap"])
+	if r.Requests.Generated <= 6 || rows["num_requests_cap"] != "6" {
+		t.Errorf("generated %d, cap row %q; want follow-ups past the 6 cap, kept as an override",
+			r.Requests.Generated, rows["num_requests_cap"])
 	}
 }

@@ -352,7 +352,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			SessionID:             sessionID,
 			ClientID:              r0.ClientID,
 			MaxRounds:             len(rounds),
-			ContextGrowth:         contextGrowth,
+			ContextGrowth:         string(contextGrowth),
 			ThinkTimeSampler:      sessionThinkTimeSampler,
 			Horizon:               horizon,
 			InputSampler:          &SequenceSampler{values: inputSeq[1:]},  // rounds 1..N

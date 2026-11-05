@@ -148,7 +148,7 @@ func TestScenarioRouterInputs_PoolLabelsReachEachPod(t *testing.T) {
 // Pods must expose the distinct hosts the kernel uses to price a P/D handoff.
 func TestScenarioRouterInputs_KernelPlacementReachesPodsWithoutNodePools(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	repos := kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry}
+	repos := reposOf(pdScenarios, catalog, registry)
 	const scenario = "glm-5-h200-3p1d-ib.yaml"
 	prefill, err := kernelmodel.OpenRole(scenario, repos, deployment.RolePrefill)
 	if err != nil {

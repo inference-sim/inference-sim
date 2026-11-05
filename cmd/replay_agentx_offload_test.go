@@ -29,7 +29,7 @@ func TestReplay_ScenarioOffloadCannotBeAddedToARecordedSimTrace(t *testing.T) {
 		args := append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv",
 			"--scenarios", withBlock, "--scenario", colocatedFixture, "--seed", "5"}, extra...)
 		if _, stderr, err := runKernelCLI(t, args...); err == nil ||
-			!strings.Contains(stderr, "cannot add one on replay of a sim-generated trace (INV-13)") {
+			!strings.Contains(stderr, "cannot add one on replay of a trace blis run or blis replay wrote") {
 			t.Errorf("%v: adding offload on replay of a recorded sim trace must be refused: %v\n%s",
 				extra, err, lastLines(stderr, 3))
 		}

@@ -79,14 +79,15 @@ func jsonFields(typ reflect.Type) []string {
 // a different kind of run states are listed with the run that states them.
 func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	conditional := map[string]string{
-		"engine.cluster.acceptance":    "a speculating run",
-		"engine.cluster.adapters":      "a LoRA run",
-		"breakdowns.per_adapter":       "a LoRA run",
-		"engine.cluster.agentic":       "an agentic replay",
-		"engine.cluster.server_series": "--server-series-interval-s",
-		"overrides":                    "a run that sets a flag or overrides its scenario",
-		"profiling_start":              "an agentic replay's explicit window (window.start)",
-		"profiling_end":                "an agentic replay's explicit window (window.stop)",
+		"reports.engine.cluster.acceptance":    "a speculating run",
+		"reports.engine.cluster.adapters":      "a LoRA run",
+		"breakdowns.per_adapter":               "a LoRA run",
+		"reports.engine.cluster.agentic":       "an agentic replay",
+		"reports.engine.cluster.server_series": "--server-series-interval-s",
+		"requests.dropped.unservable":          "a run that drops a request as unservable",
+		"overrides":                            "a run that sets a flag or overrides its scenario",
+		"profiling_start":                      "an agentic replay's explicit window (frame.phases.measured.start)",
+		"profiling_end":                        "an agentic replay's explicit window (frame.phases.measured.stop)",
 	}
 	data, err := os.ReadFile("../docs/guide/results.md")
 	if err != nil {
@@ -94,7 +95,7 @@ func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	}
 	doc := string(data)
 	table := doc[strings.Index(doc, "<!-- result-field-map -->"):strings.Index(doc, "<!-- /result-field-map -->")]
-	path := regexp.MustCompile("`((?:requests|metrics|engine|breakdowns|goodput|window|revisions|artifacts|saturation|kernel)[a-z0-9_.*]*)`")
+	path := regexp.MustCompile("`((?:requests|metrics|reports|data|frame|breakdowns|goodput|window|revisions|artifacts)[a-z0-9_.*]*)`")
 	var homes []string
 	for _, line := range strings.Split(table, "\n") {
 		if cols := strings.Split(line, "|"); len(cols) >= 3 {

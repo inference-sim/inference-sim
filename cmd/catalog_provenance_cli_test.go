@@ -12,13 +12,16 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+
 	sim "github.com/inference-sim/inference-sim/sim"
 )
 
-// End-to-end catalog provenance tests (#1732, R1/S5) at the CLI seam: `blis run` and
-// `blis replay` both record the catalog path, revision and dirty flag into their
-// --metrics-path results file (AC-1, INV-13), and their stdout is byte-identical
-// whether the catalog is clean or dirty (AC-4, INV-6).
+// End-to-end data-record tests at the CLI seam (design §3.3, X8): `blis run` and `blis replay`
+// record the catalog's source and content hash in the Result's data record and in the
+// --metrics-path file's catalog block, the same values through one helper (INV-13), and a catalog
+// whose bytes changed but whose content did not (a trailing newline) changes the content hash and
+// nothing else in the Result (INV-6).
 //
 // NOTE: these tests mutate package-level CLI vars and os.Stdout — do NOT use
 // t.Parallel(). Every mutated var is restored.
@@ -33,30 +36,23 @@ const (
 	provenanceSeed        = int64(4242)
 )
 
-// setupGitCatalogFixtures builds the fixture set the CLI provenance tests need: a copy of the
-// vendored catalog that is its OWN git repository (so the dirty flag is scoped to the catalog
-// and nothing else), plus the repository's defaults.yaml -- deliberately OUTSIDE the catalog so
-// it cannot make it dirty. hwPath is empty: the kernel reads the chip from the catalog.
-func setupGitCatalogFixtures(t *testing.T) (catalogRoot, defaultsPath, headRevision string) {
+// setupCatalogFixtures builds the fixture set the data-record tests need: a copy of the test
+// catalog in a temporary directory, read as a path, plus the repository's defaults.yaml.
+func setupCatalogFixtures(t *testing.T) (catalogRoot, defaultsPath string) {
 	t.Helper()
-	requireGit(t)
 	catalogRoot = copyKernelCatalog(t)
 	defaultsPath, err := filepath.Abs("../defaults.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	gitInRepo(t, catalogRoot, "init", "--quiet")
-	gitInRepo(t, catalogRoot, "add", ".")
-	gitInRepo(t, catalogRoot, "commit", "--quiet", "-m", "catalog: initial entries")
-	headRevision = strings.TrimSpace(gitInRepo(t, catalogRoot, "rev-parse", "HEAD"))
-	return catalogRoot, defaultsPath, headRevision
+	return catalogRoot, defaultsPath
 }
 
-// dirtyCatalogEntry makes the model graph the kernel scenario reads differ from its committed
-// state WITHOUT changing what it parses to: it appends a newline, which YAML ignores. This is
-// what makes the INV-6 assertion non-vacuous -- the catalog is genuinely dirty while the
-// simulation's inputs, and therefore its stdout, are unchanged.
-func dirtyCatalogEntry(t *testing.T, catalogRoot string) {
+// editCatalogEntry changes the bytes of the model graph the kernel scenario reads WITHOUT
+// changing what it parses to: it appends a newline, which YAML ignores. The content hash covers
+// bytes, so it changes while the simulation's inputs, and therefore every simulated figure, do
+// not. That is what makes the INV-6 assertion non-vacuous.
+func editCatalogEntry(t *testing.T, catalogRoot string) {
 	t.Helper()
 	graph := filepath.Join(catalogRoot, catalogModelsSubdir, "gpt-oss-120b", "graph.yaml")
 	data, err := os.ReadFile(graph)
@@ -64,10 +60,7 @@ func dirtyCatalogEntry(t *testing.T, catalogRoot string) {
 		t.Fatalf("read catalog entry %s: %v", graph, err)
 	}
 	if err := os.WriteFile(graph, append(data, '\n'), 0o644); err != nil {
-		t.Fatalf("dirty catalog entry %s: %v", graph, err)
-	}
-	if out := gitInRepo(t, catalogRoot, "status", "--porcelain", "--", "."); strings.TrimSpace(out) == "" {
-		t.Fatalf("fixture failed to dirty the catalog: git reports a clean subtree")
+		t.Fatalf("edit catalog entry %s: %v", graph, err)
 	}
 }
 
@@ -144,14 +137,14 @@ func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix strin
 	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
 	orig := captureCmdLevelVars()
-	origResolvedCatalog := resolvedCatalogRoot
+	origData := openedData
 	defer func() {
 		orig.restore()
-		resolvedCatalogRoot = origResolvedCatalog
+		openedData = origData
 	}()
 
 	setProvenanceRunVars(catalogDir, defaultsPath)
-	resolvedCatalogRoot = ""
+	openedData = nil
 	metricsPath = metricsFile
 	traceOutput = tracePrefix
 	workloadType = "distribution"
@@ -199,18 +192,18 @@ func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix st
 	origTraceHeader, origTraceData := traceHeaderPath, traceDataPath
 	origSessionMode, origThinkMs, origThinkDist := replaySessionMode, replayThinkTimeMs, replayThinkTimeDist
 	origReplayTraceOut, origReplayMetrics := replayTraceOutput, replayMetricsPath
-	origResolvedCatalog := resolvedCatalogRoot
+	origData := openedData
 	defer func() {
 		orig.restore()
 		traceHeaderPath, traceDataPath = origTraceHeader, origTraceData
 		replaySessionMode, replayThinkTimeMs, replayThinkTimeDist = origSessionMode, origThinkMs, origThinkDist
 		replayTraceOutput, replayMetricsPath = origReplayTraceOut, origReplayMetrics
-		resolvedCatalogRoot = origResolvedCatalog
+		openedData = origData
 	}()
 
 	headerFile, dataFile := tracePrefix+".yaml", tracePrefix+".csv"
 	setProvenanceRunVars(catalogDir, defaultsPath)
-	resolvedCatalogRoot = ""
+	openedData = nil
 	traceOutput = ""
 	traceHeaderPath = headerFile
 	traceDataPath = dataFile
@@ -241,122 +234,100 @@ func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix st
 	return stdout, readMetricsFile(t, metricsFile)
 }
 
-// assertProvenance checks a results file's catalog block against the expected catalog
-// root, revision and dirty verdict.
-func assertProvenance(t *testing.T, label string, out sim.MetricsOutput, wantPath, wantRevision string, wantDirty bool) {
+// assertProvenance checks that a run recorded its catalog the same way in the Result's data
+// record and in the --metrics-path file's catalog block: a path source, the directory, and the
+// combined content hash. It returns the hash.
+func assertProvenance(t *testing.T, label string, stdout []byte, out sim.MetricsOutput, wantPath string) string {
 	t.Helper()
+	d := parseResult(t, string(stdout)).Data.Catalog
+	if d.Source != result.SourcePath || d.Hash == "" || d.CombinedHash != d.Hash {
+		t.Errorf("%s: data.catalog = %+v, want a path source with its hash", label, d)
+	}
 	if out.Catalog == nil {
-		t.Fatalf("%s: results file records no catalog provenance (AC-1)", label)
+		t.Fatalf("%s: results file records no catalog block", label)
 	}
-	if out.Catalog.Path != wantPath {
-		t.Errorf("%s: catalog path = %q, want %q", label, out.Catalog.Path, wantPath)
+	if out.Catalog.Path != wantPath || out.Catalog.Revision != d.CombinedHash || out.Catalog.Dirty {
+		t.Errorf("%s: results file catalog = %+v, want path %q, revision %q (the Result's hash), dirty false",
+			label, *out.Catalog, wantPath, d.CombinedHash)
 	}
-	if out.Catalog.Revision != wantRevision {
-		t.Errorf("%s: catalog revision = %q, want %q", label, out.Catalog.Revision, wantRevision)
-	}
-	if out.Catalog.Dirty != wantDirty {
-		t.Errorf("%s: catalog dirty = %v, want %v", label, out.Catalog.Dirty, wantDirty)
-	}
+	return d.CombinedHash
 }
 
-// TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical is the AC-1/AC-2/
-// AC-3/AC-4 end-to-end contract for `blis run`: the results file names the catalog, its
-// revision and its dirty state, the dirty flag flips when a catalog config.json is edited
-// without committing, the Result's revisions.catalog records the same revision and dirty
-// state, and the Result is otherwise byte-identical across the two runs (INV-6: the same
-// resolved input; only the catalog's revision differs).
+// TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical: `blis run` records the
+// catalog's source and content hash, an edit to a catalog file's bytes changes the hash, and
+// the Result is otherwise byte-identical (INV-6).
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testing.T) {
-	catalogRoot, defaultsPath, head := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath := setupCatalogFixtures(t)
 
-	cleanStdout, cleanFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
-	assertProvenance(t, "clean run", cleanFile, catalogRoot, head, false)
+	beforeStdout, beforeFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
+	before := assertProvenance(t, "run", beforeStdout, beforeFile, catalogRoot)
 
-	dirtyCatalogEntry(t, catalogRoot)
-	dirtyStdout, dirtyFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
-	assertProvenance(t, "dirty run", dirtyFile, catalogRoot, head, true)
-
-	// AC-4 / INV-6: the only difference between the two runs is catalog git state. The
-	// fixture edit is whitespace-only, so the simulation's inputs are identical: the Result
-	// records the two revisions and is otherwise byte-identical.
-	assertCatalogRevision(t, "clean run", cleanStdout, head)
-	assertCatalogRevision(t, "dirty run", dirtyStdout, head+"-dirty")
-	if a, b := withoutRevisionsAndRuntime(t, string(cleanStdout)), withoutRevisionsAndRuntime(t, string(dirtyStdout)); a != b {
-		t.Errorf("INV-6 VIOLATION: `blis run` Result differs between a clean and a dirty catalog "+
-			"outside revisions and runtime.\n--- clean ---\n%s\n--- dirty ---\n%s", a, b)
+	// One process opens each catalog path once (kernelmodel.OpenData caches by path), as a CLI
+	// invocation does, so the edited catalog is a second directory with the same content.
+	edited := filepath.Join(t.TempDir(), "catalog")
+	if err := os.CopyFS(edited, os.DirFS(catalogRoot)); err != nil {
+		t.Fatalf("copy the catalog: %v", err)
 	}
-	if bytes.Contains(cleanStdout, []byte(catalogRoot)) {
-		t.Errorf("the Result names the catalog's location, a fact of the host:\n%s", cleanStdout)
+	editCatalogEntry(t, edited)
+	afterStdout, afterFile := runWithProvenance(t, edited, defaultsPath, "")
+	after := assertProvenance(t, "run after the edit", afterStdout, afterFile, edited)
+	if before == after {
+		t.Errorf("the catalog's bytes changed but its content hash did not: %s", before)
 	}
-	// Non-vacuity for the run itself: a run that completed nothing would make the
-	// stdout comparison trivial.
-	if cleanFile.CompletedRequests == 0 {
+	if a, b := withoutRevisionsAndRuntime(t, string(beforeStdout)), withoutRevisionsAndRuntime(t, string(afterStdout)); a != b {
+		t.Errorf("INV-6 VIOLATION: `blis run` Result differs after a content-neutral catalog edit "+
+			"outside the data record and runtime:\n%s", firstDiff(a, b))
+	}
+	if bytes.Contains(beforeStdout, []byte(catalogRoot)) || bytes.Contains(afterStdout, []byte(edited)) {
+		t.Errorf("the Result names the catalog's location, a fact of the host:\n%s", beforeStdout)
+	}
+	if beforeFile.CompletedRequests == 0 {
 		t.Fatalf("non-vacuity: the run completed no requests, so stdout parity is trivial")
 	}
 }
 
-// assertCatalogRevision checks the Result's revisions.catalog is the catalog's git revision.
-func assertCatalogRevision(t *testing.T, label string, stdout []byte, want string) {
-	t.Helper()
-	c := parseResult(t, string(stdout)).Revisions.Catalog
-	if c == nil || c.Revision != want {
-		t.Errorf("%s: revisions.catalog = %+v, want revision %q", label, c, want)
-	}
-}
-
-// TestCatalogProvenance_ReplayCLI_RecordsCatalog is the INV-13 half: `blis replay`
-// records the same provenance block through the same shared helper, including the dirty
-// verdict, and its stdout is likewise unaffected.
+// TestCatalogProvenance_ReplayCLI_RecordsCatalog is the INV-13 half: `blis replay` records the
+// same data record through the same helper.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_ReplayCLI_RecordsCatalog(t *testing.T) {
-	catalogRoot, defaultsPath, head := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath := setupCatalogFixtures(t)
 	tracePrefix := filepath.Join(t.TempDir(), "trace")
 
-	// Export a trace from a clean-catalog run, then replay it.
-	if _, runFile := runWithProvenance(t, catalogRoot, defaultsPath, tracePrefix); runFile.Catalog == nil {
-		t.Fatal("the exporting run must itself record provenance")
+	runStdout, runFile := runWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
+	want := assertProvenance(t, "exporting run", runStdout, runFile, catalogRoot)
+	stdout, file := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
+	if got := assertProvenance(t, "replay", stdout, file, catalogRoot); got != want {
+		t.Errorf("the replay records catalog hash %s, the run %s: the same data", got, want)
 	}
-	cleanStdout, cleanFile := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
-	assertProvenance(t, "clean replay", cleanFile, catalogRoot, head, false)
-
-	dirtyCatalogEntry(t, catalogRoot)
-	dirtyStdout, dirtyFile := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
-	assertProvenance(t, "dirty replay", dirtyFile, catalogRoot, head, true)
-
-	assertCatalogRevision(t, "clean replay", cleanStdout, head)
-	assertCatalogRevision(t, "dirty replay", dirtyStdout, head+"-dirty")
-	if a, b := withoutRevisionsAndRuntime(t, string(cleanStdout)), withoutRevisionsAndRuntime(t, string(dirtyStdout)); a != b {
-		t.Errorf("INV-6 VIOLATION: `blis replay` Result differs between a clean and a dirty catalog "+
-			"outside revisions and runtime.\n--- clean ---\n%s\n--- dirty ---\n%s", a, b)
+	if bytes.Contains(stdout, []byte(catalogRoot)) {
+		t.Errorf("the replay's Result names the catalog's location, a fact of the host:\n%s", stdout)
 	}
-	if bytes.Contains(cleanStdout, []byte(catalogRoot)) {
-		t.Errorf("the replay's Result names the catalog's location, a fact of the host:\n%s", cleanStdout)
-	}
-	if cleanFile.CompletedRequests == 0 {
+	if file.CompletedRequests == 0 {
 		t.Fatalf("non-vacuity: the replay completed no requests")
 	}
 }
 
 // TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere pins that a run WITHOUT
 // --metrics-path writes no results file and that its Result never names the catalog's
-// location: the catalog is recorded by its revision (revisions.catalog), a fact of its
-// content, never by the path it was found at, a fact of the host.
+// location: the catalog is recorded by its content hash (data.catalog), never by the path it
+// was found at, a fact of the host.
 //
 // NOTE: Do NOT use t.Parallel() — mutates package-level vars and os.Stdout.
 func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
-	catalogRoot, defaultsPath, _ := setupGitCatalogFixtures(t)
+	catalogRoot, defaultsPath := setupCatalogFixtures(t)
 
 	orig := captureCmdLevelVars()
-	origResolvedCatalog := resolvedCatalogRoot
+	origData := openedData
 	defer func() {
 		orig.restore()
-		resolvedCatalogRoot = origResolvedCatalog
+		openedData = origData
 	}()
 
 	setProvenanceRunVars(catalogRoot, defaultsPath)
-	resolvedCatalogRoot = ""
+	openedData = nil
 	metricsPath = ""
 	traceOutput = ""
 	workloadType = "distribution"

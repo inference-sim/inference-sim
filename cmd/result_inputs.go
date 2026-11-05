@@ -10,13 +10,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
 	blisschemas "github.com/inference-sim/blis-substrate/contracts"
@@ -25,7 +25,9 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-substrate/load"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -34,62 +36,66 @@ import (
 
 // Module paths whose versions a Result records.
 const (
-	modulePathRouter = "github.com/llm-d/llm-d-router"
-	modulePathEngine = "github.com/inference-sim/blis-vllm"
+	modulePathSubstrate = "github.com/inference-sim/blis-substrate"
+	modulePathRouter    = "github.com/llm-d/llm-d-router"
+	modulePathEngine    = "github.com/inference-sim/blis-vllm"
 )
 
-// resultRevisions are the versions of every component and data repository the run read.
-// catalogRoot and registryRoot are the clone roots; a root that is not a git checkout is
-// recorded as unknown, never guessed.
-func resultRevisions(catalogRoot, registryRoot string, eng engineRef) result.Revisions {
+// resultRevisions are the versions of the BLIS modules the run was built from.
+func resultRevisions() result.Revisions {
 	info, _ := debug.ReadBuildInfo()
-	return revisionsFrom(info, catalogRoot, registryRoot, eng)
+	return revisionsFrom(info)
 }
 
-// revisionsFrom is resultRevisions over given build information, for tests.
-func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot string, eng engineRef) result.Revisions {
+// revisionsFrom is resultRevisions over given build information, for tests. A module the build
+// information does not carry is "unknown" for the simulator and the substrate, which the
+// document requires, and empty for the others.
+func revisionsFrom(info *debug.BuildInfo) result.Revisions {
 	v := versionsFrom(info)
-	r := result.Revisions{BLIS: v.BLIS, BLISSchemas: v.Schemas, BLISLatencyKernel: v.Kernel}
-	if r.BLISLatencyKernel == "unknown" {
-		r.BLISLatencyKernel = ""
-	}
-	engineRelease := ""
+	r := result.Revisions{Simulator: v.BLIS, Substrate: v.Schemas}
 	if info != nil {
 		for _, dep := range info.Deps {
 			switch dep.Path {
 			case modulePathRouter:
-				r.LLMDRouter = depVersion(dep)
+				r.Router = depVersion(dep)
 			case modulePathEngine:
-				engineRelease = depVersion(dep)
+				r.EngineModule = depVersion(dep)
 			}
 		}
 	}
-	// The engine is the one the scenario selected (selectEngine): its kind and upstream release,
-	// and the engine module's own release (SIM-1).
-	if eng.Kind != "" {
-		r.Engine = &result.Engine{Kind: eng.Kind, UpstreamVersion: eng.Version, Release: engineRelease}
-	}
-	r.Catalog = dataRepoRevision(catalogRoot)
-	r.Registry = dataRepoRevision(registryRoot)
 	return r
 }
 
-// dataRepoRevision is a data repository's git revision, with "-dirty" when its tree has
-// uncommitted content; nil when no root was given. A root that is not a git checkout is
-// recorded by sim.UnknownCatalogRevision.
-func dataRepoRevision(root string) *result.DataRepo {
-	if root == "" {
-		return nil
+// resultBuild is the build the Result's data record names (design §3.3): the simulator's
+// release tag when the binary is a tagged release, else "unreleased". Go stamps a module's
+// version only into a binary built by `go install …@version`, which inference-sim's replace
+// directive forbids (X11), so a release build sets buildRelease with -ldflags.
+func resultBuild() string {
+	if releaseTag.MatchString(buildRelease) {
+		return buildRelease
 	}
-	rev, dirty, err := catalogGitState(root)
-	if err != nil {
-		logrus.Debugf("revision of %s: %v", root, err)
-		return &result.DataRepo{Revision: sim.UnknownCatalogRevision}
-	}
-	if dirty {
-		rev += "-dirty"
-	}
-	return &result.DataRepo{Revision: rev}
+	return result.BuildUnreleased
+}
+
+// buildRelease is the release tag a release build stamps:
+//
+//	go build -ldflags "-X github.com/inference-sim/inference-sim/cmd.buildRelease=v0.16.0"
+var buildRelease string
+
+// releaseTag is a plain release tag, vMAJOR.MINOR.PATCH.
+var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
+
+// resultData is the Result's record of the catalog and registry the run read (design §3.3,
+// X8): each one's source, content hash, overlay hashes and combined hash, the build, and
+// whether the run used released data. Released data is a tagged simulator release that read
+// the embedded copy of both with no overlay; the release's stack.json names the substrate tag
+// whose embedded hashes these are.
+func resultData(d *load.Data) result.Data {
+	out := result.Data{Catalog: d.Catalog.Result(), Registry: d.Registry.Result(), Build: resultBuild()}
+	out.ReleasedData = out.Build != result.BuildUnreleased &&
+		d.Catalog.Source == load.SourceEmbedded && d.Registry.Source == load.SourceEmbedded &&
+		len(d.Catalog.Overlays) == 0 && len(d.Registry.Overlays) == 0
+	return out
 }
 
 // resultScenarioDocs reads the scenario and deployment the run used, through blis-schemas' own
@@ -142,12 +148,12 @@ func specLoad(spec *workload.WorkloadSpec, arrivals []int64) measurement.Load {
 
 // traceLoad is a trace's offered load: its requests over its arrival span, the rate the
 // replay injects them at.
-func traceLoad(trace *workload.TraceV2) measurement.Load {
-	if trace == nil {
+func traceLoad(tr *workload.TraceV2) measurement.Load {
+	if tr == nil {
 		return measurement.Load{}
 	}
-	at := make([]int64, len(trace.Records))
-	for i, r := range trace.Records {
+	at := make([]int64, len(tr.Records))
+	for i, r := range tr.Records {
 		at[i] = r.ArrivalTimeUs
 	}
 	return arrivalLoad(at)
@@ -191,61 +197,53 @@ func traceBinding(dataPath string, h workload.TraceHeader, rows int) (*schemawor
 	if err != nil {
 		return nil, err
 	}
-	ref := &schemaworkload.TraceRef{Data: artifactRef(dataPath), SHA256: d, Rows: rows, Header: schemaworkload.TraceHeader{
-		Version: h.Version, TimeUnit: schemaworkload.TimeUnit(h.TimeUnit), Mode: mode,
-		WorkloadSeed: h.WorkloadSeed,
+	// The binding names the trace by its mode, seed and goodput targets; the deployment
+	// inputs the header records (offload, router, cross-node span) are recorded in the
+	// Result's input and reports, not restated here.
+	ref := &schemaworkload.TraceRef{Data: artifactRef(dataPath), SHA256: d, Rows: rows, Header: trace.Header{
+		Version: h.Version, TimeUnit: h.TimeUnit, Mode: mode, WorkloadSeed: h.WorkloadSeed,
+		GoodputSLOTargets: h.GoodputSLOTargets,
 	}}
-	if len(h.GoodputSLOTargets) > 0 {
-		ref.Header.GoodputSLOTargets = map[string]schemaworkload.SLODimTargets{}
-		for cls, t := range h.GoodputSLOTargets {
-			ref.Header.GoodputSLOTargets[cls] = schemaworkload.SLODimTargets{TTFTMs: t.TTFTMs, ITLMs: t.ITLMs, E2EMs: t.E2EMs}
-		}
-	}
 	return &schemaworkload.Binding{Trace: ref}, nil
 }
 
-// resultTraceMode is a trace header mode in the Result's vocabulary. blis-schemas v0.10.0's
-// closed set has no word for a converted trace: its "generated" is "synthesized from a shape
-// or converted from an external trace (blis run / blis convert)", so a converted trace is
-// recorded as generated, as it was before blis convert wrote a mode of its own (#2067). This
-// loses nothing a Result can show: the two modes differ only in whether replay accepts the
-// scenario's offload tiers for a trace recorded without them, and a generated trace refuses
-// that run outright. A mode outside the set is refused. The contracts trace type in
-// blis-substrate adds "converted" (task B of M1); this mapping goes when the Result moves there.
-func resultTraceMode(mode string) (schemaworkload.Mode, error) {
+// resultTraceMode is a trace header mode in the contracts' vocabulary (contracts/spec/trace),
+// which has the three modes a trace can have. A mode outside the set is refused.
+func resultTraceMode(mode trace.Mode) (trace.Mode, error) {
 	switch mode {
-	case workload.TraceModeGenerated, workload.TraceModeConverted:
-		return schemaworkload.ModeGenerated, nil
+	case workload.TraceModeGenerated:
+		return trace.ModeGenerated, nil
 	case workload.TraceModeReplayed:
-		return schemaworkload.ModeReplayed, nil
+		return trace.ModeReplayed, nil
+	case workload.TraceModeConverted:
+		return trace.ModeConverted, nil
 	}
 	return "", fmt.Errorf("trace header mode %q has no Result mode", mode)
 }
 
-// resultLedger is INV-1's ledger from the cluster's own counters: arrivals are observed at
-// the cluster boundary, independently of the terminal buckets, so the validator's two
-// clauses check the run rather than restate a sum.
+// resultLedger is the fate count (DEV-9) from the cluster's fate ledger: every generated
+// request in exactly one fate, drops by reason. The cluster's checkFates has already held the
+// ledger to INV-1's buckets.
 func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
-	m := cs.AggregatedMetrics()
-	rejected := cs.RejectedRequests()
-	arrivals := cs.Arrivals()
-	return result.Requests{
-		Generated:               arrivals,
-		Rejected:                rejected,
-		Injected:                arrivals - rejected,
-		Completed:               m.CompletedRequests,
-		StillQueued:             m.StillQueued,
-		StillRunning:            m.StillRunning,
-		DroppedUnservable:       m.DroppedUnservable,
-		TimedOut:                m.TimedOutRequests,
-		RoutingRejections:       cs.RoutingRejections(),
-		GatewayQueueDepth:       cs.GatewayQueueDepth(),
-		GatewayQueueRejected:    cs.GatewayQueueRejected(),
-		GatewayEvicted:          cs.GatewayEvicted(),
-		GatewayExpired:          cs.GatewayExpired(),
-		EncodeRoutingRejections: cs.EncodeRoutingRejections(),
-		LengthCapped:            m.LengthCappedRequests,
+	t := cs.Fates().Tally()
+	q := result.Requests{
+		Generated:         t.Created,
+		Completed:         t.ByFate[sim.FateCompleted],
+		TimedOut:          t.ByFate[sim.FateTimedOut],
+		InFlightAtHorizon: t.ByFate[sim.FateInFlightAtHorizon],
+		QueuedAtHorizon:   t.ByFate[sim.FateQueuedAtHorizon],
+		NotStarted:        t.ByFate[sim.FateNotStarted],
+		LengthCapped:      cs.AggregatedMetrics().LengthCappedRequests,
 	}
+	for reason, n := range t.Drops {
+		if n > 0 {
+			if q.Dropped == nil {
+				q.Dropped = map[result.DropReason]int{}
+			}
+			q.Dropped[result.DropReason(reason)] = n
+		}
+	}
+	return q
 }
 
 // runGPUs is the number of GPUs the run's instances occupy: each instance its own pool's

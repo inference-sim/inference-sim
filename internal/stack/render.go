@@ -60,7 +60,7 @@ func (s *Stack) Block(kind string) (string, error) {
 		return "```bash\n" +
 			"git clone https://github.com/inference-sim/blis-substrate.git\n" +
 			"git -C blis-substrate checkout " + ref + "\n" +
-			"export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command\n" +
+			"export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)\n" +
 			"```\n", nil
 	case "toolchain":
 		return "Requires Go " + strings.TrimPrefix(s.Toolchain, "go") +

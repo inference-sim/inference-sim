@@ -9,7 +9,9 @@
 # per rank, and that the routed term divides by the local expert share.
 kind: Scenario
 name: minimax-m25-h200-ep72
-engine_version: "0.29.0"
+engine:
+  kind: vllm
+  version: "0.32.0"
 
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

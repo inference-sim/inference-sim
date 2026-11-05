@@ -20,29 +20,28 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-The catalog and registry are blis-substrate's, at the commit this build pins
-([Data compatibility](getting-started/installation.md#catalog-compatibility)):
+```bash
+./blis run --scenarios examplescenarios \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
+  --rate 10 --num-requests 100
+```
+
+`blis run` and `blis replay` need a scenario directory (`--scenarios`, any directory of
+scenario YAMLs) and a scenario file name within it (`--scenario`). This repository ships
+ready-to-run scenarios in `examplescenarios/`. The catalog and registry default to the copies
+embedded in the blis-substrate module this build pins
+([Data compatibility](getting-started/installation.md#catalog-compatibility)).
+`--catalog <dir>` (or `BLIS_CATALOG`) replaces the embedded catalog, and `--registry <dir>`
+(or `BLIS_REGISTRY`) replaces the embedded registry; the flag wins over the environment
+variable. To use a checkout of blis-substrate's own `catalog/`:
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
-
-```bash
-./blis run --scenarios examplescenarios \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-substrate/registry \
-  --rate 10 --num-requests 100
-```
-
-`blis run` and `blis replay` need a catalog (`--catalog` or `BLIS_CATALOG`, no default), a
-registry (`--registry`), a scenario directory (`--scenarios`, any directory of scenario YAMLs)
-and a scenario file name within it (`--scenario`). This repository ships ready-to-run scenarios
-in `examplescenarios/`. The clones pin the releases BLIS is tested against — see
-[Catalog compatibility](getting-started/installation.md#catalog-compatibility).
 
 ---
 
@@ -52,8 +51,8 @@ in `examplescenarios/`. The clones pin the releases BLIS is tested against — s
 |---|---|---|
 | **inference-sim** | *simulates* | Arrivals, the embedded llm-d router (admission, flow control, routing), scheduling, KV block accounting, placement, metrics. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. |
-| [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets. |
-| [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | The coefficient sets the kernel prices with. |
+| [`blis-substrate` `catalog/`](https://github.com/inference-sim/blis-substrate/tree/main/catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets. |
+| [`blis-substrate` `registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry) | *holds the fitted numbers* | The coefficient sets the kernel prices with. |
 | [`blis-schemas`](https://github.com/inference-sim/blis-schemas) | *defines the formats* | Scenario, deployment, engine and catalog file formats. |
 
 A **scenario** names a catalog model and chip, registry coefficient sets, and the deployment

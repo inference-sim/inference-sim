@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 )
 
 // writeTrace writes a header and a data file into a new directory and returns their paths.
@@ -27,8 +29,8 @@ var traceDataHeaderRow = strings.Join(traceColumns, ",") + "\n"
 // Each mode a BLIS command writes loads; mode "real", which only blis observe wrote, is refused
 // naming the value and the removal, and any other value is refused naming the allowed set.
 func TestLoadTraceV2_Mode(t *testing.T) {
-	for _, mode := range []string{TraceModeGenerated, TraceModeReplayed, TraceModeConverted} {
-		hp, dp := writeTrace(t, "trace_version: 4\ntime_unit: microseconds\nmode: "+mode+"\n", traceDataHeaderRow)
+	for _, mode := range []trace.Mode{TraceModeGenerated, TraceModeReplayed, TraceModeConverted} {
+		hp, dp := writeTrace(t, "trace_version: 4\ntime_unit: microseconds\nmode: "+string(mode)+"\n", traceDataHeaderRow)
 		if _, err := LoadTraceV2(hp, dp); err != nil {
 			t.Errorf("mode %s: %v", mode, err)
 		}
@@ -86,8 +88,8 @@ func TestLoadTraceV2_V3DataColumnsAreRefused(t *testing.T) {
 
 // A converted trace records no deployment; one blis run or blis replay wrote does.
 func TestTraceHeader_RecordsDeployment(t *testing.T) {
-	for mode, want := range map[string]bool{TraceModeGenerated: true, TraceModeReplayed: true, TraceModeConverted: false} {
-		if got := (TraceHeader{Mode: mode}).RecordsDeployment(); got != want {
+	for mode, want := range map[trace.Mode]bool{TraceModeGenerated: true, TraceModeReplayed: true, TraceModeConverted: false} {
+		if got := (&TraceHeader{Mode: mode}).RecordsDeployment(); got != want {
 			t.Errorf("mode %s: RecordsDeployment() = %v, want %v", mode, got, want)
 		}
 	}

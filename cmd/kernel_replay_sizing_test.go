@@ -64,7 +64,7 @@ func TestAdoptKernelDeployment_SizesTheReplayFromTheKernel(t *testing.T) {
 		"minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml",
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			m, err := kernelmodel.Open(scenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+			m, err := kernelmodel.Open(scenario, reposOf(scenarios, catalog, registry))
 			if err != nil {
 				t.Fatal(err)
 			}

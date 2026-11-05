@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -168,7 +169,7 @@ func runConvertOtel(inputPath, outPrefix string, opts workload.OTelConvertOption
 		Version:              workload.TraceVersion,
 		TimeUnit:             "microseconds",
 		Mode:                 workload.TraceModeConverted,
-		SessionContextGrowth: growth,
+		SessionContextGrowth: trace.ContextGrowth(growth),
 	}
 	if err := workload.ExportTraceV2(header, allRecords, outPrefix+".yaml", outPrefix+".csv"); err != nil {
 		return err
