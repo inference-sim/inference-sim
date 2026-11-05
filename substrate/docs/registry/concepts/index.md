@@ -21,20 +21,21 @@ The test for which side of the first line a number falls on is simple: **could a
 measurement revise it?** A chip's SM count cannot be revised by a benchmark; its
 achievable bandwidth can. The first belongs in the catalog, the second in the registry.
 
-## Five repositories
+## Where the registry sits
 
-| Repository | Holds | Relationship to the registry |
+The registry is one directory of blis-substrate, beside the parts it works with:
+
+| Directory | Holds | Relationship to the registry |
 |---|---|---|
-| [blis-schemas](https://github.com/inference-sim/blis-schemas) | Go types and validators; no data | Defines what a coefficient set may contain and rejects any file that breaks the rules. The registry's CI runs its validator on every pull request. |
-| [blis-catalog](https://github.com/inference-sim/blis-catalog) | Models, chips, fabrics, workloads: declared facts | The registry's `scope.hardware` values are the catalog's chip names (`h200`, `gb200-nvl72`, …). |
-| **blis-registry** | Coefficient sets: learned numbers with provenance | — |
-| [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) | The cost model: prices one forward pass | Reads coefficient sets by name and evaluates its cost laws with them. Holds no numbers of its own. |
-| [inference-sim](https://github.com/inference-sim/inference-sim) | The discrete-event simulator (BLIS) | Calls the kernel once per simulated step. The kernel-backed path is [inference-sim#1851](https://github.com/inference-sim/inference-sim/pull/1851), branch `kernel-exclusive` of the `sriumcp/inference-sim` fork. |
+| `contracts/` | Go types and validators; no data | Defines what a coefficient set may contain. `validate-registry` rejects any file that breaks the rules, on every pull request. |
+| `catalog/` | Models, chips, fabrics, workloads: declared facts | The registry's `scope.hardware` values are the catalog's chip names (`h200`, `gb200-nvl72`, …). |
+| `registry/` | Coefficient sets: learned numbers with provenance | — |
+| `kernel/` | The cost model: prices one forward pass | Reads coefficient sets by name and evaluates its cost laws with them. Holds no numbers of its own. |
 
-Dependencies run one way. `blis-schemas` depends on no other BLIS repository. The
-catalog and the registry are data, validated against the schemas. The kernel imports
-the schemas and reads the catalog and registry from disk at run time. The simulator
-imports the kernel. Nothing imports the simulator.
+The catalog and the registry are data, validated against the contracts. The cost model
+reads both through one loader, from the copy embedded in each release or from a directory
+given by path (design §3.3). The simulator, inference-sim, is the only repository that
+imports the cost model and the data.
 
 ## What happens at run time
 
@@ -51,14 +52,13 @@ cluster:
   ...
 ```
 
-(Abridged from [`testdata/kimi-k3-h100-nospec.yaml`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/testdata/kimi-k3-h100-nospec.yaml)
-in blis-latency-kernel.)
+(Abridged from `testdata/kernel/kimi-k3-h100-nospec.yaml` in inference-sim.)
 
 The kernel then does three things with the registry, once, before the first step:
 
-1. **Loads** each named set from `<registry>/coefficients/<name>.yaml` with
-   blis-schemas' strict loader, then validates it with the same schema rules the
-   registry's CI runs. A file that fails either is refused before anything is priced.
+1. **Loads** each named set from `<registry>/coefficients/<name>.yaml` with the
+   strict loader in `contracts/`, then validates it with the same rules the
+   repository's CI runs. A file that fails either is refused before anything is priced.
 2. **Filters** by scope. An entry applies only if its scope admits the deployment: an
    entry scoped to `hardware: [h200]` is skipped on an H100. A dimension the scope does
    not mention is unconstrained.
@@ -76,13 +76,13 @@ nothing, and the run still completes. This is why coverage matters: the
 [recurrent set](../reference/sets/cost-model-recurrent.md) fits every part its sweeps
 measure for exactly this reason.
 
-## Why the learned numbers have their own repository
+## Why the learned numbers are kept apart from the code
 
 Because a learned number is only as good as the evidence behind it, and the evidence has
-to travel with the number. Putting coefficients in a repository of their own means each
-one can carry its method, its sources and its scope; can be re-derived and checked in CI
-independently of the code that uses it; and can be changed by a pull request whose diff
-shows exactly which numbers moved. A change here alters every estimate that uses the
-affected sets the next time the files are read; no code is rebuilt.
+to travel with the number. Each coefficient carries its method, its sources and its scope;
+can be re-derived and checked in CI on its own; and changes by a pull request whose diff
+shows exactly which numbers moved. Because the simulator can read the registry from a
+directory instead of its embedded copy, a candidate registry is scored with the released
+simulator and no rebuild.
 
 Next: [what a coefficient records](coefficients.md).

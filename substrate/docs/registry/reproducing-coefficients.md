@@ -494,78 +494,8 @@ end-to-end accuracy worse, because the composed model's accuracy rests on partia
 cancelling errors. No per-primitive refit ships on the strength of its own fit quality
 alone; see the standing rule in [`methodology.md`](methodology.md).
 
-## 6. Reproducing the evaluation figures exactly
+## 6. Reproducing the evaluation figures
 
-The accuracy numbers quoted for this registry are reproducible, but three details
-decide whether a reader gets the same figures, and each has silently produced
-wrong numbers during this work.
-
-### 6.1 The scorer is not on `main`
-
-> **Status (2026-10-30).** [inference-sim#1851](https://github.com/inference-sim/inference-sim/pull/1851)
-> merged on 2026-10-13 (`0d092d4`), and the `kernel-exclusive` branch below no longer exists.
-> The scorer now lives at `tools/metricscore` on `inference-sim/inference-sim` main.
-> `scripts/compare_registries.py` still runs `go run ./cmd/metricscore` from
-> `/private/tmp/blis-kernel-wt`, so it needs that path updated before it can run. The scorer
-> also needs three corpora (`-corpus aisimulate_e2e.json`, `-engine-settings
-> inferencex_engine_settings.json`, `-absolutes inferencex_absolutes.json`, or
-> `BLIS_MEASUREMENTS`). blis-latency-kernel does not distribute them: its `testdata/README.md`
-> says they are extracted from third-party publications by `scripts/extract_*`. Only
-> `aisimulate_e2e.json` was available for the Muse Spark change (#60), so that change ships
-> without an end-to-end score; see the change's pull request. Separately, no committed
-> scenario lists `cost-model-collectives-inferencex` or `cost-model-fabric` (the scenarios list
-> six sets, `cost-model-primitives` to `cost-model-memory`). An end-to-end score of entries in
-> those two sets is therefore unchanged by construction until a scenario names them.
-
-`cmd/metricscore` exists only on the `kernel-exclusive` branch of the
-`sriumcp/inference-sim` fork, the head of the still-open
-[inference-sim#1851](https://github.com/inference-sim/inference-sim/pull/1851).
-`inference-sim/inference-sim` carries neither that branch nor the command, and a checkout
-of its `main` fails with `stat cmd/metricscore: directory not found`.
-
-```bash
-git clone --branch kernel-exclusive https://github.com/sriumcp/inference-sim /tmp/blis-scorer
-cd /tmp/blis-scorer
-```
-
-### 6.2 `-registry` defaults to the sibling checkout, not to your work
-
-The flag's default is `/Users/sri/Documents/Projects/blis-registry` — the main
-checkout. Scoring a branch or worktree without passing `-registry` explicitly
-scores the *other* registry and reports figures that do not belong to the tree
-under test. Always pass it:
-
-```bash
-go run ./cmd/metricscore \
-  -config-tier measured -framework vllm -length-range-ratio 1.0 \
-  -registry /path/to/the/registry/under/test
-```
-
-### 6.3 The three flags each change every figure
-
-| flag | omitted | passed |
-|---|---|---|
-| `-config-tier measured` | mixes measured and resolved configurations in one average | only the 68 sweeps whose engine settings come from the run's own command line |
-| `-framework vllm` | scores every framework, which only the published arms can do | the subset BLIS models |
-| `-length-range-ratio 1.0` | AISimulate's one-sided `[0.8·len, len]` sampling | constant prompt lengths, which is what vLLM's client produces with no `--random-range-ratio` |
-
-On the main-checkout kernel (`a9b60e1`) and registry (`ea08479`), the same
-command with and without `-length-range-ratio 1.0` gives 11.62/12.05/15.23/52.94
-and 11.22/12.19/16.22/57.13 respectively. Neither is wrong; they answer different
-questions, and a figure quoted without its flags cannot be checked.
-
-### 6.4 Which tier to weigh
-
-`inferencex_engine_settings.json` records 68 sweeps with a captured engine-args
-log and 136 without, each of the latter listed in its `incomplete` array with
-`reason: "no engine-args log"`. For the 136 the engine configuration is inferred
-from vLLM's defaults rather than observed, so an error on those points is as
-likely to be a wrong assumed configuration as a wrong model. The measured tier is
-the only one where the simulated deployment is ground truth, and it is the tier
-on which a coefficient change can be attributed to the model.
-
-### 6.5 Rebuild the kernel between runs
-
-`go run` recompiles, but a pre-built binary does not. A stale binary has
-invalidated a result during this work. When scoring repeatedly, build once per
-kernel revision and name the binary after it.
+End-to-end accuracy figures come from the [accuracy dashboard](https://github.com/inference-sim/accuracy-dashboard)'s scoring harness,
+the one scorer BLIS has (design §2.2, §11.7). [Methodology §6.1](methodology.md#61-reproducing-the-end-to-end-evaluation-tables)
+says how to run it on a registry change.

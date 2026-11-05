@@ -84,8 +84,5 @@ A test that cannot run says why. Treat an unexpected skip as a test that did not
 ## The end-to-end check
 
 None of the above can tell whether a change makes BLIS more accurate. That needs the
-evaluation corpus and the scorer on the `kernel-exclusive` branch of the
-`sriumcp/inference-sim` fork (inference-sim#1851), and is
-described in [methodology §6.1](../methodology.md#61-reproducing-the-end-to-end-evaluation-tables).
-[`evaluation-baseline.json`](https://github.com/inference-sim/blis-substrate/blob/main/registry/docs/evaluation-baseline.json) records the last recorded
-figures, with the scorer and catalog revisions they were scored at.
+accuracy dashboard's scoring harness, the one end-to-end scorer, described in
+[methodology §6.1](../methodology.md#61-reproducing-the-end-to-end-evaluation-tables).

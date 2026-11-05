@@ -1,64 +1,34 @@
 # Using the registry
 
-The registry is read from disk, by path, at run time. Nothing is installed and nothing is
-fetched over the network: a consumer is given the root of a clone and opens
-`coefficients/<set>.yaml` beneath it.
-
-## Get a copy
-
-Clone a release, not `main`. A release fixes every value, and an estimate is reproducible
-only if the coefficients behind it are.
-
-```sh
-git clone --branch <!-- registry:release --> --depth 1 https://github.com/inference-sim/blis-registry.git
-```
-
-<!-- registry:release --> is the newest release at the time this page was built.
-[Releases and pinning](releases.md) explains what a version number does and does not
-promise.
+The registry is data: one YAML file per coefficient set under `registry/coefficients/`.
+Each blis-substrate release embeds it, so a run of a released simulator needs no copy of
+its own.
 
 ## Run BLIS with it
 
-The simulator prices steps through blis-latency-kernel when run with
-`--latency-model blis-latency-kernel`. That path is on the `kernel-exclusive` branch of
-the `sriumcp/inference-sim` fork, open as
-[inference-sim#1851](https://github.com/inference-sim/inference-sim/pull/1851).
-It reads the deployment from a scenario file, the model and hardware from a catalog
-clone, and the coefficients from a registry clone:
+A run that names no registry uses the copy embedded in the release. To use another, such as
+a candidate with refitted values, name its directory; the run uses it instead of the
+embedded copy and records which one it used, with its content hash (design §3.3):
 
 ```sh
-./blis run --latency-model blis-latency-kernel \
-    --scenarios path/to/scenarios --scenario kimi-k3-h100-nospec.yaml \
-    --catalog path/to/blis-catalog \
-    --registry path/to/blis-registry
+blis run --scenario path/to/scenario.yaml --registry path/to/registry
 ```
 
 The scenario's `coefficients:` list names the sets to load, and its `cluster.hardware`
-selects the entries that apply. `--registry` is required on this path; the run stops
-with an error rather than fall back to other coefficients.
+selects the entries that apply.
 
 ## Use it from Go
 
-`blis-latency-kernel` resolves a scenario file against the three roots and returns a
-kernel ready to price steps:
+`kernel.Open` resolves a scenario against the catalog and registry and returns a kernel
+ready to price steps. It uses the same loader and checks as the simulator.
+
+To read one set without the kernel, load and validate it with the `contracts` package, as
+the kernel does:
 
 ```go
-import latencykernel "github.com/inference-sim/blis-latency-kernel"
+import "github.com/inference-sim/blis-substrate/contracts"
 
-k, err := latencykernel.Open("kimi-k3-h100-nospec.yaml", latencykernel.Repos{
-    Scenarios: "path/to/scenarios",
-    Catalog:   "path/to/blis-catalog",
-    Registry:  "path/to/blis-registry",
-})
-```
-
-To read one set without the kernel, load and validate it with blis-schemas, as the
-kernel does:
-
-```go
-import blisschemas "github.com/inference-sim/blis-schemas"
-
-set, err := blisschemas.LoadCoefficientSet("path/to/blis-registry/coefficients/cost-model-attention.yaml")
+set, err := contracts.LoadCoefficientSet("registry/coefficients/cost-model-attention.yaml")
 if err != nil {
     return err // unreadable, or an unknown field
 }
@@ -78,7 +48,7 @@ coefficient's name:
 ```python
 import yaml
 
-with open("coefficients/cost-model-attention.yaml") as f:
+with open("registry/coefficients/cost-model-attention.yaml") as f:
     doc = yaml.safe_load(f)
 
 for item in doc["coefficients"]:

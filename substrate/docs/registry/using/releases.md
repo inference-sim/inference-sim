@@ -1,28 +1,22 @@
 # Releases and pinning
 
-A release is a git tag, `vMAJOR.MINOR.PATCH`, on `main`, with a GitHub release that
-describes what changed. It fixes every value in every set. A consumer that records which
-release it read can reproduce its coefficients exactly.
+The registry is released with the rest of blis-substrate: a git tag `vMAJOR.MINOR.PATCH`
+on `main` (design §14.1). A release fixes every value in every set, and embeds them, so a
+simulator built on that release reads exactly those values unless a run names another
+registry directory.
 
-## Pin the exact tag
+## What a version promises
 
-The version number orders releases. It does not promise that values are unchanged
-between them: refitting a family, adding a part and adding a set all change what a
-scenario resolves to, and each is a normal reason to release, at any of the three
-levels. Pin the full tag, and record it next to any figure computed with it.
+A PATCH release changes no contract, price or value. Refitting a family, adding a part or
+adding a set changes values, and is a MINOR release whose notes list every changed value
+(design §14.1). Record the release next to any figure computed with it; every Result
+records it, with the registry's content hash.
 
-```sh
-git clone --branch <!-- registry:release --> --depth 1 https://github.com/inference-sim/blis-registry.git
-```
-
-To see what moved between two releases, compare them:
+To see what moved between two releases:
 
 ```sh
-git diff v0.1.0 v0.1.1 --stat -- coefficients/
+git diff v0.11.0 v0.12.0 --stat -- registry/coefficients/
 ```
-
-The [releases page](https://github.com/inference-sim/blis-registry/releases) summarizes
-each one and links the pull requests behind it.
 
 ## Versions of this site
 
@@ -31,10 +25,9 @@ numbers of the version being read.
 
 | In the version selector | Built from | Updated |
 |---|---|---|
-| `X.Y.Z` | the release tag `vX.Y.Z` | when the release is published |
-| `latest` | the highest release | moves to each new highest release |
-| `dev (main)` | `main` | on every merge |
+| `X.Y` | the newest release `vX.Y.Z` of that line | when a release is published |
+| `latest` | the newest release line | moves to each new release line |
+| `dev` | `main` | on every merge |
 
 The site's root opens `latest`. Every other version shows a banner saying it is not the
-newest release. Versions are full release numbers, not `X.Y`, because a patch release can
-change values, and each release's pages must show that release's values.
+newest release.
