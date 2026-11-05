@@ -85,6 +85,10 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -race -count=1 ./contracts/... ./validate/... ./tools/...
+      # The AGENTS.md block, the pull-request template and the rendered index match the
+      # invariant registry (design §13.1). The test above also checks this; the step names
+      # the command that fixes it.
+      - run: go run ./tools/invariants render -check
 
   kernel:
     name: cost model

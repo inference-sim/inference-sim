@@ -1,0 +1,302 @@
+# The FID invariants: Fidelity to upstream code (BLIS target design §7.7).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: FID-1
+  section: §7.7
+  statement: >-
+    The manifest lists every replacement. Any write the harness makes outside a listed site fails
+    CI, and a changed list carries a new version. The configuration the oracle resolves equals, outside
+    the fields the manifest lists, what the upstream's CUDA platform would resolve for the chip the
+    scenario names. Restoring a CUDA value that depends on choosing a CUDA attention backend is a
+    transcription (FID-8), checked against recorded CUDA start-up logs. Every read of the current
+    platform reachable from ported code is listed in the manifest.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Oracle/check_mocks.py, from contracts/harness, in each engine repository
+    runs: pull_request
+    status: ci
+    test: oracle/check_mocks.py
+  - repo: blis-sglang
+    check: Oracle/check_mocks.py, from contracts/harness, in each engine repository
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 2
+  note: >-
+    blis-vllm lists only the CPU platform's async-scheduling override; its other CPU-platform changes
+    are not listed or restored
+- id: FID-2
+  section: §7.7
+  statement: >-
+    The oracle runs in a locked Python environment at the pinned upstream commit, and every recorded
+    trace records that commit, the lock file's hash, the scenario's hash, the seed and the manifest
+    version.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Oracle/check_lock.py and the trace provenance check
+    runs: pull_request
+    status: ci
+    test: oracle/check_lock.py
+  - repo: blis-sglang
+    check: Oracle/check_lock.py and the trace provenance check
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: blis-vllm only
+- id: FID-3
+  section: §7.7
+  statement: >-
+    A recorded trace's decisions change only in a commit carrying a golden-reviewed: line that names
+    the trace and gives the reason. Tools refuse to rewrite traces unless an explicit update flag
+    is set.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Oracle/check_goldens.py
+    runs: pull_request
+    status: ci
+    test: oracle/check_goldens.py
+  - repo: blis-sglang
+    check: Oracle/check_goldens.py
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: The oracle runners refuse to write traces without the update flag
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: The oracle runners refuse to write traces without the update flag
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: blis-vllm only
+- id: FID-4
+  section: §7.7
+  statement: Every ported function is exercised by at least one recorded scenario.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Coverage gate
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Coverage gate
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: FID-5
+  section: §7.7
+  statement: >-
+    A framework (connector base, offload tiering, HiCache) is marked modelled in the surface list
+    only when its contract has traces of its own, independent of any single connector built on it.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: A surface-list check that a framework marked modelled names traces of its own
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A surface-list check that a framework marked modelled names traces of its own
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: FID-6
+  section: §7.7
+  statement: >-
+    A property asserted about an engine port, such as a monotonicity law, is first run against the
+    upstream oracle. It is adopted only if the upstream satisfies it on the oracle scenarios. A law
+    about the cost model names the upstream behaviour it rests on.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: The property tests run in the oracle tier before they run against the port
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: The property tests run in the oracle tier before they run against the port
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: FID-7
+  section: §7.7
+  statement: >-
+    For every catalog model and each supported layout, the resident weights an engine reports in its
+    PoolPlan (per-rank shape, stored data type and sharding, after the engine's weight post-processing)
+    equal what the pinned upstream allocates. The graph's tensors equal the checkpoint's safetensors
+    headers.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: >-
+      Oracle tier T0 in each engine repository, run whenever a substrate release changes the catalog
+      or the engine moves to a new upstream release
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Oracle tier T0 in each engine repository, run whenever a substrate release changes the catalog
+      or the engine moves to a new upstream release
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: FID-8
+  section: §7.7
+  statement: >-
+    The harness may not contain a copy of an upstream decision function. A harness file with a Derived
+    from header, or a function named like an upstream function, is refused unless the manifest declares
+    it as a transcription.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Oracle/check_mocks.py
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Oracle/check_mocks.py
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: FID-9
+  section: §7.7
+  statement: >-
+    The engine is tested as the simulator drives it, not only on its own. Each recorded trace also
+    records the timed inputs the engine received: arrivals, completions, transfer ends and aborts.
+    Replaying those inputs through inference-sim's driver into engine.Engine reproduces the trace's
+    decisions step by step.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      The coupled replay test in inference-sim's CI, over every engine repository's recorded traces
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+  note: the oracle tests the port alone, not as the simulator drives it
+- id: FID-10
+  section: §7.7
+  statement: >-
+    Every compared field and metric series takes its neutral value and at least one other value somewhere
+    in the scenario set, so a comparison of it can fail. The comparison is two-sided: a field or series
+    that appears on only one side is a mismatch.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: >-
+      A value-coverage report in each engine repository's CI, which fails on any field or series seen
+      only at one value
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A value-coverage report in each engine repository's CI, which fails on any field or series seen
+      only at one value
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: FID-11
+  section: §7.7
+  statement: >-
+    The work a step shape asks the cost model to price equals what the pinned upstream launches for
+    the same step, for each layer: the rows of every matrix multiply, each operation's FLOPs and bytes,
+    the token count of every draft pass, and the context entries each context-dependent operation
+    reads, bounded by its window where it has one. Rows and token counts match exactly; FLOPs and
+    bytes match within a stated tolerance. FID-7 compares what is resident; this compares what runs.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: >-
+      An oracle comparison, run with T0 and on engine pull requests that change how step shapes are
+      emitted. It executes the upstream forward pass on meta tensors, at the padded batch the upstream
+      launches, under a PyTorch dispatch mode that counts each operation's rows, FLOPs and bytes,
+      with the ranks under a fake process group. Each opaque custom operation, such as attention or
+      a fused mixture of experts, is counted by a rule the manifest lists. Routed-expert rows are
+      compared in total (tokens times experts per token), since routing depends on data. Context reads
+      are counted from the upstream's own attention metadata: sequence lengths, block tables and windows.
+      Known-bad inputs: a matrix multiply priced at fewer rows per token than the upstream runs, and
+      a windowed gather priced over the whole context
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      An oracle comparison, run with T0 and on engine pull requests that change how step shapes are
+      emitted. It executes the upstream forward pass on meta tensors, at the padded batch the upstream
+      launches, under a PyTorch dispatch mode that counts each operation's rows, FLOPs and bytes,
+      with the ranks under a fake process group. Each opaque custom operation, such as attention or
+      a fused mixture of experts, is counted by a rule the manifest lists. Routed-expert rows are
+      compared in total (tokens times experts per token), since routing depends on data. Context reads
+      are counted from the upstream's own attention metadata: sequence lengths, block tables and windows.
+      Known-bad inputs: a matrix multiply priced at fewer rows per token than the upstream runs, and
+      a windowed gather priced over the whole context
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

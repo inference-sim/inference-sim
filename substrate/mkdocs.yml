@@ -14,6 +14,7 @@ exclude_docs: |
   contracts/examples/
   contracts/figures/
   contracts/generated/
+  contracts/invariants/
   kernel/figures/
   kernel/generated/
   includes/

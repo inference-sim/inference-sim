@@ -1,0 +1,180 @@
+# The VLM invariants: blis-vllm (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: VLM-1
+  section: §5
+  statement: >-
+    Decisions match vLLM at the pinned commit, step by step, on every oracle scenario.
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Oracle tiers T0–T6 (§7.4)
+    runs: pull_request
+    status: ci
+    test: ci.yml jobs packs-against-vllm, oracle-tier2, metrics-manifest
+  review: null
+  status: ci
+  target:
+    status: ci
+    milestone: null
+- id: VLM-2
+  section: §5
+  statement: >-
+    Every Go file states where it came from: derived from a vLLM path at a release and commit, moved
+    from another repository, or original. At a tag v<release>-blis.N, every ported file names that
+    vLLM release, and no file names another.
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: 'Provenance test: every file states its provenance'
+    runs: pull_request
+    status: ci
+    test: TestEveryFileStatesItsProvenance
+  - repo: blis-vllm
+    check: >-
+      Provenance test: no file names a vLLM release other than the one the Upstream record names
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 4
+  note: compat/, rules/v0_29 and rules/v0_31 name vLLM 0.29 and 0.31 until M4 (§3.3)
+- id: VLM-3
+  section: §5
+  statement: >-
+    fields.json classifies every configuration field and every environment variable the release reads,
+    including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled
+    (with a trace that sets it), proven inert (with a passing proof), or not modelled (with an issue).
+    No other status is allowed. A field marked modelled changes, when perturbed, a decision in some
+    trace or a field of the emitted plan or step shape, and records the value classes its oracle scenarios
+    cover: for a boolean or enumerated field, the values some scenario sets; for an ordered numeric
+    field, the range of values the scenarios set, split at every threshold the upstream compares the
+    field with, generated from the upstream's comparisons. The probe values of a proven-inert field
+    follow the same classes. Each field also states its estimation rule (§11.2), or that it has none.
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Completeness check
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: Inertness proofs (§7.4)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A perturbation test over every field marked modelled
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A check that every field has an estimation rule or says it has none
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VLM-4
+  section: §5
+  statement: >-
+    surface.json lists every connector, offload tier, KV-cache spec type and its manager, speculative
+    method, scheduler policy, metric family and KV-event type the pinned release registers, each with
+    a status (X9).
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Generator against vLLM's registries (§7.5)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VLM-5
+  section: §5
+  statement: >-
+    No clock reads and no goroutines. Waiting is reported to the simulator as a time value.
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Syntax-tree test
+    runs: pull_request
+    status: ci
+    test: TestNoClockNoGoroutines
+  review: null
+  status: ci
+  target:
+    status: ci
+    milestone: null
+- id: VLM-6
+  section: §5
+  statement: >-
+    A value of an enumerated setting, such as a connector, backend or policy name, runs only through
+    the surface item that models it. Two values share code only where the upstream's own registration
+    maps them to the same class, cited. Every value is either refused by name or produces its own
+    trace.
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Dispatch generated from surface.json
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A perturbation test per enumerated value
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+  note: connector and backend names are matched by hard-coded lists
+- id: VLM-7
+  section: §5
+  statement: >-
+    Every KV-cache spec type and group role the pinned release registers in KVCacheSpecRegistry has
+    a status in surface.json that X9 allows. For a modelled one, the manager the registry maps it
+    to is ported, with oracle scenarios that allocate, evict and free its blocks and, where the manager
+    supports prefix caching, share a prefix between requests. A model whose layers need a refused
+    spec type is refused before the run starts, with a message naming the spec type. The grouping
+    of layers into KV-cache groups at start-up, and the coordinators that run one manager per group,
+    are ported once and serve every manager.
+  scope:
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: Generator against KVCacheSpecRegistry (§7.5)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A T2 scenario per ported manager
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A start-up refusal test with a model that needs each refused spec type
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+  note: >-
+    three of the 11 concrete manager classes at v0.32.0 are ported (full attention, sliding window,
+    circular buffer), serving five spec types (full attention, MLA, sliding window, sliding-window
+    MLA, circular buffer); a kv_layers name outside the six known names is rejected (core/kv/layers.go
+    ParseLayerSpec), but no check yet maps a model's layers to spec types, and no surface list names
+    them

@@ -1,0 +1,288 @@
+# The VAL invariants: Coefficient values (BLIS target design §9.4).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: VAL-1
+  section: §9.4
+  statement: >-
+    Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources
+    that method needs: measured, calibrated: the data units it was fitted to; transferred: the source
+    coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation;
+    roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Schema rules in blis-substrate/validate for the method vocabulary in use
+    runs: pull_request
+    status: ci
+    test: 'contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured'
+  - repo: blis-substrate
+    check: >-
+      Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method
+      needs
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-2
+  section: §9.4
+  statement: >-
+    For every primitive family and every catalog chip, some rank has a value. A missing measured value
+    never causes a refusal.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Completeness test over every primitive and catalog chip (SUB-7)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-3
+  section: §9.4
+  statement: >-
+    Each price records, among the coefficients it used, the least trusted effective rank, and names
+    its method and any flag. An extrapolated lookup counts as transferred, and an unidentified entry
+    as assumed (VAL-10).
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Step-time result field
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Checked in kernel tests
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-4
+  section: §9.4
+  statement: >-
+    Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used;
+    flags do not change which entry is chosen, only how the price reports it. Where several entries
+    of one rank match a lookup at different scopes, one written order of precedence over every scope
+    dimension (chip, model, layout widths, node) picks one, whatever order the entries were loaded
+    in. Two matching entries that the precedence does not order are refused at load, and a price's
+    provenance names every matching entry it displaced. A more trusted entry is removed only with
+    a supersedes: record citing a defect issue, which a person must approve.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Validator check against the previous release, plus a review question
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A validator rule that refuses unordered matches
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A cost-model test that resolves every pair of scope kinds in both load orders and agrees with
+      the validator (X15)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-5
+  section: §9.4
+  statement: >-
+    The typical error of each method is measured by leaving one chip out, and published per primitive
+    family, using data units with role validate (§10).
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Nightly job
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-6
+  section: §9.4
+  statement: >-
+    A change to a measured or calibrated value passes the landing gate. The fit and held-out split
+    and the success criteria are committed first. Held-out error and distribution distance must not
+    get worse on any lane, and must improve on the target lane. For each lane the gate computes, on
+    that lane's held units, the paired bootstrap interval of the candidate's error minus the base's
+    error. A lane fails only when that whole interval lies above zero, with the Holm correction for
+    the number of lanes compared. The target lane passes only when its whole interval lies below zero.
+    Every changed measured or calibrated entry is selected by a lookup in at least one operator-level
+    or whole-run gate run. An entry no gate run selects, such as a coefficient for a chip with no
+    held data, is reported as unjudged and lands only with a person's approval. Figures come from
+    a script. A whole-run lane that gets worse does not by itself fail a change whose operator-level
+    held-out check passed: the gate records the regression as a defect in another term (VAL-11), and
+    the change needs a person's approval.
+  scope:
+  - accuracy-dashboard
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: On fixtures per pull request
+    runs: pull_request
+    status: ci
+    test: registry/validator (pytest)
+  - repo: blis-substrate
+    check: On full data nightly
+    runs: nightly
+    status: new
+  - repo: blis-substrate
+    check: Operator-level gates in blis-substrate
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Whole-run gates in accuracy-dashboard's gate job (§13.5)
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+- id: VAL-7
+  section: §9.4
+  statement: >-
+    A coefficient scoped to a single model marks a cost that the cost model's general forms do not
+    yet explain. It names the missing form. The number of such coefficients only goes down.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Ratchet test
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+  note: 46 such coefficients, all for one model
+- id: VAL-8
+  section: §9.4
+  statement: >-
+    A lookup matches a coefficient only for the exact kernel implementation that runs. A value taken
+    from a different implementation is a transferred entry (D5). Every registry entry is selected
+    by a lookup on the conformance scenarios, or its kernel hash appears in the kernel_impls.json
+    of an engine release that some supported inference-sim release pins.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: The cost model's lookup, which has no fallback to a sibling implementation
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A test that lists entries matching neither condition, which are removed in the next substrate
+      release
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-9
+  section: §9.4
+  statement: >-
+    A coefficient states what its measurement includes: device time only or host issue time as well,
+    captured or eager execution, and which harness collected it. The formula that reads it states
+    the same, and the two must agree. A formula that needs both device and host time reads two coefficients,
+    never one that mixes them.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A validator rule matching each coefficient's measurement boundary with the boundary its reading
+      formula declares
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-10
+  section: §9.4
+  statement: >-
+    A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile
+    likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and
+    kernel. A price that reads an entry outside that range records the lookup as extrapolated, which
+    ranks it with transferred for VAL-3 (§9.3). An entry whose interval is unbounded, or wider than
+    half its value, is flagged unidentified: its data do not determine it, and it ranks with assumed
+    for VAL-3, while keeping its method and its citations (D1).
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Validator rules on the interval and range fields
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A test that extrapolated lookups report it
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: The fitting scripts' identifiability check
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: VAL-11
+  section: §9.4
+  statement: >-
+    An operator-level check judges a pricing form; an end-to-end check judges how forms combine. A
+    form that passes its operator-level held-out check but makes end-to-end error worse shows that
+    another term is wrong. The disagreement is recorded as one defect, in the other term. The end-to-end
+    figure is not used to reject the form that passed, or to keep a known error. No coefficient or
+    form is kept because it cancels another error.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: A review question
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A lint that refuses comments or entries marked as a known over-charge or under-charge without
+      a linked defect
+    runs: pull_request
+    status: new
+  review:
+  - question: Is this change kept or rejected because it offsets an error elsewhere?
+    reviewer: owners of the changed directory
+    when: >-
+      a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level
+      evidence
+    trigger:
+      manual: true
+  status: new
+  target:
+    status: ci
+    milestone: 2

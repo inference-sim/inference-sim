@@ -1,0 +1,411 @@
+# The LIF invariants: Versions and releases (BLIS target design §14.2).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: LIF-1
+  section: §14.2
+  statement: >-
+    A tag names one commit forever. Tags are never moved or deleted; a mistake gets a new tag.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: blis-vllm
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: blis-sglang
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: llm-d-router
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: inference-sim
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: blis-config-search
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: accuracy-dashboard
+    check: Protected tags
+    runs: settings
+    status: new
+  - repo: blis-substrate
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  - repo: blis-vllm
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  - repo: blis-sglang
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  - repo: llm-d-router
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  - repo: inference-sim
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  - repo: blis-config-search
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  - repo: accuracy-dashboard
+    check: A nightly check that every tag resolves to its recorded commit
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: LIF-2
+  section: §14.2
+  statement: >-
+    In every build, each BLIS module resolves to the exact version the release records in stack.json,
+    and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
+    inference-sim's own substrate requirement equals the version its build selects, so no engine or
+    router release can change the simulator's data. One Go toolchain version is named in contracts/toolchain,
+    at the substrate version inference-sim selects. No module BLIS writes declares a go version above
+    it. Every CI job sets GOTOOLCHAIN=local and installs exactly that version, so no build downloads
+    a toolchain. The router fork's go line follows upstream llm-d; when upstream raises it, the release
+    bot raises the toolchain file first, in the same review set. Documented version strings are generated
+    (X23).
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      Selected-version lint (go list -m all), which for the router reads the replace target that go
+      list -m -json reports, not the placeholder version on the require line
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Selected-version lint (go list -m all), which for the router reads the replace target that go
+      list -m -json reports, not the placeholder version on the require line
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Selected-version lint (go list -m all), which for the router reads the replace target that go
+      list -m -json reports, not the placeholder version on the require line
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      Selected-version lint (go list -m all), which for the router reads the replace target that go
+      list -m -json reports, not the placeholder version on the require line
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Selected-version lint (go list -m all), which for the router reads the replace target that go
+      list -m -json reports, not the placeholder version on the require line
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A CI step that fails if go version differs from it
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A CI step that fails if go version differs from it
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A CI step that fails if go version differs from it
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A CI step that fails if go version differs from it
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A CI step that fails if go version differs from it
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The pre-release test of every engine and router package against the simulator's selected versions
+      (§3.2)
+    runs: release
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: LIF-3
+  section: §14.2
+  statement: >-
+    Only the release bot cuts releases, and only from a commit where every ci invariant passed. If
+    the bot is unavailable, two release owners may follow the documented manual procedure (§13.6);
+    a manual tag is signed with a release owner's key and recorded in the release notes.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: blis-vllm
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: blis-sglang
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: llm-d-router
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: inference-sim
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: blis-config-search
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: accuracy-dashboard
+    check: Repository settings that let only the release bot and release owners create tags
+    runs: settings
+    status: new
+  - repo: blis-substrate
+    check: The bot's own check of every ci invariant
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  - repo: inference-sim
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A nightly check that every tag made by a person is signed and listed in its release notes
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: LIF-4
+  section: §14.2
+  statement: Release notes are generated (§13.3).
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: The release bot, which writes the notes from the release's changes
+    runs: release
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: LIF-5
+  section: §14.2
+  statement: >-
+    An engine module, or the router fork, models one upstream release. Its tags are v<upstream>-blis.N,
+    v<upstream>-post.K.blis.N for a post release, or v<upstream>-rev.W.blis.N for a four-part version,
+    with N from 1. No new plain upstream tag is made; older tags stay (LIF-1). In an engine module,
+    the Upstream record names that release and commit, every ported file names that same release,
+    and no code for another release remains. Release candidates are not modelled. The package that
+    runs the modelled release depends on no package that exists only for another release.
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - llm-d-router
+  checks:
+  - repo: blis-vllm
+    check: >-
+      A test that lists the dependencies of the engine's entry package with go list -deps and fails
+      on any package kept for another release
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A test that lists the dependencies of the engine's entry package with go list -deps and fails
+      on any package kept for another release
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A test that lists the dependencies of the engine's entry package with go list -deps and fails
+      on any package kept for another release
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A tag check in the release bot: format, N one above the previous tag on the same upstream release,
+      no plain tag
+    runs: release
+    status: new
+  - repo: blis-vllm
+    check: >-
+      In engine modules, the provenance test, which refuses a ported file that names another release
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      In engine modules, the provenance test, which refuses a ported file that names another release
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Every tag of the router fork has the form v<upstream>-blis.N
+    runs: pull_request
+    status: ci
+    test: release tags v1.0.0-blis.1, v1.0.0-blis.2
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 4
+  note: >-
+    the router fork follows it; blis-vllm also holds vLLM 0.29 and 0.31 code until M4 (§3.3)
+- id: LIF-6
+  section: §14.2
+  statement: >-
+    Each inference-sim release runs exactly one upstream release of each engine and of llm-d, and
+    lists them in stack.json. A scenario whose engine.version names a different upstream release is
+    refused, with a message naming the release it asked for, the one this build runs, and the newest
+    inference-sim release that runs the one it asked for, or says that none does. The llm-d release
+    is not stated by scenarios; it is the one stack.json lists.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: A refusal test per engine kind
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A check that the message's release names match stack.json history
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    inference-sim runs vLLM 0.29, 0.31 and 0.32 in one build (cmd/engine_driver_build.go:20-33)
+- id: LIF-7
+  section: §14.2
+  statement: >-
+    A deprecated feature is removed by the first release after its deprecation that may break compatibility:
+    a MAJOR release, or a MINOR release while the repository is at v0. In an engine module, which
+    has no such releases of its own, deprecated code is removed when main moves to a new upstream
+    release. Removal takes with it every code path, flag, field, test and document that existed only
+    for that feature. Each deprecation is recorded where the feature is defined (a command's or flag's
+    deprecation notice, or a // Deprecated: comment) with the release that deprecated it. Nothing
+    in this design depends on a deprecated feature, and no repository keeps code that none of the
+    binaries BLIS ships can reach.
+  scope:
+  - blis-substrate
+  - inference-sim
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains
+      a feature deprecated in an earlier release
+    runs: release
+    status: new
+  - repo: inference-sim
+    check: >-
+      A whole-program dead-code check (Go's deadcode), run in stack CI's workspace from the main packages
+      of every binary BLIS ships, with test files not counted as reaching code. Upstream files in
+      the router fork, and the interfaces in contracts/, are exempt
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    observe, calibrate, --metrics-path and --results-path are deprecated but present; relaxed until
+    M4 for the features §3.3 lists

@@ -1,0 +1,2154 @@
+# The X invariants: Rules that span repositories, and process rules (BLIS target design §4 and §4.1).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: X1
+  section: §4
+  title: Users configure BLIS with the upstream's own configuration.
+  statement: >-
+    What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field
+    names, types, defaults and errors. BLIS adds only what the real system learns from its environment:
+    hardware, cluster topology and workload. Engine repositories resolve defaults exactly as the upstream
+    does. The router needs no port of its defaults: the fork runs llm-d's own flag parsing, configuration
+    loader and Kubernetes decoding unchanged, so a value the real router rejects is rejected with
+    the router's own message. An unknown or unsupported field is refused by its upstream name, never
+    ignored. The one exception is the router's flags that only change how a deployed router is served
+    or observed (transport, TLS, leader election, ports, telemetry). Those are accepted, have no effect,
+    and are named in a warning.
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-vllm
+    check: >-
+      Every configuration field of the pinned release is classified as modelled, proven inert, or
+      not modelled (VLM-3, SGL-3)
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Every configuration field of the pinned release is classified as modelled, proven inert, or
+      not modelled (VLM-3, SGL-3)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      An unknown field, or a not-modelled field set away from its default, is refused with its upstream
+      name
+    runs: pull_request
+    status: ci
+    test: 'rules/engineconfig: TestDecodeRefusesAnUnknownKey'
+  - repo: blis-sglang
+    check: >-
+      An unknown field, or a not-modelled field set away from its default, is refused with its upstream
+      name
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Defaults match: the upstream's own configuration code resolves each oracle scenario, and the
+      port's values are compared field by field
+    runs: pull_request
+    status: ci
+    test: 'ci.yml job packs-against-vllm: rules/v0_32 -run MatchSource'
+  - repo: blis-sglang
+    check: >-
+      Defaults match: the upstream's own configuration code resolves each oracle scenario, and the
+      port's values are compared field by field
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Every configuration the upstream rejects is rejected. This is tested on a generated set: each
+      field's boundary values, taken from the upstream's own argument and validation metadata, and
+      one case for each branch of the upstream's validation code, with branch coverage required
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Every configuration the upstream rejects is rejected. This is tested on a generated set: each
+      field's boundary values, taken from the upstream's own argument and validation metadata, and
+      one case for each branch of the upstream's validation code, with branch coverage required
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The scenario's router flags, configuration file and manifests reach the router unchanged, and
+      the router parses them with its own code
+    runs: pull_request
+    status: ci
+    test: 'cmd: TestScenarioRouterInputs_MapsTheRouterBlock'
+  - repo: llm-d-router
+    check: >-
+      A set of malformed router flags, configuration files and manifests is refused, each with llm-d's
+      own error message
+    runs: pull_request
+    status: ci
+    test: 'pkg/embed: TestNewRefusals'
+  - repo: llm-d-router
+    check: >-
+      Every flag in the router's flag set either is on the fork's list of flags that only matter in
+      a cluster, or can change a decision. Every plugin type llm-d registers either is on the fork's
+      list of audited types, or is refused by name. Both lists are regenerated against each new llm-d
+      release and reviewed as a diff
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      Every scenario key outside the engine and router blocks is on a fixed list of environment facts
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Does this new scenario field describe something the real system would observe, rather than a
+      setting the upstream does not have?
+    reviewer: contracts owners
+    when: a key is added to the environment list
+    trigger:
+      repos:
+      - blis-substrate
+      paths:
+      - contracts/spec/scenario/**
+  - question: >-
+      Does this router flag only change how a deployed router is served or observed, with no effect
+      on any routing, admission or flow-control decision?
+    reviewer: router fork owners
+    when: a flag is added to the fork's list of flags that only matter in a cluster
+    trigger:
+      repos:
+      - llm-d-router
+      paths:
+      - pkg/embed/config.go
+  status: partial
+  target:
+    status: ci
+    milestone: 4
+  note: >-
+    the engine-setting flags that restate scenario fields are removed only in M4; the router fork
+    parses router inputs with llm-d's own strict code; its inert-flag and audited-plugin lists are
+    not yet checked against upstream
+- id: X2
+  section: §4
+  title: The substrate knows no engine.
+  statement: >-
+    Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy.
+    Engine behaviour reaches it only as a resolved PoolPlan, StepShape or Transfer.
+  scope:
+  - blis-substrate
+  - inference-sim
+  checks:
+  - repo: blis-substrate
+    check: >-
+      No engine identifier in non-test Go identifiers, string literals or registry keys: engine names,
+      engine version strings, upstream source-path citations, and engine-only setting names. The word
+      list is committed in the substrate (invariants/engine-words.txt). A bot regenerates it from
+      each engine release's field list in a pull request, leaving out words the architecture vocabulary
+      also uses, such as dtype or quantization. The count per directory may only go down, measured
+      against the word list of the same version, until it reaches zero
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The cost model's public functions accept only plans, step shapes, transfers, and catalog and
+      registry handles
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      PoolPlan, StepShape and Transfer contain no field whose values come from an engine's vocabulary,
+      and a zero value means "absent" or the field's documented neutral value (such as stage 0), never
+      an engine default (a reflection test). Separately, a scenario both engines support is priced
+      from each engine's plan, and every price difference is traced to a named difference between
+      the plans
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Coefficient scope keys come from a fixed set with no engine key
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Model graphs use only architecture vocabulary
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Does this change hide one engine's policy (a default, threshold, backend choice or padding rule)
+      behind a neutral name? Would the other engine need the same edit?
+    reviewer: owners of the changed directory
+    when: any non-test change under catalog/, registry/ or kernel/
+    trigger:
+      repos:
+      - blis-substrate
+      paths:
+      - catalog/**
+      - registry/**
+      - kernel/**
+      exclude:
+      - '**/*_test.go'
+      - '**/testdata/**'
+      - '**/tests/**'
+  status: new
+  target:
+    status: ci
+    milestone: 4
+- id: X3
+  section: §4
+  title: Engine behaviour lives only in its engine repository.
+  statement: >-
+    Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering
+    a model to kernel implementations belong to blis-vllm or blis-sglang. Each engine repository models
+    one upstream release at a time (LIF-5).
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: blis-substrate
+    check: The cost model imports no engine module
+    runs: pull_request
+    status: ci
+    test: 'kernel: TestTheLibraryImportsNoEngineModel'
+  - repo: blis-vllm
+    check: No engine module imports another
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: No engine module imports another
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The simulator reaches engines only through engine.Engine, at one build site
+    runs: pull_request
+    status: ci
+    test: 'cmd: TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite'
+  - repo: inference-sim
+    check: Scheduler and KV types exist only in engine modules
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Scheduler and KV types exist only in engine modules
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The simulator does no resource arithmetic (KV blocks, bytes, tier capacities); it asks the engine
+      or the cost model. The one exception is dividing a link's bandwidth among transfers and the
+      cross-domain traffic of step collectives that overlap in time (SIM-13) (§6.2)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: Every ported file names the release that the repository's Upstream record names
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Every ported file names the release that the repository's Upstream record names
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator
+      instead of an engine repository?
+    reviewer: inference-sim owners
+    when: a change to the simulator's request-lifecycle or capacity code
+    trigger:
+      repos:
+      - inference-sim
+      paths:
+      - sim/engine_driver*.go
+      - sim/instance_state.go
+      - sim/request.go
+      - sim/event_queue.go
+      - sim/engine_records.go
+      - sim/dp_modes.go
+      - sim/cluster/**
+      exclude:
+      - '**/*_test.go'
+  status: partial
+  target:
+    status: ci
+    milestone: 4
+- id: X4
+  section: §4
+  title: The router is llm-d's own router code, unchanged.
+  statement: >-
+    The fork changes only how the router is hosted: how it reads time, starts work, draws random numbers
+    and makes calls. It changes no routing decision. Engine-specific router behaviour comes from llm-d's
+    own code for that engine.
+  scope:
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: >-
+      No new clock, timer, goroutine, randomness, map-order or network call on a decision path, except
+      through the fork's runtime interface; every change to an upstream file is of an allowed kind
+      (RTR-2), and every hosting hazard is converted or reviewed (RTR-6)
+    runs: pull_request
+    status: ci
+    test: 'hosting-lint.yml job hosting: go run ./hack/hosting-lint'
+  - repo: llm-d-router
+    check: >-
+      The fork, run under its default runtime, and the upstream release it is based on make the same
+      decisions on recorded request streams. Because the fork keeps upstream's module path, one program
+      cannot load both, so the upstream release is built separately and each build replays the same
+      recorded requests. A decision that depends on a random draw or on map order is compared as a
+      set: the fork's choice must be one the upstream can make. Upstream's own tests also run on the
+      fork, changed only as RTR-2 allows
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Under BLIS's simulated runtime, every decision is one the default runtime can make from the
+      same recorded state. Each decision is replayed from the recorded state just before it, not from
+      the simulation's own history, so one different tie-break cannot make every later decision incomparable.
+      Ties and random draws are compared as sets of the choices the upstream could make
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      BLIS imports only the fork's pkg/embed.New, and only audited plugin types are reachable
+    runs: pull_request
+    status: ci
+    test: 'sim/llmd: TestRouterImportsOnlyTheEmbedConstructor'
+  - repo: llm-d-router
+    check: >-
+      Every branch the fork takes only when hosted is exercised by a test that compares it with the
+      upstream code it replaces
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Does this change to how the router is hosted keep upstream behaviour on paths the recorded streams
+      do not cover, such as errors, timeouts and cancellation?
+    reviewer: fork owners
+    when: a fork pull request converts a call site or updates the lint baseline
+    trigger:
+      repos:
+      - llm-d-router
+      paths:
+      - hack/hosting-lint/baseline.txt
+      - hack/hosting-lint/budget.txt
+      - pkg/**/*.go
+      - cmd/epp/**/*.go
+      exclude:
+      - '**/*_test.go'
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+- id: X5
+  section: §4
+  title: Fidelity is proven by comparing against the upstream's own code.
+  statement: >-
+    Each engine repository runs the upstream's own Python code on the same inputs and compares its
+    decisions with the Go port's, step by step. Only the environment is replaced (GPU, clock, transport,
+    environment settings, the hardware platform and outside services), and every replacement is listed
+    in a manifest (§7).
+  scope:
+  - blis-sglang
+  - blis-vllm
+  checks:
+  - repo: blis-vllm
+    check: >-
+      Every replacement the test harness makes is listed in the manifest; a changed manifest carries
+      a new version
+    runs: pull_request
+    status: ci
+    test: oracle/check_mocks.py oracle/mocks.json
+  - repo: blis-sglang
+    check: >-
+      Every replacement the test harness makes is listed in the manifest; a changed manifest carries
+      a new version
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: Decisions match on every recorded scenario
+    runs: pull_request
+    status: ci
+    test: 'core/sched: TestDifferentialAgainstVLLM'
+  - repo: blis-sglang
+    check: Decisions match on every recorded scenario
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A recorded trace's decisions change only in a commit marked as reviewed
+    runs: pull_request
+    status: ci
+    test: oracle/check_goldens.py
+  - repo: blis-sglang
+    check: A recorded trace's decisions change only in a commit marked as reviewed
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Every ported function is exercised by some recorded scenario, and deliberately broken copies
+      of it are caught
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Every ported function is exercised by some recorded scenario, and deliberately broken copies
+      of it are caught
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Does this new replacement stand in only for the GPU, clock, transport, environment settings,
+      the hardware platform or an outside service, and not for a decision? If it reproduces a decision,
+      is it declared as a transcription?
+    reviewer: engine repository owners
+    when: the manifest changes
+    trigger:
+      repos:
+      - blis-vllm
+      - blis-sglang
+      paths:
+      - oracle/mocks.json
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: oracle diff tests in blis-vllm only
+- id: X6
+  section: §4
+  title: Same inputs, same output.
+  statement: >-
+    For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry
+    content hashes, the simulator's standard output is identical byte for byte across runs, thread
+    counts and supported platforms. The data source (embedded or path) is recorded in the Result,
+    but is left out of the output the byte gate compares. Simulated time is passed in as a number,
+    and no code reads the system clock. Randomness comes from named substreams seeded from the scenario
+    (DEV-6).
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: inference-sim
+    check: >-
+      Identical output across runs and thread counts; a recorded trace replays identically
+    runs: pull_request
+    status: ci
+    test: 'sim/llmd: TestDeterminism_AcrossProcesses'
+  - repo: inference-sim
+    check: >-
+      Identical output on linux/amd64, linux/arm64 and darwin/arm64: nightly, and on every pull request
+      that changes kernel/ or an engine's lowering. Two things differ by platform. First, the Go compiler
+      may fuse x*y+z into one fused multiply-add on some architectures and not others, which changes
+      the last bits; so cost-model and engine code writes float64(x*y) + z where fusion must not happen,
+      or calls math.FMA where it must. Second, some functions in Go's math package, such as Exp and
+      Log, use assembly or CPU-dependent code on some platforms, so their last bits can differ between
+      machines; cost-model and engine code calls the pure-Go copies in contracts/check/fmath instead,
+      which use no fused multiply-add. A lint enforces both rules. stack.json records the toolchain
+      version (SIM-3)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: No clock reads and no goroutines in engine or cost-model code
+    runs: pull_request
+    status: ci
+    test: TestNoClockNoGoroutines
+  - repo: blis-sglang
+    check: No clock reads and no goroutines in engine or cost-model code
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: No clock reads and no goroutines in engine or cost-model code
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this
+      lint covers files the fork wrote; upstream code is covered by the differential test in X4
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this
+      lint covers files the fork wrote; upstream code is covered by the differential test in X4
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this
+      lint covers files the fork wrote; upstream code is covered by the differential test in X4
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this
+      lint covers files the fork wrote; upstream code is covered by the differential test in X4
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this
+      lint covers files the fork wrote; upstream code is covered by the differential test in X4
+    runs: pull_request
+    status: new
+  review:
+  - question: Could this floating-point reduction give a different result on another platform?
+    reviewer: owners of the changed repository
+    when: >-
+      a parallel or floating-point reduction is added, or the cross-platform check fails
+    trigger:
+      manual: true
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+- id: X7
+  section: §4
+  title: One owner for each fact; dependencies point one way.
+  statement: >-
+    Contracts live in blis-substrate/contracts. A repository never imports one above it in Figure
+    1. A generated file is written only by its generator. Every copy of a fact is generated from its
+    owner or checked against it. The dashboard's scoring harness is the one thing a lower repository
+    uses from a repository above it: it runs the harness as a pinned, released tool, never imports
+    its code. A lower repository's candidate job may also build inference-sim through stack CI to
+    run that harness (§13.5).
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A lower repository refers to accuracy-dashboard only through the harness pin file
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: The module graph across all repositories follows Figure 1
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The engine repositories and the router fork import only substrate packages under contracts/
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The engine repositories and the router fork import only substrate packages under contracts/
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The engine repositories and the router fork import only substrate packages under contracts/
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: ci
+    test: 'tools/docgen: TestGeneratedDocsAreCurrent'
+  - repo: blis-vllm
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: ci
+    test: go run ./cmd/metricsmanifest -check
+  - repo: blis-sglang
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Every generated file matches its generator's output
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      No hand-copied list of another repository's facts; field lists, knobs and plugin parameters
+      are read from their owner at the pinned version
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      No hand-copied list of another repository's facts; field lists, knobs and plugin parameters
+      are read from their owner at the pinned version
+    runs: pull_request
+    status: new
+  review:
+  - question: Does this change give a second home to a fact another repository owns?
+    reviewer: owners of the changed repository
+    when: >-
+      a pull request adds a literal list or table, or a constant that cites another repository
+    trigger:
+      manual: true
+  status: partial
+  target:
+    status: ci
+    milestone: 4
+  note: compat/kernelmodel imports the cost model until M4 (§3.3)
+- id: X8
+  section: §4
+  title: Every number is reproducible, and no data point both fits and judges.
+  statement: >-
+    Every number records the exact versions and data it came from, and can be regenerated from them.
+    A published number, meaning one on the dashboard or in a committed report, is computed from released
+    data only (§3.3). No data point used to fit or choose a value is used to evaluate it (§10).
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: blis-substrate
+    check: No ledger unit is cited under two roles by any fit, gate or dashboard point
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Every data source is pinned to an exact revision
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Every Result records the module versions, the source and content hash of the catalog and the
+      registry, any overlay hashes, and whether the run used released data
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The dashboard and committed config-search reports accept only released-data results; an experimental
+      result is refused
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The dashboard and committed config-search reports accept only released-data results; an experimental
+      result is refused
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Every published number carries its data units
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: Every published number carries its data units
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      Published numbers regenerate: on redistributable fixtures on every pull request, on the full
+      data nightly
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      Published numbers regenerate: on redistributable fixtures on every pull request, on the full
+      data nightly
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      Published numbers regenerate: on redistributable fixtures on every pull request, on the full
+      data nightly
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      An accuracy change's success criteria are committed before any commit that reads its held-out
+      data
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      An accuracy change's success criteria are committed before any commit that reads its held-out
+      data
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      An accuracy change's success criteria are committed before any commit that reads its held-out
+      data
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      An accuracy change's success criteria are committed before any commit that reads its held-out
+      data
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Was this fitting method, gate or threshold chosen after seeing evaluation results?
+    reviewer: owners of the repository landing the change
+    when: a pull request changes a fitting method, gate or threshold
+    trigger:
+      repos:
+      - blis-substrate
+      paths:
+      - registry/scripts/**
+      - registry/validator/**
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X9
+  section: §4
+  title: The upstream feature surface is fully accounted for.
+  statement: >-
+    For every pinned upstream release, each feature the upstream offers has exactly one status in
+    a generated list. Features include connectors, KV tiers, KV-cache managers, speculative methods,
+    scheduler policies, configuration fields, metrics and event types. The statuses are: modelled,
+    with evidence; refused by name, with an issue; or out of scope, for one of three listed reasons
+    (§7.5). Modelled is the goal; the other two are exceptions, each with evidence.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-vllm
+    check: >-
+      The surface list is regenerated from the pinned upstream source and matches the committed list
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The surface list is regenerated from the pinned upstream source and matches the committed list
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The surface list is regenerated from the pinned upstream source and matches the committed list
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: Every item has a status, and every modelled item names its evidence
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Every item has a status, and every modelled item names its evidence
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Every item has a status, and every modelled item names its evidence
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Coverage of the llm-d stack's published configurations is computed and published per release
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Every out-of-scope item names one of the three allowed reasons and cites upstream. An engine
+      release does not lower the weighted share of modelled items, and does not move an item from
+      modelled to refused without a fidelity issue that explains why
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Every out-of-scope item names one of the three allowed reasons and cites upstream. An engine
+      release does not lower the weighted share of modelled items, and does not move an item from
+      modelled to refused without a fidelity issue that explains why
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      Every out-of-scope item names one of the three allowed reasons and cites upstream. An engine
+      release does not lower the weighted share of modelled items, and does not move an item from
+      modelled to refused without a fidelity issue that explains why
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Is this "out of scope" reason one of the three allowed, with a citation that supports it, and
+      does the llm-d stack never use the feature on the hardware BLIS targets?
+    reviewer: engine repository owners
+    when: an item is marked out of scope
+    trigger:
+      repos:
+      - blis-vllm
+      - blis-sglang
+      - llm-d-router
+      paths:
+      - surface.json
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: X10
+  section: §4.1
+  statement: >-
+    Repositories are released bottom-up. A change spanning repositories is one review set. Each repository's
+    part is tagged before the repository above it pins that tag.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: Release bot (§13.6)
+    runs: release
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X11
+  section: §4.1
+  statement: >-
+    Pins are exact release tags. The only committed replace directive is the one in inference-sim's
+    go.mod that substitutes the router fork for upstream llm-d. It exists because the fork keeps upstream's
+    module path (github.com/llm-d/llm-d-router), so Go cannot fetch the fork by its own path; a replace
+    is Go's only way to substitute it. It names the fork's exact -blis.N tag, never a branch or a
+    local path, so it pins as exactly as a require does, and go.sum records its hash. It may appear
+    only in inference-sim, because Go ignores replace directives in every module but the one being
+    built. No other module requires the fork; engines and other repositories use only the router contract
+    in contracts/embed. The only committed exclude directives are those in inference-sim that skip
+    a plain tag made before the rule of §14.1, and no repository commits a go.work file.
+  scope:
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      In inference-sim, exactly one, from github.com/llm-d/llm-d-router to github.com/inference-sim/llm-d-router
+      at a -blis.N tag
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: No other module requiring github.com/llm-d/llm-d-router
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: No other module requiring github.com/llm-d/llm-d-router
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: No other module requiring github.com/llm-d/llm-d-router
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: No other module requiring github.com/llm-d/llm-d-router
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: No other module requiring github.com/llm-d/llm-d-router
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Exclude directives only in inference-sim, each naming a plain tag of an engine module
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: No committed go.work
+    runs: pull_request
+    status: ci
+    test: TestNoNestedModule
+  - repo: blis-vllm
+    check: No committed go.work
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: No committed go.work
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: No committed go.work
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: No committed go.work
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+- id: X12
+  section: §4.1
+  statement: >-
+    Only derived values are committed, never third-party data, with one exception: vendor config.json
+    files whose licence is on the allow-list. Each such model records the licence identifier in its
+    model.yaml; a model whose licence is not on the allow-list commits only the file's hash and revision,
+    and the deriver fetches it in a nightly job that holds the access token; pull-request jobs check
+    only the committed hash and revision and the graph's derived_from hash, so no pull-request job
+    needs a secret. Each derived value cites its source by URL and commit or hash. No private names
+    appear in files, commits or pull-request text.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: Name scan in every repository
+    runs: pull_request
+    status: ci
+    test: .github/workflows/private-names.yml
+  - repo: blis-vllm
+    check: Name scan in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Name scan in every repository
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Name scan in every repository
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: Name scan in every repository
+    runs: pull_request
+    status: ci
+    test: .github/workflows/private-names.yml
+  - repo: blis-config-search
+    check: Name scan in every repository
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Name scan in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Provenance schema rules
+    runs: pull_request
+    status: ci
+    test: go run ./validate/cmd/validate-catalog catalog
+  - repo: blis-substrate
+    check: >-
+      A check that every committed config.json has an allow-listed licence in its model.yaml
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: name scan in 5 of 10 repositories, counting the new blis-sglang
+- id: X13
+  section: §4.1
+  statement: >-
+    Every behaviour change has a test that fails without it. A validation change (§8.9) to a published
+    number carries success criteria fixed in advance, plus held-out evidence. A verification change
+    that moves published numbers, such as a fidelity fix, carries the price-change report and the
+    scoring harness's figures on published units, and is never rejected for exposing an error elsewhere
+    (VAL-11). A refactor shows identical output on the byte gate and on the dashboard's corpus: the
+    recorded configuration of every ledger unit the dashboard can simulate, re-run through the scoring
+    harness, with no measured value read. That corpus covers shapes the byte gate does not. Each nightly
+    run of the whole corpus records which functions each point reaches. A pull request then runs every
+    point that reaches a function it changes, in parallel; with no such record for its base, it runs
+    the whole corpus. The whole corpus also runs before every release. A pull request that is both
+    a refactor and a behaviour change is split.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: inference-sim
+    check: Byte gate in inference-sim
+    runs: pull_request
+    status: ci
+    test: 'cmd: TestParity_RunStdout_DeterministicAndEagerLazyIdentical'
+  - repo: blis-substrate
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The corpus comparison, run by the scoring harness at the pinned digest from each repository's
+      CI, for pull requests declared as refactors
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Landing gate (VAL-6)
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      Mutation checks: on a pull request, the functions it changes and the functions covered by any
+      test it changes are mutated, and only the tests that cover them run
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      Mutation checks: on a pull request, the functions it changes and the functions covered by any
+      test it changes are mutated, and only the tests that cover them run
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      Mutation checks: on a pull request, the functions it changes and the functions covered by any
+      test it changes are mutated, and only the tests that cover them run
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      Mutation checks: on a pull request, the functions it changes and the functions covered by any
+      test it changes are mutated, and only the tests that cover them run
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Mutation checks: on a pull request, the functions it changes and the functions covered by any
+      test it changes are mutated, and only the tests that cover them run
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: The full sweep runs nightly and on release tags
+    runs: nightly
+    status: new
+  - repo: blis-vllm
+    check: The full sweep runs nightly and on release tags
+    runs: nightly
+    status: new
+  - repo: blis-sglang
+    check: The full sweep runs nightly and on release tags
+    runs: nightly
+    status: new
+  - repo: llm-d-router
+    check: The full sweep runs nightly and on release tags
+    runs: nightly
+    status: new
+  - repo: inference-sim
+    check: The full sweep runs nightly and on release tags
+    runs: nightly
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+- id: X14
+  section: §4.1
+  statement: >-
+    A pull request's description is accurate: the commit hashes it lists are the branch heads, it
+    merges cleanly, and every invariant it cites exists.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: The description check, a shared workflow run in every repository
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X15
+  section: §4.1
+  statement: >-
+    Each validation rule exists once, in Go, in blis-substrate. Python tools validate data by calling
+    the substrate's validate command. A Python check that restates a Go rule must pass a test that
+    runs both on the same set of failing examples.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: The parity test in blis-substrate
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A lint that flags schema-like rule code in Python scripts
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X16
+  section: §4.1
+  statement: >-
+    A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine
+    list of X25. A gate's workflow triggers are among the paths it declares, so removing a trigger
+    needs review. A gate whose last real run is more than seven days old is shown as failing.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Each repository's CI configuration
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: The nightly status page (§13.4)
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X17
+  section: §4.1
+  statement: >-
+    Every repository's protected branch requires its named checks, including formatting and lint.
+    No change merges without a successful run of them, on the tree being merged (X22).
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A nightly job in blis-substrate that lists the previous day's merges in every repository and
+      fails if any merged head has no successful required run
+    runs: nightly
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: ci
+    test: branch protection on main
+  - repo: blis-sglang
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: new
+  - repo: inference-sim
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: ci
+    test: branch protection on main
+  - repo: blis-config-search
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The protected branch requires the repository's named checks, including formatting and lint
+    runs: settings
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: checks are required only in blis-vllm, blis-registry and inference-sim
+- id: X18
+  section: §4.1
+  statement: >-
+    Every check in the invariant registry names a known-bad input that must make it fail. A check
+    that cannot fail is not a check.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A nightly job in blis-substrate that runs each check on its known-bad input and fails if the
+      check passes
+    runs: nightly
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks
+      as well as engine code
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: X19
+  section: §4.1
+  statement: >-
+    Scripts and generators, in every language, never write an engine default. They leave an unstated
+    setting unstated, or read the default with inference-sim fields. A rendered scenario or report
+    shows each resolved value with its source: stated by the user, or the engine's default.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      In every scenario generator, a test that a generated scenario contains only stated values. The
+      name lint cannot see a bare number under a neutral key, so the second test is the one that catches
+      it
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      In every scenario generator, a test that a generated scenario contains only stated values. The
+      name lint cannot see a bare number under a neutral key, so the second test is the one that catches
+      it
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      In every scenario generator, a test that a generated scenario contains only stated values. The
+      name lint cannot see a bare number under a neutral key, so the second test is the one that catches
+      it
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: X20
+  section: §4.1
+  statement: >-
+    Every commit written for BLIS is signed. Every commit that contains work by a person or an agent
+    carries a DCO Signed-off-by line from the person who takes responsibility for it; an agent never
+    signs off, since only a person can certify the DCO. A commit written with an agent's help says
+    so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot
+    commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies
+    to every commit not reachable from the upstream tag being merged; upstream history is kept as
+    upstream wrote it.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: ci
+    test: .github/workflows/ci-signed-commits.yaml
+  - repo: inference-sim
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A commit-policy check, required on every pull request in every repository, over the commits
+      the pull request adds
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    the router fork has a signature and DCO check, but it is not required and did not run on its pull
+    requests #3 and #4; no repository checks Assisted-by or Co-authored-by lines
+- id: X21
+  section: §4.1
+  statement: >-
+    Everything a build or a release runs is pinned and traceable. GitHub Actions are pinned by commit,
+    not by tag. Python environments used by oracles and fitting scripts are locked with hashes. Each
+    inference-sim release publishes build provenance and a software bill of materials. Each repository
+    keeps the licence and notice files its code requires, including blis-vllm's NOTICE for code derived
+    from vLLM; by policy blis-sglang keeps one too for code derived from SGLang. Each derived file
+    keeps upstream's licence header (vLLM's SPDX line, SGLang's Apache notice) and states that it
+    was changed, as Apache-2.0 section 4(b) requires.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A workflow lint that refuses an action not pinned by commit
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Pip install --require-hashes in every Python CI job
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The release job, which fails without provenance and a bill of materials
+    runs: release
+    status: new
+  - repo: blis-substrate
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A check that LICENSE and any required NOTICE exist
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: The provenance test checks each derived file's licence header
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: The provenance test checks each derived file's licence header
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    11 of 278 action references are pinned by commit; no repository hash-locks its Python environments
+- id: X22
+  section: §4.1
+  statement: >-
+    Every verdict (a CI result, an agent's review, or a person's answer to a review question) names
+    the git tree hash of the exact tree it judged. CI verdicts are on the merge-queue tree; an agent's
+    or person's verdict is on the head tree, and is requested again when merging changes a path it
+    covers. Every job that scores, fits or checks data states the minimum number of items it must
+    process, and fails below it. No step in a required job ignores an exit code.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
+      compares verdict tree hashes
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A workflow lint that refuses ignored exit codes
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: Each job's item count
+    runs: pull_request
+    status: ci
+    test: ci.yml job required
+  - repo: blis-vllm
+    check: Each job's item count
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: Each job's item count
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: Each job's item count
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: Each job's item count
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: Each job's item count
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: Each job's item count
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: some jobs fail on zero items; no verdict names its tree
+- id: X23
+  section: §4.1
+  statement: >-
+    A version is written in one place. stack.json, each repository's go.mod, contracts/toolchain,
+    and each application's or harness pin file are the only files that state a version; every other
+    file that mentions one (Dockerfiles, workflow files, documentation) is generated from them.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A lint in every repository, over every file type, for version literals of BLIS modules or Go
+      that are not generated
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: versions are typed in Dockerfiles, workflows and documentation
+- id: X24
+  section: §4.1
+  statement: >-
+    Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue,
+    or rejected with a reason. An issue closes only through a commit or pull request that names it,
+    or as not planned, by a code owner, with a reason.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The shared merge check, which refuses a merge while a review thread has no outcome
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A nightly job that reopens an issue closed any other way
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X25
+  section: §4.1
+  statement: >-
+    Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's
+    environment. A test failing on the main branch blocks every merge but its fix, unless it is quarantined
+    with an owning issue and an expiry date.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: CI in a clean container with no sibling checkouts
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: The quarantine list, which fails CI when an entry expires
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A required check that fails while main is failing and the pull request does not name the failing
+      test's issue
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X26
+  section: §4.1
+  statement: >-
+    In documentation, every source path, symbol, issue or pull-request reference, and every statement
+    that a feature is supported, is either generated (from surface.json, stack.json or the code) or
+    checked against the pinned tree.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A documentation reference check in every repository
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X27
+  section: §4.1
+  statement: >-
+    An open bug labelled as breaking an invariant blocks a release of the repository where the bug
+    lives, and of each repository that ships that code, unless the release fixes only that bug or
+    a security issue, or a release owner records a waiver in the release notes.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: The release bot
+    runs: release
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: X28
+  section: §4.1
+  statement: >-
+    An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled
+    item in a field or surface list, or in a code comment that marks a gap or a divergence, stays
+    open. It closes only in the change that removes or updates every citation of it.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: inference-sim
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A nightly job in every repository that resolves each cited issue and fails on a closed one
+    runs: nightly
+    status: new
+  - repo: blis-substrate
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A merge check that refuses a change closing an issue still cited elsewhere
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  - repo: blis-vllm
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  - repo: blis-sglang
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  - repo: llm-d-router
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  - repo: inference-sim
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  - repo: blis-config-search
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  - repo: accuracy-dashboard
+    check: The nightly job also reports an issue closed outside a merge
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1

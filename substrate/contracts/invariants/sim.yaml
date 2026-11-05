@@ -1,0 +1,346 @@
+# The SIM invariants: inference-sim (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: SIM-1
+  section: §5
+  statement: >-
+    The engine is chosen by the scenario's engine: {kind, version}. Any number of kinds may be registered,
+    each at one upstream release; a scenario naming another release is refused (LIF-6). A scenario
+    that still uses the field engine_version, from before engine: {kind, version} existed, is refused
+    with a message that names the replacement.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      Tests that build two engine kinds in one binary, and that refuse any scenario using engine_version
+      with a message naming engine: {kind, version}
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 4
+  note: >-
+    engine: {kind, version} in M1; engine_version refused in M4. Today the build requires exactly
+    one kind (cmd/engine_driver_build.go:101).
+- id: SIM-2
+  section: §5
+  statement: >-
+    No silent degradation: unsupported or ambiguous input is refused with a message; library code
+    returns errors and never exits the process.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: Refusal tests
+    runs: pull_request
+    status: ci
+    test: 'cmd: TestRunCmd_KernelBackend_ScenarioRefusals'
+  review: null
+  status: ci
+  target:
+    status: ci
+    milestone: null
+- id: SIM-3
+  section: §5
+  statement: >-
+    Every release publishes stack.json: the exact tag of every BLIS module and every upstream release
+    it was built and tested with, the Go toolchain version, and the llm-d guides commit.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A release check that stack.json matches go list -m all, go version and guides.lock for the tagged
+      build
+    runs: release
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: SIM-4
+  section: §5
+  statement: >-
+    The byte gate (a fixed scenario set whose output must not change in a refactor) runs inside this
+    repository.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: The byte gate job in inference-sim's CI, on every pull request
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: SIM-5
+  section: §5
+  statement: >-
+    Each release reports how much of the llm-d stack's published configurations it can run, per engine
+    (X9).
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A release job in inference-sim that computes coverage from two inputs, the llm-d guides commit
+      pinned in guides.lock (which stack.json records) and each engine's surface list, and publishes
+      per-item deployment counts through inference-sim coverage. The dashboard adds its blocked-point
+      counts to them (§7.5)
+    runs: release
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SIM-6
+  section: §5
+  statement: >-
+    A run that names no catalog or registry uses the embedded copy. A run that names a path uses that
+    directory instead of the embedded copy, plus any overlays the overlay flags name. A path flag
+    never overlays.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: Tests for each case
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The result records the data source
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: SIM-7
+  section: §5
+  statement: >-
+    Every run makes progress. Each request ends in one of the fates of §8.7 (DEV-9). An engine pauses
+    only when it has a scheduled wake-up or nothing to do. It never has more steps in flight than
+    PoolPlan.InFlight, which is its upstream's depth (in vLLM, max_concurrent_batches, config/vllm.py:577-587;
+    in SGLang, one batch ahead under the overlap scheduler), and never processes a step's output before
+    that step ends. A request that can never fit in the engine's KV cache is refused at admission
+    by the engine, with the upstream's reason, and inference-sim records the refusal; it is never
+    retried forever.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A progress watchdog that fails a run when no request changes state for a set number of engine
+      steps while work is waiting
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A seeded property test over random pools and prompts, including the exact-fit case and the one-block-over
+      case. The capacity boundary cases are also oracle scenarios in each engine repository
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: SIM-8
+  section: §5
+  statement: >-
+    Requests and sessions follow one written state machine, whose end states are the fates of §8.7
+    (DEV-9). Intermediate P/D states, such as waiting for decode KV or transferring, are states of
+    the machine, each with edges to eviction and to an end state. Code that ends a request sets its
+    fate before notifying anyone. Every round a session planned has exactly one fate. A request identifier
+    is never reused within a run.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: A transition-table test
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The arrival-count check of DEV-9
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: An oracle scenario for identifier reuse in each engine repository
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: An oracle scenario for identifier reuse in each engine repository
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: SIM-9
+  section: §5
+  statement: >-
+    Each refusal has two tests: the smallest configuration that triggers it, and the closest one that
+    does not. The message names the field and the value that caused it. A feature or plugin is refused
+    only under the settings that actually reach the code BLIS does not model.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: inference-sim
+    check: >-
+      The refusal test pairs in inference-sim, each engine repository and the router fork
+    runs: pull_request
+    status: ci
+    test: 'sim/llmd: TestStartupRefusalMessages'
+  - repo: blis-vllm
+    check: >-
+      The refusal test pairs in inference-sim, each engine repository and the router fork
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The refusal test pairs in inference-sim, each engine repository and the router fork
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The refusal test pairs in inference-sim, each engine repository and the router fork
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 2
+- id: SIM-10
+  section: §5
+  statement: >-
+    Any option that changes a byte of the Result is recorded in the Result's inputs. A cache key includes
+    every input the cached value depends on.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: A test per command-line option that toggles it and compares the recorded inputs
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: SIM-11
+  section: §5
+  statement: >-
+    Every field the simulator itself reads (scenario keys outside the engine and router blocks, trace
+    headers, replay descriptors) is consumed, refused or inert, and says which. Engine and router
+    blocks are classified only by their owners (X1). A consumed field changes some byte of the Result
+    when it changes. One validator exists per kind of value (X15), and every input that carries that
+    kind calls it, so a value refused on the command line is refused in a trace header too.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: A reflection test over every input schema that toggles each consumed field
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A parity test that the same invalid value is refused through every input
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: SIM-12
+  section: §5
+  statement: >-
+    Each request's tokens are counted once, in a token record the engine emits: prompt tokens, tokens
+    served from the local and external caches, tokens computed, and tokens emitted. Session growth,
+    trace export, latency metrics and the Result read that record; none recomputes it. Counts per
+    rank and per group are distinct types (SUB-16).
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: A test that every consumer reads the token record
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      Known-answer tests of every capacity function at tensor-parallel and data-parallel widths above
+      one
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: SIM-13
+  section: §5
+  statement: >-
+    The traffic that overlapping transfers and step collectives place on a link never exceeds its
+    capacity. inference-sim shares each link among them, as the one piece of resource arithmetic it
+    owns (X3).
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: A property test over random placements and transfers
+    runs: pull_request
+    status: ci
+    test: 'sim/cluster: TestPDContention_*'
+  - repo: inference-sim
+    check: The same property test with step collectives included
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: inference-sim shares links among transfers; step collectives are not included
+- id: SIM-14
+  section: §5
+  statement: >-
+    Every cluster control loop that runs beside the router, such as an autoscaler or the placement
+    of LoRA adapters, is a component (§8.1): it acts only on published values (DEV-1, DEV-4). Each
+    is listed in inference-sim's generated list of control loops, with the upstream controller it
+    models, if any. A Result that used one names it and states its validation status and the evidence
+    for it (§8.9).
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A reflection test that every configurable control policy has an entry in the list of control
+      loops
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A Result test that each active loop is named with its validation status
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2

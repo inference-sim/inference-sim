@@ -1,0 +1,226 @@
+# The D invariants: Data (BLIS target design §10.4).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: D1
+  section: §10.4
+  statement: >-
+    Every value computed from ledger units cites them, whatever its method. A fitted coefficient cites
+    only units whose role is fit. assumed means no data unit influenced the value.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: A validator rule
+    runs: pull_request
+    status: ci
+    test: go run ./validate/cmd/validate-registry registry
+  - repo: blis-substrate
+    check: The fitting scripts, which write the units they read
+    runs: pull_request
+    status: new
+  review:
+  - question: Was this value read from, or tuned against, any measurement?
+    reviewer: registry owners
+    when: an assumed entry is added or changed
+    trigger:
+      repos:
+      - blis-substrate
+      paths:
+      - registry/coefficients/**
+  status: partial
+  target:
+    status: ci
+    milestone: 2
+  note: fitted coefficients cite units; other data-derived values do not
+- id: D2
+  section: §10.4
+  statement: No unit is read under two roles across all consumers.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A nightly join over every consumer's record of the units it read, run inside the nightly run
+      of blis-substrate's gate job
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: D3
+  section: §10.4
+  statement: >-
+    Every source revision is pinned by commit, hash or run id. "latest", "main" and "unknown" are
+    refused.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: A ledger check that refuses latest, main and unknown as revisions
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: D4
+  section: §10.4
+  statement: >-
+    Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same
+    role, except a legacy unit, which keeps its legacy side even where units of its role key fall
+    on both sides. For a unit in the legacy table, the rule chooses only within its legacy label:
+    FIT gives fit or select, HELD gives held or anchor. Roles are append-only, and the ledger stores
+    no role except in the three published lists. A change to a source's identifying fields ships an
+    alias table, and aliased units keep their roles.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: A check against the ledger at the pull request's merge base
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A check that no committed file lists roles, other than the three published lists that the release
+      job writes and the legacy labels in legacy-map.yaml
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A check that the committed unit list equals the ingest tool's output for the pinned source
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: the existing partition splits by group; per-role-key draws are new
+- id: D5
+  section: §10.4
+  statement: >-
+    A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning
+    the same library, variant and kernel hash (CodeHash). Otherwise it is a transferred value with
+    a stated rule.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A validator rule that a coefficient's fit units were collected on the kernel implementation
+      it is keyed by
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: D6
+  section: §10.4
+  statement: >-
+    Only redistributable artefacts are committed. CI gates run on redistributable fixtures, and a
+    nightly job checks the fixtures agree with the full data.
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      A check that every committed data file is listed in the ledger as redistributable
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A nightly job comparing fixtures with the full data
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 4
+- id: D7
+  section: §10.4
+  statement: >-
+    The role seed is 256 random bits and a CI secret until its partition version is retired. Only
+    the fit, anchor and report lists are published, by the release job. Results on select, validate
+    and held units come only from the select job, the error job and the gate job, as aggregates over
+    at least 10 units. No job that holds the seed runs code from a pull request. A candidate job runs
+    with no CI environment and a read-only token, and its only output is a predictions file with a
+    fixed schema and size limit, which the seed-holding job reads with a strict loader (SUB-12) as
+    untrusted input. A seed-holding job is started only by a workflow on its own repository's default
+    branch, never by a token a pull request controls.
+  scope:
+  - accuracy-dashboard
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard)
+      whose branch policy allows only main, available only to the release, select, error and gate
+      jobs
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard)
+      whose branch policy allows only main, available only to the release, select, error and gate
+      jobs
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: A workflow lint that those jobs check out only main
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A workflow lint that those jobs check out only main
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
+    runs: pull_request
+    status: new
+  review:
+  - question: Was the new seed generated as the ledger records?
+    reviewer: ledger owners
+    when: a seed is created or rotated
+    trigger:
+      manual: true
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: D8
+  section: §10.4
+  statement: >-
+    A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored. A quantity
+    that depends on the request stream but that BLIS does not simulate, such as speculative acceptance
+    or expert routing balance, is a property of the workload. It is keyed by workload identity and
+    never stored as a coefficient scoped only to a chip or model. Its value is taken from the command
+    line if stated there, else from the scenario, else derived from the trace, else taken from the
+    substrate's profile for that workload identity, and the Result's inputs record which supplied
+    it (SIM-10).
+  scope:
+  - blis-substrate
+  checks:
+  - repo: blis-substrate
+    check: A validator rule refusing such families in the registry without a workload key
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2

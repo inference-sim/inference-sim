@@ -1,0 +1,438 @@
+# The DEV invariants: Simulation method (BLIS target design §8.10).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
+# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: DEV-1
+  section: §8.10
+  statement: >-
+    Components interact only through timestamped messages. No component reads another component's
+    state.
+  scope:
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: >-
+      In the router fork and inference-sim, unexported constructors for the router's view types, so
+      only the message-delivery code can build them
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      In the router fork and inference-sim, unexported constructors for the router's view types, so
+      only the message-delivery code can build them
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      An import-graph test that finds no import of engine-internal packages from router-side packages
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The coupled replay test (FID-9)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+  note: the router reads engine snapshots and cached renders
+- id: DEV-2
+  section: §8.10
+  statement: >-
+    Each instant is processed in the three phases of §8.2, and messages are ordered by (time, class,
+    sender, sender's send count). No global counter enters the order. Each class's position has a
+    stated reason.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      In inference-sim, a test that permutes the scheduling order of same-instant events from different
+      components and compares the Result
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: An assertion that no two queued messages share a key
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A run of the corpus under a second priority-queue implementation
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    events are ordered by time, priority and a global insertion counter (sim/cluster/cluster_event.go)
+- id: DEV-3
+  section: §8.10
+  statement: >-
+    Each engine declares, for each kind of external input, the step boundary at which it takes effect,
+    whether it arrives during a step or at the instant one ends, and whether the upstream's order
+    there is fixed or a race between threads. A declared race is a listed divergence, with the order
+    BLIS uses.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: blis-vllm
+    check: >-
+      The oracle, which records where the upstream's loop reads its input queue (each read site is
+      listed in the manifest; where that loop is transcribed, as vLLM's data-parallel busy loop is,
+      the check runs against the transcription, FID-8) and checks that reads happen only at the declared
+      boundaries
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The oracle, which records where the upstream's loop reads its input queue (each read site is
+      listed in the manifest; where that loop is transcribed, as vLLM's data-parallel busy loop is,
+      the check runs against the transcription, FID-8) and checks that reads happen only at the declared
+      boundaries
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A property test in inference-sim that, under the cost model's timing, every external input takes
+      effect at its declared boundary (FID-9)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: DEV-4
+  section: §8.10
+  statement: >-
+    No component observes a message before its timestamp. A published value carries its time and a
+    publication sequence number, every cache of it is keyed on both, and the delay between publication
+    and observation follows the deployment's declared scrape and delivery settings.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      In inference-sim, a trace check that every observation is the latest value published at or before
+      its time minus the declared delay
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A lint on cache keys of published values
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: DEV-5
+  section: §8.10
+  statement: >-
+    Only finitely many events happen in any finite stretch of simulated time. Every zero-time cycle
+    between components has a declared bound. An engine step that changes no state is an error unless
+    the engine scheduled it as a wake-up or declared it as an upstream idle step. Events per request,
+    and wall time per event, stay bounded as runs grow.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: In inference-sim, a watchdog on events per instant across the whole model
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A nightly scaling run at 104, 105 and 106 requests that fails on growth in events per request
+      or wall time per event
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
+- id: DEV-6
+  section: §8.10
+  statement: >-
+    Every random draw comes from a substream named by component, purpose and entity, seeded from the
+    SHA-256 of the scenario seed and the name, by a generator named in the frame. A request gets the
+    same random inputs whatever happened to earlier requests, in every configuration.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      In inference-sim, a test that changes one server setting under a closed-loop session workload
+      and compares every request's prompt and output lengths byte for byte
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The lint against unnamed randomness (X6)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: workload generation draws from one shared stream
+- id: DEV-7
+  section: §8.10
+  statement: >-
+    Every run records its experimental frame (§8.6). Run, export and replay under the same configuration
+    give an identical Result. A converted or composed workload keeps, phase by phase, the offered
+    load, the variability of gaps between arrivals, the joint length distribution and the session
+    structure. A run that fails its frame's acceptance conditions produces no figure.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      In inference-sim, a round-trip property test over every workload feature (closed loop, sessions,
+      accumulated context, P/D, deadlines)
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: Two-sample tests for each converter against its source
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: run and replay disagree on horizon and follow-up rounds
+- id: DEV-8
+  section: §8.10
+  statement: >-
+    Every reported metric names its definition (§8.7), and a comparison is refused unless both sides
+    use the same definition.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-substrate
+  - inference-sim
+  checks:
+  - repo: blis-substrate
+    check: >-
+      The metric registry in contracts/, which the simulator reads directly and the dashboard and
+      config search read through inference-sim metrics
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: A test that they compare only matching definitions
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: A test that they compare only matching definitions
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A test that they compare only matching definitions
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: DEV-9
+  section: §8.10
+  statement: >-
+    Each request's fate is written once, at one site, and every latency sample is derived from it.
+    The number of requests the generator created equals the number of fates written. A latency statistic
+    states how it treats requests unfinished at the horizon.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: In inference-sim, the fate type, which fails on a second write
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The arrival-count check at the end of every byte-gate scenario
+    runs: pull_request
+    status: ci
+    test: 'sim: TestINV1Accounted'
+  - repo: inference-sim
+    check: A known-bad scenario for each fate (X18)
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: conservation is checked as a sum of buckets
+- id: DEV-10
+  section: §8.10
+  statement: >-
+    A steady-state run is classified as settled, overloaded or incomplete by one detector, and only
+    a settled run gives a latency figure for steady state. The detector states its false-alarm rate
+    and its power for each window length.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      The detector in inference-sim, reached by the applications through inference-sim metrics, and
+      its reference tests against single-server queues whose behaviour is known exactly: open M/M/1
+      (exponential service times) and M/G/1 (general service times) at loads from 0.5 to 1.5 of capacity,
+      including 0.9 to 0.99 where settling is slow, closed queues for fixed-concurrency benchmarks,
+      and heavy-tailed service, which must be classed incomplete at practical window lengths
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: DEV-11
+  section: §8.10
+  statement: >-
+    A figure that compares configurations, or that is published as a property of BLIS, carries an
+    interval from replications or batch means, and states which uncertainty it covers. Comparisons
+    are paired under common random numbers, have three outcomes, and control the chance of a false
+    winner across all comparisons made.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: The report schemas of blis-config-search and accuracy-dashboard
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: The report schemas of blis-config-search and accuracy-dashboard
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A coverage test in which the full procedure, repeated 1,000 times on a model with a known difference,
+      covers that difference at its stated rate
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A coverage test in which the full procedure, repeated 1,000 times on a model with a known difference,
+      covers that difference at its stated rate
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: DEV-12
+  section: §8.10
+  statement: >-
+    Each change is a verification change or a validation change by what it does (§8.9), and is judged
+    as such. A change that is both is split.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: blis-substrate
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      In every repository, the change class in the pull-request template, and a check that the outputs
+      that moved match the declared class
+    runs: pull_request
+    status: new
+  review:
+  - question: Does this change alter what is modelled?
+    reviewer: owners of the changed directory
+    when: >-
+      a pull request is declared a verification change but moves a Result outside the byte gate
+    trigger:
+      manual: true
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: DEV-13
+  section: §8.10
+  statement: >-
+    A request's sampled output length is written by the workload generator and read only by the trace
+    writer, by replay, and by the engine's stop check, where it acts as an end-of-sequence token at
+    that position. The request's maximum token count stays what the client stated. Every other part
+    of BLIS, including the engine's own scheduler, the router, admission and flow control, sees only
+    what its counterpart in the real system sees: the maximum token count and the tokens emitted so
+    far. The oracle delivers the length the same way, as a forced end-of-sequence in the sampler that
+    the manifest lists.
+  scope:
+  - blis-sglang
+  - blis-vllm
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A field-access lint in inference-sim and each engine repository that refuses any read of the
+      sampled length outside these declared sites and tests, with a known-bad input (X18)
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A field-access lint in inference-sim and each engine repository that refuses any read of the
+      sampled length outside these declared sites and tests, with a known-bad input (X18)
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A field-access lint in inference-sim and each engine repository that refuses any read of the
+      sampled length outside these declared sites and tests, with a known-bad input (X18)
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 2
