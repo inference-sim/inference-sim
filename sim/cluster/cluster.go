@@ -1755,7 +1755,6 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.TotalInputTokens += m.TotalInputTokens
 		merged.EngineAccepted += m.EngineAccepted
 		merged.TotalOutputTokens += m.TotalOutputTokens
-		merged.TTFTSum += m.TTFTSum
 		merged.ITLSum += m.ITLSum
 		if m.SimEndedTime > merged.SimEndedTime {
 			merged.SimEndedTime = m.SimEndedTime
@@ -1845,9 +1844,6 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 						if math.IsInf(newTTFT, 0) {
 							continue
 						}
-						// I1: Keep TTFTSum consistent with per-request TTFT adjustments.
-						// Convert the TTFT delta (microseconds) to int64 ticks for TTFTSum.
-						merged.TTFTSum += int64(newTTFT - ttft)
 						merged.RequestTTFTs[reqID] = newTTFT
 					}
 				}
@@ -2025,12 +2021,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// structurally identical to the non-PD TTFT (scheduling_delay + first-token step).
 		//
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
-		// prefillTTFT is retained as the TTFTSum baseline: on the normal path pre-projection
-		// TTFTSum holds exactly prefillTTFT for this parent (a normal decode sub-request never
-		// sets FirstTokenTime, so it contributes 0). A preempted-and-re-prefilled decode
-		// sub-request is the exception — it re-stamps FirstTokenTime and adds a decode term to
-		// TTFTSum that this projection does not roll back; that pre-existing PD TTFTSum residual
-		// is tracked in #1628 and is out of scope for the #1511 no-token fix here.
+		// Every TTFT sample is the fate-derived RequestTTFTs entry (DEV-9): there is no
+		// separate aggregate to keep in step, so a decode sub-request that was preempted and
+		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (#1628).
 		// decodeDelay/hasDecodeDelay were read
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.
@@ -2062,40 +2055,21 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					// silently reporting a negative value.
 					logrus.Errorf("[cluster] projectPDMetrics: negative TTFT for %s (decodeDelay=%d firstDecodeStep=%.0f); using prefill TTFT",
 						pid, decodeDelay, firstDecodeStep)
-					m.RequestTTFTs[pid] = prefillTTFT // delta 0 vs baseline: TTFTSum untouched
+					m.RequestTTFTs[pid] = prefillTTFT
 				} else {
 					m.RequestTTFTs[pid] = newTTFT
-					// BC-3: Keep TTFTSum consistent with the TTFT adjustment. The baseline
-					// prefillTTFT is replaced by newTTFT for this parent.
-					m.TTFTSum += int64(newTTFT - prefillTTFT)
 				}
 			} else if hasPrefillTTFT {
 				// Defensive fallback: served a token but the decode scheduling delay is
-				// unavailable; use the prefill-only TTFT. TTFTSum unchanged (projected
-				// value equals the baseline).
+				// unavailable; use the prefill-only TTFT.
 				m.RequestTTFTs[pid] = prefillTTFT
 				logrus.Warnf("[cluster] projectPDMetrics: parent %s served a token but is missing its decode scheduling delay; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: served parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
-		} else if completed && hasPrefillTTFT {
-			// Terminal-but-no-token parent (decode-side drop / timeout-while-queued /
-			// preempted-then-timed-out, #1511): it has no surviving first token, so it
-			// contributes NO parent TTFT. The prefill sub-request's TTFT key was deleted
-			// above, but its value is still summed into the aggregate TTFTSum; roll the
-			// PREFILL term back so the reported mean TTFT (TTFTSum / n) does not count a
-			// request that produced no token.
-			//
-			// Scope: this rolls back the prefill term only, which is exactly what the three
-			// no-token outcomes this fix restores require. A decode sub-request that emitted a
-			// token, was preempted (re-stamping FirstTokenTime and adding a decode term to
-			// TTFTSum, simulator.go), then timed out while re-queued also leaves that decode
-			// term in TTFTSum, which neither this rollback nor the unconditional
-			// delete(RequestTTFTs, dec) removes — a pre-existing PD TTFTSum residual tracked in
-			// #1628, not introduced here. So TTFTSum == Σ RequestTTFTs holds for the no-token
-			// terminal outcomes but is NOT a general PD law (see #1628).
-			m.TTFTSum -= int64(prefillTTFT)
 		}
+		// A terminal parent with no token contributes no TTFT sample: its prefill entry was
+		// deleted above, and nothing else holds its value (#1511).
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).

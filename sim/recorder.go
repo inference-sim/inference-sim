@@ -49,7 +49,6 @@ func (m *Metrics) RecordKVUsage(used, duration int64, weight bool) {
 func (m *Metrics) RecordCompletion(c Completion) {
 	req := c.Req
 	m.CompletedRequests++
-	m.TTFTSum += c.TTFT
 	if c.OutputTokens > 0 {
 		m.TotalOutputTokens += c.OutputTokens
 	}
