@@ -3,8 +3,8 @@ package sim
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // tiered is a FIFO whose first batch that runs requests starts one CPU-tier store and two loads,

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	"pgregory.net/rapid"
 )
 

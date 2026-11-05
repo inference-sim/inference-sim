@@ -15,19 +15,15 @@ import (
 	"strconv"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/vendored"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 func main() {
 	corpusPath := flag.String("corpus", "", "")
 	scenarios := flag.String("scenarios", "", "")
-	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
-	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
+	catalog := flag.String("catalog", substratedata.MustCatalog(), "")
+	registry := flag.String("registry", substratedata.MustRegistry(), "")
 	absolutes := flag.String("absolutes", "", "")
 	settings := flag.String("engine-settings", "", "")
 	tier := flag.String("config-tier", "",

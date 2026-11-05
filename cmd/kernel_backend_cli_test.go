@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
@@ -46,7 +46,7 @@ const kernelLegEnv = "BLIS_KERNEL_LEG"
 // fails, naming the command that provides it -- never a skip, which would read as a pass.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
-	r := kernelmodel.DefaultRepos()
+	r := defaultKernelRepos()
 	if err := kernelmodel.RequireRepos(r); err != nil {
 		t.Fatal(err)
 	}

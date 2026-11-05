@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
 // CLI-level contracts for #1770: a real `blis run` / `blis replay` resolves a
@@ -107,7 +105,7 @@ func devicesCLISubprocess() bool {
 	offload := os.Getenv(devicesCLIOffloadEnv)
 	tracePrefix := os.Getenv(devicesCLITraceEnv)
 
-	repos := kernelmodel.DefaultRepos()
+	repos := defaultKernelRepos()
 	base := []string{
 		"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
 		"--seed", "42",

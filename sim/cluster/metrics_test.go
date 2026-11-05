@@ -652,3 +652,21 @@ func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
 		t.Errorf("kv_capacity_tokens_per_replica = %d, want %d", agg.KVCapacityTokensPerReplica, want)
 	}
 }
+
+// TestPercentile_RoundsTheRankOnEveryPlatform pins the last bit of a percentile that arm64's
+// compiler moved by fusing a multiply and an add or subtract (design X6). The samples are
+// {0, 1.5, 1.5 + 66/7} at p90; the expected bits are the unfused result, which every platform must
+// give. Without the rounding, arm64 gives other bits; amd64 passes either way, which is why the
+// byte gate also runs on an arm64 runner.
+func TestPercentile_RoundsTheRankOnEveryPlatform(t *testing.T) {
+	got := percentile(roundingSamples(66), roundingP90)
+	if want := math.Float64frombits(0x402215f15f15f160); got != want {
+		t.Errorf("p90 = %v (%#x), want %v (%#x)", got, math.Float64bits(got), want, math.Float64bits(want))
+	}
+}
+
+// roundingP90 and roundingSamples keep the test's inputs out of the compiler's reach: a constant
+// p would be folded into the rank, and the arithmetic the test is about would never run.
+var roundingP90 = 90.0
+
+func roundingSamples(d int) []float64 { return []float64{0, 1.5, 1.5 + float64(d)/7} }

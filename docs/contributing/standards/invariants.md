@@ -276,22 +276,63 @@ These constrain **which code may read or do what**. They are not statements abou
 
 ### NS-6: Catalog is Authoritative and Read-Only
 
-**Statement:** A model runs **if and only if it is in the catalog**, and no run may change the catalog. Two clauses:
+**Statement:** A model runs **if and only if it is in the catalog in use**, and no run changes
+the catalog or the registry. This is design §3.3 at the CLI. Three clauses:
 
-1. **Read-only, refuse-on-miss.** `cmd.resolveModelConfig` reads the model's `config.json` from the catalog located by `--catalog` / `BLIS_CATALOG` (`<catalog>/models/<short-name>/config.json`, the sole clone-root layout since #1771; #1731 — there is no default, no search path, and a run naming no catalog is refused naming both forms). A model with no entry — or an entry that is not a HuggingFace config — is **refused, naming the path the entry belongs at**. No `blis run` / `blis replay` / `blis observe` invocation creates or modifies a catalog file, and none makes a HuggingFace request.
-2. **The deployment is chosen, never inferred.** The deployment comes from a required scenario (`--scenario` / `--scenarios`, a blis-schemas Scenario + Deployment file) plus `--registry` on both `blis run` and `blis replay`; omitting one is refused. The `--hardware`/`--tp` flags that carried this clause before the kernel-exclusive change no longer exist.
+1. **The data in use.** A run that names no catalog uses the catalog embedded in the
+   blis-substrate release this build pins; a run that names no registry uses the embedded
+   registry, so `--registry` is optional. `--catalog <dir>` / `BLIS_CATALOG` and
+   `--registry <dir>` / `BLIS_REGISTRY` name directories with the layout of blis-substrate's
+   `catalog/` and `registry/`, and each replaces its embedded copy; a path never overlays.
+   `--catalog-overlay` and `--registry-overlay` add or replace entries, and are the only way
+   to (design SIM-6). The Result records each source, its content hash, every overlay hash
+   and the combined hash (X8).
+2. **Read-only, refuse-on-miss.** A model is resolved from its derived graph,
+   `models/<name>/graph.yaml`, never from its vendor `config.json`, which no run reads
+   (SUB-3). A model with no entry is **refused, naming the catalog's source (the embedded
+   release, or the path) and the relative path the entry belongs at**. No `blis run` or
+   `blis replay` invocation creates or modifies a catalog or registry file, and none reaches
+   the network.
+3. **The deployment is chosen, never inferred.** The deployment comes from a required
+   scenario (`--scenario` / `--scenarios`, a blis-substrate `contracts/spec` Scenario +
+   Deployment file) on both `blis run` and `blis replay`; omitting it is refused. No flag
+   restates the model, the hardware or the tensor-parallel width.
 
-**Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than describing simulation state. A run that writes a catalog entry can leave that run's output perfectly correct while making the catalog — the thing every later run and every calibration reads — drift by accident.
+**Status at this commit:** clauses 2 and 3 hold. Clause 1 holds for the path form; the embedded
+default, the optional `--registry`, the overlay flags and the Result's data record arrive with
+the move onto blis-substrate's loader (inference-sim#2077). Until then a run without
+`--catalog` / `BLIS_CATALOG`, or without `--registry`, is refused naming both forms.
 
-**Rationale:** before #1733, an absent `config.json` triggered a HuggingFace download that was **written into `model_configs/`**, so running an unknown model *added a catalog entry as a side effect* — the exact mechanism by which a catalog silently accumulates unreviewed, unprovenanced models. Independently, the deployment was once looked up per-model in `defaults.yaml` behind a `logrus.Warnf`, so a run could complete and emit metrics for a deployment nobody chose. Both are now refusals (R1: no warn-and-continue).
+**Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than
+describing simulation state. A run that writes a catalog entry can leave that run's output
+correct while making the catalog, which every later run and every calibration reads, drift.
 
-**Scope and non-scope:** NS-6 binds the **CLI boundary only**. Library callers that construct a `sim.ModelConfig` or call `sim.NewModelHardwareConfig` directly are unaffected and need no flags — the many test files that build configs through the Go API are deliberately outside it. `blis observe` satisfies clause 1 vacuously (it resolves no model config) and takes neither deployment flag (it places no instances).
+**Rationale:** before #1733, an absent `config.json` triggered a HuggingFace download that was
+written into `model_configs/`, so running an unknown model added a catalog entry as a side
+effect. Independently, the deployment was once looked up per model in `defaults.yaml` behind a
+`logrus.Warnf`, so a run could complete for a deployment nobody chose. Both are refusals (R1).
+Design §3.3 then made the data a release artifact: the embedded copy is the default, so a
+released binary needs no checkout, and a path is an explicit, recorded choice.
 
-**Byte-identity (INV-6):** NS-6 changes which inputs are *required*, not any number. A hand-maintained `defaults.yaml` still carrying a removed block is refused at load (strict parsing, R10) rather than parsed and ignored.
+**Scope and non-scope:** NS-6 binds the **CLI boundary only**. Library callers that construct a
+`sim.ModelConfig` directly are outside it.
 
-**Verification:** `cmd/hfconfig_test.go` — `TestResolveModelConfig_AbsentFromCatalog_RefusedNamingPath` (refusal names the path), `..._CreatesNothing` (nothing written, catalog directory not created), `TestResolveModelConfig_MalformedCatalogEntry_RefusedAndPreserved` (refused, entry byte-preserved), `TestResolveModelConfig_ResolutionInvariant` (one-step catalog resolution with no fallback, #1731). `cmd/ns6_catalog_test.go` — `TestNS6_NoRuntimeFetch_StaticGuard` (removed fetch symbols and any `huggingface.co` string literal are absent from `cmd/`'s production sources; the resolver imports no network package and makes no file-creating call), `TestNS6_ObserveTakesNoDeploymentFlags`. The scenario/registry requirement is enforced by the kernel deployment path shared by `run` and `replay` (INV-13). The INV-6 claim rests directly on `TestNoOpByteIdentity_AdapterBlindRunMatchesBaseline`'s pre-#1733 golden; the anchor test that cross-checked it against `defaults.yaml`'s own GPU/TP keys was removed with those keys by #1768, whose own contracts (the trimmed file parses, a stale `defaults:` block is refused, the deleted surface cannot return) live in `cmd/defaults_block_removal_test.go`.
+**Byte-identity (INV-6):** NS-6 changes which inputs are *required*, not any number. The data
+source is recorded in the Result and left out of what the byte gate compares (X6); the content
+hashes are not.
 
-**ID note:** `NS-6` is numbered by the operator-basis design note reconciling Discussion #1700, not by this registry's `INV-*` sequence; it is listed here because it is cited in `cmd/` and the resolution rule above is about *resolvability*, not about the prefix. Delivered by #1733 (R1 task S6, tracker #1727).
+**Verification:** `cmd/ns6_catalog_test.go`: `TestNS6_NoRuntimeFetch_StaticGuard` (no fetch
+symbol and no `huggingface.co` string literal in `cmd/`'s production sources; the catalog
+resolver imports no network package and makes no file-creating call) and
+`TestNS6_DeploymentComesOnlyFromTheScenario` (each restating flag is refused by name on both
+commands; a run naming no scenario is refused). `cmd/catalog_layout_test.go`:
+`TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused` (the refusal names
+`models/<name>/graph.yaml`; nothing is created). `cmd/catalog_root_test.go`:
+`TestCatalogRootFrom_Precedence`.
+
+**ID note:** `NS-6` is numbered by the operator-basis design note reconciling Discussion #1700,
+not by this registry's `INV-*` sequence. Delivered by #1733 (R1 task S6, tracker #1727);
+rewritten for design §3.3 by inference-sim#2077.
 
 ---
 

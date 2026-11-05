@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
@@ -27,8 +28,8 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 	// Subprocess leg: emit the metrics stdout for the variant named by the env var.
 	if v := os.Getenv("BLIS_SAT_VARIANT"); v != "" {
 		args := []string{
-			"run", "--scenario", kernelTestScenario, "--scenarios", kernelmodel.DefaultScenarios(), "--registry", kernelmodel.DefaultRegistry(), "--seed", "42",
-			"--catalog", "../testdata/catalog",
+			"run", "--scenario", kernelTestScenario, "--scenarios", kernelfixtures.AISimulate(), "--registry", substratedata.MustRegistry(), "--seed", "42",
+			"--catalog", substratedata.MustCatalog(),
 			"--num-requests", "50",
 			"--defaults-filepath", "../defaults.yaml",
 		}

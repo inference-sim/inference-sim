@@ -1,0 +1,3 @@
+# The llm-d/llm-d commit whose guides this build is tested with (design SIM-3, SIM-5). The
+# fixtures under sim/llmd/testdata/llm-d-guides/ are extracted at it, and stack.json records it.
+4427f55cb6267cc07896968b4f69eda91a1efe75

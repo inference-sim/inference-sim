@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 

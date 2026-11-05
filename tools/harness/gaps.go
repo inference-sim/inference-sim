@@ -26,7 +26,7 @@ import (
 	"sort"
 	"strings"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"

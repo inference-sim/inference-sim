@@ -103,27 +103,26 @@ func TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *t
 }
 
 // The build pins come from the binary's build information: the main module's version with
-// its VCS revision, and the kernel and schemas dependency versions (a replaced module reports
-// its replacement). Nothing is guessed when the information is absent.
+// its VCS revision, and the blis-substrate version, which is both the kernel's and the schemas'
+// (a replaced module reports its replacement). Nothing is guessed when the information is absent.
 func TestVersionsFromBuildInfo(t *testing.T) {
 	info := &debug.BuildInfo{
 		Main: debug.Module{Path: "github.com/inference-sim/inference-sim", Version: "(devel)"},
 		Deps: []*debug.Module{
-			{Path: "github.com/inference-sim/blis-latency-kernel", Version: "v0.2.0"},
-			{Path: "github.com/inference-sim/blis-schemas", Version: "v0.3.0",
-				Replace: &debug.Module{Path: "github.com/inference-sim/blis-schemas", Version: "v0.3.1"}},
+			{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0",
+				Replace: &debug.Module{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.1"}},
 		},
 		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "abc123"}, {Key: "vcs.modified", Value: "true"}},
 	}
 	got := versionsFrom(info)
-	if got.BLIS != "(devel)+abc123-dirty" || got.Kernel != "v0.2.0" || got.Schemas != "v0.3.1" {
+	if got.BLIS != "(devel)+abc123-dirty" || got.Kernel != "v0.11.1" || got.Schemas != "v0.11.1" {
 		t.Errorf("versionsFrom = %+v", *got)
 	}
 	local := versionsFrom(&debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}, Deps: []*debug.Module{
-		{Path: "github.com/inference-sim/blis-latency-kernel", Version: "v0.2.0",
-			Replace: &debug.Module{Path: "../blis-latency-kernel"}},
+		{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0",
+			Replace: &debug.Module{Path: "../blis-substrate"}},
 	}})
-	if local.BLIS != "v1.2.3" || local.Kernel != "replace:../blis-latency-kernel" || local.Schemas != "unknown" {
+	if local.BLIS != "v1.2.3" || local.Kernel != "replace:../blis-substrate" || local.Schemas != "replace:../blis-substrate" {
 		t.Errorf("a filesystem replace must be reported as such, got %+v", *local)
 	}
 	// A worktree build carries no VCS settings; the -ldflags revision names the commit, and a

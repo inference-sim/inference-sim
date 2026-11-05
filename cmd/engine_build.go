@@ -7,10 +7,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
+	blisvllm "github.com/inference-sim/blis-vllm"
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/contract"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
@@ -21,6 +22,7 @@ import (
 	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
 	_ "github.com/inference-sim/blis-vllm/compat/kv"
 	_ "github.com/inference-sim/blis-vllm/compat/lora"
+	"github.com/inference-sim/inference-sim/internal/stack"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -918,6 +920,12 @@ func compatEngineFactory(global engineConfig, acceptance float64, dpPlan dpPlace
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
+
+// EngineReleases are the upstream engine releases this binary runs, one per kind, as each
+// engine module records its own (for vLLM, blisvllm.Upstream). stack.json lists them (LIF-6).
+func EngineReleases() []stack.Upstream {
+	return []stack.Upstream{{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit}}
+}
 
 // contractRoots are the roots the registered factory reads: the catalog and registry clone
 // roots, and the scenario file's path, which it opens itself.
