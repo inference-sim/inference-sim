@@ -327,9 +327,16 @@ every rank on one node runs `internal`.
 
 ### Trace modes
 
-A trace header's `mode`: how the trace was produced.
+A [trace](trace.md) header's `mode`: how the trace was produced. A `converted` trace
+records no BLIS deployment.
 
---8<-- "docs/contracts/generated/enum/workload.Mode.md"
+--8<-- "docs/contracts/generated/enum/trace.Mode.md"
+
+### Trace statuses
+
+A trace record's `status`.
+
+--8<-- "docs/contracts/generated/enum/trace.Status.md"
 
 ### Replay scenarios
 
@@ -368,7 +375,7 @@ have returned. `cache_pressure` runs an accelerated warmup for a stated duration
 A trace header's `time_unit`. Several members name the same unit, because the tools that
 write traces spell it differently.
 
---8<-- "docs/contracts/generated/enum/workload.TimeUnit.md"
+--8<-- "docs/contracts/generated/enum/trace.TimeUnit.md"
 
 ## Acceptance
 

@@ -60,46 +60,8 @@ and row count, and the small header that says how to read the file.
 
 ### `header`
 
-<!-- fields: workload.TraceHeader -->
-
-| Key | Type | Required | Meaning |
-|---|---|---|---|
-| `trace_version` | integer | yes | The trace format version the data file was written in. At least 1. |
-| `time_unit` | string | yes | Unit of the file's timestamp columns. One of the [time units](vocabularies.md#time-units). |
-| `mode` | string | yes | How the trace was produced. One of the [trace modes](vocabularies.md#trace-modes). |
-| `workload_seed` | integer | no | The workload generator's seed, when one was recorded. A seed of 0 is a real seed, distinct from absence. |
-| `server` | mapping | no | Configuration of the server the trace came from, below. |
-| `goodput_slo_targets` | mapping | no | Latency targets per SLO class, keyed by class name, below. Class names are free. |
-
-### `header.server`
-
-Every key is optional. The server is the one that produced the trace, which need not be
-the deployment being simulated.
-
-<!-- fields: workload.TraceServer -->
-
-| Key | Type | Required | Meaning |
-|---|---|---|---|
-| `type` | string | no | The serving engine, such as `vllm`. |
-| `model` | string | no | The model it served. |
-| `tensor_parallel` | integer | no | Tensor-parallel width. Not negative. |
-| `max_num_seqs` | integer | no | Sequence cap. Not negative. |
-| `block_size` | integer | no | KV block size. Not negative. |
-| `gpu_memory_utilization` | number | no | Fraction of GPU memory, in [0, 1]. Zero means unrecorded. |
-| `max_model_len` | integer | no | Context length. Not negative. |
-
-### `header.goodput_slo_targets.<class>`
-
-Thresholds in milliseconds. Zero on a dimension leaves it unconstrained, but a class must
-constrain at least one.
-
-<!-- fields: workload.SLODimTargets -->
-
-| Key | Type | Required | Meaning |
-|---|---|---|---|
-| `ttft_ms` | number | no | Time to first token. Not negative. |
-| `itl_ms` | number | no | Inter-token latency. Not negative. |
-| `e2e_ms` | number | no | End-to-end latency. Not negative. |
+The trace's own [header](trace.md#header), copied from the trace file. A scenario that binds
+a trace states the header so the scenario says how to read the file without opening it.
 
 ## Replay
 
@@ -263,11 +225,7 @@ A binding is invalid unless it sets exactly one of `shape`, `trace` and `replay`
 invalid if
 
 - `data` is empty, `rows` is negative, or `sha256` is present and is not 64 hex digits;
-- `trace_version` is less than 1;
-- `time_unit` or `mode` is empty or not in its vocabulary;
-- a server count is negative, or `gpu_memory_utilization` is not finite or lies outside
-  [0, 1];
-- an SLO class name is empty, a target is negative or not finite, or a class sets no target.
+- its header is not a valid [trace header](trace.md#checks).
 
 A trace reference or a shape is also invalid if a stated `category` is malformed,
 `thinking` is not `on` or `off`, or `acceptance` is not a valid

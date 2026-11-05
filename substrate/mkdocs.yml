@@ -150,6 +150,7 @@ nav:
     - Scenario: contracts/reference/scenario.md
     - Deployment: contracts/reference/deployment.md
     - Workload: contracts/reference/workload.md
+    - Trace: contracts/reference/trace.md
     - Model graph: contracts/reference/model.md
     - Hardware: contracts/reference/hardware.md
     - Coefficient set: contracts/reference/coefficients.md

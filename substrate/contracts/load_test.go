@@ -8,7 +8,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
-	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 )
 
 // The yaml tags on every spec type are a contract with the files in blis-catalog and
@@ -88,18 +88,10 @@ workload:
     sha256: `+strings.Repeat("a", 64)+`
     rows: 1048576
     header:
-      trace_version: 3
+      trace_version: 4
       time_unit: microseconds
-      mode: real
+      mode: converted
       workload_seed: 0
-      server:
-        type: vllm
-        model: granite-5-230b
-        tensor_parallel: 8
-        max_num_seqs: 1024
-        block_size: 16
-        gpu_memory_utilization: 0.9
-        max_model_len: 131072
       goodput_slo_targets:
         critical:
           ttft_ms: 500
@@ -123,16 +115,13 @@ cluster:
 		t.Errorf("trace reference fields did not parse: %+v", tr)
 	}
 	h := tr.Header
-	if h.Version != 3 || h.TimeUnit != "microseconds" || h.Mode != workload.ModeReal {
+	if h.Version != 4 || h.TimeUnit != "microseconds" || h.Mode != trace.ModeConverted {
 		t.Errorf("trace header scalars did not parse: %+v", h)
 	}
 	// workload_seed: 0 is a recorded zero, which the pointer must preserve as distinct
 	// from absent.
 	if h.WorkloadSeed == nil || *h.WorkloadSeed != 0 {
 		t.Errorf("workload_seed did not parse as a recorded zero: %v", h.WorkloadSeed)
-	}
-	if h.Server == nil || h.Server.TensorParallel != 8 || h.Server.GPUMemoryUtilization != 0.9 {
-		t.Errorf("trace server block did not parse: %+v", h.Server)
 	}
 	crit, ok := h.GoodputSLOTargets["critical"]
 	if !ok || crit.TTFTMs != 500 || crit.ITLMs != 50 || crit.E2EMs != 30000 {
@@ -174,9 +163,9 @@ func TestLoadScenarioRejectsUnknownTraceField(t *testing.T) {
     data: traces/run.csv
     rowz: 10
     header:
-      trace_version: 3
+      trace_version: 4
       time_unit: microseconds
-      mode: real`,
+      mode: converted`,
 			badKey: "rowz",
 		},
 		{
@@ -184,33 +173,32 @@ func TestLoadScenarioRejectsUnknownTraceField(t *testing.T) {
 			traceYAML: `  trace:
     data: traces/run.csv
     header:
-      trace_version: 3
+      trace_version: 4
       time_unit: microseconds
-      mode: real
+      mode: converted
       time_uint: microseconds`,
 			badKey: "time_uint",
 		},
 		{
-			name: "unknown key under trace.header.server",
+			name: "the server block observe wrote, now removed",
 			traceYAML: `  trace:
     data: traces/run.csv
     header:
-      trace_version: 3
+      trace_version: 4
       time_unit: microseconds
-      mode: real
+      mode: converted
       server:
-        tensor_parallel: 8
-        tensor_paralel: 8`,
-			badKey: "tensor_paralel",
+        tensor_parallel: 8`,
+			badKey: "server",
 		},
 		{
 			name: "unknown key inside a goodput_slo_targets map value",
 			traceYAML: `  trace:
     data: traces/run.csv
     header:
-      trace_version: 3
+      trace_version: 4
       time_unit: microseconds
-      mode: real
+      mode: converted
       goodput_slo_targets:
         critical:
           ttft_ms: 500

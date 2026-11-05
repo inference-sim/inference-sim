@@ -29,6 +29,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/router"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
@@ -150,6 +151,21 @@ func TestDocExamplesValidate(t *testing.T) {
 			Scenario: fixture(LoadScenario(ex("trace-binding.yaml"))),
 		}))
 	})
+	t.Run("trace file", func(t *testing.T) {
+		h, err := os.Open(ex("trace-header.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer h.Close()
+		d, err := os.Open(ex("trace-data.csv"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		if _, err := trace.Read(h, d); err != nil {
+			t.Error(err)
+		}
+	})
 	// Every file in docs/examples/ must be one of the cases above, so an example added
 	// later cannot be shown on a page without ever being validated.
 	covered := map[string]bool{
@@ -163,6 +179,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		"connector-registry.yaml": true,
 		"result.json":             true,
 		"field-list.json":         true,
+		"trace-header.yaml":       true, "trace-data.csv": true,
 	}
 	all, err := filepath.Glob(ex("*"))
 	if err != nil {
@@ -208,10 +225,13 @@ var documented = map[string]struct {
 	"workload.CorpusSource":      {typ: reflect.TypeOf(workload.CorpusSource{})},
 	"workload.TrajectoryStart":   {typ: reflect.TypeOf(workload.TrajectoryStart{})},
 	"workload.Warmup":            {typ: reflect.TypeOf(workload.Warmup{})},
-	"workload.TraceHeader":       {typ: reflect.TypeOf(workload.TraceHeader{})},
+	"trace.Header":               {typ: reflect.TypeOf(trace.Header{})},
+	"trace.KVOffload":            {typ: reflect.TypeOf(trace.KVOffload{})},
+	"trace.KVOffloadTier":        {typ: reflect.TypeOf(trace.KVOffloadTier{})},
+	"trace.Router":               {typ: reflect.TypeOf(trace.Router{})},
+	"trace.Record":               {typ: reflect.TypeOf(trace.Record{})},
 	"workload.TokenBlocks":       {typ: reflect.TypeOf(workload.TokenBlocks{})},
-	"workload.TraceServer":       {typ: reflect.TypeOf(workload.TraceServer{})},
-	"workload.SLODimTargets":     {typ: reflect.TypeOf(workload.SLODimTargets{})},
+	"trace.SLODimTargets":        {typ: reflect.TypeOf(trace.SLODimTargets{})},
 	"workload.Shape":             {typ: reflect.TypeOf(workload.Shape{})},
 	"workload.Distribution":      {typ: reflect.TypeOf(workload.Distribution{})},
 	"deployment.Deployment":      {typ: reflect.TypeOf(deployment.Deployment{})},

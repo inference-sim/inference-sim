@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"math"
 	"testing"
 )
@@ -62,11 +63,8 @@ func traceRef() *TraceRef {
 		Data:   "traces/agentic-run.csv",
 		SHA256: strRepeat("a", 64),
 		Rows:   1048576,
-		Header: TraceHeader{
-			Version: 3, TimeUnit: "microseconds", Mode: ModeReal, WorkloadSeed: seed(0),
-			Server: &TraceServer{Type: "vllm", Model: "granite-5-230b",
-				TensorParallel: 8, MaxNumSeqs: 1024, BlockSize: 16,
-				GPUMemoryUtilization: 0.9, MaxModelLen: 131072},
+		Header: trace.Header{
+			Version: trace.Version, TimeUnit: "microseconds", Mode: trace.ModeConverted, WorkloadSeed: seed(0),
 			GoodputSLOTargets: map[string]SLODimTargets{
 				"critical": {TTFTMs: 500, ITLMs: 50, E2EMs: 30000}},
 		},
@@ -79,7 +77,7 @@ func TestValidBindingsPass(t *testing.T) {
 		"trace arm": {Trace: traceRef()},
 		"minimal trace: path + required header only": {Trace: &TraceRef{
 			Data:   "t.csv",
-			Header: TraceHeader{Version: 1, TimeUnit: "us", Mode: ModeGenerated}}},
+			Header: trace.Header{Version: trace.Version, TimeUnit: "us", Mode: trace.ModeGenerated}}},
 	}
 	for name, b := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -125,13 +123,12 @@ func TestTraceRefRejects(t *testing.T) {
 		{"token blocks with an uppercase digest", func(tr *TraceRef) {
 			tr.TokenBlocks = &TokenBlocks{Path: "blocks.jsonl.zst", SHA256: strRepeat("A", 64)}
 		}},
-		{"zero trace version", func(tr *TraceRef) { tr.Header.Version = 0 }},
+		{"older trace version", func(tr *TraceRef) { tr.Header.Version = 3 }},
 		{"no time unit", func(tr *TraceRef) { tr.Header.TimeUnit = "" }},
 		{"unknown time unit", func(tr *TraceRef) { tr.Header.TimeUnit = "fortnights" }},
 		{"no mode", func(tr *TraceRef) { tr.Header.Mode = "" }},
 		{"unknown mode", func(tr *TraceRef) { tr.Header.Mode = "simulated" }},
-		{"negative tensor_parallel", func(tr *TraceRef) { tr.Header.Server.TensorParallel = -1 }},
-		{"gpu util above one", func(tr *TraceRef) { tr.Header.Server.GPUMemoryUtilization = 1.5 }},
+		{"mode real, which observe wrote", func(tr *TraceRef) { tr.Header.Mode = "real" }},
 		{"empty slo class key", func(tr *TraceRef) {
 			tr.Header.GoodputSLOTargets = map[string]SLODimTargets{"": {TTFTMs: 1}}
 		}},
@@ -140,9 +137,6 @@ func TestTraceRefRejects(t *testing.T) {
 		}},
 		{"negative slo target", func(tr *TraceRef) {
 			tr.Header.GoodputSLOTargets = map[string]SLODimTargets{"critical": {TTFTMs: -1}}
-		}},
-		{"non-finite gpu util", func(tr *TraceRef) {
-			tr.Header.Server.GPUMemoryUtilization = math.NaN()
 		}},
 		{"non-finite slo target", func(tr *TraceRef) {
 			tr.Header.GoodputSLOTargets = map[string]SLODimTargets{"critical": {TTFTMs: math.Inf(1)}}
