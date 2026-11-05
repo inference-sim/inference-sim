@@ -693,6 +693,9 @@ source:
   repo: deepseek-ai/DeepSeek-V4-Pro
   revision: b5968e9190ef611bbf34a7229255be88a0e937c1
   retrieved: 2026-10-02
+licence:
+  id: MIT
+  evidence: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/README.md
 `)
 	id, err := LoadModelIdentity(path)
 	if err != nil {
@@ -711,8 +714,41 @@ source:
 	if id.Source.Revision != "b5968e9190ef611bbf34a7229255be88a0e937c1" || id.Source.Retrieved != "2026-10-02" {
 		t.Errorf("source provenance did not parse: %+v", id.Source)
 	}
+	if id.Licence == nil || id.Licence.ID != "MIT" {
+		t.Errorf("licence did not parse: %+v", id.Licence)
+	}
 	if p := id.Validate(); !p.OK() {
 		t.Errorf("a loaded identity failed validation:\n%s", p.Error())
+	}
+}
+
+// X12: the licence record is required, names an SPDX identifier or LicenseRef, and reads
+// the licence at the pinned revision. Each case is a known-bad identity (X18).
+func TestModelIdentityLicence(t *testing.T) {
+	const rev = "b5968e9190ef611bbf34a7229255be88a0e937c1"
+	good := func() *model.Identity {
+		return &model.Identity{Name: "m",
+			Source:  &model.Source{Provider: "huggingface", Repo: "o/m", Revision: rev},
+			Licence: &model.Licence{ID: "LicenseRef-llama2", Evidence: "https://huggingface.co/o/m/raw/" + rev + "/README.md"}}
+	}
+	if p := good().Validate(); !p.OK() {
+		t.Fatalf("a good identity failed: %s", p.Error())
+	}
+	for name, c := range map[string]struct {
+		edit func(*model.Identity)
+		want string
+	}{
+		"no licence":      {func(i *model.Identity) { i.Licence = nil }, "licence: required"},
+		"bad id":          {func(i *model.Identity) { i.Licence.ID = "Llama 2" }, "is not an SPDX identifier"},
+		"http evidence":   {func(i *model.Identity) { i.Licence.Evidence = "http://huggingface.co/o/m/raw/" + rev }, "is not an https URL"},
+		"unpinned":        {func(i *model.Identity) { i.Licence.Evidence = "https://huggingface.co/o/m/raw/main/README.md" }, "does not name the pinned revision"},
+		"bad config hash": {func(i *model.Identity) { i.Config = &model.ConfigPin{SHA256: "ABC"} }, "is not a lowercase hex SHA-256"},
+	} {
+		id := good()
+		c.edit(id)
+		if p := id.Validate(); p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want %q, got %v", name, c.want, p.Error())
+		}
 	}
 }
 

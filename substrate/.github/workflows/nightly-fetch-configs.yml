@@ -1,0 +1,63 @@
+name: nightly config fetch
+
+# X12: a model whose config.json licence is not on the allow-list commits only the file's
+# hash (model.yaml config.sha256) and its source revision. This job, which alone holds the
+# Hugging Face access token, fetches each such file at its pinned revision, checks its hash,
+# and re-derives the graph with derive_graph.py --check --fetched. Pull-request jobs need no
+# secret: they check the hash, the revision and the graph's derived_from hash only.
+#
+# The token is the HF_TOKEN secret of the protected environment "config-fetch", whose branch
+# policy allows only main. A person creates the environment and the secret.
+
+on:
+  schedule:
+    - cron: "41 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    name: fetch and re-derive
+    runs-on: ubuntu-latest
+    environment: config-fetch
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes -r catalog/scripts/requirements-dev.txt
+      - name: Fetch every pinned config.json at its revision
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "the HF_TOKEN secret of the config-fetch environment is missing; the job cannot run (X16)" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/fetched"
+          python3 - "$RUNNER_TEMP/fetched" <<'PY'
+          import os, sys, urllib.request, pathlib, yaml
+          out = pathlib.Path(sys.argv[1])
+          n = 0
+          for card in sorted(pathlib.Path("catalog/models").glob("*/model.yaml")):
+              m = yaml.safe_load(card.read_text())
+              if not m.get("config"):
+                  continue
+              s = m["source"]
+              url = f"https://huggingface.co/{s['repo']}/resolve/{s['revision']}/config.json"
+              req = urllib.request.Request(url, headers={"Authorization": "Bearer " + os.environ["HF_TOKEN"]})
+              d = out / card.parent.name
+              d.mkdir(parents=True, exist_ok=True)
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  (d / "config.json").write_bytes(r.read())
+              n += 1
+              print(f"fetched {card.parent.name} at {s['revision']}")
+          print(f"{n} pinned config(s) fetched")
+          PY
+      - name: Re-derive every graph, the pinned ones from the fetched files
+        working-directory: catalog
+        run: python3 scripts/derive_graph.py --check --fetched "$RUNNER_TEMP/fetched"

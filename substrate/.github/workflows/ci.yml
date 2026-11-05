@@ -55,7 +55,8 @@ jobs:
           has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
           # A change to go.mod, go.sum, the workflow or the root package affects every Go job.
           shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/)'
-          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/")" >> "$GITHUB_OUTPUT"
+          # Any Python file can restate a Go rule, so a Python change runs the X15 lint here.
+          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/|\.py$")" >> "$GITHUB_OUTPUT"
           echo "kernel=$(has "$shared|^kernel/|^contracts/")"             >> "$GITHUB_OUTPUT"
           echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
           echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
@@ -123,6 +124,13 @@ jobs:
           # A skipped test is a failure unless quarantined (X16, X25); fewer than 1000
           # results means packages were not run (X22).
           go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
+      # Python code that restates a Go rule (X15). TestPythonRuleLint above runs it too;
+      # the step names the command.
+      - name: Python rule lint (X15)
+        run: |
+          set -euo pipefail
+          go run ./tools/prcheck vocab > "$RUNNER_TEMP/vocab.json"
+          python3 -I tools/pyrules/pyrules.py "$RUNNER_TEMP/vocab.json"
       # The AGENTS.md block, the pull-request template and the rendered index match the
       # invariant registry (design §13.1). The test above also checks this; the step names
       # the command that fixes it.
@@ -186,9 +194,22 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install --require-hashes -r registry/scripts/requirements.txt
+      # Without the AISimulate, CollectiveX and OperatorX data, the tests that re-derive a
+      # value from it skip here, and rederive.yml, a gate on the same paths and nightly,
+      # runs them with the data present (SUB-4, SUB-8). Every other skip fails this job
+      # (X16): the skips allowed here are exactly the data-absent ones, by their message.
       - name: The derivation and value-preservation tests
         working-directory: registry
-        run: python -m pytest validator/ -q
+        run: |
+          set -euo pipefail
+          python -m pytest validator/ -q -rs | tee "$RUNNER_TEMP/pytest.log"
+          # awk, unlike grep, exits 0 when it selects nothing.
+          unexpected=$(awk '/^SKIPPED/ && !/AISimulate data not present|CollectiveX run bodies not present|OperatorX MoE response not present|could not import .pyarrow./' "$RUNNER_TEMP/pytest.log")
+          if [ -n "$unexpected" ]; then
+            echo "skips that rederive.yml does not cover (X16):" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
 
   # The docs site builds with every warning an error: a broken link, a missing snippet, a page
   # left out of the navigation. The hooks render the catalog's and the registry's reference

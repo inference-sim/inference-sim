@@ -4,3 +4,6 @@ source:
   repo: meta-llama/Llama-3.1-70B-Instruct
   revision: 1605565b47bb9346c5515c34102e054115b4f98b
   retrieved: 2026-09-16
+licence:
+  id: LicenseRef-llama3.1
+  evidence: https://huggingface.co/api/models/meta-llama/Llama-3.1-70B-Instruct/revision/1605565b47bb9346c5515c34102e054115b4f98b

@@ -79,62 +79,62 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
   - `new`, pull_request: An accuracy change's success criteria are committed before any commit that reads its held-out data
 - **X10** (new; target ci by M1) Repositories are released bottom-up.
-  - `new`, release: Release bot (§13.6)
+  - `new`, release: Release bot (§13.6) (`tools/release`)
 - **X11** (partial; target ci by M1) Pins are exact release tags.
-  - `new`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
-  - `new`, pull_request: No other module requiring github.com/llm-d/llm-d-router
+  - `new`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint`)
+  - `new`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint`)
   - `ci`, pull_request: No committed go.work (`TestNoNestedModule`)
 - **X12** (partial; target ci by M1) Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list.
   - `ci`, pull_request: Name scan in every repository (`.github/workflows/private-names.yml`)
   - `ci`, pull_request: Provenance schema rules (`go run ./validate/cmd/validate-catalog catalog`)
-  - `new`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml
+  - `new`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml (`validate/cmd/validate-catalog: TestRunLicenceCheck`)
 - **X13** (partial; target ci by M1) Every behaviour change has a test that fails without it.
   - `new`, pull_request: The corpus comparison, run by the scoring harness at the pinned digest from each repository's CI, for pull requests declared as refactors
   - `new`, pull_request: Landing gate (VAL-6)
   - `new`, pull_request: Mutation checks: on a pull request, the functions it changes and the functions covered by any test it changes are mutated, and only the tests that cover them run
   - `new`, nightly: The full sweep runs nightly and on release tags
 - **X14** (new; target ci by M1) A pull request's description is accurate: the commit hashes it lists are the branch heads, it merges cleanly, and every invariant it cites exists.
-  - `new`, pull_request: The description check, a shared workflow run in every repository
+  - `new`, pull_request: The description check, a shared workflow run in every repository (`shared-pr-checks.yml: prcheck description, invariants cited`)
 - **X15** (new; target ci by M1) Each validation rule exists once, in Go, in blis-substrate.
-  - `new`, pull_request: The parity test in blis-substrate
-  - `new`, pull_request: A lint that flags schema-like rule code in Python scripts
+  - `new`, pull_request: The parity test in blis-substrate (`tools/pyrules: TestEveryRestatementAgreesWithGo`)
+  - `new`, pull_request: A lint that flags schema-like rule code in Python scripts (`tools/pyrules/pyrules.py`)
 - **X16** (new; target ci by M1) A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine list of X25.
-  - `new`, pull_request: Each repository's CI configuration
-  - `new`, nightly: The nightly status page (§13.4)
+  - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
+  - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)
 - **X17** (partial; target ci by M1) Every repository's protected branch requires its named checks, including formatting and lint.
-  - `new`, nightly: A nightly job in blis-substrate that lists the previous day's merges in every repository and fails if any merged head has no successful required run
+  - `new`, nightly: A nightly job in blis-substrate that lists the previous day's merges in every repository and fails if any merged head has no successful required run (`nightly.yml: prcheck audit-merges`)
   - `new`, settings: The protected branch requires the repository's named checks, including formatting and lint
 - **X18** (new; target ci by M2) Every check in the invariant registry names a known-bad input that must make it fail.
-  - `new`, nightly: A nightly job in blis-substrate that runs each check on its known-bad input and fails if the check passes
+  - `new`, nightly: A nightly job in blis-substrate that runs each check on its known-bad input and fails if the check passes (`nightly.yml: prcheck knownbad`)
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
 - **X20** (partial; target ci by M1) Every commit written for BLIS is signed.
-  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds
+  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds (`shared-pr-checks.yml: prcheck commits`)
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
-  - `new`, pull_request: A workflow lint that refuses an action not pinned by commit
-  - `new`, pull_request: Pip install --require-hashes in every Python CI job
+  - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
+  - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
 - **X22** (partial; target ci by M1) Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged.
-  - `new`, pull_request: The shared merge check in blis-substrate/.github/workflows, called by every repository, which compares verdict tree hashes
-  - `new`, pull_request: A workflow lint that refuses ignored exit codes
+  - `new`, pull_request: The shared merge check in blis-substrate/.github/workflows, called by every repository, which compares verdict tree hashes (`shared-merge-check.yml: prcheck merge`)
+  - `new`, pull_request: A workflow lint that refuses ignored exit codes (`prcheck workflows`)
   - `ci`, pull_request: Each job's item count (`ci.yml job required`)
 - **X23** (new; target ci by M1) A version is written in one place.
-  - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated
+  - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
 - **X24** (new; target ci by M1) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: The shared merge check, which refuses a merge while a review thread has no outcome
+  - `new`, pull_request: The shared merge check, which refuses a merge while a review thread has no outcome (`shared-merge-check.yml: prcheck merge`)
   - `new`, nightly: A nightly job that reopens an issue closed any other way
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
-  - `new`, pull_request: The quarantine list, which fails CI when an entry expires
+  - `new`, pull_request: The quarantine list, which fails CI when an entry expires (`prcheck quarantine`)
   - `new`, pull_request: A required check that fails while main is failing and the pull request does not name the failing test's issue
 - **X26** (new; target ci by M1) In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree.
-  - `new`, pull_request: A documentation reference check in every repository
+  - `new`, pull_request: A documentation reference check in every repository (`prcheck docrefs`)
 - **X27** (new; target ci by M1) An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes.
-  - `new`, release: The release bot
+  - `new`, release: The release bot (`tools/release: CheckBugs`)
 - **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
-  - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one
-  - `new`, pull_request: A merge check that refuses a change closing an issue still cited elsewhere
+  - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
+  - `new`, pull_request: A merge check that refuses a change closing an issue still cited elsewhere (`shared-merge-check.yml: prcheck issues -closes`)
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
 - **SUB-1** (partial; target ci by M2) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
   - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)
@@ -198,7 +198,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **DEV-8** (new; target ci by M1) Every reported metric names its definition (§8.7), and a comparison is refused unless both sides use the same definition.
   - `new`, pull_request: The metric registry in contracts/, which the simulator reads directly and the dashboard and config search read through inference-sim metrics
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
-  - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class
+  - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class (`.github/pull_request_template.md (generated)`)
 - **VAL-1** (partial; target ci by M2) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
   - `ci`, pull_request: Schema rules in blis-substrate/validate for the method vocabulary in use (`contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured`)
   - `new`, pull_request: Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method needs
@@ -242,6 +242,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A check against the ledger at the pull request's merge base
   - `new`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
+  - `new`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is in an alias table
 - **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
   - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
 - **D6** (new; target ci by M4) Only redistributable artefacts are committed.
@@ -257,21 +258,21 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
   - `new`, settings: Protected tags
-  - `new`, nightly: A nightly check that every tag resolves to its recorded commit
+  - `new`, nightly: A nightly check that every tag resolves to its recorded commit (`shared-nightly.yml: prcheck tags`)
 - **LIF-2** (new; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
-  - `new`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line
-  - `new`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
-  - `new`, pull_request: A CI step that fails if go version differs from it
+  - `new`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint`)
+  - `new`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint`)
+  - `new`, pull_request: A CI step that fails if go version differs from it (`.github/actions/go-toolchain; tools/modlint`)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
   - `new`, settings: Repository settings that let only the release bot and release owners create tags
-  - `new`, pull_request: The bot's own check of every ci invariant
+  - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
   - `new`, nightly: A nightly check that every tag made by a person is signed and listed in its release notes
 - **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
-  - `new`, release: The release bot, which writes the notes from the release's changes
+  - `new`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
 - **LIF-5** (partial; target ci by M4) An engine module, or the router fork, models one upstream release.
-  - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag
+  - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
-  - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release
+  - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)
 
 ### Review questions
 

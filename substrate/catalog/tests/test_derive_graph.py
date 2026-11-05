@@ -6000,3 +6000,54 @@ def test_muse_spark_pooler_and_unpooler_shard_at_decode_on_blackwell():
             assert pool["sharded_at_decode"] == {"capability_family": 10, "max_tokens": 256}
             assert unpool["sharded_at_decode"] == {"capability_family": 10, "max_tokens": 256,
                                                    "min_tokens_across_nodes": 32}
+
+
+def _pin_one(tmp_path):
+    """Copy the catalog, and turn one model into the X12 hash-and-revision form: its
+    config.json moves to a fetch directory and model.yaml pins its sha256."""
+    import hashlib
+    import shutil
+
+    tree = tmp_path / "catalog"
+    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    target = tree / "models" / "qwen3-14b"
+    raw = (target / "config.json").read_bytes()
+    fetched = tmp_path / "fetched" / "qwen3-14b"
+    fetched.mkdir(parents=True)
+    (fetched / "config.json").write_bytes(raw)
+    (target / "config.json").unlink()
+    card = (target / "model.yaml").read_text()
+    (target / "model.yaml").write_text(card + f"config:\n  sha256: {hashlib.sha256(raw).hexdigest()}\n")
+    return tree, target, tmp_path / "fetched"
+
+
+def _check(tree, *extra):
+    return subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", *extra],
+                          capture_output=True, text=True)
+
+
+def test_a_pinned_config_is_checked_by_hash_without_the_file(tmp_path):
+    """X12: a pull-request job, with no token, checks the graph against the pinned hash."""
+    tree, target, fetched = _pin_one(tmp_path)
+    r = _check(tree)
+    assert r.returncode == 0, r.stderr
+    # Known-bad: the graph names a different config.
+    g = (target / "graph.yaml").read_text()
+    (target / "graph.yaml").write_text(re.sub(r"sha256: [0-9a-f]{64}", "sha256: " + "0" * 64, g, count=1))
+    r = _check(tree)
+    assert r.returncode != 0 and "is not model.yaml's config.sha256" in r.stderr, r.stderr
+
+
+def test_the_nightly_fetch_rederives_a_pinned_config(tmp_path):
+    """X12: the nightly job derives from the fetched file, after checking its hash."""
+    tree, target, fetched = _pin_one(tmp_path)
+    r = _check(tree, "--fetched", str(fetched))
+    assert r.returncode == 0, r.stderr
+    # Known-bad: the fetched file is not the pinned one.
+    (fetched / "qwen3-14b" / "config.json").write_text('{"architectures": ["Qwen3ForCausalLM"]}')
+    r = _check(tree, "--fetched", str(fetched))
+    assert r.returncode != 0 and "not the pinned" in r.stderr, r.stderr
+    # Known-bad: a pinned model that also commits the file.
+    (target / "config.json").write_text("{}")
+    r = _check(tree)
+    assert r.returncode != 0 and "commit one or the other" in r.stderr, r.stderr

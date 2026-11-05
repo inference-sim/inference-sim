@@ -236,6 +236,8 @@ var documented = map[string]struct {
 	"model.CacheOverride":       {typ: reflect.TypeOf(model.CacheOverride{})},
 	"model.Identity":            {typ: reflect.TypeOf(model.Identity{})},
 	"model.Source":              {typ: reflect.TypeOf(model.Source{})},
+	"model.Licence":             {typ: reflect.TypeOf(model.Licence{})},
+	"model.ConfigPin":           {typ: reflect.TypeOf(model.ConfigPin{})},
 	"hardware.Chip":             {typ: reflect.TypeOf(hardware.Chip{})},
 	"hardware.Fabric":           {typ: reflect.TypeOf(hardware.Fabric{})},
 	"hardware.StorageDevice":    {typ: reflect.TypeOf(hardware.StorageDevice{}), omit: []string{"name"}},

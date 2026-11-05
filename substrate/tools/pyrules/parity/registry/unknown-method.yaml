@@ -1,0 +1,12 @@
+# expect: "guessed" is not one of
+kind: CoefficientSet
+name: parity-unknown-method
+coefficients:
+  - gemm_eps_max_bf16:
+      value: 0.72
+      units: dimensionless
+      method: guessed
+      fitted: false
+      scope:
+        hardware: [h200]
+      rationale: a method outside the closed vocabulary

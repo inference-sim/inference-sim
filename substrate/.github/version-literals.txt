@@ -1,6 +1,3 @@
 # Version literals that predate X23's lint, one "path: literal" per line. The list only shrinks:
 # go run ./tools/prcheck versions fails on a literal not listed here and on an entry that no
 # longer occurs. Each is to be rendered from go.mod or contracts/toolchain by its owner.
-docs/catalog/contributing/checks.md: Go 1.24
-docs/contracts/guides/checkouts.md: Go 1.24
-docs/contracts/guides/checkouts.md: go-version: '1.24

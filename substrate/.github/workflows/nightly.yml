@@ -1,0 +1,69 @@
+name: nightly
+
+# blis-substrate's own nightly jobs (design §13.4), beside the shared nightly checks that
+# blis.yml calls:
+#
+#   status     the status page: each gate's last real run, a gate older than seven days
+#              shown as failing, and every invariant with a check here (X16)
+#   merges     the previous day's merges in every BLIS repository, each needing a successful
+#              run of every required check on its tree (X17)
+#   known-bad  every check's known-bad input, run by its test, which fails if the check
+#              stopped refusing it (X18)
+#
+# The merge audit reads other repositories' pull requests and check runs; the token is the
+# AUDIT_TOKEN secret, a read-only token for the inference-sim organisation, which a person
+# creates.
+
+on:
+  schedule:
+    - cron: "53 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  status:
+    name: status page (X16)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - name: Render the status page, and fail on a stale or failing gate
+        run: go run ./tools/prcheck status -repo "${{ github.repository }}" -out "$RUNNER_TEMP/status.md"
+      - name: Publish the page, whatever the result
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/status.md"
+          cat "$RUNNER_TEMP/status.md" >> "$GITHUB_STEP_SUMMARY"
+
+  merges:
+    name: merge audit (X17)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.AUDIT_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "the AUDIT_TOKEN secret is missing; the merge audit cannot run (X16)" >&2
+            exit 1
+          fi
+          go run ./tools/prcheck audit-merges -hours 24
+
+  known-bad:
+    name: known-bad inputs (X18)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - run: go run ./tools/prcheck knownbad

@@ -10,3 +10,13 @@
 /docs/            @sriumcp @jgchn
 /.github/         @sriumcp @jgchn
 /CODEOWNERS       @sriumcp @jgchn
+
+# Release owners (design §13.6, LIF-3): the people who may tag by the manual procedure, two
+# at a time, while the release bot is unavailable. The release bot's code, the recorded
+# tags and the required-check list are theirs to review.
+/tools/release/              @sriumcp @jgchn
+/.github/tags.lock           @sriumcp @jgchn
+/.github/required-checks.yaml @sriumcp @jgchn
+/.github/gates.yaml          @sriumcp @jgchn
+/contracts/invariants/       @sriumcp @jgchn
+/contracts/toolchain         @sriumcp @jgchn

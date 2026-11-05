@@ -4,3 +4,6 @@ source:
   repo: Qwen/Qwen3-30B-A3B
   revision: ad44e777bcd18fa416d9da3bd8f70d33ebb85d39
   retrieved: 2026-09-16
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/Qwen/Qwen3-30B-A3B/raw/ad44e777bcd18fa416d9da3bd8f70d33ebb85d39/README.md

@@ -1,0 +1,80 @@
+# Models whose config.json is committed although its licence is not on the X12 allow-list
+# (contracts/vocab: vocab.RedistributableLicences). Each waits for a person to read its licence
+# and decide: add the licence to the allow-list, or remove the committed config.json and keep
+# only its hash and revision in model.yaml, so the nightly fetch job derives the graph.
+#
+# validate-catalog fails on a committed config.json whose licence is neither allowed nor listed
+# here, and on an entry here whose model's licence differs from the one recorded, or that names
+# a model with an allowed licence. Remove an entry in the change that resolves it; the list only
+# shrinks.
+
+pending:
+  - model: codellama-34b-instruct-hf
+    licence: LicenseRef-llama2
+    status: pending licence review
+  - model: deepseek-v2-lite
+    licence: LicenseRef-deepseek
+    status: pending licence review
+  - model: deepseek-v3
+    licence: LicenseRef-none-stated
+    status: pending licence review
+  - model: glm-5.3
+    licence: LicenseRef-glm-5.3
+    status: pending licence review
+  - model: kimi-k2.5
+    licence: LicenseRef-modified-mit
+    status: pending licence review
+  - model: kimi-k2.6
+    licence: LicenseRef-modified-mit
+    status: pending licence review
+  - model: kimi-k3
+    licence: LicenseRef-kimi-k3
+    status: pending licence review
+  - model: llama-2-70b-hf
+    licence: LicenseRef-llama2
+    status: pending licence review
+  - model: llama-2-7b-hf
+    licence: LicenseRef-llama2
+    status: pending licence review
+  - model: llama-3.1-70b-instruct
+    licence: LicenseRef-llama3.1
+    status: pending licence review
+  - model: llama-3.1-8b-instruct
+    licence: LicenseRef-llama3.1
+    status: pending licence review
+  - model: llama-4-scout-17b-16e-instruct-fp8-dynamic
+    licence: LicenseRef-llama4
+    status: pending licence review
+  - model: minimax-m2.5
+    licence: LicenseRef-modified-mit
+    status: pending licence review
+  - model: minimax-m2.7
+    licence: LicenseRef-other
+    status: pending licence review
+  - model: minimax-m3-mxfp8
+    licence: LicenseRef-minimax-community
+    status: pending licence review
+  - model: minimax-m3
+    licence: LicenseRef-minimax-community
+    status: pending licence review
+  - model: muse-spark-open-816b-a42b-nvfp4
+    licence: LicenseRef-muse-model-license
+    status: pending licence review
+  - model: muse-spark-open-816b-a42b
+    licence: LicenseRef-muse-model-license
+    status: pending licence review
+  - model: muse-spark-open-dspark
+    licence: LicenseRef-muse-spark-open
+    status: pending licence review
+  - model: nemotron-3-ultra-550b-a55b-bf16
+    licence: LicenseRef-openmdw-1.1
+    status: pending licence review
+  - model: nemotron-3-ultra-550b-a55b-nvfp4
+    licence: LicenseRef-openmdw-1.1
+    status: pending licence review
+  - model: nemotron-3.5-lightning-30b-a3b-bf16
+    licence: LicenseRef-openmdw-1.1
+    status: pending licence review
+  - model: nemotron-3.5-lightning-30b-a3b-nvfp4
+    licence: LicenseRef-openmdw-1.1
+    status: pending licence review

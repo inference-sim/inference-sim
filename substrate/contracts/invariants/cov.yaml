@@ -104,10 +104,10 @@
   checks:
   - repo: accuracy-dashboard
     check: >-
-      A check that the dashboard holds no settings table, and that every scenario's engine block equals
-      the run's recorded configuration field for field, after parsing both with the engine's own argument
-      parser, except engine.version, which equals the release in stack.json, and each field an estimation
-      rule set, which the point names
+      A check that the dashboard holds no settings table, and that every scenario's engine block equals,
+      field for field, the values the run passed, or the resolved value where only that is recorded
+      (§11.2), after parsing them with the engine's own argument parser, except engine.version, which
+      equals the release in stack.json, and each field an estimation rule set, which the point names
     runs: pull_request
     status: new
   review: null
@@ -170,8 +170,8 @@
   section: §11.8
   statement: >-
     Coverage (graded anchor units over all anchor units, by engine, engine release, chip and grade,
-    with the share in each grade) is published beside accuracy, and the backlog is published every
-    night.
+    with the share in each grade) is published beside accuracy, with the number of source records
+    the ledger left out (§10.2), and the backlog is published every night.
   scope:
   - accuracy-dashboard
   checks:
@@ -227,14 +227,17 @@
   statement: >-
     The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client
     concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones
-    the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run left to chance
-    on the server, and replications (DEV-11) cover that. A frame field the run did not record makes
-    the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved
-    concurrency in the simulation matches the measured one within a stated tolerance. Each lane is
-    scored on its percentiles and a distribution distance, not only on its mean. A simulated figure
-    compared with a measurement carries its replication interval. Where InferenceX has several measurements
-    that differ only in their measured date or benchmark run, their spread is reported as the measurement's
-    own noise, and no point is graded worse for a difference smaller than that noise.
+    the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run's requests do not
+    fix, such as a router's tie-breaks, and replications (DEV-11) cover those draws. A frame field
+    the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default
+    is substituted. The achieved concurrency in the simulation matches the measured one within a stated
+    tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its
+    mean. A simulated figure compared with a measurement carries its replication interval, or states
+    that the run has no random input (§8.4); its uncertainty is then the measurement's own noise (below)
+    and the model's (§8.8). Where InferenceX has several units whose identifying fields differ only
+    in measured date or benchmark run, or one unit holding several measurements (§10.2), their spread
+    is reported as the measurement's own noise, and no point's error is counted for a difference smaller
+    than that noise. A unit holding several measurements is scored against their mean.
   scope:
   - accuracy-dashboard
   checks:
@@ -284,14 +287,18 @@
 - id: COV-12
   section: §11.8
   statement: >-
-    The scored simulation receives the requests the measured run sent. Where the benchmark client
-    draws its requests from a seeded generator, the dashboard recomputes them with the client's own
-    algorithm and seed at the client's pinned release, in the client's order. The prompt and output
-    lengths are the ones the client sent, after its own tokenisation, verified against the run's tokenizer
-    at a pinned revision; where they cannot be verified, the point is G2 and names the gap. A warm-up
-    the client runs before its measured phase leaves in the simulator the state it leaves in the engine,
-    such as cached prefixes. Every difference between the run's client and the simulated one is named
-    on the point, and makes it G2.
+    The scored simulation receives the requests the measured run sent: the same requests, in the same
+    order, with the same prompt lengths, output lengths and shared prefixes. Their arrival times follow
+    the simulated completions by the client's own rules (§8.5). Where the client draws its requests
+    from a seeded generator, the dashboard recomputes them with the client's own algorithm and seed,
+    at the client release the run records; where the run records none, at the release its image ships,
+    and the point names it. Prompt lengths are counted after the client's tokenisation and verified
+    against the run's tokenizer at a pinned revision. An output length is the length the client forced
+    or, where it forced none, the length the run's response records (DEV-13); where neither is recorded,
+    the length is drawn from the frame's input model, and the point names it. The simulator runs the
+    client's warm-up, so the measured phase starts from the engine state the warm-up left, such as
+    cached prefixes. Every difference between the run's client and the simulated one, including an
+    unrecorded client release or an unverified length, is named on the point and makes it G2.
   scope:
   - accuracy-dashboard
   - inference-sim
@@ -322,7 +329,8 @@
   status: partial
   target:
     status: ci
-    milestone: 1
+    milestone: 3
   note: >-
-    the single-turn recomputation of the client's seed-0 lengths and the sent-length check exist,
-    in inference-sim's tools/harness; they move into the dashboard's harness
+    M1 moves the single-turn recomputation of the client's seed-0 lengths, the sent-length check and
+    the warm-up priming from inference-sim's tools/harness into the dashboard's harness; agentic-trace
+    requests follow in M3

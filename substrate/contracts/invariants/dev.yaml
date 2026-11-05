@@ -299,7 +299,8 @@
   section: §8.10
   statement: >-
     A figure that compares configurations, or that is published as a property of BLIS, carries an
-    interval from replications or batch means, and states which uncertainty it covers. Comparisons
+    interval from replications or batch means and states which uncertainty that interval covers, or
+    states that the run has no random input and which uncertainty it therefore leaves out. Comparisons
     are paired under common random numbers, have three outcomes, and control the chance of a false
     winner across all comparisons made.
   scope:
@@ -351,6 +352,8 @@
       that moved match the declared class
     runs: pull_request
     status: new
+    test: .github/pull_request_template.md (generated)
+    known_bad: 'tools/invariants: TestRenderCheckFailsOnAHandEditedCopy'
   - repo: blis-vllm
     check: >-
       In every repository, the change class in the pull-request template, and a check that the outputs

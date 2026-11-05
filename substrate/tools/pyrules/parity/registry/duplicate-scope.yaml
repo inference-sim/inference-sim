@@ -1,0 +1,20 @@
+# expect: duplicate entry name
+kind: CoefficientSet
+name: parity-duplicate-scope
+coefficients:
+  - gemm_eps_max_bf16:
+      value: 0.72
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope:
+        hardware: [h200]
+      rationale: the first of two entries with one name and one scope
+  - gemm_eps_max_bf16:
+      value: 0.70
+      units: dimensionless
+      method: assumed
+      fitted: false
+      scope:
+        hardware: [h200]
+      rationale: the second of two entries with one name and one scope

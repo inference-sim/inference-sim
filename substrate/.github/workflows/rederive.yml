@@ -9,13 +9,27 @@ name: rederive
 # at the commit every committed value re-derives at and runs the whole suite
 # (scripts/rederive.sh), so a value that its own fitter no longer produces fails.
 #
-# Manual only (Actions -> rederive -> Run workflow): the checkout is ~135 MB and the gates
-# take ~20 minutes, so it no longer runs on every pull request or push. Run the same gates
-# locally, where the data is present, with scripts/rederive.sh before a pull request that
-# changes a fitted value, a writer or a test.
+# It runs nightly on the full data (SUB-4, SUB-8), on every pull request that changes the
+# registry's coefficients, scripts or tests, and by hand. The checkout is ~135 MB and the
+# gates take ~20 minutes, which a pull request touching those paths pays. It is a gate: its
+# trigger paths are declared below and in .github/gates.yaml, and the nightly status page
+# shows it failing when its last real run is more than seven days old (X16).
+#
+# gate-paths: registry/coefficients/**, registry/scripts/**, registry/validator/**, .github/workflows/rederive.yml
 
 on:
+  pull_request:
+    paths:
+      - registry/coefficients/**
+      - registry/scripts/**
+      - registry/validator/**
+      - .github/workflows/rederive.yml
+  schedule:
+    - cron: "23 4 * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   rederive:
