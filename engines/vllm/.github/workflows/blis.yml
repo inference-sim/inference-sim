@@ -23,30 +23,30 @@ permissions:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@cad1bf145e1eb70887f7f721ff95a6dba4433f0c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@36b923c467f8dcfd6a6ac33188d55324726c5ce1
     permissions:
       contents: read
       pull-requests: write
     with:
       repo: blis-vllm
-      substrate-ref: cad1bf145e1eb70887f7f721ff95a6dba4433f0c
+      substrate-ref: 36b923c467f8dcfd6a6ac33188d55324726c5ce1
 
   merge:
     if: github.event_name == 'merge_group'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-merge-check.yml@cad1bf145e1eb70887f7f721ff95a6dba4433f0c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-merge-check.yml@36b923c467f8dcfd6a6ac33188d55324726c5ce1
     permissions:
       contents: read
       pull-requests: read
       checks: read
     with:
-      substrate-ref: cad1bf145e1eb70887f7f721ff95a6dba4433f0c
+      substrate-ref: 36b923c467f8dcfd6a6ac33188d55324726c5ce1
       required: "go,lint,blis checks / blis checks"
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@cad1bf145e1eb70887f7f721ff95a6dba4433f0c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@36b923c467f8dcfd6a6ac33188d55324726c5ce1
     permissions:
       contents: read
       issues: read
     with:
-      substrate-ref: cad1bf145e1eb70887f7f721ff95a6dba4433f0c
+      substrate-ref: 36b923c467f8dcfd6a6ac33188d55324726c5ce1
