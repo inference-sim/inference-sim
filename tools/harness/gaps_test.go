@@ -50,7 +50,7 @@ func TestAModelMissingFromTheCatalogIsAGapOwnedByTheCatalog(t *testing.T) {
 	r := testRepos()
 	r.Scenarios = dir
 	gaps := gapsFor(t, committedSweep("vllm"), Config{Repos: r})
-	if !hasGap(gaps, OwnerCatalog, "model not in blis-catalog") {
+	if !hasGap(gaps, OwnerCatalog, "model not in the catalog") {
 		t.Errorf("gaps %+v lack the missing model", gaps)
 	}
 	for _, g := range gaps {

@@ -26,9 +26,15 @@ func TestSIM11_SameInvalidValueRefusedThroughEveryInput(t *testing.T) {
 		flag, key string
 		header    func(v int64) *workload.TraceRouterConfig
 	}{
-		{"--gateway-latency", "router.gateway_latency_us", func(v int64) *workload.TraceRouterConfig { return &workload.TraceRouterConfig{GatewayLatencyUs: v} }},
-		{"--epp-scrape-jitter", "router.scrape_jitter_us", func(v int64) *workload.TraceRouterConfig { return &workload.TraceRouterConfig{ScrapeJitterUs: v} }},
-		{"--kv-event-delay", "router.kv_event_delay_us", func(v int64) *workload.TraceRouterConfig { return &workload.TraceRouterConfig{KVEventDelayUs: v} }},
+		{"--gateway-latency", "router.gateway_latency_us", func(v int64) *workload.TraceRouterConfig {
+			return &workload.TraceRouterConfig{EPPFlags: simEPPFlags, GatewayLatencyUs: v}
+		}},
+		{"--epp-scrape-jitter", "router.scrape_jitter_us", func(v int64) *workload.TraceRouterConfig {
+			return &workload.TraceRouterConfig{EPPFlags: simEPPFlags, ScrapeJitterUs: v}
+		}},
+		{"--kv-event-delay", "router.kv_event_delay_us", func(v int64) *workload.TraceRouterConfig {
+			return &workload.TraceRouterConfig{EPPFlags: simEPPFlags, KVEventDelayUs: v}
+		}},
 	}
 	for _, tm := range timings {
 		t.Run(tm.flag, func(t *testing.T) {
@@ -132,7 +138,7 @@ func TestReplayCmd_RefusesNegativeHeaderRouterTiming(t *testing.T) {
 		dir := t.TempDir()
 		hp, dp := filepath.Join(dir, "h.yaml"), filepath.Join(dir, "d.csv")
 		h := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated",
-			Router: &workload.TraceRouterConfig{GatewayLatencyUs: -1}}
+			Router: &workload.TraceRouterConfig{EPPFlags: simEPPFlags, GatewayLatencyUs: -1}}
 		if err := workload.ExportTraceV2(h, []workload.TraceRecord{{InputTokens: 10, OutputTokens: 2, Status: "ok"}}, hp, dp); err != nil {
 			os.Exit(2)
 		}
@@ -171,3 +177,7 @@ func runSubprocess(t *testing.T, run string, env ...string) (string, int) {
 	t.Fatalf("run %s: %v", run, err)
 	return "", -1
 }
+
+// simEPPFlags are the router flags a trace header's router block states: contracts/spec/trace
+// requires the block to carry them, and these are the standalone router's defaults.
+var simEPPFlags = []string{"--endpoint-selector=llm-d.ai/inference-serving=true", "--endpoint-target-ports=8000"}

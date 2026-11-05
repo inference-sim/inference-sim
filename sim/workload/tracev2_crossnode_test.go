@@ -9,6 +9,7 @@
 package workload
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,10 +73,15 @@ func TestTraceHeader_MaxNodesSpanned_OmittedWhenAbsent(t *testing.T) {
 // This test exists so that if someone ever removes the normalization believing `omitempty`
 // covers it, the coupling is written down here rather than discovered as a changed trace
 // format.
+//
+// contracts/spec/trace refuses a span of 1 when the trace is read, so the header is only
+// written here, not read back.
 func TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization(t *testing.T) {
-	_, raw := writeAndReload(t, &TraceHeader{
+	var b bytes.Buffer
+	require.NoError(t, writeTraceHeader(&b, &TraceHeader{
 		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", MaxNodesSpanned: 1,
-	})
+	}))
+	raw := b.String()
 	assert.Contains(t, raw, "max_nodes_spanned",
 		"a span of 1 is serialized, so the writer must normalize it to 0 rather than relying on omitempty")
 }

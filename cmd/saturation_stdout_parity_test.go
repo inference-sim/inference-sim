@@ -74,12 +74,12 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 	parseSaturation := func(t *testing.T, stdout string) (map[string]string, bool) {
 		t.Helper()
 		r := parseResult(t, stdout)
-		if r.Saturation == nil {
+		if r.Reports.Saturation == nil {
 			return nil, false
 		}
-		final, ok := r.Saturation["final"].(map[string]any)
+		final, ok := r.Reports.Saturation["final"].(map[string]any)
 		if !ok {
-			t.Fatalf("the Result's saturation has no final labels: %v", r.Saturation)
+			t.Fatalf("the Result's saturation has no final labels: %v", r.Reports.Saturation)
 		}
 		out := make(map[string]string, len(final))
 		for d, l := range final {

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/check"
 	"gopkg.in/yaml.v3"
@@ -17,76 +19,44 @@ import (
 // TraceVersion is the trace format this build reads and writes: version 4, the format
 // blis-substrate's contracts/spec/trace defines. A trace of another version is refused; a
 // version 3 trace is converted with `blis convert trace` (ConvertTraceV3).
-const TraceVersion = 4
+const TraceVersion = trace.Version
 
-// TraceHeader is a trace's YAML header (trace format version 4).
-type TraceHeader struct {
-	Version  int    `yaml:"trace_version"`
-	TimeUnit string `yaml:"time_unit"`
-	Mode     string `yaml:"mode"` // TraceModeGenerated, TraceModeReplayed or TraceModeConverted
-	// WorkloadSeed is the workload generator's seed, when one was recorded.
-	WorkloadSeed *int64 `yaml:"workload_seed,omitempty"`
+// The trace format's types are contracts/spec/trace's (SUB-19): this package reads and writes
+// them, and adds the validation its command-line counterparts share (package check, SIM-11).
+type (
+	// TraceHeader is a trace's YAML header.
+	TraceHeader = trace.Header
+	// TraceRouterConfig is the header's record of the llm-d router's inputs.
+	TraceRouterConfig = trace.Router
+	// TraceKVOffloadConfig is the header's resolved KV-cache offload configuration (#1587).
+	TraceKVOffloadConfig = trace.KVOffload
+	// TraceKVOffloadTier is one resolved secondary offload tier.
+	TraceKVOffloadTier = trace.KVOffloadTier
+	// TraceRecord is one row of the data CSV: one request.
+	TraceRecord = trace.Record
+)
 
-	// SessionContextGrowth controls per-round input assembly in closed-loop
-	// replay. "accumulate" makes each session reuse a single growing token
-	// buffer so round N+1's input is byte-identical to round N's plus new
-	// tokens (strict prefix reuse for KV-cache modeling; see design §5).
-	// Empty (default) = each round's input is generated independently
-	// (pre-existing behavior). Set by `blis convert otel`.
-	SessionContextGrowth string `yaml:"session_context_growth,omitempty"`
-
-	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
-	// measurement (issue #1409, BC-8). Persisted in trace headers so run and
-	// replay carry the same SLO definition.
-	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
-
-	// KVOffload records the RESOLVED KV-cache offload configuration (H5, #1587) so it
-	// round-trips run→replay (BC-G6, INV-13). Absent (nil, omitempty) when no
-	// --kv-offload-config was supplied — so a run without offload writes a
-	// byte-identical header to a pre-feature build (BC-G5). The resolved bandwidth /
-	// latency numbers are recorded (not device_class), so replay reproduces the exact
-	// physics regardless of the replay host's defaults.yaml; replay uses them
-	// authoritatively and logrus.Fatalf's on any config it cannot reconstruct.
-	KVOffload *TraceKVOffloadConfig `yaml:"kv_offload,omitempty"`
-
-	// MaxNodesSpanned records the largest number of physical nodes any single model
-	// instance occupied during the source run (#1530). Written by `blis run` only when
-	// node-pool placement actually spread an instance's tensor-parallel group across a
-	// node boundary; absent (0, omitempty) otherwise, so a run without multi-node
-	// placement writes a byte-identical header to a pre-feature build (INV-6).
-	//
-	// READ BY REPLAY, BUT ONLY AS A REFUSAL SIGNAL — never to reconstruct anything.
-	// This is the distinction to keep in mind before building on this field. #1530 offered
-	// two designs for run/replay parity: round-trip the cross-node signal so replay
-	// reproduces the run's step times, or keep a loud rejection. This is the SECOND one,
-	// extended to cover the trace path. Cross-node collective traffic is charged to step
-	// time, and node pools are `blis run`-only, so a trace from a multi-node run replayed
-	// without them would silently reproduce the workload at single-node speed — faster
-	// than the run it came from. `blis replay` therefore treats a value above 1 as a hard
-	// error (INV-13: a feature replay cannot reproduce must fail loudly, never degrade
-	// silently). It does NOT use the value to rebuild a fleet, and a future change that
-	// wanted replay to reproduce cross-node timing would need the topology per instance,
-	// not this single fleet-wide maximum.
-	//
-	// Normalization note: `omitempty` drops only 0, so a span of exactly 1 WOULD be
-	// serialized. The writer normalizes 1 to 0 (see cmd.crossNodeSpanForTrace) so that a
-	// single-node node-pool run does not start emitting a new header key; the coupling is
-	// pinned by TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization.
-	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
-
-	// Router records the inputs of the llm-d router the source run routed with, so a replay
-	// rebuilds the same router (INV-13). Absent from converted traces and from traces
-	// written before the router was embedded.
-	Router *TraceRouterConfig `yaml:"router,omitempty"`
+// checkTraceHeader runs validateTraceHeader, then contracts/spec/trace's header validator.
+func checkTraceHeader(h *TraceHeader) error {
+	// Package check first: it names the field and the value, as the command line's validator
+	// for the same kind of value does (SIM-11). Contracts' validator then refuses the rest.
+	if err := validateTraceHeader(h); err != nil {
+		return err
+	}
+	if p := h.Validate(); !p.OK() {
+		return p
+	}
+	return nil
 }
 
-// Validate refuses a header value that no run could have recorded, with the validator the same
-// kind of value meets on the command line (package check, SIM-11): the router's three timings are
-// spans of simulated time, as --gateway-latency, --epp-scrape-jitter and --kv-event-delay are; each
-// goodput latency target is a positive span, as --slo-ttft, --slo-itl and --slo-e2e are. A target
-// of 0 is the encoding of an absent one (SLODimTargets omits it), so only a stated value is
-// checked. The fields are visited in a fixed order, so the first refusal is deterministic (R2).
-func (h *TraceHeader) Validate() error {
+// validateTraceHeader refuses a header value that no run could have recorded, with the validator
+// the same kind of value meets on the command line (package check, SIM-11): the router's three
+// timings are spans of simulated time, as --gateway-latency, --epp-scrape-jitter and
+// --kv-event-delay are; each goodput latency target is a positive span, as --slo-ttft, --slo-itl
+// and --slo-e2e are. A target of 0 is the encoding of an absent one (SLODimTargets omits it), so
+// only a stated value is checked. The fields are visited in a fixed order, so the first refusal
+// is deterministic (R2). contracts' own Header.Validate runs too, in LoadTraceV2.
+func validateTraceHeader(h *TraceHeader) error {
 	if r := h.Router; r != nil {
 		for _, f := range []struct {
 			name string
@@ -102,110 +72,6 @@ func (h *TraceHeader) Validate() error {
 		return err
 	}
 	return validateGoodputTargets(h.GoodputSLOTargets)
-}
-
-// TraceRouterConfig is the trace-header record of the embedded llm-d router's inputs: the
-// EPP command-line flags (with the EndpointPickerConfig inlined as --config-text), the
-// Kubernetes manifests, the extra pod labels, and the environment model around the router.
-type TraceRouterConfig struct {
-	EPPFlags         []string          `yaml:"epp_flags"`
-	Manifests        string            `yaml:"manifests,omitempty"`
-	PodLabels        map[string]string `yaml:"pod_labels,omitempty"`
-	GatewayLatencyUs int64             `yaml:"gateway_latency_us,omitempty"`
-	ScrapeJitterUs   int64             `yaml:"scrape_jitter_us,omitempty"`
-	KVEventDelayUs   int64             `yaml:"kv_event_delay_us,omitempty"`
-	// Seed is the seed the router ran with (its random streams and the prompts it was shown);
-	// a replay runs its router with it. Absent in traces BLIS did not record.
-	Seed *int64 `yaml:"seed,omitempty"`
-}
-
-// TraceKVOffloadConfig is the trace-header serialization of a resolved
-// sim.KVOffloadConfig (H5, #1587). It is a workload-package struct — decoupled from
-// sim.KVOffloadConfig so the on-disk trace format is stable independent of the
-// internal config type. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
-// LoadTraceV2, so an unknown offload sub-key is a hard error (BC-N3 version guard).
-type TraceKVOffloadConfig struct {
-	CPUBytesToUse          int64                `yaml:"cpu_bytes_to_use"`
-	PerBlockBytes          int64                `yaml:"per_block_bytes"`
-	BlockSize              int64                `yaml:"block_size"`
-	BlocksPerChunk         int64                `yaml:"blocks_per_chunk"`
-	TokensPerHash          int64                `yaml:"tokens_per_hash"`
-	EvictionPolicy         string               `yaml:"eviction_policy"`
-	OffloadPromptOnly      bool                 `yaml:"offload_prompt_only"`
-	SelfDescribingKVEvents bool                 `yaml:"self_describing_kv_events"`
-	Tiers                  []TraceKVOffloadTier `yaml:"secondary_tiers,omitempty"`
-	// SimpleCPUOffload / LazyOffload record vLLM's SimpleCPUOffloadConnector and its mode.
-	SimpleCPUOffload bool `yaml:"simple_cpu_offload,omitempty"`
-	LazyOffload      bool `yaml:"lazy_offload,omitempty"`
-}
-
-// TraceKVOffloadTier is the trace-header serialization of one resolved
-// sim.KVOffloadTier. Bandwidths/latency are the RESOLVED numbers (bytes/µs, µs);
-// device_class is an informational echo only.
-type TraceKVOffloadTier struct {
-	Type           string  `yaml:"type"`
-	RootDir        string  `yaml:"root_dir"`
-	NReadThreads   int64   `yaml:"n_read_threads"`
-	NWriteThreads  int64   `yaml:"n_write_threads"`
-	Locality       string  `yaml:"locality,omitempty"`
-	EnableKVEvents bool    `yaml:"enable_kv_events"`
-	DirectIO       bool    `yaml:"direct_io"`
-	DeviceClass    string  `yaml:"device_class,omitempty"`
-	ReadBandwidth  float64 `yaml:"read_bandwidth"`
-	WriteBandwidth float64 `yaml:"write_bandwidth"`
-	BaseLatency    float64 `yaml:"base_latency"`
-	// #1581 device model (resolved for the selected regime). Always present so the
-	// round-trip is lossless (BC-G6); Qsat=1/f₁=1.0/σ=0 encode "ramp/jitter off".
-	SaturationQueueDepth   int64   `yaml:"saturation_queue_depth"`
-	SingleTransferFraction float64 `yaml:"single_transfer_fraction"`
-	// CapacityBytes is the tier's resolved size in bytes (0 unbounded).
-	CapacityBytes       int64   `yaml:"capacity_bytes,omitempty"`
-	LatencyJitterStddev float64 `yaml:"latency_jitter_stddev"`
-}
-
-// TraceRecord is one row of a trace's data CSV: one request.
-type TraceRecord struct {
-	RequestID        int
-	ClientID         string
-	TenantID         string
-	SLOClass         string
-	SessionID        string
-	RoundIndex       int
-	PrefixGroup      string
-	PrefixLength     int
-	Streaming        bool
-	InputTokens      int
-	OutputTokens     int
-	TextTokens       int
-	ImageTokens      int
-	AudioTokens      int
-	VideoTokens      int
-	ReasonRatio      float64
-	Model            string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
-	DeadlineUs       int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
-	SLOTargetUs      int64  // per-request SLO TTFT target in microseconds; 0 = no target
-	ArrivalTimeUs    int64
-	FirstChunkTimeUs int64
-	LastChunkTimeUs  int64
-	Status           string // "ok", "error", "timeout" or "incomplete"
-	Adapter          string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
-	// ThinkTimeUs is the recorded per-round client think time in µs (gap from the
-	// previous request's end), set by agentic-trace converters (#1478) and preferred
-	// over arrival-gap derivation in closed-loop replay. It is a PRESENCE signal
-	// (#1608): nil = not recorded (CSV cell empty; replay falls back to arrival gaps),
-	// non-nil = recorded — INCLUDING a recorded &0 (CSV cell "0"), which a genuinely-
-	// zero recorded think (e.g. Weka's overlap-clamped rounds) uses so it is no longer
-	// conflated with "absent". A negative recorded value is a load error (INV-3).
-	ThinkTimeUs *int64
-	// InputTokensReset is a context-compaction marker (#1609): the recorded ABSOLUTE
-	// input for a non-monotone round (in_N < in_{N-1} + out_{N-1}, where the delta law
-	// clamps to 0). Set only by the shared agentic-trace encoder, only on such rounds.
-	// nil (not recorded / monotone round) is the common case and writes no CSV cell, so
-	// a trace without any compaction round is byte-identical to a pre-#1609 trace (INV-6).
-	// In accumulate closed-loop replay the buffer re-seeds to this absolute at the
-	// boundary (see EncodeSessionToTraceRecords / SessionManager.OnComplete). *int64
-	// presence (nil = absent) mirrors the think_time_us non-lossy encoding (#1608/#1612).
-	InputTokensReset *int64
 }
 
 // TraceV2 combines header and records for a complete trace.
@@ -321,7 +187,7 @@ func writeTraceV2Rows(w io.Writer, _ *TraceHeader, records []TraceRecord) error 
 			strconv.Itoa(r.VideoTokens), strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64), r.Model,
 			strconv.FormatInt(r.DeadlineUs, 10), strconv.FormatInt(r.ArrivalTimeUs, 10),
 			strconv.FormatInt(r.FirstChunkTimeUs, 10), strconv.FormatInt(r.LastChunkTimeUs, 10),
-			r.Status,
+			string(r.Status),
 		}
 		for _, c := range traceOptionalColumns {
 			if !has[c] {
@@ -388,7 +254,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	if err := validateTraceMode(header.Mode); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
 	}
-	if err := header.Validate(); err != nil {
+	if err := checkTraceHeader(header); err != nil {
 		return nil, fmt.Errorf("trace header %s: %w", headerPath, err)
 	}
 	file, err := os.Open(dataPath)
@@ -541,7 +407,7 @@ func parseTraceRecord(row []string, at map[string]int) (*TraceRecord, error) {
 		// prefix_group and model are read as written.
 		PrefixGroup: t.row[at["prefix_group"]],
 		Model:       t.row[at["model"]],
-		Status:      t.row[at["status"]],
+		Status:      trace.Status(t.row[at["status"]]),
 		Adapter:     t.str("adapter"),
 	}
 	rec.RequestID = t.integer("request_id")
@@ -629,12 +495,12 @@ func parseTraceRecord(row []string, at map[string]int) (*TraceRecord, error) {
 func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 	records := make([]TraceRecord, 0, len(requests))
 	for i, req := range requests {
-		status := "incomplete"
+		status := trace.StatusIncomplete
 		switch req.State {
 		case sim.StateCompleted:
-			status = "ok"
+			status = trace.StatusOK
 		case sim.StateTimedOut:
-			status = "timeout"
+			status = trace.StatusTimeout
 		}
 
 		// Absolute timing (ticks = microseconds)

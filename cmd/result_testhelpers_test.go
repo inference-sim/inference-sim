@@ -1,8 +1,8 @@
 package cmd
 
-// Test helpers for the Result document (#1871): stdout of run and replay is one blis-schemas
-// Result, so every stdout-reading test parses it with blis-schemas' own reader rather than
-// scanning text.
+// Test helpers for the Result document (#1871): stdout of run and replay is one Result
+// (contracts/spec/result, schema 2), so every stdout-reading test parses it with the contracts'
+// own reader rather than scanning text.
 
 import (
 	"encoding/json"
@@ -30,29 +30,29 @@ func clusterFigures(t *testing.T, stdout string) map[string]float64 {
 	t.Helper()
 	r := parseResult(t, stdout)
 	q := r.Requests
+	drop := func(d result.DropReason) float64 { return float64(q.Dropped[d]) }
+	// The schema 1 ledger, from the fates of schema 2 (docs/guide/results.md has the table).
+	// injected is what arrived and was not refused at admission.
 	out := map[string]float64{
 		"completed_requests":        float64(q.Completed),
-		"injected_requests":         float64(q.Injected),
-		"still_queued":              float64(q.StillQueued),
-		"still_running":             float64(q.StillRunning),
-		"dropped_unservable":        float64(q.DroppedUnservable),
+		"injected_requests":         float64(q.Generated - q.NotStarted - q.Dropped[result.DropAdmissionRejected]),
 		"timed_out_requests":        float64(q.TimedOut),
 		"length_capped_requests":    float64(q.LengthCapped),
-		"rejected_requests":         float64(q.Rejected),
-		"routing_rejections":        float64(q.RoutingRejections),
-		"gateway_queue_depth":       float64(q.GatewayQueueDepth),
-		"gateway_queue_rejected":    float64(q.GatewayQueueRejected),
-		"gateway_evicted":           float64(q.GatewayEvicted),
-		"gateway_expired":           float64(q.GatewayExpired),
-		"encode_routing_rejections": float64(q.EncodeRoutingRejections),
+		"rejected_requests":         drop(result.DropAdmissionRejected),
+		"routing_rejections":        drop(result.DropRoutingRejected),
+		"dropped_unservable":        drop(result.DropUnservable) + drop(result.DropDecodeKV),
+		"gateway_queue_rejected":    drop(result.DropGatewayQueueRejected),
+		"gateway_evicted":           drop(result.DropGatewayEvicted),
+		"gateway_expired":           drop(result.DropGatewayExpired),
+		"encode_routing_rejections": drop(result.DropEncodeRoutingRejected),
+		"in_flight_at_horizon":      float64(q.InFlightAtHorizon),
+		"queued_at_horizon":         float64(q.QueuedAtHorizon),
 	}
-	// The MetricsOutput name of the engine's preemption count.
-	if c, ok := r.Engine["cluster"].(map[string]any); ok {
+	if c, ok := r.Reports.Engine["cluster"].(map[string]any); ok {
+		// The MetricsOutput name of the engine's preemption count.
 		if v, ok := asFloat(c["preemptions"]); ok {
 			out["preemption_count"] = v
 		}
-	}
-	if c, ok := r.Engine["cluster"].(map[string]any); ok {
 		for k, v := range c {
 			if f, ok := asFloat(v); ok {
 				out[k] = f
@@ -60,7 +60,7 @@ func clusterFigures(t *testing.T, stdout string) map[string]float64 {
 		}
 	}
 	for k, v := range r.Metrics {
-		out["metric:"+k] = v
+		out["metric:"+k] = v.Value
 	}
 	return out
 }
@@ -69,7 +69,7 @@ func clusterFigures(t *testing.T, stdout string) map[string]float64 {
 // by instance id; nil for a single-instance run, which reports only the cluster.
 func instanceFigures(t *testing.T, stdout string) map[string]map[string]any {
 	t.Helper()
-	v, ok := resultValue(resultDoc(t, stdout), "engine.instances")
+	v, ok := resultValue(resultDoc(t, stdout), "reports.engine.instances")
 	if !ok {
 		return nil
 	}
@@ -94,7 +94,7 @@ func metric(t *testing.T, stdout, name string) float64 {
 	if !ok {
 		t.Fatalf("the Result reports no metric %q (it reports %v)", name, r.Metrics)
 	}
-	return v
+	return v.Value
 }
 
 // withoutRuntime returns stdout with the runtime block removed, the one block INV-6 exempts.
@@ -141,6 +141,18 @@ func resultDoc(t *testing.T, stdout string) map[string]any {
 // "metrics.ttft_mean_ms", "engine.instances.instance_0.completed_requests"), and whether
 // the document has it.
 func resultValue(doc map[string]any, path string) (any, bool) {
+	// Schema 1 carried the component sections at the top level; schema 2 carries them under
+	// reports (docs/guide/results.md). A test written against the old path reads the new one.
+	for _, c := range []string{"engine.", "router.", "kernel.", "saturation."} {
+		if strings.HasPrefix(path, c) {
+			path = "reports." + path
+			break
+		}
+	}
+	// A schema 2 metric is a figure: its value is metrics.<id>.value.
+	if strings.HasPrefix(path, "metrics.") && strings.Count(path, ".") == 1 {
+		path += ".value"
+	}
 	var cur any = doc
 	for _, seg := range strings.Split(path, ".") {
 		m, ok := cur.(map[string]any)
@@ -169,12 +181,13 @@ func resultNum(t *testing.T, stdout, path string) float64 {
 }
 
 // inv13Sections are the parts of a Result that INV-13 holds equal between a run and the
-// replay of its trace: everything the simulation computed. The input record (input, overrides,
-// and the name that digests them), the artifacts, the revisions and the runtime describe how
-// each command was invoked -- a run records --rate, a replay its --trace-data -- and are not
-// compared.
-var inv13Sections = []string{"metric_defs", "window", "metrics", "requests", "goodput", "breakdowns",
-	"engine", "router", "kernel", "saturation"}
+// replay of its trace: everything the simulation computed, and the frame outside its record of
+// how the command was invoked. The input record (input, overrides, and the name that digests
+// them), the artifacts, the revisions, the data record and the runtime describe how each
+// command was invoked -- a run records --rate, a replay its --trace-data -- and are not
+// compared. selected_entries is compared: a run and its replay read the same coefficients.
+var inv13Sections = []string{"frame", "window", "metrics", "requests", "goodput", "breakdowns",
+	"reports", "selected_entries", "engine"}
 
 // inv13View is stdout's INV-13 sections, re-encoded canonically, so a run and its replay
 // compare as strings.
@@ -196,31 +209,22 @@ func inv13View(t *testing.T, stdout string) string {
 }
 
 // withoutFrameInvocation removes from a Result's sections the parts of the experimental frame
-// (engine.frame) that record how the command was invoked: the generator (a run's workload spec
-// or flags against a replay's trace) and the stop rule (a run's request cap against a replay's
-// trace length). The frame's phases, initial state, acceptance and metric identifiers stay:
-// a run and its replay must agree on them (DEV-7).
+// that record how the command was invoked: the generator (a run's workload spec or flags
+// against a replay's trace) and the stop rule (a run's request cap against a replay's trace
+// length). The frame's phases, initial state, acceptance and metric identifiers stay: a run and
+// its replay must agree on them (DEV-7).
 func withoutFrameInvocation(sections map[string]any) {
-	eng, ok := sections["engine"].(map[string]any)
-	if !ok {
-		return
-	}
-	f, ok := eng["frame"].(map[string]any)
+	f, ok := sections["frame"].(map[string]any)
 	if !ok {
 		return
 	}
 	g := map[string]any{}
 	for k, v := range f {
-		if k != "generator" && k != "stop_rule" {
+		if k != "generator" && k != "stop" {
 			g[k] = v
 		}
 	}
-	e := map[string]any{}
-	for k, v := range eng {
-		e[k] = v
-	}
-	e["frame"] = g
-	sections["engine"] = e
+	sections["frame"] = g
 }
 
 // completedIs reports whether stdout is one Result that completed exactly n requests.
@@ -242,7 +246,8 @@ func withoutRevisionsAndRuntime(t *testing.T, stdout string) string {
 	t.Helper()
 	r := parseResult(t, stdout)
 	r.Runtime = nil
-	r.Revisions = result.Revisions{BLIS: "x", BLISSchemas: "x"}
+	r.Revisions = result.Revisions{Simulator: "x", Substrate: "x"}
+	r.Data = result.Data{}
 	r.Artifacts = nil
 	data, err := result.Marshal(r, result.FormatJSON)
 	if err != nil {
@@ -261,12 +266,22 @@ func simulated(t *testing.T, stdout string) string {
 	doc := resultDoc(t, stdout)
 	view := map[string]any{}
 	for _, k := range inv13Sections {
-		if k == "kernel" {
+		v, ok := doc[k]
+		if !ok {
 			continue
 		}
-		if v, ok := doc[k]; ok {
-			view[k] = v
+		if k == "reports" {
+			if m, ok := v.(map[string]any); ok {
+				rest := map[string]any{}
+				for rk, rv := range m {
+					if rk != "kernel" {
+						rest[rk] = rv
+					}
+				}
+				v = rest
+			}
 		}
+		view[k] = v
 	}
 	withoutFrameInvocation(view)
 	data, err := json.MarshalIndent(view, "", "  ")

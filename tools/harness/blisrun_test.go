@@ -125,7 +125,7 @@ func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
 // every trace record replayed once and in order. It names no data-parallel width (the command
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
 func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
-	cfg := Config{Repos: testRepos(), Seed: 7}
+	cfg := Config{Repos: testRepos(), Catalog: "/c", Registry: "/r", Seed: 7}
 	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", 40, 4)
 	if args[0] != "replay" {
 		t.Fatalf("first argument %q, want replay", args[0])
@@ -134,7 +134,7 @@ func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 	for _, want := range []string{"--scenario s.yaml", "--scenarios /d", "--trace-header /d/t.yaml",
 		"--trace-data /d/t.csv", "--session-mode closed-loop", "--concurrent-sessions 4",
 		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7",
-		"--catalog " + cfg.Repos.Catalog, "--registry " + cfg.Repos.Registry} {
+		"--catalog /c", "--registry /r"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q lacks %q", line, want)
 		}

@@ -37,7 +37,7 @@ func TestReplay_ConvertedTraceTakesTheScenarioOffloadBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, stderr, err := replay(relabelled); err == nil ||
-		!strings.Contains(stderr, "cannot add one on replay of a sim-generated trace (INV-13)") {
+		!strings.Contains(stderr, "cannot add one on replay of a trace blis run or blis replay wrote") {
 		t.Errorf("a generated trace with no kv_offload must still refuse the scenario's tiers: %v\n%s", err, lastLines(stderr, 3))
 	}
 }

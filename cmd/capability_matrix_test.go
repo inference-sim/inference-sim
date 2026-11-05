@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -57,16 +59,20 @@ func parseCapOut(t *testing.T, stdout string) capOut {
 	doc := resultDoc(t, stdout)
 	o := capOut{stdout: stdout, cluster: map[string]float64{}, ledger: map[string]int{}, pd: map[string]float64{}}
 	q := r.Requests
+	// The fates (DEV-9) under the matrix's names: one bucket per fate, and per drop reason.
+	o.ledger["generated"] = q.Generated
 	for k, v := range map[string]int{
-		"generated": q.Generated, "rejected": q.Rejected, "injected": q.Injected, "completed": q.Completed,
-		"still_queued": q.StillQueued, "still_running": q.StillRunning, "dropped_unservable": q.DroppedUnservable,
-		"timed_out": q.TimedOut, "routing_rejections": q.RoutingRejections, "gateway_queue_depth": q.GatewayQueueDepth,
-		"gateway_queue_rejected": q.GatewayQueueRejected, "gateway_evicted": q.GatewayEvicted,
-		"gateway_expired": q.GatewayExpired, "encode_routing_rejections": q.EncodeRoutingRejections,
+		"completed": q.Completed, "timed_out": q.TimedOut, "in_flight_at_horizon": q.InFlightAtHorizon,
+		"queued_at_horizon": q.QueuedAtHorizon, "not_started": q.NotStarted,
 	} {
 		o.ledger[k] = v
 	}
-	o.cluster["injected_requests"] = float64(q.Injected)
+	for reason, n := range q.Dropped {
+		o.ledger["dropped:"+string(reason)] = n
+	}
+	o.ledger["rejected"] = q.Dropped[result.DropAdmissionRejected]
+	o.ledger["routing_rejections"] = q.Dropped[result.DropRoutingRejected]
+	o.cluster["injected_requests"] = float64(q.Generated - q.NotStarted - q.Dropped[result.DropAdmissionRejected])
 	o.cluster["completed_requests"] = float64(q.Completed)
 	for name, path := range capClusterNames {
 		if v, ok := resultValue(doc, path); ok {
@@ -120,15 +126,17 @@ func sortedKeysOf2(m map[string]float64) []string {
 	return keys
 }
 
-// arrivals is every request the run accounted for: the sum of INV-1's eleven terminal
-// buckets plus the admission rejections, read bucket by bucket, so it is independent of the
-// ledger's own generated count and compares with the fixture's.
+// arrivals is every request the run accounted for: the sum of the fates, read bucket by
+// bucket (each drop reason its own), so it is independent of the ledger's own generated count
+// and compares with the fixture's.
 func (o capOut) arrivals() int {
-	n := o.ledger["rejected"]
-	for _, k := range []string{"completed", "still_queued", "still_running", "dropped_unservable", "timed_out",
-		"routing_rejections", "gateway_queue_depth", "gateway_queue_rejected", "gateway_evicted",
-		"gateway_expired", "encode_routing_rejections"} {
-		n += o.ledger[k]
+	n := 0
+	for k, v := range o.ledger {
+		switch {
+		case k == "completed", k == "timed_out", k == "in_flight_at_horizon", k == "queued_at_horizon",
+			k == "not_started", strings.HasPrefix(k, "dropped:"):
+			n += v
+		}
 	}
 	return n
 }
@@ -326,8 +334,8 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 				"--output-tokens", "200", "--detectors", "all")...)
 			o.conserves(t, 600)
 			labels := map[string]string{}
-			if r := parseResult(t, o.stdout); r.Saturation != nil {
-				for d, l := range r.Saturation["final"].(map[string]any) {
+			if r := parseResult(t, o.stdout); r.Reports.Saturation != nil {
+				for d, l := range r.Reports.Saturation["final"].(map[string]any) {
 					labels[d] = l.(string)
 				}
 			}

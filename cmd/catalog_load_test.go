@@ -76,7 +76,10 @@ source:
   repo: Example/%s
   revision: 0000000000000000000000000000000000000000
   retrieved: 2026-09-16
-`, name, name)
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/Example/%s/raw/0000000000000000000000000000000000000000/README.md
+`, name, name, name)
 }
 
 // newCompleteCatalog builds a temporary catalog with all four namespaces populated and every
@@ -236,10 +239,10 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			name: "unknown key in model.yaml",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelEntryFile),
-					modelEntryYAML(gateModel)+"licence: apache-2.0\n")
+					modelEntryYAML(gateModel)+"licensing: apache-2.0\n")
 			},
 			wantFile:    catalogModelEntryFile,
-			wantPhrases: []string{"licence"},
+			wantPhrases: []string{"licensing"},
 		},
 		{
 			name: "unknown key in a replay workload",
@@ -416,7 +419,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			name: "model.yaml is a multi-document YAML stream",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, filepath.Join(root, modelEntry, catalogModelEntryFile),
-					modelEntryYAML(gateModel)+"---\nlicence: apache-2.0\n")
+					modelEntryYAML(gateModel)+"---\nlicensing: apache-2.0\n")
 			},
 			wantFile:    catalogModelEntryFile,
 			wantPhrases: []string{"multi-document", "2 documents"},

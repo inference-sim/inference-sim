@@ -120,6 +120,8 @@ type measuredLatencies struct {
 	// itlCount and perUserCount are the samples behind request_itl_* and
 	// output_tok_per_user_mean, so a reader can tell a zero from no sample.
 	itlCount, perUserCount int
+	// stepCount is the number of step intervals behind the step-interval series.
+	stepCount int
 	// startUs and endUs bound the window the aggregates were computed over (0, 0 when it
 	// is empty).
 	startUs, endUs int64
@@ -148,6 +150,8 @@ type MeasuredSummary struct {
 	// RequestITLCount is the number of requests behind request_itl_* (output of two or more
 	// tokens), and PerUserCount those behind output_tok_per_user_mean (a positive ITL).
 	RequestITLCount, PerUserCount int
+	// StepIntervalCount is the number of step intervals behind the step-interval figures.
+	StepIntervalCount int
 	// WindowStartUs and WindowEndUs bound the window; both 0 when it is empty.
 	WindowStartUs, WindowEndUs int64
 }
@@ -187,7 +191,7 @@ func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 		E2EMeanMs: lat.e2eMean, E2EP90Ms: lat.e2eP90, E2EP95Ms: lat.e2eP95, E2EP99Ms: lat.e2eP99,
 		CacheHitRate:      lat.cacheHitRate,
 		StepIntervalP50Ms: lat.stepP50, StepIntervalP95Ms: lat.stepP95,
-		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount,
+		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount, StepIntervalCount: lat.stepCount,
 		WindowStartUs: lat.startUs, WindowEndUs: lat.endUs,
 	}
 }
@@ -299,6 +303,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.StepIntervalMeanMs = CalculateMean(steps)
 	out.StepIntervalP90Ms = CalculatePercentile(steps, 90)
 	out.StepIntervalP99Ms = CalculatePercentile(steps, 99)
+	lat.stepCount = len(steps)
 	lat.stepP50 = CalculatePercentile(steps, 50)
 	lat.stepP95 = CalculatePercentile(steps, 95)
 

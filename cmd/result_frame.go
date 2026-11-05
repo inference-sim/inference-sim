@@ -1,16 +1,8 @@
 package cmd
 
 // The experimental frame (design §8.6, DEV-7): what a run fed in, when it measured, and what
-// it measured, recorded in every Result. This file is the one place the frame is built, from
-// the run's resolved options, so that moving it onto the frame field of the contracts Result
-// (blis-substrate contracts/spec/result) is a change of where it is written, not of what it
-// holds.
-//
-// blis-schemas v0.10.0's Result has no frame field and is decoded strictly, so the frame is
-// written under engine.frame: engine is the one open section every Result carries, and it
-// already holds the simulator's whole-run records (engine.cluster.whole_run, .agentic). No
-// consumer iterates engine's keys (blis-config-search reads engine.cluster and
-// engine.instances).
+// it measured, recorded in every Result's frame. This file is the one place the frame is
+// built, from the run's resolved options.
 
 import (
 	"math"
@@ -21,7 +13,9 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// The generator kinds a frame names: how the run's requests were produced.
+// The generator kinds a frame names: how the run's requests were produced. They are written
+// nowhere in the frame itself (contracts' Generator states a workload binding and a load); a
+// command uses them to choose its binding.
 const (
 	generatorWorkloadSpec  = "workload_spec"  // run --workload-spec
 	generatorDistribution  = "distribution"   // run --workload distribution: the token-length flags
@@ -33,8 +27,7 @@ const (
 
 // frameRandomGenerator names the random-number generator every draw comes from, with its
 // derivation, so that a change of generator, which changes every draw, changes the frame
-// (§8.4, DEV-6): sim.StreamGenerator, whose named streams are seeded from the SHA-256 of the
-// seed and the stream's name (sim/rng.go).
+// (§8.4, DEV-6).
 const frameRandomGenerator = sim.StreamGenerator
 
 // frameGenerator is what a command tells the frame about its request source.
@@ -42,129 +35,60 @@ type frameGenerator struct {
 	// Kind is one of the generator* constants.
 	Kind string
 	// Source identifies the workload: a workload spec's or a trace data file's sha256, a
-	// preset's name, or empty for the distribution and concurrency generators, whose
-	// parameters are the run's flags (input.run and overrides).
+	// preset's name, or empty for the distribution and concurrency generators.
 	Source string
 	// Seed is the seed the workload's draws used. A workload spec run without --seed uses the
 	// spec's own seed.
 	Seed int64
-	// SessionMode is a trace replay's --session-mode (fixed, closed-loop or
-	// fixed-accumulate); empty for a run.
+	// SessionMode is a trace replay's --session-mode; empty for a run.
 	SessionMode string
-	// Warmup names the warm-up rule, "" for none: an agentic replay's warm-up mode.
+	// Warmup names an agentic replay's warm-up mode, "" for none.
 	Warmup string
 }
 
-// resultFrame is the experimental frame, as recorded.
-type resultFrame struct {
-	Generator    frameGeneratorRecord `json:"generator"`
-	InitialState frameInitialState    `json:"initial_state"`
-	Phases       framePhases          `json:"phases"`
-	StopRule     frameStopRule        `json:"stop_rule"`
-	Acceptance   frameAcceptance      `json:"acceptance"`
-	// Metrics are the identifiers of the metric definitions the run reports: the keys of the
-	// Result's metric_defs, sorted.
-	Metrics []string `json:"metrics"`
-}
+// frameUnfinishedThreshold is the acceptance condition every run states: the fraction of
+// generated requests unfinished at the horizon may be at most 1, which every run meets. It is
+// recorded so a reader sees the observed fraction; a frame that bounds it more tightly is the
+// workload's to state.
+const frameUnfinishedThreshold = 1.0
 
-type frameGeneratorRecord struct {
-	Kind        string `json:"kind"`
-	Source      string `json:"source,omitempty"`
-	Seed        int64  `json:"seed"`
-	SessionMode string `json:"session_mode,omitempty"`
-	// Random names the random-number generator and how its streams are seeded.
-	Random string `json:"random"`
-}
+// buildFrame fills r.Frame from the generator, the request cap the generator was given
+// (0 for none) and the horizon the run stopped at (math.MaxInt64 or 0 for none). It runs
+// after the metrics and the window are set, since frame.metrics lists the figures and the
+// measured phase names the window's rules.
+func buildFrame(g frameGenerator, r *result.Result, rules windowRules, numRequestsCap int, horizonUs int64) {
+	f := &r.Frame
+	f.Kind = result.FrameTerminating
+	f.Generator.Seed = g.Seed
+	f.Generator.RNG = frameRandomGenerator
+	f.InitialState = result.InitialState{Caches: result.CachesEmpty}
 
-type frameInitialState struct {
-	// Caches is how every engine's KV cache starts. BLIS starts every engine empty; an
-	// agentic replay's warm-up fills it during the run (phases.warmup).
-	Caches string `json:"caches"`
-}
-
-type framePhases struct {
-	// Warmup is the rule for the warm-up phase the measured window excludes.
-	Warmup string `json:"warmup"`
-	// MeasuredStart and MeasuredStop are the rules that bound the measured window
-	// (result.Window.Start and .Stop).
-	MeasuredStart string `json:"measured_start"`
-	MeasuredStop  string `json:"measured_stop"`
-	// Drain is what happens to requests still in flight when the run stops.
-	Drain string `json:"drain"`
-}
-
-type frameStopRule struct {
-	// Rule is request_count, horizon, both, or exhaustion (neither: the run ends when no
-	// event remains).
-	Rule string `json:"rule"`
-	// NumRequests is the request cap the generator was given, 0 for none.
-	NumRequests int `json:"num_requests,omitempty"`
-	// HorizonUs is the horizon the run stopped at, 0 for none.
-	HorizonUs int64 `json:"horizon_us,omitempty"`
-}
-
-type frameAcceptance struct {
-	// Conditions are the conditions under which the run produces figures. A run that fails
-	// one produces no Result (emitRunResult refuses it).
-	Conditions []string `json:"conditions"`
-	// UnfinishedAtStop counts the requests that had not finished when the run stopped:
-	// queued, running, or held by the router.
-	UnfinishedAtStop int `json:"unfinished_at_stop"`
-}
-
-// The phase and stop rules, as written in the frame.
-const (
-	frameNoWarmup         = "none"
-	frameCachesEmpty      = "empty"
-	frameDrainNone        = "none: a request unfinished at the horizon is counted unfinished, not drained"
-	frameDrainToEnd       = "every request runs to its end: the run stops when no event remains"
-	frameStopRequestCount = "request_count"
-	frameStopHorizon      = "horizon"
-	frameStopBoth         = "both"
-	frameStopExhaustion   = "exhaustion"
-	// frameConditionSimulatedTime is the one acceptance condition emitRunResult enforces.
-	frameConditionSimulatedTime = "simulated time advanced: at least one request arrived, or a horizon bounds the run"
-)
-
-// buildFrame is the run's experimental frame. numRequestsCap is the request cap the generator
-// was given (0 for none); horizonUs the horizon the run stopped at (math.MaxInt64 or 0 for
-// none).
-func buildFrame(g frameGenerator, r *result.Result, numRequestsCap int, horizonUs int64) resultFrame {
 	bounded := horizonUs > 0 && horizonUs < math.MaxInt64
-	stop := frameStopRule{NumRequests: max(numRequestsCap, 0)}
-	switch {
-	case numRequestsCap > 0 && bounded:
-		stop.Rule = frameStopBoth
-	case numRequestsCap > 0:
-		stop.Rule = frameStopRequestCount
-	case bounded:
-		stop.Rule = frameStopHorizon
-	default:
-		stop.Rule = frameStopExhaustion
-	}
-	drain := frameDrainToEnd
+	f.Stop = result.StopRule{Requests: max(numRequestsCap, 0)}
 	if bounded {
-		stop.HorizonUs = horizonUs
-		drain = frameDrainNone
+		f.Stop.HorizonS = horizonSeconds(horizonUs)
 	}
-	warmup := g.Warmup
-	if warmup == "" {
-		warmup = frameNoWarmup
+	f.Phases.Warmup = result.WarmupPhase{Rule: result.WarmupNone}
+	if g.Warmup != "" {
+		f.Phases.Warmup.Rule = result.WarmupMarked
 	}
-	metrics := make([]string, 0, len(r.MetricDefs))
-	for k := range r.MetricDefs {
-		metrics = append(metrics, k)
+	f.Phases.Measured = result.MeasuredPhase{Start: rules.start, Stop: rules.stop}
+	f.Phases.Drain = result.DrainPhase{Rule: result.DrainUntilComplete}
+	if bounded {
+		f.Phases.Drain.Rule = result.DrainNone
 	}
-	sort.Strings(metrics)
+
 	q := r.Requests
-	return resultFrame{
-		Generator: frameGeneratorRecord{Kind: g.Kind, Source: g.Source, Seed: g.Seed,
-			SessionMode: g.SessionMode, Random: frameRandomGenerator},
-		InitialState: frameInitialState{Caches: frameCachesEmpty},
-		Phases:       framePhases{Warmup: warmup, MeasuredStart: r.Window.Start, MeasuredStop: r.Window.Stop, Drain: drain},
-		StopRule:     stop,
-		Acceptance: frameAcceptance{Conditions: []string{frameConditionSimulatedTime},
-			UnfinishedAtStop: q.StillQueued + q.StillRunning + q.GatewayQueueDepth},
-		Metrics: metrics,
+	observed := 0.0
+	if q.Generated > 0 {
+		observed = float64(q.Unfinished()) / float64(q.Generated)
 	}
+	f.Acceptance = []result.AcceptanceCondition{{Condition: result.ConditionUnfinishedAtMost,
+		Threshold: frameUnfinishedThreshold, Observed: observed, Met: observed <= frameUnfinishedThreshold}}
+
+	f.Metrics = make([]string, 0, len(r.Metrics))
+	for k := range r.Metrics {
+		f.Metrics = append(f.Metrics, k)
+	}
+	sort.Strings(f.Metrics)
 }

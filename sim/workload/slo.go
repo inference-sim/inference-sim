@@ -3,6 +3,7 @@ package workload
 import (
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/check"
 )
 
@@ -27,11 +28,10 @@ import (
 // set". Here zero is the disabled-sentinel for a threshold; gating on a 0 ms
 // latency target is meaningless (no completion has zero latency), so there
 // is no user value distinct from "absent" and pointer types add no signal.
-type SLODimTargets struct {
-	TTFTMs float64 `yaml:"ttft_ms,omitempty"`
-	ITLMs  float64 `yaml:"itl_ms,omitempty"`
-	E2EMs  float64 `yaml:"e2e_ms,omitempty"`
-}
+//
+// It is contracts/spec/trace's SLODimTargets, which the trace header and the workload
+// specification share.
+type SLODimTargets = trace.SLODimTargets
 
 // validateGoodputTargets refuses a stated latency target that is not a finite number of
 // milliseconds above zero (check.LatencyTargetMs, the validator --slo-ttft, --slo-itl and

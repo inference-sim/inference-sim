@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -81,10 +82,10 @@ func ConvertTraceV3(headerPath, dataPath string) (*TraceV2, []TraceV3Drop, error
 	}
 	header := TraceHeader{
 		Version:              TraceVersion,
-		TimeUnit:             h.TimeUnit,
-		Mode:                 h.Mode,
+		TimeUnit:             trace.TimeUnit(h.TimeUnit),
+		Mode:                 trace.Mode(h.Mode),
 		WorkloadSeed:         h.WorkloadSeed,
-		SessionContextGrowth: h.SessionContextGrowth,
+		SessionContextGrowth: trace.ContextGrowth(h.SessionContextGrowth),
 		GoodputSLOTargets:    h.GoodputSLOTargets,
 		KVOffload:            h.KVOffload,
 		MaxNodesSpanned:      h.MaxNodesSpanned,
@@ -107,7 +108,7 @@ func ConvertTraceV3(headerPath, dataPath string) (*TraceV2, []TraceV3Drop, error
 	if err := validateTraceMode(header.Mode); err != nil {
 		return nil, nil, fmt.Errorf("trace header %s: %w", headerPath, err)
 	}
-	if err := header.Validate(); err != nil {
+	if err := checkTraceHeader(&header); err != nil {
 		return nil, nil, fmt.Errorf("trace header %s: %w", headerPath, err)
 	}
 

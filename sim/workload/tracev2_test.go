@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -567,7 +568,7 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 func TestRequestsToTraceRecords_StatusMapping(t *testing.T) {
 	cases := []struct {
 		state sim.RequestState
-		want  string
+		want  trace.Status
 	}{
 		{sim.StateCompleted, "ok"},
 		{sim.StateTimedOut, "timeout"},

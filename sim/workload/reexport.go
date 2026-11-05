@@ -6,6 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -249,7 +250,7 @@ func copyReExportMetadata(rec *TraceRecord, req *sim.Request) {
 // reexportStatus maps a replayed request's terminal state to the trace Status string,
 // mirroring RequestsToTraceRecords (the sibling re-export). Status is informational —
 // the replay loader does not read it — but keeping it faithful aids downstream analysis.
-func reexportStatus(state sim.RequestState) string {
+func reexportStatus(state sim.RequestState) trace.Status {
 	switch state {
 	case sim.StateCompleted:
 		return "ok"

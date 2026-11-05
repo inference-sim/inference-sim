@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/check"
@@ -462,7 +462,7 @@ Example:
 		var prefillOverrides, decodeOverrides poolOverrides
 
 		// Same as runCmd: each P/D role's engine is its own pool's.
-		kernelPD := openKernelPools(resolvedCatalogRoot)
+		kernelPD := openKernelPools()
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
@@ -656,6 +656,11 @@ Example:
 			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
 			frame: replayFrameGenerator(agx),
+			// A replay stops when its requests are exhausted or its horizon is reached: the
+			// frame's stop rule states the count it replays (the trace's records, or the
+			// agentic scenario's requests), which is what a pooled replay without a horizon
+			// stops on.
+			numRequestsCap: len(requests),
 		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
@@ -667,11 +672,11 @@ Example:
 		// records) keeps the byte-identical RequestsToTraceRecords(requests) path (INV-6).
 		if replayTraceOutput != "" {
 			var records []workload.TraceRecord
-			reexportGrowth := ""
+			var reexportGrowth trace.ContextGrowth
 			if sessionMgr != nil || poolDriver != nil {
 				allReqs := append(append([]*sim.Request{}, requests...), followUpRequests...)
 				var rErr error
-				records, rErr = workload.ReExportClosedLoopRecords(allReqs, thinkUsByReqID, traceData.Header.SessionContextGrowth)
+				records, rErr = workload.ReExportClosedLoopRecords(allReqs, thinkUsByReqID, string(traceData.Header.SessionContextGrowth))
 				if rErr != nil {
 					logrus.Fatalf("faithful closed-loop re-export: %v", rErr)
 				}
@@ -845,7 +850,7 @@ func replayFrameGenerator(agx *agentXRun) frameGenerator {
 // replayRunControls are the run controls a replay records: the trace's offered load (or the
 // agentic scenario's lanes), the requests it replays, the seed and the horizon it ran to. No warmup is
 // recorded for a trace: a replay measures every request, and an agentic replay's warmup is part of its workload.replay.
-func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) result.Run {
+func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) runControls {
 	numRequests, load := len(requests), measurement.Load{}
 	var binding *schemaworkload.Binding
 	if agx == nil && trace != nil {
@@ -864,7 +869,7 @@ func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.
 	// The horizon the replay ran to: --horizon, or the one replay derives from the trace (2x
 	// its last arrival), or the end an agentic replay moved it to, so a rerun from the document
 	// stops where this one did (#1871 B2).
-	return result.Run{Seed: seed, NumRequests: numRequests, Load: load, HorizonS: horizonSeconds(horizonUs), Workload: binding}
+	return runControls{Seed: seed, NumRequests: numRequests, Load: load, Binding: binding}
 }
 
 // extractSimResults converts Metrics to the --results-path rows.

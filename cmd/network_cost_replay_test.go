@@ -131,21 +131,23 @@ func TestReplayCmd_SingleNodeTraceAccepted(t *testing.T) {
 	}
 }
 
-// TestReplayCmd_SingleNodeSpanTraceAccepted verifies the boundary value: a header
-// recording a span of exactly 1 (every instance on one node) is not a cross-node fleet
-// and must replay normally.
-func TestReplayCmd_SingleNodeSpanTraceAccepted(t *testing.T) {
+// TestReplayCmd_SingleNodeSpanTraceRefused: a header recording a span of exactly 1 (every
+// instance on one node) is refused by the trace format (contracts/spec/trace, version 4): an
+// instance on one node spans none, so the key is omitted, and the writer never writes a 1
+// (cmd.crossNodeSpanForTrace normalises it to 0). A hand-written header that states one is
+// refused naming the key, not replayed as a cross-node fleet.
+func TestReplayCmd_SingleNodeSpanTraceRefused(t *testing.T) {
 	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
 		runReplayInSubprocess(t, "max_nodes_spanned: 1\n")
 		return
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_SingleNodeSpanTraceAccepted", "-test.v")
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_SingleNodeSpanTraceRefused", "-test.v")
 	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("a span of 1 is not a cross-node fleet and must replay normally, got %v; output:\n%s", err, out)
+	if err == nil {
+		t.Fatalf("a span of 1 must be refused; output:\n%s", out)
 	}
-	if strings.Contains(string(out), "max_nodes_spanned") {
-		t.Errorf("the cross-node fence must stay silent for a span of 1; output:\n%s", out)
+	if !strings.Contains(string(out), "max_nodes_spanned: is 1") {
+		t.Errorf("the refusal must name max_nodes_spanned and the value 1; output:\n%s", out)
 	}
 }

@@ -129,15 +129,17 @@ var traceRecordFields = map[string]FieldEntry{
 func TraceFieldStatus(typeName string) (map[string]FieldEntry, bool) {
 	var m map[string]FieldEntry
 	switch typeName {
-	case "TraceHeader":
+	// The trace types are contracts/spec/trace's, under their own names; each is accepted by
+	// either name.
+	case "TraceHeader", "Header":
 		m = traceHeaderFields
-	case "TraceRouterConfig":
+	case "TraceRouterConfig", "Router":
 		m = traceRouterFields
-	case "TraceKVOffloadConfig":
+	case "TraceKVOffloadConfig", "KVOffload":
 		m = traceKVOffloadFields
-	case "TraceKVOffloadTier":
+	case "TraceKVOffloadTier", "KVOffloadTier":
 		m = traceKVOffloadTierFields
-	case "TraceRecord":
+	case "TraceRecord", "Record":
 		m = traceRecordFields
 	default:
 		return nil, false

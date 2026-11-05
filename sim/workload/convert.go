@@ -16,7 +16,7 @@ func ConvertServeGen(path string, windowDurationSecs, drainTimeoutSecs int) (*Wo
 	}
 	spec := &WorkloadSpec{
 		Version:       "2",
-		AggregateRate: 0, // Absolute rate mode (trace_rate per cohort)
+		AggregateRate: 0,  // Absolute rate mode (trace_rate per cohort)
 		Seed:          42, // Default seed for deterministic RNG (BC-7)
 		ServeGenData: &ServeGenDataSpec{
 			Path:               path,
@@ -68,19 +68,19 @@ func ConvertPreset(name string, rate float64, numRequests int, preset PresetConf
 				InputDist: DistSpec{
 					Type: "gaussian",
 					Params: map[string]float64{
-						"mean":  float64(preset.PromptTokensMean),
+						"mean":    float64(preset.PromptTokensMean),
 						"std_dev": float64(preset.PromptTokensStdev),
-						"min":   float64(preset.PromptTokensMin),
-						"max":   float64(preset.PromptTokensMax),
+						"min":     float64(preset.PromptTokensMin),
+						"max":     float64(preset.PromptTokensMax),
 					},
 				},
 				OutputDist: DistSpec{
 					Type: "gaussian",
 					Params: map[string]float64{
-						"mean":  float64(preset.OutputTokensMean),
+						"mean":    float64(preset.OutputTokensMean),
 						"std_dev": float64(preset.OutputTokensStdev),
-						"min":   float64(preset.OutputTokensMin),
-						"max":   float64(preset.OutputTokensMax),
+						"min":     float64(preset.OutputTokensMin),
+						"max":     float64(preset.OutputTokensMax),
 					},
 				},
 				PrefixLength: preset.PrefixTokens,

@@ -1163,11 +1163,14 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
+	// Read while the command runs: a Result is larger than the pipe's buffer.
+	var buf bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&buf, r); close(copied) }()
 	replayCmd.Run(testCmd, nil)
 	_ = w.Close()
 	os.Stdout = old
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	<-copied
 	out := buf.String()
 
 	// THEN: the Result's ledger records the timeout (BC-1): the one request timed out and
@@ -1842,11 +1845,14 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
+	// Read while the command runs: a Result is larger than the pipe's buffer.
+	var buf bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&buf, r); close(copied) }()
 	replayCmd.Run(testCmd, nil)
 	_ = w.Close()
 	os.Stdout = old
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	<-copied
 	return buf.String()
 }
 

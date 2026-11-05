@@ -18,7 +18,9 @@
 # collective entries that are assumed.
 kind: Scenario
 name: minimax-m25-gb300-tp4
-engine_version: "0.29.0"
+engine:
+  kind: vllm
+  version: "0.32.0"
 
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

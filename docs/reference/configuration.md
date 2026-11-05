@@ -21,7 +21,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 
 **Deployment and engine settings** — from the scenario only. See [Scenario and Deployment](#scenario-and-deployment) below for the full list. There is no CLI override and no per-model fallback.
 
-**Latency** — priced by [blis-latency-kernel](../guide/latency-models.md), the only latency backend. The scenario names the coefficient sets; they are read from the [blis-registry](https://github.com/inference-sim/blis-registry) clone named by `--registry`. There are no coefficient flags.
+**Latency** — priced by [blis-latency-kernel](../guide/latency-models.md), the only latency backend. The scenario names the coefficient sets; they are read from the registry in use: the one embedded in the pinned blis-substrate release, or the directory `--registry` / `BLIS_REGISTRY` names (layout of blis-substrate's [`registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry)). There are no coefficient flags.
 
 **KV cache blocks** — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, `gpu_memory_utilization`, `cache_dtype`, `block_size`), per data-parallel rank. There is no flag to set it.
 
@@ -69,28 +69,32 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 
 **`enable_multi_turn_chat` semantic mismatch (issue #517).** inference-perf's `enable_multi_turn_chat` creates one persistent session per virtual user. BLIS's closest equivalent is `multi_turn.single_session: true` in the workload YAML, but the session mechanics differ. When converting inference-perf specs, verify that the converted multi-turn behavior matches your intent.
 
-## Deployment Inputs (required)
+## Deployment Inputs
 
-`blis run` and `blis replay` both require all four of these. Omitting any is refused.
+`blis run` and `blis replay` both require `--scenario` and `--scenarios`; omitting either is refused. The catalog and registry default to the copies embedded in the blis-substrate release this build pins, and the flags below replace or add to them.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--scenario` | string | "" | **Required.** Scenario **file name** within `--scenarios`, e.g. `llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml`. The file is a [blis-schemas](https://github.com/inference-sim/blis-schemas) Scenario + Deployment (two YAML documents) — see [Scenario and Deployment](#scenario-and-deployment). |
 | `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The cost model's fixtures are at `testdata/kernel/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`), an MTP example (`glm-5-h200-tp8-mtp3.yaml`) and a DeepSeek-V4.1-Flash DSpark example (`deepseek-v4.1-flash-h100-tp8-dspark5.yaml`). |
-| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) directory with the layout of blis-substrate's `registry/`, holding the coefficient sets the scenario names; the pinned commit is in [Data compatibility](../getting-started/installation.md#catalog-compatibility). |
-| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) directory with the layout of blis-substrate's `catalog/` (see [Data compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
+| `--catalog` | string | "" | A directory with the layout of blis-substrate's `catalog/` (model graphs, chips, fabrics, storage devices, workload presets) that replaces the catalog embedded in the blis-substrate release this build pins. Without it, or `BLIS_CATALOG`, the run reads the embedded copy (design §3.3, SIM-6). The flag wins when both are set, and the override is announced on stderr. A model the catalog does not have is refused, naming the catalog's source and where the entry belongs. BLIS never fetches or writes a catalog file (NS-6). The Result records the catalog under `data.catalog` by source and content hash. |
+| `--registry` | string | "" | A directory with the layout of blis-substrate's `registry/` (the coefficient sets) that replaces the embedded registry; or `BLIS_REGISTRY`. Without either, the embedded registry. Recorded under `data.registry`. |
+| `--catalog-overlay` | string, repeatable | | A directory of catalog entries (whole `models/<name>/` directories, or hardware, device, network or workload files) added to the catalog in use, each replacing an entry of the same identity; applied in order. A path never overlays and an overlay never replaces the whole catalog. Each overlay is recorded with its hash under `data.catalog.overlays`. The v0.32.0 engine does not read overlays yet, so a run with one is refused (blis-vllm). |
+| `--registry-overlay` | string, repeatable | | A directory of coefficient sets added to the registry in use; a coefficient with the same set, name, scope and method replaces the one there. Applied in order, recorded under `data.registry.overlays`; refused, as `--catalog-overlay` is, until the engine reads overlays. |
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
 
+The checkout above is optional; without it the run below reads the embedded catalog and registry.
+
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/kernel/aisimulate \
   --rate 10 --num-requests 100
 ```
 
@@ -158,7 +162,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 
 ## Latency Model
 
-BLIS prices every step with blis-substrate's cost model (`kernel/`, at the version `stack.json` names; adapter blis-vllm `compat/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
+BLIS prices every step with blis-substrate's cost model (`kernel/`, at the version `stack.json` names; adapter blis-vllm `compat/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets, read from the embedded registry or the one `--registry` names. See [Latency Models](../guide/latency-models.md).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -269,7 +273,7 @@ BLIS supports three workload specification modes, in order of precedence:
 |------|---------|-------------|
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workload with per-client distributions. Highest priority. |
 | **CLI distribution** | `--workload distribution` (default) | Single-client Gaussian distribution controlled by CLI flags. |
-| **Preset** | `--workload <name>` | Named preset read from the catalog (`<catalog>/workloads/<name>.yaml`, #1769): `chatbot`, `contentgen`, `summarization`, `multidoc`. Needs `--catalog` / `BLIS_CATALOG`, which `blis run` already requires. |
+| **Preset** | `--workload <name>` | Named preset read from the catalog (`<catalog>/workloads/<name>.yaml`, #1769): `chatbot`, `contentgen`, `summarization`, `multidoc`. Read from the catalog in use: the embedded copy, or the directory `--catalog` / `BLIS_CATALOG` names. |
 
 ### Distribution Mode Flags
 
@@ -419,7 +423,7 @@ When configured, BLIS computes a single fitness score from aggregated metrics. L
 
 ## defaults.yaml
 
-The `defaults.yaml` file (located by `--defaults-filepath`, default `defaults.yaml`) carries only the LoRA control-plane cost terms and a `version`. It holds no latency coefficients, no per-model deployment policy and no workload presets: latency coefficients live in [blis-registry](https://github.com/inference-sim/blis-registry), named by the scenario; the deployment lives in the scenario; workload presets live in the catalog (`<catalog>/workloads/<name>.yaml`, #1769).
+The `defaults.yaml` file (located by `--defaults-filepath`, default `defaults.yaml`) carries only the LoRA control-plane cost terms and a `version`. It holds no latency coefficients, no per-model deployment policy and no workload presets: latency coefficients live in blis-substrate's [`registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry), named by the scenario; the deployment lives in the scenario; workload presets live in the catalog (`<catalog>/workloads/<name>.yaml`, #1769).
 
 These are the top-level keys the file may carry, and strict parsing accepts no others (`KnownFields(true)`, R10 — the authoritative list is `cmd.Config` in `cmd/default_config.go`; the bundled `defaults.yaml` is the worked example):
 
@@ -441,7 +445,7 @@ lora:
 
 | Sub-Config | Flags |
 |------------|-------|
-| **Deployment (required)** | `--scenario`, `--scenarios`, `--registry`, `--catalog` (or `BLIS_CATALOG`) |
+| **Deployment** | `--scenario`, `--scenarios` (required); `--catalog` (or `BLIS_CATALOG`), `--registry` (or `BLIS_REGISTRY`), `--catalog-overlay`, `--registry-overlay` (optional) |
 | **KVCacheConfig** | `--kv-cpu-blocks`, `--kv-offload-threshold`, `--kv-offload-config` (block budget and block size: scenario + kernel) |
 | **BatchConfig** | scenario (`max_num_seqs`, `max_num_batched_tokens`, `long_prefill_token_threshold`) |
 | **Latency** | `--speculative-acceptance-rate` / `--speculative-acceptance-length` and the acceptance selectors (everything else: scenario + registry, priced by blis-latency-kernel) |
@@ -456,7 +460,7 @@ lora:
 
 ## blis replay
 
-Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns` (INV-13).
+Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns` (INV-13).
 
 ### Replay-Specific Flags
 
@@ -489,7 +493,7 @@ reads).
 | `--name` | string | "" | Preset name (e.g., `chatbot`, `summarization`, `contentgen`, `multidoc`). |
 | `--rate` | float64 | 1.0 | Request rate in requests/second. |
 | `--num-requests` | int | 100 | Number of requests. |
-| `--catalog` | string | "" | Catalog clone root holding `workloads/<name>.yaml`. No default; `BLIS_CATALOG` is the fallback (the flag wins when both are set). |
+| `--catalog` | string | "" | A catalog directory holding `workloads/<name>.yaml` that replaces the embedded catalog; `BLIS_CATALOG` is the fallback (the flag wins when both are set). Without either, the embedded catalog's presets. |
 
 ### `blis convert servegen`
 

@@ -31,8 +31,8 @@ func TestAdoptKernelDeployment_SchedulingPolicySetsQueueOrderAndPreemption(t *te
 		{"fcfs", "fcfs", "fcfs", nil},
 		{"priority", "priority-fcfs", "fcfs", []string{"--preemption-policy", "fcfs"}},
 	} {
-		dir := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
-			"      gpu_memory_utilization: 0.92\n      scheduling_policy: "+tt.policy+"\n")
+		dir := writeColocatedVariant(t, "      max_model_len: 32768\n",
+			"      max_model_len: 32768\n      scheduling_policy: "+tt.policy+"\n")
 		cmd := &cobra.Command{}
 		registerSimConfigFlags(cmd)
 		if err := cmd.ParseFlags(append([]string{"--scenario", "variant.yaml", "--scenarios", dir,
@@ -61,25 +61,25 @@ func TestKernelPools_Overrides_CarryEachPoolsOwnSchedulingPolicy(t *testing.T) {
 		"      gpu_memory_utilization: 0.9\n      scheduling_policy: fcfs\n  - role: decode",
 		"      gpu_memory_utilization: 0.9\n\npd_transfer",
 		"      gpu_memory_utilization: 0.9\n      scheduling_policy: priority\n\npd_transfer")
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened, prefillInstances,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened, prefillInstances,
 		decodeInstances, numInstances, scheduler, preemptionPolicy, schedulerSource, preemptionSource}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, numInstances = saved[4].(int), saved[5].(int), saved[6].(int)
 		scheduler, preemptionPolicy = saved[7].(string), saved[8].(string)
 		schedulerSource, preemptionSource = saved[9].(string), saved[10].(string)
 		scenarioOverrides = nil
 	}()
-	m, err := kernelmodel.Open("variant.yaml", kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open("variant.yaml", reposOf(dir, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = "variant.yaml", dir, registry, m
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = "variant.yaml", dir, registry, m
 	prefillInstances, decodeInstances, numInstances = 3, 1, 4
 
 	schedulerSource, preemptionSource, scenarioOverrides = "", "", nil
-	pre, dec := openKernelPools(catalog).overrides()
+	pre, dec := openKernelPools().overrides()
 	if pre.Scheduler != "fcfs" || pre.PreemptionPolicy != "fcfs" {
 		t.Errorf("prefill pool states fcfs: overrides scheduler %q preemption %q", pre.Scheduler, pre.PreemptionPolicy)
 	}
@@ -92,7 +92,7 @@ func TestKernelPools_Overrides_CarryEachPoolsOwnSchedulingPolicy(t *testing.T) {
 
 	scheduler, preemptionPolicy = "fcfs", "fcfs"
 	schedulerSource, preemptionSource, scenarioOverrides = "--scheduler", "--preemption-policy", nil
-	pre, dec = openKernelPools(catalog).overrides()
+	pre, dec = openKernelPools().overrides()
 	if pre.Scheduler != "" || pre.PreemptionPolicy != "" || dec.Scheduler != "" || dec.PreemptionPolicy != "" {
 		t.Errorf("a run-level policy must reach both pools through the global, got prefill %+v decode %+v",
 			[]string{pre.Scheduler, pre.PreemptionPolicy}, []string{dec.Scheduler, dec.PreemptionPolicy})

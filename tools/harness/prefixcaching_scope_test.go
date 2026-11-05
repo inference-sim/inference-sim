@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -14,12 +13,7 @@ import (
 // pins the first three, where a silent break would leave every unit test passing.
 func TestScenarioPrefixCachingReachesTheDeployment(t *testing.T) {
 	const scenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
-	committed := kernelmodel.Repos{
-		Scenarios: testScenarios(),
-		Catalog:   substratedata.MustCatalog(),
-		Registry:  substratedata.MustRegistry(),
-	}
-	m, err := kernelmodel.Open(scenario, committed)
+	m, err := kernelmodel.Open(scenario, testRepos())
 	if err != nil {
 		t.Fatalf("Open(%s): %v", scenario, err)
 	}

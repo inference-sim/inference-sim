@@ -223,7 +223,10 @@ func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *te
 			t.Fatalf("%v: %v\n%s", tc.flags, err, lastLines(stderr, 3))
 		}
 		r := parseResult(t, out)
-		if v, _ := resultValue(resultDoc(t, base), tc.section); jsonEqual(t, v, resultDoc(t, out)[tc.section]) {
+		// The report sections sit under reports in schema 2.
+		was, _ := resultValue(resultDoc(t, base), "reports."+tc.section)
+		now, _ := resultValue(resultDoc(t, out), "reports."+tc.section)
+		if jsonEqual(t, was, now) {
 			t.Fatalf("non-vacuity: %v left the %s section unchanged", tc.flags, tc.section)
 		}
 		if jsonEqual(t, r.Overrides, b.Overrides) || r.Name == b.Name {

@@ -119,11 +119,14 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
+	// Read concurrently: the Result is larger than the pipe's buffer, so a replay that writes it
+	// before the reader starts would block for ever.
+	read := make(chan []byte, 1)
+	go func() { b, _ := io.ReadAll(r); read <- b }()
 	replayCmd.Run(testCmd, nil)
 	_ = w.Close()
 	os.Stdout = origStdout
-	out, _ := io.ReadAll(r)
-	return out
+	return <-read
 }
 
 // TestReplayFixedAccumulate_EndToEnd (BC-1): a fixed-accumulate replay of an accumulate
@@ -142,8 +145,8 @@ func TestReplayFixedAccumulate_EndToEnd(t *testing.T) {
 	}
 	// INV-1 conservation companion: all 5 rounds injected, and all 5 completed
 	// (nothing queued/dropped) — the corpus arrivals span 2s, well within the horizon.
-	if q.Injected != 5 {
-		t.Errorf("expected 5 injected requests (INV-1 conservation), got %d", q.Injected)
+	if q.Generated != 5 || q.Sum() != 5 {
+		t.Errorf("expected 5 generated requests, each with one fate (INV-1, DEV-9), got %+v", q)
 	}
 }
 

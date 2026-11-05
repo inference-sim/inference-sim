@@ -40,9 +40,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
-	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness"
 	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
@@ -62,8 +60,8 @@ func main() {
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
 		kernelfixtures.AISimulate(), "scenario directory")
-	catalog := flag.String("catalog", substratedata.MustCatalog(), "")
-	registry := flag.String("registry", substratedata.MustRegistry(), "")
+	catalog := flag.String("catalog", "", "catalog directory (empty: the embedded copy)")
+	registry := flag.String("registry", "", "registry directory (empty: the embedded copy)")
 	settings := flag.String("engine-settings",
 		corpora.MeasurementPath("inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; configures each point as the run was")
@@ -119,10 +117,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	repos, err := harness.OpenRepos(*scenarios, *catalog, *registry)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	base := harness.Config{
-		Repos: kernelmodel.Repos{
-			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
-		},
+		Repos: repos, Catalog: *catalog, Registry: *registry,
 		Blis:           *blis,
 		Seed:           *seed,
 		EngineSettings: eset,

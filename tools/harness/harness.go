@@ -48,6 +48,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
@@ -187,6 +188,9 @@ type Observation struct {
 // Config carries what a run needs beyond the sweep itself.
 type Config struct {
 	Repos kernelmodel.Repos
+	// Catalog and Registry are the directories Repos.Data was opened from, which every point's
+	// `blis replay` is handed as --catalog and --registry. Empty means the embedded copy.
+	Catalog, Registry string
 	// Blis is the path of the `blis` binary every point is simulated with. Required: the
 	// harness does not simulate anything itself (#1902) -- it writes the point's scenario and
 	// trace and runs `blis replay` on them the way any user would.
@@ -804,4 +808,14 @@ func Logs(errs []float64) LogStats {
 		GeoMeanPct:    100 * (math.Exp(mean) - 1),
 		ResidualFloor: 100 * resid / float64(len(logs)),
 	}
+}
+
+// OpenRepos opens catalog and registry (empty: the embedded copy) through blis-substrate's
+// loader, as a run does, and returns the roots a Config holds.
+func OpenRepos(scenarios, catalog, registry string) (kernelmodel.Repos, error) {
+	d, err := kernelmodel.OpenData(load.Options{Catalog: catalog, Registry: registry})
+	if err != nil {
+		return kernelmodel.Repos{}, err
+	}
+	return kernelmodel.Repos{Scenarios: scenarios, Data: d}, nil
 }

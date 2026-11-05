@@ -321,14 +321,14 @@ func TestByteGateTrace(t *testing.T) {
 		"--trace-header", filepath.Join(golden, traceCase+".yaml"), "--trace-data", filepath.Join(golden, traceCase+".csv")}, data...)...)
 	var r struct {
 		Requests struct {
-			Injected int `json:"injected"`
+			Generated int `json:"generated"`
 		} `json:"requests"`
 	}
 	if err := json.Unmarshal(out, &r); err != nil {
 		t.Fatal(err)
 	}
-	if rows := bytes.Count(first[".csv"], []byte("\n")) - 1; r.Requests.Injected != rows || rows == 0 {
-		t.Errorf("the replay injected %d requests; the trace holds %d", r.Requests.Injected, rows)
+	if rows := bytes.Count(first[".csv"], []byte("\n")) - 1; r.Requests.Generated != rows || rows == 0 {
+		t.Errorf("the replay generated %d requests; the trace holds %d", r.Requests.Generated, rows)
 	}
 }
 

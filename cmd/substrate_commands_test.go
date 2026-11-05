@@ -66,7 +66,7 @@ func resolved(t *testing.T, r catalogResolution, err error) string {
 // A model resolves by its entry name or by its source repository; anything else is null with
 // a reason. A chip resolves by its hardware file. A query is never read as a path.
 func TestCatalogResolve(t *testing.T) {
-	root := substratedata.MustCatalog()
+	root := testData()
 	for _, c := range []struct{ query, want string }{
 		{"llama-3.1-70b-instruct", "llama-3.1-70b-instruct"},
 		{"meta-llama/Llama-3.1-70B-Instruct", "llama-3.1-70b-instruct"},
@@ -88,8 +88,8 @@ func TestCatalogResolve(t *testing.T) {
 		{"nvidia-h200", ""},
 		{"../models", ""},
 	} {
-		r, err := resolveCatalogChip(root, c.query)
-		if got := resolved(t, r, err); got != c.want {
+		r := resolveCatalogChip(root, c.query)
+		if got := resolved(t, r, nil); got != c.want {
 			t.Errorf("chip %q resolves to %q, want %q", c.query, got, c.want)
 		}
 	}
@@ -97,23 +97,35 @@ func TestCatalogResolve(t *testing.T) {
 
 // A source repository two entries claim is refused, naming both, rather than resolved to one.
 func TestCatalogResolveRefusesAnAmbiguousRepository(t *testing.T) {
-	src := substratedata.MustCatalog()
+	src := filepath.Join(substratedata.MustCatalog(), "models", "qwen3-14b")
 	root := t.TempDir()
-	body, err := os.ReadFile(filepath.Join(src, "models", "qwen3-14b", "model.yaml"))
+	body, err := os.ReadFile(filepath.Join(src, "model.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"qwen3-14b", "qwen3-14b-copy"} {
-		dir := filepath.Join(root, "models", name)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			t.Fatal(err)
-		}
-		b := strings.Replace(string(body), "name: qwen3-14b", "name: "+name, 1)
-		if err := os.WriteFile(filepath.Join(dir, "model.yaml"), []byte(b), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	// An overlay adds a second entry claiming the same repository as the catalog's qwen3-14b.
+	dir := filepath.Join(root, "models", "qwen3-14b-copy")
+	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+		t.Fatal(err)
 	}
-	_, err = resolveCatalogModel(root, "Qwen/Qwen3-14B")
+	b := strings.Replace(string(body), "name: qwen3-14b", "name: qwen3-14b-copy", 1)
+	if err := os.WriteFile(filepath.Join(dir, "model.yaml"), []byte(b), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// The loader requires a graph to name itself as its directory does.
+	graph, err := os.ReadFile(filepath.Join(dir, "graph.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "graph.yaml"),
+		[]byte(strings.Replace(string(graph), "name: qwen3-14b", "name: qwen3-14b-copy", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	data, err := dataWithCatalogOverlay(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resolveCatalogModel(data, "Qwen/Qwen3-14B")
 	if err == nil || !strings.Contains(err.Error(), "qwen3-14b, qwen3-14b-copy") {
 		t.Errorf("an ambiguous repository must be refused naming both entries, got %v", err)
 	}

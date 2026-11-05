@@ -8,18 +8,17 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
 // testRepos is the artifact roots the harness tests run against: this repository's
-// testdata/scenarios and the vendored catalog and registry.
+// testdata/kernel/aisimulate and the catalog and registry embedded in the pinned blis-substrate.
 func testRepos() kernelmodel.Repos {
-	return kernelmodel.Repos{
-		Scenarios: testScenarios(),
-		Catalog:   substratedata.MustCatalog(),
-		Registry:  substratedata.MustRegistry(),
+	r, err := OpenRepos(testScenarios(), "", "")
+	if err != nil {
+		panic(err)
 	}
+	return r
 }
 
 var (
@@ -96,7 +95,5 @@ func testSweep(t *testing.T) Sweep {
 	return Sweep{}
 }
 
-// testScenarios is this repository's testdata/scenarios. The pinned kernel module's own
-// scenarios (blis-latency-kernel testdata/aisimulate) state vLLM 0.29.0, which blis refuses
-// (LIF-6); the ones these tests read are copied there at 0.32.0.
-func testScenarios() string { return filepath.Join(repoRoot(), "testdata", "scenarios") }
+// testScenarios is the cost model's generated fixtures, testdata/kernel/aisimulate.
+func testScenarios() string { return filepath.Join(repoRoot(), "testdata", "kernel", "aisimulate") }

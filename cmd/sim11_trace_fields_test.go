@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -185,7 +186,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 			h.GoodputSLOTargets = map[string]workload.SLODimTargets{"standard": {TTFTMs: 5}}
 		}},
 		"TraceHeader.Router": {"plain", func(h *workload.TraceHeader, _ []workload.TraceRecord) {
-			h.Router = &workload.TraceRouterConfig{GatewayLatencyUs: 500}
+			h.Router = &workload.TraceRouterConfig{EPPFlags: simEPPFlags, GatewayLatencyUs: 500}
 		}},
 		"TraceRouterConfig.EPPFlags":  {"plain", func(h *workload.TraceHeader, r []workload.TraceRecord) { precise(h, r) }},
 		"TraceRouterConfig.Manifests": {"pool", func(h *workload.TraceHeader, _ []workload.TraceRecord) { h.Router.Manifests = sim11Manifests("other") }},
@@ -290,7 +291,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 // its deployment, and an agentic replay has no trace header at all.
 func TestReplayRecordsDeployment(t *testing.T) {
 	for _, c := range []struct {
-		mode    string
+		mode    trace.Mode
 		agentic bool
 		want    bool
 	}{{"generated", false, true}, {"replayed", false, true}, {"converted", false, false}, {"generated", true, false}} {

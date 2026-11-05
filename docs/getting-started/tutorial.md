@@ -4,16 +4,18 @@ This tutorial walks through a complete capacity planning exercise: determining h
 
 **Scenario:** You're deploying Llama-3.1-70B-Instruct on H200 GPUs (FP8, vLLM, TP4). Your SLO is TTFT p99 < 500ms. You need to find the minimum number of instances for 40 requests/second.
 
-!!! note "Set up the catalog and registry first"
-    Every command below needs the catalog (`--catalog` or `BLIS_CATALOG`) and the registry
-    (`--registry`): blis-substrate's `catalog/` and `registry/` at the commit this build pins.
-    See [Quick Start](quickstart.md) and [Data compatibility](installation.md#catalog-compatibility).
+!!! note "The catalog and registry"
+    Every command below reads the catalog and registry embedded in the blis-substrate module
+    this build pins; none needs a data flag. To read a catalog of your own, name it with
+    `--catalog` or `BLIS_CATALOG`, and a registry with `--registry` or `BLIS_REGISTRY`; each
+    replaces its embedded copy. The checkout below is optional. See [Quick Start](quickstart.md)
+    and [Data compatibility](installation.md#catalog-compatibility).
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
 
@@ -37,7 +39,7 @@ Before scaling up, measure the throughput of a single instance under load. Run e
 ```bash
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --rate 500 --num-requests 2000
 ```
 
@@ -56,7 +58,7 @@ This means for 40 req/s, you need at minimum `ceil(40/11) = 4` instances. Let's 
 ```bash
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --rate 2 --num-requests 50
 ```
 
@@ -70,19 +72,19 @@ Run simulations at increasing instance counts for 40 req/s:
 # 2 instances (20 req/s per instance vs ~11 saturated capacity → overloaded)
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --num-instances 2 --rate 40 --num-requests 4000
 
 # 4 instances (10 req/s per instance → just under capacity)
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --num-instances 4 --rate 40 --num-requests 4000
 
 # 8 instances (5 req/s per instance → comfortable headroom)
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --num-instances 8 --rate 40 --num-requests 4000
 ```
 
@@ -123,13 +125,13 @@ utilization and prefix-cache scorers) with a load-only configuration:
 # The router's built-in default configuration
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --num-instances 4 --rate 40 --num-requests 4000
 
 # Load-only: queue-scorer and kv-cache-utilization-scorer
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node-load-only.yaml \
-  --scenarios examples/llm-d/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios examples/llm-d/scenarios \
   --num-instances 4 --rate 40 --num-requests 4000
 ```
 
@@ -138,7 +140,7 @@ With uniform workloads (same prompt/output distribution), router configurations 
 ```bash
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
-  --scenarios examples/llm-d/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios examples/llm-d/scenarios \
   --num-instances 4 --rate 40 --num-requests 4000 \
   --prefix-tokens 512
 ```
@@ -152,7 +154,7 @@ For automated comparison across many configurations, use fitness evaluation:
 ```bash
 ./blis run \
   --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-substrate/registry \
+  --scenarios testdata/scenarios \
   --num-instances 8 --rate 40 --num-requests 4000 \
   --fitness-weights "p99_ttft:3,mean_e2e:1,throughput:2" --view summary
 ```

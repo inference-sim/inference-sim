@@ -105,9 +105,8 @@ func devicesCLISubprocess() bool {
 	offload := os.Getenv(devicesCLIOffloadEnv)
 	tracePrefix := os.Getenv(devicesCLITraceEnv)
 
-	repos := defaultKernelRepos()
 	base := []string{
-		"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", repos.Registry,
+		"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", testRegistryDir(),
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
 		"--catalog", catalog,
@@ -300,8 +299,12 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 	if err == nil {
 		t.Fatalf("a device_class with no catalog device table must be refused:\n%s", stdout)
 	}
-	if want := catalogStorageDevicesPath(noDevices); !strings.Contains(stderr, want) {
-		t.Errorf("refusal must name the path %q, got:\n%s", want, stderr)
+	// blis-substrate's loader opens the catalog whole when the run starts and names each
+	// file relative to the catalog it was refused in.
+	for _, want := range []string{filepath.Base(noDevices), catalogStorageDevicesRelPath} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("refusal must name %q, got:\n%s", want, stderr)
+		}
 	}
 
 	// Negative control: restoring the table makes the SAME invocation succeed, so the
@@ -320,7 +323,7 @@ func TestRunCmd_KVOffloadDeviceClass_MissingCatalogTableIsRefused(t *testing.T) 
 // TestRunCmd_KVOffloadRefusalsReachTheCLI: the KV offload configuration is resolved by the
 // engine (blis-vllm compat/build, called from cmd/engine_build.go), and each kind of refusal
 // ends `blis run` with it on stderr, naming what to fix: a malformed storage-device table (the
-// kernel reads the catalog first, so its decoding error names the file), a device_class the
+// loader opens the catalog first, so its decoding error names the catalog and the file in it), a device_class the
 // table does not define, an invalid kv_offload block, and a tier stating its own physics. A
 // refusal is never a silent fallback. The messages are the ones the CLI gave before the move.
 func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
@@ -345,7 +348,7 @@ func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
 		want                   []string
 	}{
 		{"a malformed device table", malformed, writeOffloadConfigWithClass(t, "nvme_gen4"),
-			[]string{"decoding " + catalogStorageDevicesPath(malformed), "did not find expected node content"}},
+			[]string{malformed + " is refused", "decoding " + catalogStorageDevicesRelPath, "did not find expected node content"}},
 		{"an unknown device class", newDeviceCatalog(t, good), writeOffloadConfigWithClass(t, "floppy"),
 			[]string{`device_class=\"floppy\" is not defined in the catalog storage-device table`, "known: cpu_dram, nvme_gen4"}},
 		{"an invalid kv_offload block", newDeviceCatalog(t, good),
