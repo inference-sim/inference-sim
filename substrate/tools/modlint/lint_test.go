@@ -1,0 +1,169 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+const simGoMod = `module github.com/inference-sim/inference-sim
+
+go 1.27.2
+
+require (
+	github.com/inference-sim/blis-vllm v0.32.0-blis.2
+	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
+)
+
+exclude github.com/inference-sim/blis-vllm v0.32.0
+
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2
+`
+
+func simModules() []Module {
+	return []Module{
+		{Path: "github.com/inference-sim/inference-sim", Main: true, GoVersion: "1.27.2"},
+		{Path: "github.com/inference-sim/blis-vllm", Version: "v0.32.0-blis.2", GoVersion: "1.27.2"},
+		{Path: "github.com/inference-sim/blis-substrate", Version: "v0.11.0", GoVersion: "1.24"},
+		{Path: "github.com/llm-d/llm-d-router", Version: "v0.0.0-00010101000000-000000000000",
+			Replace: &Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0-blis.2", GoVersion: "1.27.2"}},
+		{Path: "gopkg.in/yaml.v3", Version: "v3.0.1"},
+	}
+}
+
+func simInput() Input {
+	return Input{
+		GoMod:   []byte(simGoMod),
+		Modules: simModules(),
+		Graph: [][2]string{
+			{"github.com/inference-sim/inference-sim", "github.com/llm-d/llm-d-router@v0.0.0-00010101000000-000000000000"},
+			{"github.com/inference-sim/blis-vllm@v0.32.0-blis.2", "github.com/inference-sim/blis-substrate@v0.11.0"},
+		},
+		Toolchain: "go1.27.2",
+		GoVersion: "go1.27.2",
+	}
+}
+
+func TestInferenceSimAsDesignedIsClean(t *testing.T) {
+	bad, err := Lint(simInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bad) > 0 {
+		t.Fatalf("a go.mod that follows X11 was refused:\n%s", strings.Join(bad, "\n"))
+	}
+}
+
+// Each case is a known-bad input (X18): one change to a clean inference-sim input that
+// breaks one rule of X11 or LIF-2. The lint must report it.
+func TestEachRuleHasAKnownBadInput(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*Input)
+		want string
+	}{
+		{"a branch replace target", func(in *Input) {
+			in.GoMod = []byte(strings.Replace(simGoMod, "v1.0.0-blis.2", "v1.0.1-0.20261101000000-abcdefabcdef", 1))
+		}, "is not a -blis.N tag"},
+		{"a local replace", func(in *Input) {
+			in.GoMod = []byte(strings.Replace(simGoMod, "github.com/inference-sim/llm-d-router v1.0.0-blis.2", "../llm-d-router", 1))
+		}, "replace target ../llm-d-router"},
+		{"a second replace", func(in *Input) {
+			in.GoMod = append([]byte(simGoMod), "replace github.com/inference-sim/blis-vllm => ../blis-vllm\n"...)
+		}, "has 2 replace directives"},
+		{"no replace", func(in *Input) {
+			in.GoMod = []byte(strings.Split(simGoMod, "replace ")[0])
+		}, "has 0 replace directives"},
+		{"an exclude of a -blis.N tag", func(in *Input) {
+			in.GoMod = []byte(strings.Replace(simGoMod, "blis-vllm v0.32.0\n", "blis-vllm v0.32.0-blis.1\n", 1))
+		}, "an exclude may name only a plain tag"},
+		{"an exclude of a non-engine module", func(in *Input) {
+			in.GoMod = []byte(strings.Replace(simGoMod, "exclude github.com/inference-sim/blis-vllm v0.32.0", "exclude github.com/inference-sim/blis-substrate v0.10.0", 1))
+		}, "an exclude may name only an engine module"},
+		{"a committed go.work", func(in *Input) { in.GoWork = []string{"go.work"} }, "go.work is committed"},
+		{"another module requires the router", func(in *Input) {
+			in.Graph = append(in.Graph, [2]string{"github.com/inference-sim/blis-vllm@v0.32.0-blis.2", "github.com/llm-d/llm-d-router@v1.0.0"})
+		}, "only inference-sim may require the router"},
+		{"a BLIS module at a pseudo-version", func(in *Input) {
+			in.Modules[1].Version = "v0.32.1-0.20261101000000-abcdefabcdef"
+		}, "is not a release tag"},
+		{"the router selected without its replace", func(in *Input) { in.Modules[3].Replace = nil }, "without the router fork's replace"},
+		{"a module above the toolchain", func(in *Input) { in.Modules[2].GoVersion = "1.28" }, "above contracts/toolchain"},
+		{"a go command other than the toolchain", func(in *Input) { in.GoVersion = "go1.27.3" }, "go version reports go1.27.3"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			in := simInput()
+			in.Modules = simModules()
+			c.edit(&in)
+			bad, err := Lint(in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(strings.Join(bad, "\n"), c.want) {
+				t.Fatalf("lint did not report %q; it reported:\n%s", c.want, strings.Join(bad, "\n"))
+			}
+		})
+	}
+}
+
+func TestOutsideInferenceSimNoReplaceOrExclude(t *testing.T) {
+	gomod := "module github.com/inference-sim/blis-vllm\n\ngo 1.27.2\n\nreplace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2\n\nexclude github.com/inference-sim/blis-sglang v0.5.23\n"
+	bad, err := Lint(Input{
+		GoMod:     []byte(gomod),
+		Modules:   []Module{{Path: "github.com/inference-sim/blis-vllm", Main: true, GoVersion: "1.27.2"}},
+		Toolchain: "go1.27.2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(bad, "\n")
+	for _, want := range []string{"only inference-sim may carry a replace directive", "only inference-sim may carry exclude directives"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestTagForms(t *testing.T) {
+	for _, v := range []string{"v0.32.0-blis.1", "v0.32.0-blis.10", "v0.5.6-post.1.blis.2", "v0.10.1-rev.1.blis.1"} {
+		if !blisTag.MatchString(v) {
+			t.Errorf("%s is a LIF-5 tag", v)
+		}
+	}
+	for _, v := range []string{"v0.32.0", "v0.32.0-blis.0", "v0.32.0-blis", "v0.32.0-rc.1", "v0.5.6-post.0.blis.1", "v0.32.0-blis.01"} {
+		if blisTag.MatchString(v) {
+			t.Errorf("%s is not a LIF-5 tag", v)
+		}
+	}
+	for v, want := range map[string]bool{
+		"v0.0.0-20261101000000-abcdefabcdef":       true,
+		"v0.32.1-0.20261101000000-abcdefabcdef":    true,
+		"v1.2.4-pre.0.20261101000000-abcdefabcdef": true,
+		"v0.32.0-blis.2":                           false,
+		"v0.11.0":                                  false,
+	} {
+		if isPseudo(v) != want {
+			t.Errorf("isPseudo(%s) = %v", v, !want)
+		}
+	}
+}
+
+// This repository, as committed, passes its own lint, and contracts/toolchain is a valid
+// version no lower than any go directive here.
+func TestThisRepositoryIsClean(t *testing.T) {
+	bad, err := lintDir("../..", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The go command running the tests may differ from contracts/toolchain on a developer
+	// machine; CI installs exactly that version and runs modlint itself.
+	var real []string
+	for _, b := range bad {
+		if !strings.HasPrefix(b, "go version reports") {
+			real = append(real, b)
+		}
+	}
+	if len(real) > 0 {
+		t.Fatalf("blis-substrate fails its own selected-version lint:\n%s", strings.Join(real, "\n"))
+	}
+}

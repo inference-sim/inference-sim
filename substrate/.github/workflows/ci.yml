@@ -16,6 +16,10 @@ on:
 permissions:
   contents: read
 
+# No build downloads a toolchain: every Go job installs exactly contracts/toolchain (LIF-2).
+env:
+  GOTOOLCHAIN: local
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -61,15 +65,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
       - run: go vet ./...
       - run: go build ./...
+      # The selected-version lint (X11, LIF-2): replace and exclude directives, no go.work,
+      # every module's go directive at or below contracts/toolchain, and go version equal
+      # to it.
+      - run: go run ./tools/modlint
       # The root package's tests: one module, no nested go.mod, and the module zip under
       # 100 MB (SUB-13).
       - run: go test -count=1 .
@@ -81,9 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - run: go test -race -count=1 ./contracts/... ./validate/... ./tools/...
       # The AGENTS.md block, the pull-request template and the rendered index match the
       # invariant registry (design §13.1). The test above also checks this; the step names
@@ -97,9 +101,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       # The scoring suite needs measurement corpora this repository does not distribute, so it
       # is compiled and vetted here but not run.
       - run: go vet -tags scoring ./kernel/...
@@ -122,9 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - run: go run ./validate/cmd/validate-catalog catalog
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
@@ -146,9 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - run: go run ./validate/cmd/validate-registry registry
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
