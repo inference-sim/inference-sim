@@ -90,14 +90,14 @@ jobs:
             --jq '.[] | "\(.sha) \(if .commit.verification.verified then "G" else "N" end)"' > "$RUNNER_TEMP/signatures"
           test -s "$RUNNER_TEMP/signatures"
       - name: Description (X14)
-        if: env.PR != ''
+        if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
         run: |
           set -euo pipefail
           invariants cited -body "$RUNNER_TEMP/body.md"
           prcheck description -body "$RUNNER_TEMP/body.md" -repo "${{ github.repository }}" -base "$BASE" -head "$HEAD"
       - name: Review questions (design §13.2)
-        if: env.PR != ''
+        if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
         run: |
           set -euo pipefail
@@ -114,19 +114,23 @@ jobs:
             exit 1
           fi
       - name: Commit policy (X20)
-        if: env.PR != ''
+        if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
         run: prcheck commits -base "$BASE" -head "$HEAD" -signatures "$RUNNER_TEMP/signatures"
       - name: Workflow lint (X21, X22, X16)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck workflows
       - name: Version literals (X23)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck versions
       - name: Documentation references (X26)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck docrefs
       - name: Cited issues (X28)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: |
           set -euo pipefail
@@ -136,12 +140,15 @@ jobs:
             prcheck issues -repo "${{ github.repository }}"
           fi
       - name: Licence and notice files (X21)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck licence-files -repo-name "${{ inputs.repo }}"
       - name: Quarantine list (X25)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck quarantine
       - name: Generated copies of the registry (design §13.1)
+        if: ${{ !cancelled() }}
         working-directory: repo
         run: |
           set -euo pipefail
@@ -151,6 +158,6 @@ jobs:
             invariants check-copy -repo "${{ inputs.repo }}" -agents AGENTS.md -template .github/pull_request_template.md
           fi
       - name: Selected-version lint (X11, LIF-2)
-        if: hashFiles('repo/go.mod') != ''
+        if: ${{ !cancelled() && (hashFiles('repo/go.mod') != '') }}
         working-directory: repo
         run: modlint
