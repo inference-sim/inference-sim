@@ -402,60 +402,17 @@ tier — comes from one of the seven.
 
 ### 6.1 Reproducing the end-to-end evaluation tables
 
-Reproducing a coefficient needs only a fitter and its collection. Reproducing an
-accuracy FIGURE needs four things pinned, and each of them has silently produced a
-wrong number during this work:
+End-to-end accuracy figures, which compare a simulation with a measured InferenceX run, come
+from one place: the [accuracy dashboard](https://github.com/inference-sim/accuracy-dashboard)'s scoring harness, a signed and versioned
+tool (design §2.2, §11.7). This registry holds no scorer of its own, because two scorers would
+sooner or later disagree about what a figure means. To see what a registry change does end to
+end, run the harness with a simulator build and this registry's directory as its registry
+path. Its figures on published fit units inform review; they are never landing evidence for an
+accuracy change (design §11.7).
 
-| what | why it matters |
-|---|---|
-| the scorer checkout | `cmd/metricscore` is on the `kernel-exclusive` branch of the `sriumcp/inference-sim` fork (48ca63f at the time of writing). `inference-sim/inference-sim` carries neither that branch nor `cmd/metricscore`, and a checkout of its `main` fails with `stat cmd/metricscore: directory not found` |
-| `-registry` | defaults to the sibling `blis-registry` checkout, so scoring a branch without passing it explicitly scores a different registry |
-| `-catalog` | the figures move with the catalog revision; a comparison across catalog revisions once produced an apparent 0.03pp "effect" that was two catalog commits |
-| `-config-tier`, `-framework`, `-length-range-ratio` | each changes every figure. On one kernel revision the same command with and without `-length-range-ratio 1.0` gives 11.62/12.05/15.23/52.94 against 11.22/12.19/16.22/57.13 |
-
-`scripts/compare_registries.py` pins all four by construction and prints the
-revisions it used. Beyond comparing two registries it records and checks absolute
-figures:
-
-    # write the current figures, with revisions and flags, to registry/docs/evaluation-baseline.json
-    python scripts/compare_registries.py --record --scorer /path/to/kernel-exclusive/checkout
-
-    # fail if any figure, or any n, has moved since
-    python scripts/compare_registries.py --check  --scorer /path/to/kernel-exclusive/checkout
-
-`registry/docs/evaluation-baseline.json` is the machine-checkable record. It holds the four
-headline figures and their point counts per tier, plus the framework, the
-length-range-ratio and the scorer and catalog revisions, because a figure is a
-claim about that whole triple rather than about the registry alone. `--check`
-compares the revisions too and says when they have moved, so a drift is
-attributable rather than merely visible.
-
-A figure quoted without its flags cannot be checked, and this is the reason every
-table in the companion documents carries its invocation.
-
-### 6.1.1 The scorer's kernel is pinned, and the pin is not this registry's concern
-
-One asymmetry in the reproduce recipe is worth stating because it looks like an
-oversight and is not. The scoring branch clones the catalog and the registry at
-release tags (`blis-catalog` `0.2.1`, `blis-registry` `v0.1.1` at 48ca63f), because both
-are read at RUN TIME by path and the scorer takes `-catalog` and `-registry` flags. It
-does not clone `blis-latency-kernel` at all: the kernel is a COMPILED dependency pinned
-by module version in `go.mod`. An earlier revision of this section said the catalog and
-registry were cloned with `-b modeling`; none of the three repositories has a
-`modeling` branch.
-
-The consequence for a reader: changing this registry changes the figures
-immediately, while changing the kernel does not until its pin is advanced. At the
-time of writing the scoring branch pins blis-latency-kernel `v0.1.0` and
-blis-schemas `v0.2.2`. A figure recorded by
-`compare_registries.py --record` therefore states the scorer revision alongside
-the registry, and `--check` reports when it has moved, because a figure is a claim
-about the pair.
-
-A local `replace` directive pointing at on-disk kernel checkouts is how the
-scoring branch's own plan describes linking the two, and it is explicitly
-worktree-only: committing one would break the build for anyone following the
-clone recipe.
+A figure is a claim about every input that produced it: the simulator build, the catalog, the
+registry and the harness digest. The harness records all four with every figure, so a reader can
+reproduce it.
 
 ### 6.2 Which tier to weigh
 

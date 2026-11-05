@@ -23,8 +23,8 @@ reflect software rather than silicon.
 SemiAnalysis results; `scripts/select_overlap_band.py` holds the guard to import.
 
 **No per-primitive fit ships without an end-to-end check.** A better fit to one
-primitive has, six times in this project, made the overall estimate worse. Score the
-change with `scripts/compare_registries.py` (see
+primitive has, six times in this project, made the overall estimate worse. Run the
+accuracy dashboard's scoring harness on the change (see
 [methodology §6.1](../methodology.md#61-reproducing-the-end-to-end-evaluation-tables))
 and report the before and after figures in the pull request.
 
