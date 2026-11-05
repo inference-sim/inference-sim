@@ -43,6 +43,7 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
+!/stack.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
 !sim/workload/testdata/agentx/*.json
