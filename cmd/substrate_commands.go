@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -94,8 +95,9 @@ var catalogResolveCmd = &cobra.Command{
 		"resolves when the catalog has an entry of that name, or exactly one entry whose " +
 		"model.yaml source repository is that name (compared without regard to letter case); a " +
 		"chip resolves when hardware/<name>.yaml exists. The output is {\"query\": ..., " +
-		"\"identity\": <catalog name> | null, \"reason\": ...}. A name two entries claim is an " +
-		"error, never a choice.",
+		"\"identity\": <catalog name> | null, \"reason\": ...}; a resolved chip adds " +
+		"\"packaging\": {\"gpus_per_node\", \"gpus_per_rack\"}, each the value its entry fixes or null " +
+		"where the scenario states it. A name two entries claim is an error, never a choice.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
@@ -132,6 +134,31 @@ type catalogResolution struct {
 	Query    string  `json:"query"`
 	Identity *string `json:"identity"`
 	Reason   string  `json:"reason"`
+	// Packaging is a resolved chip's packaging as its catalog entry states it: the GPUs per
+	// node and per rack the product fixes, each null where the entry leaves it to the
+	// scenario. Absent for a model, or a chip that does not resolve. A generator writes
+	// neither field for a value stated here, and the scenario's own for a null one
+	// (blis-substrate scenario.Cluster.Packaging, design SUB-3).
+	Packaging *chipPackaging `json:"packaging,omitempty"`
+}
+
+// chipPackaging is what a chip's catalog entry states about its packaging.
+type chipPackaging struct {
+	GPUsPerNode *int `json:"gpus_per_node"`
+	GPUsPerRack *int `json:"gpus_per_rack"`
+}
+
+func packagingOf(c *hardware.Chip) *chipPackaging {
+	p := &chipPackaging{}
+	if c.GPUsPerNode > 0 {
+		n := c.GPUsPerNode
+		p.GPUsPerNode = &n
+	}
+	if c.GPUsPerRack > 0 {
+		n := c.GPUsPerRack
+		p.GPUsPerRack = &n
+	}
+	return p
 }
 
 // catalogData opens the catalog a command names, with the embedded registry: a catalog
@@ -170,8 +197,9 @@ func resolveCatalogModel(data *load.Data, query string) (catalogResolution, erro
 }
 
 func resolveCatalogChip(data *load.Data, query string) catalogResolution {
-	if _, err := data.Chip(query); err == nil {
-		return catalogResolution{Query: query, Identity: &query, Reason: "the catalog has hardware/" + query + ".yaml"}
+	if chip, err := data.Chip(query); err == nil {
+		return catalogResolution{Query: query, Identity: &query, Reason: "the catalog has hardware/" + query + ".yaml",
+			Packaging: packagingOf(chip)}
 	}
 	return catalogResolution{Query: query, Reason: "the catalog has no hardware entry of this name"}
 }
