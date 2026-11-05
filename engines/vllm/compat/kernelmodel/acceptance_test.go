@@ -32,7 +32,9 @@ func museAdaptiveInputs(t *testing.T) (latencykernel.Inputs, engineconfig.Engine
 
 // Under adaptive verification the kernel gets the run's acceptance, resolved from the
 // scenario's pin (acceptance.value: num_spec_tokens 7, acceptance_length 2.84); without it the
-// kernel gets none, so a pool that does not trim opens exactly as before.
+// kernel gets none, so a pool that does not trim opens exactly as before. A resolution from a
+// registry profile is recorded in the data's selected-entry report (VAL-6); a pinned value
+// names no profile, so it records nothing.
 func TestAcceptanceReachesTheKernelOnlyUnderAdaptiveVerification(t *testing.T) {
 	in, e := museAdaptiveInputs(t)
 	got, err := resolveAcceptance(in, e, repos().Data, AcceptanceOverrides{})
@@ -41,6 +43,37 @@ func TestAcceptanceReachesTheKernelOnlyUnderAdaptiveVerification(t *testing.T) {
 	}
 	if got == nil || got.AcceptanceLength != 2.84 || len(got.PerPositionRates) != 7 || got.Layer != "scenario" {
 		t.Fatalf("resolved %+v, want the scenario's AL 2.84 over 7 positions", got)
+	}
+
+	// The registry layer: no pin, and a model, method and K the embedded registry has a profile
+	// for (inferencex-golden-al: deepseek-v4.1-flash, dspark, K 5, coding, thinking off).
+	data, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, re := in, e
+	reg.Scenario.Acceptance = nil
+	reg.Scenario.Model = "deepseek-v4.1-flash"
+	sp := *e.Speculative
+	sp.NumSpecTokens = 5
+	re.Speculative = &sp
+	terms := acceptance.Workload{Category: "coding", Thinking: acceptance.ThinkingOff}
+	got, err = resolveAcceptance(reg, re, data, AcceptanceOverrides{Workload: &terms})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.Layer != "registry" || got.Set != "inferencex-golden-al" {
+		t.Fatalf("resolved %+v, want the registry's inferencex-golden-al profile", got)
+	}
+	var recorded []load.Selected
+	for _, sel := range data.Report().Selected {
+		if sel.Kind == load.KindAcceptance {
+			recorded = append(recorded, sel)
+		}
+	}
+	if len(recorded) != 1 || recorded[0].Set != "inferencex-golden-al" || recorded[0].Entry != got.Profile.Key().String() {
+		t.Errorf("selected-entry report's acceptance entries %+v, want the one profile resolved (%s)",
+			recorded, got.Profile.Key())
 	}
 	off := false
 	e.Speculative.EnableAdaptiveVerification = &off
