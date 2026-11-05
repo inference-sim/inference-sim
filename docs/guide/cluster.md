@@ -5,7 +5,7 @@ This guide covers running multi-instance BLIS simulations — the full pipeline 
 ```bash
 # Quick example: 4-instance cluster with tracing
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --scenarios testdata/scenarios \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace
 ```
@@ -75,7 +75,6 @@ configuration:
 
 ```bash
 ./blis run --scenario glm-5-h200-3p1d-ib.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --num-instances 4 --prefill-instances 3 --decode-instances 1 \
   --rate 10 --num-requests 100
 ```
@@ -132,7 +131,7 @@ Log every routing decision, with the scores the router's primary scheduling prof
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-  --scenarios testdata/scenarios --registry $PWD/blis-registry \
+  --scenarios testdata/scenarios \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --counterfactual-k 3
 ```

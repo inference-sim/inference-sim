@@ -13,15 +13,15 @@ BLIS is six repositories, each owning one kind of thing:
 | **inference-sim** (this repo) | simulates | the end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the hosting of the llm-d router, metrics and reports; no vLLM code |
 | **blis-vllm** | runs the engine | the vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter |
 | **blis-latency-kernel** | prices | step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads |
-| **blis-catalog** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
-| **blis-registry** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |
+| **blis-substrate `catalog/`** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
+| **blis-substrate `registry/`** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |
 | **blis-schemas** | defines the formats | the source of truth for every shared format: scenario, deployment, engine and catalog files, and the kernel interface |
 
 ```mermaid
 flowchart LR
     SC["Scenario<br/>(blis-schemas format)"] --> SIM
-    CAT["blis-catalog<br/>facts"] --> K
-    REG["blis-registry<br/>coefficients"] --> K
+    CAT["blis-substrate catalog/<br/>facts"] --> K
+    REG["blis-substrate registry/<br/>coefficients"] --> K
     SC --> E
     SIM["inference-sim<br/>simulates"] -- "engine.Engine:<br/>add, schedule, complete" --> E["blis-vllm<br/>runs the engine"]
     E -- "batch, transfer, tier" --> K["blis-latency-kernel<br/>prices"]
@@ -37,8 +37,9 @@ memory is left for KV. The simulator reaches the engine only through blis-schema
 blis-vllm at one build site, `cmd/engine_build.go`. A deployment choice -- which chip, how many GPUs,
 what parallelism and engine settings -- is neither a fact nor a coefficient, so it lives in
 the scenario a run names, not in the catalog or registry. Data the kernel reads is never
-copied into this repo: adding a model or chip is a commit to blis-catalog, refitting a
-coefficient is a commit to blis-registry. How a scenario reaches the kernel:
+copied into this repo: adding a model or chip is a commit to blis-substrate's `catalog/`,
+refitting a coefficient is a commit to its `registry/`. A build embeds both at the pinned
+version. How a scenario reaches the kernel:
 [Latency Models](../guide/latency-models.md).
 
 ## Overview

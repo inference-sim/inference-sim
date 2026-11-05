@@ -18,7 +18,7 @@ The Go module (`github.com/inference-sim/blis-vllm`) that is BLIS's vLLM engine:
 
 ### blis-latency-kernel
 
-The Go module (`github.com/inference-sim/blis-latency-kernel`) that prices everything BLIS needs a cost for: step time, KV and fixed memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs, chips, fabrics and storage devices from blis-catalog and fitted coefficients from blis-registry. See [Latency Models Guide](../guide/latency-models.md).
+The Go module (`github.com/inference-sim/blis-latency-kernel`) that prices everything BLIS needs a cost for: step time, KV and fixed memory, P/D KV transfer, offload tier transfer and host overheads. It reads model graphs, chips, fabrics and storage devices from blis-substrate's catalog and fitted coefficients from its registry. See [Latency Models Guide](../guide/latency-models.md).
 
 ### Block (KV Block)
 

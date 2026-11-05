@@ -12,7 +12,6 @@ On vLLM v0.32.0, each instance's engine orders its requests by the pool's engine
 ```bash
 # Not yet available on 0.32.0 (refused): priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --scheduler priority-fcfs
 # SLO class is set in the workload spec (slo_class: critical/standard/batch/etc.)

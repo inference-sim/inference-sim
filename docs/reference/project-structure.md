@@ -19,8 +19,8 @@ inference-sim/
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
 │   ├── convert_trace.go       # `blis convert trace`: a trace format version 3 (or 2) trace to version 4
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   ├── catalog_root.go        # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731); a run reads a model's `models/<name>/graph.yaml` within it
-│   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. resultsFileEmitOptions is the single helper both `blis run` and `blis replay` pass to the `--metrics-path` writer (INV-13); the Result records the revision under `revisions.catalog`
+│   ├── catalog_root.go        # The run's data: the catalog and registry embedded in the pinned blis-substrate, replaced by --catalog / BLIS_CATALOG or --registry / BLIS_REGISTRY, with --catalog-overlay / --registry-overlay; runData opens them once
+│   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): the catalog's source (`embedded` or the path), its combined content hash, and a dirty flag set when an overlay changed it. resultsFileEmitOptions is the single helper both `blis run` and `blis replay` pass to the `--metrics-path` writer (INV-13); the Result records the data under `data`
 │   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload` and `blis convert preset`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
 │   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
 │   └── default_config.go      # defaults.yaml loading: the LoRA cost coefficients (and `version`) only
@@ -91,8 +91,8 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore, P/D and KV-transfer records (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-│                               # (The model catalog is NOT in this repo: it is the external blis-catalog
-│                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
+│                               # (The model catalog is NOT in this repo: it is blis-substrate's catalog/,
+│                               #  embedded in the pinned module and replaced by --catalog / BLIS_CATALOG.
 │                               #  It holds model graphs, chips, fabrics, storage devices and workload
 │                               #  presets. Tests read the catalog/ and registry/ of the blis-substrate
 │                               #  module go.mod selects (internal/substratedata); this repo's own
@@ -106,7 +106,7 @@ inference-sim/
 │   ├── sensitivity/           # How much each assumed engine setting (and the length draw) moves the score
 │   ├── signedprobe/           # One CSV row per direct-corpus point, to find where the error is one-sided (temporary)
 │   └── validation/            # render_docs.py: renders docs/validation/ from the validation results
-├── defaults.yaml              # LoRA cost coefficients only (latency coefficients live in blis-registry)
+├── defaults.yaml              # LoRA cost coefficients only (latency coefficients live in blis-substrate's registry/)
 ├── examples/                  # Example configuration files
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 ├── docs/
