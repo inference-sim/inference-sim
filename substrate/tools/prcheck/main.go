@@ -41,6 +41,8 @@
 //	    each required check on the tree it merged.
 //	prcheck knownbad [-repo-name blis-substrate] [-list-only]
 //	    X18: run every known-bad test the registry names for this repository.
+//	prcheck licence-files [-repo-name <name>]
+//	    X21: LICENSE exists, and an engine repository's NOTICE names its upstream.
 //	prcheck vocab
 //	    Print the Go vocabularies as JSON, for the Python rule lint (X15).
 //	prcheck quarantine [-list .github/quarantine.yaml] [-skip-pattern <pkg>]
@@ -390,6 +392,8 @@ func run(args []string, w io.Writer) error {
 			return nil
 		}
 		return report(w, "knownbad", runKnownBad(tests))
+	case "licence-files":
+		return report(w, "licence-files", CheckLicenceFiles(".", *repoName))
 	case "vocab":
 		// The closed vocabularies the Go validators enforce, as JSON, for the Python rule
 		// lint (X15), so the lint compares Python literals with the Go sets, not a copy.

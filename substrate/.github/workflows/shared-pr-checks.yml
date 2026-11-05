@@ -25,6 +25,7 @@ name: shared pull-request checks
 #   doc-references  X26: paths, line ranges and repeated table rows in documentation
 #   cited-issues    X28: no change closes an issue the merge tree still cites
 #   quarantine      X25: every quarantined test has an issue and an unexpired date
+#   licence-files   X21: LICENSE, and an engine repository's NOTICE naming its upstream
 #   generated       design §13.1: AGENTS.md and the pull-request template match the registry
 #
 # Every job fails rather than passes when it cannot run (X16).
@@ -134,6 +135,9 @@ jobs:
           else
             prcheck issues -repo "${{ github.repository }}"
           fi
+      - name: Licence and notice files (X21)
+        working-directory: repo
+        run: prcheck licence-files -repo-name "${{ inputs.repo }}"
       - name: Quarantine list (X25)
         working-directory: repo
         run: prcheck quarantine

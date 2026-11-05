@@ -500,3 +500,15 @@ func TestKnownBadRunsEachTest(t *testing.T) {
 		t.Fatalf("an entry naming a missing test was not reported: %v", bad)
 	}
 }
+
+// X21: LICENSE and an engine's NOTICE.
+func TestLicenceFiles(t *testing.T) {
+	dir := t.TempDir()
+	has(t, CheckLicenceFiles(dir, "inference-sim"), "LICENSE is missing")
+	os.WriteFile(filepath.Join(dir, "LICENSE"), []byte("Apache License\n"), 0o644)
+	none(t, CheckLicenceFiles(dir, "inference-sim"))
+	has(t, CheckLicenceFiles(dir, "blis-vllm"), "NOTICE is missing")
+	os.WriteFile(filepath.Join(dir, "NOTICE"), []byte("Portions derived from SGLang.\n"), 0o644)
+	has(t, CheckLicenceFiles(dir, "blis-vllm"), "does not name vLLM")
+	none(t, CheckLicenceFiles("../..", "blis-substrate"))
+}
