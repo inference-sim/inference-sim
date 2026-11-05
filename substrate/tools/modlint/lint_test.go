@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 const simGoMod = `module github.com/inference-sim/inference-sim
@@ -165,5 +166,27 @@ func TestThisRepositoryIsClean(t *testing.T) {
 	}
 	if len(real) > 0 {
 		t.Fatalf("blis-substrate fails its own selected-version lint:\n%s", strings.Join(real, "\n"))
+	}
+}
+
+// The pin-by-commit deferral: a pseudo-version pin is deferred while the file holds; every
+// other finding fails; an expired, unowned or malformed file defers nothing.
+func TestApplyDeferral(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	const file = "issue: inference-sim/blis-substrate#14\nexpires: 2026-12-05\nreason: tags follow review\n"
+	pin := "github.com/inference-sim/blis-substrate resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
+	other := "go version reports go1.24.0; contracts/toolchain names go1.27.2 (LIF-2)"
+	fail, deferred := ApplyDeferral([]byte(file), day("2026-11-05"), []string{pin, other})
+	if len(deferred) != 1 || len(fail) != 1 || fail[0] != other {
+		t.Fatalf("held: fail=%v deferred=%v", fail, deferred)
+	}
+	if fail, deferred = ApplyDeferral(nil, day("2026-11-05"), []string{pin}); len(fail) != 1 || len(deferred) != 0 {
+		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
+	}
+	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), []string{pin}); len(deferred) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "expired") {
+		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
+	}
+	if fail, _ = ApplyDeferral([]byte("issue: x\nexpires: 2026-12-05\nreason: y\n"), day("2026-11-05"), []string{pin}); len(fail) != 2 || !strings.Contains(fail[1], "owning issue") {
+		t.Fatalf("bad issue: %v", fail)
 	}
 }

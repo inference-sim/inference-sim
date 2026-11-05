@@ -30,10 +30,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const substrate = "github.com/inference-sim/blis-substrate"
@@ -41,11 +43,32 @@ const substrate = "github.com/inference-sim/blis-substrate"
 func main() {
 	dir := flag.String("C", ".", "the module root")
 	tcFlag := flag.String("toolchain", "", "the toolchain version to check against, instead of reading contracts/toolchain")
+	deferral := flag.String("deferral", "", "the pin-by-commit deferral file; while it holds, a BLIS module pinned by commit is reported as deferred")
+	today := flag.String("today", "", "the date to judge the deferral's expiry on (YYYY-MM-DD); default today, UTC")
 	flag.Parse()
 	bad, err := lintDir(*dir, *tcFlag)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "modlint:", err)
 		os.Exit(2)
+	}
+	if *deferral != "" {
+		src, rerr := os.ReadFile(*deferral)
+		if rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+			fmt.Fprintln(os.Stderr, "modlint:", rerr)
+			os.Exit(2)
+		}
+		day := time.Now().UTC()
+		if *today != "" {
+			if day, rerr = time.Parse("2006-01-02", *today); rerr != nil {
+				fmt.Fprintln(os.Stderr, "modlint: -today:", rerr)
+				os.Exit(2)
+			}
+		}
+		var deferred []string
+		bad, deferred = ApplyDeferral(src, day, bad)
+		if len(deferred) > 0 {
+			fmt.Printf("modlint: %d finding(s) deferred (see %s)\n", len(deferred), *deferral)
+		}
 	}
 	for _, b := range bad {
 		fmt.Println(b)
