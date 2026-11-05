@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -74,4 +75,33 @@ func TestModuleZipIsUnder100MB(t *testing.T) {
 		t.Errorf("the module zip holds %d bytes uncompressed; it must stay under %d (SUB-13)", total, limit)
 	}
 	t.Logf("module zip: %d files, %d bytes uncompressed, %d compressed", len(r.File), total, buf.Len())
+}
+
+// SUB-9: the go:embed directive must list literal patterns, so it repeats CatalogPatterns
+// and RegistryPatterns. The loader reads a path with those two lists; if the directive
+// differed, an embedded load and a path load would read different files.
+func TestEmbedPatternsEqualLoaderPatterns(t *testing.T) {
+	raw, err := os.ReadFile("data.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var embedded []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if rest, ok := strings.CutPrefix(line, "//go:embed "); ok {
+			embedded = append(embedded, strings.Fields(rest)...)
+		}
+	}
+	var want []string
+	for _, p := range CatalogPatterns {
+		want = append(want, "catalog/"+p)
+	}
+	for _, p := range RegistryPatterns {
+		want = append(want, "registry/"+p)
+	}
+	sort.Strings(embedded)
+	sort.Strings(want)
+	if strings.Join(embedded, "\n") != strings.Join(want, "\n") {
+		t.Errorf("data.go's go:embed patterns differ from the loader's.\n go:embed: %v\n loader:   %v",
+			embedded, want)
+	}
 }

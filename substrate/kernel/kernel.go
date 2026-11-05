@@ -296,7 +296,11 @@ type Kernel struct {
 
 	// Provenance, assembled once. assumptions are the values the kernel supplied itself,
 	// appended to origins after the registry's entries.
-	origins     []kernel.CoefficientOrigin
+	origins []kernel.CoefficientOrigin
+	// selected is every registry entry a lookup returned while the kernel was built, for
+	// the selected-entry report (RecordSelected). Pricing reads no coefficient after
+	// construction, so the list is complete when New returns.
+	selected    []resolve.Resolved
 	assumptions []kernel.CoefficientOrigin
 	resolution  kernel.Resolution
 

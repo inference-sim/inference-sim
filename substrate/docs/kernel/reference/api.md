@@ -18,8 +18,9 @@ import latencykernel "github.com/inference-sim/blis-substrate/kernel"
 | `OpenPool(scenario, repos, i)` | The same for pool `i` of a disaggregated deployment. |
 | `OpenInputs(scenario, repos, i)` | Loads the documents without building a kernel, for a caller that needs them too. |
 | `New(inputs)` | Builds a kernel from documents already in memory. `Open` and `OpenPool` end here. |
+| `(*Kernel).RecordSelected(data)` | Records the coefficients the kernel's lookups returned in the data's selected-entry report. `OpenPool` calls it. |
 | `Inputs` | The documents a kernel is built from: scenario, deployment, pool index, model graph, chip, fabric, storage devices, coefficient sets and engine rules. |
-| `Repos` | The three roots a scenario's names resolve against (scenarios, catalog, registry), and the engine's part, which the caller supplies: `Rules`, the engine rules for a release, and `EngineSettings`, which decodes a pool's engine block. |
+| `Repos` | The scenario directory and the data (`*load.Data`) a scenario's names resolve against, and the engine's part, which the caller supplies: `Rules`, the engine rules for a release, and `EngineSettings`, which decodes a pool's engine block. |
 | `RulesFrom(lookup)` | Adapts a lookup returning a concrete rules type, such as blis-vllm/rules' `Lookup`, to `Repos.Rules`. |
 | `LoadBundle(path)` | **Deprecated:** use `contracts.LoadBundle`, which this calls. Reads a scenario and its deployment from one file of two YAML documents. |
 

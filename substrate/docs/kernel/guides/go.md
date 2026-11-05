@@ -17,9 +17,24 @@ import latencykernel "github.com/inference-sim/blis-substrate/kernel"
 ## Point it at its inputs
 
 A scenario names its model, its chip, its fabric and its coefficient sets, but not where they
-live. `Repos` says where: a directory of scenario files, a catalog directory and a registry
-directory. Either directory is blis-substrate's own `catalog/` or `registry/`, or any
-directory with the same layout.
+live. `Repos` says where: a directory of scenario files, and `Data`, the catalog and registry
+opened by package `load`. `load.Embedded()` opens the copy compiled into this substrate
+release; `load.Open(load.Options{Catalog: dir, Registry: dir})` opens directories with the
+layout of blis-substrate's `catalog/` and `registry/`, each replacing the embedded copy, plus
+any overlays. Either way the files are checked by the validators CI runs before any is used.
+
+```go
+data, err := load.Embedded() // or load.Open(load.Options{Registry: "/path/to/candidate"})
+if err != nil {
+	return err
+}
+k, err := latencykernel.Open("scenario.yaml", latencykernel.Repos{
+	Scenarios: dir, Data: data, Rules: rules, EngineSettings: settings,
+})
+```
+
+`data.Report()` then lists the registry entries the kernel's lookups returned and the
+registry files nothing loaded.
 
 ```go
 // The repos example lives in blis-vllm's kerneltests/example_test.go

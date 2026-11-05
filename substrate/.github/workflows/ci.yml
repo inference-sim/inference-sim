@@ -55,8 +55,9 @@ jobs:
           has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
           # A change to go.mod, go.sum, the workflow or the root package affects every Go job.
           shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/)'
-          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/")" >> "$GITHUB_OUTPUT"
-          echo "kernel=$(has "$shared|^kernel/|^contracts/")"             >> "$GITHUB_OUTPUT"
+          # The loader (load/) reads the catalog and the registry, so a data change runs it.
+          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/")" >> "$GITHUB_OUTPUT"
+          echo "kernel=$(has "$shared|^kernel/|^contracts/|^load/|^validate/")" >> "$GITHUB_OUTPUT"
           echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
           echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
           echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
@@ -119,7 +120,7 @@ jobs:
           AIPERF_SOURCE_REQUIRED: "1"
         run: |
           set -euo pipefail
-          go test -race -count=1 -json ./contracts/... ./validate/... ./tools/... > "$RUNNER_TEMP/go-test.json" || { go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000; exit 1; }
+          go test -race -count=1 -json ./contracts/... ./validate/... ./tools/... ./load/... > "$RUNNER_TEMP/go-test.json" || { go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000; exit 1; }
           # A skipped test is a failure unless quarantined (X16, X25); fewer than 1000
           # results means packages were not run (X22).
           go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000

@@ -30,6 +30,10 @@ type Coefficients struct {
 	byNameFabric map[string]Resolved
 	// order records the set names in the order they were applied, for provenance.
 	order []string
+	// selected holds every entry a lookup returned, keyed by set, name and scope, for the
+	// selected-entry report (design §3.3, VAL-6). A lookup is Value, ValueOr, Entry or
+	// EntryScopedToFabric finding the entry; Has and Names do not select.
+	selected map[string]Resolved
 }
 
 // Resolved is one coefficient with the set that supplied it.
@@ -48,7 +52,8 @@ type Resolved struct {
 // make a model's own constant silently lose to the generic one placed after it. Among
 // entries equally specific in that sense, the later one wins as before.
 func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
-	c := &Coefficients{byName: map[string]Resolved{}, byNameFabric: map[string]Resolved{}}
+	c := &Coefficients{byName: map[string]Resolved{}, byNameFabric: map[string]Resolved{},
+		selected: map[string]Resolved{}}
 	put := func(into map[string]Resolved, e coefficient.Entry, set string) {
 		if prev, ok := into[e.Name]; ok && len(prev.Entry.Scope.Model) > 0 &&
 			len(e.Scope.Model) == 0 {
@@ -133,6 +138,7 @@ func (c *Coefficients) Value(name string) (float64, error) {
 	if !ok {
 		return 0, &MissingError{Name: name, Available: c.Names()}
 	}
+	c.select_(r)
 	return r.Entry.Value, nil
 }
 
@@ -141,12 +147,14 @@ func (c *Coefficients) Value(name string) (float64, error) {
 // matters to a prediction's footing must say so itself.
 func (c *Coefficients) ValueOr(name string, fallback float64) float64 {
 	if r, ok := c.byName[name]; ok {
+		c.select_(r)
 		return r.Entry.Value
 	}
 	return fallback
 }
 
-// Has reports whether a coefficient was resolved.
+// Has reports whether a coefficient was resolved. It does not count as a lookup for the
+// selected-entry report: a caller that uses the value reads it with Value or ValueOr.
 func (c *Coefficients) Has(name string) bool {
 	_, ok := c.byName[name]
 	return ok
@@ -155,6 +163,9 @@ func (c *Coefficients) Has(name string) bool {
 // Entry returns the full resolved entry, for a caller that needs its evidence.
 func (c *Coefficients) Entry(name string) (Resolved, bool) {
 	r, ok := c.byName[name]
+	if ok {
+		c.select_(r)
+	}
 	return r, ok
 }
 
@@ -165,7 +176,37 @@ func (c *Coefficients) Entry(name string) (Resolved, bool) {
 // Entry and hide the fabric's.
 func (c *Coefficients) EntryScopedToFabric(name string) (Resolved, bool) {
 	r, ok := c.byNameFabric[name]
+	if ok {
+		c.select_(r)
+	}
 	return r, ok
+}
+
+// Admitted returns the winning entry of a name without recording a lookup. It is for
+// reporting what the sets resolved to (Provenance); pricing code uses Entry, so that the
+// selected-entry report lists only what pricing read.
+func (c *Coefficients) Admitted(name string) (Resolved, bool) {
+	r, ok := c.byName[name]
+	return r, ok
+}
+
+// Selected returns every entry a lookup has returned, sorted by set, name and scope.
+func (c *Coefficients) Selected() []Resolved {
+	keys := make([]string, 0, len(c.selected))
+	for k := range c.selected {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]Resolved, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, c.selected[k])
+	}
+	return out
+}
+
+// select_ records r as returned by a lookup.
+func (c *Coefficients) select_(r Resolved) {
+	c.selected[r.Set+"\x00"+r.Entry.Name+"\x00"+r.Entry.Scope.Key()+"\x00"+string(r.Entry.Method)] = r
 }
 
 // Names returns every resolved coefficient name, sorted.
