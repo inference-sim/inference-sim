@@ -104,9 +104,12 @@ func LoadDeployment(path string) (*deployment.Deployment, error) {
 }
 
 // LoadModelGraph reads a derived model graph.
-func LoadModelGraph(path string) (*model.Graph, error) {
+func LoadModelGraph(path string) (*model.Graph, error) { return loadFile(path, ParseModelGraph) }
+
+// ParseModelGraph decodes a derived model graph from data, naming path in an error.
+func ParseModelGraph(path string, data []byte) (*model.Graph, error) {
 	var g model.Graph
-	if err := decodeStrict(path, &g); err != nil {
+	if err := decodeStrictBytes(path, data, &g); err != nil {
 		return nil, err
 	}
 	return &g, nil
@@ -118,8 +121,13 @@ func LoadModelGraph(path string) (*model.Graph, error) {
 // the document — the catalog requires that name to match the directory — so the loader
 // does not stamp it; the caller checks it against the directory, as it does for a graph.
 func LoadModelIdentity(path string) (*model.Identity, error) {
+	return loadFile(path, ParseModelIdentity)
+}
+
+// ParseModelIdentity decodes a model entry's model.yaml from data.
+func ParseModelIdentity(path string, data []byte) (*model.Identity, error) {
 	var id model.Identity
-	if err := decodeStrict(path, &id); err != nil {
+	if err := decodeStrictBytes(path, data, &id); err != nil {
 		return nil, err
 	}
 	return &id, nil
@@ -130,9 +138,13 @@ func LoadModelIdentity(path string) (*model.Identity, error) {
 // path stem. The Chip type tags Name `yaml:"-"`, so the stamp is the field's only source:
 // there is no in-file name to prefer, hence no `if Name == ""` guard, and an in-file
 // `name` is rejected under strict decode (#27).
-func LoadChip(path string) (*hardware.Chip, error) {
+func LoadChip(path string) (*hardware.Chip, error) { return loadFile(path, ParseChip) }
+
+// ParseChip decodes a chip descriptor from data and names it from path's stem, as LoadChip
+// does.
+func ParseChip(path string, data []byte) (*hardware.Chip, error) {
 	var c hardware.Chip
-	if err := decodeStrict(path, &c); err != nil {
+	if err := decodeStrictBytes(path, data, &c); err != nil {
 		return nil, err
 	}
 	c.Name = stem(path)
@@ -142,9 +154,12 @@ func LoadChip(path string) (*hardware.Chip, error) {
 // LoadFabric reads a fabric descriptor from blis-catalog's networks namespace, naming it
 // from the filename as LoadChip does: the stamp is Fabric.Name's only source, and an
 // in-file `name` is a rejected unknown field (#27).
-func LoadFabric(path string) (*hardware.Fabric, error) {
+func LoadFabric(path string) (*hardware.Fabric, error) { return loadFile(path, ParseFabric) }
+
+// ParseFabric decodes a fabric descriptor from data and names it from path's stem.
+func ParseFabric(path string, data []byte) (*hardware.Fabric, error) {
 	var f hardware.Fabric
-	if err := decodeStrict(path, &f); err != nil {
+	if err := decodeStrictBytes(path, data, &f); err != nil {
 		return nil, err
 	}
 	f.Name = stem(path)
@@ -153,8 +168,13 @@ func LoadFabric(path string) (*hardware.Fabric, error) {
 
 // LoadCoefficientSet reads a coefficient set from blis-registry.
 func LoadCoefficientSet(path string) (*coefficient.Set, error) {
+	return loadFile(path, ParseCoefficientSet)
+}
+
+// ParseCoefficientSet decodes a coefficient set from data.
+func ParseCoefficientSet(path string, data []byte) (*coefficient.Set, error) {
 	var s coefficient.Set
-	if err := decodeStrict(path, &s); err != nil {
+	if err := decodeStrictBytes(path, data, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -173,8 +193,13 @@ func LoadConnectorRegistry(path string) (*connector.Registry, error) {
 // LoadAcceptanceProfileSet reads an acceptance-profile set from blis-registry's
 // acceptance namespace. It does not validate; call Validate.
 func LoadAcceptanceProfileSet(path string) (*acceptance.ProfileSet, error) {
+	return loadFile(path, ParseAcceptanceProfileSet)
+}
+
+// ParseAcceptanceProfileSet decodes an acceptance-profile set from data.
+func ParseAcceptanceProfileSet(path string, data []byte) (*acceptance.ProfileSet, error) {
 	var s acceptance.ProfileSet
-	if err := decodeStrict(path, &s); err != nil {
+	if err := decodeStrictBytes(path, data, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -183,8 +208,13 @@ func LoadAcceptanceProfileSet(path string) (*acceptance.ProfileSet, error) {
 // LoadRoutingProfileSet reads a routing-profile set from blis-registry's routing
 // namespace. It does not validate; call Validate.
 func LoadRoutingProfileSet(path string) (*routing.ProfileSet, error) {
+	return loadFile(path, ParseRoutingProfileSet)
+}
+
+// ParseRoutingProfileSet decodes a routing-profile set from data.
+func ParseRoutingProfileSet(path string, data []byte) (*routing.ProfileSet, error) {
 	var s routing.ProfileSet
-	if err := decodeStrict(path, &s); err != nil {
+	if err := decodeStrictBytes(path, data, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
@@ -215,17 +245,19 @@ func LoadWorkload(path string) (*workload.Shape, error) {
 // from the path stem, and both decode strictly. A replay file may carry the catalog's
 // `_comment` keys at its top level, as a shape may.
 func LoadCatalogWorkload(path string) (*workload.CatalogWorkload, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("opening %s: %w", path, err)
-	}
+	return loadFile(path, ParseCatalogWorkload)
+}
+
+// ParseCatalogWorkload decodes one catalog workload, a shape or a replay, from data, naming
+// it from path's stem.
+func ParseCatalogWorkload(path string, b []byte) (*workload.CatalogWorkload, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(b, &doc); err != nil {
 		return nil, fmt.Errorf("decoding %s: %w", path, err)
 	}
 	if !topLevelKey(&doc, "replay") {
 		var s workload.Shape
-		if err := decodeStrict(path, &s); err != nil {
+		if err := decodeStrictBytes(path, b, &s); err != nil {
 			return nil, err
 		}
 		s.Name = stem(path)
@@ -310,8 +342,13 @@ func LoadResult(path string) (*result.Result, error) {
 // LoadMeasurementSources reads the licence registry, blis-catalog's
 // measurements/sources.yaml.
 func LoadMeasurementSources(path string) (*measurement.Registry, error) {
+	return loadFile(path, ParseMeasurementSources)
+}
+
+// ParseMeasurementSources decodes the licence registry from data.
+func ParseMeasurementSources(path string, data []byte) (*measurement.Registry, error) {
 	var r measurement.Registry
-	if err := decodeStrict(path, &r); err != nil {
+	if err := decodeStrictBytes(path, data, &r); err != nil {
 		return nil, err
 	}
 	return &r, nil
@@ -328,8 +365,14 @@ func LoadMeasurementSources(path string) (*measurement.Registry, error) {
 // Sorted by name on return, so two loads of one file yield the same order and a caller
 // comparing kernels built from it is comparing configuration rather than map iteration.
 func LoadStorageDevices(path string) ([]*hardware.StorageDevice, error) {
+	return loadFile(path, ParseStorageDevices)
+}
+
+// ParseStorageDevices decodes the offload-tier classes from data, as LoadStorageDevices
+// does.
+func ParseStorageDevices(path string, data []byte) ([]*hardware.StorageDevice, error) {
 	var byName map[string]*hardware.StorageDevice
-	if err := decodeStrict(path, &byName); err != nil {
+	if err := decodeStrictBytes(path, data, &byName); err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(byName))
@@ -358,18 +401,33 @@ func LoadStorageDevices(path string) ([]*hardware.StorageDevice, error) {
 // does not declare. The error names the file, because a caller loading a directory
 // needs to know which one failed.
 func decodeStrict(path string, dst any) error {
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", path, err)
 	}
-	defer f.Close()
+	return decodeStrictBytes(path, data, dst)
+}
 
-	dec := yaml.NewDecoder(f)
+// decodeStrictBytes is decodeStrict for a document already read. Every Parse function and
+// every Load function that reads one document ends here, so a document read from a path and
+// the same bytes read from the embedded copy decode alike (SUB-9).
+func decodeStrictBytes(path string, data []byte, dst any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(dst); err != nil {
 		return fmt.Errorf("decoding %s: %w", path, err)
 	}
 	return nil
+}
+
+// loadFile reads path and decodes it with parse.
+func loadFile[T any](path string, parse func(string, []byte) (T, error)) (T, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		var zero T
+		return zero, fmt.Errorf("opening %s: %w", path, err)
+	}
+	return parse(path, data)
 }
 
 // stem returns a file's base name without its extension, which is how the catalog

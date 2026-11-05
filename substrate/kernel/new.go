@@ -425,6 +425,7 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, err
 	}
 	k.buildProvenance(coeffs)
+	k.selected = coeffs.Selected()
 	k.fixed = k.computeFixedBytes(in.Model)
 	if err := k.refuseUnallocatableDeepEP(); err != nil {
 		return nil, err
@@ -2830,7 +2831,7 @@ func (k *Kernel) residentBytes(l price.PlannedLayer) float64 {
 // occupancy once went unreported beside "101 measured of 133".
 func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 	for _, name := range c.Names() {
-		r, ok := c.Entry(name)
+		r, ok := c.Admitted(name)
 		if !ok {
 			continue
 		}

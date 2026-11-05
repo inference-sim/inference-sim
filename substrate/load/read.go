@@ -1,0 +1,139 @@
+package load
+
+import (
+	"fmt"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+)
+
+// The readers below return documents shared by every caller of one Data. They are read
+// only: a caller that needs to change one copies it first.
+
+// Model returns a model's graph. A model the catalog in use does not have is refused,
+// naming the catalog's source and the path its entry belongs at (design §3.3).
+func (d *Data) Model(name string) (*model.Graph, error) {
+	if g := d.catalog.Models[name]; g != nil {
+		return g, nil
+	}
+	return nil, d.missing(d.Catalog, "model", name, "models/"+name+"/graph.yaml", sortedKeys(d.catalog.Models))
+}
+
+// ModelIdentity returns a model's model.yaml.
+func (d *Data) ModelIdentity(name string) (*model.Identity, error) {
+	if id := d.catalog.Identities[name]; id != nil {
+		return id, nil
+	}
+	return nil, d.missing(d.Catalog, "model", name, "models/"+name+"/model.yaml", sortedKeys(d.catalog.Identities))
+}
+
+// Chip returns a chip by its catalog identity.
+func (d *Data) Chip(name string) (*hardware.Chip, error) {
+	if c := d.catalog.Chips[name]; c != nil {
+		return c, nil
+	}
+	return nil, d.missing(d.Catalog, "hardware", name, "hardware/"+name+".yaml", sortedKeys(d.catalog.Chips))
+}
+
+// Fabric returns a fabric by its catalog identity.
+func (d *Data) Fabric(name string) (*hardware.Fabric, error) {
+	if f := d.catalog.Fabrics[name]; f != nil {
+		return f, nil
+	}
+	return nil, d.missing(d.Catalog, "fabric", name, "networks/"+name+".yaml", sortedKeys(d.catalog.Fabrics))
+}
+
+// StorageDevices returns every storage tier, sorted by name.
+func (d *Data) StorageDevices() []*hardware.StorageDevice {
+	return append([]*hardware.StorageDevice(nil), d.catalog.Devices...)
+}
+
+// Workload returns a catalog workload, a shape or a replay.
+func (d *Data) Workload(name string) (*workload.CatalogWorkload, error) {
+	if w := d.catalog.Workloads[name]; w != nil {
+		return w, nil
+	}
+	return nil, d.missing(d.Catalog, "workload", name, "workloads/"+name+".yaml", sortedKeys(d.catalog.Workloads))
+}
+
+// Models lists the catalog's models, sorted.
+func (d *Data) Models() []string { return sortedKeys(d.catalog.Models) }
+
+// Chips lists the catalog's chips, sorted.
+func (d *Data) Chips() []string { return sortedKeys(d.catalog.Chips) }
+
+// CoefficientSet returns a coefficient set by name and records it as loaded.
+func (d *Data) CoefficientSet(name string) (*coefficient.Set, error) {
+	s := d.registry.Sets[name]
+	if s == nil {
+		return nil, d.missing(d.Registry, "coefficient set", name, "coefficients/"+name+".yaml", sortedKeys(d.registry.Sets))
+	}
+	d.markLoaded("coefficients/" + name + ".yaml")
+	return s, nil
+}
+
+// AcceptanceSet returns an acceptance-profile set by name and records it as loaded.
+func (d *Data) AcceptanceSet(name string) (*acceptance.ProfileSet, error) {
+	s := d.registry.Acceptance[name]
+	if s == nil {
+		return nil, d.missing(d.Registry, "acceptance-profile set", name, "acceptance/"+name+".yaml", sortedKeys(d.registry.Acceptance))
+	}
+	d.markLoaded("acceptance/" + name + ".yaml")
+	return s, nil
+}
+
+// AcceptanceSets returns every acceptance-profile set, in name order, and records each as
+// loaded: the registry layer of acceptance.Resolve consults them all.
+func (d *Data) AcceptanceSets() []*acceptance.ProfileSet {
+	var out []*acceptance.ProfileSet
+	for _, name := range sortedKeys(d.registry.Acceptance) {
+		d.markLoaded("acceptance/" + name + ".yaml")
+		out = append(out, d.registry.Acceptance[name])
+	}
+	return out
+}
+
+// RoutingSet returns a routing-profile set by name and records it as loaded.
+func (d *Data) RoutingSet(name string) (*routing.ProfileSet, error) {
+	s := d.registry.Routing[name]
+	if s == nil {
+		return nil, d.missing(d.Registry, "routing-profile set", name, "routing/"+name+".yaml", sortedKeys(d.registry.Routing))
+	}
+	d.markLoaded("routing/" + name + ".yaml")
+	return s, nil
+}
+
+// RoutingSets returns every routing-profile set, in name order, and records each as loaded.
+func (d *Data) RoutingSets() []*routing.ProfileSet {
+	var out []*routing.ProfileSet
+	for _, name := range sortedKeys(d.registry.Routing) {
+		d.markLoaded("routing/" + name + ".yaml")
+		out = append(out, d.registry.Routing[name])
+	}
+	return out
+}
+
+func (d *Data) missing(p Provenance, what, name, rel string, have []string) error {
+	src := "the embedded release"
+	if p.Source == SourcePath {
+		src = p.Path
+	}
+	if len(p.Overlays) > 0 {
+		src += " with overlays"
+		for _, o := range p.Overlays {
+			src += " " + o.Path
+		}
+	}
+	return fmt.Errorf("%s %q is not in the data in use (%s); its entry belongs at %s, and the data has %v",
+		what, name, src, rel, have)
+}
+
+func (d *Data) markLoaded(rel string) {
+	d.mu.Lock()
+	d.loaded[rel] = true
+	d.mu.Unlock()
+}

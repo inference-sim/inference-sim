@@ -13,6 +13,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/blis-substrate/load"
 )
 
 // Repos locates the roots a scenario's names resolve against, and the engine rules its
@@ -24,8 +25,11 @@ import (
 // model (blis-vllm), not to this cost model, so a caller supplies them too.
 type Repos struct {
 	Scenarios string // directory holding scenario files
-	Catalog   string // a blis-catalog checkout, or a pinned copy of one
-	Registry  string // a blis-registry checkout, or a pinned copy of one
+	// Data is the catalog and registry the scenario's names resolve against, opened and
+	// checked by package load: the embedded copy (load.Embedded), or paths and overlays
+	// (load.Open). Required. Open records into it every coefficient its lookups return,
+	// for the selected-entry report (Data.Report).
+	Data *load.Data
 
 	// Rules returns the engine rules for a release, or nil for a release it has none for:
 	// for vLLM, the packs of github.com/inference-sim/blis-vllm/rules (its Lookup, wrapped
@@ -125,7 +129,21 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
-	return New(in)
+	k, err := New(in)
+	if err != nil {
+		return nil, err
+	}
+	k.RecordSelected(r.Data)
+	return k, nil
+}
+
+// RecordSelected records into d every coefficient this kernel's lookups returned while it
+// was built, for d's selected-entry report (design §3.3, VAL-6). OpenPool calls it; a caller
+// that builds a kernel with New from documents it took from d calls it itself.
+func (k *Kernel) RecordSelected(d *load.Data) {
+	for _, r := range k.selected {
+		d.RecordCoefficient(r.Set, r.Entry.Name, r.Entry.Scope, string(r.Entry.Method))
+	}
 }
 
 // OpenInputs resolves one pool of a scenario file into the documents New prices it from,
@@ -145,6 +163,10 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
 // those from Inputs instead would rebuild the second answer to "which pool is this" that
 // the interface exists to remove.
 func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
+	if r.Data == nil {
+		return Inputs{}, fmt.Errorf("%s: no data: Repos.Data is unset. Open the catalog and "+
+			"registry with load.Embedded or load.Open", scenario)
+	}
 	sc, dep, err := LoadBundle(filepath.Join(r.Scenarios, scenario))
 	if err != nil {
 		return Inputs{}, err
@@ -156,37 +178,31 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 		return Inputs{}, fmt.Errorf("%s states %d pool(s); pool %d was requested",
 			scenario, len(dep.Pools), poolIndex)
 	}
-	graph, err := contracts.LoadModelGraph(
-		filepath.Join(r.Catalog, "models", sc.Model, "graph.yaml"))
+	// The documents come from r.Data, which checked them when it was opened; the kernel
+	// copies what it keeps (New), so the shared documents are never changed.
+	graph, err := r.Data.Model(sc.Model)
 	if err != nil {
-		return Inputs{}, fmt.Errorf("model %q: %w", sc.Model, err)
+		return Inputs{}, err
 	}
-	chip, err := contracts.LoadChip(
-		filepath.Join(r.Catalog, "hardware", sc.Cluster.Hardware+".yaml"))
+	chip, err := r.Data.Chip(sc.Cluster.Hardware)
 	if err != nil {
-		return Inputs{}, fmt.Errorf("hardware %q: %w", sc.Cluster.Hardware, err)
+		return Inputs{}, err
 	}
 	var fabric *hardware.Fabric
 	if sc.Cluster.Fabric != "" {
-		if fabric, err = contracts.LoadFabric(
-			filepath.Join(r.Catalog, "networks", sc.Cluster.Fabric+".yaml")); err != nil {
-			return Inputs{}, fmt.Errorf("fabric %q: %w", sc.Cluster.Fabric, err)
+		if fabric, err = r.Data.Fabric(sc.Cluster.Fabric); err != nil {
+			return Inputs{}, err
 		}
 	}
 	sets := make([]*coefficient.Set, 0, len(sc.Coefficients))
 	for _, name := range sc.Coefficients {
-		set, err := contracts.LoadCoefficientSet(
-			filepath.Join(r.Registry, "coefficients", name+".yaml"))
+		set, err := r.Data.CoefficientSet(name)
 		if err != nil {
-			return Inputs{}, fmt.Errorf("coefficient set %q: %w", name, err)
+			return Inputs{}, err
 		}
 		sets = append(sets, set)
 	}
-	devices, err := contracts.LoadStorageDevices(
-		filepath.Join(r.Catalog, "devices", "storage.yaml"))
-	if err != nil {
-		return Inputs{}, err
-	}
+	devices := r.Data.StorageDevices()
 	if r.Rules == nil {
 		return Inputs{}, fmt.Errorf("%s: no engine rules source: Repos.Rules is unset, and the "+
 			"kernel looks no rules up itself. Pass the engine model's rules for the scenario's "+
@@ -214,9 +230,8 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 	}
 	var draft *model.Graph
 	if name := draftModelName(eng); name != "" {
-		if draft, err = contracts.LoadModelGraph(
-			filepath.Join(r.Catalog, "models", name, "graph.yaml")); err != nil {
-			return Inputs{}, fmt.Errorf("draft model %q: %w", name, err)
+		if draft, err = r.Data.Model(name); err != nil {
+			return Inputs{}, fmt.Errorf("draft model: %w", err)
 		}
 	}
 	return Inputs{
