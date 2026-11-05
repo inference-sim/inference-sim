@@ -1,32 +1,15 @@
 # Commands
 
-<p class="lede">Five commands live in blis-vllm's <code>kerneltests/cmd/</code>: they open a
+<p class="lede">Three commands live in blis-vllm's <code>kerneltests/cmd/</code>. They open a
 kernel from a scenario's vLLM engine block, which blis-vllm decodes, so they live with the engine
-model. Two score the kernel against published measurements; three print what the kernel
-computes, for checking it or for use by another tool. Each runs with
-<code>go run ./kerneltests/cmd/&lt;name&gt;</code> from blis-vllm's root, after
-<code>kerneltests/scripts/fetch-testdata.sh</code>.</p>
+model. Each prints what the kernel computes, for checking it or for use by another tool. Each
+runs with <code>go run ./kerneltests/cmd/&lt;name&gt;</code> from blis-vllm's root.</p>
 
-Every command takes `-catalog` and `-registry` to read a catalog or registry other than the
-fetched one; `BLIS_CATALOG` and `BLIS_REGISTRY` set the same defaults for all of them.
+Every command takes `-catalog` and `-registry`, the catalog and registry directories to read;
+`BLIS_CATALOG` and `BLIS_REGISTRY` set the same defaults for all of them.
 
-## Scoring
-
-These two compare against measurement corpora that are not distributed with this repository,
-because they are other publishers' data. They read them from `-data`, or from the directory
-`BLIS_MEASUREMENTS` names, and say so when they are missing. [Accuracy](../research/accuracy.md)
-describes what they measure.
-
-`score`
-:   Inter-token latency against published benchmark runs: the absolute error per point, per
-    model and in aggregate, for every point a step-time model can be held to, with the points
-    it leaves out and why. `-verbose` prints every point.
-
-`shape`
-:   The shape of the kernel's response to concurrency against NVIDIA's AISimulate accuracy
-    snapshot: the ratio of step times across concurrency at a fixed deployment, each side
-    normalized to its own lowest concurrency, beside AISimulate's own error on the same
-    points. `-testdata` names the scenario directory, `testdata/aisimulate` by default.
+None of them compares the kernel with measured end-to-end benchmarks. That comparison is
+accuracy-dashboard's scoring harness, the one end-to-end scorer in BLIS.
 
 ## Inspecting
 
@@ -39,7 +22,7 @@ describes what they measure.
 
 `bandprobe`
 :   Prices one step per line of CSV on standard input and prints both estimates, so a fitter
-    outside this repository can compare both with measured step times without reimplementing
+    can compare both with measured step times without reimplementing
     the composition. `-scenario` names the deployment. Each input line is
     `batch,prefill_tokens,context_tokens_per_sequence`.
 

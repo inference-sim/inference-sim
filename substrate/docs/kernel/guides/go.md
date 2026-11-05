@@ -5,14 +5,21 @@ batch. The later sections build variants of a deployment in memory, read its mem
 evidence, and say what to do when a deployment is refused or a step must be priced often.</p>
 
 ```sh
-go get github.com/inference-sim/blis-latency-kernel@latest
+go get github.com/inference-sim/blis-substrate@<version>
+```
+
+The package is `latencykernel`:
+
+```go
+import latencykernel "github.com/inference-sim/blis-substrate/kernel"
 ```
 
 ## Point it at its inputs
 
 A scenario names its model, its chip, its fabric and its coefficient sets, but not where they
-live. `Repos` says where: a directory of scenario files, a blis-catalog checkout, and a
-blis-registry checkout.
+live. `Repos` says where: a directory of scenario files, a catalog directory and a registry
+directory. Either directory is blis-substrate's own `catalog/` or `registry/`, or any
+directory with the same layout.
 
 ```go
 // The repos example lives in blis-vllm's kerneltests/example_test.go
@@ -20,11 +27,10 @@ blis-registry checkout.
 // which decodes the vLLM engine block it opens the kernel from.
 ```
 
-These are the paths in this repository after `scripts/fetch-testdata.sh` has fetched the
-catalog and registry at the commits the kernel is tested against. Elsewhere, point `Catalog`
-and `Registry` at checkouts of the two repositories, at the versions on
-[Sources of truth](../reference/sources.md). [Scenarios and their inputs](inputs.md) describes
-the scenario files.
+`Repos` also carries the engine's part: `Rules`, the engine rules for the release a scenario
+declares, and `EngineSettings`, which decodes a pool's engine block. For vLLM both come from
+blis-vllm, which is why the examples on these pages live there.
+[Scenarios and their inputs](inputs.md) describes the scenario files.
 
 ## Open a kernel and price a step
 
@@ -139,7 +145,7 @@ A kernel holds no mutable state: it can be shared between goroutines, and the sa
 always prices the same. A step is cheap because everything that does not depend on the batch
 is computed once, in `New`. A step then walks the model's distinct *kinds* of layer rather
 than its layers, and multiplies by how many of each there are: three kinds instead of 108
-layers for the deepest model in the catalog. On a laptop, `bench_test.go` measures a step at a
+layers for the deepest model in the catalog. On a laptop, blis-vllm's `kerneltests/bench_test.go` measures a step at a
 few hundred nanoseconds for one request and a few microseconds for a 256-request batch.
 
 A caller pricing millions of steps can use `StepTimeInto`, which writes the per-resource

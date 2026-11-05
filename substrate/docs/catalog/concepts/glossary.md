@@ -8,7 +8,7 @@ Chip
 :   One GPU product, such as `h100`, described by a file in `hardware/`. Its figures are per GPU.
 
 Coefficient
-:   A learned number: one fitted to measurements, or assumed, for a cost model, recorded in blis-registry with how it was obtained and the scope it applies to.
+:   A learned number: one fitted to measurements, or assumed, for a cost model, recorded in the registry with how it was obtained and the scope it applies to.
 
 Config
 :   A model's `config.json`, the configuration file its vendor publishes, committed to the catalog byte for byte.
@@ -17,13 +17,13 @@ Declared fact
 :   A figure written down from a published source, such as a config or a datasheet. The catalog holds only declared facts. See [Declared, learned, chosen](declared-facts.md).
 
 Deriver
-:   `scripts/derive_graph.py`, which translates a config into a model graph. Its `HANDLERS` table maps each supported architecture to a *handler*, a function that builds the layers of that architecture's family.
+:   `catalog/scripts/derive_graph.py`, which translates a config into a model graph. Its `HANDLERS` table maps each supported architecture to a *handler*, a function that builds the layers of that architecture's family.
 
 Fabric
 :   An inter-node network class, such as `ib-400g`, described by a file in `networks/`.
 
 Kernel
-:   blis-latency-kernel, the cost model that prices a batch from a model graph, a chip, coefficients and a deployment. (A *GPU kernel* is a routine that runs on the GPU; the site says so when it means one.)
+:   The cost model in `kernel/` of blis-substrate, which prices a batch from a model graph, a chip, coefficients and a deployment. (A *GPU kernel* is a routine that runs on the GPU; the site says so when it means one.)
 
 Model graph
 :   A model expressed as the operations a forward pass launches, in `models/<name>/graph.yaml`. See [Model graphs](model-graphs.md).
@@ -41,7 +41,7 @@ Provenance
 :   Where a figure came from. Chip and fabric files state it in the `Provenance` field, as `vendor_spec` or `derived`.
 
 Release
-:   A git tag `MAJOR.MINOR.PATCH` with its GitHub release notes. The *docs version* `MAJOR.MINOR` describes the newest patch on that line.
+:   A blis-substrate tag `vMAJOR.MINOR.PATCH` with its GitHub release notes. A release embeds its catalog. The *docs version* `MAJOR.MINOR` describes the newest patch on that line.
 
 Scenario
 :   The file that describes one run: which model, chip, fabric and coefficient sets, and each pool's parallelism and engine settings. The user supplies it; no BLIS repository owns scenarios.

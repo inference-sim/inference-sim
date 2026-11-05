@@ -12,5 +12,5 @@ for each; the Go is taken from tests, so it compiles and prints what is shown.</
     inference-sim does both.
 
 [Scenarios and their inputs](inputs.md)
-:   What a scenario file holds, where its names resolve, and how this repository fetches the
-    catalog and registry its tests read.
+:   What a scenario file holds, where its names resolve, and which catalog and registry the
+    kernel's tests read.

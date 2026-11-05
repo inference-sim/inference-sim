@@ -17,3 +17,14 @@ one release.
 
 The engine repositories and the router fork import only the packages under `contracts/`.
 Only inference-sim imports the cost model and the data.
+
+A run of the simulator uses the catalog and registry embedded in the substrate release it
+was built with. `--catalog` and `--registry` name directories that replace the embedded
+copy, and `--catalog-overlay` and `--registry-overlay` add entries to it. Every run records
+which source it used and the content hash of each, so a result can be traced to the exact
+data behind it. [Point BLIS at the catalog](catalog/using/point-blis.md) gives the details.
+
+A change that spans several of these parts is one pull request. [Changes across
+repositories](contributing/changes.md) describes such changes, and changes that reach other
+BLIS repositories. [Documentation and releases](contributing/documentation.md) describes how
+this site is built and how a release is published.

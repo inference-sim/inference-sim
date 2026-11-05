@@ -87,7 +87,7 @@ scope.
 ## Selecting an entry
 
 The schema defines what an entry says. Choosing among entries is the cost model's job, and
-blis-latency-kernel does it as follows. An entry applies to a deployment if, for every
+the cost model in `kernel/` does it as follows. An entry applies to a deployment if, for every
 dimension its scope states, the list includes the deployment's value; hardware, model and
 fabric names are compared without regard to case, and a dimension the scope omits does not
 constrain it. The kernel reads the scenario's sets in order and, within each set, its

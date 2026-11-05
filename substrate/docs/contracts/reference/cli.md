@@ -1,14 +1,19 @@
 # Command line
 
-<p class="lede">One command for each data repository, and one for measured runs before
-they are committed. Each validates every document under the path it is given and exits
-with a code a CI step can read.</p>
+<p class="lede">One command for the catalog, one for the registry, and one for measured
+runs before they are committed. Each validates every document under the path it is given
+and exits with a code a CI step can read.</p>
+
+From the root of a blis-substrate checkout:
 
 ```sh
-go run github.com/inference-sim/blis-schemas/cmd/validate-catalog@<version>      <catalog root>
-go run github.com/inference-sim/blis-schemas/cmd/validate-registry@<version>     <registry root>
-go run github.com/inference-sim/blis-schemas/cmd/validate-measurements@<version> [-local] <measurements dir>
+go run ./validate/cmd/validate-catalog      <catalog dir>
+go run ./validate/cmd/validate-registry     <registry dir>
+go run ./validate/cmd/validate-measurements [-local] <measurements dir>
 ```
+
+The repository's own data is `catalog`, `registry` and `catalog/measurements`. Any
+directory with the same layout may be given instead.
 
 Both write every problem to standard error. `validate-catalog` writes to standard output a
 heading for each kind of file and one line for each artifact that validates: each file, or
@@ -44,7 +49,9 @@ not followed. A scenario can refer only to a set at the top level of `coefficien
 
 Files under `acceptance/`, found the same way, are validated as
 [acceptance-profile sets](acceptance.md#profile-set), each reported as
-`acceptance/<file>`. The directory is optional.
+`acceptance/<file>`. Files under `routing/` are validated as
+[routing-profile sets](routing.md), each reported as `routing/<file>`. Both directories are
+optional.
 
 ## validate-measurements
 
@@ -68,6 +75,6 @@ directory.
 | `1` | an artifact failed to load or validate | a coefficient or acceptance set failed to load or validate |
 | `2` | wrong arguments; the root does not exist; none of the six directories is present; or nothing was found to validate | wrong arguments; the root does not exist; `coefficients/` could not be read; or it holds no coefficient sets |
 
-Source: [`cmd/validate-catalog`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-catalog),
-[`cmd/validate-registry`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-registry),
-[`cmd/validate-measurements`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-measurements).
+Source: [`validate/cmd/validate-catalog`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-catalog),
+[`validate/cmd/validate-registry`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-registry),
+[`validate/cmd/validate-measurements`](https://github.com/inference-sim/blis-substrate/tree/main/validate/cmd/validate-measurements).

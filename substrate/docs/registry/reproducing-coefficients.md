@@ -25,8 +25,8 @@ the data comes from, and which command regenerates which file.
 | Licence | Apache-2.0, with one MIT third-party file carved out in the `LICENSE` NOTICE and attributed in `THIRD_PARTY_NOTICES.md`. GitHub's license API reports `NOASSERTION` because of that preamble; the text itself says "Except for the third-party material identified in that notice file, this codebase is licensed under the Apache License 2.0", and source files carry `SPDX-License-Identifier: Apache-2.0`. |
 | Provenance | Successor to [`ai-dynamo/aiconfigurator`](https://github.com/ai-dynamo/aiconfigurator); method described in arXiv:2601.06288. |
 | Fetch | `git clone https://github.com/ai-dynamo/aisimulate` — the sweeps are checked into git as Parquet. Git LFS is needed only for retained legacy `.txt` assets, which no fit in this registry reads. `pip install aisimulate` also ships the tree inside the wheel. |
-| Pin | Every committed value re-derives at `2f0f4cd8606d580567b253d02f3d699fe36db865` (2026-10-10), with blis-catalog at `0.5.0` (`b5550f7`; the commit `validator/testdata/catalog` vendors). The `rederive` CI job checks out both; bump either deliberately, with the diff the writers produce. A catalog revision that changes a part's datasheet figure moves every rate fitted as a fraction of it. |
-| Python | `pip install -r requirements-fit.txt` — the validator's dependencies plus `numpy`, `pandas` and `pyarrow`, which the fitters need to read Parquet. |
+| Pin | Every committed value re-derives at `2f0f4cd8606d580567b253d02f3d699fe36db865` (2026-10-10), with the repository's own `catalog/` at the same commit as the registry. The `rederive` workflow checks out AISimulate at `AISIMULATE_SHA`; bump it deliberately, with the diff the writers produce. A catalog change to a part's datasheet figure moves every rate fitted as a fraction of it, so the writers' `--check` runs on the pull request that makes it. |
+| Python | `pip install -r scripts/requirements-fit.txt`, from `registry/`: the validator's dependencies plus `numpy`, `pandas` and `pyarrow`, which the fitters need to read Parquet. |
 
 The two trees the fits read are **not** at the repository root:
 
@@ -35,11 +35,13 @@ python/aisimulate/src/aisimulate_core/systems/<sku>.yaml          # system descr
 python/aisimulate/src/aisimulate_core/systems/data/<sku>/<op>/<framework>/<version>/*.parquet
 ```
 
-Export that second path once; every script below honours it:
+Export that second path once; every script below honours it. The fitters read the
+repository's `catalog/` unless `BLIS_CATALOG` names another directory, and
+`scripts/rederive.sh` requires it. Run them from `registry/`:
 
 ```bash
 export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
-export BLIS_CATALOG=<path-to-blis-catalog>
+export BLIS_CATALOG=$PWD/../catalog
 ```
 
 **Dataset SKU directories are not catalog chip names.** The sweeps use
@@ -399,7 +401,7 @@ the bf16 GEMM ramp **from the registry**, so the envelope must be committed firs
 
 ```bash
 export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
-export BLIS_CATALOG=<path-to-blis-catalog>
+export BLIS_CATALOG=$PWD/../catalog
 
 # 1. descriptors (vendor_spec, from NVIDIA's own systems/gb300.yaml)
 #    emit_primitives.py owns this family; its GEMM/MoE path is superseded — see below.
@@ -436,17 +438,16 @@ per-family writers; they are what `--check` guards.
 
 ## 4. Why the registry holds only what the kernel reads
 
-`blis-latency-kernel` requests five sets — `cost-model-primitives`,
-`cost-model-collectives`, `cost-model-host-overheads`, `cost-model-attention`,
-`cost-model-recurrent` — and when the removals below were made `coefficients/` held exactly
-those, 724 entries.
+When the removals below were made, the cost model requested five sets
+(`cost-model-primitives`, `cost-model-collectives`, `cost-model-host-overheads`,
+`cost-model-attention`, `cost-model-recurrent`) and `coefficients/` held exactly those,
+724 entries.
 
-A sixth, `cost-model-memory`, is the one deliberate exception, and it is committed **ahead
-of its reader** rather than without one: it supplies magnitudes the kernel was hardcoding
-(inference-sim/blis-registry#33), and the kernel change that reads them,
-inference-sim/blis-latency-kernel#22, is sequenced to land after it. Until then no scenario
-lists it. The rule this section states still applies: if that reader does not land, the
-set should go.
+`cost-model-memory` supplies the memory magnitudes the kernel had hard-coded
+(inference-sim/blis-registry#33); the cost model reads it
+(inference-sim/blis-latency-kernel#22). Every set under `coefficients/` has a reader, and
+[the reference overview](reference/index.md#which-sets-the-kernel-reads) lists the
+families within them that have none.
 
 Four sets were removed because nothing in BLIS read them; they are recoverable from git history, where they last appear at 8d78ff8:
 
@@ -457,7 +458,7 @@ Four sets were removed because nothing in BLIS read them; they are recoverable f
 | `legacy-kv-transfer.yaml` | pre-#1590 CPU↔GPU transfer defaults | `TierTime` prices from catalog facts instead |
 | `lora-adapter-costs.yaml` | Digital-Twin adapter terms | no consumer |
 
-The kernel's `TierTime` and `PDTransferTime` take their numbers from blis-catalog hardware
+The kernel's `TierTime` and `PDTransferTime` take their numbers from the catalog's hardware
 facts — `StorageDevice` read/write bandwidths and base latency, `IntraNodeBwGBps`,
 `InterNodeBwGBps` — using only `host_link_bandwidth` from `cost-model-primitives` as a
 host-link ceiling. `inference-sim` does not read any of the four either; its own
@@ -484,7 +485,7 @@ placeholders and transcriptions, not measurements.
 ## 5. Checking a re-derivation
 
 ```bash
-python -m pytest validator/ -q        # derivation / value-preservation gates (schema validation lives in blis-schemas)
+python -m pytest validator/ -q        # derivation / value-preservation gates; schema validation is validate-registry's
 python scripts/validate_against_aisimulate_tables.py   # oracle check against AISimulate's own tables
 ```
 

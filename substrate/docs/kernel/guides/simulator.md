@@ -5,10 +5,10 @@ kernel says how long each step takes. The simulator builds one kernel per pool b
 reads the pool's settings and memory from it once, and then calls it once per simulated
 step.</p>
 
-inference-sim adopts the kernel this way in pull request
-[#1851](https://github.com/inference-sim/inference-sim/pull/1851), in the package
-`sim/kernelmodel`. That pull request pins an earlier commit of this kernel, so a few of the
-method names it calls differ from the ones here; what follows describes this version.
+inference-sim uses the kernel this way. It imports the kernel with the substrate's data
+loader and embedded data. A run reads the embedded catalog and registry unless it names other
+directories with `--catalog` and `--registry`, and records which it used, with each one's
+content hash. What follows describes the kernel at this version.
 
 ## Before the run
 

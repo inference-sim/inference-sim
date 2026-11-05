@@ -1,6 +1,6 @@
 # Add a model
 
-A model entry is a directory holding three files:
+A model entry is a directory under `catalog/` holding three files:
 
 ```
 models/<name>/
@@ -24,14 +24,14 @@ repo=Qwen/Qwen3-14B
 name=qwen3-14b
 rev=$(curl -fsS https://huggingface.co/api/models/$repo/revision/main \
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["sha"])')
-mkdir -p models/$name
-curl -fsSL -o models/$name/config.json \
+mkdir -p catalog/models/$name
+curl -fsSL -o catalog/models/$name/config.json \
      https://huggingface.co/$repo/resolve/$rev/config.json
 ```
 
 For a gated repository, one that requires accepting its terms before download, add `-H "Authorization: Bearer $HF_TOKEN"` to both `curl` commands, and check that the model's license allows its configuration file to be redistributed.
 
-Do not reformat the file. A pretty-printer, or an editor that trims whitespace, changes its bytes, and the graph records a digest of those bytes. The repository's `.gitattributes` turns off line-ending conversion for `config.json` for the same reason. A reviewer can repeat your download and compare the two files with `cmp`.
+Do not reformat the file. A pretty-printer, or an editor that trims whitespace, changes its bytes, and the graph records a digest of those bytes. `catalog/.gitattributes` turns off line-ending conversion for `config.json` for the same reason. A reviewer can repeat your download and compare the two files with `cmp`.
 
 ## 3. Write `model.yaml`
 
@@ -49,8 +49,8 @@ source:
 ## 4. Derive the graph
 
 ```sh
-pip install -r requirements-dev.txt
-python3 scripts/derive_graph.py --model qwen3-14b
+pip install -r catalog/scripts/requirements-dev.txt
+python3 catalog/scripts/derive_graph.py --model qwen3-14b
 ```
 
 The script reads `config.json` and writes `graph.yaml` beside it. If it reports `1 written`, go to step 5.
@@ -63,13 +63,13 @@ The deriver chooses a *handler*, a function that builds the layers of one family
 no handler for architecture 'Qwen9ForCausalLM'; add one rather than letting a default misprice the model
 ```
 
-Add a handler to `scripts/derive_graph.py` and register it in the `HANDLERS` table. Many architectures differ from a supported one only in values such as depth, width or expert count, and can reuse its handler; the comments in `HANDLERS` record several such cases. Add tests for the new handler to `tests/test_derive_graph.py`.
+Add a handler to `catalog/scripts/derive_graph.py` and register it in the `HANDLERS` table. Many architectures differ from a supported one only in values such as depth, width or expert count, and can reuse its handler; the comments in `HANDLERS` record several such cases. Add tests for the new handler to `catalog/tests/test_derive_graph.py`.
 
-If the model has a property that no field of the graph format can express, the change starts in [blis-schemas](https://github.com/inference-sim/blis-schemas), followed by the kernel. That has happened a few times. Kimi-K2.5 added the `int4` weight format. DeepSeek-V4-Pro added a per-node `weight_dtype`, for experts stored at a narrower width than the rest of the checkpoint, and `compress_ratio`, for attention that reads a compressed cache.
+If the model has a property that no field of the graph format can express, the same pull request adds a field to `contracts/spec`, with its validator, and the cost model's reading of it in `kernel/`. That has happened a few times. Kimi-K2.5 added the `int4` weight format. DeepSeek-V4-Pro added a per-node `weight_dtype`, for experts stored at a narrower width than the rest of the checkpoint, and `compress_ratio`, for attention that reads a compressed cache.
 
 ## 5. Review the graph
 
-Read `graph.yaml` against `config.json`. The model's page in a [local preview](releasing.md#preview-locally) of this site is the quickest way: it draws the layer stack and tabulates every node. Check the layer count, the attention head counts, the expert count and top-k, and whether a draft module is present.
+Read `graph.yaml` against `config.json`. The model's page in a [local preview](../../contributing/documentation.md#preview-locally) of this site is the quickest way: it draws the layer stack and tabulates every node. Check the layer count, the attention head counts, the expert count and top-k, and whether a draft module is present.
 
 ## 6. Run the checks and open a pull request
 

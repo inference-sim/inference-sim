@@ -3,19 +3,20 @@ hide:
   - navigation
 ---
 
-# blis-schemas
+# Contracts
 
 <p class="lede">BLIS, the Blackbox Inference Simulator, estimates how an LLM serving
-deployment will perform before anyone runs it. blis-schemas defines the documents BLIS
-reasons about and checks them. It is a Go module: types for a model, its hardware, the
-coefficients a cost model uses, a deployment, its traffic and a measured run; a validator
-for each; the interface a cost model implements; and the contract between a simulator and the
-request router it hosts. It holds no data.</p>
+deployment will perform before anyone runs it. The contracts, the packages under
+<code>contracts/</code> in blis-substrate, define the documents BLIS reasons about and check
+them: types for a model, its hardware, the coefficients a cost model uses, a deployment, its
+traffic and a measured run; a validator for each; the interface a cost model implements; the
+interface an engine implements; and the contract between a simulator and the request router
+it hosts. They hold no data. Every Go repository in BLIS imports them.</p>
 
 ## The idea in brief
 
-A document's *shape* is defined here, and its *contents* live in the repository that owns
-them, so either side can change without the other. A **scenario** fixes the problem: the
+A document's *shape* is defined here. Its *contents* live in the catalog, in the registry,
+or in the scenario and deployment a user writes. A **scenario** fixes the problem: the
 model, the hardware, the traffic, and the engine version. A **deployment** states the choices
 made against it: parallelism, engine settings, offload. Validation asks two questions and
 keeps the answers apart. Is each document well formed? That never depends on an engine
@@ -32,9 +33,9 @@ validator reports every problem at once, each naming the field that is wrong.
 
     ---
 
-    Run the validators the data repositories run in CI, and look up what a key means.
+    Run the validators CI runs on `catalog/` and `registry/`, and look up what a key means.
 
-    [Validate a catalog or registry](guides/checkouts.md) ·
+    [Validate the catalog and the registry](guides/checkouts.md) ·
     [Reference](reference/index.md)
 
 -   **You write Go that reads these documents**
@@ -51,17 +52,17 @@ validator reports every problem at once, each naming the field that is wrong.
 
     ---
 
-    The ideas the schemas rest on, then the reasoning behind particular choices.
+    The ideas the contracts rest on, then the reasoning behind particular choices.
 
     [Concepts](concepts/index.md) ·
     [Design notes](design/index.md)
 
--   **You are changing blis-schemas**
+-   **You are changing the contracts**
 
     ---
 
-    Where a change belongs, how an engine release is added, how these pages are built and
-    published.
+    Where a change belongs, how it is tested, and the rule that contracts change only
+    compatibly.
 
     [Contributing](contributing/index.md)
 
@@ -70,14 +71,16 @@ validator reports every problem at once, each naming the field that is wrong.
 ## Install
 
 ```sh
-go get github.com/inference-sim/blis-schemas@latest
+go get github.com/inference-sim/blis-substrate@<version>
 ```
 
-The two command-line validators run without a checkout of this repository:
+The packages are imported by path, such as
+`github.com/inference-sim/blis-substrate/contracts/spec/scenario`. From the root of a
+blis-substrate checkout, the validators check the repository's own data:
 
 ```sh
-go run github.com/inference-sim/blis-schemas/cmd/validate-catalog@latest  /path/to/blis-catalog
-go run github.com/inference-sim/blis-schemas/cmd/validate-registry@latest /path/to/blis-registry
+go run ./validate/cmd/validate-catalog catalog
+go run ./validate/cmd/validate-registry registry
 ```
 
 These pages are versioned. The selector in the header switches between release lines;

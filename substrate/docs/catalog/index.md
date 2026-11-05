@@ -5,7 +5,7 @@ hide:
 
 # BLIS Catalog
 
-<p class="lede">The catalog holds the facts that <a href="https://github.com/inference-sim/inference-sim">BLIS</a> simulates with: what a model is, what a chip can do, what a network fabric can carry, what traffic looks like, and what a storage tier costs. Its rule is that every entry is a <em>declared fact</em>, written down from a published source such as a model's own configuration file or a vendor datasheet, and not fitted to measurements or chosen for a particular run. <a href="concepts/declared-facts/#where-the-catalog-falls-short-of-its-rule">A few entries</a> fall short of the rule today.</p>
+<p class="lede">The catalog, the `catalog/` directory of blis-substrate, holds the facts that <a href="https://github.com/inference-sim/inference-sim">BLIS</a> simulates with: what a model is, what a chip can do, what a network fabric can carry, what traffic looks like, and what a storage tier costs. Its rule is that every entry is a <em>declared fact</em>, written down from a published source such as a model's own configuration file or a vendor datasheet, and not fitted to measurements or chosen for a particular run. <a href="concepts/declared-facts/#where-the-catalog-falls-short-of-its-rule">A few entries</a> fall short of the rule today.</p>
 
 This site documents [[catalog.release]].
 

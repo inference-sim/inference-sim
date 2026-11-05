@@ -6,8 +6,8 @@ model, speculative method, K and thinking mode. Generated at build time from
 hand.</p>
 
 An acceptance-profile set is the acceptance counterpart of a coefficient set. Its format,
-and how a run resolves one value from it, are blis-schemas'
-[acceptance reference](https://github.com/inference-sim/blis-substrate/blob/main/docs/contracts/reference/acceptance.md)
+and how a run resolves one value from it, are on the contracts'
+[acceptance reference](../../contracts/reference/acceptance.md)
 (blis-schemas#65). Each profile holds the mean **acceptance length** (AL): the tokens a
 request gains per verification step, counting the target's bonus token, so it lies in
 [1, K + 1]. No per-position rates are stored. A consumer that needs them derives vLLM

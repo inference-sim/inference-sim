@@ -291,7 +291,7 @@ rewritten to the packed record, and on a plain-row backend it is an FP8 row. Whi
 runs is resolved by the rules pack (`Pack.ResolveCacheDType`). The 68-byte MXFP4 indexer
 record DeepSeek-V4.1 can opt into is selected by vLLM's `indexer_kv_dtype`, which no
 deployment key carries yet, so the graph states the default FP8 record
-([#57](https://github.com/inference-sim/blis-schemas/issues/57)).
+([blis-schemas#57](https://github.com/inference-sim/blis-schemas/issues/57)).
 
 DeepSeek-V4.1-Flash is the case caches exist for. Only layers 2, 8, 14 and 20 own a
 compressed cache, and the ratio-2 ones hold one entry per two tokens. Every layer's sliding

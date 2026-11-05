@@ -6,8 +6,8 @@ would simulate is from the one that ran. The verdict is computed from those fact
 read from the file.</p>
 
 A measured run supersedes the [evaluation run](evaluation.md) for scoring. Runs live in
-blis-catalog under `measurements/<license_ref>/<name>.yaml`, beside the licence registry
-`measurements/sources.yaml`.
+the catalog under `catalog/measurements/<license_ref>/<name>.yaml`, beside the licence registry
+`catalog/measurements/sources.yaml`.
 
 ```yaml
 --8<-- "docs/contracts/examples/measured-run.yaml"

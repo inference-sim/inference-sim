@@ -1,8 +1,8 @@
 # Sources of truth
 
 <p class="lede">Every claim the kernel makes about the engine is stated against one release
-of vLLM, and every input it reads is pinned to one commit. This table is generated from the
-pins themselves.</p>
+of vLLM. The contracts, the catalog and the registry it reads are in the same repository, at
+the same commit. This table is generated from the pins themselves.</p>
 
 --8<-- "docs/kernel/generated/sources.md"
 
@@ -35,9 +35,10 @@ citation before it.
 - **vLLM.** Moving to a newer release is a review of every behavior the kernel encodes, not a
   version bump: each citation must be checked against the new release, and the constants
   `EngineBehaviourVersion` and `EngineBehaviourCommit` in `new.go` changed with them.
-- **blis-schemas.** A Go module dependency: change `go.mod`.
-- **blis-catalog and blis-registry.** Edit `testdata/upstream.lock`, run
-  `scripts/fetch-testdata.sh`, and run `go test ./...`. A renamed chip or coefficient is
-  supposed to break the scenarios that name it.
+- **The contracts, the catalog and the registry.** These are `contracts/`, `catalog/` and
+  `registry/` of this repository, so there is no pin to move: a change to any of them is
+  tested against the kernel in the same pull request. Run `go test ./kernel/...`. A renamed
+  chip or coefficient is meant to break the tests that name it.
 
-After any of these, run `go run ./internal/docgen` so this table and the figures follow.
+After a change to a pin or to pricing, regenerate the generated files with blis-vllm's
+`go run ./kerneltests/internal/docgen`, so this table and the figures follow.

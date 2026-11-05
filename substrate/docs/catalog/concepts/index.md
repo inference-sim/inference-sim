@@ -2,7 +2,7 @@
 
 Three pages explain how the catalog is organized, and a glossary defines the terms the site uses.
 
-**[The catalog in BLIS](repositories.md).** BLIS is split across five repositories, each owning one kind of thing; the catalog owns declared facts. It contains no code that a simulation runs, and it depends on another BLIS repository only for validation. A new model built from operations the schemas already define needs changes here and nowhere else.
+**[The catalog in BLIS](repositories.md).** The catalog is the directory of blis-substrate that holds declared facts, beside the contracts, the registry and the cost model. It contains no code that a simulation runs. A new model built from operations the graph format already defines needs changes here and nowhere else.
 
 **[Declared, learned, chosen](declared-facts.md).** The numbers behind an estimate are of three kinds: read off a source, fitted or assumed for a cost model, or chosen for one run. Each kind lives in a different place, so that every number can say where it came from. The catalog holds the first kind. The test: if a measurement would revise a number, the number does not belong here.
 

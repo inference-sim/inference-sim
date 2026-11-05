@@ -1,11 +1,11 @@
 # File format
 
 A coefficient set is a YAML file under `coefficients/`. The rules on this page are
-enforced by [blis-schemas](https://github.com/inference-sim/blis-schemas), at the
-release `v0.4.0`, in
-[`spec/coefficient`](https://github.com/inference-sim/blis-schemas/tree/v0.4.0/spec/coefficient)
-and [`vocab`](https://github.com/inference-sim/blis-schemas/blob/v0.4.0/vocab/vocab.go),
-the release CI pins; it also validates `acceptance/` and `routing/`.
+enforced by the contracts, in
+[`contracts/spec/coefficient`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/coefficient)
+and [`contracts/vocab`](https://github.com/inference-sim/blis-substrate/blob/main/contracts/vocab/vocab.go),
+at the same commit as the data; `validate-registry` also validates `acceptance/` and
+`routing/`.
 Where this page and the schema disagree, the schema is right.
 
 ## Shape

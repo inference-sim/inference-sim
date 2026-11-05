@@ -2,12 +2,12 @@
 
 <p class="lede">The package's exported names, what each is for, and what this kernel does
 for each method of the interface it implements. The full Go documentation is on
-<a href="https://pkg.go.dev/github.com/inference-sim/blis-latency-kernel">pkg.go.dev</a>;
+<a href="https://pkg.go.dev/github.com/inference-sim/blis-substrate/kernel">pkg.go.dev</a>;
 the interface itself is defined and documented in
-<a href="https://pkg.go.dev/github.com/inference-sim/blis-schemas/kernel">blis-schemas</a>.</p>
+<a href="https://pkg.go.dev/github.com/inference-sim/blis-substrate/contracts/kernel">contracts/kernel</a>.</p>
 
 ```go
-import latencykernel "github.com/inference-sim/blis-latency-kernel"
+import latencykernel "github.com/inference-sim/blis-substrate/kernel"
 ```
 
 ## Building a kernel
@@ -19,15 +19,15 @@ import latencykernel "github.com/inference-sim/blis-latency-kernel"
 | `OpenInputs(scenario, repos, i)` | Loads the documents without building a kernel, for a caller that needs them too. |
 | `New(inputs)` | Builds a kernel from documents already in memory. `Open` and `OpenPool` end here. |
 | `Inputs` | The documents a kernel is built from: scenario, deployment, pool index, model graph, chip, fabric, storage devices, coefficient sets and engine rules. |
-| `Repos` | The three roots a scenario's names resolve against (scenarios, catalog, registry) and `Rules`, the engine rules for a release, which the caller supplies. |
+| `Repos` | The three roots a scenario's names resolve against (scenarios, catalog, registry), and the engine's part, which the caller supplies: `Rules`, the engine rules for a release, and `EngineSettings`, which decodes a pool's engine block. |
 | `RulesFrom(lookup)` | Adapts a lookup returning a concrete rules type, such as blis-vllm/rules' `Lookup`, to `Repos.Rules`. |
-| `LoadBundle(path)` | **Deprecated:** use blis-schemas' `LoadBundle`, which this calls. Reads a scenario and its deployment from one file of two YAML documents. |
+| `LoadBundle(path)` | **Deprecated:** use `contracts.LoadBundle`, which this calls. Reads a scenario and its deployment from one file of two YAML documents. |
 
 [Price a batch from Go](../guides/go.md) shows each in use.
 
 ## Kernel methods
 
-`*Kernel` implements `kernel.Kernel` from blis-schemas. Every method is a pure function of
+`*Kernel` implements `kernel.Kernel` from `contracts/kernel`. Every method is a pure function of
 its arguments and safe to call from many goroutines at once.
 
 | Method | What this kernel does |
@@ -62,7 +62,7 @@ And ten that are not on the interface:
 | `StepTimeInto(batch, per)` | `StepTime`, writing the per-resource breakdown into a map the caller reuses instead of allocating one. |
 
 The two context-parallel widths are methods here only until `kernel.Resolution` in
-blis-schemas carries them.
+`contracts/kernel` carries them.
 
 ## Constants
 

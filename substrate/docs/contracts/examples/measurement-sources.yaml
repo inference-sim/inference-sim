@@ -9,7 +9,7 @@ sources:
       - derive_coefficients
       - redistribute
     evidence:
-      - url: https://github.com/inference-sim/blis-schemas/blob/main/LICENSE
+      - url: https://github.com/inference-sim/blis-substrate/blob/main/LICENSE
         quote: Apache License
         location: LICENSE:1
   - id: hud

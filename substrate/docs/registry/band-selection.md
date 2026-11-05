@@ -1,6 +1,6 @@
 # Choosing between the kernel's two step-time band edges
 
-`blis-latency-kernel` reports a band rather than a point estimate. `Overlap` sums the max
+The cost model (`kernel/`) reports a band rather than a point estimate. `Overlap` sums the max
 over resources within each layer and then sums layers; `NoOverlap` sums every resource.
 Which edge a consumer should use is a model-selection question, and this document records
 how it was answered.
@@ -13,8 +13,10 @@ prices the same quantity the band brackets, with no scheduler in between, which 
 the right evidence for this choice — and the wrong evidence for fitting a coefficient,
 because it constrains a composition rather than a constant.
 
-Reproduce with `scripts/select_overlap_band.py`. The band CSV comes from the kernel
-repository, which owns composition; this repository only selects between its columns.
+Reproduce with `registry/scripts/select_overlap_band.py`. The band CSV comes from
+`bandprobe` ([Commands](../kernel/reference/commands.md)), which prices the band with the
+cost model, because the cost model owns composition; the registry only selects between its
+columns.
 
 | cell | n | Overlap | NoOverlap | winner |
 |---|---|---|---|---|

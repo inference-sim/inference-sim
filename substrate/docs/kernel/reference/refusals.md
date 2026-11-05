@@ -8,7 +8,7 @@ change. The engine's reasons cite the vLLM v0.31.0 source in the code beside the
 
 - A scenario file has a key its document type does not define. `LoadBundle` decodes strictly,
   so `Open`, `OpenPool` and `OpenInputs` fail here.
-- A document fails blis-schemas' field-level validation: a missing required field, a value
+- A document fails the contracts' field-level validation: a missing required field, a value
   out of range. Rule-level findings, which depend on the engine version, do not stop
   construction.
 - The deployment has no pool at the requested index, or a tensor- or data-parallel width

@@ -123,5 +123,5 @@ these:
 | `mamba_cache_mode` | A hybrid model states `none` with prefix caching on, which vLLM runs as `align`. |
 | `max_cudagraph_capture_size` | A stated maximum that vLLM lowers: capped at `max_num_batched_tokens`, or off the sizes it captures (1, 2, 4, every 8 below 256, every 16 from it). The largest size that runs is the ceiling. |
 
-The two context-parallel widths are not yet fields of `kernel.Resolution`. Until blis-schemas
+The two context-parallel widths are not fields of `kernel.Resolution`. Until `contracts/kernel`
 adds them, read them from `DecodeContextParallelWidth()` and `PrefillContextParallelWidth()`.

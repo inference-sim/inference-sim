@@ -101,7 +101,7 @@ states its caches. Both are refused.
 
 A collective, a P/D handoff or a pipeline boundary that leaves a node crosses the cluster's
 fabric. The catalog states its nominal per-GPU rate, a line rate divided by eight, and
-blis-registry states what fraction of it a transfer achieves (`fabric_bandwidth_efficiency`,
+the registry states what fraction of it a transfer achieves (`fabric_bandwidth_efficiency`,
 scoped by the fabric's catalog name). The kernel prices every byte over the fabric at the
 corrected rate, and scales a cross-node collective's bytes by the ratio of on-node to
 corrected off-node bandwidth. Two clusters of comparable silicon on different fabrics price

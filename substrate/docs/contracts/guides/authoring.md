@@ -18,15 +18,13 @@ and the test suite validates each one.
 :   A directory under `models/` in the catalog.
 
 `coefficients`
-:   Coefficient sets in the registry, named by file. The five above are those named by
-    inference-sim's kernel-based scenarios (added in its pull request #1851, merged on
-    2026-10-13). blis-latency-kernel reads
-    them in the order listed: where two sets both supply a coefficient that applies to the
+:   Coefficient sets in the registry, named by file. The five above are those inference-sim's
+    scenarios name. The cost model reads them in the order listed: where two sets both supply a coefficient that applies to the
     deployment, the later set wins.
 
 `engine_version`
 :   The engine version the run describes. Version-specific rules run only when it matches a
-    registered rules pack exactly, so write `"0.29.0"` and not `"0.29"`. Quote it so that
+    release the engine's rules know exactly, so write `"0.29.0"` and not `"0.29"`. Quote it so that
     YAML reads it as a string.
 
 `workload`

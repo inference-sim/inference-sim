@@ -1,7 +1,7 @@
 """MkDocs hook: render the catalog's reference pages from the committed data.
 
 The reference section of the documentation is not written by hand. Every table,
-figure and per-model page under docs/reference/ is generated here, at build time,
+figure and per-model page under docs/catalog/reference/ is generated here, at build time,
 from the same YAML and JSON files the simulator and the kernel read. A page
 that restated a figure would be a second copy of it, and a second copy drifts;
 generating the page means the documentation for a release describes exactly the
@@ -67,7 +67,7 @@ class Model:
 
     @property
     def layers(self) -> list[str]:
-        """The stack expanded the way blis-schemas' Stack.Expand expands it."""
+        """The stack expanded the way contracts/spec/model's Stack.Expand expands it."""
         s = self.graph["stack"]
         return (list(s.get("prologue", []))
                 + list(s.get("pattern", [])) * s.get("repeat", 0)
@@ -628,7 +628,7 @@ def networks_notes(cat: Catalog) -> str:
 
 def is_replay(doc: dict[str, Any]) -> bool:
     """A file whose top-level key is replay: is a replay workload, not a shape
-    (blis-schemas LoadCatalogWorkload)."""
+    (contracts.LoadCatalogWorkload)."""
     return "replay" in doc
 
 

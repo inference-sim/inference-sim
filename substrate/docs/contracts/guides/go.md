@@ -5,7 +5,7 @@
 which engine release's rules ran.</p>
 
 ```sh
-go get github.com/inference-sim/blis-schemas@latest
+go get github.com/inference-sim/blis-substrate@<version>
 ```
 
 The snippets on this page are the package's example tests. They run under `go test`, and
@@ -93,7 +93,7 @@ A rule problem carries its rule's name in brackets. Rules state the location ins
 message, so the path between the two colons is empty.
 
 If the field layer passed, the bundle has a scenario, and `rep.RulesApplied` is still
-empty, then no rules pack matched the scenario's `engine_version`. The rule layer then
+empty, then the rules given know no release of the scenario's `engine_version`. The rule layer then
 holds a single warning saying so.
 
 ## Resolve names against a catalog
@@ -105,42 +105,19 @@ chip that exists. `ValidateAgainstCatalog` can, given a catalog root and a regis
 --8<-- "contracts/example_test.go:resolve"
 ```
 
-```text title="Output, with the pinned catalog in testdata/"
-error: references.hardware: "nvidia-h100": looked for hardware/nvidia-h100.yaml; the catalog has [a100-80 a100-sxm b200 b300 gb200-nvl72 h100 h200 l40s]
+```text title="Output, with the repository's catalog/"
+error: references.hardware: "nvidia-h100": looked for hardware/nvidia-h100.yaml; the catalog has [a100-80 a100-sxm b200 b300 gb200-nvl72 gb300 h100 h200 l40s]
 ```
 
 It checks only that each name resolves. To validate what the names point to, load those
 files and pass them to `Validate`.
 
-## Ask a rules pack
+## Pass the engine's own rules
 
-The `rules` package exposes the registered packs. Besides the values a release accepts, a
-pack answers questions about what the release does:
-
-```go
-pack := rules.Lookup("0.29.0") // nil if no pack is registered
-rules.Versions()               // every registered version
-
-// Does the engine make the MoE input sequence-parallel, replacing an all-reduce with a
-// reduce-scatter and all-gather pair?
-pack.SequenceParallelMoE(all2allBackend, expertParallel, tp, dp)
-// Does the custom all-reduce GPU kernel support this tensor-parallel width?
-pack.CustomAllReduceSupportsWidth(tp)
-// Does dual-batch overlap split a batch of this size?
-pack.DBOEngages(enabled, totalTokens, uniformDecode)
-// How many SMs does a concurrent offload fetch of this page size take?
-pack.TritonFetchWithholdsSMs(pageBytes)
-```
-
-Packs are registered when the root package `blisschemas` is imported. A program that
-imports `rules` but not the root package has no packs, so `Lookup` returns nil.
-
-### Pass the engine's own rules
-
-The vLLM packs are moving to the engine model that owns them, blis-vllm
-(inference-sim#2021 B4). A consumer that has them passes them to `Validate` instead of using
-this module's packs: `Bundle.Rules` returns a release's rules as a `rules.EngineRules`, and
-`Bundle.RulesVersions`, which is optional, lists the releases it knows, for the finding a
+The contracts hold no engine release's rules. Each engine model owns the rules for the
+release it models; for vLLM they are the packs of `github.com/inference-sim/blis-vllm/rules`.
+A caller passes them in: `Bundle.Rules` returns a release's rules as a `rules.EngineRules`,
+and `Bundle.RulesVersions`, which is optional, lists the releases it knows, for the finding a
 scenario naming another one gets.
 
 ```go
@@ -151,12 +128,13 @@ b.Rules = func(v string) rules.EngineRules {
 	return nil // a typed nil reads as unknown too
 }
 b.RulesVersions = vllmrules.Versions
-rep := blisschemas.Validate(b)
+rep := contracts.Validate(b)
 ```
 
-The report is the same as with this module's packs. A release the rules do not know gets the
-`engine-version-known` warning. Rules that answer for a release other than the scenario's are
-an error, `engine-version-matches`, and are not applied: a lookup that falls back to a nearby
-release would pass a scenario its own release refuses.
+A release the rules do not know gets the `engine-version-known` warning. Rules that answer
+for a release other than the scenario's are an error, `engine-version-matches`, and are not
+applied: a lookup that falls back to a nearby release would pass a scenario its own release
+refuses. A bundle with a scenario and no rules gets the error `engine-rules-given`.
+[Engine rules](../reference/rules.md) lists all three.
 
-The full API is on [pkg.go.dev](https://pkg.go.dev/github.com/inference-sim/blis-schemas).
+The full API is on [pkg.go.dev](https://pkg.go.dev/github.com/inference-sim/blis-substrate/contracts).

@@ -64,7 +64,7 @@ Two further fields cover models that are more than one decoder stack. A `specula
 
 ## Generated, not written
 
-`scripts/derive_graph.py` (the *deriver*) reads a config and writes the graph. It chooses a handler by the config's `architectures` entry; each handler encodes how one family of architectures builds its layers in the serving engine. When the deriver meets something it cannot translate, such as an unknown architecture or a missing field it needs, it stops with an error rather than guessing. A guessed graph would price a different model, with nothing to show that it had.
+`catalog/scripts/derive_graph.py` (the *deriver*) reads a config and writes the graph. It chooses a handler by the config's `architectures` entry; each handler encodes how one family of architectures builds its layers in the serving engine. When the deriver meets something it cannot translate, such as an unknown architecture or a missing field it needs, it stops with an error rather than guessing. A guessed graph would price a different model, with nothing to show that it had.
 
 ## Committed, not computed on demand
 

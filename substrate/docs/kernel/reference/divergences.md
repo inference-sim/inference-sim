@@ -7,7 +7,7 @@ what the code admits to.</p>
 
 Each entry gives a short summary, then the note itself, which records the evidence and cites
 the vLLM v0.31.0 lines it rests on. A note is marked in the source by one of the phrases
-`KNOWN DIVERGENCE`, `KNOWN over-charge` or `COVERAGE LIMIT`, and `internal/docgen` collects
-every one outside the tests.
+`KNOWN DIVERGENCE`, `KNOWN over-charge` or `COVERAGE LIMIT`, and blis-vllm's
+`kerneltests/internal/docgen` collects every one outside the tests.
 
 --8<-- "docs/kernel/generated/divergences.md"
