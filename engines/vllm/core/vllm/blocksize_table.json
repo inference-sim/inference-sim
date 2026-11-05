@@ -1,0 +1,1188 @@
+{
+ "combinations": [
+  {
+   "backends": [
+    "FLASHMLA",
+    "FLASH_ATTN_MLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v3",
+   "note": "depends on fa3_available, flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v3",
+   "note": "depends on flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "FLASH_ATTN_MLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "kimi-k2.5",
+   "note": "depends on fa3_available, flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "kimi-k2.5",
+   "note": "depends on flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "auto",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "auto",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "auto",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "status": "resolved"
+  }
+ ],
+ "facts": {
+  "fa3_available": "vLLM's FlashAttention wheel ships FA3, built for SM9x (flash_attn_interface.py:_is_fa3_supported)",
+  "fa4_available": "vLLM's FlashAttention wheel ships FA4 (flash_attn_interface.py:_is_fa4_supported)",
+  "flashmla_built": "vLLM's wheel was built with FlashMLA (v1/attention/ops/flashmla.py:_is_flashmla_available, :37-52)",
+  "trtllm_usable": "FlashInfer's TRTLLM-gen kernels are usable (utils/flashinfer.py:can_use_trtllm_attention)"
+ },
+ "not_resolved": {
+  "deepseek-v4-pro": "DeepSeek-V4 layers use their own sparse MLA backends and block sizes (vllm/models/deepseek_v4), not the selector alone",
+  "glm-5": "its sparse MLA layers need the indexer backends' sizes (use_sparse); not modelled here",
+  "minimax-m3": "its sparse-attention layers pick MiniMaxM3SparseBackend directly (vllm/models/minimax_m3/nvidia/model.py:559), outside the selector",
+  "qwen3.5-397b-a17b": "a hybrid model: its block size is aligned to the recurrent page (platforms/interface.py:783-790, _align_hybrid_block_size)"
+ },
+ "replacements": [
+  {
+   "what": "module vllm._C_stable_libtorch",
+   "why": "compiled extension or NVML, imported by vllm.platforms.cuda; decides no block size"
+  },
+  {
+   "what": "module vllm._C",
+   "why": "compiled extension or NVML, imported by vllm.platforms.cuda; decides no block size"
+  },
+  {
+   "what": "module pynvml",
+   "why": "compiled extension or NVML, imported by vllm.platforms.cuda; decides no block size"
+  },
+  {
+   "what": "module flashinfer",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.decode",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.prefill",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.utils",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.page",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.mla",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.trtllm_low_latency_gemm",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.fused_moe",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module flashinfer.comm",
+   "why": "GPU-only wheel imported by the FlashInfer backends; its kernels are not run. ASSUMED: flashinfer-python is installed, as requirements/cuda.txt:13 pins it"
+  },
+  {
+   "what": "module vllm.vllm_flash_attn",
+   "why": "CUDA flash-attention wheel; FA2 is assumed present, FA3 and FA4 are the facts fa3_available and fa4_available"
+  },
+  {
+   "what": "torch.empty(device='cuda')",
+   "why": "allocates on the CPU instead, so cutlass_mla.py:99's import-time workspace (a module global, never read for selection) can be built"
+  },
+  {
+   "what": "vllm.utils.platform_utils.num_compute_units",
+   "why": "a fixed SM count for cutlass_mla.py:73, read only to size that workspace"
+  },
+  {
+   "what": "vllm.utils.flashinfer.can_use_trtllm_attention / supports_trtllm_attention",
+   "why": "the fact trtllm_usable replaces them; the capability rules (:663-670) are copied and the artifactory and cubin probes (:620-645) are what the fact stands for"
+  },
+  {
+   "what": "vllm.v1.attention.ops.flashmla._is_flashmla_available",
+   "why": "the fact flashmla_built replaces the probe of the compiled extensions; the capability rules in is_flashmla_dense_supported (:51-58) and is_flashmla_sparse_supported (:61-74) run as written"
+  }
+ ],
+ "vllm": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+}

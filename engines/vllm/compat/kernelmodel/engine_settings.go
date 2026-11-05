@@ -5,6 +5,7 @@ package kernelmodel
 import (
 	"fmt"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	"github.com/inference-sim/blis-vllm/core/vllm"
@@ -15,9 +16,13 @@ import (
 // and where each resolved setting came from.
 type resolvedEngine struct {
 	engine engineconfig.Engine
-	// sources names, for each of max_num_seqs and max_num_batched_tokens, "stated" or the rule
-	// that set it. Empty for a release this package does not resolve (0.29.0, 0.31.0).
+	// sources names, for each setting the release resolves (max_num_seqs, max_num_batched_tokens
+	// and block_size), "stated" or the rule that set it. Empty for a release this package does
+	// not resolve (0.29.0, 0.31.0).
 	sources map[string]string
+	// blockSizeErr is why an unstated block_size is not resolved, naming blis-vllm#68; nil when
+	// it is stated or resolved.
+	blockSizeErr error
 }
 
 // resolveEngine resolves the pool's engine settings as its release does. For vLLM 0.32.0 an
@@ -60,8 +65,43 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 	r.sources = map[string]string{
 		"max_num_seqs":           b.MaxNumSeqsSource,
 		"max_num_batched_tokens": b.MaxNumBatchedTokensSource,
+		"block_size":             vllm.SourceStated,
+	}
+	if e.BlockSize <= 0 {
+		bs, err := resolveBlockSize(in, e, pool)
+		if err != nil {
+			r.blockSizeErr = err
+			delete(r.sources, "block_size")
+		} else {
+			r.engine.BlockSize, r.sources["block_size"] = bs.Size, bs.Source
+		}
 	}
 	return r
+}
+
+// resolveBlockSize resolves an unstated block_size as vLLM v0.32.0 does, for the models, GPUs
+// and KV dtypes the block-size oracle resolves (core/vllm.ResolveBlockSize).
+func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deployment.Pool) (vllm.BlockSize, error) {
+	kv := e.CacheDType
+	if kv == "" {
+		kv = "auto"
+	}
+	if in.Rules != nil {
+		// The KV dtype that runs: the release's rules resolve a requested one for the model's
+		// architecture, the chip's family and the TP width (rules.EngineRules.ResolveCacheDType).
+		fam, _ := in.Chip.CapabilityMajor()
+		kv = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, fam, max(pool.Parallel.TP, 1), kv)
+	}
+	return vllm.ResolveBlockSize(vllm.BlockSizeInput{
+		Model:               in.Scenario.Model,
+		Capability:          in.Chip.ComputeCapability,
+		KVCacheDType:        kv,
+		Speculative:         e.Speculative != nil,
+		ContextParallel:     max(pool.Parallel.DCP, 1) > 1 || max(pool.Parallel.PCP, 1) > 1,
+		Env:                 e.Env,
+		UsesTRTLLMAttention: e.UseTRTLLMAttention != nil,
+		MLAPrefillBackend:   e.MLAPrefillBackend,
+	})
 }
 
 // Engine reports the engine settings of the pool this kernel prices, as its release resolves
@@ -74,22 +114,18 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 //
 // For vLLM 0.32.0 an unstated max_num_seqs or max_num_batched_tokens is vLLM's own default
 // for the GPU (resolveEngine), and EngineSources says which values were stated. An unstated
-// block_size is still refused: vLLM v0.32.0 picks it from the attention backends it selects
-// for the model, GPU and KV dtype, and aligns a hybrid model's block to its recurrent page
-// (Platform.update_block_size_for_backend, vllm/platforms/interface.py:745-785@5df63a72),
-// which is not yet ported (https://github.com/inference-sim/blis-vllm/issues/68). For 0.29.0
-// and 0.31.0 it returns the deployment's own values, and refuses any of the three unstated,
-// as before.
+// block_size is vLLM's own too, for the models, GPUs and KV dtypes the block-size oracle
+// resolves (core/vllm.ResolveBlockSize); for any other it is refused, naming why and
+// https://github.com/inference-sim/blis-vllm/issues/68. For 0.29.0 and 0.31.0 it returns the
+// deployment's own values, and refuses any of the three unstated, as before.
 //
 // The settings live on the DEPLOYMENT: engine knobs are tunable configuration chosen against
 // a scenario, not part of the problem it states, so the error text says "deployment".
 func (m *Model) Engine() (engineconfig.Engine, error) {
 	e := m.resolved.engine
 	if e.BlockSize <= 0 {
-		if m.resolved.sources != nil {
-			return e, fmt.Errorf("kernelmodel: deployment states no block_size; vLLM v0.32.0 resolves it from the " +
-				"attention backends it selects (vllm/platforms/interface.py:745-785@5df63a72), which blis-vllm " +
-				"does not resolve yet (https://github.com/inference-sim/blis-vllm/issues/68)")
+		if m.resolved.blockSizeErr != nil {
+			return e, fmt.Errorf("kernelmodel: deployment %w", m.resolved.blockSizeErr)
 		}
 		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
 	}

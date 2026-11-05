@@ -202,6 +202,17 @@ jobs:
           python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock
       - name: the mocks replace no decision code
         run: python -I oracle/check_mocks.py oracle/mocks.json
+      # An unstated block_size is vLLM's own choice, from the attention backends it selects for the
+      # model, GPU and KV dtype (core/vllm/blocksize.go). The oracle runs vLLM's selection on this
+      # CPU, with every replacement listed in its table, and the committed table must equal what
+      # it prints. The models' config.json files are the pinned blis-substrate's catalog.
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: the block-size table is vLLM's own selection
+        run: |
+          catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/blocksize/oracle.py vllm-source check core/vllm/blocksize_table.json oracle/blocksize/TABLE.tsv
       # The scheduler helper's default model, as configuration only (no weights), at a pinned
       # revision, so a change on the Hub cannot change a run.
       - name: fetch the helper model's configuration at its pinned revision

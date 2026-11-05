@@ -335,6 +335,11 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
+	// An unstated block_size the release resolves is priced at the resolved size, so the kernel
+	// and Engine describe one engine (resolveEngine).
+	if r := resolveEngine(in, engine); engine.BlockSize <= 0 && r.engine.BlockSize > 0 {
+		settings.BlockSize = r.engine.BlockSize
+	}
 	in.Engine = &settings
 	k, err := latencykernel.New(in)
 	if err != nil {
