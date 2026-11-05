@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/sirupsen/logrus"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // parseServeGenPDF parses a Python dict string like "{100: 0.5, 200: 0.3}"
@@ -140,7 +142,7 @@ func parseServeGenFloatPDF(s string) (map[float64]float64, error) {
 // findBestCoverageWindow returns the window index (0-143) with the most active chunks.
 // Returns error if all windows have zero coverage (total trace parse failure).
 func findBestCoverageWindow(traceFiles []string) (int, error) {
-	const dayDurationSec = 86400 // 24 hours
+	const dayDurationSec = 86400                             // 24 hours
 	numWindows := dayDurationSec / serveGenWindowDurationSec // 144 windows per day
 	windowCoverage := make(map[int]int)
 
@@ -232,14 +234,14 @@ func averageReasonRatioPMFs(chunks []chunkData) (DistSpec, error) {
 // chunkData represents a single ServeGen chunk during loading.
 type chunkData struct {
 	id             string
-	client         *ClientSpec // Temporarily use ClientSpec for loading; will convert to cohort
-	datasetPath    string      // For lognormal fitting in cohort loop
+	client         *ClientSpec         // Temporarily use ClientSpec for loading; will convert to cohort
+	datasetPath    string              // For lognormal fitting in cohort loop
 	reasonRatioPDF map[float64]float64 // For reasoning workloads
 }
 
 // serveGenTraceRow represents one row from a ServeGen chunk-*-trace.csv.
 // Format: start_time(s), rate(req/s), cv, pattern_type, param1, param2
-type serveGenTraceRow struct{
+type serveGenTraceRow struct {
 	startTimeSec float64
 	rate         float64
 	cv           float64
@@ -283,8 +285,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		drainSec = 180 // 3 minutes default
 	}
 
-	// BC-7: Deterministic RNG from spec.Seed
-	rng := rand.New(rand.NewSource(spec.Seed))
+	// BC-7: each of ServeGen's choices draws from its own named stream of spec.Seed (DEV-6).
+	servegen := sim.Streams{Seed: spec.Seed, Component: componentServeGen}
 
 	// Define three time periods (ServeGen Day 1 spans 0-86400s; each period is 30 minutes)
 	// startUs values create gaps between periods for drain timeout
@@ -354,7 +356,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 	// Route to appropriate conversion path
 	if isReasoningWorkload {
-		return buildReasoningCohorts(spec, traceFiles, rng)
+		return buildReasoningCohorts(spec, traceFiles, servegen.Stream(purposeSLOAssignment))
 	}
 
 	if len(traceFiles) == 0 {
@@ -397,8 +399,10 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 	// Pre-select one window per period (not per cohort)
 	periodWindows := make(map[int]int64) // Maps period index -> selected window start (seconds)
+	windowRNG := servegen.Stream(purposeWindowChoice)
+	sloRNG := servegen.Stream(purposeSLOAssignment)
 	for periodIdx, period := range periods {
-		windowIndex := rng.Intn(3) // Pick window 0, 1, or 2
+		windowIndex := windowRNG.Intn(3) // Pick window 0, 1, or 2
 		windowStart := period.spanStart + int64(windowIndex*600)
 		periodWindows[periodIdx] = windowStart
 	}
@@ -447,7 +451,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 		// Shuffle chunks for this period to randomize SLO assignment
 		shuffled := make([]chunkData, len(chunks))
 		copy(shuffled, chunks)
-		rng.Shuffle(len(shuffled), func(i, j int) {
+		sloRNG.Shuffle(len(shuffled), func(i, j int) {
 			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		})
 

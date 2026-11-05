@@ -2775,7 +2775,7 @@ func TestGenerateRequests_CohortAbsoluteMode_UsesTraceRate(t *testing.T) {
 		},
 	}
 	// Expand cohorts
-	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	expanded := ExpandCohorts(spec.Cohorts)
 	if len(expanded) != 7 {
 		t.Fatalf("expected 7 clients; got %d", len(expanded))
 	}
@@ -2812,7 +2812,7 @@ func TestGenerateRequests_CohortProportionalMode_BackwardCompatible(t *testing.T
 			},
 		},
 	}
-	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	expanded := ExpandCohorts(spec.Cohorts)
 	if len(expanded) != 5 {
 		t.Fatalf("expected 5 clients; got %d", len(expanded))
 	}
@@ -2906,7 +2906,7 @@ func TestGenerateRequests_MultiCohortAbsoluteMode_NonOverlappingSpikes(t *testin
 func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 	// BC-1: Time-varying reasoning session generation
 	// BC-5: Window boundary filtering
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-0",
@@ -2938,7 +2938,7 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 	}
 
 	// Call generateRequestsForWindow (with nil prefix)
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -2994,7 +2994,7 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 
 func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 	// BC-6: Non-reasoning client path unchanged
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "single-shot-client",
@@ -3019,7 +3019,7 @@ func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 		TraceRate: ptrFloat64(10.0), // 10 req/s
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3037,7 +3037,7 @@ func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 
 func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 	// BC-2: Prefix prepending in time-varying reasoning
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	prefixTokens := []sim.TokenID{999, 888, 777} // 3-token shared prefix
 
@@ -3072,7 +3072,7 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, prefixTokens)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", prefixTokens)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3114,7 +3114,7 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 
 func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 	// BC-3: Deadline setting in time-varying reasoning
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	timeoutUs := int64(30000000) // 30s timeout
 
@@ -3148,7 +3148,7 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3164,7 +3164,7 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 
 func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 	// BC-3: Default 300s timeout for reasoning sessions (when Timeout is nil)
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-default-timeout",
@@ -3196,7 +3196,7 @@ func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 		TraceRate: ptrFloat64(1.0),
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3214,7 +3214,7 @@ func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 	// Preemption safety: Verify reasoning requests have immutable session metadata
 	// that is preserved across preemption (SessionID, RoundIndex don't change)
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-preemption-test",
@@ -3245,7 +3245,7 @@ func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 		TraceRate: ptrFloat64(1.0),
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3301,7 +3301,7 @@ func TestGenerateRequestsForWindow_ReasoningSingleSession(t *testing.T) {
 	// 1. Exactly one unique SessionID appears across all returned requests
 	// 2. All returned rounds have ArrivalTime < window.EndUs
 	// 3. RoundIndex values are sequential starting from 0
-	rng := rand.New(rand.NewSource(42))
+	rng := testWindowStreams(42)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-single-session",
@@ -3333,7 +3333,7 @@ func TestGenerateRequestsForWindow_ReasoningSingleSession(t *testing.T) {
 		TraceRate: ptrFloat64(1.0),
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}

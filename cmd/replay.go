@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
 	"os"
 	"sort"
 	"strconv"
@@ -37,12 +36,6 @@ var (
 	replayTotalSessions      int  // total sessions to replay when pooling (0 = corpus size)
 	replayShuffleCorpus      bool // randomize corpus step order (pool mode only; seeded from --seed) (#1480)
 )
-
-// corpusShuffleSeedSalt is XORed with the master --seed to derive the corpus-shuffle
-// RNG stream, keeping it independent of the per-session token and clone RNGs (#1480).
-// Shared by `blis replay --shuffle-corpus` and `blis observe --shuffle-corpus` so the
-// SAME --seed selects the SAME subset/order on both — required for calibration parity.
-const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
 
 var replayCmd = &cobra.Command{
 	Use:   "replay",
@@ -295,11 +288,11 @@ Example:
 				if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
 					logrus.Fatalf("--concurrent-sessions requires every trace record to belong to a session, but %d of %d records have no session_id. Pooled replay cannot mix session and non-session (single-shot) records; re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`), or drop --concurrent-sessions to replay it in plain closed-loop mode.", nonSession, len(r0Requests))
 				}
-				// Optional seeded shuffle of the corpus step order (#1480). Drawn from
-				// a distinct stream off the master seed (XOR salt) so it is reproducible
-				// from --seed yet does not perturb the per-session token / clone RNGs.
+				// Optional seeded shuffle of the corpus step order (#1480), drawn from its
+				// own named stream (workload.CorpusShuffleStream), so it is reproducible
+				// from --seed and does not move any session's token draws.
 				if replayShuffleCorpus {
-					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
+					workload.ShuffleSessions(blueprints, r0Requests, workload.CorpusShuffleStream(seed))
 				}
 				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
 				if pErr != nil {

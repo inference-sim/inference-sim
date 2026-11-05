@@ -2,7 +2,6 @@ package workload
 
 import (
 	"math"
-	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -621,10 +620,10 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		}
 
 		aggregateRate := 100.0
-		rng := rand.New(rand.NewSource(42))
+		rng := testWindowStreams(42)
 
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng, nil)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng, "sess_", nil)
 		require.NoError(t, err)
 		// Should generate requests
 		require.Greater(t, len(requests), 0, "should generate requests")
@@ -672,10 +671,10 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 		}
 
 		aggregateRate := 50.0
-		rng := rand.New(rand.NewSource(123))
+		rng := testWindowStreams(123)
 
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng, nil)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, aggregateRate, rng, "sess_", nil)
 		require.NoError(t, err)
 		// Check achieved rate is close to target (50 req/s for 10s = 500 requests)
 		windowDurationSec := float64(window.EndUs-window.StartUs) / 1e6
@@ -707,9 +706,9 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 			},
 		}
 
-		rng := rand.New(rand.NewSource(42))
+		rng := testWindowStreams(42)
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 100.0, rng, nil)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 100.0, rng, "sess_", nil)
 		require.NoError(t, err)
 		assert.Empty(t, requests, "zero trace_rate should produce no requests")
 	})
@@ -734,9 +733,9 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 			},
 		}
 
-		rng := rand.New(rand.NewSource(99))
+		rng := testWindowStreams(99)
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng, nil)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng, "sess_", nil)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 1, "need multiple requests for monotonicity check")
 
@@ -767,9 +766,9 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 			},
 		}
 
-		rng := rand.New(rand.NewSource(42))
+		rng := testWindowStreams(42)
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 10.0, rng, nil)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 10.0, rng, "sess_", nil)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 
@@ -802,9 +801,9 @@ func TestGenerateRequestsForWindow(t *testing.T) {
 			},
 		}
 
-		rng := rand.New(rand.NewSource(42))
+		rng := testWindowStreams(42)
 		window := clients[0].Lifecycle.Windows[0]
-		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng, nil)
+		requests, err := generateRequestsForWindow(clients[0], window, clients, 20.0, rng, "sess_", nil)
 		require.NoError(t, err)
 		require.Greater(t, len(requests), 0)
 		for _, req := range requests {
@@ -836,14 +835,14 @@ func TestGenerateRequestsForWindow_Determinism_AbsoluteRateMode(t *testing.T) {
 	}
 
 	seed := int64(42)
-	rng1 := rand.New(rand.NewSource(seed))
-	rng2 := rand.New(rand.NewSource(seed))
+	rng1 := testWindowStreams(seed)
+	rng2 := testWindowStreams(seed)
 
 	window := clients[0].Lifecycle.Windows[0]
 
-	requests1, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng1, nil) // AggregateRate=0
+	requests1, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng1, "sess_", nil) // AggregateRate=0
 	require.NoError(t, err)
-	requests2, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng2, nil)
+	requests2, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng2, "sess_", nil)
 	require.NoError(t, err)
 
 	// Verify requests are actually generated (not zero due to misconfiguration)
@@ -919,13 +918,13 @@ func TestGenerateRequestsForWindow_ExactCountAndInteriorArrivals(t *testing.T) {
 					},
 				}
 
-				rng := rand.New(rand.NewSource(seed))
+				rng := testWindowStreams(seed)
 				window := clients[0].Lifecycle.Windows[0]
 				// aggregateRate=0 selects absolute rate mode (computeProportionalRate
 				// returns window.TraceRate directly), sidestepping proportional
 				// allocation across co-active clients -- orthogonal to what this
 				// test checks.
-				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, "sess_", nil)
 				require.NoError(t, err)
 
 				assert.Equal(t, expected, len(requests),
@@ -1025,9 +1024,9 @@ func TestGenerateRequestsForWindow_MultiSessionReasoning_ExactCountAndInteriorAr
 					},
 				}
 
-				rng := rand.New(rand.NewSource(seed))
+				rng := testWindowStreams(seed)
 				window := clients[0].Lifecycle.Windows[0]
-				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, "sess_", nil)
 				require.NoError(t, err)
 
 				assert.Equal(t, expected, len(requests),
@@ -1117,9 +1116,9 @@ func TestGenerateRequestsForWindow_SingleSessionReasoning_SessionSurvivesAtCeilO
 					},
 				}
 
-				rng := rand.New(rand.NewSource(seed))
+				rng := testWindowStreams(seed)
 				window := clients[0].Lifecycle.Windows[0]
-				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+				requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, "sess_", nil)
 				require.NoError(t, err)
 
 				// Exactly one session, exactly one round: the branch generates a
@@ -1231,8 +1230,8 @@ func TestGenerateRequestsForWindow_InteriorGapSemantics(t *testing.T) {
 			window := clients[0].Lifecycle.Windows[0]
 
 			// Seed is irrelevant for `constant`; fixed for reproducibility.
-			rng := rand.New(rand.NewSource(42))
-			requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+			rng := testWindowStreams(42)
+			requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, "sess_", nil)
 			require.NoError(t, err)
 
 			require.Equal(t, numRequests, len(requests),
@@ -1320,8 +1319,8 @@ func TestGenerateRequestsForWindow_ArrivalsOrderedAndInterior(t *testing.T) {
 					clients := windowClientSpec(process, tc.rate, startUs, tc.durationUs)
 					window := clients[0].Lifecycle.Windows[0]
 
-					rng := rand.New(rand.NewSource(seed))
-					requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, nil)
+					rng := testWindowStreams(seed)
+					requests, err := generateRequestsForWindow(clients[0], window, clients, 0.0, rng, "sess_", nil)
 					require.NoError(t, err)
 
 					require.Equal(t, numRequests, len(requests),

@@ -225,8 +225,7 @@ func TestBuildSessionPool_ClonesHaveIndependentSamplers(t *testing.T) {
 	}
 	srcR0 := &sim.Request{ID: "r_s0", SessionID: "s0", RoundIndex: 0, State: sim.StateQueued}
 
-	rng := rand.New(rand.NewSource(1))
-	clone, _ := cloneBlueprintForDup(src, srcR0, 1, rng)
+	clone, _ := cloneBlueprintForDup(src, srcR0, 1, 1)
 
 	// Pointer identity must differ: the clone must not alias the source's sampler.
 	if clone.InputSampler == src.InputSampler {

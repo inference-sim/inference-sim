@@ -205,7 +205,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		}
 	}()
 	g.host = host
-	seed := streamSeed(host.RNG())
+	seed := streamSeed(host.Seed())
 	if g.opts.Seed != nil {
 		seed = *g.opts.Seed
 	}

@@ -178,7 +178,7 @@ An llm-d router plugin in a scheduling profile that scores each candidate endpoi
 
 ### Seed
 
-The random seed for deterministic simulation. The same input at the same revisions produces a byte-identical `Result` outside `runtime` (INV-6). BLIS uses partitioned RNG to isolate randomness across subsystems. See [Configuration Reference](../reference/configuration.md#simulation-control).
+The random seed for deterministic simulation. The same input at the same revisions produces a byte-identical `Result` outside `runtime` (INV-6). Every draw comes from a named random stream (component, purpose and entity), so one request's draws do not depend on another's. See [Configuration Reference](../reference/configuration.md#simulation-control).
 
 ### SLO Class
 

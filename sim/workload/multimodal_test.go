@@ -1,13 +1,14 @@
 package workload
 
 import (
-	"math/rand"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestGenerateMultimodalTokens_TokenAccounting(t *testing.T) {
 	// BC-8: text + image + audio + video = total input
-	rng := rand.New(rand.NewSource(42))
+	rs := sim.Streams{Seed: 42, Component: "test", Entity: "request/0"}
 	mm := &MultimodalSpec{
 		TextDist:       DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 50, "max": 200}},
 		ImageDist:      DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 20, "min": 100, "max": 400}},
@@ -16,7 +17,7 @@ func TestGenerateMultimodalTokens_TokenAccounting(t *testing.T) {
 		AudioCountDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 1, "std_dev": 0, "min": 1, "max": 1}},
 	}
 
-	tokens, textLen, imageLen, audioLen, videoLen, err := GenerateMultimodalTokens(rng, mm)
+	tokens, textLen, imageLen, audioLen, videoLen, err := GenerateMultimodalTokens(rs, mm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,12 +36,12 @@ func TestGenerateMultimodalTokens_TokenAccounting(t *testing.T) {
 }
 
 func TestGenerateMultimodalTokens_ZeroModalities(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+	rs := sim.Streams{Seed: 42, Component: "test", Entity: "request/0"}
 	mm := &MultimodalSpec{
 		TextDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 50, "max": 200}},
 	}
 
-	tokens, textLen, imageLen, audioLen, videoLen, err := GenerateMultimodalTokens(rng, mm)
+	tokens, textLen, imageLen, audioLen, videoLen, err := GenerateMultimodalTokens(rs, mm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,10 +57,10 @@ func TestGenerateMultimodalTokens_ZeroModalities(t *testing.T) {
 }
 
 func TestGenerateMultimodalTokens_EmptySpec_MinimumOneToken(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+	rs := sim.Streams{Seed: 42, Component: "test", Entity: "request/0"}
 	mm := &MultimodalSpec{}
 
-	tokens, _, _, _, _, err := GenerateMultimodalTokens(rng, mm)
+	tokens, _, _, _, _, err := GenerateMultimodalTokens(rs, mm)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,11 +70,11 @@ func TestGenerateMultimodalTokens_EmptySpec_MinimumOneToken(t *testing.T) {
 }
 
 func TestGenerateMultimodalTokens_InvalidDistType_ReturnsError(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+	rs := sim.Streams{Seed: 42, Component: "test", Entity: "request/0"}
 	mm := &MultimodalSpec{
 		TextDist: DistSpec{Type: "invalid_type"},
 	}
-	_, _, _, _, _, err := GenerateMultimodalTokens(rng, mm)
+	_, _, _, _, _, err := GenerateMultimodalTokens(rs, mm)
 	if err == nil {
 		t.Fatal("expected error for invalid distribution type")
 	}

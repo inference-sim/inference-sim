@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"math"
-	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -126,11 +125,11 @@ func buildObserveCorpusPool(
 		return nil, nil, fmt.Errorf("corpus-mode requires every record to belong to a session, but %d of %d records have no session_id; pooled observe cannot mix session and non-session (single-shot) records — re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`)", nonSession, len(r0Requests))
 	}
 	// Optional seeded shuffle of the corpus step/admission order (#1480). Drawn from
-	// the SAME salted stream (seed ^ corpusShuffleSeedSalt) as `blis replay
+	// the same named stream (workload.CorpusShuffleStream) as `blis replay
 	// --shuffle-corpus`, so observe and replay of one corpus under the same --seed
 	// select the identical subset/order — required for calibration parity.
 	if shuffleCorpus {
-		workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
+		workload.ShuffleSessions(blueprints, r0Requests, workload.CorpusShuffleStream(seed))
 	}
 	driver, initial, err := workload.BuildSessionPool(blueprints, r0Requests, concurrentSessions, totalSessions, seed)
 	if err != nil {

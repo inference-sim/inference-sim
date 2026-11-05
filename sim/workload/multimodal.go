@@ -2,7 +2,6 @@ package workload
 
 import (
 	"fmt"
-	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -10,7 +9,11 @@ import (
 // GenerateMultimodalTokens generates input tokens for a multimodal request.
 // Returns the combined input tokens, per-modality counts, and any error.
 // Total input = text + image*imageCount + audio*audioCount + video*videoCount.
-func GenerateMultimodalTokens(rng *rand.Rand, mm *MultimodalSpec) ([]sim.TokenID, int, int, int, int, error) {
+//
+// The counts and lengths are drawn from the request's multimodal stream, the token IDs from its
+// input-token stream.
+func GenerateMultimodalTokens(rs sim.Streams, mm *MultimodalSpec) ([]sim.TokenID, int, int, int, int, error) {
+	rng := rs.Stream(purposeMultimodal)
 	textLen := 0
 	imageLen := 0
 	audioLen := 0
@@ -78,7 +81,7 @@ func GenerateMultimodalTokens(rng *rand.Rand, mm *MultimodalSpec) ([]sim.TokenID
 	if totalLen == 0 {
 		totalLen = 1 // minimum 1 token
 	}
-	tokens := sim.GenerateRandomTokenIDs(rng, totalLen)
+	tokens := tokens(rs, purposeInputTokens, totalLen)
 
 	return tokens, textLen, imageLen, audioLen, videoLen, nil
 }

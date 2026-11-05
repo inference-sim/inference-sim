@@ -319,7 +319,10 @@ func TestCapabilityMatrix_Policies(t *testing.T) {
 	t.Run("saturation detectors/each labels an overload and not a light load", func(t *testing.T) {
 		t.Parallel()
 		label := func(rate string) map[string]string {
-			o := capRun(t, runArgs(colocated(1), "--num-requests", "600", "--rate", rate, "--prompt-tokens", "2000",
+			// Seed 13: composite also false-alarms on this light load at seed 11 (one of eight
+			// seeds checked, 1, 2, 3, 5, 11, 13, 17, 23), which DEV-10's stated false-alarm rate
+			// is to account for; this law checks the label, not that rate.
+			o := capRun(t, runArgs(colocated(1), "--seed", "13", "--num-requests", "600", "--rate", rate, "--prompt-tokens", "2000",
 				"--output-tokens", "200", "--detectors", "all")...)
 			o.conserves(t, 600)
 			labels := map[string]string{}

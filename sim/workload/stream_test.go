@@ -354,8 +354,8 @@ func assertTimeVaryingParity(t *testing.T, mk func() *WorkloadSpec, horizon, max
 			t.Fatalf("blueprint %d ClientID eager=%q lazy=%q", j, eagerWl.Sessions[j].ClientID, lazySessions[j].ClientID)
 		}
 		// Identically-seeded blueprint RNGs must produce the same first draw.
-		if e, l := eagerWl.Sessions[j].RNG.Int63(), lazySessions[j].RNG.Int63(); e != l {
-			t.Fatalf("blueprint %d (session %q) RNG diverged eager=%d lazy=%d", j, eagerWl.Sessions[j].SessionID, e, l)
+		if e, l := eagerWl.Sessions[j].Streams, lazySessions[j].Streams; e != l {
+			t.Fatalf("blueprint %d (session %q) streams diverged eager=%+v lazy=%+v", j, eagerWl.Sessions[j].SessionID, e, l)
 		}
 	}
 }
@@ -918,13 +918,10 @@ func TestLazyRequestSource_Reasoning_TightMaxRequests_BlueprintParity(t *testing
 			t.Fatalf("blueprint %d: ClientID eager=%q lazy=%q",
 				i, wlEager.Sessions[i].ClientID, lazySessions[i].ClientID)
 		}
-		// RNG byte-identity: draw one Int63 from each and compare. If
-		// blueprint RNG seeds matched, these MUST match too.
-		eDraw := wlEager.Sessions[i].RNG.Int63()
-		lDraw := lazySessions[i].RNG.Int63()
-		if eDraw != lDraw {
-			t.Fatalf("blueprint %d (session %q): RNG draw diverged eager=%d lazy=%d — blueprintRNG seeds shifted",
-				i, wlEager.Sessions[i].SessionID, eDraw, lDraw)
+		// The blueprints must name the same stream family: equal names give equal draws.
+		if e, l := wlEager.Sessions[i].Streams, lazySessions[i].Streams; e != l {
+			t.Fatalf("blueprint %d (session %q): streams diverged eager=%+v lazy=%+v",
+				i, wlEager.Sessions[i].SessionID, e, l)
 		}
 	}
 	// Sanity: confirm at least one client lost its session to the cap.
@@ -987,8 +984,8 @@ func TestLazyRequestSource_Reasoning_MultiSession_MatchesEager(t *testing.T) {
 			t.Fatalf("session %d: ClientID eager=%q lazy=%q",
 				i, wlEager.Sessions[i].ClientID, lazySessions[i].ClientID)
 		}
-		if e, l := wlEager.Sessions[i].RNG.Int63(), lazySessions[i].RNG.Int63(); e != l {
-			t.Fatalf("session %d (%q): RNG draw diverged eager=%d lazy=%d",
+		if e, l := wlEager.Sessions[i].Streams, lazySessions[i].Streams; e != l {
+			t.Fatalf("session %d (%q): streams diverged eager=%+v lazy=%+v",
 				i, wlEager.Sessions[i].SessionID, e, l)
 		}
 	}
@@ -1322,11 +1319,11 @@ func assertBlueprintsEqual(t *testing.T, eager, lazy []SessionBlueprint) {
 		if e.Model != l.Model {
 			t.Fatalf("blueprint %d (%s): Model eager=%q lazy=%q", i, e.SessionID, e.Model, l.Model)
 		}
-		if e.RNG == nil || l.RNG == nil {
-			t.Fatalf("blueprint %d (%s): nil RNG eager=%v lazy=%v", i, e.SessionID, e.RNG == nil, l.RNG == nil)
+		if e.Streams.Component == "" || l.Streams.Component == "" {
+			t.Fatalf("blueprint %d (%s): unnamed streams eager=%+v lazy=%+v", i, e.SessionID, e.Streams, l.Streams)
 		}
-		if ed, ld := e.RNG.Int63(), l.RNG.Int63(); ed != ld {
-			t.Fatalf("blueprint %d (%s): RNG draw diverged eager=%d lazy=%d — bpSeed shifted",
+		if ed, ld := e.Streams, l.Streams; ed != ld {
+			t.Fatalf("blueprint %d (%s): streams diverged eager=%+v lazy=%+v",
 				i, e.SessionID, ed, ld)
 		}
 	}

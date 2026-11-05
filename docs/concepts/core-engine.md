@@ -190,6 +190,6 @@ This is the fundamental accounting invariant that ensures no requests are silent
 BLIS guarantees deterministic output: the same input at the same revisions produces a byte-identical `Result` document outside its `runtime` block (INV-6).
 
 Key mechanisms:
-- **Partitioned RNG:** Each subsystem (workload generation, scheduling, etc.) uses an independent random stream derived from the seed, so adding randomness to one subsystem doesn't perturb others
+- **Named random streams:** every draw comes from a substream named by component, purpose and entity (for example client 3, prompt length, request 17), seeded from the SHA-256 of the seed and the name (`sim.NewStream`, `sim.StreamGenerator`). A request's random inputs therefore do not depend on what earlier requests drew or on how the server responded, so two runs that differ only in configuration give the same requests the same inputs (DEV-6)
 - **Sorted map iteration:** Where map iteration order affects output, keys are sorted first
 - **Stdout/stderr separation:** Deterministic results go to stdout; wall-clock timing and diagnostics go to stderr via logrus
