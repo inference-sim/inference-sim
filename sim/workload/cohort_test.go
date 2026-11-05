@@ -1035,7 +1035,7 @@ func TestCohortValidation_NegativeTimeout_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for negative timeout")
 	}
-	if !strings.Contains(err.Error(), "timeout must be non-negative") {
+	if !strings.Contains(err.Error(), "timeout: -1 µs is negative") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -1059,7 +1059,7 @@ func TestCohortValidation_NegativePrefixLength_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for negative prefix_length")
 	}
-	if !strings.Contains(err.Error(), "prefix_length must be non-negative") {
+	if !strings.Contains(err.Error(), "prefix_length: -1 tokens is negative") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -1238,7 +1238,7 @@ func TestValidation_AbsoluteMode_CohortWithNegativeTraceRate_Fails(t *testing.T)
 	if err == nil {
 		t.Fatal("expected validation to fail for negative trace_rate")
 	}
-	if !strings.Contains(err.Error(), "must be positive") {
+	if !strings.Contains(err.Error(), "must be > 0") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -1264,7 +1264,7 @@ func TestValidation_AbsoluteMode_CohortWithNaNTraceRate_Fails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation to fail for NaN trace_rate")
 	}
-	if !strings.Contains(err.Error(), "must be a finite number") {
+	if !strings.Contains(err.Error(), "is not a finite number") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }
@@ -1290,7 +1290,7 @@ func TestValidation_AbsoluteMode_CohortWithInfTraceRate_Fails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected validation to fail for Inf trace_rate")
 	}
-	if !strings.Contains(err.Error(), "must be a finite number") {
+	if !strings.Contains(err.Error(), "is not a finite number") {
 		t.Errorf("unexpected error message: %v", err)
 	}
 }

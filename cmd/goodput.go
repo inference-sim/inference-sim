@@ -7,6 +7,7 @@ import (
 	"time"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -39,8 +40,10 @@ func parseSLODurationFlag(s string) (map[string]time.Duration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unparseable duration in pair %q: %w", pair, err)
 		}
-		if d <= 0 {
-			return nil, fmt.Errorf("non-positive duration in pair %q", pair)
+		// The one validator for a latency target (SIM-11): a trace header's goodput_slo_targets
+		// meets it too (workload.TraceHeader.Validate).
+		if err := check.LatencyTargetMs(key, float64(d)/float64(time.Millisecond)); err != nil {
+			return nil, fmt.Errorf("pair %q: %w", pair, err)
 		}
 		out[key] = d
 	}
