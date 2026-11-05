@@ -67,10 +67,48 @@ FILES = {
     """,
 }
 
+# One file per read pattern of the READ RULE, each naming the variable it reads.
+READS = {
+    "vllm/a/get.py": 'import os\nx = os.environ.get("R_ENVIRON_GET", "0")\n',
+    "vllm/a/getenv.py": 'import os\nx = os.getenv("R_OS_GETENV")\n',
+    "vllm/a/imported.py": 'from os import environ, getenv\nx = environ.get("R_IMPORTED_GET")\ny = getenv("R_IMPORTED_GETENV")\n',
+    "vllm/a/subscript.py": 'import os\nx = os.environ["R_SUBSCRIPT"]\n',
+    "vllm/a/contains.py": 'import os\nif "R_IN" in os.environ or "R_NOT_IN" not in os.environ:\n    pass\n',
+    "vllm/a/setdefault.py": 'import os\nos.environ.setdefault("R_SETDEFAULT", "1")\n',
+    "vllm/a/pop.py": 'import os\nold = os.environ.pop("R_POP_USED", None)\nos.environ.pop("W_POP_DROPPED", None)\n',
+    "vllm/a/is_set.py": 'from vllm import envs\nif envs.is_set("R_IS_SET"):\n    pass\n',
+    "vllm/a/const.py": 'import os\nNAME = "R_CONSTANT"\nx = os.environ.get(NAME)\n',
+    "vllm/a/ifexp.py": 'import os\nn = "R_IFEXP_A" if flag else "R_IFEXP_B"\nx = os.environ.get(n)\n',
+    "vllm/a/loop.py": 'import os\nfor k in ("R_LOOP_A", "R_LOOP_B"):\n    x = os.environ.get(k)\nD = {"R_LOOP_C": 1}\nold = {k: os.environ.get(k) for k in D}\n',
+    "vllm/a/alias.py": 'import os\ndef f(environ=None):\n    env = os.environ if environ is None else environ\n    return env.get("R_ALIAS")\n',
+    "vllm/a/write.py": 'import os\nos.environ["W_ONLY_WRITTEN"] = "1"\ndel os.environ["W_DELETED"]\n',
+    "vllm/a/comm.py": 'pins = {"NCCL_PROTO": "Simple"}\nchild = {}\nchild.setdefault("UCX_TLS", "rc")\n',
+    "vllm/a/envs_attr.py": 'from vllm import envs\nx = envs.VLLM_A\n',
+    "vllm/platforms/rocm.py": 'import os\nx = os.environ.get("R_PLATFORM_MODULE")\n',
+    "csrc/k.cu": 'const char* a = std::getenv("R_CPP_STD");\nconst char* b = getenv("R_CPP_PLAIN");\n'
+                 'constexpr const char* kName = "R_CPP_CONST";\nconst char* c = std::getenv(kName);\n',
+    "rust/src/server/src/x.rs": 'const N: &str = "R_RUST_CONST";\nfn f() { std::env::var("R_RUST_VAR"); env::var_os(N); }\n'
+                                '#[cfg(test)]\nmod tests { fn t() { std::env::var("W_RUST_TEST"); } }\n',
+    # EXCLUDED: separate commands and build steps, never the serving process.
+    "vllm/collect_env.py": 'import os\nx = os.environ.get("X_COLLECT_ENV")\n',
+    "vllm/benchmarks/b.py": 'import os\nx = os.environ.get("X_BENCHMARKS")\n',
+    "vllm/entrypoints/cli/openai.py": 'import os\nx = os.environ.get("X_CLI_CLIENT")\n',
+    "rust/src/bench/src/b.rs": 'fn f() { std::env::var("X_RUST_BENCH"); }\n',
+    "rust/proto/build.rs": 'fn f() { std::env::var("X_BUILD_RS"); }\n',
+    "csrc/gen.py": 'import os\nx = os.environ.get("X_CSRC_GENERATOR")\n',
+    "tests/t.py": 'import os\nx = os.environ.get("X_TESTS")\n',
+    "setup.py": 'import os\nx = os.environ.get("X_SETUP")\n',
+}
+READ_NAMES = sorted(["R_ENVIRON_GET", "R_OS_GETENV", "R_IMPORTED_GET", "R_IMPORTED_GETENV", "R_SUBSCRIPT",
+                     "R_IN", "R_NOT_IN", "R_SETDEFAULT", "R_POP_USED", "R_IS_SET", "R_CONSTANT",
+                     "R_IFEXP_A", "R_IFEXP_B", "R_ALIAS", "R_LOOP_A", "R_LOOP_B", "R_LOOP_C", "R_PLATFORM_MODULE",
+                     "R_CPP_STD", "R_CPP_PLAIN", "R_CPP_CONST", "R_RUST_CONST", "R_RUST_VAR",
+                     "NCCL_PROTO", "UCX_TLS"])
+
 CONFIG = ["block_size", "chat_template", "enable_log_requests", "headless",
           "kv_transfer_config.kv_connector", "max_num_seqs", "model_tag", "port",
           "speculative_config.method", "speculative_config.num_speculative_tokens"]
-ENV = ["NCCL_MAX_CTAS", "VLLM_A", "VLLM_B"]
+ENV = ["NCCL_MAX_CTAS", "SOME_OTHER", "VLLM_A", "VLLM_B"]
 
 
 def entry():
@@ -114,8 +152,64 @@ class GenFieldsTest(unittest.TestCase):
     def test_config_names_are_engine_args_expanded_into_their_config_classes(self):
         self.assertEqual(gen_fields.config_names(self.src), CONFIG)
 
-    def test_env_names_are_envs_keys_and_communication_library_reads(self):
+    def test_env_names_are_envs_keys_literal_reads_and_communication_library_writes(self):
         self.assertEqual(gen_fields.env_names(self.src, []), ENV)
+
+    def write(self, files):
+        for path, body in files.items():
+            p = os.path.join(self.src, path)
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w") as f:
+                f.write(body)
+
+    def reads(self, files):
+        self.write(files)
+        return gen_fields.literal_env_reads(self.src)
+
+    def test_each_read_pattern_is_found_and_records_where(self):
+        reads, dynamic = self.reads(READS)
+        for name in READ_NAMES:
+            with self.subTest(name=name):
+                self.assertIn(name, reads)
+        self.assertEqual(reads["R_SUBSCRIPT"], ["vllm/a/subscript.py:2"])
+        self.assertEqual(reads["R_CPP_CONST"], ["csrc/k.cu:4"])
+        self.assertEqual(reads["R_RUST_CONST"], ["rust/src/server/src/x.rs:2"])
+        self.assertEqual(dynamic, [])
+
+    def test_a_variable_vllm_only_writes_is_not_a_read(self):
+        reads, _ = self.reads(READS)
+        for name in ("W_ONLY_WRITTEN", "W_DELETED", "W_POP_DROPPED", "W_RUST_TEST"):
+            self.assertNotIn(name, reads)
+
+    def test_the_excluded_paths_and_only_those_are_skipped(self):
+        reads, _ = self.reads(READS)
+        for name in ("X_COLLECT_ENV", "X_BENCHMARKS", "X_CLI_CLIENT", "X_RUST_BENCH", "X_BUILD_RS",
+                     "X_CSRC_GENERATOR", "X_TESTS", "X_SETUP"):
+            self.assertNotIn(name, reads)
+        names = {n for n in reads if n.startswith(("R_", "NCCL_", "UCX_", "SOME_"))}
+        self.assertEqual(sorted(names), sorted(READ_NAMES + ["NCCL_MAX_CTAS", "SOME_OTHER"]))
+
+    def test_a_module_named_for_another_platform_is_read(self):
+        reads, _ = self.reads(READS)
+        self.assertEqual(reads["R_PLATFORM_MODULE"], ["vllm/platforms/rocm.py:2"])
+
+    def test_an_envs_attribute_that_is_not_a_key_stops_the_generator(self):
+        self.write({"vllm/a/bad.py": "from vllm import envs\nx = envs.VLLM_NOT_A_KEY\n"})
+        with self.assertRaises(SystemExit) as e:
+            gen_fields.literal_env_reads(self.src)
+        self.assertIn("envs.VLLM_NOT_A_KEY", str(e.exception))
+
+    def test_a_dynamic_read_must_be_listed_and_its_names_are_added(self):
+        self.write({"vllm/a/dyn.py": "import os\ndef f(name):\n    return os.environ.get(name)\n"})
+        call = "vllm/a/dyn.py: os.environ.get(name)"
+        with self.assertRaises(SystemExit) as e:
+            gen_fields.env_names(self.src, [], {})
+        self.assertIn(call, str(e.exception))
+        names = gen_fields.env_names(self.src, [], {call: {"reason": "r", "names": ["R_TRACED"]}})
+        self.assertIn("R_TRACED", names)
+        with self.assertRaises(SystemExit) as e:
+            gen_fields.env_names(self.src, [], {call: {"reason": "r"}, "vllm/gone.py: os.getenv(x)": {"reason": "r"}})
+        self.assertIn("vllm/gone.py", str(e.exception))
 
     def test_output_is_sorted_by_name_then_source(self):
         code, out, _ = self.run_main(self.src, self.status_path)

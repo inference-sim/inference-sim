@@ -49,10 +49,18 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
 
 - **Names** come from vLLM's own source at the pinned commit, not by hand: `fields/gen_fields.py`
   reads the `EngineArgs`, `AsyncEngineArgs` and front-end flag fields (expanding each config
-  object to `<field>.<subfield>`), every key of `vllm/envs.py`'s `environment_variables`, and the
-  NCCL, NVSHMEM and UCX variables vLLM reads by a literal name. CI runs
+  object to `<field>.<subfield>`), every key of `vllm/envs.py`'s `environment_variables`, and
+  every environment variable vLLM reads by a literal name: `os.environ.get`, `os.getenv`,
+  `os.environ[...]`, `in os.environ`, `setdefault`, `envs.is_set` and `envs.X` under `vllm/`,
+  `getenv` in `csrc/`, and `env::var` in the Rust front end under `rust/`, with each read's
+  file and line (`--env-reads`). It also lists the NCCL, NVSHMEM and UCX variables vLLM sets for
+  those libraries. The generator's docstring states the read rule and the paths it skips, each
+  a separate command or a build step (`vllm collect-env`, `vllm bench`, `vllm chat`, tests,
+  build scripts); a module named for another platform is not skipped. A read whose name is
+  not a literal is listed in `status.json`'s `dynamic_reads`, with the reason. CI runs
   `python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json`, which
-  fails while a name vLLM reads has no entry or an entry names a field vLLM does not have.
+  fails while a name vLLM reads has no entry, an entry names a field vLLM does not have, or a
+  dynamic read is unlisted.
 - **Status, evidence and estimation** are in `fields/status.json`, edited by hand. The first
   version was seeded as release plan §3.3 says: a field the port reads and that changes a
   decision is `modelled`, citing the recorded traces that set it; a field the port refuses is

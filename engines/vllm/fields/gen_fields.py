@@ -11,6 +11,7 @@ Usage:
     python3 -I fields/gen_fields.py <vllm-source> fields/status.json > fields.json
     python3 -I fields/gen_fields.py <vllm-source> fields/status.json --check fields.json
     python3 -I fields/gen_fields.py <vllm-source> --names           (the derived names, one per line)
+    python3 -I fields/gen_fields.py <vllm-source> --env-reads       (each variable read, and where)
 
 Name spaces. A configuration field is named as `vllm serve` accepts it, in snake case:
   - every field of EngineArgs and AsyncEngineArgs (vllm/engine/arg_utils.py) that has a flag;
@@ -22,10 +23,57 @@ Name spaces. A configuration field is named as `vllm serve` accepts it, in snake
     class, named <field>.<subfield>, recursively, and no entry for the object itself. A field
     declared init=False, or typed SkipValidation[...] (set by vLLM's own code, not by a user),
     is not a setting and gets no entry.
-An environment variable is named as it is set: every key of vllm/envs.py's
-environment_variables, and every NCCL_*, NVSHMEM_* or UCX_* variable vLLM reads or sets by a
-literal name anywhere under vllm/ (VLM-3 names these libraries). status.json's "extra_env" adds
-other literal reads a reviewer decides belong in the list.
+An environment variable is named as it is read. The list holds every key of vllm/envs.py's
+environment_variables and every variable vLLM v0.32.0 reads by a literal name (READ RULE below).
+status.json's "extra_env" adds a variable a reviewer decides belongs in the list although no
+literal read names it.
+
+READ RULE. A read is one of these, its name a string literal or a constant bound to exactly one
+string in the same file:
+  Python, every .py file under vllm/ (read with ast):
+    os.environ.get("X") and os.getenv("X"), also as imported environ / getenv, and through a
+      name a function binds to os.environ (env = os.environ if environ is None else environ);
+    os.environ["X"] as a value (not as an assignment or del target);
+    "X" in os.environ and "X" not in os.environ;
+    os.environ.setdefault("X", ...), since a value already set wins;
+    os.environ.pop("X", ...) when its value is used;
+    envs.is_set("X");
+    envs.X, which must be a key of environment_variables, or the generator stops.
+  C and CUDA, every .c, .cc, .cpp, .cu, .cuh, .h, .hpp and .inl file under csrc/:
+    getenv("X") and std::getenv("X"), or either applied to a const char* constant.
+  Rust, every .rs file under rust/ (the vllm-rs front end, selected by VLLM_USE_RUST_FRONTEND):
+    env::var("X") and env::var_os("X"), or either applied to a const &str. Code from a file's
+    first #[cfg(test)] on is test code and is not read.
+A variable vLLM only writes (os.environ["X"] = v, del, or a pop whose value is dropped) is not a
+read: vLLM sets it for a library or a child process, and a value the user set is overwritten.
+NCCL_*, NVSHMEM_* and UCX_* are the exception. VLM-3 names those libraries, which read what vLLM
+sets, so each of their variables that vLLM reads or sets is listed: set through os.environ, as a
+key of a dict literal (the variables batch_invariant.py pins for NCCL) or by a mapping's
+setdefault (a child process's environment).
+A name is also resolved through a loop over a literal collection (for v in ["A", "B"],
+for k, _ in {"A": ...}.items(), or a name bound to such a collection in the same file) and
+through a conditional expression of literals ("A" if cond else "B"). A read whose name is
+still not resolved (os.environ.get(name)) is listed in status.json's "dynamic_reads", keyed
+"<path>: <call>", with the reason, and with the variables it can read ("names") when a reviewer
+has traced them; those are added to the list. A dynamic read not listed there, or a listed one
+vLLM no longer makes, stops the generator. Reading the whole environment (os.environ.copy(), dict(os.environ), .items()) to pass
+it to a child process, hash it or print it names no variable.
+
+EXCLUDED, by this rule and no other. Each excluded path is a separate command or a build step,
+never the serving process (vllm serve, its engine core and its workers):
+  vllm/collect_env.py and vllm/entrypoints/cli/collect_env.py: `vllm collect-env`, which prints
+    the environment for a bug report;
+  vllm/benchmarks/ and vllm/entrypoints/cli/benchmark/: `vllm bench`, a client that sends
+    requests to a server;
+  vllm/entrypoints/cli/openai.py: `vllm chat` and `vllm complete`, clients;
+  rust/src/bench/, the Rust benchmark client, and every build.rs, a build script;
+  the .py code generators under csrc/, which run at build time;
+  everything outside vllm/, csrc/ and rust/ (tests/, benchmarks/, examples/, docs/, tools/,
+    setup.py, cmake/): tests, examples and the build, none of it in the serving process.
+Nothing else is excluded. A module named for another platform (platforms/rocm.py, xpu.py,
+tpu, cpu, an amd/ kernel directory) is read like any other. Design §7.4 lets a variable read
+only behind a platform check that is false on CUDA be proven inert by a reviewed static
+argument; that is work for the variable's issue, not a reason to leave it off the list.
 """
 
 import argparse
@@ -46,9 +94,6 @@ CONFIG_OF_DICT = {
     "watermark_config": "WatermarkConfig",
     "diffusion_config": "DiffusionConfig",
 }
-
-COMM_ENV = re.compile(r"^(NCCL|NVSHMEM|UCX)_[A-Z0-9_]+$")
-
 
 def parse(path):
     with open(path, encoding="utf-8") as f:
@@ -148,7 +193,7 @@ def config_names(src):
     return sorted(set(names))
 
 
-def env_names(src, extra):
+def envs_keys(src):
     tree = parse(os.path.join(src, "vllm", "envs.py"))
     keys = []
     for n in tree.body:
@@ -157,42 +202,326 @@ def env_names(src, extra):
             keys = [k.value for k in n.value.keys if isinstance(k, ast.Constant)]
     if not keys:
         raise SystemExit("gen_fields: vllm/envs.py has no environment_variables dict")
-    names = set(keys) | set(extra)
-    for name in sorted(literal_env_reads(src)):
-        if COMM_ENV.match(name):
-            names.add(name)
+    return keys
+
+
+def env_names(src, extra, dynamic=None):
+    """envs.py's keys, every variable read by a literal name (READ RULE), and extra_env."""
+    names = set(envs_keys(src)) | set(extra)
+    reads, dyn = literal_env_reads(src)
+    names |= set(reads)
+    for entry in (dynamic or {}).values():
+        names |= set(entry.get("names", []))
+    if dynamic is not None:
+        unlisted = sorted(set(dyn) - set(dynamic))
+        gone = sorted(set(dynamic) - set(dyn))
+        if unlisted or gone:
+            msg = []
+            if unlisted:
+                msg.append("reads whose name is not a literal, not in status.json dynamic_reads:\n  " + "\n  ".join(unlisted))
+            if gone:
+                msg.append("dynamic_reads entries vLLM no longer makes:\n  " + "\n  ".join(gone))
+            raise SystemExit("gen_fields: " + "\n".join(msg))
     return sorted(names)
 
 
-ENV_CALLS = {"os.environ.get", "os.getenv", "environ.get", "os.environ.setdefault", "os.environ.pop", "getenv"}
+# Paths, relative to the vLLM checkout, that are not part of the serving process (EXCLUDED in
+# the module docstring). A path ending in "/" excludes a directory.
+EXCLUDED = (
+    "vllm/collect_env.py",
+    "vllm/entrypoints/cli/collect_env.py",
+    "vllm/benchmarks/",
+    "vllm/entrypoints/cli/benchmark/",
+    "vllm/entrypoints/cli/openai.py",
+    "rust/src/bench/",
+)
+COMM_ENV = re.compile(r"^(NCCL|NVSHMEM|UCX)_[A-Z0-9_]+$")
+ENVIRON = re.compile(r"^(?:os\.)?environ$")
+GET_CALL = re.compile(r"^(?:os\.)?(?:environ\.get|getenv)$")
+CPP_EXT = (".c", ".cc", ".cpp", ".cu", ".cuh", ".h", ".hpp", ".inl")
+CPP_CONST = re.compile(r'\bconst\s+char\s*\*\s*(?:const\s+)?(\w+)\s*=\s*"([^"]+)"')
+CPP_READ = re.compile(r'\b(?:std::)?getenv\s*\(\s*(?:"([^"]+)"|(\w+))\s*\)')
+RS_CONST = re.compile(r'\bconst\s+(\w+)\s*:\s*&(?:\'static\s+)?str\s*=\s*"([^"]+)"')
+RS_READ = re.compile(r'\benv::var(?:_os)?\s*\(\s*(?:"([^"]+)"|(\w+))\s*\)')
+
+
+def excluded(rel):
+    rel = rel.replace(os.sep, "/")
+    if os.path.basename(rel) == "build.rs":
+        return True
+    if rel.startswith("csrc/") and rel.endswith(".py"):
+        return True
+    return any(rel == e or (e.endswith("/") and rel.startswith(e)) for e in EXCLUDED)
+
+
+def walk(src, top, exts):
+    for root, dirs, files in os.walk(os.path.join(src, top)):
+        dirs.sort()
+        for f in sorted(files):
+            p = os.path.join(root, f)
+            rel = os.path.relpath(p, src).replace(os.sep, "/")
+            if f.endswith(exts) and not excluded(rel):
+                yield p, rel
+
+
+def literal_strings(node, consts):
+    """The strings an expression can be when every branch of it is a literal: a string, a
+    name bound to strings, or a conditional expression of those. None when it can be other."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    if isinstance(node, ast.Name) and node.id in consts:
+        return set(consts[node.id])
+    if isinstance(node, ast.IfExp):
+        a, b = literal_strings(node.body, consts), literal_strings(node.orelse, consts)
+        return a | b if a is not None and b is not None else None
+    return None
+
+
+def literal_collection(node, consts, collections):
+    """The strings a loop over node visits, when node is a literal list, tuple or set of
+    strings, a dict literal (its keys), its .keys() or .items(), or a name bound to one."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("keys", "items") and not node.args:
+        node = node.func.value
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id in ("frozenset", "set", "tuple", "list") and len(node.args) == 1):
+        node = node.args[0]
+    if isinstance(node, ast.Name) and node.id in collections:
+        return collections[node.id]
+    elts = node.keys if isinstance(node, ast.Dict) else node.elts if isinstance(node, (ast.List, ast.Tuple, ast.Set)) else None
+    if elts is None:
+        return None
+    out = set()
+    for e in elts:
+        v = literal_strings(e, consts) if e is not None else None
+        if v is None:
+            return None
+        out |= v
+    return out
+
+
+SCOPES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def scope_nodes(scope):
+    """The nodes of one scope, not descending into a nested function or class."""
+    todo = list(ast.iter_child_nodes(scope))
+    while todo:
+        n = todo.pop()
+        yield n
+        if not isinstance(n, SCOPES):
+            todo.extend(ast.iter_child_nodes(n))
+
+
+def string_constants(scope, outer=({}, {})):
+    """Names one scope binds to string literals (or to names or conditional expressions of
+    them), and names it binds to literal collections of strings; a name it also binds to
+    anything else is dropped."""
+    assigns = []
+    for n in scope_nodes(scope):
+        if isinstance(n, (ast.Assign, ast.AnnAssign)) and n.value is not None:
+            for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
+                if isinstance(t, ast.Name):
+                    assigns.append((t.id, n.value))
+    consts, colls = {}, {}
+    seen_c, seen_k = dict(outer[0]), dict(outer[1])
+    while True:  # to a fixed point, so a = b, b = "X" resolves whatever the order
+        before = (len(consts), len(colls))
+        for name, value in assigns:
+            v = literal_strings(value, {**seen_c, **consts})
+            if v is not None:
+                consts.setdefault(name, set()).update(v)
+                continue
+            c = literal_collection(value, {**seen_c, **consts}, {**seen_k, **colls})
+            if c is not None:
+                colls.setdefault(name, set()).update(c)
+        if (len(consts), len(colls)) == before:
+            break
+    allc, allk = {**seen_c, **consts}, {**seen_k, **colls}
+    other = {name for name, value in assigns
+             if literal_strings(value, allc) is None and literal_collection(value, allc, allk) is None}
+    # A name this scope binds hides the enclosing scope's binding of it.
+    for name in other:
+        seen_c.pop(name, None)
+        seen_k.pop(name, None)
+    seen_c.update({k: v for k, v in consts.items() if k not in other})
+    seen_k.update({k: v for k, v in colls.items() if k not in other})
+    return seen_c, seen_k
+
+
+def python_env_reads(path, rel, keys):
+    """(reads, writes, dynamic) for one module: reads and writes map a name to its lines."""
+    tree = parse(path)
+    parent = {}
+    for n in ast.walk(tree):
+        for c in ast.iter_child_nodes(n):
+            parent[c] = n
+    bound = {}
+
+    def scoped(node):
+        """The constants and collections visible at node: each enclosing function's (and
+        lambda's) bindings over the module's. A class body's names are not visible inside its
+        methods, as in Python."""
+        chain, p = [], parent.get(node)
+        while p is not None:
+            if isinstance(p, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                chain.append(p)
+            p = parent.get(p)
+        env = ({}, {})
+        for scope in reversed(chain):
+            if scope not in bound:
+                bound[scope] = string_constants(scope, env)
+            env = bound[scope]
+        return env
+
+    def loop_names(name_node, consts, colls):
+        """The strings a loop variable takes, when an enclosing for loops over a literal
+        collection (for v in [...], for k, _ in d.items(), {k: ... for k in [...]})."""
+        p = parent.get(name_node)
+        while p is not None:
+            gens = [(p.target, p.iter)] if isinstance(p, (ast.For, ast.AsyncFor)) else \
+                [(g.target, g.iter) for g in p.generators] if isinstance(p, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)) else []
+            for target, it in gens:
+                first = target.elts[0] if isinstance(target, ast.Tuple) and target.elts else target
+                if isinstance(first, ast.Name) and first.id == name_node.id:
+                    return literal_collection(it, consts, colls)
+            p = parent.get(p)
+        return None
+
+    def names_of(a):
+        consts, colls = scoped(a)
+        v = literal_strings(a, consts)
+        if v is None and isinstance(a, ast.Name):
+            v = loop_names(a, consts, colls)
+        return v
+
+    def comm_setting(const):
+        """Whether a string is a key of a dict literal, or the first argument of a mapping's
+        setdefault: the two ways vLLM hands a NCCL, NVSHMEM or UCX variable to the library or
+        a child process other than os.environ[...] = v."""
+        p = parent.get(const)
+        if isinstance(p, ast.Dict) and any(k is const for k in p.keys):
+            return True
+        return (isinstance(p, ast.Call) and isinstance(p.func, ast.Attribute)
+                and p.func.attr == "setdefault" and p.args and p.args[0] is const)
+
+    def environ_aliases(scope):
+        """Names a function binds to os.environ, alone or as one branch of a conditional
+        expression (env = os.environ if environ is None else environ)."""
+        out = set()
+        for a in scope_nodes(scope):
+            if isinstance(a, ast.Assign) and len(a.targets) == 1 and isinstance(a.targets[0], ast.Name):
+                v = a.value
+                branches = [v.body, v.orelse] if isinstance(v, ast.IfExp) else [v]
+                if any(ENVIRON.match(ast.unparse(b)) for b in branches):
+                    out.add(a.targets[0].id)
+        return out
+
+    alias_of = {}
+
+    def is_environ(node):
+        if ENVIRON.match(ast.unparse(node)):
+            return True
+        if not isinstance(node, ast.Name):
+            return False
+        p = parent.get(node)
+        while p is not None and not isinstance(p, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
+            p = parent.get(p)
+        if p not in alias_of:
+            alias_of[p] = environ_aliases(p)
+        return node.id in alias_of[p]
+
+    reads, writes, dynamic = {}, {}, []
+    for n in ast.walk(tree):
+        names, is_read = None, True
+        if isinstance(n, ast.Call) and n.args:
+            fn = ast.unparse(n.func)
+            method = n.func.attr if isinstance(n.func, ast.Attribute) else None
+            on_environ = method is not None and is_environ(n.func.value)
+            if GET_CALL.match(fn) or fn == "envs.is_set" or (on_environ and method in ("get", "setdefault")):
+                pass
+            elif on_environ and method == "pop":
+                is_read = not isinstance(parent.get(n), ast.Expr)
+            else:
+                continue
+            names = names_of(n.args[0])
+            if names is None:
+                if is_read:
+                    dynamic.append("%s: %s" % (rel, ast.unparse(n)))
+                continue
+        elif isinstance(n, ast.Subscript) and is_environ(n.value):
+            is_read = isinstance(n.ctx, ast.Load)
+            names = names_of(n.slice)
+            if names is None:
+                if is_read:
+                    dynamic.append("%s: %s" % (rel, ast.unparse(n)))
+                continue
+        elif (isinstance(n, ast.Compare) and len(n.ops) == 1 and isinstance(n.ops[0], (ast.In, ast.NotIn))
+              and is_environ(n.comparators[0])):
+            names = names_of(n.left)
+            if names is None:
+                dynamic.append("%s: %s" % (rel, ast.unparse(n)))
+                continue
+        elif isinstance(n, ast.Attribute) and ast.unparse(n.value) in ("envs", "vllm.envs") and isinstance(n.ctx, ast.Load):
+            if n.attr in keys or not n.attr.isupper():
+                continue  # a key already listed, or a helper such as envs.is_set
+            raise SystemExit("gen_fields: %s:%d reads envs.%s, which is not a key of environment_variables"
+                             % (rel, n.lineno, n.attr))
+        elif (isinstance(n, ast.Constant) and isinstance(n.value, str) and COMM_ENV.match(n.value)
+              and comm_setting(n)):
+            # A NCCL, NVSHMEM or UCX variable vLLM sets through a mapping, such as a key of the
+            # variables it pins for NCCL or of a child's environment: those libraries read it.
+            names, is_read = {n.value}, False
+        else:
+            continue
+        for name in names:
+            (reads if is_read else writes).setdefault(name, []).append("%s:%d" % (rel, n.lineno))
+    return reads, writes, dynamic
+
+
+def regex_env_reads(path, rel, const_re, read_re, cut_at=None):
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if cut_at is not None and cut_at in text:
+        text = text[:text.index(cut_at)]
+    consts = dict(const_re.findall(text))
+    reads = {}
+    for m in read_re.finditer(text):
+        name = m.group(1) or consts.get(m.group(2))
+        if name is None:
+            raise SystemExit("gen_fields: %s:%d reads the environment through %s, which is not a string constant"
+                             % (rel, text.count("\n", 0, m.start()) + 1, m.group(2)))
+        reads.setdefault(name, []).append("%s:%d" % (rel, text.count("\n", 0, m.start()) + 1))
+    return reads
 
 
 def literal_env_reads(src):
-    """Every environment variable read or set by a literal name under vllm/, with its files."""
-    out = {}
-    for root, dirs, files in os.walk(os.path.join(src, "vllm")):
-        dirs.sort()
-        for f in sorted(files):
-            if not f.endswith(".py"):
-                continue
-            p = os.path.join(root, f)
-            for node in ast.walk(parse(p)):
-                name = None
-                if isinstance(node, ast.Call) and ast.unparse(node.func) in ENV_CALLS and node.args:
-                    a = node.args[0]
-                    if isinstance(a, ast.Constant) and isinstance(a.value, str):
-                        name = a.value
-                elif isinstance(node, ast.Subscript) and ast.unparse(node.value) in ("os.environ", "environ"):
-                    if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
-                        name = node.slice.value
-                elif (isinstance(node, ast.Compare) and len(node.comparators) == 1
-                      and isinstance(node.ops[0], (ast.In, ast.NotIn))
-                      and ast.unparse(node.comparators[0]) in ("os.environ", "environ")
-                      and isinstance(node.left, ast.Constant) and isinstance(node.left.value, str)):
-                    name = node.left.value
-                if name:
-                    out.setdefault(name, set()).add(os.path.relpath(p, src))
-    return out
+    """Every variable read by a literal name (READ RULE), with where it is read, and the
+    reads whose name is not a literal."""
+    keys = set(envs_keys(src))
+    reads, writes, dynamic = {}, {}, []
+
+    def add(into, found):
+        for k, v in found.items():
+            into.setdefault(k, []).extend(v)
+
+    for p, rel in walk(src, "vllm", (".py",)):
+        r, w, d = python_env_reads(p, rel, keys)
+        add(reads, r)
+        add(writes, w)
+        dynamic += d
+    for p, rel in walk(src, "csrc", CPP_EXT):
+        add(reads, regex_env_reads(p, rel, CPP_CONST, CPP_READ))
+    for p, rel in walk(src, "rust", (".rs",)):
+        add(reads, regex_env_reads(p, rel, RS_CONST, RS_READ, cut_at="#[cfg(test)]"))
+    for name, where in writes.items():
+        if COMM_ENV.match(name):
+            reads.setdefault(name, []).extend(where)
+    return {k: sorted(set(v), key=site_order) for k, v in reads.items()}, sorted(set(dynamic))
+
+
+def site_order(site):
+    path, _, line = site.rpartition(":")
+    return path, int(line)
 
 
 def key(source, name):
@@ -200,7 +529,7 @@ def key(source, name):
 
 
 def build(src, status):
-    derived = [("config", n) for n in config_names(src)] + [("env", n) for n in env_names(src, status.get("extra_env", []))]
+    derived = [("config", n) for n in config_names(src)] + [("env", n) for n in env_names(src, status.get("extra_env", []), status.get("dynamic_reads", {}))]
     entries = status["fields"]
     missing = [key(s, n) for s, n in derived if key(s, n) not in entries]
     stale = sorted(set(entries) - {key(s, n) for s, n in derived})
@@ -268,7 +597,7 @@ def main(argv):
     ap.add_argument("status", nargs="?")
     ap.add_argument("--check", metavar="FIELDS_JSON")
     ap.add_argument("--names", action="store_true", help="print the derived names and exit")
-    ap.add_argument("--env-reads", action="store_true", help="print every literal env read under vllm/ and exit")
+    ap.add_argument("--env-reads", action="store_true", help="print every variable read (READ RULE) and where, then exit")
     a = ap.parse_args(argv)
     if a.names:
         for n in config_names(a.vllm_source):
@@ -277,8 +606,11 @@ def main(argv):
             print("env:" + n)
         return 0
     if a.env_reads:
-        for n, files in sorted(literal_env_reads(a.vllm_source).items()):
-            print(n, " ".join(sorted(files)))
+        reads, dynamic = literal_env_reads(a.vllm_source)
+        for n, where in sorted(reads.items()):
+            print(n, " ".join(where))
+        for d in dynamic:
+            print("dynamic", d)
         return 0
     if a.status is None:
         ap.error("status.json is required")

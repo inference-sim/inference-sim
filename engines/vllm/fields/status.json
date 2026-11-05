@@ -8,6 +8,114 @@
   "config:speculative_config.synthetic_acceptance_length": "AD33 \u00a715, drafter acceptance"
  },
  "extra_env": [],
+ "dynamic_reads": {
+  "vllm/config/utils.py: envs.is_set(env_name)": {
+   "reason": "get_from_deprecated_env_if_set, called only by set_from_deprecated_env_if_set (config/utils.py:511), which nothing in vLLM v0.32.0 calls"
+  },
+  "vllm/config/utils.py: os.environ.get(env_name)": {
+   "reason": "the same helper as envs.is_set(env_name), which nothing in vLLM v0.32.0 calls"
+  },
+  "vllm/engine/arg_utils.py: os.environ.get(current_platform.device_control_env_var)": {
+   "reason": "the platform's device_control_env_var: CUDA_VISIBLE_DEVICES on CUDA and ROCm (platforms/cuda.py:231, rocm.py:604), ZE_AFFINITY_MASK on XPU (xpu.py:112), CPU_VISIBLE_MEMORY_NODES on CPU (cpu.py:109, utils/cpu_resource_utils.py:17)",
+   "names": [
+    "CUDA_VISIBLE_DEVICES",
+    "ZE_AFFINITY_MASK",
+    "CPU_VISIBLE_MEMORY_NODES"
+   ]
+  },
+  "vllm/envs.py: name in os.environ": {
+   "reason": "envs.is_set(name), which first checks that name is a key of environment_variables (envs.py:2346), so it reads only listed variables"
+  },
+  "vllm/envs.py: os.getenv(env_name)": {
+   "reason": "the helpers env_with_choices, env_list_with_choices, env_set_with_choices and get_env_or_set_default, each called with a key of environment_variables in its own entry, so they read only listed variables"
+  },
+  "vllm/platforms/interface.py: cls.device_control_env_var in os.environ": {
+   "reason": "the platform's device_control_env_var: CUDA_VISIBLE_DEVICES on CUDA and ROCm (platforms/cuda.py:231, rocm.py:604), ZE_AFFINITY_MASK on XPU (xpu.py:112), CPU_VISIBLE_MEMORY_NODES on CPU (cpu.py:109, utils/cpu_resource_utils.py:17)",
+   "names": [
+    "CUDA_VISIBLE_DEVICES",
+    "ZE_AFFINITY_MASK",
+    "CPU_VISIBLE_MEMORY_NODES"
+   ]
+  },
+  "vllm/platforms/interface.py: os.environ.get(cls.device_control_env_var, '')": {
+   "reason": "the platform's device_control_env_var: CUDA_VISIBLE_DEVICES on CUDA and ROCm (platforms/cuda.py:231, rocm.py:604), ZE_AFFINITY_MASK on XPU (xpu.py:112), CPU_VISIBLE_MEMORY_NODES on CPU (cpu.py:109, utils/cpu_resource_utils.py:17)",
+   "names": [
+    "CUDA_VISIBLE_DEVICES",
+    "ZE_AFFINITY_MASK",
+    "CPU_VISIBLE_MEMORY_NODES"
+   ]
+  },
+  "vllm/platforms/interface.py: os.environ[cls.device_control_env_var]": {
+   "reason": "the platform's device_control_env_var: CUDA_VISIBLE_DEVICES on CUDA and ROCm (platforms/cuda.py:231, rocm.py:604), ZE_AFFINITY_MASK on XPU (xpu.py:112), CPU_VISIBLE_MEMORY_NODES on CPU (cpu.py:109, utils/cpu_resource_utils.py:17)",
+   "names": [
+    "CUDA_VISIBLE_DEVICES",
+    "ZE_AFFINITY_MASK",
+    "CPU_VISIBLE_MEMORY_NODES"
+   ]
+  },
+  "vllm/ray/ray_env.py: v in os.environ": {
+   "reason": "logs which of the variables get_env_vars_to_copy chose are set; it decides nothing"
+  },
+  "vllm/tracing/otel.py: os.environ.get(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL, 'grpc')": {
+   "reason": "the constant imported from opentelemetry.sdk.environment_variables, whose value is the variable's own name",
+   "names": [
+    "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
+   ]
+  },
+  "vllm/tracing/otel.py: os.environ.get(k)": {
+   "reason": "saves, to restore after inject(), the trace headers tracing/utils.py:12 names (TRACE_HEADERS: traceparent, tracestate), which vllm/tracing/otel.py:224-227 also reads by name",
+   "names": [
+    "traceparent",
+    "tracestate"
+   ]
+  },
+  "vllm/utils/nccl.py: os.environ.get(name)": {
+   "reason": "_swap_env saves the previous value of each variable pin_nccl_env sets; its only caller pins the literal NCCL_* names of model_executor/determinism/batch_invariant.py:1406-1421, which are listed"
+  },
+  "vllm/utils/system_utils.py: k in os.environ": {
+   "reason": "update_environment_variables logs a variable it overwrites; it writes the caller's values, and decides nothing with the old one"
+  },
+  "vllm/utils/system_utils.py: os.environ.get(key)": {
+   "reason": "set_env_var saves a variable's value to restore it; its callers pass OMP_NUM_THREADS, VLLM_OMP_NUM_THREADS_SET_BY_VLLM (v1/engine/utils.py:230-231) and TORCHINDUCTOR_PATTERN_MATCH_DEBUG (compilation/passes/pass_manager.py:81), each set, not read"
+  },
+  "vllm/utils/system_utils.py: os.environ[k]": {
+   "reason": "the same log as k in os.environ in update_environment_variables"
+  },
+  "vllm/v1/engine/core.py: os.getenv(device_control_env_var)": {
+   "reason": "the platform's device_control_env_var: CUDA_VISIBLE_DEVICES on CUDA and ROCm (platforms/cuda.py:231, rocm.py:604), ZE_AFFINITY_MASK on XPU (xpu.py:112), CPU_VISIBLE_MEMORY_NODES on CPU (cpu.py:109, utils/cpu_resource_utils.py:17); used only in an error message",
+   "names": [
+    "CUDA_VISIBLE_DEVICES",
+    "ZE_AFFINITY_MASK",
+    "CPU_VISIBLE_MEMORY_NODES"
+   ]
+  },
+  "vllm/v1/engine/utils.py: name in os.environ": {
+   "reason": "the DP engine-core actors' environment: copies to a Ray worker each variable get_env_vars_to_copy chooses (ray/ray_env.py:56): every key of environment_variables, every variable present whose name starts with VLLM_, FLASH_ATTENTION_, LMCACHE_, NCCL_, UCX_, HF_ or HUGGING_FACE_, PYTHONHASHSEED, and the names VLLM_RAY_EXTRA_ENV_VARS_TO_COPY lists; it passes a value on and decides nothing with it"
+  },
+  "vllm/v1/engine/utils.py: os.environ[name]": {
+   "reason": "the DP engine-core actors' environment: copies to a Ray worker each variable get_env_vars_to_copy chooses (ray/ray_env.py:56): every key of environment_variables, every variable present whose name starts with VLLM_, FLASH_ATTENTION_, LMCACHE_, NCCL_, UCX_, HF_ or HUGGING_FACE_, PYTHONHASHSEED, and the names VLLM_RAY_EXTRA_ENV_VARS_TO_COPY lists; it passes a value on and decides nothing with it"
+  },
+  "vllm/v1/engine/utils.py: os.getenv(device_control_env_var)": {
+   "reason": "the platform's device_control_env_var: CUDA_VISIBLE_DEVICES on CUDA and ROCm (platforms/cuda.py:231, rocm.py:604), ZE_AFFINITY_MASK on XPU (xpu.py:112), CPU_VISIBLE_MEMORY_NODES on CPU (cpu.py:109, utils/cpu_resource_utils.py:17); used only in an error message",
+   "names": [
+    "CUDA_VISIBLE_DEVICES",
+    "ZE_AFFINITY_MASK",
+    "CPU_VISIBLE_MEMORY_NODES"
+   ]
+  },
+  "vllm/v1/executor/ray_executor.py: name in os.environ": {
+   "reason": "the Ray workers' environment: copies to a Ray worker each variable get_env_vars_to_copy chooses (ray/ray_env.py:56): every key of environment_variables, every variable present whose name starts with VLLM_, FLASH_ATTENTION_, LMCACHE_, NCCL_, UCX_, HF_ or HUGGING_FACE_, PYTHONHASHSEED, and the names VLLM_RAY_EXTRA_ENV_VARS_TO_COPY lists; it passes a value on and decides nothing with it"
+  },
+  "vllm/v1/executor/ray_executor.py: os.environ[name]": {
+   "reason": "the Ray workers' environment: copies to a Ray worker each variable get_env_vars_to_copy chooses (ray/ray_env.py:56): every key of environment_variables, every variable present whose name starts with VLLM_, FLASH_ATTENTION_, LMCACHE_, NCCL_, UCX_, HF_ or HUGGING_FACE_, PYTHONHASHSEED, and the names VLLM_RAY_EXTRA_ENV_VARS_TO_COPY lists; it passes a value on and decides nothing with it"
+  },
+  "vllm/v1/executor/ray_executor_v2.py: os.environ.setdefault(key, value)": {
+   "reason": "sets in a Ray worker each driver variable not already set there (get_driver_env_vars, v1/executor/ray_env_utils.py:10-20, all of the driver's environment but the worker-specific names); it passes values on"
+  },
+  "vllm/v1/executor/vllm_net_devices.py: os.environ.get(var_name, '')": {
+   "reason": "prepends the GPU's RDMA device to each variable VLLM_NIC_SELECTION_VARS names (a user-given list, parsed at v1/executor/vllm_net_devices.py:120); which variables is the user's choice, recorded by VLLM_NIC_SELECTION_VARS itself"
+  }
+ },
  "fields": {
   "config:additional_config": {
    "estimation": {
@@ -4854,7 +4962,61 @@
    },
    "status": "not_modelled"
   },
+  "env:AWS_ENDPOINT_URL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:CCL_ATL_TRANSPORT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:CMAKE_BUILD_TYPE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:CONDA_PREFIX": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:CPU_VISIBLE_MEMORY_NODES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:CRIU_CUDA_PLUGIN_DIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:CUDA_DEVICE_ORDER": {
    "estimation": {
     "rule": "none"
    },
@@ -4872,7 +5034,133 @@
    },
    "status": "not_modelled"
   },
+  "env:CUDA_PATH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:CUDA_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:DG_JIT_CACHE_DIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:DO_NOT_TRACK": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:EP_DISABLE_GIN": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:EXA_API_KEY": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLASHINFER_CUBINS_REPOSITORY": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLASH_ATTENTION_TRITON_AMD_ENABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLA_CI_ENV": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLA_COMPILER_MODE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLA_TRIL_PRECISION": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLA_USE_CUDA_GRAPH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLA_USE_FAST_OPS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLA_USE_TMA": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:FLYDSL_RUNTIME_CACHE_DIR": {
    "estimation": {
     "rule": "none"
    },
@@ -4890,7 +5178,178 @@
    },
    "status": "not_modelled"
   },
+  "env:FORCE_NUM_KV_SPLITS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:GDN_RECOMPUTE_SUPPRESS_LEVEL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:GPU_PINNED_MIN_XFER_SIZE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:HF_HUB_CACHE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:HF_HUB_OFFLINE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:HF_TOKEN": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:HF_XET_HIGH_PERFORMANCE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:HIP_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:HOST_IP": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:INKLING_GFX950_GLUON": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:INKLING_MULTIMEM_AR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:INKLING_SPLIT_KV": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:JAX_PLATFORMS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:LAMPORT_RS_SCONV": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:LD_LIBRARY_PATH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:LD_PRELOAD": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:LLGUIDANCE_LOG_LEVEL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:LMCACHE_CONFIG_FILE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:LMCACHE_FORCE_SKIP_SAVE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:LMCACHE_USE_UPSTREAM_MP": {
    "estimation": {
     "rule": "none"
    },
@@ -4908,7 +5367,34 @@
    },
    "status": "not_modelled"
   },
+  "env:LOCAL_WORLD_SIZE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:MAX_JOBS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:MODELSCOPE_API_TOKEN": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:MOONCAKE_CONFIG_PATH": {
    "estimation": {
     "rule": "none"
    },
@@ -4935,6 +5421,24 @@
    },
    "status": "not_modelled"
   },
+  "env:MORI_SHMEM_HEAP_SIZE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_ALGO": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:NCCL_ASYNC_ERROR_HANDLING": {
    "estimation": {
     "rule": "none"
@@ -4944,7 +5448,34 @@
    },
    "status": "not_modelled"
   },
+  "env:NCCL_COLLNET_ENABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_CUMEM_ENABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:NCCL_GRAPH_REGISTER": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_IB_DISABLE": {
    "estimation": {
     "rule": "none"
    },
@@ -4971,7 +5502,70 @@
    },
    "status": "not_modelled"
   },
+  "env:NCCL_MAX_NCHANNELS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_MIN_NCHANNELS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
   "env:NCCL_NO_CACHE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_NTHREADS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_NVLS_ENABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_P2P_NET_DISABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_PROTO": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:NCCL_SOCKET_NTHREADS": {
    "estimation": {
     "rule": "none"
    },
@@ -4989,7 +5583,259 @@
    },
    "status": "not_modelled"
   },
+  "env:NUMBA_THREADING_LAYER": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:NVCC_THREADS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:OMP_NUM_THREADS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:OUTLINES_CACHE_DIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:PATH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:PROMETHEUS_MULTIPROC_DIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:PYTHONHASHSEED": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:PYTORCH_ALLOC_CONF": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:PYTORCH_CUDA_ALLOC_CONF": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:PYTORCH_HIP_ALLOC_CONF": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:ProgramFiles": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RANK": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_CGRAPH_get_timeout": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_ASCEND_RT_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_CUDA_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_HABANA_VISIBLE_MODULES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_NEURON_RT_VISIBLE_CORES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_ONEAPI_DEVICE_SELECTOR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_RBLN_RT_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_ROCR_VISIBLE_DEVICES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_EXPERIMENTAL_NOSET_TPU_VISIBLE_CHIPS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RAY_USAGE_STATS_ENABLED": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:ROCM_PATH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RUNAI_STREAMER_S3_ENDPOINT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RUNPOD_DC_ID": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:RUST_LOG": {
    "estimation": {
     "rule": "none"
    },
@@ -5025,6 +5871,96 @@
    },
    "status": "not_modelled"
   },
+  "env:TILELANG_CLEANUP_TEMP_FILES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TOKIO_WORKER_THREADS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TORCHINDUCTOR_CACHE_DIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TORCH_COMPILE_DISABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TRACEPARENT": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TRACESTATE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TRITON_CACHE_AUTOTUNING": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TRITON_CACHE_DIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TRITON_PRINT_AUTOTUNING": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:TRTLLM_ENABLE_PDL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:UCX_MEMTYPE_CACHE": {
    "estimation": {
     "rule": "none"
@@ -5040,6 +5976,24 @@
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#62"
+   },
+   "status": "not_modelled"
+  },
+  "env:USE_DEFAULT_FLA_NORM": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:USE_FLAGOS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
    },
    "status": "not_modelled"
   },
@@ -5322,6 +6276,15 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_CPU_SIM_MULTI_NUMA": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_CUDART_SO_PATH": {
    "estimation": {
     "rule": "none"
@@ -5332,6 +6295,15 @@
    "status": "not_modelled"
   },
   "env:VLLM_CUDA_COMPATIBILITY_PATH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_CUSTOM_ALLREDUCE_ALGO": {
    "estimation": {
     "rule": "none"
    },
@@ -5539,6 +6511,15 @@
    "status": "not_modelled"
   },
   "env:VLLM_DISTRIBUTED_USE_SPLIT_GROUP": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_DIST_IDENT": {
    "estimation": {
     "rule": "none"
    },
@@ -6483,6 +7464,51 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_MORIIO_CONNECTOR_READ_MODE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_MORIIO_NUM_WORKERS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_MORIIO_POST_BATCH_SIZE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_MORIIO_QP_PER_TRANSFER": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_MORIIO_TRANSFER_TIMEOUT_S": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_MQ_MAX_CHUNK_BYTES_MB": {
    "estimation": {
     "rule": "none"
@@ -6600,6 +7626,15 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_OMP_NUM_THREADS_SET_BY_VLLM": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_P2P_HANDSHAKE_TIMEOUT_S": {
    "estimation": {
     "rule": "none"
@@ -6673,6 +7708,15 @@
    "status": "not_modelled"
   },
   "env:VLLM_PP_LAYER_PARTITION": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_PRECOMPILED_WHEEL_LOCATION": {
    "estimation": {
     "rule": "none"
    },
@@ -7104,6 +8148,42 @@
    },
    "status": "not_modelled"
   },
+  "env:VLLM_RS_DISABLE_RIPTOKEN": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_RS_REQUEST_WORKER_THREADS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_RS_ZMQ_WORKER_THREADS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_RUNTIME_LORA_ALLOWED_PATH_PREFIXES": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
   "env:VLLM_RUST_FRONTEND_PATH": {
    "estimation": {
     "rule": "none"
@@ -7159,6 +8239,15 @@
    "status": "not_modelled"
   },
   "env:VLLM_SKIP_VERSION_SUFFIX": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:VLLM_SNAPSHOT_TIMEOUT_S": {
    "estimation": {
     "rule": "none"
    },
@@ -7756,6 +8845,96 @@
    "status": "not_modelled"
   },
   "env:VLLM_ZENTORCH_WEIGHT_PREPACK": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:WINDIR": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:XDG_CACHE_HOME": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:XDG_CONFIG_HOME": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:XHS_VIDEO_JPEG_QUALITY": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:XPU_USE_TRITON_KERNEL": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:ZE_AFFINITY_MASK": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:_VLLM_INTERNAL_NUMACTL_ARGS": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:_VLLM_INTERNAL_NUMACTL_PYTHON_EXECUTABLE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:traceparent": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:tracestate": {
    "estimation": {
     "rule": "none"
    },
