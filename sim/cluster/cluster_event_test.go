@@ -8,9 +8,9 @@ import (
 )
 
 // TestClusterEventQueue_Ordering verifies BC-4:
-// GIVEN a ClusterEventQueue with events at various timestamps, priorities, and seqIDs
+// GIVEN a ClusterEventQueue with events at various timestamps, priorities, and send counts of one sender
 // WHEN events are popped from the heap
-// THEN they come out ordered by (Timestamp, Priority, seqID)
+// THEN they come out ordered by (Timestamp, Priority, count)
 func TestClusterEventQueue_Ordering(t *testing.T) {
 	type eventSpec struct {
 		timestamp int64
@@ -88,7 +88,7 @@ func TestClusterEventQueue_Ordering(t *testing.T) {
 
 			for _, e := range tc.events {
 				event := &fixedPriorityEvent{at: e.timestamp, priority: e.priority}
-				heap.Push(q, clusterEventEntry{event: event, seqID: e.seqID})
+				heap.Push(q, clusterEventEntry{event: event, key: eventKey{time: e.timestamp, class: e.priority, sender: senderTest, count: e.seqID}})
 			}
 
 			for i, exp := range tc.expected {
@@ -99,8 +99,8 @@ func TestClusterEventQueue_Ordering(t *testing.T) {
 				if entry.event.Priority() != exp.priority {
 					t.Errorf("pop %d: priority = %d, want %d", i, entry.event.Priority(), exp.priority)
 				}
-				if entry.seqID != exp.seqID {
-					t.Errorf("pop %d: seqID = %d, want %d", i, entry.seqID, exp.seqID)
+				if entry.key.count != exp.seqID {
+					t.Errorf("pop %d: count = %d, want %d", i, entry.key.count, exp.seqID)
 				}
 			}
 
@@ -233,7 +233,7 @@ func TestBuildRouterState_ActiveAndLoadingMixed_SeparateBuckets(t *testing.T) {
 }
 
 // fixedPriorityEvent is a no-op ClusterEvent with a chosen timestamp and priority, for
-// exercising the queue's (timestamp, priority, seqID) ordering independent of event types.
+// exercising the queue's (time, class, sender, count) ordering independent of event types.
 type fixedPriorityEvent struct {
 	at       int64
 	priority int

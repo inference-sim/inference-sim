@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 	"sort"
 
@@ -190,7 +189,7 @@ func (cs *ClusterSimulator) Schedule(at int64, priority int, daemon bool, fn fun
 	if daemon {
 		cs.daemonQueued++
 	}
-	heap.Push(&cs.clusterEvents, clusterEventEntry{event: ev, seqID: cs.nextSeqID()})
+	cs.schedule(ev, &cs.routerSender)
 	return func() { ev.cancelled = true }
 }
 
@@ -253,7 +252,7 @@ func (cs *ClusterSimulator) Reject(req *sim.Request, why Rejection, reason strin
 	cs.recordUnserved(req) // measured failed_requests and closed-loop drivers (#1938, #1937)
 	if why == RejectedUnservable && cs.sessionCallback != nil {
 		for _, next := range cs.sessionCallback(req, cs.clock) {
-			cs.pushArrival(next, next.ArrivalTime)
+			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 	}
 }
@@ -398,10 +397,7 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 	}
 	parent.PrefillSubReq = prefillSubReq
 	cs.pendingPrefillCompletions[prefillSubReq.ID] = parent.ID
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &PrefillRoutingEvent{time: cs.clock, request: prefillSubReq, parentReq: parent},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&PrefillRoutingEvent{time: cs.clock, request: prefillSubReq, parentReq: parent}, &cs.routerSender)
 	cs.gateway.OnDispatched(req, cs.clock)
 }
 

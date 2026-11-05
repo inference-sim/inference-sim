@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 )
 
@@ -91,10 +90,7 @@ func (c *ClusterSimulator) expirePrefillLease(parent *ParentRequest, expiry int6
 	if _, held := c.prefillHolds[parent.ID]; !held {
 		return
 	}
-	heap.Push(&c.clusterEvents, clusterEventEntry{
-		event: &PrefillKVLeaseExpiredEvent{time: expiry, parentReq: parent},
-		seqID: c.nextSeqID(),
-	})
+	c.schedule(&PrefillKVLeaseExpiredEvent{time: expiry, parentReq: parent}, &c.kvConnectorSender)
 }
 
 // PrefillKVLeaseExpiredEvent frees a prefill instance's held KV when its lease runs out.

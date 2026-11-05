@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"math"
 	"sort"
 	"testing"
@@ -60,7 +59,7 @@ func TestPDDecodeKVWait_DecodeThatNeverHadTheRequestLeavesTheLease(t *testing.T)
 		cfg.PDKVLeaseUs = lease
 		cfg.Horizon = horizon
 		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 1, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
+		cs.scheduleTestEvent(&pdDrainAt{time: 1, inst: cs.Instances()[1].ID()})
 		mustRun(t, cs)
 		return cs
 	}
@@ -93,7 +92,7 @@ func TestPDDecodeKVWait_DrainedDecodeDropsItsWaiters(t *testing.T) {
 		cfg := config
 		cfg.Horizon = horizon
 		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{long, waiter}), nil)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 300_000, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
+		cs.scheduleTestEvent(&pdDrainAt{time: 300_000, inst: cs.Instances()[1].ID()})
 		mustRun(t, cs)
 		return cs
 	}

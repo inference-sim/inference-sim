@@ -109,7 +109,7 @@ Every cluster run routes with the real llm-d router (EPP) embedded in-process (`
 ### Code Style
 
 - Composition over inheritance (e.g. `InstanceSimulator` wraps a `sim.EngineDriver`).
-- Timestamp-based event ordering via min-heap; cluster and per-instance queues use `(timestamp, priority, seqID)`; cluster ties broken by lowest instance index.
+- Timestamp-based event ordering via min-heap; the cluster queue uses `(time, class, sender, sender's count)` (DEV-2, `sim/cluster/cluster_event.go`), each instance's queue `(timestamp, priority, seqID)`; cluster ties broken by lowest instance index.
 - Partitioned RNG per subsystem to isolate randomness.
 
 ### CI/CD
