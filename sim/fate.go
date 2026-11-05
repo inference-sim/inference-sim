@@ -61,15 +61,16 @@ func IsValidFate(f Fate) bool {
 	return false
 }
 
-// The reasons a request is dropped. Each names the INV-1 bucket the request lands in.
+// The reasons a request is dropped, named as blis-substrate contracts/spec/result's
+// DropReason names them. Each comment names the INV-1 bucket the request lands in.
 const (
-	DropAdmission       = "admission"        // an admission check refused it (rejected)
-	DropRouting         = "routing"          // no endpoint could serve it (routing_rejections)
-	DropGatewayCapacity = "gateway_capacity" // flow control's queues were full (gateway_queue_rejected)
-	DropGatewayExpired  = "gateway_expired"  // it waited in flow control past its TTL (gateway_expired)
-	DropGatewayEvicted  = "gateway_evicted"  // the gateway evicted it in flight (gateway_evicted)
-	DropUnservable      = "unservable"       // a model server could not serve it (dropped_unservable)
-	DropDecodeKV        = "decode_kv"        // a P/D decode side could not take its KV (dropped_unservable)
+	DropAdmission       = "admission_rejected"     // an admission check refused it (rejected)
+	DropRouting         = "routing_rejected"       // no endpoint could serve it (routing_rejections)
+	DropGatewayCapacity = "gateway_queue_rejected" // flow control's queues were full (gateway_queue_rejected)
+	DropGatewayExpired  = "gateway_expired"        // it waited in flow control past its TTL (gateway_expired)
+	DropGatewayEvicted  = "gateway_evicted"        // the gateway evicted it in flight (gateway_evicted)
+	DropUnservable      = "unservable"             // a model server could not serve it (dropped_unservable)
+	DropDecodeKV        = "decode_kv_unavailable"  // a P/D decode side could not take its KV (dropped_unservable)
 )
 
 // FateRecord is one request's fate: what it was, why (for a drop), and when it was written.

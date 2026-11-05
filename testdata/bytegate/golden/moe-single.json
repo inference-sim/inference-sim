@@ -353,7 +353,7 @@
       },
       "generator": {
         "kind": "distribution",
-        "random": "math/rand rngSource; sim.PartitionedRNG: workload subsystem seeded by the seed, every other subsystem by seed XOR fnv1a64(name)",
+        "random": "sha256-seeded math/rand/v2 PCG-DXSM, v1",
         "seed": 3
       },
       "initial_state": {
