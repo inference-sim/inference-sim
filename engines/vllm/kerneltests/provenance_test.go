@@ -65,7 +65,7 @@ func TestAMissingOptionalCoefficientIsDisclosedWhereItMatters(t *testing.T) {
 }
 
 // THE ENGINE RELEASE PRICED IS DISCLOSED WHEN IT IS NOT THE ONE DECLARED. The fixtures declare
-// 0.29.0, a release the vLLM rules packs cover, and the kernel encodes 0.31.0's behaviour; that
+// 0.32.0, a release the vLLM rules packs cover, and the kernel encodes 0.31.0's behaviour; that
 // must show in Provenance, and must not when the scenario declares 0.31.0 itself.
 func TestTheEngineReleasePricedIsDisclosed(t *testing.T) {
 	in := fixtureInputs(t, dcpMLAFixture)
@@ -81,8 +81,8 @@ func TestTheEngineReleasePricedIsDisclosed(t *testing.T) {
 		}
 		return hasAssumption(k, "engine_version")
 	}
-	if !declared("0.29.0") {
-		t.Error("a 0.29.0 scenario priced at 0.31.0's behaviour discloses nothing")
+	if !declared("0.32.0") {
+		t.Error("a 0.32.0 scenario priced at 0.31.0's behaviour discloses nothing")
 	}
 	if declared(EngineBehaviourVersion) {
 		t.Errorf("a %s scenario discloses a version mismatch", EngineBehaviourVersion)

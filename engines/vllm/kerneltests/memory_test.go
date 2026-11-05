@@ -217,7 +217,7 @@ func TestTheGraphModeIsChosenPerBatch(t *testing.T) {
 // filled in must appear as a kernel assumption, which a fully stated deployment has none of
 // -- except the cudagraph capture ceiling, which blis-schemas has no field to state, so any
 // capturing deployment reports vLLM's default for it, and the engine release, which the
-// fixture declares as 0.29.0 (a release the vLLM rules packs cover) where the kernel encodes
+// fixture declares as 0.32.0 (a release the vLLM rules packs cover) where the kernel encodes
 // 0.31.0.
 func TestProvenanceSeesEveryFigureFixedBytesReports(t *testing.T) {
 	k := fixture(t, memoryFixture)

@@ -28,7 +28,7 @@
 # (vllm/v1/attention/backends/mla/indexer.py:203-204).
 kind: Scenario
 name: glm-5-b200-fp4-sglang-tp4
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: glm-5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

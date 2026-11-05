@@ -3,6 +3,8 @@
 package latencykernel_test
 
 import (
+	"fmt"
+
 	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"path/filepath"
@@ -20,7 +22,6 @@ import (
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
 )
 
 // The catalog and registry are blis-substrate's catalog/ and registry/ at the release go.mod
@@ -103,14 +104,15 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	}
 }
 
-// rulesFor is the vLLM rules pack for a fixture's declared release, and the 0.29.0 pack for
-// a release with none, as these fixtures were written against. The packs come from the
-// engine model's rules module, as every caller's do: the kernel looks none up itself.
+// rulesFor is the vLLM rules pack for a fixture's declared release. The packs come from the
+// engine model's rules module, as every caller's do: the kernel looks none up itself. A release
+// with no pack is a malformed fixture, not a reason to price it with another release's pack.
 func rulesFor(version string) *pack.Pack {
-	if p := vllmrules.Lookup(version); p != nil {
-		return p
+	p := vllmrules.Lookup(version)
+	if p == nil {
+		panic(fmt.Sprintf("no vLLM rules pack for engine_version %q (known: %v)", version, vllmrules.Versions()))
 	}
-	return v0_29.Pack()
+	return p
 }
 
 // withRules gives a Repos the vLLM rules packs and engine-block decoding, as a caller of Open

@@ -23,7 +23,7 @@
 # deployment that cannot serve its own points.
 kind: Scenario
 name: gpt-oss-120b-b200-fp4-trt-tp4
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: gpt-oss-120b
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
