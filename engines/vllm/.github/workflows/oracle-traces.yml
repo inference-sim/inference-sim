@@ -34,8 +34,9 @@ jobs:
         run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       - name: install the oracle environment
         run: |
-          python -m pip install pip==26.2.2
-          pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.lock
+          python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
+          python -m pip install --require-hashes -r oracle/requirements-pip.txt
+          pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
           pip check
           pip freeze > oracle-env.lock
           python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock

@@ -178,7 +178,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: oracle/requirements.lock
+          cache-dependency-path: oracle/requirements-hashed.txt
       - name: check out vLLM v0.32.0 (for its test helpers) at its pinned commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -189,12 +189,14 @@ jobs:
       - name: the checked-out vLLM is the pinned commit
         run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       # The whole environment is pinned (oracle/requirements.lock, every package == or a sha256
-      # URL) and installed without resolving, so a transitive release cannot change a run; the
-      # step fails if what got installed is not exactly the lock.
+      # URL) and installed without resolving, from oracle/requirements-hashed.txt with every
+      # archive's sha256 (oracle/lock.sh, X21), so neither a transitive release nor a replaced
+      # archive can change a run; the step fails if what got installed is not exactly the lock.
       - name: install the oracle environment
         run: |
-          python -m pip install pip==26.2.2
-          pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements.lock
+          python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt
+          python -m pip install --require-hashes -r oracle/requirements-pip.txt
+          pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r oracle/requirements-hashed.txt
           pip check
           pip freeze > oracle-env.lock
           python -I oracle/check_lock.py oracle/requirements.lock oracle-env.lock

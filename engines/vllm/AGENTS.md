@@ -39,8 +39,9 @@ In short:
   code. Never overwrite a golden trace without human review (`docs/testing.md`).
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers: the
   `oracle-tier2` CI job, step by step, from a Python with `oracle/requirements.lock` installed
-  (`pip install --no-deps -r oracle/requirements.lock`, Linux x86_64; `oracle/README.md` gives
-  each runner's command and the environment variables the Go fuzz tests read).
+  (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64;
+  `oracle/README.md` gives each runner's command and the environment variables the Go fuzz
+  tests read).
 - **Process checks.** `.github/workflows/blis.yml` calls blis-substrate's shared checks by
   commit; `.github/workflows/private-names.yml` is the name scan. The section below and
   `.github/pull_request_template.md` are generated from the invariant registry

@@ -16,10 +16,15 @@ weights; the scenario's fixed `num_blocks` and `block_size` govern every decisio
 
 ## Environment
 
-`oracle/requirements.lock` is the whole environment, every package pinned (Linux x86_64, CPU):
-`pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r
-oracle/requirements.lock`, then `python -I oracle/check_lock.py oracle/requirements.lock <(pip
-freeze)` confirms it. The runners also read:
+`oracle/requirements.lock` is the whole environment, every package pinned (Linux x86_64, CPU).
+`oracle/lock.sh` writes the same pins with every archive's sha256 into
+`oracle/requirements-hashed.txt`, and pip's own release into `oracle/requirements-pip.txt`
+(X21). Install with `python -m pip install --require-hashes -r oracle/requirements-pip.txt`,
+then `pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu
+-r oracle/requirements-hashed.txt`; `python -I oracle/check_lock.py oracle/requirements.lock <(pip
+freeze)` confirms it. After changing the lock, run `oracle/lock.sh` and commit all three files;
+`python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt`,
+which CI runs first, fails while they disagree. The runners also read:
 
 | Variable | What |
 |---|---|
