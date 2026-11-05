@@ -67,7 +67,11 @@ func Marshal(r *Result, f Format) ([]byte, error) {
 // an error naming it, in either encoding. A document whose first non-blank byte is `{` is
 // read as JSON, by a JSON decoder, so every escape JSON allows reads as JSON defines it;
 // anything else is read as YAML.
-func Unmarshal(data []byte, r *Result) error {
+func Unmarshal(data []byte, r *Result) error { return UnmarshalStrict(data, r) }
+
+// UnmarshalStrict reads any document type from JSON or YAML as Unmarshal reads a Result:
+// strictly, with one decoder deciding both encodings. Other document packages use it.
+func UnmarshalStrict(data []byte, r any) error {
 	if t := bytes.TrimLeft(data, " \t\r\n"); len(t) > 0 && t[0] == '{' {
 		n, err := jsonToNode(data)
 		if err != nil {

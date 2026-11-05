@@ -22,6 +22,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
@@ -365,6 +366,20 @@ func LoadResult(path string) (*result.Result, error) {
 	}
 	var r result.Result
 	if err := result.Unmarshal(data, &r); err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", path, err)
+	}
+	return &r, nil
+}
+
+// LoadPointRecord reads a per-point record, JSON or YAML, refusing an unknown key in
+// either. It does not validate; call Validate.
+func LoadPointRecord(path string) (*pointrecord.Record, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s: %w", path, err)
+	}
+	var r pointrecord.Record
+	if err := result.UnmarshalStrict(data, &r); err != nil {
 		return nil, fmt.Errorf("decoding %s: %w", path, err)
 	}
 	return &r, nil
