@@ -24,13 +24,12 @@ func (s *Scenario) Validate() *validate.Problems {
 	if s.Kind != "Scenario" {
 		p.Field("kind", "must be %q, got %q", "Scenario", s.Kind)
 	}
-	for field, v := range map[string]string{
-		"name": s.Name, "model": s.Model, "engine_version": s.EngineVersion,
-	} {
+	for field, v := range map[string]string{"name": s.Name, "model": s.Model} {
 		if v == "" {
 			p.Field(field, "required")
 		}
 	}
+	s.validateEngine(p)
 	if len(s.Coefficients) == 0 {
 		p.Field("coefficients",
 			"at least one set is required; an estimate with no coefficients is not an estimate")
@@ -51,6 +50,29 @@ func (s *Scenario) Validate() *validate.Problems {
 
 	s.validateCluster(p)
 	return p
+}
+
+// validateEngine checks the engine a scenario names (SIM-1). Until M4 the deprecated
+// engine_version is accepted alone, or beside engine with the same version (plan §3.3).
+func (s *Scenario) validateEngine(p *validate.Problems) {
+	e := s.Engine
+	switch {
+	case e == nil && s.EngineVersion == "":
+		p.Field("engine", "required: the engine that runs the scenario, as engine: {kind, version}")
+		return
+	case e == nil:
+		return
+	}
+	if e.Kind == "" {
+		p.Field("engine.kind", "required: the engine kind, for example vllm")
+	}
+	if e.Version == "" {
+		p.Field("engine.version", "required: the upstream release the engine models, for example 0.32.0")
+	}
+	if s.EngineVersion != "" && e.Version != "" && s.EngineVersion != e.Version {
+		p.Field("engine_version", "is %q but engine.version is %q: engine_version is deprecated; state the release once, in engine.version",
+			s.EngineVersion, e.Version)
+	}
 }
 
 func (s *Scenario) validateCluster(p *validate.Problems) {

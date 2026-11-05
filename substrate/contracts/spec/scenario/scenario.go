@@ -54,17 +54,39 @@ type Scenario struct {
 	// (routing.Resolve).
 	Routing *routing.Pin `yaml:"routing,omitempty"`
 
-	// EngineVersion is the engine release this scenario is fitted against. It is not
-	// cosmetic: a coefficient is valid only for the code it was fitted against, and
-	// the version-scoped validation rules are selected by it. It is distinct from the
-	// per-pool engine KNOBS a Deployment sets — those move between releases, this
-	// identifies which release.
-	EngineVersion string `yaml:"engine_version"`
+	// Engine names the engine that runs the scenario, by kind and upstream release
+	// (SIM-1). The simulator chooses the engine by it and refuses a release it does not
+	// run. It is distinct from the per-pool engine settings a Deployment states: those
+	// move between releases, this identifies which release.
+	Engine *Engine `yaml:"engine,omitempty"`
+
+	// EngineVersion is the field Engine replaces. Deprecated: by M1, in the first substrate release with Engine;
+	// removed in M4 (plan §3.3). A scenario may state it alone, or beside Engine with
+	// the same version; EngineRelease reads either.
+	EngineVersion string `yaml:"engine_version,omitempty"`
 
 	// Cluster is the available-hardware inventory: the accelerator every node carries,
 	// the inter-node fabric, how the nodes are packaged, and the storage classes a
 	// deployment may offload onto.
 	Cluster Cluster `yaml:"cluster"`
+}
+
+// Engine is an engine by kind and upstream release, for example {kind: vllm, version:
+// 0.32.0}.
+type Engine struct {
+	// Kind names the engine, as its engine repository registers it: vllm or sglang.
+	Kind string `yaml:"kind"`
+	// Version is the upstream release the engine models, for example "0.32.0".
+	Version string `yaml:"version"`
+}
+
+// EngineRelease returns the upstream release the scenario names: Engine.Version when
+// Engine is set, else the deprecated EngineVersion.
+func (s *Scenario) EngineRelease() string {
+	if s.Engine != nil {
+		return s.Engine.Version
+	}
+	return s.EngineVersion
 }
 
 // Cluster is the available-hardware inventory: the hardware a problem is handed and a

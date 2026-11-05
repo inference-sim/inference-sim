@@ -1187,16 +1187,16 @@ func TestLoadResultReadsJSONAndYAMLStrictly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadResult(%s): %v", j, err)
 	}
-	if r.Kind != "Result" || r.Input.Run.Load.Concurrency != 64 || r.Metrics["ttft_p99_ms"] != 431.5 {
+	if r.Kind != "Result" || r.Frame.Generator.Load.Concurrency != 64 || r.Metrics["ttft_p99_ms"].Value != 431.5 {
 		t.Errorf("the JSON example did not load field for field: %+v", r)
 	}
 
 	dir := t.TempDir()
 	y := filepath.Join(dir, "r.yaml")
-	if err := os.WriteFile(y, []byte("kind: Result\nschema_version: 1\nname: x\nmetrics: {ttft_p99_ms: 1}\n"), 0o644); err != nil {
+	if err := os.WriteFile(y, []byte("kind: Result\nschema_version: 2\nname: x\nmetrics: {ttft_p99_ms: {value: 1, samples: 3}}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if r, err := LoadResult(y); err != nil || r.Metrics["ttft_p99_ms"] != 1 {
+	if r, err := LoadResult(y); err != nil || r.Metrics["ttft_p99_ms"].Value != 1 {
 		t.Errorf("LoadResult did not read YAML: %v %+v", err, r)
 	}
 

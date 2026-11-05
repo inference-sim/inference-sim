@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 )
 
 // outDir is where generated pages live, relative to the repository root. The site
@@ -27,6 +30,8 @@ var enumDirs = []string{
 	"contracts/spec/measurement",
 	"contracts/spec/router",
 	"contracts/spec/fields",
+	"contracts/spec/result",
+	"contracts/metrics",
 }
 
 type file struct {
@@ -42,6 +47,7 @@ func generate(root string) ([]file, error) {
 		return nil, err
 	}
 	out = append(out, enums...)
+	out = append(out, metricsTable())
 	sort.Slice(out, func(i, j int) bool { return out[i].path < out[j].path })
 	return out, nil
 }
@@ -135,4 +141,26 @@ func typedStringConsts(dir string) (string, map[string][]string, error) {
 		}
 	}
 	return pkg, out, nil
+}
+
+// metricsTable writes the metric registry (contracts/metrics) as one table, so the page a
+// reader trusts lists exactly the definitions the code holds (DEV-8).
+func metricsTable() file {
+	var b bytes.Buffer
+	b.WriteString(header)
+	b.WriteString("| Identifier | Formula | Statistic | Population | Window | Unit | Unfinished | Meaning |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	for _, d := range metrics.All() {
+		st := string(d.Statistic)
+		if d.PercentileMethod != "" {
+			st += " (" + string(d.PercentileMethod) + ")"
+		}
+		desc := d.Description
+		if d.Follows != "" {
+			desc += " Follows " + d.Follows + "."
+		}
+		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | `%s` | %s | %s | %s |\n",
+			d.ID, d.Formula, st, d.Population, d.Window, d.Unit, d.Unfinished, desc)
+	}
+	return file{path: outDir + "/metrics.md", content: b.Bytes()}
 }

@@ -1,20 +1,21 @@
 // Package result describes what one BLIS run predicts: the document `blis run` and
-// `blis replay` emit, one per run of one configuration at one load with one seed.
+// `blis replay` emit, one per run of one configuration under one experimental frame.
 //
-// A Result states its metrics in the vocabulary a measured run uses (package
-// measurement): each metric is a name defined by a measurement.MetricDef, and the load is
-// a measurement.Load. A prediction and a measurement of the same configuration therefore
-// compare by metric name, with the two definitions checked equal, and with no table that
-// translates one tool's keys into another's.
+// A Result names every figure by its identifier in the metric registry
+// (contracts/metrics, DEV-8) and carries no definition of its own, so a reader looks the
+// definition up and two figures compare only when their definitions are the same.
 //
-// A Result embeds the input it was produced from, resolved, and the revision of every
-// component and data repository it read. Given that input at the same revisions, the
-// simulator reproduces the document byte for byte outside Runtime, RerunOf and
-// RevisionChanges. Runtime is the only part of the document that depends on the host or
-// the wall clock.
+// A Result records what the run read and how: the engine it ran (SIM-1), the catalog and
+// registry it loaded, with their content hashes and overlays, and whether that is released
+// data (design §3.3, X8); the registry entries its lookups selected and the coefficient
+// files no lookup read (VAL-6); every option that changes a byte of the document (SIM-10),
+// with the source of each workload property (D8); and its experimental frame (design §8.6,
+// DEV-7). Each request it generated has one fate (DEV-9), and the document counts the
+// fates and may list one row per request.
 //
-// Bulk data (per-request rows, an exported trace, engine time series) is referenced by
-// path and sha256, never inlined.
+// Given the same input, options and data, the simulator reproduces the document byte for
+// byte outside Runtime, RerunOf and RevisionChanges. Runtime is the only part that depends
+// on the host or the wall clock.
 //
 // The simulator writes a Result as JSON by default and as YAML on request, with Marshal;
 // Unmarshal reads either. The yaml tags define the keys of both encodings, so a Result is
@@ -22,17 +23,21 @@
 package result
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 // Kind is the value of Result.Kind.
 const Kind = "Result"
 
-// SchemaVersion is the Result schema this package reads and writes.
-const SchemaVersion = 1
+// SchemaVersion is the Result schema this package reads and writes. Version 2 added the
+// engine, data, selected entries, options, workload properties, frame, fates and request
+// rows, and replaced metric_defs by registry identifiers.
+const SchemaVersion = 2
 
 // Result is one simulator run's predicted output.
 type Result struct {
@@ -41,9 +46,19 @@ type Result struct {
 	// Name identifies the run, a lowercase slug, for example "qwen3-32b-h100-pd.c64-s1".
 	Name string `yaml:"name"`
 
+	// Engine is the engine the run used, chosen by the scenario's engine (SIM-1).
+	Engine Engine `yaml:"engine"`
+	// Data is the catalog and registry the run read, and whether they are released data.
+	Data Data `yaml:"data"`
+	// SelectedEntries are the registry entries the run's lookups returned, and the
+	// coefficient files no lookup read (VAL-6).
+	SelectedEntries SelectedEntries `yaml:"selected_entries"`
+
 	// Input is everything the run was given, after resolution.
 	Input Input `yaml:"input"`
-	// Revisions are the versions of every component and data repository the run read.
+	// Frame is the run's experimental frame (design §8.6).
+	Frame Frame `yaml:"frame"`
+	// Revisions are the versions of the BLIS modules the run was built from.
 	Revisions Revisions `yaml:"revisions"`
 
 	// RerunOf names the Result whose input this run was produced from, when it was.
@@ -52,28 +67,23 @@ type Result struct {
 	// unless RerunOf is set.
 	RevisionChanges []RevisionChange `yaml:"revision_changes,omitempty"`
 
-	// MetricDefs defines every key of Metrics, in the measured-run vocabulary.
-	MetricDefs map[string]measurement.MetricDef `yaml:"metric_defs"`
-	// Window is the measured window every metric is computed over.
+	// Window is the measured window as it fell in this run.
 	Window Window `yaml:"window"`
-	// Metrics are the predicted values, keyed by metric name.
-	Metrics map[string]float64 `yaml:"metrics"`
+	// Metrics are the predicted figures, keyed by metric-registry identifier. A run that
+	// fails an acceptance condition of its frame reports none (DEV-7).
+	Metrics map[string]Figure `yaml:"metrics,omitempty"`
 
-	// Requests is the request-conservation ledger (INV-1) over the whole run.
+	// Requests counts the fate of every request the run generated (DEV-9).
 	Requests Requests `yaml:"requests"`
+	// RequestRows, when present, holds one row per generated request.
+	RequestRows []RequestRow `yaml:"request_rows,omitempty"`
 
 	// Goodput is present when the input states SLO targets.
 	Goodput *Goodput `yaml:"goodput,omitempty"`
 	// Breakdowns split the run along the axes it exercised.
 	Breakdowns *Breakdowns `yaml:"breakdowns,omitempty"`
-
-	// Engine, Router and Kernel are each reported by that component, keyed by pool role
-	// where a component is per pool. The document carries them as reported.
-	Engine map[string]any `yaml:"engine,omitempty"`
-	Router map[string]any `yaml:"router,omitempty"`
-	Kernel map[string]any `yaml:"kernel,omitempty"`
-	// Saturation is the post-hoc saturation report, when detectors ran.
-	Saturation map[string]any `yaml:"saturation,omitempty"`
+	// Reports are each component's own report, carried as reported.
+	Reports Reports `yaml:"reports,omitempty"`
 
 	// Overrides lists every setting the run simulated differently from Input, and what
 	// chose the value.
@@ -86,6 +96,97 @@ type Result struct {
 	Runtime *Runtime `yaml:"runtime,omitempty"`
 }
 
+// Engine is the engine a run used: its kind and the upstream release it models.
+type Engine struct {
+	// Kind names the engine, for example "vllm".
+	Kind string `yaml:"kind"`
+	// Version is the upstream release, for example "0.32.0".
+	Version string `yaml:"version"`
+}
+
+// Data records which catalog and registry a run read (design §3.3, X8).
+type Data struct {
+	Catalog  DataSource `yaml:"catalog"`
+	Registry DataSource `yaml:"registry"`
+	// ReleasedData is true when the simulator is a tagged release whose stack.json names a
+	// tagged substrate release, the catalog and registry hashes equal that release's
+	// embedded hashes, and no overlay is used. Only such a run's figures are published.
+	ReleasedData bool `yaml:"released_data"`
+	// Build is the simulator build: a release tag such as "v0.16.0", or BuildUnreleased.
+	Build string `yaml:"build"`
+}
+
+// BuildUnreleased is Data.Build for any simulator that is not a tagged release: a local
+// build, go run, or stack CI.
+const BuildUnreleased = "unreleased"
+
+// DataSource is one of the catalog and the registry as a run read it.
+type DataSource struct {
+	// Source is where the base data came from.
+	Source Source `yaml:"source"`
+	// Hash is the content hash of the base data, 64 lowercase hex characters, computed as
+	// design §3.3 defines it.
+	Hash string `yaml:"hash"`
+	// Overlays are the overlay directories applied on top, in the order applied.
+	Overlays []Overlay `yaml:"overlays,omitempty"`
+	// CombinedHash is the content hash of the data after every overlay. With no overlay it
+	// equals Hash.
+	CombinedHash string `yaml:"combined_hash"`
+}
+
+// Source says where a run's base catalog or registry came from.
+type Source string
+
+const (
+	// SourceEmbedded: the copy compiled into the substrate the simulator was built with.
+	SourceEmbedded Source = "embedded"
+	// SourcePath: a directory named by --catalog, --registry, BLIS_CATALOG or
+	// BLIS_REGISTRY.
+	SourcePath Source = "path"
+)
+
+// Overlay is one overlay directory a run applied.
+type Overlay struct {
+	// Hash is the overlay's content hash.
+	Hash string `yaml:"hash"`
+}
+
+// SelectedEntries is the selected-entry report (VAL-6). Every reader behind the engine's
+// Environment contributes to it, the acceptance and routing profile readers included.
+type SelectedEntries struct {
+	// Coefficients are the coefficient entries a lookup returned, each once, sorted by
+	// set, name, method and scope.
+	Coefficients []SelectedCoefficient `yaml:"coefficients,omitempty"`
+	// AcceptanceProfiles are the acceptance profiles a lookup returned.
+	AcceptanceProfiles []SelectedProfile `yaml:"acceptance_profiles,omitempty"`
+	// RoutingProfiles are the routing profiles a lookup returned.
+	RoutingProfiles []SelectedProfile `yaml:"routing_profiles,omitempty"`
+	// UnreadFiles are the registry's coefficient, acceptance and routing files, relative
+	// to the registry directory with forward slashes, from which no lookup returned an
+	// entry. Sorted.
+	UnreadFiles []string `yaml:"unread_files,omitempty"`
+}
+
+// SelectedCoefficient identifies one registry coefficient as design §3.3 does: by its set,
+// its name, its scope and its method.
+type SelectedCoefficient struct {
+	Set    string            `yaml:"set"`
+	Name   string            `yaml:"name"`
+	Method vocab.Method      `yaml:"method"`
+	Scope  coefficient.Scope `yaml:"scope"`
+	// File is the registry file the entry was read from, relative to the registry
+	// directory.
+	File string `yaml:"file"`
+}
+
+// SelectedProfile identifies one acceptance or routing profile by its set and its key, as
+// the profile's Key renders.
+type SelectedProfile struct {
+	Set  string `yaml:"set"`
+	Key  string `yaml:"key"`
+	File string `yaml:"file"`
+}
+
 // Input is the resolved input of a run.
 type Input struct {
 	Scenario   scenario.Scenario     `yaml:"scenario"`
@@ -93,56 +194,246 @@ type Input struct {
 	// Policy is the simulator's policy bundle (autoscaler, node pools, instance
 	// lifecycle, priority, preemption), verbatim, when one was given.
 	Policy map[string]any `yaml:"policy,omitempty"`
-	Run    Run            `yaml:"run"`
+	// Options are every command-line option and environment variable that changes a byte
+	// of this document, with the value the run used (SIM-10). Sorted by name.
+	Options []Option `yaml:"options,omitempty"`
+	// WorkloadProperties are the values of quantities that depend on the request stream
+	// and that BLIS does not simulate, such as speculative acceptance or expert routing
+	// imbalance, each with what supplied it (D8). Sorted by name.
+	WorkloadProperties []WorkloadProperty `yaml:"workload_properties,omitempty"`
 }
 
-// Run holds the run-level controls: the inputs a scenario and a deployment do not state.
-type Run struct {
-	// Load is the offered load: exactly one of a concurrency and a request rate.
-	Load measurement.Load `yaml:"load"`
-	// NumRequests is the number of requests the run generated.
-	NumRequests int   `yaml:"num_requests"`
-	Seed        int64 `yaml:"seed"`
-	// HorizonS bounds simulated time, in seconds, when set.
-	HorizonS *float64 `yaml:"horizon_s,omitempty"`
-	// Warmup is excluded from the measured window.
-	Warmup *Warmup `yaml:"warmup,omitempty"`
-	// Workload is the workload the run used: the scenario's binding unless one replaced it.
+// Option is one option that changes the Result.
+type Option struct {
+	// Name is the flag without its dashes, or the environment variable's name.
+	Name string `yaml:"name"`
+	// Value is the value the run used, as text.
+	Value string `yaml:"value"`
+	// Source says whether the value was given or is the option's default.
+	Source OptionSource `yaml:"source"`
+}
+
+// OptionSource says where an option's value came from.
+type OptionSource string
+
+const (
+	OptionCommandLine OptionSource = "command_line"
+	OptionEnvironment OptionSource = "environment"
+	// OptionDefault: the option was not given and its default applied.
+	OptionDefault OptionSource = "default"
+)
+
+// WorkloadProperty is one workload property's value and its source (D8).
+type WorkloadProperty struct {
+	// Name is the property, for example "speculative_acceptance" or "expert_routing".
+	Name string `yaml:"name"`
+	// Values are the property's figures, keyed by name, for example
+	// {acceptance_length: 3.8}. Empty only when Source is PropertyDefault.
+	Values map[string]float64 `yaml:"values,omitempty"`
+	// Source is what supplied the values, in D8's order of precedence.
+	Source PropertySource `yaml:"source"`
+	// Profile names the registry profile, as set and key, when Source is
+	// PropertyProfile.
+	Profile string `yaml:"profile,omitempty"`
+}
+
+// PropertySource is what supplied a workload property, highest precedence first (D8).
+type PropertySource string
+
+const (
+	PropertyCommandLine PropertySource = "command_line"
+	PropertyScenario    PropertySource = "scenario"
+	// PropertyWorkload: the workload the scenario binds states the value, or it was
+	// derived from the trace.
+	PropertyWorkload PropertySource = "workload"
+	// PropertyProfile: the substrate's profile for the workload's identity.
+	PropertyProfile PropertySource = "profile"
+	// PropertyDefault: no source states a value and the consumer's documented neutral
+	// value applies, such as evenly loaded expert ranks.
+	PropertyDefault PropertySource = "default"
+)
+
+// Frame is a run's experimental frame (design §8.6): what it feeds in, when it measures,
+// and what it measures.
+type Frame struct {
+	// Kind says whether the run is terminating or steady-state (design §8.8).
+	Kind FrameKind `yaml:"kind"`
+	// Generator is the workload and its seeds.
+	Generator Generator `yaml:"generator"`
+	// InitialState is the engines' state when the run starts.
+	InitialState InitialState `yaml:"initial_state"`
+	// Phases define warm-up, the measured window and drain, each by a rule.
+	Phases Phases `yaml:"phases"`
+	// Stop is the stop rule.
+	Stop StopRule `yaml:"stop"`
+	// Acceptance are the conditions under which the run counts for this frame.
+	Acceptance []AcceptanceCondition `yaml:"acceptance,omitempty"`
+	// Metrics are the registry identifiers the frame measures, sorted. Every key of
+	// Result.Metrics is one of them.
+	Metrics []string `yaml:"metrics"`
+}
+
+// FrameKind is terminating or steady-state.
+type FrameKind string
+
+const (
+	// FrameTerminating measures a fixed amount of work, such as a benchmark of a set
+	// number of prompts at a set concurrency.
+	FrameTerminating FrameKind = "terminating"
+	// FrameSteadyState measures a system that has settled.
+	FrameSteadyState FrameKind = "steady_state"
+)
+
+// Generator is the frame's input: a workload with its offered load, or a trace to replay,
+// and the seeds.
+type Generator struct {
+	// Workload is the workload the run used: the scenario's binding unless one replaced
+	// it.
 	Workload *workload.Binding `yaml:"workload,omitempty"`
+	// Load is the offered load: exactly one of a concurrency and a request rate. A replay
+	// of fixed timestamps states neither.
+	Load measurement.Load `yaml:"load,omitempty"`
+	// Seed is the scenario seed every substream is derived from (DEV-6).
+	Seed int64 `yaml:"seed"`
+	// RNG names the random generator and its version, because a new generator changes
+	// every draw (design §8.4).
+	RNG string `yaml:"rng"`
 }
 
-// Warmup is the leading part of a run excluded from the measured window: a number of
-// requests or a duration, not both.
-type Warmup struct {
-	Requests  int     `yaml:"requests,omitempty"`
+// InitialState is the engines' state at the start of a run.
+type InitialState struct {
+	Caches CacheState `yaml:"caches"`
+	// Rule states how caches were warmed, when Caches is CachesWarmed.
+	Rule string `yaml:"rule,omitempty"`
+}
+
+// CacheState is the engines' caches at the start of a run.
+type CacheState string
+
+const (
+	CachesEmpty  CacheState = "empty"
+	CachesWarmed CacheState = "warmed"
+)
+
+// Phases are the frame's warm-up, measured window and drain.
+type Phases struct {
+	Warmup   WarmupPhase   `yaml:"warmup"`
+	Measured MeasuredPhase `yaml:"measured"`
+	Drain    DrainPhase    `yaml:"drain"`
+}
+
+// WarmupPhase is the leading part of a run excluded from the measured window.
+type WarmupPhase struct {
+	Rule WarmupRule `yaml:"rule"`
+	// Requests is the number of leading requests excluded, for WarmupRequests.
+	Requests int `yaml:"requests,omitempty"`
+	// DurationS is the excluded leading time in simulated seconds, for WarmupDuration.
 	DurationS float64 `yaml:"duration_s,omitempty"`
 }
 
-// Revisions are the versions a run read, each a release tag, a commit, or both.
+// WarmupRule is how a warm-up is defined.
+type WarmupRule string
+
+const (
+	WarmupNone     WarmupRule = "none"
+	WarmupRequests WarmupRule = "requests"
+	WarmupDuration WarmupRule = "duration"
+	// WarmupMarked: the workload marks its warm-up requests, as an agentic replay's
+	// warm-up phase does.
+	WarmupMarked WarmupRule = "marked"
+	// WarmupMSER5: the cut that minimises the variance of the remaining mean, per output
+	// series (design §8.8).
+	WarmupMSER5 WarmupRule = "mser5"
+)
+
+// MeasuredPhase says what opens and closes the measured window.
+type MeasuredPhase struct {
+	Start WindowStart `yaml:"start"`
+	Stop  WindowStop  `yaml:"stop"`
+}
+
+// WindowStart is what opens the measured window.
+type WindowStart string
+
+const (
+	// StartFirstArrivalAfterWarmup: the first arrival of a measured request.
+	StartFirstArrivalAfterWarmup WindowStart = "first_arrival_after_warmup"
+	// StartProfiling: the workload's own profiling phase starts, as aiperf's does.
+	StartProfiling WindowStart = "profiling_start"
+	// StartSimulation: the start of the run.
+	StartSimulation WindowStart = "simulation_start"
+)
+
+// WindowStop is what closes the measured window.
+type WindowStop string
+
+const (
+	StopLastCompletion WindowStop = "last_completion"
+	StopProfiling      WindowStop = "profiling_end"
+	StopSimulation     WindowStop = "simulation_end"
+)
+
+// DrainPhase is what happens after the measured window closes.
+type DrainPhase struct {
+	Rule DrainRule `yaml:"rule"`
+	// DurationS bounds the drain in simulated seconds, for DrainGrace.
+	DurationS float64 `yaml:"duration_s,omitempty"`
+}
+
+// DrainRule is how a run ends its work after the measured window.
+type DrainRule string
+
+const (
+	// DrainNone: the run stops when the window closes.
+	DrainNone DrainRule = "none"
+	// DrainUntilComplete: the run continues until every request has a fate.
+	DrainUntilComplete DrainRule = "until_complete"
+	// DrainGrace: the run continues for a stated grace period.
+	DrainGrace DrainRule = "grace"
+)
+
+// StopRule ends a run: a request count, a horizon, or both, whichever comes first.
+type StopRule struct {
+	// Requests caps the requests the workload generator emits.
+	Requests int `yaml:"requests,omitempty"`
+	// HorizonS is the simulated time, in seconds, at which the run stops.
+	HorizonS *float64 `yaml:"horizon_s,omitempty"`
+}
+
+// AcceptanceCondition is one condition under which a run counts for its frame.
+type AcceptanceCondition struct {
+	Condition ConditionKind `yaml:"condition"`
+	// Threshold is the condition's bound, in the condition's terms.
+	Threshold float64 `yaml:"threshold"`
+	// Observed is what the run achieved.
+	Observed float64 `yaml:"observed"`
+	// Met says whether Observed satisfies Threshold.
+	Met bool `yaml:"met"`
+}
+
+// ConditionKind names an acceptance condition.
+type ConditionKind string
+
+const (
+	// ConditionConcurrencyTolerance: the achieved mean concurrency differs from the
+	// target by at most Threshold, a fraction of the target.
+	ConditionConcurrencyTolerance ConditionKind = "achieved_concurrency_within"
+	// ConditionUnfinishedAtMost: the fraction of generated requests in flight or queued
+	// at the horizon is at most Threshold.
+	ConditionUnfinishedAtMost ConditionKind = "unfinished_fraction_at_most"
+)
+
+// Revisions are the versions of the BLIS modules a run was built from, each a release tag,
+// a Go pseudo-version or a commit.
 type Revisions struct {
-	BLIS              string    `yaml:"blis"`
-	BLISSchemas       string    `yaml:"blis_schemas"`
-	BLISLatencyKernel string    `yaml:"blis_latency_kernel,omitempty"`
-	LLMDRouter        string    `yaml:"llm_d_router,omitempty"`
-	Engine            *Engine   `yaml:"engine,omitempty"`
-	Catalog           *DataRepo `yaml:"catalog,omitempty"`
-	Registry          *DataRepo `yaml:"registry,omitempty"`
-}
-
-// Engine is the inference-engine model a run used.
-type Engine struct {
-	// Kind names the engine model, for example "vllm".
-	Kind string `yaml:"kind"`
-	// UpstreamVersion is the release of the real engine it models, for example "0.32.0".
-	UpstreamVersion string `yaml:"upstream_version"`
-	// Release is the engine model's own release.
-	Release string `yaml:"release,omitempty"`
-}
-
-// DataRepo is a data repository read at a release, a commit, or both.
-type DataRepo struct {
-	Release  string `yaml:"release,omitempty"`
-	Revision string `yaml:"revision,omitempty"`
+	// Simulator is the inference-sim build.
+	Simulator string `yaml:"simulator"`
+	// Substrate is the blis-substrate module version the build selected.
+	Substrate string `yaml:"substrate"`
+	// Router is the llm-d router fork's version.
+	Router string `yaml:"router,omitempty"`
+	// EngineModule is the engine repository's module version, such as blis-vllm's.
+	EngineModule string `yaml:"engine_module,omitempty"`
 }
 
 // Reference names another Result document.
@@ -153,65 +444,197 @@ type Reference struct {
 
 // RevisionChange is one component whose revision differs from the Result a run reran.
 type RevisionChange struct {
-	// Component is a key of Revisions, for example "blis" or "catalog".
+	// Component is a key of Revisions, or "catalog" or "registry" for the data's combined
+	// hash.
 	Component string `yaml:"component"`
 	From      string `yaml:"from"`
 	To        string `yaml:"to"`
 }
 
-// Window is the measured window the metrics are over.
+// Window is the measured window as it fell: its bounds on the simulated clock and the
+// requests that completed inside it.
 type Window struct {
-	// Start and Stop say what bounds the window, for example "first_send_after_warmup"
-	// and "last_completion".
-	Start     string  `yaml:"start"`
-	Stop      string  `yaml:"stop"`
+	// StartUs and EndUs bound the window in simulated microseconds.
+	StartUs int64 `yaml:"start_us"`
+	EndUs   int64 `yaml:"end_us"`
+	// DurationS is EndUs - StartUs in seconds.
 	DurationS float64 `yaml:"duration_s"`
 	// Requests is the number of requests that completed inside the window.
 	Requests int `yaml:"requests"`
 }
 
-// Requests is the request-conservation ledger. Every injected request ends in exactly
-// one terminal bucket; each bucket is named as in the simulator's INV-1.
+// Figure is one predicted value and the number of samples behind it.
+type Figure struct {
+	Value float64 `yaml:"value"`
+	// Samples is the size of the population the statistic was taken over: requests,
+	// token gaps or steps, as the metric's definition says. For a rate, the count summed.
+	Samples int `yaml:"samples"`
+}
+
+// Requests counts each request's fate (DEV-9). Generated is the generator's own count of
+// the requests it created, every round a session planned included; it equals the sum of
+// the fates.
 type Requests struct {
-	// Generated is every request the workload produced: Injected plus Rejected.
 	Generated int `yaml:"generated"`
-	// Rejected requests were refused at admission and never injected.
-	Rejected int `yaml:"rejected"`
-	Injected int `yaml:"injected"`
 
-	Completed         int `yaml:"completed"`
-	StillQueued       int `yaml:"still_queued"`
-	StillRunning      int `yaml:"still_running"`
-	DroppedUnservable int `yaml:"dropped_unservable"`
-	TimedOut          int `yaml:"timed_out"`
+	Completed int `yaml:"completed"`
+	// Dropped counts dropped requests by reason.
+	Dropped           map[DropReason]int `yaml:"dropped,omitempty"`
+	TimedOut          int                `yaml:"timed_out"`
+	InFlightAtHorizon int                `yaml:"in_flight_at_horizon"`
+	QueuedAtHorizon   int                `yaml:"queued_at_horizon"`
+	NotStarted        int                `yaml:"not_started"`
 
-	// The router's outcomes; zero for a single instance.
-	RoutingRejections       int `yaml:"routing_rejections"`
-	GatewayQueueDepth       int `yaml:"gateway_queue_depth"`
-	GatewayQueueRejected    int `yaml:"gateway_queue_rejected"`
-	GatewayEvicted          int `yaml:"gateway_evicted"`
-	GatewayExpired          int `yaml:"gateway_expired"`
-	EncodeRoutingRejections int `yaml:"encode_routing_rejections"`
-
-	// LengthCapped counts completed requests whose output was cut at the length limit.
-	// It is not a terminal bucket.
+	// LengthCapped counts completed requests that stopped at a length limit (max_tokens or
+	// the context length) rather than at end of sequence. It is not a fate.
 	LengthCapped int `yaml:"length_capped"`
 }
 
-// Terminal returns the sum of the terminal buckets, which INV-1 requires to equal
-// Injected.
-func (r Requests) Terminal() int {
-	return r.Completed + r.StillQueued + r.StillRunning + r.DroppedUnservable + r.TimedOut +
-		r.RoutingRejections + r.GatewayQueueDepth + r.GatewayQueueRejected +
-		r.GatewayEvicted + r.GatewayExpired + r.EncodeRoutingRejections
+// Fate is how a request ended (design §8.7).
+type Fate string
+
+const (
+	FateCompleted         Fate = "completed"
+	FateDropped           Fate = "dropped"
+	FateTimedOut          Fate = "timed_out"
+	FateInFlightAtHorizon Fate = "in_flight_at_horizon"
+	FateQueuedAtHorizon   Fate = "queued_at_horizon"
+	// FateNotStarted: a request the workload planned, such as a later round of a session,
+	// that was never issued.
+	FateNotStarted Fate = "not_started"
+)
+
+// DropReason is why a request was dropped.
+type DropReason string
+
+const (
+	// DropAdmissionRejected: refused at admission and never routed.
+	DropAdmissionRejected DropReason = "admission_rejected"
+	// DropRoutingRejected: the router found no endpoint to serve it.
+	DropRoutingRejected DropReason = "routing_rejected"
+	// DropEncodeRoutingRejected: refused at an encode stage.
+	DropEncodeRoutingRejected DropReason = "encode_routing_rejected"
+	// DropGatewayQueueRejected: the router's flow control refused it at capacity.
+	DropGatewayQueueRejected DropReason = "gateway_queue_rejected"
+	// DropGatewayEvicted: the router revoked it in flight.
+	DropGatewayEvicted DropReason = "gateway_evicted"
+	// DropGatewayExpired: it waited past the router's queue-wait budget.
+	DropGatewayExpired DropReason = "gateway_expired"
+	// DropUnservable: the engine refused it because it can never fit in the KV cache
+	// (SIM-7).
+	DropUnservable DropReason = "unservable"
+	// DropContextOverflow: the engine refused it because prompt plus output exceed the
+	// context length.
+	DropContextOverflow DropReason = "context_overflow"
+	// DropDecodeKV: a disaggregated request whose decode instance could not hold its KV.
+	DropDecodeKV DropReason = "decode_kv_unavailable"
+)
+
+// Sum returns the number of fates counted, which DEV-9 requires to equal Generated.
+func (q Requests) Sum() int {
+	n := q.Completed + q.TimedOut + q.InFlightAtHorizon + q.QueuedAtHorizon + q.NotStarted
+	for _, v := range q.Dropped {
+		n += v
+	}
+	return n
 }
 
-// Goodput is the share of requests that met their SLO targets.
+// Unfinished returns the requests in flight or queued at the horizon.
+func (q Requests) Unfinished() int { return q.InFlightAtHorizon + q.QueuedAtHorizon }
+
+// RequestRow is one generated request. Times are on the simulated clock in microseconds.
+// A latency is present only when the request produced the sample: no token, no TTFT; fewer
+// than two output tokens, no TPOT; not completed, no E2E.
+type RequestRow struct {
+	// ID is the request's identifier, unique within the run (SIM-8).
+	ID   string `yaml:"id"`
+	Fate Fate   `yaml:"fate"`
+	// DropReason is set exactly when Fate is dropped.
+	DropReason DropReason `yaml:"drop_reason,omitempty"`
+
+	// ArrivalUs is when the request arrived at the client.
+	ArrivalUs int64  `yaml:"arrival_us"`
+	TTFTUs    *int64 `yaml:"ttft_us,omitempty"`
+	// TPOTUs is (E2E - TTFT) / (output tokens - 1).
+	TPOTUs *float64 `yaml:"tpot_us,omitempty"`
+	E2EUs  *int64   `yaml:"e2e_us,omitempty"`
+	// SchedulingDelayUs is the time from arrival at an engine to the first scheduled step.
+	SchedulingDelayUs *int64 `yaml:"scheduling_delay_us,omitempty"`
+	// GatewayQueueDelayUs is the time spent in the router's flow-control queue.
+	GatewayQueueDelayUs *int64 `yaml:"gateway_queue_delay_us,omitempty"`
+	// CompletionIndex is the request's 1-based position in the run's order of completion,
+	// for a completed request.
+	CompletionIndex int `yaml:"completion_index,omitempty"`
+
+	// The token record the engine emitted (SIM-12).
+	PromptTokens         int `yaml:"prompt_tokens"`
+	CachedLocalTokens    int `yaml:"cached_local_tokens,omitempty"`
+	CachedExternalTokens int `yaml:"cached_external_tokens,omitempty"`
+	ComputedTokens       int `yaml:"computed_tokens,omitempty"`
+	OutputTokens         int `yaml:"output_tokens"`
+	// LengthCapped: the request completed at a length limit rather than at end of
+	// sequence.
+	LengthCapped bool `yaml:"length_capped,omitempty"`
+
+	// Phase is the request's benchmark phase, when the workload marks phases.
+	Phase Phase `yaml:"phase,omitempty"`
+	// Instance is the engine instance that served it.
+	Instance   string `yaml:"instance,omitempty"`
+	Model      string `yaml:"model,omitempty"`
+	Adapter    string `yaml:"adapter,omitempty"`
+	SLOClass   string `yaml:"slo_class,omitempty"`
+	TenantID   string `yaml:"tenant_id,omitempty"`
+	SessionID  string `yaml:"session_id,omitempty"`
+	RoundIndex int    `yaml:"round_index,omitempty"`
+	// Agentic is the request's place in an agentic replay, for such a workload.
+	Agentic *AgenticTag `yaml:"agentic,omitempty"`
+}
+
+// Phase is a request's benchmark phase, after aiperf's benchmark_phase tag. Only
+// PhaseWarmup is outside the measured window.
+type Phase string
+
+const (
+	PhaseWarmup  Phase = "warmup"
+	PhaseProfile Phase = "profile"
+	PhaseGrace   Phase = "grace"
+)
+
+// AgenticTag places a request in an agentic replay's session trees.
+type AgenticTag struct {
+	// Lane is the concurrency lane whose session-tree slot the request runs under.
+	Lane int `yaml:"lane"`
+	// Tree numbers the tree instance, one per lane at start and one per recycle.
+	Tree int `yaml:"tree"`
+	// TraceID is the corpus trace the tree replays.
+	TraceID string `yaml:"trace_id"`
+	// Stream is the conversation: the trace id for the root, or the child session id.
+	Stream string `yaml:"stream"`
+	// Kind is root, subagent or flat.
+	Kind AgenticKind `yaml:"kind"`
+	// StreamInstance numbers the stream's instance within the run.
+	StreamInstance int `yaml:"stream_instance"`
+	// Turn is the turn index within the stream.
+	Turn int `yaml:"turn"`
+	// Outcome is how the load generator would record the request: completed, error,
+	// context_overflow or cancelled. It is the client's classification, beside the fate.
+	Outcome string `yaml:"outcome,omitempty"`
+}
+
+// AgenticKind is a stream's place in its tree.
+type AgenticKind string
+
+const (
+	AgenticRoot     AgenticKind = "root"
+	AgenticSubagent AgenticKind = "subagent"
+	AgenticFlat     AgenticKind = "flat"
+)
+
+// Goodput is the SLO outcome: the targets and each class's result. The goodput_rps and
+// slo_attainment figures are metrics.
 type Goodput struct {
-	Targets       map[string]workload.SLODimTargets `yaml:"targets"`
-	GoodputRPS    float64                           `yaml:"goodput_rps"`
-	SLOAttainment float64                           `yaml:"slo_attainment"`
-	PerClass      map[string]ClassGoodput           `yaml:"per_class,omitempty"`
+	Targets  map[string]workload.SLODimTargets `yaml:"targets"`
+	PerClass map[string]ClassGoodput           `yaml:"per_class,omitempty"`
 }
 
 // ClassGoodput is one SLO class's outcome.
@@ -220,15 +643,30 @@ type ClassGoodput struct {
 	Met       int `yaml:"met"`
 }
 
-// Breakdowns split a run's metrics along the axes it exercised. Each slice is a map of
-// metric name to value, in the units the matching MetricDefs entry states.
+// Breakdowns split a run's metrics along the axes it exercised. Each per-key slice maps a
+// metric identifier to its value over that key's requests.
 type Breakdowns struct {
-	// PD holds the prefill/decode split of a disaggregated run.
+	// PD holds the prefill/decode split of a disaggregated run, by quantity name.
 	PD         map[string]float64            `yaml:"pd,omitempty"`
 	PerModel   map[string]map[string]float64 `yaml:"per_model,omitempty"`
 	PerTenant  map[string]map[string]float64 `yaml:"per_tenant,omitempty"`
 	PerAdapter map[string]map[string]float64 `yaml:"per_adapter,omitempty"`
-	Sessions   map[string]float64            `yaml:"sessions,omitempty"`
+	// Sessions holds the multi-turn session split, by quantity name.
+	Sessions map[string]float64 `yaml:"sessions,omitempty"`
+}
+
+// Reports are the components' own reports, keyed as each component keys them. The
+// document carries them as reported; their contents are not figures under the registry.
+type Reports struct {
+	Engine     map[string]any `yaml:"engine,omitempty"`
+	Router     map[string]any `yaml:"router,omitempty"`
+	Kernel     map[string]any `yaml:"kernel,omitempty"`
+	Saturation map[string]any `yaml:"saturation,omitempty"`
+}
+
+// IsZero reports whether no component reported, so the key is omitted.
+func (r Reports) IsZero() bool {
+	return len(r.Engine) == 0 && len(r.Router) == 0 && len(r.Kernel) == 0 && len(r.Saturation) == 0
 }
 
 // Override is one setting the run simulated differently from its input.

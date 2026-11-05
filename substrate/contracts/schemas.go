@@ -130,11 +130,11 @@ func Validate(b Bundle) Report {
 	// same deployment paths a field check of the deployment reports at.
 	var er rules.EngineRules
 	if b.Scenario != nil && b.Rules != nil {
-		if er = b.Rules(b.Scenario.EngineVersion); isNilRules(er) {
+		if er = b.Rules(b.Scenario.EngineRelease()); isNilRules(er) {
 			er = nil
 		}
 	}
-	if b.Deployment != nil && er != nil && er.EngineVersion() == b.Scenario.EngineVersion {
+	if b.Deployment != nil && er != nil && er.EngineVersion() == b.Scenario.EngineRelease() {
 		for i, pool := range b.Deployment.Pools {
 			if pp := er.CheckEngineBlock(fmt.Sprintf("pools[%d]", i), pool.Engine); pp != nil {
 				field.Merge("deployment", pp)
@@ -212,7 +212,7 @@ func Validate(b Bundle) Report {
 			rep.Rule.RuleErrorf("engine-rules-given",
 				"no engine rules were given for engine version %q: pass the release's rules "+
 					"(Bundle.Rules) from the engine model that owns it; nothing was rule-checked",
-				b.Scenario.EngineVersion)
+				b.Scenario.EngineRelease())
 			return rep
 		}
 		if er == nil {
@@ -222,11 +222,11 @@ func Validate(b Bundle) Report {
 			if b.RulesVersions != nil {
 				p.RuleWarnf("engine-version-known",
 					"no rules pack for engine version %q; field validation passed but no version-specific rule was applied. Registered versions: %v",
-					b.Scenario.EngineVersion, b.RulesVersions())
+					b.Scenario.EngineRelease(), b.RulesVersions())
 			} else {
 				p.RuleWarnf("engine-version-known",
 					"no rules pack for engine version %q; field validation passed but no version-specific rule was applied",
-					b.Scenario.EngineVersion)
+					b.Scenario.EngineRelease())
 			}
 			rep.Rule = p
 			return rep
@@ -234,10 +234,10 @@ func Validate(b Bundle) Report {
 		// Rules for another release are never applied to this one: a lookup that falls back to
 		// a nearby release would pass a scenario its own release refuses (rules.go's package
 		// comment).
-		if v := er.EngineVersion(); v != b.Scenario.EngineVersion {
+		if v := er.EngineVersion(); v != b.Scenario.EngineRelease() {
 			rep.Rule.RuleErrorf("engine-version-matches",
 				"the engine rules looked up for engine version %q are for %q; no rule was applied",
-				b.Scenario.EngineVersion, v)
+				b.Scenario.EngineRelease(), v)
 			return rep
 		}
 		// A Check that finds nothing may say so with a nil Problems; the report keeps its empty
@@ -245,7 +245,7 @@ func Validate(b Bundle) Report {
 		if p := er.Check(in); p != nil {
 			rep.Rule = p
 		}
-		rep.RulesApplied = b.Scenario.EngineVersion
+		rep.RulesApplied = b.Scenario.EngineRelease()
 	}
 	return rep
 }

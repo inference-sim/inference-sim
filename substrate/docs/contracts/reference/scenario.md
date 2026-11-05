@@ -19,11 +19,21 @@ them.</p>
 | `name` | string | yes | The scenario's identity. |
 | `model` | string | yes | A model directory under `models/` in the catalog. |
 | `coefficients` | list of strings | yes | Coefficient sets in the registry, named by file, at least one. How a cost model combines them is under [Selecting an entry](coefficients.md#selecting-an-entry). |
-| `engine_version` | string | yes | The exact release string of the engine the run describes, such as `0.29.0`. Selects the [rules pack](rules.md). |
+| `engine` | mapping | yes, or `engine_version` | The engine that runs the scenario, below. The simulator chooses the engine by it and refuses a release it does not run. |
+| `engine_version` | string | no | Deprecated; replaced by `engine`, and removed in M4. A scenario may state it alone, or beside `engine` with the same version. |
 | `workload` | mapping | no | The traffic, as a shape, a trace or a replay. See [Workload](workload.md). Omitted for a question about capacity alone. |
 | `routing` | mapping | no | Pins expert-parallel routing imbalance for the run, by a routing-profile set in the registry or an inline value. See [Scenario pin](routing.md#scenario-pin). Omitted, the workload and the registry's default sets decide, else evenly loaded. |
 | `acceptance` | mapping | no | Pins speculative acceptance for the run, by a profile set in the registry or an inline value. See [Scenario pin](acceptance.md#scenario-pin). Omitted, the workload and the registry decide. |
 | `cluster` | mapping | yes | The hardware available, below. |
+
+### `engine`
+
+<!-- fields: scenario.Engine -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | string | yes | The engine, as its repository registers it: `vllm` or `sglang`. |
+| `version` | string | yes | The upstream release the engine models, such as `0.32.0`. Selects the [rules pack](rules.md). |
 
 ### `cluster`
 
@@ -42,7 +52,9 @@ them.</p>
 
 A scenario is invalid if
 
-- `kind` is not `Scenario`, or `name`, `model` or `engine_version` is empty;
+- `kind` is not `Scenario`, or `name` or `model` is empty;
+- it states neither `engine` nor `engine_version`; `engine` lacks `kind` or `version`; or
+  both are stated and `engine_version` differs from `engine.version`;
 - `coefficients` is empty;
 - `cluster.hardware` is empty, or `nodes` or `gpus_per_node` is less than 1;
 - `gpus_per_rack` is set and is not a multiple of `gpus_per_node`;
