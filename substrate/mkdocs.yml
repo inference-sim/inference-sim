@@ -175,6 +175,7 @@ nav:
     - A new engine release: contracts/contributing/engine-release.md
     - Documentation and releases: contracts/contributing/documentation.md
     - Changes across the repositories: contracts/contributing/cross-repo-changes.md
+    - Releasing: contracts/contributing/releasing.md
 - Catalog:
   - Home: catalog/index.md
   - Using:

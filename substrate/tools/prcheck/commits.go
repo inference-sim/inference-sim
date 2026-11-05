@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/inference-sim/blis-substrate/tools/internal/bot"
 )
 
 // Commit is what the commit-policy check reads of one commit.
@@ -16,7 +18,7 @@ type Commit struct {
 }
 
 // The release bot's identity. Its commits are signed and carry no sign-off (X20).
-const releaseBotEmail = "blis-release-bot@users.noreply.github.com"
+const releaseBotEmail = bot.Email
 
 var (
 	trailerLine   = regexp.MustCompile(`^([A-Za-z][A-Za-z-]*):\s*(.*)$`)
@@ -71,11 +73,11 @@ func CommitPolicy(c Commit) []string {
 			}
 		}
 	}
-	bot := strings.Contains(c.Author, "<"+releaseBotEmail+">")
+	isBot := strings.Contains(c.Author, "<"+releaseBotEmail+">")
 	switch {
-	case bot && len(signoffs) > 0:
+	case isBot && len(signoffs) > 0:
 		add("a release-bot commit carries a Signed-off-by line; the bot never signs off (X20)")
-	case !bot && len(signoffs) == 0:
+	case !isBot && len(signoffs) == 0:
 		add("no Signed-off-by line; the person who takes responsibility for the commit adds the DCO sign-off (X20)")
 	}
 	for _, s := range signoffs {

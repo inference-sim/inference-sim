@@ -30,7 +30,8 @@ var (
 func versionSource(p string) bool {
 	base := path.Base(p)
 	switch base {
-	case "go.mod", "go.sum", "go.work.sum", "stack.json", "stack.lock", "pins.env", "harness.pin", "toolchain":
+	case "go.mod", "go.sum", "go.work.sum", "stack.json", "stack.lock", "pins.env", "harness.pin", "toolchain",
+		"version-literals.txt": // the baseline lists literals; it states none
 		return true
 	}
 	return strings.HasSuffix(base, "_test.go") || strings.HasPrefix(base, "test_") ||
