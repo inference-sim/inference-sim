@@ -233,8 +233,8 @@ The mapping lives in `sim/slo_priority.go` (`sim.SLOPriorityMap`); `InvertForVLL
 
 ## Deprecated Flags
 
-v0.16.0 deprecates these flags of `blis run` and `blis replay`, and v0.19.0 removes them. Each
-restates an engine setting the scenario states, in vLLM's own field (X1,
+v0.16.0 deprecates these flags of `blis run` and `blis replay`, and v0.19.0 removes them. The
+first five restate an engine setting the scenario states, in vLLM's own field (X1,
 [#2037](https://github.com/inference-sim/inference-sim/issues/2037)). They still work in v0.16.0
 through v0.18.0. Giving one prints a notice on standard error that names its replacement; the
 Result document on standard output is unchanged.
@@ -246,6 +246,7 @@ Result document on standard output is unchanged.
 | `--dp-load-balancing` | `parallel.data_parallel_load_balancing` in the scenario's pool |
 | `--swa-bounded-replay` | `engine.swa_bounded_replay` in the scenario's pool engine block |
 | `--kv-offload-config` | the scenario's `offload` block |
+| `--lazy-generation` | nothing: requests are streamed by default, and the eager generator that `--lazy-generation=false` selects is removed with the flag ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)) |
 
 ## Scheduling and Priority
 
@@ -351,6 +352,7 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
 | `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml` (the LoRA cost block; see [defaults.yaml](#defaultsyaml)). |
 | `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
+| `--lazy-generation` | bool | true | **Deprecated in v0.16.0, removed in v0.19.0** ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)). `blis run` streams requests from the workload generator by default. `--lazy-generation=false` selects the eager generator, which builds every request before the run starts and produces the same requests (INV-6); it goes with the flag. On `blis replay` the flag has no effect. |
 
 ## Policy Bundle
 

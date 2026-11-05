@@ -1194,15 +1194,16 @@ func (o origCmdLevelVars) restore() {
 	defaultsFilePath = o.defaultsFile
 }
 
-// TestRunCmd_LazyGeneration_FlagRegistered verifies the --lazy-generation
-// flag is registered on `blis run` and defaults to false. BC-1, #1441.
+// TestRunCmd_LazyGeneration_FlagRegistered verifies the --lazy-generation flag is registered
+// on `blis run` and defaults to true: streaming generation is the default since v0.16.0
+// (#1449), and the eager generator runs only on an explicit --lazy-generation=false.
 func TestRunCmd_LazyGeneration_FlagRegistered(t *testing.T) {
 	flag := runCmd.Flags().Lookup("lazy-generation")
 	if flag == nil {
 		t.Fatal("--lazy-generation flag must be registered on runCmd")
 	}
-	if flag.DefValue != "false" {
-		t.Errorf("--lazy-generation default = %q, want %q", flag.DefValue, "false")
+	if flag.DefValue != "true" {
+		t.Errorf("--lazy-generation default = %q, want %q", flag.DefValue, "true")
 	}
 }
 

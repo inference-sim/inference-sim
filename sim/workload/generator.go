@@ -316,6 +316,9 @@ type GeneratedWorkload struct {
 // SessionBlueprints are generated directly (concurrency clients have RateFraction=0,
 // so GenerateRequests naturally skips them).
 // For all other clients (including open-loop reasoning), identical to GenerateRequests.
+//
+// Deprecated: since v0.16.0, and removed in v0.19.0 (#1450, #1451). Use GenerateWorkloadLazy,
+// which streams the same requests and session blueprints; blis run streams by default.
 func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*GeneratedWorkload, error) {
 	// Generate all requests using existing logic.
 	// For closed-loop clients, this currently generates ALL rounds (open-loop style).

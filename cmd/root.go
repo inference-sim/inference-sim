@@ -143,7 +143,7 @@ var (
 
 	// Workload spec config (PR10)
 	workloadSpecPath string // Path to YAML workload specification file
-	lazyGeneration   bool   // --lazy-generation: stream requests from generator (alpha, #1441)
+	lazyGeneration   bool   // --lazy-generation: stream requests from the generator (default true; =false selects the eager generator, deprecated in v0.16.0, #1451)
 
 	// Tiered KV cache config (PR12)
 	kvCPUBlocks           int64
@@ -874,12 +874,12 @@ var runCmd = &cobra.Command{
 			logrus.Fatalf("Workload requires either num_requests or --horizon to bound generation")
 		}
 
-		// Lazy generation path (#1441, alpha). Default off. When set, build
-		// a streaming workload source instead of materializing the full
-		// request slice. As of #1460 there is NO eager-fallback class — every
-		// spec the eager generator accepts is streamed: multi-session reasoning
-		// (#1458), concurrency clients (#1459), and time-varying / per-window
-		// workloads (#1460).
+		// Streaming generation (#1441) is the default since v0.16.0 (#1449): build
+		// a streaming workload source instead of materializing the full request
+		// slice. Every spec the eager generator accepts is streamed: multi-session
+		// reasoning (#1458), concurrency clients (#1459), and time-varying /
+		// per-window workloads (#1460). --lazy-generation=false selects the eager
+		// generator, which v0.16.0 deprecates and v0.19.0 removes (#1450, #1451).
 		var wl *workload.GeneratedWorkload
 		// lazyRequestSource is typed as the interface satisfied by
 		// *workload.lazyRequestSource: Next() delivers requests to the
@@ -904,7 +904,7 @@ var runCmd = &cobra.Command{
 		}
 		if wl == nil {
 			var err error
-			wl, err = workload.GenerateWorkload(spec, simulationHorizon, maxRequests)
+			wl, err = workload.GenerateWorkload(spec, simulationHorizon, maxRequests) //nolint:staticcheck // the deprecated eager path --lazy-generation=false selects, until v0.19.0 (#1451)
 			if err != nil {
 				logrus.Fatalf("Failed to generate workload: %v", err)
 			}
@@ -1553,7 +1553,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMin, "output-tokens-min", defaultOutputMin, "Min Output Token Count")
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
-	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "Alpha (#1441): stream requests from the workload generator instead of pre-generating the full slice. Default off. Supports every workload class — single-shot, single- and multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / per-window workloads (#1460); no eager fallback.")
+	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", true, "Stream requests from the workload generator (#1441) instead of pre-generating the full slice; the default since v0.16.0 (#1449). --lazy-generation=false selects the eager generator, which produces the same requests (INV-6). Supports every workload class — single-shot, single- and multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / per-window workloads (#1460).")
 	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected.")
 	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
@@ -1568,7 +1568,7 @@ func init() {
 	// The Result document's encoding, file and summary view (#1871).
 	registerResultFlags(runCmd)
 
-	markDeprecatedFlags(runCmd)
+	markDeprecatedFlags(runCmd, nil)
 
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
