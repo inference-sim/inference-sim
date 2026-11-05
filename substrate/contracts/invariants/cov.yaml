@@ -103,11 +103,15 @@
   - accuracy-dashboard
   checks:
   - repo: accuracy-dashboard
+    check: A check that the dashboard holds no settings table
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
     check: >-
-      A check that the dashboard holds no settings table, and that every scenario's engine block equals,
-      field for field, the values the run passed, or the resolved value where only that is recorded
-      (§11.2), after parsing them with the engine's own argument parser, except engine.version, which
-      equals the release in stack.json, and each field an estimation rule set, which the point names
+      A check that every scenario's engine block equals, field for field, the values the run passed,
+      parsed with the engine's own argument parser, or the resolved value where only that is recorded
+      (§11.2). The exceptions are engine.version, which equals the release in stack.json, and each
+      field an estimation rule set, which the point names
     runs: pull_request
     status: new
   review: null
@@ -235,9 +239,11 @@
     mean. A simulated figure compared with a measurement carries its replication interval, or states
     that the run has no random input (§8.4); its uncertainty is then the measurement's own noise (below)
     and the model's (§8.8). Where InferenceX has several units whose identifying fields differ only
-    in measured date or benchmark run, or one unit holding several measurements (§10.2), their spread
-    is reported as the measurement's own noise, and no point's error is counted for a difference smaller
-    than that noise. A unit holding several measurements is scored against their mean.
+    in measured date or benchmark run, and whose recorded image digests agree, or one such unit holding
+    several measurements (§10.2), their spread is reported as the measurement's own noise, and no
+    point's error is counted for a difference smaller than that noise. Units whose image digests differ
+    or are unrecorded are not pooled for noise, because their builds may differ. A unit holding several
+    measurements is scored against their mean.
   scope:
   - accuracy-dashboard
   checks:

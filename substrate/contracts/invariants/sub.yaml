@@ -69,7 +69,14 @@
     a reader can follow. Each model's graph is generated from its vendor config.json and the safetensors
     headers of its checkpoint, and never edited by hand. No runtime code reads config.json. No model
     value is hard-coded in the cost model or an engine, and no setting asks the user to copy a value
-    from a checkpoint.
+    from a checkpoint. A scenario's cluster names catalog entries for its chip, fabric and storage
+    devices, and states what the user provisions: the node count, and the GPUs per node, GPUs per
+    rack and host memory per node where the chip's entry leaves them open. Where the entry states
+    them, as GB200 NVL72's does, the scenario may omit them or restate them unchanged, and any other
+    value is refused. On a chip whose entry has no rack tier, the scenario may not state a rack size.
+    On a chip that has one, the cluster's fabric is the network between racks. A different packaging
+    of the same chip is a catalog entry of its own. One function in contracts/spec resolves a cluster's
+    packaging from the scenario and the catalog, and every reader calls it (X15).
   scope:
   - blis-sglang
   - blis-substrate
@@ -81,19 +88,9 @@
     status: ci
     test: catalog/scripts/derive_graph.py --check
   - repo: blis-substrate
-    check: The validators
+    check: The validators, including the packaging check and its test pair
     runs: pull_request
-    status: ci
-    test: go run ./validate/cmd/validate-catalog catalog
-  - repo: blis-substrate
-    check: >-
-      The packaging check and its test pair: a scenario's gpus_per_node or gpus_per_rack that
-      contradicts the chip's catalog entry, a missing gpus_per_node on a chip that states none, and a
-      gpus_per_rack on a chip with no rack tier are refused, each beside the closest accepted cluster
-    runs: pull_request
-    status: ci
-    test: 'contracts/spec/scenario: TestPackagingRefusals'
-    known_bad: 'contracts/spec/scenario: TestPackagingRefusals'
+    status: new
   - repo: blis-substrate
     check: A test that no runtime package opens config.json
     runs: pull_request
@@ -121,6 +118,9 @@
   target:
     status: ci
     milestone: 4
+  note: >-
+    M1 resolves hardware packaging from the catalog, refusing a scenario that contradicts it; model
+    values held in code move to graph fields in M4
 - id: SUB-4
   section: §5
   statement: >-
@@ -337,6 +337,9 @@
   target:
     status: ci
     milestone: 2
+  note: >-
+    the malformed-document set in contracts/conformance runs against every blis-substrate loader from
+    M1; M2 runs it against the loaders in blis-vllm, blis-sglang and inference-sim
 - id: SUB-13
   section: §5
   statement: >-

@@ -57,7 +57,7 @@
  {
   "ID": "X12",
   "Title": "",
-  "Statement": "Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list. Each such model records the licence identifier in its model.yaml; a model whose licence is not on the allow-list commits only the file's hash and revision, and the deriver fetches it in a nightly job that holds the access token; pull-request jobs check only the committed hash and revision and the graph's derived_from hash, so no pull-request job needs a secret. Each derived value cites its source by URL and commit or hash. No private names appear in files, commits or pull-request text."
+  "Statement": "Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list. Each such model records the licence identifier in its model.yaml; a model whose licence is not on the allow-list commits only the file's hash and revision, and the deriver fetches it in a nightly job that holds the access token; pull-request jobs check only the committed hash and revision and the graph's derived_from hash, so no pull-request job needs a secret. Each derived value cites its source by URL and commit or hash. No private names appear in files, commits, pull-request text or issue text, and reports and documents name internal data neutrally, as internal experiments."
  },
  {
   "ID": "X13",
@@ -92,7 +92,7 @@
  {
   "ID": "X19",
   "Title": "",
-  "Statement": "Scripts and generators, in every language, never write an engine default. They leave an unstated setting unstated, or read the default with inference-sim fields. A rendered scenario or report shows each resolved value with its source: stated by the user, recorded by the measured run (including a value it logs as resolved), or the engine's default."
+  "Statement": "Scripts and generators, in every language, never write an engine default. They leave an unstated setting unstated, or read the default with inference-sim fields. A rendered scenario or report shows each resolved value with its source: stated by the user, recorded by the measured run (including a value it logs as resolved), the engine's default, or, for a workload-dependent value, a cited measurement (D8)."
  },
  {
   "ID": "X20",
@@ -152,7 +152,7 @@
  {
   "ID": "SUB-3",
   "Title": "",
-  "Statement": "The catalog holds declared facts only: figures read from a published source, each with a citation a reader can follow. Each model's graph is generated from its vendor config.json and the safetensors headers of its checkpoint, and never edited by hand. No runtime code reads config.json. No model value is hard-coded in the cost model or an engine, and no setting asks the user to copy a value from a checkpoint."
+  "Statement": "The catalog holds declared facts only: figures read from a published source, each with a citation a reader can follow. Each model's graph is generated from its vendor config.json and the safetensors headers of its checkpoint, and never edited by hand. No runtime code reads config.json. No model value is hard-coded in the cost model or an engine, and no setting asks the user to copy a value from a checkpoint. A scenario's cluster names catalog entries for its chip, fabric and storage devices, and states what the user provisions: the node count, and the GPUs per node, GPUs per rack and host memory per node where the chip's entry leaves them open. Where the entry states them, as GB200 NVL72's does, the scenario may omit them or restate them unchanged, and any other value is refused. On a chip whose entry has no rack tier, the scenario may not state a rack size. On a chip that has one, the cluster's fabric is the network between racks. A different packaging of the same chip is a catalog entry of its own. One function in contracts/spec resolves a cluster's packaging from the scenario and the catalog, and every reader calls it (X15)."
  },
  {
   "ID": "SUB-4",
@@ -252,7 +252,7 @@
  {
   "ID": "VLM-3",
   "Title": "",
-  "Statement": "fields.json classifies every configuration field and every environment variable the release reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled (with a trace that sets it), proven inert (with a passing proof), or not modelled (with an issue). No other status is allowed. A field marked modelled changes, when perturbed, a decision in some trace or a field of the emitted plan or step shape, and records the value classes its oracle scenarios cover: for a boolean or enumerated field, the values some scenario sets; for an ordered numeric field, the range of values the scenarios set, split at every threshold the upstream compares the field with, generated from the upstream's comparisons. The probe values of a proven-inert field follow the same classes. Each field also states its estimation rule (§11.2), or that it has none."
+  "Statement": "fields.json classifies every configuration field and every environment variable the release reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled, proven inert (with a passing proof), or not modelled (with an issue). No other status is allowed, except one a release plan allows for a stated time (glossary: Inert, unproven). A field is modelled when the port reads it and setting it changes a decision in a recorded trace, or a field of the emitted plan or step shape that the cost model prices (SUB-11). Its evidence is an oracle scenario that sets it and whose trace the port reproduces, or a test that sets it and finds the emitted plan or step shape equal to the upstream's own resolution. A field that reaches only a plan or step-shape field on SUB-11's not-yet-priced list is not modelled, and cites that list's issue. A field the port reads but carries to no decision, plan or step shape is proven inert or not modelled. A field marked modelled records the value classes its evidence covers: for a boolean or enumerated field, the values its evidence sets; for an ordered numeric field, the range its evidence sets, split at every threshold the upstream compares the field with, generated from the upstream's comparisons. The probe values of a proven-inert field follow the same classes. A field that can name code outside the pinned release, such as a class or module path, is marked so. Each field also states its estimation rule (§11.2), or that it has none."
  },
  {
   "ID": "VLM-4",
@@ -427,12 +427,12 @@
  {
   "ID": "CFG-4",
   "Title": "",
-  "Statement": "Service-level checks use the worst instance, and every metric they use has one definition from the metric registry, shared by the search, the ranking and the report (DEV-8). A run that is overloaded or incomplete is never ranked (DEV-10)."
+  "Statement": "A specification ranks and checks configurations on any metric of the metric registry, at any scope (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99 time to first token over instances, and output tokens per second per accelerator for one pool. Every metric it uses has one definition from the registry, shared by the search, the ranking and the report (DEV-8), and every figure states its metric, scope and aggregate. A run that is overloaded or incomplete is never ranked (DEV-10)."
  },
  {
   "ID": "CFG-5",
   "Title": "",
-  "Statement": "A search varies only settings that the engine's field list marks as modelled at the pinned release. A ranking states the least trusted coefficient method and, from the dashboard's published summary at the release its pin file names, the grades of the dashboard points in the lanes it relies on, and a recommendation in a lane with no G1 or G2 points is labelled an extrapolation, with that lane's measured error."
+  "Statement": "A search varies only settings that the engine's field list marks as modelled at the pinned release. A ranking states the least trusted coefficient method and, from the dashboard's published summary at the release its pin file names, the grades of the dashboard points in the lanes it relies on, and a recommendation in a lane with no G1 or G2 points is labelled an extrapolation, with that lane's measured error. A speculative-decoding arm states its acceptance in its scenario (D8). The value comes from the substrate's profiles, read through inference-sim acceptance, which runs D8's lookup, or from another cited measurement. The report names the source and each key field in which it differs from the arm."
  },
  {
   "ID": "FID-1",
@@ -527,7 +527,7 @@
  {
   "ID": "DEV-8",
   "Title": "",
-  "Statement": "Every reported metric names its definition (§8.7), and a comparison is refused unless both sides use the same definition."
+  "Statement": "Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate."
  },
  {
   "ID": "DEV-9",
@@ -647,7 +647,7 @@
  {
   "ID": "D8",
   "Title": "",
-  "Statement": "A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored. A quantity that depends on the request stream but that BLIS does not simulate, such as speculative acceptance or expert routing balance, is a property of the workload. It is keyed by workload identity and never stored as a coefficient scoped only to a chip or model. Its value is taken from the command line if stated there, else from the scenario, else derived from the trace, else taken from the substrate's profile for that workload identity, and the Result's inputs record which supplied it (SIM-10)."
+  "Statement": "A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored. A quantity that depends on the request stream but that BLIS does not simulate, such as speculative acceptance or expert routing balance, is a property of the workload. It is keyed by workload identity and never stored as a coefficient scoped only to a chip or model. Its value is taken from the command line if stated there, else from the scenario, else derived from the trace, else taken from the substrate's profile for that workload identity, and the Result's inputs record which supplied it (SIM-10). Speculative acceptance is keyed by the target model, the drafter, the speculative method, the number of speculative tokens K, and the workload's category and thinking mode. The drafter is the model's own in-graph speculator, such as its MTP layers, or a separate drafter checkpoint with its own catalog entry. A value stated on the command line, in the scenario or by the workload is used as stated. A profile lookup, in the substrate's profiles or in a profile set the scenario names, may borrow when no measured profile has the run's exact key. It takes the closest measured one, in this order. First, the same target and drafter at another K. Between measured values of K it interpolates linearly. Above the largest it takes the largest's value. Below the smallest it takes that profile's stated per-position rates for the first K positions. A profile that states none gives 1 + K(AL − 1)/K₀, where K₀ is its K. That figure cannot exceed what the profile's own rates would give, so it does not overstate drafting's gain. The lookup never extrapolates. Second, another drafter of the same target, preferring the same method and then the lowest value at the run's K, found by the first step's rules, so that drafting's gain is not overstated. Third, the same method on another target whose graph records the same architecture. Every step keeps the category and thinking mode, apart from a fallback category the user requested. Two profiles that share a key but record different sampling or rejection settings are not interchangeable, and an exact key found in two profile sets is ambiguous; the lookup refuses both. Any remaining tie breaks in an order the substrate's acceptance reference states, so the choice is deterministic. With no profile on any step, the run is refused. The Result records the profile used, the step, and each key field that differed. A scenario or command-line option limits the lookup to exact matches."
  },
  {
   "ID": "COV-1",
@@ -697,7 +697,7 @@
  {
   "ID": "COV-10",
   "Title": "",
-  "Statement": "The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run's requests do not fix, such as a router's tie-breaks, and replications (DEV-11) cover those draws. A frame field the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved concurrency in the simulation matches the measured one within a stated tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its mean. A simulated figure compared with a measurement carries its replication interval, or states that the run has no random input (§8.4); its uncertainty is then the measurement's own noise (below) and the model's (§8.8). Where InferenceX has several units whose identifying fields differ only in measured date or benchmark run, or one unit holding several measurements (§10.2), their spread is reported as the measurement's own noise, and no point's error is counted for a difference smaller than that noise. A unit holding several measurements is scored against their mean."
+  "Statement": "The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run's requests do not fix, such as a router's tie-breaks, and replications (DEV-11) cover those draws. A frame field the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved concurrency in the simulation matches the measured one within a stated tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its mean. A simulated figure compared with a measurement carries its replication interval, or states that the run has no random input (§8.4); its uncertainty is then the measurement's own noise (below) and the model's (§8.8). Where InferenceX has several units whose identifying fields differ only in measured date or benchmark run, and whose recorded image digests agree, or one such unit holding several measurements (§10.2), their spread is reported as the measurement's own noise, and no point's error is counted for a difference smaller than that noise. Units whose image digests differ or are unrecorded are not pooled for noise, because their builds may differ. A unit holding several measurements is scored against their mean."
  },
  {
   "ID": "COV-11",
