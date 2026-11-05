@@ -1307,10 +1307,36 @@ var runCmd = &cobra.Command{
 			cs: cs, gateway: gw, run: run, goodputTargets: goodputTargets, satTracer: satTracer, extraOverrides: extra,
 			metricsPath: metricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			fitnessWeights: fitnessWeights, started: startTime,
+			frame: runFrameGenerator(spec), numRequestsCap: int(max(maxRequests, 0)),
 		})
 
 		logrus.Info("Simulation complete.")
 	},
+}
+
+// runFrameGenerator is what a run tells the experimental frame about its requests: the
+// generator that made them, the workload's identity, and the seed its draws used.
+func runFrameGenerator(spec *workload.WorkloadSpec) frameGenerator {
+	g := frameGenerator{Seed: seed}
+	if spec != nil {
+		g.Seed = spec.Seed
+	}
+	switch {
+	case workloadSpecPath != "":
+		g.Kind = generatorWorkloadSpec
+		if d, err := fileDigest(workloadSpecPath); err == nil {
+			g.Source = "sha256:" + d
+		} else {
+			logrus.Fatalf("--workload-spec %s: %v", workloadSpecPath, err)
+		}
+	case concurrency > 0:
+		g.Kind = generatorConcurrency
+	case workloadType == "distribution":
+		g.Kind = generatorDistribution
+	default:
+		g.Kind, g.Source = generatorPreset, workloadType
+	}
+	return g
 }
 
 // runLoadOf is the offered load a run generated: --concurrency, a workload spec's own clients

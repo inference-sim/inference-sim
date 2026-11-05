@@ -665,6 +665,7 @@ Example:
 			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
 			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
+			frame: replayFrameGenerator(agx),
 		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
@@ -836,6 +837,23 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 		}
 	}
 	return computeHorizonFromMaxArrival(maxArrival)
+}
+
+// replayFrameGenerator is what a replay tells the experimental frame about its requests: the
+// trace (by its data file's sha256) and session mode, or the agentic scenario with its seed
+// and warm-up rule.
+func replayFrameGenerator(agx *agentXRun) frameGenerator {
+	if agx != nil {
+		return frameGenerator{Kind: generatorAgenticReplay, Source: "sha256:" + agx.spec.Corpus.SHA256,
+			Seed: agx.spec.Seed(), Warmup: string(agx.spec.WarmupMode())}
+	}
+	g := frameGenerator{Kind: generatorTrace, Seed: seed, SessionMode: replaySessionMode}
+	if d, err := fileDigest(traceDataPath); err == nil {
+		g.Source = "sha256:" + d
+	} else {
+		logrus.Fatalf("--trace-data %s: %v", traceDataPath, err)
+	}
+	return g
 }
 
 // replayRunControls are the run controls a replay records: the trace's offered load (or the
