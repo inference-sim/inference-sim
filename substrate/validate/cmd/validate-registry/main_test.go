@@ -16,9 +16,24 @@ func writeSet(t *testing.T, dir, name, body string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(namedAfter(body, name)), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// namedAfter sets a fixture's name: line to its file's stem, which every set must carry
+// (dataset.CheckCoefficientSet). A fixture is written under several file names.
+func namedAfter(body, file string) string {
+	base := filepath.Base(file)
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	var out []string
+	for _, l := range strings.Split(body, "\n") {
+		if strings.HasPrefix(l, "name: ") {
+			l = "name: " + stem
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\n")
 }
 
 // A well-formed set validates: exit 0, and the summary names it on stdout.
@@ -251,10 +266,11 @@ func TestRunDanglingSymlinkFails(t *testing.T) {
 // to prevent.
 func TestRunDiscoversYmlNestedAndUppercase(t *testing.T) {
 	dir := t.TempDir()
+	// Each set is scoped to its own chip, so the four do not overlap (VAL-4).
 	writeSet(t, dir, "flat.yaml", validSet)
-	writeSet(t, dir, "alt.yml", validSet)
-	writeSet(t, dir, filepath.Join("nested", "deep.yaml"), validSet)
-	writeSet(t, dir, "UPPER.YAML", validSet)
+	writeSet(t, dir, "alt.yml", strings.Replace(validSet, "[h200]", "[h100]", 1))
+	writeSet(t, dir, filepath.Join("nested", "deep.yaml"), strings.Replace(validSet, "[h200]", "[b200]", 1))
+	writeSet(t, dir, "UPPER.YAML", strings.Replace(validSet, "[h200]", "[b300]", 1))
 
 	var out, errBuf bytes.Buffer
 	if code := run([]string{dir}, &out, &errBuf); code != 0 {
@@ -295,7 +311,7 @@ func writeAcceptance(t *testing.T, dir, name, body string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(namedAfter(body, name)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -358,5 +374,34 @@ profiles:
 	errBuf.Reset()
 	if code := run([]string{dir}, &out, &errBuf); code != 1 {
 		t.Fatalf("exit = %d, want 1 for a busiest rank below the mean", code)
+	}
+}
+
+// A set that names itself something other than its file fails: a scenario names a set by
+// its file, and the loader reports entries against it.
+func TestRunSetNameMustBeItsFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "coefficients", "a.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(validSet), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out, errBuf bytes.Buffer
+	if code := run([]string{dir}, &out, &errBuf); code != 1 || !strings.Contains(errBuf.String(), "but its file is a.yaml") {
+		t.Fatalf("exit = %d, want 1 naming the file; stderr:\n%s", code, errBuf.String())
+	}
+}
+
+// Two sets holding one name at overlapping scopes that the precedence does not order fail
+// the run (VAL-4).
+func TestRunUnorderedEntriesAcrossSetsFail(t *testing.T) {
+	dir := t.TempDir()
+	writeSet(t, dir, "a.yaml", validSet)
+	writeSet(t, dir, "b.yaml", strings.Replace(validSet, "hardware: [h200]", "hardware: [h200, h100]", 1))
+	var out, errBuf bytes.Buffer
+	if code := run([]string{dir}, &out, &errBuf); code != 1 || !strings.Contains(errBuf.String(), "VAL-4") {
+		t.Fatalf("exit = %d, want 1 naming VAL-4; stderr:\n%s", code, errBuf.String())
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/validate/dataset"
 	"github.com/inference-sim/blis-substrate/validate/measurements"
 )
 
@@ -159,14 +160,10 @@ func validateModelGraphs(r *reporter, dirs []string) {
 	r.section("# models/*/graph.yaml")
 	for _, path := range paths {
 		name := filepath.Base(filepath.Dir(path))
-		g, err := contracts.LoadModelGraph(path)
+		g, p, err := checkFile(path, "models/"+name+"/graph.yaml", dataset.CheckModelGraph)
 		if err != nil {
 			r.loadFail(name, "%v", err)
 			continue
-		}
-		p := g.Validate()
-		if g.Name != name {
-			p.Field("name", "graph names itself %q but its directory is %q", g.Name, name)
 		}
 		if r.record(name, p) {
 			continue
@@ -257,16 +254,12 @@ func validateModelIdentities(r *reporter, dirs []string) map[string]*model.Ident
 			r.loadFail(label, "model.yaml is a directory, not a file")
 			continue
 		}
-		id, err := contracts.LoadModelIdentity(path)
+		id, p, err := checkFile(path, "models/"+name+"/model.yaml", dataset.CheckModelIdentity)
 		if err != nil {
 			r.loadFail(label, "%v", err)
 			continue
 		}
 		ids[name] = id
-		p := id.Validate()
-		if id.Name != name {
-			p.Field("name", "model.yaml names itself %q but its directory is %q", id.Name, name)
-		}
 		if r.record(label, p) {
 			continue
 		}
@@ -287,12 +280,12 @@ func validateHardware(r *reporter, root string) {
 	r.section("# hardware/*.yaml")
 	for _, path := range paths {
 		name := stem(path)
-		c, err := contracts.LoadChip(path)
+		c, p, err := checkFile(path, path, dataset.CheckChip)
 		if err != nil {
 			r.loadFail(name, "%v", err)
 			continue
 		}
-		if r.record(name, c.Validate()) {
+		if r.record(name, p) {
 			continue
 		}
 		r.pass(fmt.Sprintf("%-46s bf16 %g, fp8 %g TFLOP/s, %g GiB",
@@ -312,12 +305,12 @@ func validateNetworks(r *reporter, root string) {
 	r.section("# networks/*.yaml")
 	for _, path := range paths {
 		name := stem(path)
-		f, err := contracts.LoadFabric(path)
+		f, p, err := checkFile(path, path, dataset.CheckFabric)
 		if err != nil {
 			r.loadFail(name, "%v", err)
 			continue
 		}
-		if r.record(name, f.Validate()) {
+		if r.record(name, p) {
 			continue
 		}
 		r.pass(fmt.Sprintf("%-46s %g GB/s inter-node", f.Name, f.InterNodeBwGBps))
@@ -368,14 +361,14 @@ func validateWorkloads(r *reporter, root string) {
 	}
 	r.section("# workloads/*.yaml")
 	for _, path := range paths {
-		w, err := contracts.LoadCatalogWorkload(path)
+		w, p, err := checkFile(path, path, dataset.CheckWorkload)
 		if err != nil {
 			// The identity is the filename stem; the loader could not stamp it, so name
 			// the file.
 			r.loadFail(stem(path), "%v", err)
 			continue
 		}
-		if r.record(w.Name(), w.Validate()) {
+		if r.record(w.Name(), p) {
 			continue
 		}
 		if rp := w.Replay; rp != nil {
@@ -418,6 +411,18 @@ func validateMeasurements(r *reporter, root string) {
 		}
 		r.pass(fmt.Sprintf("%-46s %s", name, res.Summary))
 	}
+}
+
+// checkFile reads path and runs on it the check package load runs on the same file
+// (validate/dataset), so this command and a run judge a file alike (SUB-9, X15). label is
+// the name the check reports the file by.
+func checkFile[T any](path, label string, check func(string, []byte) (T, *validate.Problems, error)) (T, *validate.Problems, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		var zero T
+		return zero, nil, fmt.Errorf("opening %s: %w", path, err)
+	}
+	return check(label, b)
 }
 
 // summarizeSource renders a model card's provenance for the one-line summary: provider,
