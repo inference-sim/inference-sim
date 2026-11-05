@@ -1,6 +1,8 @@
 package workload
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -143,6 +145,73 @@ func TestComposeSpecs_NegativeTotalRate_ReturnsError(t *testing.T) {
 	_, err := ComposeSpecs([]*WorkloadSpec{spec})
 	if err == nil {
 		t.Error("expected error for negative aggregate rate")
+	}
+}
+
+// boundedSpec is a one-client rate-based spec with the given seed, horizon and num_requests.
+func boundedSpec(seed, horizon, numRequests int64) *WorkloadSpec {
+	dist := DistSpec{Type: "constant", Params: map[string]float64{"value": 100}}
+	return &WorkloadSpec{Version: "2", Seed: seed, Category: "language", AggregateRate: 2, Horizon: horizon, NumRequests: numRequests,
+		Clients: []ClientSpec{{ID: "c", RateFraction: 1, Arrival: ArrivalSpec{Process: "poisson"}, InputDist: dist, OutputDist: dist}}}
+}
+
+// The law from #1906: composing one spec returns that spec unchanged.
+func TestComposeSpecs_SingleSpec_ReturnsItUnchanged(t *testing.T) {
+	dist := DistSpec{Type: "constant", Params: map[string]float64{"value": 100}}
+	closedLoop := &WorkloadSpec{Version: "2", Seed: 7, Category: "language", Horizon: 5_000_000, NumRequests: 100,
+		Clients: []ClientSpec{{ID: "c", Concurrency: 4, Arrival: ArrivalSpec{Process: "constant"}, InputDist: dist, OutputDist: dist}}}
+	for _, spec := range []*WorkloadSpec{boundedSpec(7, 5_000_000, 100), closedLoop} {
+		got, err := ComposeSpecs([]*WorkloadSpec{spec})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !reflect.DeepEqual(got, spec) {
+			t.Errorf("got %+v, want %+v", got, spec)
+		}
+	}
+}
+
+func TestComposeSpecs_MergesRunBounds(t *testing.T) {
+	tests := []struct {
+		name            string
+		specs           []*WorkloadSpec
+		wantSeed        int64
+		wantHorizon     int64
+		wantNumRequests int64
+	}{
+		{"sums num_requests and takes the max horizon", []*WorkloadSpec{boundedSpec(7, 1000, 200), boundedSpec(7, 3000, 100)}, 7, 3000, 300},
+		{"leaves num_requests unset when no input sets it", []*WorkloadSpec{boundedSpec(7, 1000, 0), boundedSpec(7, 0, 0)}, 7, 1000, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ComposeSpecs(tt.specs)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Seed != tt.wantSeed || got.Horizon != tt.wantHorizon || got.NumRequests != tt.wantNumRequests {
+				t.Errorf("seed, horizon, num_requests = %d, %d, %d; want %d, %d, %d",
+					got.Seed, got.Horizon, got.NumRequests, tt.wantSeed, tt.wantHorizon, tt.wantNumRequests)
+			}
+		})
+	}
+}
+
+func TestComposeSpecs_RefusesConflictingInputs(t *testing.T) {
+	tests := []struct {
+		name    string
+		specs   []*WorkloadSpec
+		wantErr string
+	}{
+		{"seeds differ", []*WorkloadSpec{boundedSpec(7, 0, 200), boundedSpec(42, 0, 100)}, "seed"},
+		{"num_requests set on only some inputs", []*WorkloadSpec{boundedSpec(7, 0, 200), boundedSpec(7, 1000, 0)}, "num_requests"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ComposeSpecs(tt.specs)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("err = %v, want an error naming %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
