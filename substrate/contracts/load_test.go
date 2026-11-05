@@ -728,6 +728,8 @@ func TestModelIdentityLicence(t *testing.T) {
 	}{
 		"no licence":      {func(i *model.Identity) { i.Licence = nil }, "licence: required"},
 		"bad id":          {func(i *model.Identity) { i.Licence.ID = "Llama 2" }, "is not an SPDX identifier"},
+		"placeholder id":  {func(i *model.Identity) { i.Licence.ID = "LicenseRef-other" }, "names no licence text"},
+		"none stated":     {func(i *model.Identity) { i.Licence.ID = "LicenseRef-none-stated" }, "names no licence text"},
 		"http evidence":   {func(i *model.Identity) { i.Licence.Evidence = "http://huggingface.co/o/m/raw/" + rev }, "is not an https URL"},
 		"unpinned":        {func(i *model.Identity) { i.Licence.Evidence = "https://huggingface.co/o/m/raw/main/README.md" }, "does not name the pinned revision"},
 		"bad config hash": {func(i *model.Identity) { i.Config = &model.ConfigPin{SHA256: "ABC"} }, "is not a lowercase hex SHA-256"},

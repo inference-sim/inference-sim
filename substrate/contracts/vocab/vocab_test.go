@@ -94,10 +94,14 @@ func contains(s, sub string) bool {
 	return false
 }
 
-// The licence allow-list of X12 and D6 is closed, and its identifiers are exact SPDX
-// identifiers: a lower-case or spelled-out form is refused.
+// The licence allow-list of X12 and D6 is closed, and its identifiers are exact: a
+// lower-case or spelled-out form is refused, and so is a LicenseRef that names no text.
 func TestLicenceAllowList(t *testing.T) {
-	want := []string{"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0", "MIT"}
+	want := []string{"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0",
+		"LicenseRef-deepseek", "LicenseRef-glm-5.3", "LicenseRef-kimi-k3", "LicenseRef-llama2",
+		"LicenseRef-llama3.1", "LicenseRef-llama4", "LicenseRef-minimax-community",
+		"LicenseRef-minimax-m2.7", "LicenseRef-modified-mit", "LicenseRef-muse-model-license",
+		"LicenseRef-muse-spark-open", "LicenseRef-openmdw-1.1", "MIT"}
 	got := RedistributableLicences()
 	if len(got) != len(want) {
 		t.Fatalf("allow-list %v, want %v", got, want)
@@ -107,7 +111,8 @@ func TestLicenceAllowList(t *testing.T) {
 			t.Errorf("[%d] = %q, want %q", i, got[i], want[i])
 		}
 	}
-	for _, bad := range []string{"apache-2.0", "Apache 2.0", "GPL-3.0", "NOASSERTION", ""} {
+	for _, bad := range []string{"apache-2.0", "Apache 2.0", "GPL-3.0", "NOASSERTION", "",
+		"LicenseRef-other", "LicenseRef-none-stated", "llama2"} {
 		if LicenceRedistributable(bad) {
 			t.Errorf("%q is on the allow-list", bad)
 		}

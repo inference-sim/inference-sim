@@ -29,7 +29,9 @@ curl -fsSL -o catalog/models/$name/config.json \
      https://huggingface.co/$repo/resolve/$rev/config.json
 ```
 
-For a gated repository, one that requires accepting its terms before download, add `-H "Authorization: Bearer $HF_TOKEN"` to both `curl` commands, and check that the model's license allows its configuration file to be redistributed.
+For a gated repository, one that requires accepting its terms before download, add `-H "Authorization: Bearer $HF_TOKEN"` to both `curl` commands.
+
+Read the model's licence at the same revision. If it is Apache-2.0, nothing more is needed. If it is another licence on the allow-list (`contracts/vocab/licence.go`), commit its text under `catalog/licences/`, list the model in `catalog/licences/index.yaml` with the text's source URL and SHA-256, and add any attribution sentence the licence requires to `catalog/NOTICE`. If the licence is not on the allow-list, a person must read it: a licence that permits redistribution can be added to the list; one that forbids it never is, and the model commits no `config.json`, only its hash and revision ([model reference](../../contracts/reference/model.md)).
 
 Do not reformat the file. A pretty-printer, or an editor that trims whitespace, changes its bytes, and the graph records a digest of those bytes. `catalog/.gitattributes` turns off line-ending conversion for `config.json` for the same reason. A reviewer can repeat your download and compare the two files with `cmp`.
 
