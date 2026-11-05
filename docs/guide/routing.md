@@ -18,13 +18,11 @@ For instance-level request ordering (the engine's own scheduler), see
 
 ```bash
 # The router's built-in configuration over four instances (the scenario states no router)
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios --num-instances 4 --rate 100 --num-requests 500
 
 # A real deployment's router configuration, unchanged, named by the scenario's router block
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml \
-  --scenarios examples/llm-d/scenarios \
-  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
+  --scenarios examples/llm-d/scenarios --num-instances 4 --rate 100 --num-requests 500
 ```
 
 ## The router's inputs

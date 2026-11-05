@@ -340,7 +340,8 @@ and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 ### Quick start
 
 ```bash
-# One-time setup: blis-substrate's catalog and registry at the commit this build pins
+# The script passes --catalog and --registry on every run, so it needs a checkout of
+# blis-substrate's catalog and registry at the commit this build pins
 # (docs/getting-started/installation.md#catalog-compatibility shows the checkout)
 export BLIS_CATALOG=$PWD/blis-substrate/catalog
 
@@ -365,8 +366,8 @@ any directory of scenario YAMLs works.
 |---|---|---|
 | `SCENARIO` | — (required) | Scenario file name, passed as `--scenario` |
 | `SCENARIOS` | — (required) | Directory holding the scenario, passed as `--scenarios` |
-| `REGISTRY` | — (required) | `blis-registry` clone root, passed as `--registry` |
-| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | `blis-catalog` clone root, passed as `--catalog`. The scenario's model must have an entry; a missing one is refused, never fetched. |
+| `REGISTRY` | — (required by the script) | A directory with the layout of blis-substrate's `registry/`, passed as `--registry` |
+| `CATALOG` | `$BLIS_CATALOG`, else `blis-catalog` | A directory with the layout of blis-substrate's `catalog/`, passed as `--catalog`. The script always passes it, so it does not use the embedded catalog. The scenario's model must have an entry; a missing one is refused, never fetched. |
 | `WORKLOAD` | `chatbot` | Catalog workload preset (chatbot/summarization/contentgen/multidoc) |
 | `NUM_REQUESTS` | `6000` | `--num-requests` per rate |
 | `HORIZON_US` | `600000000` (600s) | `--horizon` per rate |
