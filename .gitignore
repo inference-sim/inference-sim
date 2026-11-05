@@ -50,6 +50,7 @@ __pycache__/*
 !sim/workload/testdata/agentx/*.json
 data/
 *.txt
+!testdata/bytegate/cases.txt
 
 # binaries
 #
