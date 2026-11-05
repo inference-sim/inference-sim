@@ -1372,7 +1372,8 @@
   statement: >-
     Scripts and generators, in every language, never write an engine default. They leave an unstated
     setting unstated, or read the default with inference-sim fields. A rendered scenario or report
-    shows each resolved value with its source: stated by the user, or the engine's default.
+    shows each resolved value with its source: stated by the user, recorded by the measured run (including
+    a value it logs as resolved), or the engine's default.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1419,23 +1420,23 @@
     status: new
   - repo: inference-sim
     check: >-
-      In every scenario generator, a test that a generated scenario contains only stated values. The
-      name lint cannot see a bare number under a neutral key, so the second test is the one that catches
-      it
+      In every scenario generator, a test that a generated scenario contains only stated or recorded
+      values. The name lint cannot see a bare number under a neutral key, so the second test is the
+      one that catches it
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
-      In every scenario generator, a test that a generated scenario contains only stated values. The
-      name lint cannot see a bare number under a neutral key, so the second test is the one that catches
-      it
+      In every scenario generator, a test that a generated scenario contains only stated or recorded
+      values. The name lint cannot see a bare number under a neutral key, so the second test is the
+      one that catches it
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
-      In every scenario generator, a test that a generated scenario contains only stated values. The
-      name lint cannot see a bare number under a neutral key, so the second test is the one that catches
-      it
+      In every scenario generator, a test that a generated scenario contains only stated or recorded
+      values. The name lint cannot see a bare number under a neutral key, so the second test is the
+      one that catches it
     runs: pull_request
     status: new
   review: null

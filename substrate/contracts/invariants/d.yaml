@@ -76,9 +76,12 @@
     Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same
     role, except a legacy unit, which keeps its legacy side even where units of its role key fall
     on both sides. For a unit in the legacy table, the rule chooses only within its legacy label:
-    FIT gives fit or select, HELD gives held or anchor. Roles are append-only, and the ledger stores
-    no role except in the three published lists. A change to a source's identifying fields ships an
-    alias table, and aliased units keep their roles.
+    FIT gives fit or select, HELD gives held or anchor. A legacy unit whose records carry both labels,
+    and a new unit whose role key holds legacy units of both labels, are on the FIT side; a new unit
+    whose role key holds legacy units of one label takes that label. Roles are append-only, and the
+    ledger stores no role except in the three published lists. A change that alters a source's identifying
+    fields, or how the ingest tool computes them or role keys, ships an alias table, and aliased units
+    keep their roles.
   scope:
   - blis-substrate
   checks:
@@ -95,6 +98,12 @@
   - repo: blis-substrate
     check: >-
       A check that the committed unit list equals the ingest tool's output for the pinned source
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A check that every unit at the merge base keeps its unit_id and role key, or is in an alias
+      table
     runs: pull_request
     status: new
   review: null

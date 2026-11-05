@@ -242,6 +242,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A check against the ledger at the pull request's merge base
   - `new`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
+  - `new`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is in an alias table
 - **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
   - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
 - **D6** (new; target ci by M4) Only redistributable artefacts are committed.
