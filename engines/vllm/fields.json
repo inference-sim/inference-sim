@@ -7259,7 +7259,7 @@
         "issue": "inference-sim/blis-latency-kernel#83"
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

@@ -75,7 +75,10 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   Estimation rules start from accuracy-dashboard discussion #33. `leave_unset` means the engine
   resolves the upstream's default (X19), so a rule is `leave_unset` only where blis-vllm resolves
   it for every value: `max_num_seqs` and `max_num_batched_tokens`, by `ResolveBatch` in
-  `core/vllm/batchdefaults.go`. `block_size` is `none`: the engine resolves an unstated one only
+  `core/vllm/batchdefaults.go`, and `gpu_memory_utilization`, whose default 0.92 `resolveEngine`
+  in `compat/kernelmodel/engine_settings.go` fills in for every release the engine models.
+  `gpu_memory_utilization` stays `not_modelled`: the KV budget it sizes is priced by the cost
+  model, and nothing here compares that budget with vLLM's own memory profiling (VLM-3). `block_size` is `none`: the engine resolves an unstated one only
   for the models, GPUs and KV dtypes in `oracle/blocksize/TABLE.tsv` (`ResolveBlockSize` in
   `core/vllm/blocksize.go`) and refuses the rest, citing blis-vllm#68, and a field has one
   estimation rule, which cannot say that.

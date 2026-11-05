@@ -2088,7 +2088,7 @@
   },
   "config:gpu_memory_utilization": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
     "issue": "inference-sim/blis-latency-kernel#83"
