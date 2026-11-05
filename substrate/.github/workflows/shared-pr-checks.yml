@@ -168,4 +168,6 @@ jobs:
           # modlint reads the module graph and the substrate's contracts/toolchain from the
           # module cache, so the modules must be downloaded first.
           go mod download
-          modlint
+          # A BLIS module pinned by commit is deferred while the substrate's deferral file
+          # holds (plan §3.1: drafts depend on commits; tags follow review).
+          modlint -deferral "$GITHUB_WORKSPACE/substrate/.github/modlint-deferral.yaml"

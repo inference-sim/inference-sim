@@ -1,0 +1,9 @@
+# The pin-by-commit deferral (release plan §3.1: "depending on commit IDs is fine for
+# drafts"). While it holds, the selected-version lint reports a BLIS module pinned by commit
+# as deferred and does not fail on it. Every other finding still fails. Tags come after
+# review and merge; the owning issue tracks the re-pin to tags.
+issue: inference-sim/blis-substrate#14
+expires: 2026-12-05
+reason: >-
+  the M1 draft pull requests pin the BLIS modules by commit until the modules are tagged,
+  bottom up, after review and merge
