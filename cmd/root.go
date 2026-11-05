@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -789,8 +790,8 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		} else if workloadType == "distribution" {
 			// Distribution mode → synthesize v2 spec from CLI flags
-			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
-				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			if err := check.PositiveFinite("--rate", rate); err != nil {
+				logrus.Fatalf("%v", err)
 			}
 			// R3: Validate distribution token bounds (shared with concurrency mode).
 			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
@@ -807,8 +808,8 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		} else {
 			// Preset name (chatbot, summarization, etc.) → synthesize v2 spec
-			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
-				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			if err := check.PositiveFinite("--rate", rate); err != nil {
+				logrus.Fatalf("%v", err)
 			}
 			// #1769: the preset is read from <catalog>/workloads/<name>.yaml, through the
 			// same reader `blis convert preset` and `blis observe --workload` use.

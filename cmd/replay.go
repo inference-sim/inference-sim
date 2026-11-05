@@ -18,6 +18,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -139,8 +140,8 @@ Example:
 		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" && agx == nil {
 			logrus.Fatalf("--session-mode must be \"fixed\", \"closed-loop\", or \"fixed-accumulate\", got %q", replaySessionMode)
 		}
-		if replayThinkTimeMs < 0 {
-			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
+		if err := check.DurationMs("--think-time-ms", int64(replayThinkTimeMs)); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 		// --timeout override (#2064): reject 0 the same way `blis run` does — positive sets
 		// a deadline, negative disables, 0 is ambiguous. Only meaningful when explicitly set.

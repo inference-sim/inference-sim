@@ -5,12 +5,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"gopkg.in/yaml.v3"
 )
 
@@ -94,6 +94,33 @@ type TraceHeader struct {
 	// rebuilds the same router (INV-13). Absent from traces of real systems (blis observe)
 	// and from traces written before the router was embedded.
 	Router *TraceRouterConfig `yaml:"router,omitempty"`
+}
+
+// Validate refuses a header value that no run could have recorded, with the validator the same
+// kind of value meets on the command line (package check, SIM-11): the router's three timings are
+// spans of simulated time, as --gateway-latency, --epp-scrape-jitter and --kv-event-delay are; each
+// goodput latency target is a positive span, as --slo-ttft, --slo-itl and --slo-e2e are. A target
+// of 0 is the encoding of an absent one (SLODimTargets omits it), so only a stated value is
+// checked. The fields are visited in a fixed order, so the first refusal is deterministic (R2).
+func (h *TraceHeader) Validate() error {
+	if r := h.Router; r != nil {
+		for _, f := range []struct {
+			name string
+			v    int64
+		}{{"router.gateway_latency_us", r.GatewayLatencyUs}, {"router.scrape_jitter_us", r.ScrapeJitterUs},
+			{"router.kv_event_delay_us", r.KVEventDelayUs}} {
+			if err := check.DurationUs(f.name, f.v); err != nil {
+				return err
+			}
+		}
+	}
+	if err := check.Count("warm_up_requests", int64(h.WarmUpRequests)); err != nil {
+		return err
+	}
+	if err := check.Count("max_nodes_spanned", int64(h.MaxNodesSpanned)); err != nil {
+		return err
+	}
+	return validateGoodputTargets(h.GoodputSLOTargets)
 }
 
 // TraceRouterConfig is the trace-header record of the embedded llm-d router's inputs: the
@@ -511,6 +538,9 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	if err := decoder.Decode(&header); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
 	}
+	if err := header.Validate(); err != nil {
+		return nil, fmt.Errorf("trace header %s: %w", headerPath, err)
+	}
 
 	// Load data CSV
 	file, err := os.Open(dataPath)
@@ -594,6 +624,13 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	return &TraceV2{Header: header, Records: records}, nil
 }
 
+// rowError places a field refusal from package check in its trace row. The message keeps the
+// field name and value check gives it, so a value refused here reads as the same value refused on
+// the command line (SIM-11).
+func rowError(requestID int, err error) error {
+	return fmt.Errorf("trace row request_id %d: %w", requestID, err)
+}
+
 // parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
 // (after slo_class), slo_target_us (after deadline_us), and the trailing
 // columns x_request_id, adapter, think_time_us, and input_tokens_reset.
@@ -620,8 +657,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		if err != nil {
 			return nil, fmt.Errorf("parsing vllm_priority %q: %w", row[4], err)
 		}
-		if vllmPriority < 0 {
-			return nil, fmt.Errorf("parsing vllm_priority: negative value %d not allowed", vllmPriority)
+		if err := check.Count("vllm_priority", int64(vllmPriority)); err != nil {
+			return nil, rowError(requestID, err)
 		}
 	}
 
@@ -629,13 +666,16 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing round_index %q: %w", row[5+offset], err)
 	}
+	if err := check.Count("round_index", int64(roundIndex)); err != nil {
+		return nil, rowError(requestID, err)
+	}
 	// Column 7+offset: prefix_length
 	prefixLength, err := strconv.Atoi(row[7+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7+offset], err)
 	}
-	if prefixLength < 0 {
-		return nil, fmt.Errorf("parsing prefix_length: negative value %d not allowed", prefixLength)
+	if err := check.TokenCount("prefix_length", int64(prefixLength)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Column 8+offset: streaming
 	streaming, err := strconv.ParseBool(row[8+offset])
@@ -647,58 +687,60 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9+offset], err)
 	}
-	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
-	if inputTokens < 0 {
-		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
+	// A negative token count would panic in make([]int, n) in LoadTraceV2Requests. Zero is
+	// accepted: the gateway drops an empty prompt as unservable and the run continues (#2065).
+	if err := check.TokenCount("input_tokens", int64(inputTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	outputTokens, err := strconv.Atoi(row[10+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10+offset], err)
 	}
-	if outputTokens < 0 {
-		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
+	if err := check.TokenCount("output_tokens", int64(outputTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	textTokens, err := strconv.Atoi(row[11+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11+offset], err)
 	}
-	if textTokens < 0 {
-		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
+	if err := check.TokenCount("text_tokens", int64(textTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	imageTokens, err := strconv.Atoi(row[12+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12+offset], err)
 	}
-	if imageTokens < 0 {
-		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
+	if err := check.TokenCount("image_tokens", int64(imageTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	audioTokens, err := strconv.Atoi(row[13+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13+offset], err)
 	}
-	if audioTokens < 0 {
-		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
+	if err := check.TokenCount("audio_tokens", int64(audioTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	videoTokens, err := strconv.Atoi(row[14+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14+offset], err)
 	}
-	if videoTokens < 0 {
-		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
+	if err := check.TokenCount("video_tokens", int64(videoTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	reasonRatio, err := strconv.ParseFloat(row[15+offset], 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15+offset], err)
 	}
-	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
-		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15+offset], reasonRatio)
+	if err := check.Fraction("reason_ratio", reasonRatio); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	deadlineUs, err := strconv.ParseInt(row[17+offset], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17+offset], err)
 	}
-	if deadlineUs < 0 {
-		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
+	// 0 means no client deadline.
+	if err := check.DurationUs("deadline_us", deadlineUs); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Parse optional slo_target_us (appears after deadline_us when present)
 	var sloTargetUs int64
@@ -707,8 +749,9 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		if err != nil {
 			return nil, fmt.Errorf("parsing slo_target_us %q: %w", row[18+offset], err)
 		}
-		if sloTargetUs < 0 {
-			return nil, fmt.Errorf("parsing slo_target_us: negative value %d not allowed (use 0 for no target)", sloTargetUs)
+		// 0 means no target.
+		if err := check.DurationUs("slo_target_us", sloTargetUs); err != nil {
+			return nil, rowError(requestID, err)
 		}
 		offset++
 	}
@@ -716,8 +759,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18+offset], err)
 	}
-	if serverInputTokens < 0 {
-		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
+	if err := check.TokenCount("server_input_tokens", int64(serverInputTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	arrivalTimeUs, err := strconv.ParseInt(row[19+offset], 10, 64)
 	if err != nil {
@@ -729,8 +772,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	// monotonicity). Reject loudly, matching the other time/count fields (R1).
 	// (send_time_us is intentionally NOT checked: injectionTime falls back to
 	// arrival_time_us when send_time_us <= 0, so a negative send is tolerated.)
-	if arrivalTimeUs < 0 {
-		return nil, fmt.Errorf("parsing arrival_time_us: negative value %d not allowed", arrivalTimeUs)
+	if err := check.DurationUs("arrival_time_us", arrivalTimeUs); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	sendTimeUs, err := strconv.ParseInt(row[20+offset], 10, 64)
 	if err != nil {
@@ -748,8 +791,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23+offset], err)
 	}
-	if numChunks < 0 {
-		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
+	if err := check.Count("num_chunks", int64(numChunks)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Cross-field invariant: deadline must not precede arrival (would cause immediate
 	// timeout at enqueue before any processing). Zero deadline means "no timeout";
@@ -784,8 +827,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 			if perr != nil {
 				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, perr)
 			}
-			if parsed < 0 {
-				return nil, fmt.Errorf("parsing think_time_us: negative value %d not allowed", parsed)
+			if err := check.DurationUs("think_time_us", parsed); err != nil {
+				return nil, rowError(requestID, err)
 			}
 			thinkTimeUs = &parsed
 		}
@@ -802,8 +845,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 			if perr != nil {
 				return nil, fmt.Errorf("parsing input_tokens_reset %q: %w", v, perr)
 			}
-			if parsed < 0 {
-				return nil, fmt.Errorf("parsing input_tokens_reset: negative value %d not allowed", parsed)
+			if err := check.TokenCount("input_tokens_reset", parsed); err != nil {
+				return nil, rowError(requestID, err)
 			}
 			inputTokensReset = &parsed
 		}
