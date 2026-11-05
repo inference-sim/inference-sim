@@ -318,14 +318,14 @@ citations name the git SHA where that file can still be read.
   `aisimulate_core/sdk/backends/` (located from `$AISIMULATE_DATA`, two directories up).
   Verified against AISimulate `70305030`.
 * The CUDA-graph capture bytes are `assumed`, the median per mode of the committed
-  `docs/vllm-cudagraph-capture-samples.csv`. That CSV is regenerated from the vLLM issue
+  `registry/docs/vllm-cudagraph-capture-samples.csv`. That CSV is regenerated from the vLLM issue
   tracker, which needs an authenticated `gh` and changes as issues are filed — so a
   re-mine is a deliberate data update, committed with its diff, not part of `--check`:
 
 ```bash
 python scripts/mine_vllm_cudagraph_memory.py fetch   /tmp/vllm-cg-cache
 python scripts/mine_vllm_cudagraph_memory.py extract /tmp/vllm-cg-cache \
-    > docs/vllm-cudagraph-capture-samples.csv
+    > registry/docs/vllm-cudagraph-capture-samples.csv
 python scripts/emit_memory.py            # then review the value diff
 ```
 
@@ -373,7 +373,7 @@ appears with no owner — so a value that cannot be regenerated cannot be added.
 | `fabric_bandwidth_efficiency` (`cost-model-fabric`) | `emit_fabric.py --check` (`--verify DIR` re-hashes the cited pages) | NVIDIA/nccl-tests#309 for ib-400g (`literature`); roce-200g and ethernet-100gbe `assumed` with stated ranges |
 | host overheads (`assumed`) | none — see that file's header | not measured by either dataset |
 | `activation_buffer_count_*`, `activation_scratch_floor_bytes` | `emit_memory.py` | AISimulate `sdk/backends` source (`vendor_spec`) |
-| `cudagraph_capture_bytes_*` | `emit_memory.py` | `docs/vllm-cudagraph-capture-samples.csv`, from `mine_vllm_cudagraph_memory.py` (`assumed`) |
+| `cudagraph_capture_bytes_*` | `emit_memory.py` | `registry/docs/vllm-cudagraph-capture-samples.csv`, from `mine_vllm_cudagraph_memory.py` (`assumed`) |
 
 **Derived entries carry their own reproduction too.** Two scripts write `method: assumed`
 values, and both state the predictor, its holdout error and the parts it was derived

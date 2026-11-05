@@ -26,7 +26,7 @@ them per part.
 memory model, as AISimulate's vLLM backend uses it. The CUDA-graph capture sizes are
 `assumed`: their magnitude is the median of vLLM's own start-up logs, collected from
 vLLM's issue tracker into a committed CSV
-([`vllm-cudagraph-capture-samples.csv`](../../vllm-cudagraph-capture-samples.csv)).
+([`vllm-cudagraph-capture-samples.csv`](https://github.com/inference-sim/blis-substrate/blob/main/registry/docs/vllm-cudagraph-capture-samples.csv)).
 `FULL` and `FULL_DECODE_ONLY` have too few samples and are charged the
 `FULL_AND_PIECEWISE` figure as an upper bound. `NONE` is a declared zero.
 

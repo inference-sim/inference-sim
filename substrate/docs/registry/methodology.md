@@ -417,13 +417,13 @@ wrong number during this work:
 revisions it used. Beyond comparing two registries it records and checks absolute
 figures:
 
-    # write the current figures, with revisions and flags, to docs/evaluation-baseline.json
+    # write the current figures, with revisions and flags, to registry/docs/evaluation-baseline.json
     python scripts/compare_registries.py --record --scorer /path/to/kernel-exclusive/checkout
 
     # fail if any figure, or any n, has moved since
     python scripts/compare_registries.py --check  --scorer /path/to/kernel-exclusive/checkout
 
-`docs/evaluation-baseline.json` is the machine-checkable record. It holds the four
+`registry/docs/evaluation-baseline.json` is the machine-checkable record. It holds the four
 headline figures and their point counts per tier, plus the framework, the
 length-range-ratio and the scorer and catalog revisions, because a figure is a
 claim about that whole triple rather than about the registry alone. `--check`
@@ -1458,7 +1458,7 @@ revision `68fa3add` were read), and its SGLang raw evidence was collected with p
 
 vLLM measures it on every start-up and logs it, and users paste those logs into issues.
 `mine_vllm_cudagraph_memory.py` collected 506 samples from 677 vLLM issues into
-`docs/vllm-cudagraph-capture-samples.csv`, which is committed so the anchor is reproducible
+`registry/docs/vllm-cudagraph-capture-samples.csv`, which is committed so the anchor is reproducible
 offline. The medians on catalog parts are 0.80 GiB for `PIECEWISE` (n = 18) and 1.08 GiB
 for `FULL_AND_PIECEWISE` (n = 22); the replaced constant was 0.50 GiB. The **dimension**
 is vLLM's profiler (`gpu_model_runner.profile_cudagraph_memory`): one first capture per

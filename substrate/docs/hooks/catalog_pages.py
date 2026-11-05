@@ -774,12 +774,14 @@ def on_config(config):
 
 
 def on_files(files, config):
-    from mkdocs.structure.files import File
+    from mkdocs.structure.files import File, InclusionLevel
 
     cat = _state["catalog"]
     for m in cat.models:
+        # Reached from the models table, not from the navigation, so not listed in it.
         files.append(File.generated(config, f"{MODELS_DIR}/{m.name}.md",
-                                    content=model_page(cat, m)))
+                                    content=model_page(cat, m),
+                                    inclusion=InclusionLevel.NOT_IN_NAV))
     return files
 
 
