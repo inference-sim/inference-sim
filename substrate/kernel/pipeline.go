@@ -287,7 +287,9 @@ func (k *Kernel) liftPipeline(g *model.Graph) error {
 			st.overNIC = st.crossesNode && (!k.fabric.RackIsOneDomain || !k.sameRack())
 		}
 	}
-	k.liftPipelineMemory()
+	if err := k.liftPipelineMemory(); err != nil {
+		return err
+	}
 	k.assume("pipeline_stages", strconv.Itoa(pp),
 		"each stage is priced as its own step over its share of the layers (get_pp_indices, "+
 			"vllm/distributed/utils.py:126-169@5df63a72), the embedding on the first, the head "+
@@ -531,10 +533,11 @@ func (k *Kernel) stageHost(b kernel.Batch, st *pipelineStage, draftKernels int) 
 // fixed bytes over its KV a block. The budget is the part's memory times the deployment's
 // gpu_memory_utilization (requested_memory, vllm/v1/worker/gpu_worker.py:535-540@v0.32.0),
 // and where stages trade fixed bytes against KV a token the binding one depends on it, so the
-// stages are compared at the deployment's value, at vLLM's default (defaultMemoryUtilization)
-// only where the block states none, which is recorded. An engine model that sizes each stage's
+// stages are compared at the deployment's value. The kernel resolves no default (SUB-6): a
+// block that states none is refused, since the default belongs to the engine (vLLM's is
+// blis-vllm's, and SGLang's mem_fraction_static is a different setting). An engine model that sizes each stage's
 // pool at its own budget reads PipelineStageMemory.
-func (k *Kernel) liftPipelineMemory() {
+func (k *Kernel) liftPipelineMemory() error {
 	embedding := k.embeddingResidentBytes(k.graph)
 	targetEmbedOnLast := k.speculating && k.plan.Draft != nil &&
 		needsTargetEmbed(k.plan.Draft.Method) && len(k.stages) > 1
@@ -561,17 +564,19 @@ func (k *Kernel) liftPipelineMemory() {
 		}
 		st.memory = m
 	}
-	k.bindStage()
+	return k.bindStage()
 }
 
-// bindStage picks the binding pipeline stage from the stages' memory (liftPipelineMemory).
-func (k *Kernel) bindStage() {
+// bindStage picks the binding pipeline stage from the stages' memory (liftPipelineMemory). It
+// refuses a plan whose gpu_memory_utilization is zero: the kernel applies no engine default.
+func (k *Kernel) bindStage() error {
 	util := k.engine.GPUMemoryUtilization
 	if util <= 0 {
-		util = defaultMemoryUtilization
-		k.assume("pipeline_binding_utilization", strconv.FormatFloat(util, 'g', -1, 64),
-			"the deployment states no gpu_memory_utilization, so the pipeline stages' pools are "+
-				"compared at vLLM's default (vllm/config/cache.py:102@v0.32.0)")
+		return fmt.Errorf("pipeline parallelism (pp %d) needs the deployment's "+
+			"gpu_memory_utilization to compare the stages' KV pools, and the plan states %v (0 is "+
+			"unstated); the cost model resolves no default (SUB-6), the engine does: the "+
+			"engine repository resolves its own default into the plan (blis-vllm resolves "+
+			"vLLM's) before it builds the kernel", max(k.layout.PP, 1), util)
 	}
 	part := k.chip.MemoryGiB * (1 << 30) * util
 	best, binding := math.Inf(1), 0
@@ -609,12 +614,8 @@ func (k *Kernel) bindStage() {
 			"bytes over its own KV a token, it holds the fewest tokens "+
 			"(get_kv_cache_configs, vllm/v1/core/kv_cache_utils.py:2650-2680@v0.32.0); "+
 			"PipelineStageMemory reports every stage")
+	return nil
 }
-
-// defaultMemoryUtilization is vLLM's default gpu_memory_utilization (CacheConfig,
-// vllm/config/cache.py:102@v0.32.0), at which the kernel picks the binding pipeline stage when
-// the deployment states none.
-const defaultMemoryUtilization = 0.92
 
 // needsTargetEmbed reports whether a draft method's drafter reads the target's input
 // embedding on the last pipeline stage, which the target then builds there:
