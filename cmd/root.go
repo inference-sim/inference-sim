@@ -1159,6 +1159,7 @@ var runCmd = &cobra.Command{
 					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
 					ScaleDownBoundary: bundle.Autoscaler.Analyzer.ScaleDownBoundary,
 					AvgInputTokens:    bundle.Autoscaler.Analyzer.AvgInputTokens,
+					MinReplicas:       bundle.Autoscaler.Analyzer.MinReplicas,
 				}
 			}
 			for _, np := range bundle.NodePools {

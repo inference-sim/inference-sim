@@ -83,12 +83,16 @@ type VariantCapacity struct {
 // Mutual exclusivity: RequiredCapacity > 0 implies SpareCapacity == 0 and vice versa.
 // Utilization guard: when TotalSupply == 0, Utilization = 0 (no division).
 type AnalyzerResult struct {
-	ModelID           string
-	TotalSupply       float64           // aggregate serving capacity (model-level)
-	TotalDemand       float64           // aggregate load (model-level)
-	Utilization       float64           // TotalDemand / TotalSupply; 0 when TotalSupply == 0
-	RequiredCapacity  float64           // scale-up signal: capacity needed beyond current supply
-	SpareCapacity     float64           // scale-down signal: capacity safely removable
+	ModelID          string
+	TotalSupply      float64 // aggregate serving capacity (model-level)
+	TotalDemand      float64 // aggregate load (model-level)
+	Utilization      float64 // TotalDemand / TotalSupply; 0 when TotalSupply == 0
+	RequiredCapacity float64 // scale-up signal: capacity needed beyond current supply
+	SpareCapacity    float64 // scale-down signal: capacity safely removable
+	// SafeRemovals is how many replicas the Analyzer's check proves can be removed: the supply
+	// left stays above the scale-down boundary and the model keeps its minimum replicas. Positive
+	// exactly when SpareCapacity is; an Engine removes no more than this.
+	SafeRemovals      int
 	VariantCapacities []VariantCapacity // sorted by CostPerReplica ascending for determinism (R2)
 }
 

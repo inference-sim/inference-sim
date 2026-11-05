@@ -49,6 +49,7 @@ func TestFullPipelineEndToEnd(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.4,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	})
 	engine := &UnlimitedEngine{}
 
@@ -82,6 +83,7 @@ func TestPipelineCollectorAnalyzerIntegration(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.4,
 		AvgInputTokens:    512,
+		MinReplicas:       1,
 	})
 
 	// Simulate a RouterState with two models
