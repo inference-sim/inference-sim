@@ -30,7 +30,7 @@ go run ./validate/cmd/validate-catalog catalog
 go run ./validate/cmd/validate-registry registry
 (cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 (cd registry && python3 -m pytest validator -q)
-mkdocs build --strict
+DOCS_RELEASE=main mkdocs build --strict
 ```
 
 - Every behaviour change has a test that fails without it (X13).
