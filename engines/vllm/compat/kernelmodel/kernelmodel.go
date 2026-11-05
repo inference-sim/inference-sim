@@ -175,6 +175,9 @@ type identity struct {
 	poolNodes   int
 	gpusPerNode int
 	gpusPerRack int
+	// packaging is the cluster's packaging as blis-substrate resolved it, with each value's
+	// source; gpusPerNode and gpusPerRack are its two counts.
+	packaging scenario.Packaging
 	// rankGPUs is the GPUs one data-parallel rank occupies: pp x tp x pcp.
 	rankGPUs int
 	// tpRanks is the pool's TP width; latentKV is whether every attention layer stores one
@@ -215,6 +218,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 		poolNodes:       pool.Nodes,
 		gpusPerNode:     pk.GPUsPerNode,
 		gpusPerRack:     pk.GPUsPerRack,
+		packaging:       pk,
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
@@ -454,6 +458,13 @@ func (m *Model) WorldSize() int { return m.id.rankGPUs }
 func (m *Model) RankCapacity() int {
 	return m.id.poolNodes * m.id.gpusPerNode / m.id.rankGPUs
 }
+
+// Packaging is the cluster's packaging this pool is placed and priced with, as
+// blis-substrate resolves it from the scenario and the chip's catalog entry
+// (scenario.Cluster.Packaging): the GPUs per node and per rack, and whether each was stated
+// or taken from the catalog. A simulator reads it here rather than from the scenario, whose
+// fields are zero where it leaves them to the catalog, and records it in the Result's inputs.
+func (m *Model) Packaging() scenario.Packaging { return m.id.packaging }
 
 // PlacementOf places the pool's rank-th replica, its ranks packed onto the pool's nodes in
 // order: rank r occupies GPUs [r*rankGPUs, (r+1)*rankGPUs) of the pool and sits on the node

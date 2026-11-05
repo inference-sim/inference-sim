@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 )
 
 // Placement reads the cluster's packaging as blis-substrate resolves it from the scenario
@@ -27,6 +28,10 @@ func TestPlacementReadsTheCatalogsPackaging(t *testing.T) {
 	if dec.id.gpusPerNode != 4 || dec.id.gpusPerRack != 72 {
 		t.Fatalf("decode pool placed with %d GPUs per node and %d per rack, want the catalog's 4 and 72",
 			dec.id.gpusPerNode, dec.id.gpusPerRack)
+	}
+	if pk := dec.Packaging(); pk != (scenario.Packaging{GPUsPerNode: 4, GPUsPerNodeSource: scenario.SourceCatalog,
+		GPUsPerRack: 72, GPUsPerRackSource: scenario.SourceCatalog}) {
+		t.Errorf("Packaging() = %+v, want the catalog's 4 and 72", pk)
 	}
 	a, b := dec.PlacementOf(0), dec.PlacementOf(1)
 	if a.Node != 17 || a.Rack != 0 || b.Node != 18 || b.Rack != 1 {
