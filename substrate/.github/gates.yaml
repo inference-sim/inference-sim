@@ -10,4 +10,5 @@
     - registry/scripts/**
     - registry/validator/**
     - .github/workflows/rederive.yml
-  invariants: [SUB-4, SUB-8, VAL-6]
+    - .github/quarantine.yaml
+  invariants: [SUB-4, SUB-8, VAL-6, X16, X25]

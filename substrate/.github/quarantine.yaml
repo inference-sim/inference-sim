@@ -1,0 +1,32 @@
+# The quarantine list (X25): tests in a required or gate job that cannot run or fail on the
+# main branch, each with an owning issue and an expiry at most 30 days after it was added. A
+# listed test's skip does not fail its gate (X16) until the entry expires; then CI fails. The
+# format is in tools/prcheck/quarantine.go. A gate reads this list through `prcheck skips`.
+#
+# The three entries below are re-derivation gates (registry/scripts/rederive.sh) whose cited
+# InferenceX bodies the API no longer serves. Each writer refuses (exit 3) rather than re-fit
+# and re-cite its entries on other runs, so the test skips; the committed values stay as
+# fitted, and cannot be re-derived from public data until the bodies are restored or the
+# entries are re-cited through a reviewed refit.
+- test: test_graph_mode_pair_reproduces_from_collectivex
+  package: registry/validator/test_deepep_ll_graph.py
+  issue: inference-sim/blis-registry#57
+  expires: 2026-12-05
+  reason: >-
+    fit_deepep_ll_graph.py refuses; the CollectiveX runs its entries cite (33356406487,
+    36334392363, 36367074689, 36402856875) answer 404
+- test: test_host_link_reproduces_from_collectivex
+  package: registry/validator/test_deepep_ll_graph.py
+  issue: inference-sim/blis-registry#57
+  expires: 2026-12-05
+  reason: >-
+    fit_host_link.py refuses; the CollectiveX swap_blocks bodies its entries cite (sha256
+    26cad6ccbdaa) answer 404
+- test: test_marlin_nvfp4_grouped_ramp_reproduces_from_operatorx
+  package: registry/validator/test_operatorx.py
+  issue: inference-sim/blis-registry#57
+  expires: 2026-12-05
+  reason: >-
+    fit_marlin_nvfp4_grouped_ramp.py refuses; the OperatorX MoE MiniMax-M3 response its
+    entries cite (sha256 ea8fb4078168) is no longer served. #57 owns the rederive gate's
+    unrunnable tests until an issue of this test's own is filed

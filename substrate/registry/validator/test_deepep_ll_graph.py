@@ -18,8 +18,9 @@ DATA = os.environ.get("COLLECTIVEX_DATA", "")
 
 # A writer exits 3 when the bodies its committed entries cite are not in $COLLECTIVEX_DATA:
 # CollectiveX serves only its latest 15 runs, so a run cited once can stop being fetchable.
-# That is a gate that cannot run, not a pass, so it skips under this exact reason, which
-# scripts/rederive.sh names as the one data skip it accepts.
+# That is a gate that cannot run, not a pass, so it skips under this exact reason, and
+# scripts/rederive.sh fails on the skip unless the test is on .github/quarantine.yaml (X16,
+# X25). scripts/fetch_cited_inferencex.py fetches the bodies the API still serves.
 CITED_ABSENT = "the cited CollectiveX bodies are not present"
 
 

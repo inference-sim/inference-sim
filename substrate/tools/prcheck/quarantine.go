@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -122,17 +123,34 @@ func CheckSkips(skips []SkipResult, list []QuarantineEntry) []string {
 	return bad
 }
 
-var pytestSkip = regexp.MustCompile(`^SKIPPED \[\d+\] ([^:]+):\d+:`)
+var (
+	pytestSkip = regexp.MustCompile(`^SKIPPED \[\d+\] ([^:]+):\d+:`)
+	// pytest -v names each test: "validator/test_x.py::test_name[param] SKIPPED (reason)".
+	// A test id may hold spaces (a parameter), so the id runs to the first " SKIPPED".
+	pytestNodeSkip = regexp.MustCompile(`^(\S+?\.py)::(.+?) SKIPPED(?:\s|$)`)
+)
 
 // ParseSkips reads the skips from go test -json output (one JSON object per line) or
-// from pytest -rs output ("SKIPPED [n] file:line: reason").
+// from pytest output. With pytest -v, each skipped test is one result, its package the
+// Python file under pyPackage and its test the test's name, so a quarantine entry covers
+// one test, not every test in its file. The "SKIPPED [n] file:line: reason" summary lines
+// of -rs repeat those skips; a summary line for a file with no skipped test named is a
+// whole module skipped at import, reported as test "(module)" of that file. Without -v,
+// only the summary lines name a skip, and they name a file: package pyPackage, test the
+// file.
 func ParseSkips(out []byte, pyPackage string) ([]SkipResult, int, error) {
-	var skips []SkipResult
+	var skips, summary []SkipResult
+	nodes := false
 	ran := 0
 	for _, l := range strings.Split(string(out), "\n") {
 		l = strings.TrimSpace(l)
+		if m := pytestNodeSkip.FindStringSubmatch(l); m != nil {
+			skips = append(skips, SkipResult{path.Join(pyPackage, m[1]), m[2]})
+			nodes = true
+			continue
+		}
 		if m := pytestSkip.FindStringSubmatch(l); m != nil {
-			skips = append(skips, SkipResult{pyPackage, m[1]})
+			summary = append(summary, SkipResult{pyPackage, m[1]})
 			continue
 		}
 		if !strings.HasPrefix(l, "{") {
@@ -151,6 +169,19 @@ func ParseSkips(out []byte, pyPackage string) ([]SkipResult, int, error) {
 			ran++
 		case "pass", "fail":
 			ran++
+		}
+	}
+	if !nodes {
+		return append(skips, summary...), ran, nil
+	}
+	named := map[string]bool{}
+	for _, sk := range skips {
+		named[sk.Package] = true
+	}
+	for _, sm := range summary {
+		if file := path.Join(pyPackage, sm.Test); !named[file] {
+			skips = append(skips, SkipResult{file, "(module)"})
+			named[file] = true
 		}
 	}
 	return skips, ran, nil

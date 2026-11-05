@@ -315,6 +315,40 @@ func TestQuarantine(t *testing.T) {
 	has(t, bad, "more than 30 days")
 }
 
+// X16, X25: a pytest -v run names each skipped test, so a quarantine entry covers that test
+// and not its file's others; without -v the summary lines name only the file.
+func TestPytestSkips(t *testing.T) {
+	verbose := []byte("validator/test_c.py::test_ll SKIPPED (cited bodies absent)    [ 10%]\n" +
+		"validator/test_c.py::test_gb200 SKIPPED (no data)    [ 20%]\n" +
+		"validator/test_c.py::test_p[a b] SKIPPED (param)    [ 30%]\n" +
+		"validator/test_c.py::test_ok PASSED    [ 40%]\n" +
+		"SKIPPED [1] validator/test_c.py:12: cited bodies absent\n" +
+		"SKIPPED [1] validator/test_c.py:20: no data\n" +
+		"SKIPPED [1] validator/test_c.py:30: param\n")
+	skips, _, err := ParseSkips(verbose, "registry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []SkipResult{{"registry/validator/test_c.py", "test_ll"}, {"registry/validator/test_c.py", "test_gb200"}, {"registry/validator/test_c.py", "test_p[a b]"}}
+	if fmt.Sprint(skips) != fmt.Sprint(want) {
+		t.Fatalf("skips %v, want %v", skips, want)
+	}
+	list := []QuarantineEntry{{Test: "test_ll", Package: "registry/validator/test_c.py"}, {Test: "test_p", Package: "registry/validator/test_c.py"}}
+	bad := CheckSkips(skips, list)
+	if len(bad) != 1 || !strings.Contains(bad[0], "test_gb200 was skipped") {
+		t.Errorf("an entry for one test must not cover its file's others: %v", bad)
+	}
+	// A module skipped at import has a summary line and no test line; it is still a skip.
+	mod, _, _ := ParseSkips(append(verbose, "SKIPPED [1] validator/test_m.py:2: whole module\n"...), "registry")
+	if len(mod) != 4 || mod[3] != (SkipResult{"registry/validator/test_m.py", "(module)"}) {
+		t.Errorf("module skip: %v", mod)
+	}
+	summary, _, err := ParseSkips([]byte("SKIPPED [1] validator/test_c.py:12: cited bodies absent\n"), "registry")
+	if err != nil || len(summary) != 1 || summary[0] != (SkipResult{"registry", "validator/test_c.py"}) {
+		t.Errorf("summary-only output: %v %v", summary, err)
+	}
+}
+
 // The commits subcommand, against a local git repository.
 func TestCommitsAgainstALocalRepository(t *testing.T) {
 	dir := t.TempDir()
