@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -64,7 +65,22 @@ func LoadBundle(path string) (*scenario.Scenario, *deployment.Deployment, error)
 	}
 	defer f.Close()
 
-	dec := yaml.NewDecoder(f)
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	// Each of the two documents is held to the strict rules before it is decoded.
+	check := yaml.NewDecoder(bytes.NewReader(data))
+	for i, target := range []reflect.Type{reflect.TypeOf(&scenario.Scenario{}), reflect.TypeOf(&deployment.Deployment{})} {
+		var doc yaml.Node
+		if err := check.Decode(&doc); err != nil {
+			break // the decode below reports an empty or a one-document file
+		}
+		if err := validate.CheckNode(&doc, target); err != nil {
+			return nil, nil, fmt.Errorf("decoding the %s in %s: %w", []string{"scenario", "deployment"}[i], path, err)
+		}
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 
 	var sc scenario.Scenario
@@ -255,6 +271,9 @@ func ParseCatalogWorkload(path string, b []byte) (*workload.CatalogWorkload, err
 	if err := yaml.Unmarshal(b, &doc); err != nil {
 		return nil, fmt.Errorf("decoding %s: %w", path, err)
 	}
+	if err := validate.CheckNode(&doc, reflect.TypeOf(&catalogReplayFile{})); err != nil && topLevelKey(&doc, "replay") {
+		return nil, fmt.Errorf("decoding %s: %w", path, err)
+	}
 	if !topLevelKey(&doc, "replay") {
 		var s workload.Shape
 		if err := decodeStrictBytes(path, b, &s); err != nil {
@@ -411,7 +430,18 @@ func decodeStrict(path string, dst any) error {
 // decodeStrictBytes is decodeStrict for a document already read. Every Parse function and
 // every Load function that reads one document ends here, so a document read from a path and
 // the same bytes read from the embedded copy decode alike (SUB-9).
+//
+// Before decoding, it refuses what SUB-12 lists and yaml.v3 accepts: a number that does not
+// convert exactly to its field, a non-finite number, a repeated key and a recursive alias
+// (validate.CheckNode).
 func decodeStrictBytes(path string, data []byte, dst any) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("decoding %s: %w", path, err)
+	}
+	if err := validate.CheckNode(&doc, reflect.TypeOf(dst)); err != nil {
+		return fmt.Errorf("decoding %s: %w", path, err)
+	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	if err := dec.Decode(dst); err != nil {

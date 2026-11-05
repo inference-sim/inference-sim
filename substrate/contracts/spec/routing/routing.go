@@ -164,7 +164,7 @@ func (v *Value) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type shape Value
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*v = Value(raw)

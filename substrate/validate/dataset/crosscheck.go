@@ -96,6 +96,9 @@ func CheckOrdered(sets map[string]*coefficient.Set) []Problem {
 				if (len(a.e.Scope.Model) > 0) != (len(b.e.Scope.Model) > 0) || !overlap(a.e.Scope, b.e.Scope) {
 					continue
 				}
+				if a.set == b.set && a.e.Scope.Key() == b.e.Scope.Key() {
+					continue // a duplicate within one set, which the set's own Validate reports
+				}
 				out = append(out, Problem{"coefficients/" + b.set + ".yaml", fmt.Sprintf(
 					"entry %s (%s, %s) and coefficients/%s.yaml's entry %s (%s, %s) can match one "+
 						"deployment and no scope precedence orders them, so the order the sets are "+

@@ -169,7 +169,7 @@ func (c *Chip) UnmarshalYAML(node *yaml.Node) error {
 	validate.StripCatalogComments(node)
 	type shape Chip
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*c = Chip(raw)
@@ -184,7 +184,7 @@ func (f *Fabric) UnmarshalYAML(node *yaml.Node) error {
 	validate.StripCatalogComments(node)
 	type shape Fabric
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*f = Fabric(raw)
@@ -199,7 +199,7 @@ func (d *StorageDevice) UnmarshalYAML(node *yaml.Node) error {
 	validate.StripCatalogComments(node)
 	type shape StorageDevice
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*d = StorageDevice(raw)

@@ -58,7 +58,7 @@ func (s *Set) UnmarshalYAML(node *yaml.Node) error {
 		Coefficients []yaml.Node `yaml:"coefficients"`
 	}
 	var raw setShape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	s.Kind, s.Name = raw.Kind, raw.Name
@@ -80,7 +80,7 @@ func (s *Set) UnmarshalYAML(node *yaml.Node) error {
 			return fmt.Errorf("coefficients[%d] (%s): missing required field %q",
 				i, item.Content[0].Value, "fitted")
 		}
-		if err := item.Content[1].Decode(&e); err != nil {
+		if err := validate.DecodeNode(item.Content[1], &e); err != nil {
 			return fmt.Errorf("coefficients[%d] (%s): %w", i, item.Content[0].Value, err)
 		}
 		// A present `sources:` must be a non-empty list, matching the registry's validator.
@@ -156,7 +156,7 @@ type Interval struct {
 // UnmarshalYAML reads the two-element sequence form.
 func (iv *Interval) UnmarshalYAML(node *yaml.Node) error {
 	var pair []float64
-	if err := node.Decode(&pair); err != nil {
+	if err := validate.DecodeNode(node, &pair); err != nil {
 		return fmt.Errorf("an interval is a two-element sequence [lower, upper]: %w", err)
 	}
 	if len(pair) != 2 {
@@ -188,7 +188,7 @@ func (s *Source) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type sourceShape Source // no UnmarshalYAML, so decoding does not recurse
 	var raw sourceShape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*s = Source(raw)
@@ -225,7 +225,7 @@ func (s *Scope) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type scopeShape Scope // no UnmarshalYAML, so decoding does not recurse
 	var raw scopeShape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*s = Scope(raw)
@@ -299,14 +299,14 @@ func (m *MetricList) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
 		var one string
-		if err := node.Decode(&one); err != nil {
+		if err := validate.DecodeNode(node, &one); err != nil {
 			return err
 		}
 		*m = MetricList{one}
 		return nil
 	case yaml.SequenceNode:
 		var many []string
-		if err := node.Decode(&many); err != nil {
+		if err := validate.DecodeNode(node, &many); err != nil {
 			return err
 		}
 		*m = many

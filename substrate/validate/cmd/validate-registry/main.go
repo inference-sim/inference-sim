@@ -26,10 +26,9 @@
 // to route this command through contracts.Validate(Bundle{Coefficients: ...}) so it
 // enforces coefficient-level rules.
 //
-// Unlike validate-catalog it does not check that a file's name matches the set's name. By
-// convention the two are equal in every committed set, and a scenario refers to a set by its
-// file name (ValidateAgainstCatalog resolves coefficients/<name>.yaml), but no gate enforces
-// the convention today.
+// Each set must name itself what its file is called: a scenario names a set by its file
+// stem, and the loader reports a selected entry against its set's file, so the two names
+// must be one.
 package main
 
 import (
@@ -39,8 +38,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/validate/dataset"
 	"github.com/inference-sim/blis-substrate/validate/registry"
 )
 
@@ -92,13 +92,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	failed := 0
+	sets := map[string]*coefficient.Set{}
 	for _, path := range paths {
 		failed += check(stdout, stderr, coeffDir, path, func() (int, string, *validate.Problems, error) {
-			s, err := contracts.LoadCoefficientSet(path)
+			s, p, err := checkFile(path, dataset.CheckCoefficientSet)
 			if err != nil {
 				return 0, "", nil, err
 			}
-			return len(s.Coefficients), "coefficient(s)", s.Validate(), nil
+			sets[dataset.Stem(path)] = s
+			return len(s.Coefficients), "coefficient(s)", p, nil
 		})
 	}
 	// Acceptance-profile sets are optional: a registry that hosts none is complete. They are
@@ -106,30 +108,53 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// coefficient set of the same file name.
 	for _, path := range accPaths {
 		failed += check(stdout, stderr, root, path, func() (int, string, *validate.Problems, error) {
-			s, err := contracts.LoadAcceptanceProfileSet(path)
+			s, p, err := checkFile(path, dataset.CheckAcceptanceSet)
 			if err != nil {
 				return 0, "", nil, err
 			}
-			return len(s.Profiles), "profile(s)", s.Validate(), nil
+			return len(s.Profiles), "profile(s)", p, nil
 		})
 	}
 	// Routing-profile sets are optional too, and named relative to the root (routing/<file>).
 	for _, path := range routePaths {
 		failed += check(stdout, stderr, root, path, func() (int, string, *validate.Problems, error) {
-			s, err := contracts.LoadRoutingProfileSet(path)
+			s, p, err := checkFile(path, dataset.CheckRoutingSet)
 			if err != nil {
 				return 0, "", nil, err
 			}
-			return len(s.Profiles), "profile(s)", s.Validate(), nil
+			return len(s.Profiles), "profile(s)", p, nil
 		})
 	}
+	// The rule across sets: no two entries of one name that a deployment could both match
+	// are left to the order sets are listed in (VAL-4). The loader runs the same check.
+	across := dataset.CheckOrdered(sets)
+	for _, p := range across {
+		fmt.Fprintln(stderr, p)
+	}
 	total := len(paths) + len(accPaths) + len(routePaths)
+	if len(across) > 0 {
+		fmt.Fprintf(stderr, "\n%d pair(s) of entries across sets are not ordered (VAL-4)\n", len(across))
+		if failed == 0 {
+			return 1
+		}
+	}
 	if failed > 0 {
 		fmt.Fprintf(stderr, "\n%d of %d set(s) failed\n", failed, total)
 		return 1
 	}
 	fmt.Fprintf(stdout, "\nall %d set(s) validate\n", total)
 	return 0
+}
+
+// checkFile reads path and runs on it the check package load runs on the same file
+// (validate/dataset), so this command and a run judge a set alike (SUB-9, X15).
+func checkFile[T any](path string, check func(string, []byte) (T, *validate.Problems, error)) (T, *validate.Problems, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		var zero T
+		return zero, nil, fmt.Errorf("opening %s: %w", path, err)
+	}
+	return check(path, b)
 }
 
 // check loads and validates one set, writing its summary line to stdout and its findings

@@ -85,7 +85,7 @@ func (s *Shape) UnmarshalYAML(node *yaml.Node) error {
 	validate.StripCatalogComments(node)
 	type shape Shape
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*s = Shape(raw)
@@ -116,7 +116,7 @@ func (d *Distribution) UnmarshalYAML(node *yaml.Node) error {
 	validate.StripCatalogComments(node)
 	type shape Distribution
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*d = Distribution(raw)
