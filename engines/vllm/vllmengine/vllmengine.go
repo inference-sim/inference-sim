@@ -135,7 +135,7 @@ func open(s engine.Spec) (pool, error) {
 // deployment's offload description, whose prefetch_depth is not a vLLM setting.
 const (
 	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/4"
-	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/13"
+	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/63"
 	prefetchIssue      = "https://github.com/inference-sim/inference-sim/issues/1910"
 )
 

@@ -253,10 +253,11 @@ func Check(o Options) error {
 	case o.SpecName != "" && o.SpecName != "CPUOffloadingSpec" && o.SpecName != "TieringOffloadingSpec":
 		return fmt.Errorf("offloading: spec_name %q is not modelled; CPUOffloadingSpec and TieringOffloadingSpec are (%s)", o.SpecName, Issue)
 	case o.SecondaryTiers > 0:
-		// Tier cascades, promotions and their backpressure clocks (tiering/manager.py:269-360,
-		// backpressure.py) are https://github.com/inference-sim/blis-vllm/issues/13.
+		// The secondary tiers' lookups, stores and promotions (tiering/manager.py:269-360) are
+		// https://github.com/inference-sim/blis-vllm/issues/63; their backpressure clocks
+		// (backpressure.py) are https://github.com/inference-sim/blis-vllm/issues/13.
 		return fmt.Errorf("offloading: TieringOffloadingSpec with %d secondary tier(s) is not modelled, only its CPU "+
-			"primary tier (https://github.com/inference-sim/blis-vllm/issues/13)", o.SecondaryTiers)
+			"primary tier (https://github.com/inference-sim/blis-vllm/issues/63)", o.SecondaryTiers)
 	case o.EvictionPolicy != "" && o.EvictionPolicy != "lru":
 		// ARC (cpu/policies/arc.py:16) is https://github.com/inference-sim/blis-vllm/issues/1.
 		return fmt.Errorf("offloading: eviction_policy %q is not modelled, only lru "+

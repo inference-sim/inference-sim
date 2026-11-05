@@ -174,8 +174,8 @@ func TestOffloadMappingRefusals(t *testing.T) {
 	}
 	const tier = "  tiers:\n    - {tier: cpu_dram, bytes: 549755813888}\n"
 	for _, c := range []struct{ name, old, new, want string }{
-		{"a secondary tier", tier, tier + "    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/13"},
-		{"a tier not of host DRAM", tier, "  tiers:\n    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/13"},
+		{"a secondary tier", tier, tier + "    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/63"},
+		{"a tier not of host DRAM", tier, "  tiers:\n    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/63"},
 		{"another connector", "  connector: OffloadingConnector\n", "  connector: LMCacheConnectorV1\n", "blis-vllm/issues/4)"},
 		{"a prefetch depth", "  connector: OffloadingConnector\n", "  connector: OffloadingConnector\n  prefetch_depth: 2\n", "inference-sim/issues/1910"},
 		{"a Mooncake option", "  eviction_policy: lru\n", "  eviction_policy: lru\n  connector_options: {load_async: true}\n", "blocks_per_chunk"},

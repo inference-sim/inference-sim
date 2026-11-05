@@ -871,7 +871,7 @@ func TestCheckRefusesWhatIsNotModelled(t *testing.T) {
 		want string
 	}{
 		{Options{SpecName: "Other"}, "spec_name"},
-		{Options{SpecName: "TieringOffloadingSpec", SecondaryTiers: 1}, "issues/13"},
+		{Options{SpecName: "TieringOffloadingSpec", SecondaryTiers: 1}, "issues/63"},
 		{Options{EvictionPolicy: "arc"}, "issues/1)"},
 		{Options{StoreThreshold: 2}, "store_threshold"},
 		{Options{RetentionInterval: &zero}, "issues/7"},
