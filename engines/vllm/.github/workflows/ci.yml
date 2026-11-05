@@ -13,8 +13,8 @@ jobs:
   go:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: gofmt
@@ -40,14 +40,14 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       # The module targets Go 1.27; golangci-lint refuses a module newer than the Go that built
       # it, so it is built from source with the module's Go (as inference-sim's CI does).
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
         with:
           version: v2.14.0
           install-mode: goinstall
@@ -73,12 +73,12 @@ jobs:
             tag: v0.32.0
             commit: 5df63a7203cdb9328d824a27b682e77c7b9928be
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: check out vLLM at the pack's release
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
           ref: ${{ matrix.commit }}
@@ -101,7 +101,7 @@ jobs:
           printf '{"tier": 1, "pack": "%s", "vllm_tag": "%s", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
             "${{ matrix.pack }}" "${{ matrix.tag }}" "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" \
             > tier1-out/provenance-${{ matrix.pack }}.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: tier1-${{ matrix.pack }}
@@ -113,15 +113,15 @@ jobs:
   metrics-manifest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - name: check out vLLM v0.32.0 at its pinned commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
           ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
@@ -144,7 +144,7 @@ jobs:
         run: |
           printf '{"tier": 5, "check": "metrics-manifest", "vllm_tag": "v0.32.0", "vllm_commit": "%s", "blis_vllm_commit": "%s", "go_version": "%s"}\n' \
             "$(git -C vllm-source rev-parse HEAD)" "$GITHUB_SHA" "$(go env GOVERSION)" > manifest-out/provenance.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: metrics-manifest
@@ -154,7 +154,7 @@ jobs:
   goldens-reviewed:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: every commit changing a golden trace has a golden-reviewed trailer
@@ -172,15 +172,15 @@ jobs:
   oracle-tier2:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: oracle/requirements.lock
       - name: check out vLLM v0.32.0 (for its test helpers) at its pinned commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: vllm-project/vllm
           ref: 5df63a7203cdb9328d824a27b682e77c7b9928be
@@ -262,7 +262,7 @@ jobs:
         uses: ./.github/actions/oracle-fuzz
         with:
           python-version: ${{ steps.python.outputs.python-version }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       # The Go side of the run's provenance: blis-vllm's ProvenanceFor, the commit, Go and the
@@ -357,7 +357,7 @@ jobs:
         run: |
           set -o pipefail
           go test -v -count=1 -run 'TestOffloadingAgainstVLLM|TestOffloadingFuzzCorpusAgainstVLLM' ./core/connector/offloading/ | tee oracle/out/offloading-results.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: oracle-tier2
