@@ -52,18 +52,18 @@ the cost model looks the key up. Search `kernel/` for the name, not `registry/`.
    names the script that owns each family. Each takes `--check`, which exits non-zero if
    the committed file would change, and most take `--insert CHIP` to add a part.
 
-3. **Run the derivation tests with the data present.** CI does not run them on pull
-   requests (the `rederive` workflow takes ~20 minutes and is manual-dispatch only), so
-   run them locally before any pull request that touches a coefficient, a writer or a
-   test. With `COLLECTIVEX_DATA` also set to the CollectiveX run bodies:
+3. **Run the derivation tests with the data present.** The `rederive` workflow runs them
+   on every pull request that touches a coefficient, a writer or a test (~20 minutes);
+   run them locally first. With `COLLECTIVEX_DATA` also set to the CollectiveX run bodies
+   (`python -I scripts/fetch_cited_inferencex.py <dir>` fetches and checks them):
 
     ```sh
     scripts/rederive.sh
     ```
 
     It runs `python -m pytest validator/ -q -rs` and fails on any skip other than the
-    by-design ramp-form ones, because a skip with the data present is a test that did
-    not run.
+    by-design ramp-form ones and the tests on `.github/quarantine.yaml`, because a skip
+    with the data present is a test that did not run.
 
 4. **Run the schema validator.** CI runs it on every pull request; running it first
    saves a round trip. From the repository root:

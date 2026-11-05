@@ -7,7 +7,7 @@ one says nothing about the others.
 |---|---|---|
 | Schema | Could a consumer load this file? | CI, every pull request and every push to `main` |
 | Properties | Is every value physically sensible, and is its provenance complete? | CI, every pull request and every push to `main` |
-| Re-derivation | Does every value still come out of its fitter, from its cited data? | Locally, with an AISimulate clone; the manual `rederive` workflow; skipped in CI's `registry` job |
+| Re-derivation | Does every value still come out of its fitter, from its cited data? | The `rederive` workflow: every pull request that changes `registry/coefficients`, `registry/scripts`, `registry/validator` or `.github/quarantine.yaml`, nightly, and by hand; locally, with an AISimulate clone; skipped in CI's `registry` job |
 
 The documentation build is a fourth, narrower check: it fails if a set has no reference
 page, or if a set holds data the reference tables cannot represent faithfully.
@@ -63,11 +63,14 @@ Run from `registry/`:
 ```sh
 export AISIMULATE_DATA=/path/to/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
 export BLIS_CATALOG=$PWD/../catalog   # run from registry/; the repository's catalog
-export COLLECTIVEX_DATA=/path/to/collectivex-run-bodies
+python -I scripts/fetch_cited_inferencex.py /tmp/collectivex   # sha256-pinned
+export COLLECTIVEX_DATA=/tmp/collectivex
 scripts/rederive.sh
 ```
 
-`scripts/rederive.sh` is also what the manual-dispatch `rederive` workflow runs.
+`scripts/rederive.sh` is also what the `rederive` workflow runs. A skip fails it unless the
+test is a by-design ramp-form skip or is on `.github/quarantine.yaml`, with an owning issue
+and an expiry (X16, X25).
 
 They check that:
 

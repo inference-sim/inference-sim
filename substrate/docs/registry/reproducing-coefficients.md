@@ -282,15 +282,26 @@ https://inferencex.semianalysis.com/api/v1/collectivex/runs/<run_id>?version=1
 ```
 
 and save each body as `cx_run_<run_id>.body`. The query must be the bare integer
-`version=1`: without it, or with `v1`, the API answers `{"error":"Unknown version"}`. The
-API keeps only its latest 15 runs, so a cited run can stop being fetchable. Each writer
-checks that the bodies its committed entries cite are present and hash to the cited sha256.
-If they are not, it exits 3 rather than re-fit and re-cite the entries on other runs, and
-`validator/test_deepep_ll_graph.py` skips with "the cited CollectiveX bodies are not
-present". The entries `fit_deepep_ll_graph.py` and `fit_host_link.py` wrote cite runs the
-API no longer serves (33356406487, 36334392363, 36367074689, 36402856875, and the
-swap_blocks bodies sha256 `26cad6ccbdaa`). They stay as committed, and those two gates skip
-until the bodies are restored.
+`version=1`: without it, or with `v1`, the API answers `{"error":"Unknown version"}`.
+`scripts/fetch_cited_inferencex.py <dir>` does this for the bodies the committed entries
+cite that the API still serves, and fails unless each matches its pinned sha256; the
+`rederive` workflow runs it. The bodies are third-party data and are not committed.
+
+The API keeps a bounded window of recent runs, so a cited run can stop being fetchable.
+Each writer checks that the bodies its committed entries cite are present and hash to the
+cited sha256. If they are not, it exits 3 rather than re-fit and re-cite the entries on
+other runs, and `validator/test_deepep_ll_graph.py` skips with "the cited CollectiveX
+bodies are not present". The entries `fit_deepep_ll_graph.py` and `fit_host_link.py` wrote
+cite runs the API no longer serves (33356406487, 36334392363, 36367074689, 36402856875, and
+the swap_blocks bodies sha256 `26cad6ccbdaa`; each answered 404 on 2026-11-05). They stay as
+committed, and cannot be re-derived from public data. Their two tests are on
+`.github/quarantine.yaml` under inference-sim/blis-registry#57, so the gate reports them
+and fails when the entries expire, until the bodies are restored or the entries are
+re-cited through a reviewed refit.
+
+The OperatorX response `fit_marlin_nvfp4_grouped_ramp.py` cites (sha256 `ea8fb4078168`) is
+no longer what its URL serves, so `validator/test_operatorx.py` is quarantined the same
+way.
 
 ### Data freshness, checked 2026-10-30
 

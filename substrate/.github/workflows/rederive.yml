@@ -9,13 +9,19 @@ name: rederive
 # at the commit every committed value re-derives at and runs the whole suite
 # (scripts/rederive.sh), so a value that its own fitter no longer produces fails.
 #
+# The InferenceX CollectiveX run bodies the GB200 / H200-EP16 DeepEP entries cite are fetched
+# from the public API and checked against pinned sha256s (scripts/fetch_cited_inferencex.py);
+# they are third-party data, so they are fetched, never committed (X12, D6). The tests whose
+# cited bodies the API no longer serves skip, and are on .github/quarantine.yaml with an
+# owning issue and an expiry; rederive.sh fails on any other skip (X16, X25).
+#
 # It runs nightly on the full data (SUB-4, SUB-8), on every pull request that changes the
 # registry's coefficients, scripts or tests, and by hand. The checkout is ~135 MB and the
 # gates take ~20 minutes, which a pull request touching those paths pays. It is a gate: its
 # trigger paths are declared below and in .github/gates.yaml, and the nightly status page
 # shows it failing when its last real run is more than seven days old (X16).
 #
-# gate-paths: registry/coefficients/**, registry/scripts/**, registry/validator/**, .github/workflows/rederive.yml
+# gate-paths: registry/coefficients/**, registry/scripts/**, registry/validator/**, .github/workflows/rederive.yml, .github/quarantine.yaml
 
 on:
   pull_request:
@@ -24,6 +30,7 @@ on:
       - registry/scripts/**
       - registry/validator/**
       - .github/workflows/rederive.yml
+      - .github/quarantine.yaml
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
@@ -35,6 +42,7 @@ jobs:
   rederive:
     runs-on: ubuntu-latest
     env:
+      GOTOOLCHAIN: local
       # The AISimulate commit the committed values re-derive at. Pinned by SHA because the
       # repository's history moves; bump it deliberately, together with the diff the
       # writers produce at the new commit (docs/reproducing-coefficients.md).
@@ -94,11 +102,20 @@ jobs:
       - name: Install the fitters' dependencies
         run: pip install --require-hashes -r registry/scripts/requirements-fit.txt
 
+      # tools/prcheck reads the skips against the quarantine list.
+      - uses: ./.github/actions/go-toolchain
+
+      # Fails, naming the run, if a pinned body is no longer served or differs from its hash.
+      - name: Fetch the cited CollectiveX run bodies (sha256-pinned)
+        working-directory: registry
+        run: python -I scripts/fetch_cited_inferencex.py "$RUNNER_TEMP/collectivex"
+
       - name: Run every gate with the data present
         env:
           AISIMULATE_DATA: ${{ github.workspace }}/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
           BLIS_CATALOG: ${{ github.workspace }}/catalog
           AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data
           INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
+          COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex
         working-directory: registry
         run: scripts/rederive.sh
