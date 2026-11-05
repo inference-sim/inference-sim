@@ -980,6 +980,15 @@ var runCmd = &cobra.Command{
 						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g",
 						np.Name, np.GPUMemoryGiB, gpu, chip, chip)
 				}
+				// A node pool's gpus_per_node is the node the kernel places and prices ranks
+				// on: the cluster's packaging, resolved from the scenario and the chip's
+				// catalog entry (blis-substrate scenario.Cluster.Packaging). A pool stating
+				// another node size would host ranks on nodes the kernel never priced.
+				if gpn := kernelOpened.Packaging().GPUsPerNode; np.GPUsPerNode != gpn {
+					logrus.Fatalf("policy bundle node pool %q states gpus_per_node %d, but scenario %q resolves "+
+						"to %d GPUs per node (%s), on which the kernel places and prices every rank; state %d",
+						np.Name, np.GPUsPerNode, kernelScenario, gpn, kernelOpened.Packaging(), gpn)
+				}
 				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
 					Name:         np.Name,
 					GPUType:      np.GPUType,

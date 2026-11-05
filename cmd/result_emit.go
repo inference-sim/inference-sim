@@ -12,6 +12,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
@@ -147,6 +148,7 @@ func emitRunResult(p postRun) {
 	in := resultInputs{
 		Scenario:       docs.Scenario,
 		Deployment:     docs.Deployment,
+		Packaging:      resultPackaging(kernelOpened),
 		Policy:         policy,
 		Generator:      result.Generator{Workload: p.run.Binding, Load: p.run.Load, Seed: p.frame.Seed},
 		NumRequests:    p.run.NumRequests,
@@ -223,4 +225,18 @@ func emitRunResult(p postRun) {
 			"pass --view summary to also print them as text on stderr")
 	}
 	emitResult(r, view)
+}
+
+// resultPackaging is the packaging the Result's inputs record: the kernel's resolved
+// packaging when any value came from the chip's catalog entry, nil when the scenario stated
+// every value (input.scenario then records each as stated) or no kernel is open.
+func resultPackaging(m *engineModel) *scenario.Packaging {
+	if m == nil {
+		return nil
+	}
+	pk := m.Packaging()
+	if pk.GPUsPerNodeSource == scenario.SourceStated && pk.GPUsPerRack == 0 {
+		return nil
+	}
+	return &pk
 }
