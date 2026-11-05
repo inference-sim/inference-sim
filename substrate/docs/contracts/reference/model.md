@@ -429,12 +429,24 @@ the entry is and where its `config.json` came from.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `id` | string | yes | The SPDX identifier, or `LicenseRef-<name>` for a licence SPDX does not list. |
-| `evidence` | string | yes | The `https` URL the licence was read from, naming the pinned revision. |
+| `id` | string | yes | The SPDX identifier, or `LicenseRef-<name>` for a licence SPDX does not list. When the model card names no licence, or only `other`, the identifier names the licence file read at the pinned revision; `LicenseRef-other` and `LicenseRef-none-stated` are refused. |
+| `evidence` | string | yes | The `https` URL the licence was read from, naming the pinned revision: the model card, or the licence file when the card names none. |
 
 A model's `config.json` is committed only when its licence is on the allow-list
-(`vocab.RedistributableLicences`), or while the model is listed in
-`catalog/licence-exceptions.yaml` pending a person's review of its licence.
+(`vocab.RedistributableLicences`). Each `LicenseRef` entry there names one licence text a
+person has read and found to permit redistribution. A licence that forbids redistribution is
+never added: such a model commits only `config.sha256` and the revision, below.
+
+A committed `config.json` is redistributed, so the conditions of its licence travel with it.
+Apache-2.0 is the repository's own licence. For any other licence,
+`catalog/licences/index.yaml` lists the model with the licence text, and any use policy,
+committed under `catalog/licences/`; each text's source URL at a pinned revision and its
+SHA-256; and the attribution sentence the licence requires in a notice file, if any.
+`catalog/NOTICE` carries every such sentence verbatim and states that the `config.json`
+files are third-party files redistributed unchanged. `validate-catalog` fails on a missing
+entry, on an entry whose licence differs from `model.yaml`'s, whose text is missing or
+hashes differently, or whose notice sentence `NOTICE` lacks, and on an entry or text that
+no model with a committed `config.json` needs.
 
 ### `config`
 

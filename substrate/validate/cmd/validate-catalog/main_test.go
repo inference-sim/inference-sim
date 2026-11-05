@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -512,32 +514,84 @@ func TestRunRefusesAnUnredistributableMeasurement(t *testing.T) {
 	}
 }
 
-// X12: a committed config.json needs an allow-listed licence or a listed exception; a
-// model pinned by hash commits no config.json. Each case is a known-bad catalog (X18).
+// X12: a committed config.json needs an allow-listed licence, and, unless its licence is
+// the repository's own Apache-2.0, an entry in licences/index.yaml whose texts are committed
+// with the hashes recorded and whose notice sentence NOTICE carries; a model pinned by hash
+// commits no config.json. Each failing case is a known-bad catalog (X18).
 func TestRunLicenceCheck(t *testing.T) {
 	model := func(lic string, extra string) string {
 		return "name: tiny-llm\nsource:\n  provider: huggingface\n  repo: example/Tiny-LLM\n  revision: deadbeef\n" +
 			"licence:\n  id: " + lic + "\n  evidence: https://huggingface.co/example/Tiny-LLM/raw/deadbeef/README.md\n" + extra
 	}
-	pending := func(lic string) string {
-		return "pending:\n  - model: tiny-llm\n    licence: " + lic + "\n    status: pending licence review\n"
+	const (
+		text     = "Example Licence\n\nKeep this notice: \"Tiny is licensed under the\nExample Licence.\"\n"
+		notice   = "Tiny is licensed under the Example Licence."
+		pin      = "config:\n  sha256: " + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" + "\n"
+		source   = "https://huggingface.co/example/Tiny-LLM/raw/deadbeef/LICENSE"
+		licences = "licences/"
+	)
+	sum := sha256.Sum256([]byte(text))
+	sha := hex.EncodeToString(sum[:])
+	index := func(model, lic, file, src, hash, note string) string {
+		s := "models:\n  - model: " + model + "\n    licence: " + lic + "\n    texts:\n      - file: " + file +
+			"\n        source: " + src + "\n        sha256: " + hash + "\n"
+		if note != "" {
+			s += "    notice: \"" + note + "\"\n"
+		}
+		return s
 	}
-	const pin = "config:\n  sha256: " + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" + "\n"
+	good := func() map[string]string {
+		return map[string]string{
+			"models/tiny-llm/config.json":      validConfigJSON,
+			"models/tiny-llm/model.yaml":       model("LicenseRef-llama2", ""),
+			licences + "index.yaml":            index("tiny-llm", "LicenseRef-llama2", "LicenseRef-llama2.txt", source, sha, notice),
+			licences + "LicenseRef-llama2.txt": text,
+			"NOTICE":                           "Third-party files.\n\n" + notice + "\n",
+		}
+	}
+	with := func(edit func(map[string]string)) map[string]string {
+		f := good()
+		edit(f)
+		return f
+	}
 	cases := []struct {
 		name  string
 		files map[string]string
 		code  int
 		want  string
 	}{
-		{"allowed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", "")}, 0, "tiny-llm licence"},
-		{"not allowed, not listed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", "")}, 1, "not on the allow-list"},
-		{"listed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", ""), "licence-exceptions.yaml": pending("LicenseRef-llama2")}, 0, "pending licence review"},
-		{"listed under another licence", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", ""), "licence-exceptions.yaml": pending("LicenseRef-llama3.1")}, 1, "lists LicenseRef-llama3.1"},
-		{"listed but allowed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", ""), "licence-exceptions.yaml": pending("MIT")}, 1, "is on the allow-list; remove the model"},
-		{"listed model missing", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", ""), "licence-exceptions.yaml": strings.Replace(pending("X"), "tiny-llm", "gone", 1)}, 1, "lists gone, which is not a model"},
-		{"bad status", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", ""), "licence-exceptions.yaml": strings.Replace(pending("LicenseRef-llama2"), "pending licence review", "approved", 1)}, 1, `status "approved"`},
-		{"pinned by hash", map[string]string{"models/tiny-llm/model.yaml": model("LicenseRef-llama2", pin)}, 0, "not committed; pinned by sha256"},
-		{"pinned and committed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", pin)}, 1, "commit one or the other"},
+		{"own licence, no entry", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("Apache-2.0", "")}, 0, "tiny-llm licence"},
+		{"listed with text and notice", good(), 0, "LicenseRef-llama2, text LicenseRef-llama2.txt"},
+		{"not allowed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-proprietary", "")}, 1, "take the derived-only path"},
+		{"allowed, no entry", with(func(f map[string]string) {
+			delete(f, licences+"index.yaml")
+			delete(f, licences+"LicenseRef-llama2.txt")
+		}), 1, "has no entry in licences/index.yaml"},
+		{"MIT, no entry", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", "")}, 1, "has no entry in licences/index.yaml"},
+		{"entry under another licence", with(func(f map[string]string) {
+			f[licences+"index.yaml"] = index("tiny-llm", "LicenseRef-llama3.1", "LicenseRef-llama2.txt", source, sha, notice)
+		}), 1, "lists LicenseRef-llama3.1"},
+		{"text missing", with(func(f map[string]string) { delete(f, licences+"LicenseRef-llama2.txt") }), 1, "licences/LicenseRef-llama2.txt is missing"},
+		{"text hashes wrong", with(func(f map[string]string) { f[licences+"LicenseRef-llama2.txt"] = text + "edited\n" }), 1, "but the index records " + sha},
+		{"source not at the pinned revision", with(func(f map[string]string) {
+			f[licences+"index.yaml"] = index("tiny-llm", "LicenseRef-llama2", "LicenseRef-llama2.txt", "https://huggingface.co/example/Tiny-LLM/raw/main/LICENSE", sha, notice)
+		}), 1, "does not name the pinned revision"},
+		{"notice not in NOTICE", with(func(f map[string]string) { f["NOTICE"] = "Third-party files.\n" }), 1, "is not in NOTICE"},
+		{"notice not in its text", with(func(f map[string]string) {
+			f[licences+"index.yaml"] = index("tiny-llm", "LicenseRef-llama2", "LicenseRef-llama2.txt", source, sha, "Something else.")
+			f["NOTICE"] += "Something else.\n"
+		}), 1, "is not in its licence text"},
+		{"entry names no model", with(func(f map[string]string) {
+			f[licences+"index.yaml"] += strings.TrimPrefix(index("gone", "MIT", "LicenseRef-llama2.txt", source, sha, ""), "models:\n")
+		}), 1, "lists gone, which is not a model"},
+		{"entry for a model that commits no config.json", with(func(f map[string]string) {
+			delete(f, "models/tiny-llm/config.json")
+			f["models/tiny-llm/model.yaml"] = model("LicenseRef-llama2", pin)
+		}), 1, "commits no config.json; remove the entry"},
+		{"text no entry names", with(func(f map[string]string) { f[licences+"stray.txt"] = "x\n" }), 1, "no entry in licences/index.yaml names this file"},
+		{"unknown index key", with(func(f map[string]string) { f[licences+"index.yaml"] = "pending: []\n" }), 1, "field pending not found"},
+		{"pinned by hash", map[string]string{"models/tiny-llm/model.yaml": model("LicenseRef-proprietary", pin)}, 0, "not committed; pinned by sha256"},
+		{"pinned and committed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-proprietary", pin)}, 1, "commit one or the other"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

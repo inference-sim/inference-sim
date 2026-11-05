@@ -54,10 +54,14 @@ type Identity struct {
 // Licence records a model's licence and where it was read.
 type Licence struct {
 	// ID is the licence's SPDX identifier, or LicenseRef-<name> for a licence SPDX does not
-	// list, written as the model card at the pinned revision names it.
+	// list, written as the model card at the pinned revision names it. When the card names
+	// no licence, or names only "other", the ID names the licence file read at the pinned
+	// revision instead (LicenseRef-deepseek for DeepSeek-V3's LICENSE-MODEL), never a
+	// placeholder such as LicenseRef-other or LicenseRef-none-stated, which names no text.
 	ID string `yaml:"id"`
 	// Evidence is the URL the licence was read from, at the pinned revision: the model
-	// card's front matter, or the provider's API record of that revision.
+	// card's front matter, the provider's API record of that revision, or, when the ID
+	// names a licence file because the card does not, that file.
 	Evidence string `yaml:"evidence"`
 }
 
@@ -109,12 +113,24 @@ func (id *Identity) Validate() *validate.Problems {
 
 var licenceRef = regexp.MustCompile(`^(LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.+-]*)$`)
 
+// placeholderLicences are LicenseRef names that record what a model card says about its
+// licence ("other", nothing) rather than naming a licence text.
+var placeholderLicences = map[string]bool{
+	"LicenseRef-other":       true,
+	"LicenseRef-none":        true,
+	"LicenseRef-none-stated": true,
+	"LicenseRef-unknown":     true,
+}
+
 // Validate checks a licence record: an identifier in SPDX form, and evidence at the
 // source's pinned revision.
 func (l *Licence) Validate(src *Source) *validate.Problems {
 	p := &validate.Problems{}
-	if !licenceRef.MatchString(l.ID) {
+	switch {
+	case !licenceRef.MatchString(l.ID):
 		p.Field("id", "%q is not an SPDX identifier or LicenseRef-<name>", l.ID)
+	case placeholderLicences[l.ID]:
+		p.Field("id", "%q names no licence text; name the licence file read at the pinned revision, and cite that file as the evidence", l.ID)
 	}
 	if !strings.HasPrefix(l.Evidence, "https://") {
 		p.Field("evidence", "%q is not an https URL", l.Evidence)

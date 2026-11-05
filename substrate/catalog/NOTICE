@@ -1,0 +1,40 @@
+BLIS catalog: third-party files
+
+Each file catalog/models/<name>/config.json is a third-party file: the vendor's model
+configuration, copied byte for byte from the repository and revision that the model's
+model.yaml names, and redistributed unchanged. It is not licensed under this repository's
+Apache-2.0 licence. It remains under the licence that model.yaml's licence.id names.
+
+catalog/licences/index.yaml lists, for every committed config.json whose licence is not
+Apache-2.0, the licence, the licence text and any use policy that travel with the file
+(in catalog/licences/), the URL each text was read from at a pinned revision, and its
+SHA-256. The copyright notices of those files are in those texts.
+
+Some of these licences restrict use. The Llama 2, Llama 3.1, Llama 4, DeepSeek, MiniMax
+and Muse Spark Open texts each incorporate a use policy or list of prohibited uses. The
+MiniMax-M2.7 licence permits only non-commercial use without MiniMax's prior written
+authorisation, and the MiniMax Community Licence (MiniMax-M3) sets conditions on
+commercial use. BLIS commits these files for non-commercial research; anyone who uses a
+model must read its licence.
+
+The Llama 3.1 and Llama 4 licences (section 1.b.i) ask whoever distributes the materials
+to display "Built with Llama", and the Muse Spark Open licence (condition 2) asks a product
+that uses the files to display "Built with Muse Spark Open" in its documentation. This
+catalog carries those files, and BLIS derives model graphs from them:
+
+Built with Llama.
+Built with Muse Spark Open.
+
+The licences below require these attribution notices, reproduced verbatim:
+
+Llama 2 is licensed under the LLAMA 2 Community License, Copyright (c) Meta Platforms, Inc. All Rights Reserved.
+    (codellama-34b-instruct-hf, llama-2-70b-hf, llama-2-7b-hf)
+
+Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
+    (llama-3.1-70b-instruct, llama-3.1-8b-instruct)
+
+Llama 4 is licensed under the Llama 4 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved.
+    (llama-4-scout-17b-16e-instruct-fp8-dynamic)
+
+MiniMax AI model is licensed under the MiniMax Model License, Copyright © MiniMax. All Rights Reserved.
+    (minimax-m2.5)

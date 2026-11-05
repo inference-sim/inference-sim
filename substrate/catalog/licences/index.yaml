@@ -1,0 +1,233 @@
+# The licence texts of the committed vendor config.json files (X12).
+#
+# A model's config.json is committed only when its licence is on the allow-list
+# (contracts/vocab, vocab.RedistributableLicences). Every such model whose licence is not
+# Apache-2.0, the repository's own licence (LICENSE), has one entry here: its licence, the
+# text or texts that licence requires to travel with the file, each with the URL it was read
+# from at a pinned revision and its SHA-256, and the attribution sentence the licence
+# requires in a notice file, if any. catalog/NOTICE carries those sentences.
+#
+# validate-catalog fails on a model that needs an entry and has none, on an entry whose
+# licence differs from model.yaml's, whose text is missing or hashes differently, whose
+# notice sentence is absent from its text or from catalog/NOTICE, or that names no model
+# with a committed config.json.
+
+models:
+  - model: codellama-34b-instruct-hf
+    licence: LicenseRef-llama2
+    texts:
+      - file: LicenseRef-llama2.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama/7c0a08ec24ce91880184ba9002227624262904a2/LICENSE
+        sha256: f28d05612fee8ef09283d4e755c468080b13d1cd92c9ae1aa52c84b075799e23
+      - file: LicenseRef-llama2.use-policy.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama/7c0a08ec24ce91880184ba9002227624262904a2/USE_POLICY.md
+        sha256: 7c23fb36d80141c4ab8cdbb61ee4790102ebd2bf7aeff414453177d4f2110e5d
+    notice: "Llama 2 is licensed under the LLAMA 2 Community License, Copyright (c) Meta Platforms, Inc. All Rights Reserved."
+    note: "The repository holds no licence file; meta-llama/codellama's LICENSE points at the Llama 2 licence, read here at Meta's pinned commit."
+  - model: deepseek-r1-0528
+    licence: MIT
+    texts:
+      - file: MIT.deepseek.txt
+        source: https://huggingface.co/deepseek-ai/DeepSeek-R1-0528/raw/4236a6af538feda4548eca9ab308586007567f52/LICENSE
+        sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
+  - model: deepseek-v2-lite
+    licence: LicenseRef-deepseek
+    texts:
+      - file: LicenseRef-deepseek.txt
+        source: https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/raw/604d5664dddd88a0433dbae533b7fe9472482de0/LICENSE
+        sha256: ccfee4895df06bcab524151c278e8dde88bbe76165a24ecbcbcf9fafd71fd2b3
+  - model: deepseek-v3
+    licence: LicenseRef-deepseek
+    texts:
+      - file: LicenseRef-deepseek.txt
+        source: https://huggingface.co/deepseek-ai/DeepSeek-V3/raw/e815299b0bcbac849fa540c768ef21845365c9eb/LICENSE-MODEL
+        sha256: ccfee4895df06bcab524151c278e8dde88bbe76165a24ecbcbcf9fafd71fd2b3
+    note: "The card names no licence in its front matter; its body says the models are subject to the Model License, LICENSE-MODEL, which is the same bytes as DeepSeek-V2-Lite's LICENSE."
+  - model: deepseek-v4-pro
+    licence: MIT
+    texts:
+      - file: MIT.deepseek.txt
+        source: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/LICENSE
+        sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
+  - model: deepseek-v4.1-flash
+    licence: MIT
+    texts:
+      - file: MIT.deepseek.txt
+        source: https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/raw/5254448103b6254fc646dacbca1cbbf20e9216c1/LICENSE
+        sha256: f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040
+  - model: glm-5
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
+  - model: glm-5.2
+    licence: MIT
+    texts:
+      - file: MIT.zhipu-ai.txt
+        source: https://huggingface.co/zai-org/GLM-5.2/raw/cf457fa734ab149ffef225f80893eb38c6ff5cdc/LICENSE
+        sha256: f4a18c6ae40b0a8e7d2b7667f52f6e1994e54a46430d2e172b73cb8c9b5eb0d7
+  - model: glm-5.2-fp8
+    licence: MIT
+    texts:
+      - file: MIT.zhipu-ai.txt
+        source: https://huggingface.co/zai-org/GLM-5.2-FP8/raw/f33c6dc501ee5a2c7e35155653b1b1abbc320951/LICENSE
+        sha256: f4a18c6ae40b0a8e7d2b7667f52f6e1994e54a46430d2e172b73cb8c9b5eb0d7
+  - model: glm-5.3
+    licence: LicenseRef-glm-5.3
+    texts:
+      - file: LicenseRef-glm-5.3.txt
+        source: https://huggingface.co/zai-org/GLM-5.3/raw/aca966e4e02791568aa6a4ced368624b3d897f42/LICENSE
+        sha256: 96e1622099fc9d6b70c9760f007d99e66d7497eec636b63c60fe208401e9170c
+  - model: glm-5.3-flash
+    licence: MIT
+    texts:
+      - file: MIT.z-ai.txt
+        source: https://huggingface.co/zai-org/GLM-5.3-Flash/raw/eb9eb208eb0d988989d07a6a12d0fdeb5f52574a/LICENSE
+        sha256: 30b85b6b9659f2e78aa259f8faf5d920a68dee7c9ced3fa6dba1f19f2bc4fca1
+  - model: kimi-k2.5
+    licence: LicenseRef-modified-mit
+    texts:
+      - file: LicenseRef-modified-mit.kimi-k2.5.txt
+        source: https://huggingface.co/moonshotai/Kimi-K2.5/raw/4d01dfe0332d63057c186e0b262165819efb6611/LICENSE
+        sha256: c524b41658421b8b143c5b50637ef008909da56013ad12ccaba0536139ee35b0
+  - model: kimi-k2.6
+    licence: LicenseRef-modified-mit
+    texts:
+      - file: LicenseRef-modified-mit.kimi-k2.6.txt
+        source: https://huggingface.co/moonshotai/Kimi-K2.6/raw/7eb5002f6aadc958aed6a9177b7ed26bb94011bb/LICENSE
+        sha256: 1d4ab2d8404287de44429024a78b58d3aabc4df9d0c490e73fec9ff1fd842529
+  - model: kimi-k3
+    licence: LicenseRef-kimi-k3
+    texts:
+      - file: LicenseRef-kimi-k3.txt
+        source: https://huggingface.co/moonshotai/Kimi-K3/raw/f831ab66814297da540d832a5235f8e904f29d06/LICENSE
+        sha256: 20c797ce19af0c17de52c6afb144644768a591c521655f5ebf5712c9850f2887
+  - model: llama-2-70b-hf
+    licence: LicenseRef-llama2
+    texts:
+      - file: LicenseRef-llama2.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama/7c0a08ec24ce91880184ba9002227624262904a2/LICENSE
+        sha256: f28d05612fee8ef09283d4e755c468080b13d1cd92c9ae1aa52c84b075799e23
+      - file: LicenseRef-llama2.use-policy.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama/7c0a08ec24ce91880184ba9002227624262904a2/USE_POLICY.md
+        sha256: 7c23fb36d80141c4ab8cdbb61ee4790102ebd2bf7aeff414453177d4f2110e5d
+    notice: "Llama 2 is licensed under the LLAMA 2 Community License, Copyright (c) Meta Platforms, Inc. All Rights Reserved."
+    note: "The Hugging Face repository is gated, so the text is Meta's own copy at a pinned commit."
+  - model: llama-2-7b-hf
+    licence: LicenseRef-llama2
+    texts:
+      - file: LicenseRef-llama2.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama/7c0a08ec24ce91880184ba9002227624262904a2/LICENSE
+        sha256: f28d05612fee8ef09283d4e755c468080b13d1cd92c9ae1aa52c84b075799e23
+      - file: LicenseRef-llama2.use-policy.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama/7c0a08ec24ce91880184ba9002227624262904a2/USE_POLICY.md
+        sha256: 7c23fb36d80141c4ab8cdbb61ee4790102ebd2bf7aeff414453177d4f2110e5d
+    notice: "Llama 2 is licensed under the LLAMA 2 Community License, Copyright (c) Meta Platforms, Inc. All Rights Reserved."
+    note: "The Hugging Face repository is gated, so the text is Meta's own copy at a pinned commit."
+  - model: llama-3.1-70b-instruct
+    licence: LicenseRef-llama3.1
+    texts:
+      - file: LicenseRef-llama3.1.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama-models/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/LICENSE
+        sha256: bf2eac60b81e5c5f779fc3b4849d3bfacfd63f97f3eb68b44e9c6868c5801712
+      - file: LicenseRef-llama3.1.use-policy.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama-models/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/USE_POLICY.md
+        sha256: f456a3f5b15ab588c84d06cf095a245bfee0bbc1620b48ed00af2cca4a711735
+    notice: "Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved."
+    note: "The Hugging Face repository is gated, so the text is Meta's own copy at a pinned commit."
+  - model: llama-3.1-8b-instruct
+    licence: LicenseRef-llama3.1
+    texts:
+      - file: LicenseRef-llama3.1.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama-models/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/LICENSE
+        sha256: bf2eac60b81e5c5f779fc3b4849d3bfacfd63f97f3eb68b44e9c6868c5801712
+      - file: LicenseRef-llama3.1.use-policy.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama-models/1f0feb795a4130697ced243fb53051670d591653/models/llama3_1/USE_POLICY.md
+        sha256: f456a3f5b15ab588c84d06cf095a245bfee0bbc1620b48ed00af2cca4a711735
+    notice: "Llama 3.1 is licensed under the Llama 3.1 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved."
+    note: "The Hugging Face repository is gated, so the text is Meta's own copy at a pinned commit."
+  - model: llama-4-scout-17b-16e-instruct-fp8-dynamic
+    licence: LicenseRef-llama4
+    texts:
+      - file: LicenseRef-llama4.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama-models/5fdf83110cc9daa7435dfba6eb304892cc0041b8/models/llama4/LICENSE
+        sha256: 6b346865267ef58a4592287a99e9417178223c9300e9da361ce7801be6dea61f
+      - file: LicenseRef-llama4.use-policy.txt
+        source: https://raw.githubusercontent.com/meta-llama/llama-models/5fdf83110cc9daa7435dfba6eb304892cc0041b8/models/llama4/USE_POLICY.md
+        sha256: bbf009b29f1dc413c2b3c9abb12637b0cdffa350cd0a3bd6eba89b270fc9e83f
+    notice: "Llama 4 is licensed under the Llama 4 Community License, Copyright © Meta Platforms, Inc. All Rights Reserved."
+    note: "RedHatAI's repository holds no licence file; its card names llama4 and the base model meta-llama/Llama-4-Scout-17B-16E-Instruct, so the text is Meta's own copy at a pinned commit."
+  - model: minimax-m2.5
+    licence: LicenseRef-modified-mit
+    texts:
+      - file: LicenseRef-modified-mit.minimax-m2.5.txt
+        source: https://huggingface.co/MiniMaxAI/MiniMax-M2.5/raw/f710177d938eff80b684d42c5aa84b382612f21f/LICENSE-MODEL
+        sha256: 278b29a14cf6b0cc60519617909af61fa4a6aca4ee928d6178cb9799785c5cc0
+    notice: "MiniMax AI model is licensed under the MiniMax Model License, Copyright © MiniMax. All Rights Reserved."
+    note: "The card names modified-mit; the repository's licence file is LICENSE-MODEL, the MINIMAX MODEL LICENSE."
+  - model: minimax-m2.7
+    licence: LicenseRef-minimax-m2.7
+    texts:
+      - file: LicenseRef-minimax-m2.7.txt
+        source: https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/d494266a4affc0d2995ba1fa35c8481cbd84294b/LICENSE
+        sha256: 6373a886779a26e56af8070699ebaa8f90104cadcc7bbf6897037f72017bedfe
+    note: "Non-commercial licence: commercial use needs MiniMax's prior written authorisation. Committing config.json to a public research repository is non-commercial distribution."
+  - model: minimax-m3
+    licence: LicenseRef-minimax-community
+    texts:
+      - file: LicenseRef-minimax-community.txt
+        source: https://huggingface.co/MiniMaxAI/MiniMax-M3/raw/f0e1c1e04d40177e4673a22097036854f536e9c0/LICENSE
+        sha256: b53f2fdda3049b0e9013207be51efc2d372cda1fcfdd8bb4bb8b22658ca5db9c
+  - model: minimax-m3-mxfp8
+    licence: LicenseRef-minimax-community
+    texts:
+      - file: LicenseRef-minimax-community.txt
+        source: https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8/raw/c5454eb03678d8710e54a4e0fc681b9f3b4a3dba/LICENSE
+        sha256: b53f2fdda3049b0e9013207be51efc2d372cda1fcfdd8bb4bb8b22658ca5db9c
+  - model: muse-spark-open-816b-a42b
+    licence: LicenseRef-muse-model-license
+    texts:
+      - file: LicenseRef-muse-model-license.txt
+        source: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B/raw/49cade7b0c6ed297f0434229ac67eea5f9ae1220/LICENSE.md
+        sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+  - model: muse-spark-open-816b-a42b-nvfp4
+    licence: LicenseRef-muse-model-license
+    texts:
+      - file: LicenseRef-muse-model-license.txt
+        source: https://huggingface.co/unsloth/Muse-Spark-Open-816B-A42B-NVFP4/raw/fc6908f53c6882d4ec48fca5ba144e41d21e1f92/LICENSE.md
+        sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+  - model: muse-spark-open-dspark
+    licence: LicenseRef-muse-spark-open
+    texts:
+      - file: LicenseRef-muse-model-license.txt
+        source: https://huggingface.co/Inferact/Muse-Spark-Open-DSpark/raw/ffc3eb50c8ae7a5a391ddedc43085d2e5249bc35/LICENSE.md
+        sha256: 458a5c57d8e622e395eb0e59799ba5bba1ea7524ffd120ee6e3018688d7d6ace
+    note: "The card names muse-spark-open; the repository's LICENSE.md is the same bytes as the other Muse repositories'."
+  - model: nemotron-3-ultra-550b-a55b-bf16
+    licence: LicenseRef-openmdw-1.1
+    texts:
+      - file: LicenseRef-openmdw-1.1.txt
+        source: https://raw.githubusercontent.com/OpenMDW/OpenMDW/9067ba54b2f84bc9e15a05734f570ec88e9f445d/1.1/LICENSE.OpenMDW-1.1
+        sha256: 2ab44b68365473c112f5092211a38f231cb23e50de68b75a13369adbd76a74df
+    note: "The repository holds no licence file; its card links https://openmdw.ai/license/1-1/ and this file, whose text the page shows."
+  - model: nemotron-3-ultra-550b-a55b-nvfp4
+    licence: LicenseRef-openmdw-1.1
+    texts:
+      - file: LicenseRef-openmdw-1.1.txt
+        source: https://raw.githubusercontent.com/OpenMDW/OpenMDW/9067ba54b2f84bc9e15a05734f570ec88e9f445d/1.1/LICENSE.OpenMDW-1.1
+        sha256: 2ab44b68365473c112f5092211a38f231cb23e50de68b75a13369adbd76a74df
+    note: "The repository holds no licence file; its card links https://openmdw.ai/license/1-1/ and this file, whose text the page shows."
+  - model: nemotron-3.5-lightning-30b-a3b-bf16
+    licence: LicenseRef-openmdw-1.1
+    texts:
+      - file: LicenseRef-openmdw-1.1.nvidia.txt
+        source: https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/raw/a9904d24bcc1d289a1950fa9d2b978c47cf903b9/LICENSE
+        sha256: d7c8a9e5d1896d0a9588319cc7b1433e64645ad6d9e55632c30b78d8c038c23b
+  - model: nemotron-3.5-lightning-30b-a3b-nvfp4
+    licence: LicenseRef-openmdw-1.1
+    texts:
+      - file: LicenseRef-openmdw-1.1.nvidia.txt
+        source: https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4/raw/bee7596271d1495f6992ae224aefde4410e816b8/LICENSE
+        sha256: d7c8a9e5d1896d0a9588319cc7b1433e64645ad6d9e55632c30b78d8c038c23b
