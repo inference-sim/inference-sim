@@ -31,7 +31,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: validate-measurements [-local] <measurements dir>")
 		return 2
 	}
-	results, err := measurements.Check(fs.Arg(0), !*local)
+	results, err := measurements.Check(fs.Arg(0), !*local, nil)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 2

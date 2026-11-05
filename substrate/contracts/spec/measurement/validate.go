@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 )
 
 // Validate performs field-level validation of a run on its own.
@@ -24,9 +25,21 @@ func (r *MeasuredRun) Validate() *validate.Problems {
 
 // ValidateWithSources validates a run against the licence registry: its licence_ref must
 // name an entry, and a stated verdict must equal the computed one.
+//
+// It holds no catalog, so a run that leaves the node size to its chip's entry is not fitted
+// and carries a warning; ValidateAgainstCatalog is the check that fits it.
 func (r *MeasuredRun) ValidateWithSources(reg *Registry) *validate.Problems {
+	return r.ValidateAgainstCatalog(reg, nil)
+}
+
+// ValidateAgainstCatalog is ValidateWithSources with chip, the catalog entry the run's
+// cluster names (nil when the caller has none). With it the cluster's packaging is resolved
+// by scenario.Cluster.Packaging (SUB-3), so a run that omits gpus_per_node on a chip whose
+// entry fixes it, GB200 NVL72 or GB300, has its deployment fitted to the entry's node size,
+// and a cluster that contradicts the entry is refused.
+func (r *MeasuredRun) ValidateAgainstCatalog(reg *Registry, chip *hardware.Chip) *validate.Problems {
 	p := &validate.Problems{}
-	r.validateFields(p)
+	r.validateFieldsWith(p, chip)
 	if r.Source.LicenseRef != "" && reg.Lookup(r.Source.LicenseRef) == nil {
 		p.Field("source.license_ref", "%q is not in the licence registry", r.Source.LicenseRef)
 	}
@@ -77,7 +90,9 @@ func reasons(a Assessment) string {
 	return strings.Join(a.Reasons, "; ")
 }
 
-func (r *MeasuredRun) validateFields(p *validate.Problems) {
+func (r *MeasuredRun) validateFields(p *validate.Problems) { r.validateFieldsWith(p, nil) }
+
+func (r *MeasuredRun) validateFieldsWith(p *validate.Problems, chip *hardware.Chip) {
 	if r.Kind != "MeasuredRun" {
 		p.Field("kind", "must be %q, got %q", "MeasuredRun", r.Kind)
 	}
@@ -94,15 +109,29 @@ func (r *MeasuredRun) validateFields(p *validate.Problems) {
 	if r.Deployment != nil {
 		p.Merge("deployment", r.Deployment.Validate())
 		if c := r.Cluster; c != nil {
-			// The fit uses the node size the run states. A run whose cluster leaves it to
-			// the chip's catalog entry (scenario.Cluster.Packaging) is fitted only by a
-			// validator that holds the entry, and says so rather than pass unchecked.
-			if c.GPUsPerNode == 0 {
+			// The fit uses the cluster's resolved packaging when the caller holds the chip's
+			// entry. Without it, only a stated node size is known, and a run that leaves the
+			// size to the entry says so rather than pass unchecked.
+			gpusPerNode := c.GPUsPerNode
+			switch {
+			case chip != nil:
+				pk, err := c.Packaging(chip)
+				if err != nil {
+					if problems, ok := err.(*validate.Problems); ok {
+						p.Merge("cluster", problems)
+					} else {
+						p.Field("cluster", "%v", err)
+					}
+					gpusPerNode = 0
+				} else {
+					gpusPerNode = pk.GPUsPerNode
+				}
+			case c.GPUsPerNode == 0:
 				p.Warnf("cluster.gpus_per_node is left to the catalog entry of %q, so the deployment's per-node fit is not checked here",
 					c.Hardware)
 			}
 			p.Merge("deployment", r.Deployment.ValidateAgainstCluster(deployment.ClusterConstraints{
-				Nodes: c.Nodes, GPUsPerNode: c.GPUsPerNode, Storage: c.Storage}))
+				Nodes: c.Nodes, GPUsPerNode: gpusPerNode, Storage: c.Storage}))
 		}
 	}
 	if r.Router != nil {
