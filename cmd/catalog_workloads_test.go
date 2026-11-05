@@ -759,7 +759,7 @@ func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if os.Getenv(presetRunLegEnv) == "1" {
 		repos := defaultKernelRepos()
 		rootCmd.SetArgs([]string{
-			"run", "--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
+			"run", "--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", repos.Registry,
 			"--workload", "chatbot", "--rate", "5", "--num-requests", "20",
 			"--seed", "42", "--horizon", "600000000",
 			"--defaults-filepath", "../defaults.yaml",

@@ -8,16 +8,15 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
 	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
-// testRepos is the artifact roots the harness tests run against: the pinned kernel module's
-// scenarios and the vendored catalog and registry.
+// testRepos is the artifact roots the harness tests run against: this repository's
+// testdata/scenarios and the vendored catalog and registry.
 func testRepos() kernelmodel.Repos {
 	return kernelmodel.Repos{
-		Scenarios: kernelfixtures.AISimulate(),
+		Scenarios: testScenarios(),
 		Catalog:   substratedata.MustCatalog(),
 		Registry:  substratedata.MustRegistry(),
 	}
@@ -96,3 +95,8 @@ func testSweep(t *testing.T) Sweep {
 	t.Fatal("gpt-oss-120b-h200-fp4-vllm-tp4 not in the corpus")
 	return Sweep{}
 }
+
+// testScenarios is this repository's testdata/scenarios. The pinned kernel module's own
+// scenarios (blis-latency-kernel testdata/aisimulate) state vLLM 0.29.0, which blis refuses
+// (LIF-6); the ones these tests read are copied there at 0.32.0.
+func testScenarios() string { return filepath.Join(repoRoot(), "testdata", "scenarios") }

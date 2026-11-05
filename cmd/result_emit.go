@@ -137,7 +137,7 @@ func emitRunResult(p postRun) {
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
 		Artifacts:      artifacts,
-		Revisions:      resultRevisions(resolvedCatalogRoot, kernelRegistry, docs.Scenario.EngineVersion),
+		Revisions:      resultRevisions(resolvedCatalogRoot, kernelRegistry, scenarioEngine),
 	}
 	out := resultMetrics{
 		Aggregated:      aggregated,

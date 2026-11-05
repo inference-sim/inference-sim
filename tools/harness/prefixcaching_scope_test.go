@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
 	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -16,7 +15,7 @@ import (
 func TestScenarioPrefixCachingReachesTheDeployment(t *testing.T) {
 	const scenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	committed := kernelmodel.Repos{
-		Scenarios: kernelfixtures.AISimulate(),
+		Scenarios: testScenarios(),
 		Catalog:   substratedata.MustCatalog(),
 		Registry:  substratedata.MustRegistry(),
 	}

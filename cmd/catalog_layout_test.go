@@ -94,7 +94,7 @@ func catalogLayoutSubprocess() bool {
 	tracePrefix := os.Getenv(catalogLayoutTraceEnv)
 
 	repos := defaultKernelRepos()
-	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry}
+	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", repos.Registry}
 	var args []string
 	switch leg {
 	case "run", "run-export":

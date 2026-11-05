@@ -463,16 +463,9 @@ Example:
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
 
-		// DP-as-placement plan DECISION (#1531/#1556, #1553), as runCmd makes it.
-		// planDPPlacement is pure; it is APPLIED below at the shared resolveDPPlacement (R23).
-		// autoscaler / node pools are structurally false on replay (rejected unconditionally
-		// above), so a replay plan is only ever active for PD or a plain MoE scenario dp>1.
-		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
-			bundle != nil && len(bundle.NodePools) > 0)
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
+		if err := refuseDPAutoscaler(lr.ModelConfig.IsMoE(), dataParallelism,
+			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0)); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides poolOverrides
@@ -483,20 +476,6 @@ Example:
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
 			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
-		}
-
-		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
-		// guards): on an MoE model, the scenario's dp N means N independent single-node engine
-		// replicas (vLLM's internal DP EngineCores), not one lumped instance.
-		// resolveDPPlacement is the ONE code path run and replay share (R23) — it expands
-		// numInstances × N and the four PD pool counts; KV blocks and max_model_len are
-		// already per rank from the kernel and stay unchanged — so identical flags over the
-		// same trace produce identical metrics (INV-13). Placed AFTER the PD / autoscaler /
-		// node-pool validation above and BEFORE the DeploymentConfig literal below, which
-		// reads the adjusted quantities. A no-op for dp 1 and dense models (INV-6).
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
 		}
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks", totalKVBlocks, replayHorizon)
@@ -512,12 +491,11 @@ Example:
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
-		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:             instanceConfigOf(runEngine),
 			NumInstances:               numInstances,
-			DPLockstepRanks:            dpPlan.LockstepRanks,
 			DPLoadBalancing:            dpLoadBalancing,
 			TraceLevel:                 traceLevel,
 			CounterfactualK:            counterfactualK,
@@ -529,16 +507,13 @@ Example:
 			PDTransferContention:       pdTransferContention,
 			PDTransferDemand:           pdTransferDemand,
 			PDPrefillKVHold:            kernelPD.holdsPrefillKV(),
-			PDPrefillSamplesFirstToken: coreEngineVersions[scenarioShape.EngineVersion],
+			PDPrefillSamplesFirstToken: true,
 			Roles:                      rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			InstanceLifecycle:          bundleInstanceLifecycle,
 			ScenarioEndpointTopology:   cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
-			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
-		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
-			config.NewEngine = f
+			NewEngine: engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode

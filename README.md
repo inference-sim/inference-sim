@@ -95,9 +95,11 @@ Every `blis run` and `blis replay` needs four inputs:
 The clones are pinned to the releases BLIS is tested against; see
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
 
-**vLLM versions.** Every scenario states `engine_version: "0.32.0"`; one that omits it is
-refused. It runs blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning
-prices it, and the run says so on stderr). Older engine versions are being retired. Priority
+**vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.32.0"}`, or
+with the deprecated `engine_version: "0.32.0"`, accepted with a warning until M4. This build runs
+blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning prices it, and the
+run says so on stderr). A scenario naming another release is refused; for vLLM 0.29.0 and 0.31.0
+the refusal names v0.15.0, the last inference-sim release that runs them. Priority
 scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`,
 `--preemption-policy priority`, SLO priority overrides) is refused for now. The engine block must
 state `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs`

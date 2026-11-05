@@ -107,7 +107,7 @@ func devicesCLISubprocess() bool {
 
 	repos := defaultKernelRepos()
 	base := []string{
-		"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
+		"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", repos.Registry,
 		"--seed", "42",
 		"--defaults-filepath", "../defaults.yaml",
 		"--catalog", catalog,
