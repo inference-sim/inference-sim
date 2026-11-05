@@ -84,7 +84,7 @@ directly to WaitQueue. See [Architecture](concepts/architecture.md).
 | P/D disaggregation | Prefill and decode pools, KV handoff priced over the scenario's fabric. | [Cluster](guide/cluster.md) |
 | KV caching and offload | Prefix caching and tiered offload over catalog storage devices. | [KV cache](guide/kv-cache.md) |
 | Autoscaling | Node pools with provisioning delays (`--policy-config`). | [Cluster](guide/cluster.md) |
-| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/observe-replay-calibrate.md) |
+| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/replay.md) |
 | Results and analysis | TTFT/ITL/E2E, saturation detectors, decision traces, fitness. | [Results](guide/results.md) |
 
 ---

@@ -187,7 +187,7 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 		// stale past deadline on every wave-2+ session — instantly dropped on enqueue
 		// (simulator.go deadline guard), mass-cancelling the pool. Preserve the
 		// recorded deadline-relative-to-arrival gap by shifting the deadline by the
-		// same offset. (OTel corpora set no deadline; run/observe corpora do.)
+		// same offset. (OTel corpora set no deadline; run corpora do.)
 		if next.Deadline > 0 {
 			next.Deadline += tick - next.ArrivalTime
 		}

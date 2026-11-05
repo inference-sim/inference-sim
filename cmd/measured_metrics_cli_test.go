@@ -144,29 +144,6 @@ func TestVersionsFromBuildInfo(t *testing.T) {
 	}
 }
 
-// calibrate compares whole-run TTFT with whole-run throughput, so it reads whole_run's TTFT
-// from a file that has it (the top-level ttft_mean_ms is the measured window's) and the
-// top-level value from an older file without it.
-func TestLoadBLISAggregate_ReadsTheWholeRunTTFT(t *testing.T) {
-	dir := t.TempDir()
-	write := func(name, body string) string {
-		p := filepath.Join(dir, name)
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		return p
-	}
-	now := loadBLISAggregate(write("new.json",
-		`{"ttft_mean_ms": 50, "vllm_estimated_duration_s": 2, "total_output_tokens": 10, "whole_run": {"ttft_mean_ms": 70}}`))
-	if now.TTFTMs != 70 {
-		t.Errorf("TTFT %v, want whole_run's 70", now.TTFTMs)
-	}
-	old := loadBLISAggregate(write("old.json", `{"ttft_mean_ms": 50, "vllm_estimated_duration_s": 2, "total_output_tokens": 10}`))
-	if old.TTFTMs != 50 {
-		t.Errorf("TTFT %v, want the top-level 50 of a file without whole_run", old.TTFTMs)
-	}
-}
-
 // A run no kernel priced still states its provenance block, empty, so the file's shape does
 // not depend on the backend.
 func TestKernelProvenance_IsEmptyNotAbsentWithoutAKernel(t *testing.T) {
@@ -185,22 +162,6 @@ func TestKernelProvenance_IsEmptyNotAbsentWithoutAKernel(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"kernel_provenance": {}`) {
 		t.Errorf("the file must carry an empty kernel_provenance block:\n%s", data)
-	}
-}
-
-// cache_hit_rate is the GPU prefix cache's rate and cpu_tier_hit_rate the CPU tier's share
-// of the same queried tokens, so calibrate compares their sum against a tiered observation
-// (blocks either tier served) and the GPU rate alone against a GPU-cache observation.
-func TestLoadSimCacheHitRate_AddsTheCPUTierForATieredObservation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "m.json")
-	if err := os.WriteFile(path, []byte(`{"cache_hit_rate": 0.5, "cpu_tier_hit_rate": 0.2, "percentile_method": "numpy_linear"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	for source, want := range map[string]float64{"tiered": 0.7, "gpu-prefix-cache-fallback": 0.5} {
-		got, err := loadSimCacheHitRate(path, source)
-		if err != nil || got == nil || math.Abs(*got-want) > 1e-12 {
-			t.Errorf("source %s: %v (err %v), want %v", source, got, err, want)
-		}
 	}
 }
 

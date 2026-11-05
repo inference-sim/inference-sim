@@ -12,8 +12,7 @@ import (
 func TestSIM11_EveryTraceFieldHasAStatus(t *testing.T) {
 	for _, typ := range []reflect.Type{
 		reflect.TypeOf(TraceHeader{}), reflect.TypeOf(TraceRouterConfig{}), reflect.TypeOf(TraceKVOffloadConfig{}),
-		reflect.TypeOf(TraceKVOffloadTier{}), reflect.TypeOf(TraceServerConfig{}), reflect.TypeOf(TraceNetworkConfig{}),
-		reflect.TypeOf(TraceObservedKVMetrics{}), reflect.TypeOf(TraceRecord{}),
+		reflect.TypeOf(TraceKVOffloadTier{}), reflect.TypeOf(TraceRecord{}),
 	} {
 		table, ok := TraceFieldStatus(typ.Name())
 		if !ok {

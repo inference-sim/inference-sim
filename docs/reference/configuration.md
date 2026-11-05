@@ -436,63 +436,6 @@ lora:
 
 ---
 
-## blis observe
-
-!!! warning "Deprecated"
-    `blis observe` is deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)).
-
-Dispatches a workload to a real inference server and records request-level timing into TraceV2 files for later replay and calibration.
-
-### Required
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--server-url` | string | "" | Inference server URL (required). |
-| `--model` | string | "" | Model name for API requests (required). |
-| `--trace-header` | string | "" | Output path for TraceV2 header YAML (required). |
-| `--trace-data` | string | "" | Output path for TraceV2 data CSV (required). |
-
-### Workload Input
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--workload-spec` | string | "" | Path to WorkloadSpec YAML (alternative to `--rate` + distribution flags). |
-| `--rate` | float64 | 0 | Requests per second for distribution synthesis. |
-
-### Optional
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--api-key` | string | "" | Bearer token for server authentication. |
-| `--server-type` | string | "vllm" | Server type (`vllm`, `tgi`, etc.). |
-| `--max-concurrency` | int | 256 | Maximum simultaneous in-flight requests. |
-| `--warmup-requests` | int | 0 | Number of initial requests to exclude from trace. |
-| `--no-streaming` | bool | false | Disable streaming (use non-streaming HTTP). |
-| `--seed` | int64 | 42 | RNG seed for workload generation. |
-| `--horizon` | int64 | 0 | Observation horizon in microseconds (0 = from spec or unlimited). |
-| `--num-requests` | int | 0 | Maximum requests to generate (0 = from spec or unlimited). |
-
-### Distribution Synthesis
-
-Used when `--rate` is set instead of `--workload-spec`. Same flag names and defaults as `blis run`.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--prompt-tokens` | int | 512 | Average prompt token count. |
-| `--prompt-tokens-stdev` | int | 256 | Prompt token standard deviation. |
-| `--prompt-tokens-min` | int | 2 | Minimum prompt tokens. |
-| `--prompt-tokens-max` | int | 7000 | Maximum prompt tokens. |
-| `--output-tokens` | int | 512 | Average output token count. |
-| `--output-tokens-stdev` | int | 256 | Output token standard deviation. |
-| `--output-tokens-min` | int | 2 | Minimum output tokens. |
-| `--output-tokens-max` | int | 7000 | Maximum output tokens. |
-| `--prefix-tokens` | int | 0 | Shared prefix token count. |
-| `--api-format` | string | "completions" | API format: `completions` (`/v1/completions`) or `chat` (`/v1/chat/completions`). |
-| `--unconstrained-output` | bool | false | Do not set `max_tokens` (let server decide output length). |
-| `--rtt-ms` | float64 | 0 | Measured network round-trip time in milliseconds (recorded in trace header for calibrate). |
-
----
-
 ## blis replay
 
 Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns` (INV-13).
@@ -503,32 +446,13 @@ Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`)
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
-| `--timeout` | int | 300 | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round (round 0 and every session follow-up) keeps its own recorded `deadline_us`, or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. See [observe/replay/calibrate](../guide/observe-replay-calibrate.md#replay-specific-flags). |
-| `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
+| `--timeout` | int | 300 | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round (round 0 and every session follow-up) keeps its own recorded `deadline_us`, or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. See [Trace Replay](../guide/replay.md#replay-specific-flags). |
+| `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write a per-request JSON array (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`). Replay-only — `blis run` does not register it. |
 
 `blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under
 [Simulation Control](#simulation-control)); it is not replay-specific, so it is not repeated in the
 table above. The two are complementary rather than alternatives: `--results-path` writes per-request
-rows, `--metrics-path` writes the run aggregate that `blis calibrate --sim-metrics` reads.
-
----
-
-## blis calibrate
-
-!!! warning "Deprecated"
-    `blis calibrate` is deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)).
-
-Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--trace-header` | string | "" | Path to TraceV2 header YAML file (from `blis observe`; required). |
-| `--trace-data` | string | "" | Path to TraceV2 data CSV file (from `blis observe`; required). |
-| `--sim-results` | string | "" | Path to SimResult JSON file (from `blis replay --results-path`; required). |
-| `--report` | string | "" | Path to write calibration report JSON (required). |
-| `--warmup-requests` | int | -1 | Number of initial requests to exclude. Default: from trace header `warm_up_requests`; pass 0 to include all. |
-| `--network-rtt-us` | int64 | -1 | Network RTT in microseconds added to sim-side latencies. Default: from trace header `network.measured_rtt_ms`. |
-| `--network-bandwidth-mbps` | float64 | 0 | Network bandwidth in Mbps for upload/download delay calculation (0 = no delay). |
+rows, `--metrics-path` writes the run aggregate.
 
 ---
 
@@ -539,8 +463,8 @@ Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcomm
 ### `blis convert preset`
 
 Generates a WorkloadSpec from a named preset in the catalog
-(`<catalog>/workloads/<name>.yaml`, #1769 — the same definition `blis run --workload` and
-`blis observe --workload` read).
+(`<catalog>/workloads/<name>.yaml`, #1769 — the same definition `blis run --workload`
+reads).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

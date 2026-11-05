@@ -167,7 +167,7 @@ func runConvertOtel(inputPath, outPrefix string, opts workload.OTelConvertOption
 	header := &workload.TraceHeader{
 		Version:              3,
 		TimeUnit:             "microseconds",
-		Mode:                 "generated",
+		Mode:                 workload.TraceModeConverted,
 		SessionContextGrowth: growth,
 	}
 	if err := workload.ExportTraceV2(header, allRecords, outPrefix+".yaml", outPrefix+".csv"); err != nil {

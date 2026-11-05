@@ -2,44 +2,14 @@ package cmd
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
-
-// TestValidateObservedKVReplayable enforces BC-10 through the build site (requireOffloadForTieredObservation) (#1583): a tiered observed hit-rate
-// requires a reproducible offload config on replay; all other cases pass.
-func TestValidateObservedKVReplayable(t *testing.T) {
-	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered, HitRate: 0.5}
-	gpu := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceGPUCache, HitRate: 0.5}
-
-	if err := requireOffloadForTieredObservation(tiered, false); err == nil {
-		t.Error("tiered observation with offload DISABLED must error (BC-10)")
-	}
-	if err := requireOffloadForTieredObservation(tiered, true); err != nil {
-		t.Errorf("tiered observation with offload ENABLED must pass, got %v", err)
-	}
-	if err := requireOffloadForTieredObservation(gpu, false); err != nil {
-		t.Errorf("gpu-fallback observation must pass regardless of offload, got %v", err)
-	}
-	if err := requireOffloadForTieredObservation(nil, false); err != nil {
-		t.Errorf("nil observation must pass, got %v", err)
-	}
-}
-
-// TestValidateObservedKVReplayable_ErrorMentionsConfig verifies the BC-10 error is
-// actionable (names the missing config), not a bare failure.
-func TestValidateObservedKVReplayable_ErrorMentionsConfig(t *testing.T) {
-	tiered := &workload.TraceObservedKVMetrics{Source: workload.ObservedKVSourceTiered}
-	err := requireOffloadForTieredObservation(tiered, false)
-	if err == nil || !strings.Contains(err.Error(), "--kv-offload-config") {
-		t.Errorf("BC-10 error must point at --kv-offload-config, got %v", err)
-	}
-}
 
 // makeSharedPrefixGroupRequests builds requests that carry PrefixGroup + PrefixLength
 // so the shared prefix ROUND-TRIPS through the trace: RequestsToTraceRecords records
@@ -75,19 +45,19 @@ func makeSharedPrefixGroupRequests() []*sim.Request {
 	return reqs
 }
 
-// TestResolveReplayKVOffload_ObserveTraceAllowsFlagAdd verifies the #1583 fix for the
-// tiered observe→replay workflow: an observe trace (allowFlagAdd=true) with no header
-// offload config accepts a --kv-offload-config-supplied config to model the observed
-// deployment; a sim-generated trace (allowFlagAdd=false) still rejects it (INV-13).
-func TestResolveReplayKVOffload_ObserveTraceAllowsFlagAdd(t *testing.T) {
+// TestResolveReplayKVOffload_UnrecordedDeploymentAllowsFlagAdd verifies that a trace
+// recording no deployment (allowFlagAdd=true: a converted trace, #2067, or an agentic
+// replay) with no header offload config accepts a scenario- or flag-supplied config, and
+// a trace blis run wrote (allowFlagAdd=false) still rejects it (INV-13).
+func TestResolveReplayKVOffload_UnrecordedDeploymentAllowsFlagAdd(t *testing.T) {
 	flagCfg := kvOffloadConfig{
 		Enabled: true, CPUBytesToUse: 1 << 30, BlockSize: 16, BlocksPerChunk: 1,
 		TokensPerHash: 16, EvictionPolicy: "lru", OffloadPromptOnly: true,
 	}
-	// Observe trace: no header offload, flag supplied, add ALLOWED.
+	// No recorded deployment: no header offload, flag supplied, add ALLOWED.
 	got, err := resolveReplayKVOffload(nil, true, flagCfg, true)
 	if err != nil {
-		t.Fatalf("observe trace must accept --kv-offload-config, got %v", err)
+		t.Fatalf("a trace recording no deployment must accept --kv-offload-config, got %v", err)
 	}
 	if !got.IsEnabled() {
 		t.Fatal("returned config should be the flag-supplied offload config")
@@ -100,7 +70,7 @@ func TestResolveReplayKVOffload_ObserveTraceAllowsFlagAdd(t *testing.T) {
 
 // TestINV13_RunReplayParity_CacheHitRate verifies BC-5: with the KV-offload chain
 // active, a run and a replay of the same shared-prefix requests produce identical
-// aggregate cache_hit_rate — the value calibrate reads from --metrics-path (INV-13).
+// aggregate cache_hit_rate, the value --metrics-path writes (INV-13).
 func TestINV13_RunReplayParity_CacheHitRate(t *testing.T) {
 	const fixedSeed int64 = 99
 	requests := makeSharedPrefixGroupRequests()

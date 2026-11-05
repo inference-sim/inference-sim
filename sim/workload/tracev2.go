@@ -18,8 +18,7 @@ import (
 type TraceHeader struct {
 	Version        int    `yaml:"trace_version"`
 	TimeUnit       string `yaml:"time_unit"`
-	CreatedAt      string `yaml:"created_at,omitempty"`
-	Mode           string `yaml:"mode"` // "real" (blis observe), "generated" (blis run), or "replayed" (blis replay)
+	Mode           string `yaml:"mode"` // TraceModeGenerated, TraceModeReplayed or TraceModeConverted
 	WarmUpRequests int    `yaml:"warm_up_requests"`
 	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
 	// WorkloadSpec records workload provenance:
@@ -36,11 +35,9 @@ type TraceHeader struct {
 	// (pre-existing behavior). Set by `blis convert otel`.
 	SessionContextGrowth string `yaml:"session_context_growth,omitempty"`
 
-	Server  *TraceServerConfig  `yaml:"server,omitempty"`
-	Network *TraceNetworkConfig `yaml:"network,omitempty"`
 	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
-	// measurement (issue #1409, BC-8). Persisted in trace headers so observe →
-	// replay → calibrate carry the same SLO definition. Schema bump to trace
+	// measurement (issue #1409, BC-8). Persisted in trace headers so run and
+	// replay carry the same SLO definition. Schema bump to trace
 	// version 3; old binaries reading new traces will hard-fail under
 	// KnownFields(true) — intentional, signaled by Version (BC-N3).
 	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
@@ -53,17 +50,6 @@ type TraceHeader struct {
 	// physics regardless of the replay host's defaults.yaml; replay uses them
 	// authoritatively and logrus.Fatalf's on any config it cannot reconstruct.
 	KVOffload *TraceKVOffloadConfig `yaml:"kv_offload,omitempty"`
-
-	// ObservedKVMetrics records the REAL server's KV-cache hit-rate scraped from its
-	// Prometheus /metrics endpoint during `blis observe --scrape-kv-metrics` (#1583).
-	// It is a resolved-observation block (engine-level counters, not per-request), so
-	// it lives in the header rather than a per-record column. Absent (nil, omitempty)
-	// unless --scrape-kv-metrics was set and a recognized counter family was found —
-	// so a default observe writes a byte-identical header (BC-8). It is real-side
-	// ground truth: replay preserves it verbatim on re-export (BC-4) and never
-	// regenerates it. `blis calibrate` compares it against the simulator's own
-	// aggregate cache_hit_rate.
-	ObservedKVMetrics *TraceObservedKVMetrics `yaml:"observed_kv_metrics,omitempty"`
 
 	// MaxNodesSpanned records the largest number of physical nodes any single model
 	// instance occupied during the source run (#1530). Written by `blis run` only when
@@ -91,8 +77,8 @@ type TraceHeader struct {
 	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
 
 	// Router records the inputs of the llm-d router the source run routed with, so a replay
-	// rebuilds the same router (INV-13). Absent from traces of real systems (blis observe)
-	// and from traces written before the router was embedded.
+	// rebuilds the same router (INV-13). Absent from converted traces and from traces
+	// written before the router was embedded.
 	Router *TraceRouterConfig `yaml:"router,omitempty"`
 }
 
@@ -138,41 +124,10 @@ type TraceRouterConfig struct {
 	Seed *int64 `yaml:"seed,omitempty"`
 }
 
-// TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM
-// server's Prometheus /metrics endpoint over the measured observation window (#1583).
-// It is a workload-package struct — decoupled from any sim type — so the on-disk trace
-// format is stable, mirroring the TraceKVOffloadConfig / TraceServerConfig precedent.
-// Read strictly (KnownFields) via LoadTraceV2, so an unknown sub-key is a hard error.
-type TraceObservedKVMetrics struct {
-	// Source names which counter family produced HitRate:
-	//   "tiered"                    — vllm:kv_offload_tiering_block_hits/_block_queries
-	//                                 (the multi-tier offload family; requires an
-	//                                 unreleased vLLM, PR #48798).
-	//   "gpu-prefix-cache-fallback" — vllm:gpu_prefix_cache_* (released vLLM, GPU-only).
-	//                                 A distinct, weaker signal — never conflated with a
-	//                                 tiered number.
-	Source string `yaml:"source"`
-	// HitRate is a fraction in [0,1]: BlockHits/BlockQueries over the measured window.
-	HitRate float64 `yaml:"hit_rate"`
-	// BlockHits and BlockQueries are the cumulative-counter DELTAS over the measured
-	// window (end − start), summed across all per-tier label series of the family.
-	BlockHits    int64 `yaml:"block_hits"`
-	BlockQueries int64 `yaml:"block_queries"`
-	// ReadTimeTotal and WriteTimeTotal are the per-tier read/write time deltas summed
-	// across the family (vLLM native seconds), recorded for the documented manual
-	// bandwidth cross-check. Informational — not part of the automated comparison.
-	ReadTimeTotal  float64 `yaml:"read_time_total,omitempty"`
-	WriteTimeTotal float64 `yaml:"write_time_total,omitempty"`
-	// VLLMCommit is the pinned vLLM commit the cluster ran (operator-supplied via
-	// --vllm-commit), recorded so the dependency on an unreleased vLLM is explicit.
-	VLLMCommit string `yaml:"vllm_commit,omitempty"`
-}
-
 // TraceKVOffloadConfig is the trace-header serialization of a resolved
 // sim.KVOffloadConfig (H5, #1587). It is a workload-package struct — decoupled from
 // sim.KVOffloadConfig so the on-disk trace format is stable independent of the
-// internal config type — mirroring the TraceServerConfig / TraceNetworkConfig
-// precedent. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
+// internal config type. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
 // LoadTraceV2, so an unknown offload sub-key is a hard error (BC-N3 version guard).
 type TraceKVOffloadConfig struct {
 	CPUBytesToUse          int64                `yaml:"cpu_bytes_to_use"`
@@ -213,29 +168,12 @@ type TraceKVOffloadTier struct {
 	LatencyJitterStddev float64 `yaml:"latency_jitter_stddev"`
 }
 
-// TraceServerConfig captures server configuration in trace header.
-type TraceServerConfig struct {
-	Type                 string  `yaml:"type,omitempty"`
-	Model                string  `yaml:"model,omitempty"`
-	TensorParallel       int     `yaml:"tensor_parallel,omitempty"`
-	MaxNumSeqs           int     `yaml:"max_num_seqs,omitempty"`
-	BlockSize            int     `yaml:"block_size,omitempty"`
-	GPUMemoryUtilization float64 `yaml:"gpu_memory_utilization,omitempty"`
-	MaxModelLen          int64   `yaml:"max_model_len,omitempty"`
-}
-
-// TraceNetworkConfig captures network configuration in trace header.
-type TraceNetworkConfig struct {
-	MeasuredRTTMs float64 `yaml:"measured_rtt_ms,omitempty"`
-}
-
 // TraceRecord represents one row in a trace v2 CSV.
 type TraceRecord struct {
 	RequestID         int
 	ClientID          string
 	TenantID          string
 	SLOClass          string
-	VLLMPriority      int // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
@@ -260,7 +198,6 @@ type TraceRecord struct {
 	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
-	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
 	// ThinkTimeUs is the recorded per-round client think time in µs (gap from the
 	// previous request's end), set by agentic-trace converters (#1478) and preferred
@@ -343,22 +280,8 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 		}
 	}
 
-	// Conditionally include x_request_id column: present iff any record has a non-empty
-	// UUID AND the trace is from a real run. Mode-gated to ensure replay re-exports never
-	// emit UUIDs (which would no longer correspond to real EPP routing decisions).
-	// Issue #1428.
-	includeXRequestID := false
-	if header.Mode == "real" {
-		for _, r := range records {
-			if r.XRequestID != "" {
-				includeXRequestID = true
-				break
-			}
-		}
-	}
-
 	// Conditionally include adapter column (#1464): present iff any record carries
-	// a non-empty LoRA adapter id. Trailing position (like x_request_id) keeps the
+	// a non-empty LoRA adapter id. Trailing position keeps the
 	// positional parser's index math untouched. Omitted for adapter-blind traces so
 	// the no-op default adds no columns (INV-6).
 	includeAdapter := false
@@ -371,8 +294,8 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 
 	// Conditionally include think_time_us column (#1478): present iff any record carries
 	// a RECORDED (non-nil) think time — including a recorded &0 (#1608). Trailing position
-	// (like x_request_id / adapter) keeps the positional parser's index math untouched.
-	// Omitted when no record recorded think, so traces that never set it (e.g. observe,
+	// (like adapter) keeps the positional parser's index math untouched.
+	// Omitted when no record recorded think, so traces that never set it (e.g.
 	// generated, convert otel) add no column (INV-6 byte-identity).
 	includeThinkTime := false
 	for _, r := range records {
@@ -385,7 +308,7 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 	// Conditionally include input_tokens_reset column (#1609): present iff any record
 	// carries a compaction reset marker (non-nil). Trailing position (like adapter /
 	// think_time_us) keeps the positional parser's index math untouched. Omitted for
-	// traces with no compaction round, so run/observe/monotone traces add no column
+	// traces with no compaction round, so run/monotone traces add no column
 	// (INV-6 byte-identity).
 	includeInputTokensReset := false
 	for _, r := range records {
@@ -395,39 +318,17 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 		}
 	}
 
-	// Conditionally include vllm_priority column: present iff priority was actually computed.
-	// Include when either:
-	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
-	// 2. Any record has SLOClass in "real" mode (covers critical=0 from observe)
-	// This prevents misleading empty columns in simulation traces (Mode != "real") where
-	// priority was never sent to a server, even if SLOClass is set for admission control.
-	includeVLLMPriority := false
-	for _, r := range records {
-		if r.VLLMPriority != 0 || (r.SLOClass != "" && header.Mode == "real") {
-			includeVLLMPriority = true
-			break
-		}
-	}
-
 	// Build column header list
 	columns := make([]string, 0, len(traceV2Columns)+3)
-	for i, col := range traceV2Columns {
+	for _, col := range traceV2Columns {
 		columns = append(columns, col)
-		// Insert vllm_priority immediately after slo_class (index 3)
-		if i == 3 && includeVLLMPriority {
-			columns = append(columns, "vllm_priority")
-		}
 		// Insert slo_target_us immediately after deadline_us (matched by name)
 		if col == "deadline_us" && includeSLOTarget {
 			columns = append(columns, "slo_target_us")
 		}
 	}
-	// Append x_request_id at end (issue #1428): trailing position avoids shifting
-	// indices in the positional parser.
-	if includeXRequestID {
-		columns = append(columns, "x_request_id")
-	}
-	// Append adapter at end (#1464): also trailing; parsed by header-position lookup.
+	// Append adapter at end (#1464): trailing, so it shifts no index in the positional
+	// parser; parsed by header-position lookup.
 	if includeAdapter {
 		columns = append(columns, "adapter")
 	}
@@ -452,13 +353,6 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 			r.ClientID,
 			r.TenantID,
 			r.SLOClass,
-		}
-		// Conditionally append vllm_priority after slo_class
-		if includeVLLMPriority {
-			row = append(row, strconv.Itoa(r.VLLMPriority))
-		}
-		// Continue with remaining fields
-		row = append(row,
 			r.SessionID,
 			strconv.Itoa(r.RoundIndex),
 			r.PrefixGroup,
@@ -473,7 +367,7 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
 			r.Model,
 			strconv.FormatInt(r.DeadlineUs, 10),
-		)
+		}
 		if includeSLOTarget {
 			row = append(row, strconv.FormatInt(r.SLOTargetUs, 10))
 		}
@@ -488,10 +382,6 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 			r.ErrorMessage,
 			r.FinishReason,
 		)
-		// Append x_request_id at end (issue #1428).
-		if includeXRequestID {
-			row = append(row, r.XRequestID)
-		}
 		// Append adapter at end (#1464).
 		if includeAdapter {
 			row = append(row, r.Adapter)
@@ -538,6 +428,9 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	if err := decoder.Decode(&header); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
 	}
+	if err := validateTraceMode(header.Mode); err != nil {
+		return nil, fmt.Errorf("parsing trace header: %w", err)
+	}
 	if err := header.Validate(); err != nil {
 		return nil, fmt.Errorf("trace header %s: %w", headerPath, err)
 	}
@@ -559,20 +452,20 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	}
 
 	// Detect optional columns from header
-	hasVLLMPriority := false
 	hasSLOTarget := false
-	xRequestIDIdx := -1       // header-position lookup; -1 = absent (issue #1428)
 	adapterIdx := -1          // header-position lookup; -1 = absent (#1464)
 	thinkTimeUsIdx := -1      // header-position lookup; -1 = absent (#1478)
 	inputTokensResetIdx := -1 // header-position lookup; -1 = absent (#1609)
 	for i, col := range headerRow {
 		switch col {
-		case "vllm_priority":
-			hasVLLMPriority = true
+		case "vllm_priority", "x_request_id":
+			// Only blis observe wrote these columns, and v0.16.0 removed it (#1901).
+			// vllm_priority sat after slo_class, so reading past it would shift every
+			// later column; the file is refused rather than misread.
+			return nil, fmt.Errorf("trace data column %q is not supported: only blis observe "+
+				"wrote it, which v0.16.0 removed (#1901)", col)
 		case "slo_target_us":
 			hasSLOTarget = true
-		case "x_request_id":
-			xRequestIDIdx = i
 		case "adapter":
 			adapterIdx = i
 		case "think_time_us":
@@ -592,13 +485,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
 		minCols := len(traceV2Columns)
-		if hasVLLMPriority {
-			minCols++
-		}
 		if hasSLOTarget {
-			minCols++
-		}
-		if xRequestIDIdx >= 0 {
 			minCols++
 		}
 		if adapterIdx >= 0 {
@@ -614,7 +501,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
+		r, err := parseTraceRecord(row, hasSLOTarget, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -631,35 +518,18 @@ func rowError(requestID int, err error) error {
 	return fmt.Errorf("trace row request_id %d: %w", requestID, err)
 }
 
-// parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
-// (after slo_class), slo_target_us (after deadline_us), and the trailing
-// columns x_request_id, adapter, think_time_us, and input_tokens_reset.
-// xRequestIDIdx, adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute
-// column indices in the row, or -1 if the respective column is absent.
-func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
-	// Column offset: optional columns shift subsequent indices.
-	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
-	// slo_target_us appears after deadline_us → shifts everything after by +1.
+// parseTraceRecord parses a CSV row. Handles the optional column slo_target_us (after
+// deadline_us) and the trailing columns adapter, think_time_us, and input_tokens_reset.
+// adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute column indices in the
+// row, or -1 if the respective column is absent.
+func parseTraceRecord(row []string, hasSLOTarget bool, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
+	// Column offset: slo_target_us appears after deadline_us and shifts every later
+	// column by +1.
 	offset := 0
-	if hasVLLMPriority {
-		offset = 1
-	}
 
 	requestID, err := strconv.Atoi(row[0])
 	if err != nil {
 		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
-	}
-
-	// Parse vllm_priority if present (index 4, immediately after slo_class at index 3)
-	vllmPriority := 0
-	if hasVLLMPriority {
-		vllmPriority, err = strconv.Atoi(row[4])
-		if err != nil {
-			return nil, fmt.Errorf("parsing vllm_priority %q: %w", row[4], err)
-		}
-		if err := check.Count("vllm_priority", int64(vllmPriority)); err != nil {
-			return nil, rowError(requestID, err)
-		}
 	}
 
 	roundIndex, err := strconv.Atoi(row[5+offset])
@@ -802,13 +672,6 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	}
 	finishReason := strings.TrimSpace(row[26+offset])
 
-	// Optional x_request_id at trailing column (issue #1428): looked up by
-	// absolute header position so the index math above is unaffected.
-	var xRequestID string
-	if xRequestIDIdx >= 0 && xRequestIDIdx < len(row) {
-		xRequestID = strings.TrimSpace(row[xRequestIDIdx])
-	}
-
 	// Optional adapter at trailing column (#1464): looked up by absolute header
 	// position so the positional index math above is unaffected.
 	var adapter string
@@ -857,7 +720,6 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		ClientID:          row[1],
 		TenantID:          row[2],
 		SLOClass:          row[3],
-		VLLMPriority:      vllmPriority,
 		SessionID:         row[4+offset],
 		RoundIndex:        roundIndex,
 		PrefixGroup:       row[6+offset],
@@ -882,7 +744,6 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		Status:            row[24+offset],
 		ErrorMessage:      strings.TrimSpace(row[25+offset]),
 		FinishReason:      finishReason,
-		XRequestID:        xRequestID,
 		Adapter:           adapter,
 		ThinkTimeUs:       thinkTimeUs,
 		InputTokensReset:  inputTokensReset,
@@ -967,88 +828,4 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 		})
 	}
 	return records
-}
-
-// TraceRecordsToRequests converts TraceRecords to sim.Request objects for saturation analysis.
-// Maps observed timing data to Request fields as follows:
-//   - ArrivalTime: ArrivalTimeUs from trace
-//   - FirstTokenTime: FirstChunkTimeUs - ArrivalTimeUs (TTFT)
-//   - ITL: approximated as single value (LastChunkTimeUs - FirstChunkTimeUs) / (OutputTokens - 1)
-//   - TTFTSet: true if FirstChunkTimeUs > 0 (request reached first token)
-//   - State: derived from Status field ("ok" → Completed, "timeout" → TimedOut, "error" → TimedOut)
-//
-// Note: This is a lossy conversion — trace records don't store per-token ITL, so we use
-// a uniform approximation. For exact ITL data, use --record-itl during observe.
-// Returns empty slice if input is nil or empty.
-func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
-	if len(records) == 0 {
-		return []*sim.Request{}
-	}
-
-	requests := make([]*sim.Request, 0, len(records))
-	for _, rec := range records {
-		req := &sim.Request{
-			ArrivalTime:  rec.ArrivalTimeUs,
-			OutputTokens: []sim.TokenID{sim.TokenID(rec.OutputTokens)},
-		}
-
-		// TTFTSet and FirstTokenTime
-		if rec.FirstChunkTimeUs > 0 {
-			req.TTFTSet = true
-			req.FirstTokenTime = rec.FirstChunkTimeUs - rec.ArrivalTimeUs
-		}
-
-		// State mapping
-		switch rec.Status {
-		case "ok":
-			req.State = sim.StateCompleted
-		case "timeout", "error":
-			req.State = sim.StateTimedOut
-		default:
-			req.State = sim.StateRunning // Unknown status, treat as running
-		}
-
-		// ITL approximation: distribute total decode time uniformly across output tokens
-		if rec.OutputTokens > 1 && rec.LastChunkTimeUs > rec.FirstChunkTimeUs {
-			totalDecodeUs := rec.LastChunkTimeUs - rec.FirstChunkTimeUs
-			numITL := rec.OutputTokens - 1 // N tokens = N-1 inter-token intervals
-			avgITL := totalDecodeUs / int64(numITL)
-			req.ITL = make([]int64, numITL)
-			for i := range req.ITL {
-				req.ITL[i] = avgITL
-			}
-		} else if rec.OutputTokens == 1 && req.TTFTSet {
-			// Single-token response: no ITL
-			req.ITL = []int64{}
-		}
-
-		requests = append(requests, req)
-	}
-
-	return requests
-}
-
-// TraceRecordsToRequestMetrics converts trace records to RequestMetrics for saturation detectors.
-// Only includes completed requests (Status == "ok") with valid E2E latency (> 0).
-// This matches the filtering logic in printObserveMetrics (observe_cmd.go:610).
-// CRITICAL UNITS: ArrivedAt is in SECONDS (not milliseconds), E2E is in milliseconds.
-// This matches the canonical constructor in sim/simulator.go:261 which sets ArrivedAt as float64(req.ArrivalTime)/1e6.
-func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
-	metrics := make([]sim.RequestMetrics, 0, len(records))
-	for _, rec := range records {
-		if rec.Status != "ok" {
-			continue // Only include completed requests
-		}
-		// Compute E2E and filter invalid latencies (clock skew, malformed records)
-		e2eMs := float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0
-		if e2eMs <= 0 {
-			continue // Skip records with non-positive E2E (matches printObserveMetrics filter)
-		}
-		metrics = append(metrics, sim.RequestMetrics{
-			ID:        fmt.Sprintf("request_%d", rec.RequestID), // matches sim's request_%d ids (extractor parity, #1516)
-			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6,         // µs → seconds (CRITICAL: not ms!)
-			E2E:       e2eMs,                                    // µs → ms
-		})
-	}
-	return metrics
 }

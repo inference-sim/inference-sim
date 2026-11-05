@@ -34,20 +34,18 @@ Examples:
 
 ## Adding Fields to TraceV2 Format
 
-To add a new field to TraceV2 CSV output (e.g., observability metadata like `vllm_priority`):
+To add a new field to TraceV2 CSV output (e.g., a per-round value a converter records, like `think_time_us`):
 
 1. **Add field to `TraceRecord`** in `sim/workload/tracev2.go` (place logically near related fields)
-2. **Add field to `RequestRecord`** in `cmd/observe.go` (if captured during observation)
-3. **Capture the value** in `RealClient.Send()` in `cmd/observe.go` (set field on `RequestRecord`)
-4. **Wire through Recorder** in `cmd/observe.go`: Update `RecordRequest()` to copy field from `RequestRecord` to `TraceRecord`
-5. **Update ExportTraceV2** in `sim/workload/tracev2.go`:
+2. **Set it where records are built**: `RequestsToTraceRecords` (run's export), `ReExportClosedLoopRecords` (replay's re-export) or the converter that records it
+3. **Update ExportTraceV2** in `sim/workload/tracev2.go`:
    - For **optional columns**: scan records to determine if column is needed, conditionally add to header, conditionally write values
    - For **always-present columns**: add to `traceV2Columns` slice and write in row construction
-6. **Update LoadTraceV2/parseTraceRecord** in `sim/workload/tracev2.go`:
-   - For **optional columns**: detect column presence from CSV header, apply offset to subsequent column indices
+4. **Update LoadTraceV2/parseTraceRecord** in `sim/workload/tracev2.go`:
+   - For **optional columns**: append them after the fixed columns and look them up by header position, so no later index moves
    - For **always-present columns**: parse at fixed index, update all downstream indices
-7. **Enforce simulation isolation** (if observability-only): Verify `LoadTraceV2Requests` and `LoadTraceV2SessionBlueprints` do NOT read the field into `sim.Request` — add tests for this
-8. **Add behavioral tests** covering round-trip, conditional logic, and simulation isolation
+5. **Enforce simulation isolation** (if observability-only): Verify `LoadTraceV2Requests` and `LoadTraceV2SessionBlueprints` do NOT read the field into `sim.Request` — add tests for this
+6. **Add behavioral tests** covering round-trip, conditional logic, and simulation isolation
 
 **Column position guidelines:**
 - Observability metadata: place near related fields (e.g., `vllm_priority` after `slo_class`)

@@ -8,7 +8,7 @@ import (
 
 // ComputeSimEndUs computes the simulation end time from request completion times.
 // Returns max(all completion times, horizon) where horizon is used as a floor if > 0.
-// This is the canonical simEndUs calculation used by run, replay, and calibrate commands.
+// This is the canonical simEndUs calculation.
 func ComputeSimEndUs(requests []*sim.Request, horizon int64) int64 {
 	simEndUs := int64(0)
 	for _, req := range requests {

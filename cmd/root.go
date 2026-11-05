@@ -25,10 +25,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// distDefaults are the shared default values for distribution synthesis flags.
-// Both runCmd and observeCmd use these constants so the two commands produce
-// identical workload shapes when called with no explicit distribution flags.
-// Changing a value here affects both commands simultaneously.
+// distDefaults are the default values for distribution synthesis flags.
 //
 // Flags covered:
 //
@@ -37,9 +34,6 @@ import (
 //
 // NOT covered: --prefix-tokens (default 0 means "no shared prefix", a feature toggle,
 // not a distribution shape parameter).
-//
-// --num-requests is intentionally NOT shared: run defaults to 100 (safe for quick sims),
-// observe defaults to 0 (requires explicit bound — see observe_cmd.go).
 const (
 	defaultPromptMean  = 512
 	defaultPromptStdev = 256
@@ -812,7 +806,7 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("%v", err)
 			}
 			// #1769: the preset is read from <catalog>/workloads/<name>.yaml, through the
-			// same reader `blis convert preset` and `blis observe --workload` use.
+			// same reader `blis convert preset` uses.
 			wl, presetErr := loadPresetWorkload(workloadType)
 			if presetErr != nil {
 				logrus.Fatalf("--workload %q could not be resolved: %v\n"+
@@ -1259,7 +1253,7 @@ var runCmd = &cobra.Command{
 				TimeUnit:          "microseconds",
 				Mode:              "generated",
 				WorkloadSeed:      &spec.Seed,
-				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay/calibrate
+				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay
 				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
 				// #1530: record multi-node placement so replay can refuse a trace whose
 				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
@@ -1560,7 +1554,7 @@ func init() {
 	runCmd.Flags().IntVar(&outputTokensMax, "output-tokens-max", defaultOutputMax, "Max Output Token Count")
 	runCmd.Flags().StringVar(&workloadSpecPath, "workload-spec", "", "Path to YAML workload specification file (overrides --workload)")
 	runCmd.Flags().BoolVar(&lazyGeneration, "lazy-generation", false, "Alpha (#1441): stream requests from the workload generator instead of pre-generating the full slice. Default off. Supports every workload class — single-shot, single- and multi-session reasoning (#1458), concurrency clients (#1459), and time-varying / per-window workloads (#1460); no eager fallback.")
-	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected. Consistent with blis observe: both commands reject 0.")
+	runCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "Per-request deadline in seconds (default 300s matches the session-client default in computeDeadline). Negative = disabled; 0 is rejected.")
 	runCmd.Flags().StringVar(&goodputSLOTTFT, "slo-ttft", "", "Per-class TTFT goodput thresholds (e.g. \"critical=100ms,standard=500ms\"). Precedence: CLI > trace header > workload spec.")
 	runCmd.Flags().StringVar(&goodputSLOITL, "slo-itl", "", "Per-class mean ITL goodput thresholds (e.g. \"critical=50ms,standard=150ms\").")
 	runCmd.Flags().StringVar(&goodputSLOE2E, "slo-e2e", "", "Per-class E2E goodput thresholds (e.g. \"critical=5s,standard=30s\").")

@@ -554,9 +554,9 @@ rate was 0.8723.
 run's records changes no measured aggregate, `cache_hit_rate` and `cpu_tier_hit_rate` included.
 With no phase set and no explicit window the measured set is every completed request:
 `step_interval_*` equals the legacy `itl_*`, and `e2e_*` equals stdout's when the completion
-overhead is zero. The file's `ttft_*` population is completed measured requests; stdout's (kept
-under `whole_run`) also counts a request that emitted a first token and did not complete, so the
-two agree only when there is none.
+overhead is zero. The file's `ttft_*` population is completed measured requests; the whole run's
+also counts a request that emitted a first token and did not complete, so the two agree only when
+there is none.
 
 **Verification:** `TestBuildMeasured_AddingWarmupRequestsChangesNothingMeasured` (rapid, with
 lookups), `TestBuildMeasured_WithNoPhaseEveryCompletedRequestIsMeasured` (step series, E2E and the

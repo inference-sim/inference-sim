@@ -7,8 +7,7 @@ package sim
 // therefore it cannot affect stdout (INV-6).
 //
 // This hook applies to both blis run and blis replay (both drive simulation
-// through ClusterSimulator.Run). It does not apply to blis observe, which
-// communicates with a real server.
+// through ClusterSimulator.Run).
 type ProgressHook interface {
 	OnProgress(snapshot ProgressSnapshot)
 }

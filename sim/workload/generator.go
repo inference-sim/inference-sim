@@ -757,8 +757,6 @@ func expandClientsAndCohorts(spec *WorkloadSpec) error {
 }
 
 // DefaultTimeoutUs is the default per-request timeout (300s = 5 minutes).
-// Matches cmd/observe.go HTTP client timeout for consistency between
-// simulated and real-backend modes.
 const DefaultTimeoutUs = 300_000_000
 
 // computeDeadline derives the absolute deadline tick for a request.

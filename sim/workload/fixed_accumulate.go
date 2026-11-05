@@ -147,9 +147,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		// abs_0 from the server count while the encoder wrote deltas over the InputTokens
 		// column would shift every later reconstructed absolute by (server − input).
 		// Unreachable today — no converter (weka/otel) or re-exporter sets ServerInputTokens
-		// on an accumulate corpus, and observe (the only ServerInputTokens producer) never
-		// emits session_context_growth=accumulate, so such a trace is rejected by the CLI
-		// guard before reaching here. Left as a documented boundary rather than a guard.
+		// on an accumulate corpus. Left as a documented boundary rather than a guard.
 		r0Suffix := tokens(roundStreams(session, 0), purposeInputTokens, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
 		buf.Append(r0Suffix)
 

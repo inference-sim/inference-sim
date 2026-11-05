@@ -88,7 +88,7 @@ var convertPresetCmd = &cobra.Command{
 		}
 		// #1769: presets come from the catalog (<catalog>/workloads/<name>.yaml), not from
 		// the bundled defaults.yaml, so --name resolves identically here and under
-		// `blis run --workload` / `blis observe --workload`.
+		// `blis run --workload`.
 		wl, err := loadPresetWorkload(presetName)
 		if err != nil {
 			logrus.Fatalf("--name %q: %v", presetName, err)

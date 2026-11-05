@@ -146,8 +146,8 @@ func TestDefaultsSchemaDocMatchesConfigStruct(t *testing.T) {
 // doc claim cannot be "corrected" into a second falsehood if the flag registration changes.
 //
 // Retired claim: `--metrics-path` is "blis run only — blis replay uses --results-path
-// instead". #1583 put --metrics-path on replay (that is how `blis calibrate --sim-metrics`
-// gets a replayed cache_hit_rate); --results-path is the replay-only PER-REQUEST path, a
+// instead". #1583 put --metrics-path on replay (it carries a replayed cache_hit_rate);
+// --results-path is the replay-only PER-REQUEST path, a
 // complement rather than a substitute.
 func TestMetricsPathDocumentedOnRunAndReplay(t *testing.T) {
 	// Behavioral anchor: the documented shape is the real one.

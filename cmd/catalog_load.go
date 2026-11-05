@@ -315,8 +315,8 @@ func readCatalogHardwareEntry(path string) (*hardware.Chip, error) {
 }
 
 // loadCatalogWorkloadEntries loads every workloads/<name>.yaml: a replay workload through
-// blis-schemas' LoadCatalogWorkload, and a preset through readCatalogPresetWorkload — the production reader shared by `blis run --workload`,
-// `blis observe --workload` and `blis convert preset --name` (#1769).
+// blis-schemas' LoadCatalogWorkload, and a preset through readCatalogPresetWorkload — the production reader shared by `blis run --workload`
+// and `blis convert preset --name` (#1769).
 func loadCatalogWorkloadEntries(root string) (int, []string) {
 	dir := filepath.Join(root, catalogWorkloadsSubdir)
 	paths, err := catalogYAMLFiles(dir)
