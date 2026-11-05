@@ -139,6 +139,9 @@ type Model struct {
 	// requested one for the model's architecture, the chip's family and the TP width
 	// (rules.EngineRules.ResolveCacheDType), the key a cache record is read by (KVLayers).
 	cacheDType string
+	// resolved is the pool's engine settings as its release resolves them (resolveEngine): for
+	// vLLM 0.32.0 the batch settings a deployment leaves unstated, with each one's source.
+	resolved resolvedEngine
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -345,6 +348,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, err
 	}
 	m.engine = engine
+	m.resolved = resolveEngine(in, engine)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by
@@ -745,39 +749,10 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 // smallest step in the evaluation corpus (553 us for an empty batch) is under 0.2%.
 func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() }
 
-// Engine reports the engine settings of the pool this kernel prices.
-//
-// A caller configuring a simulator needs the same block size, token budget and sequence cap
-// the kernel resolved against, or the two would describe different deployments: a scheduler
-// admitting 512 sequences while the kernel priced a 256-sequence engine is not a
-// disagreement the numbers would reveal.
-//
-// It returns the deployment's own values rather than a copy with defaults filled in, and
-// errors when a value a simulator requires is absent, so a missing setting is a failure
-// rather than a silent zero.
-//
-// The settings live on the DEPLOYMENT as of blis-schemas v0.2.0: engine knobs are tunable
-// configuration chosen against a scenario, not part of the immutable problem it states.
-// The error text says "deployment" for the same reason -- a reader told the scenario lacks
-// a block_size would look in the wrong document.
 // DPLoadBalancing is the pool's parallel.data_parallel_load_balancing as stated ("" is
 // internal; blis-schemas#76).
 func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
 	return m.k.Deployment().Parallel.DataParallelLoadBalancing
-}
-
-func (m *Model) Engine() (engineconfig.Engine, error) {
-	e := m.engine
-	if e.BlockSize <= 0 {
-		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
-	}
-	if e.MaxNumSeqs <= 0 {
-		return e, fmt.Errorf("kernelmodel: deployment states no max_num_seqs")
-	}
-	if e.MaxNumBatchedTokens <= 0 {
-		return e, fmt.Errorf("kernelmodel: deployment states no max_num_batched_tokens")
-	}
-	return e, nil
 }
 
 // DataParallelWidth is the pool's attention data-parallel width.
