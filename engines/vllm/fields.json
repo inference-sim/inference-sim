@@ -4507,9 +4507,9 @@
     {
       "name": "VLLM_USE_SIMPLE_KV_OFFLOAD",
       "source": "env",
-      "status": "inert_unproven",
+      "status": "not_modelled",
       "evidence": {
-        "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: Selects SimpleCPUOffloadConnector for --kv-offloading-size; the connector is read from kv_transfer_config."
+        "issue": "inference-sim/blis-vllm#60"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -5979,11 +5979,9 @@
     {
       "name": "data_parallel_external_lb",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "rules/v0_32/pack_test.go"
-        ]
+        "issue": "inference-sim/blis-vllm#55"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -5992,11 +5990,9 @@
     {
       "name": "data_parallel_hybrid_lb",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "rules/v0_32/pack_test.go"
-        ]
+        "issue": "inference-sim/blis-vllm#64"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6052,12 +6048,9 @@
     {
       "name": "data_parallel_size_local",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "core/engine/testdata/golden-dp/dp4-lb.json",
-          "rules/v0_32/pack_test.go"
-        ]
+        "issue": "inference-sim/blis-vllm#55"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6865,6 +6858,7 @@
       "status": "modelled",
       "evidence": {
         "traces": [
+          "core/sched/testdata/golden/meta-more-kv-small.json",
           "core/sched/testdata/golden/prefix-cache.json"
         ]
       },
@@ -7018,11 +7012,9 @@
     {
       "name": "engram_config.cpu_offload",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "kerneltests/weights_test.go"
-        ]
+        "issue": "inference-sim/blis-latency-kernel#83"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7748,9 +7740,9 @@
     {
       "name": "kv_offloading_backend",
       "source": "config",
-      "status": "inert_unproven",
+      "status": "not_modelled",
       "evidence": {
-        "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: Read with kv_offloading_size; the size decides whether offload runs."
+        "issue": "inference-sim/blis-vllm#60"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -10029,12 +10021,9 @@
     {
       "name": "speculative_config.model",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "core/sched/testdata/golden/spec-draft-model.json",
-          "core/sched/testdata/golden/spec-eagle3.json"
-        ]
+        "issue": "inference-sim/blis-vllm#58"
       },
       "estimation": {
         "rule": "leave_unset"

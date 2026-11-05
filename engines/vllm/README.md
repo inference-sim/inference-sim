@@ -61,11 +61,12 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   `python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json`, which
   fails while a name vLLM reads has no entry, an entry names a field vLLM does not have, or a
   dynamic read is unlisted.
-- **Status, evidence and estimation** are in `fields/status.json`, edited by hand. The first
-  version was seeded as release plan §3.3 says: a field the port reads and that changes a
-  decision is `modelled`, citing the recorded traces that set it; a field the port refuses is
-  `not_modelled`, citing its open issue; a field accuracy-dashboard's `vllm_arg_policy.yaml`
-  marked inert is `inert_unproven`; any other field is `not_modelled` with an open issue.
+- **Status, evidence and estimation** are in `fields/status.json`, edited by hand. A field is
+  `modelled` only with VLM-3's evidence: an oracle trace that sets it and that the port
+  reproduces, or a test that sets it and checks the result against vLLM's own. A field the port
+  does not read, or reads without such evidence, is `not_modelled` and cites an open issue
+  (X28). The first version was seeded from accuracy-dashboard's `vllm_arg_policy.yaml`, as
+  release plan §3.3 says: "Fields that table marked inert are entered as 'inert, unproven'."
   Estimation rules start from accuracy-dashboard discussion #33.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
   other checks are M2 work and are not here yet: the inertness proofs that turn each
