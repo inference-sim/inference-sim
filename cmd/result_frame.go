@@ -17,6 +17,8 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
 // The generator kinds a frame names: how the run's requests were produced.
@@ -31,11 +33,9 @@ const (
 
 // frameRandomGenerator names the random-number generator every draw comes from, with its
 // derivation, so that a change of generator, which changes every draw, changes the frame
-// (§8.4). The derivation is sim.PartitionedRNG's (sim/rng.go): math/rand's source per named
-// subsystem, seeded with the seed for the workload subsystem and with the seed XOR the
-// FNV-1a 64 hash of the subsystem's name for every other one.
-const frameRandomGenerator = "math/rand rngSource; sim.PartitionedRNG: workload subsystem seeded by the seed, " +
-	"every other subsystem by seed XOR fnv1a64(name)"
+// (§8.4, DEV-6): sim.StreamGenerator, whose named streams are seeded from the SHA-256 of the
+// seed and the stream's name (sim/rng.go).
+const frameRandomGenerator = sim.StreamGenerator
 
 // frameGenerator is what a command tells the frame about its request source.
 type frameGenerator struct {
