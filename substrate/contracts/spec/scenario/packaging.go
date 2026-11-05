@@ -17,8 +17,8 @@ import (
 //
 // A rack, in BLIS, is an NVLink domain that spans nodes: the third topology tier, whose
 // bandwidth is the entry's IntraRackBwGBps. The cost model prices it only where the entry
-// states it (the kernel's RackIsOneDomain reads GPUsPerRack and IntraRackBwGBps from the
-// chip), and an engine places ranks into racks only so the cost model can price that tier.
+// states it. The kernel's RackIsOneDomain reads GPUsPerRack and IntraRackBwGBps from the
+// chip. An engine places ranks into racks only so the cost model can price that tier.
 // hardware.Chip.Validate refuses IntraRackBwGBps without GPUsPerRack, so an entry that
 // states no GPUsPerRack has no rack tier at all, and there is no rack for the scenario to
 // size. A scenario's gpus_per_rack on such a chip describes an NVLink domain the product

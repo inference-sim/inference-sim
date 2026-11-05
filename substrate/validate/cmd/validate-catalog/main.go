@@ -27,6 +27,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/validate/dataset"
 	"github.com/inference-sim/blis-substrate/validate/measurements"
@@ -74,11 +75,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		validateModelConfigs(r, dirs, ids)
 		validateLicences(r, root, dirs, ids)
 	}
-	validateHardware(r, root)
+	chips := validateHardware(r, root)
 	validateNetworks(r, root)
 	validateDevices(r, root)
 	validateWorkloads(r, root)
-	validateMeasurements(r, root)
+	validateMeasurements(r, root, chips)
 
 	// A directory can satisfy the namespace gate with an empty or optional namespace (an
 	// empty devices/ or workloads/) and reach here having validated nothing. Reporting
@@ -268,14 +269,17 @@ func validateModelIdentities(r *reporter, dirs []string) map[string]*model.Ident
 	return ids
 }
 
-func validateHardware(r *reporter, root string) {
+// validateHardware checks hardware/ and returns the entries that loaded and validated, by
+// name, for the checks that resolve a cluster's packaging against them.
+func validateHardware(r *reporter, root string) map[string]*hardware.Chip {
+	chips := map[string]*hardware.Chip{}
 	paths, err := yamlFiles(filepath.Join(root, "hardware"))
 	if err != nil {
 		r.loadFail("hardware", "%v", err)
-		return
+		return chips
 	}
 	if len(paths) == 0 {
-		return
+		return chips
 	}
 	r.section("# hardware/*.yaml")
 	for _, path := range paths {
@@ -288,9 +292,11 @@ func validateHardware(r *reporter, root string) {
 		if r.record(name, p) {
 			continue
 		}
+		chips[c.Name] = c
 		r.pass(fmt.Sprintf("%-46s bf16 %g, fp8 %g TFLOP/s, %g GiB",
 			c.Name, c.BF16Peak, c.FP8Peak, c.MemoryGiB))
 	}
+	return chips
 }
 
 func validateNetworks(r *reporter, root string) {
@@ -384,7 +390,7 @@ func validateWorkloads(r *reporter, root string) {
 // validateMeasurements checks measurements/: the licence registry and every run against
 // it. The namespace is optional, but once present it needs its sources.yaml, and every run
 // in it must be one the licence lets the catalog redistribute.
-func validateMeasurements(r *reporter, root string) {
+func validateMeasurements(r *reporter, root string, chips map[string]*hardware.Chip) {
 	dir := filepath.Join(root, "measurements")
 	ok, err := measurements.Exists(dir)
 	if err != nil {
@@ -394,7 +400,7 @@ func validateMeasurements(r *reporter, root string) {
 	if !ok {
 		return
 	}
-	results, err := measurements.Check(dir, true)
+	results, err := measurements.Check(dir, true, chips)
 	if err != nil {
 		r.loadFail("measurements", "%v", err)
 		return

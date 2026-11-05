@@ -15,6 +15,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 )
 
@@ -39,7 +40,12 @@ func (r Result) OK() bool { return r.Err == nil && r.Problems.OK() }
 // licence to permit redistribution, which a file in a public repository is; an adapter
 // checking local-only output passes false. It returns an error only when dir cannot be
 // read at all.
-func Check(dir string, committed bool) ([]Result, error) {
+//
+// chips maps a hardware name to its catalog entry. A run whose cluster names a chip in it has
+// its packaging resolved from the entry (scenario.Cluster.Packaging), so its deployment is
+// fitted to the entry's node size even where the run omits gpus_per_node. A nil map, or a
+// chip absent from it, leaves the run unfitted and warned, as before.
+func Check(dir string, committed bool, chips map[string]*hardware.Chip) ([]Result, error) {
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("%s: not a directory", dir)
 	}
@@ -78,7 +84,11 @@ func Check(dir string, committed bool) ([]Result, error) {
 			out = append(out, res)
 			continue
 		}
-		p := r.ValidateWithSources(reg)
+		var chip *hardware.Chip
+		if r.Cluster != nil {
+			chip = chips[r.Cluster.Hardware]
+		}
+		p := r.ValidateAgainstCatalog(reg, chip)
 		if stem := strings.TrimSuffix(filepath.Base(path), ".yaml"); r.Name != stem {
 			p.Field("name", "the run names itself %q but its file is %s.yaml", r.Name, stem)
 		}

@@ -26,7 +26,10 @@ one of them to say nothing it does not already say. harness.LoadBundle reads the
 # What the corpus states, and what it does not
 
 STATED, and written here: tp_size, pp_size, attention_dp_size, moe_ep_size, moe_tp_size,
-framework, precision, serving, gpu, model.
+framework, precision, serving, gpu, model, and gpus_per_node for a chip whose catalog entry
+leaves the node size open. A chip whose entry fixes GPUsPerNode and GPUsPerRack (gb200-nvl72,
+gb300) gets neither field: the catalog owns them. A row for any other chip that states no
+gpus_per_node is refused; no node size is assumed (X19).
 
 NOT stated by the artifact corpus, and therefore set here: max_num_seqs, max_model_len,
 block_size, gpu_memory_utilization, cudagraph_mode. A sweep carrying `stated_config` (the
@@ -67,7 +70,9 @@ import argparse
 import collections
 import json
 import os
+import re
 import sys
+from pathlib import Path
 
 COEFFICIENTS = (
     "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, "
@@ -112,7 +117,49 @@ UNPRICED_SPECULATORS = {("minimax-m3", "eagle3")}
 # arms in these frameworks; bf16 serving keeps an unquantised cache.
 CACHE_DTYPE = {"fp4": "fp8", "fp8": "fp8", "bf16": "auto", "int4": "auto"}
 
-GPUS_PER_NODE = 8
+# The blis-catalog checkout whose hardware/ entries say which chips fix their own packaging.
+# This repository carries it at catalog/; --catalog names another.
+DEFAULT_CATALOG = Path(__file__).resolve().parents[2] / "catalog"
+
+
+def catalog_packaging(chip: str, catalog: Path) -> dict[str, int]:
+    """The GPUsPerNode and GPUsPerRack that chip's catalog entry fixes, by key; {} if none.
+
+    A chip whose product fixes its packaging (GB200 NVL72's 4 per tray and 72 per rack) owns
+    those figures, and a scenario for it states neither (design SUB-3, scenario.Cluster.Packaging
+    resolves them). Read as plain top-level `Key: integer` lines, so the script needs no YAML
+    library; a missing entry is an error, not "fixes nothing".
+    """
+    path = catalog / "hardware" / f"{chip}.yaml"
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise SystemExit(f"error: cannot read the catalog entry for {chip!r}: {e}")
+    out = {}
+    for key in ("GPUsPerNode", "GPUsPerRack"):
+        m = re.search(rf"^{key}:\s*(\d+)\s*$", text, re.M)
+        if m and int(m.group(1)) > 0:
+            out[key] = int(m.group(1))
+    return out
+
+
+def node_size(dep: dict, catalog: Path) -> tuple[int, bool]:
+    """(GPUs per node, whether the scenario states it) for one deployment row.
+
+    A chip whose catalog entry fixes GPUsPerNode owns it: the scenario omits the field. For any
+    other chip the row states the node size, and a row that does not is refused: no node size is
+    invented here (X19).
+    """
+    fixed = catalog_packaging(dep["gpu"], catalog)
+    if "GPUsPerNode" in fixed:
+        return fixed["GPUsPerNode"], False
+    n = dep.get("gpus_per_node")
+    if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+        raise SystemExit(
+            f"error: {dep['scenario']}: the catalog entry for {dep['gpu']!r} does not fix "
+            f"GPUsPerNode and the row states no gpus_per_node (got {n!r}); this script does "
+            f"not assume a node size")
+    return n, True
 
 
 def context_length(workloads: set[str]) -> int:
@@ -129,14 +176,16 @@ def context_length(workloads: set[str]) -> int:
     return window
 
 
-def emit(dep: dict, workloads: set[str], labels: set[str]) -> str:
+def emit(dep: dict, workloads: set[str], labels: set[str],
+         catalog: Path = DEFAULT_CATALOG) -> str:
     par = dep["parallelism"]
     tp, ep, dp = par["tp_size"], par["moe_ep_size"], par["attention_dp_size"]
     # A dense model records moe_ep_size as null: it has no expert group, which is a different
     # thing from one unsharded group (ep=1). Expert parallelism is off either way.
     expert_parallel = ep is not None and ep > 1
     ranks = tp * dp
-    nodes = max(1, -(-ranks // GPUS_PER_NODE))
+    per_node, states_node_size = node_size(dep, catalog)
+    nodes = max(1, -(-ranks // per_node))
     quant = QUANT[dep["precision"]]
     max_len = context_length(workloads)
     name = dep["scenario"][: -len(".yaml")]
@@ -222,7 +271,12 @@ def emit(dep: dict, workloads: set[str], labels: set[str]) -> str:
         lines.append("  fabric: ib-400g")
     lines += [
         f"  nodes: {nodes}",
-        f"  gpus_per_node: {GPUS_PER_NODE}",
+    ]
+    if states_node_size:
+        # Only a chip whose entry leaves the node size open has it stated here. One that fixes
+        # it (and its rack) is left to the catalog: Cluster.Packaging fills both in.
+        lines.append(f"  gpus_per_node: {per_node}")
+    lines += [
         # The tunable half, as its own document. Same file because a measurement row
         # addresses a deployment by one filename; same name because there is exactly one
         # deployment per scenario here.
@@ -268,6 +322,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("corpus")
     ap.add_argument("-o", "--out", required=True, help="scenario directory")
+    ap.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG,
+                    help="blis-catalog checkout whose hardware/ entries fix packaging")
     ap.add_argument("--check", action="store_true",
                     help="verify the files on disk match what would be generated")
     args = ap.parse_args()
@@ -308,7 +364,7 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
     stale = []
     for name, dep in sorted(deps.items()):
-        text = emit(dep, workloads[name], labels[name])
+        text = emit(dep, workloads[name], labels[name], args.catalog)
         path = os.path.join(args.out, name)
         if args.check:
             try:

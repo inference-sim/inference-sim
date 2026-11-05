@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/router"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
@@ -445,4 +446,52 @@ func TestValidateMetricDefPathsAreRelative(t *testing.T) {
 			t.Errorf("expected a problem at %q, got paths %v", want, paths)
 		}
 	}
+}
+
+// gb200Chip is the catalog's GB200 NVL72 entry as far as packaging goes: it fixes 4 GPUs per
+// tray and 72 per rack.
+func gb200Chip() *hardware.Chip {
+	return &hardware.Chip{Name: "gb200-nvl72", GPUsPerNode: 4, GPUsPerRack: 72}
+}
+
+// gb200Run is exactRun on a GB200 NVL72 cluster that omits gpus_per_node and gpus_per_rack,
+// with a deployment of tp ranks on its one tray.
+func gb200Run(tp int) *MeasuredRun {
+	r := exactRun()
+	r.Name = "synthetic-gb200"
+	r.Cluster = &scenario.Cluster{Hardware: "gb200-nvl72", Nodes: 1}
+	r.Deployment.Pools[0].Parallel.TP = tp
+	return r
+}
+
+// A measured run that omits the node size on a chip whose entry fixes it is fitted to the
+// entry's node size (SUB-3's pair, SIM-9). Eight ranks do not fit the 4-GPU tray: the run is
+// refused when the entry is held, and only warned about when it is not.
+func TestMeasuredRunOmittingNodeSizeIsFittedToTheCatalogEntry(t *testing.T) {
+	r := gb200Run(8)
+	requireProblemAt(t, r.ValidateAgainstCatalog(permitting(), gb200Chip()).Errors(), "deployment.pools[0].parallel")
+
+	p := r.ValidateWithSources(permitting())
+	if !p.OK() {
+		t.Fatalf("without the entry the fit cannot be checked, and the run is only warned about:\n%s", p.Error())
+	}
+	var warned bool
+	for _, w := range p.All() {
+		warned = warned || strings.Contains(w.String(), "gpus_per_node is left to the catalog entry")
+	}
+	if !warned {
+		t.Errorf("no warning that the fit was skipped:\n%v", p.All())
+	}
+}
+
+// The other half of the pair: a run that fits the entry's tray passes, with no warning, and
+// a cluster that contradicts the entry is refused at the cluster.
+func TestMeasuredRunThatFitsTheCatalogEntryPasses(t *testing.T) {
+	p := gb200Run(4).ValidateAgainstCatalog(permitting(), gb200Chip())
+	if !p.OK() || len(p.All()) != 0 {
+		t.Fatalf("a tp=4 run on one GB200 tray should pass cleanly, got:\n%s", p.Error())
+	}
+	r := gb200Run(4)
+	r.Cluster.GPUsPerNode = 8
+	requireProblemAt(t, r.ValidateAgainstCatalog(permitting(), gb200Chip()).Errors(), "cluster.gpus_per_node")
 }

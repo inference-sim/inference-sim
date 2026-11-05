@@ -24,13 +24,15 @@ def ck(label, ok, detail=""):
         FAILURES.append(label)
 
 
-def sweep(model="minimax-m2.5", stated=None):
+def sweep(model="minimax-m2.5", stated=None, gpu="h200", gpus_per_node=8):
     s = {
-        "scenario": f"{model}-h200-fp8-vllm-tp4.yaml", "model": model, "gpu": "h200",
+        "scenario": f"{model}-{gpu}-fp8-vllm-tp4.yaml", "model": model, "gpu": gpu,
         "precision": "fp8", "framework": "vllm",
         "parallelism": {"tp_size": 4, "pp_size": 1, "attention_dp_size": 1,
                         "moe_ep_size": 1, "moe_tp_size": 4},
     }
+    if gpus_per_node is not None:
+        s["gpus_per_node"] = gpus_per_node
     if stated is not None:
         s["stated_config"] = stated
     return s
@@ -67,6 +69,26 @@ def main() -> int:
        (engine(mtp, "method"), engine(mtp, "num_spec_tokens")) == ("mtp", "2"))
     ck("an unstated speculative config is left out",
        engine(sweep("deepseek-v4-pro", stated={}), "method") is None)
+
+    # Packaging is the catalog's where the chip's entry fixes it (SUB-3), and the row's otherwise.
+    has_packaging = re.compile(r"^ +gpus_per_(node|rack):", re.M)
+    for chip in ("gb200-nvl72", "gb300"):
+        for stated in (None, 8):
+            text = emit(sweep(gpu=chip, gpus_per_node=stated), {"1024:1024"}, {"1k1k"})
+            ck(f"a {chip} row (row states {stated}) writes neither gpus_per_node nor gpus_per_rack",
+               not has_packaging.search(text))
+    wide = sweep(gpu="gb200-nvl72", gpus_per_node=None)
+    wide["parallelism"] = {"tp_size": 8, "pp_size": 1, "attention_dp_size": 1,
+                           "moe_ep_size": 1, "moe_tp_size": 8}
+    ck("a gb200 tp8 row takes the catalog's 4 per tray: two nodes",
+       engine(wide, "nodes") == "2")
+    ck("an h200 row writes the node size its row states",
+       engine(sweep(gpus_per_node=4), "gpus_per_node") == "4")
+    try:
+        emit(sweep(gpus_per_node=None), {"1024:1024"}, {"1k1k"})
+        ck("an h200 row with no node size is refused", False, "emit returned")
+    except SystemExit as e:
+        ck("an h200 row with no node size is refused, not given 8", "gpus_per_node" in str(e))
 
     print()
     if FAILURES:
