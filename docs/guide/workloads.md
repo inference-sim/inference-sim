@@ -19,6 +19,13 @@ BLIS supports three modes, in order of precedence:
 | **CLI distribution** | `--rate`, `--num-requests`, `--prompt-tokens` | Quick single-client experiments |
 | **Named presets** | `--workload chatbot` | Standard workload profiles |
 
+Whichever mode states the workload, `blis run` streams its requests: each client's generator
+produces the next request when the simulation reaches it, so memory holds the requests in flight
+rather than the whole workload. This is the default since v0.16.0 (#1449). The older eager
+generator, which builds every request before the run starts, produces the same requests (INV-6)
+and is selected with `--lazy-generation=false`, deprecated in v0.16.0 and removed in v0.19.0
+(#1451).
+
 !!! note "Migration: `--workload traces` removed"
     The `--workload traces` and `--workload-traces-filepath` flags have been removed. They performed lossy statistical approximation (averaged token lengths, constant arrival) rather than faithful replay. For trace replay, use `--workload-spec` with a [TraceV2 YAML file](../reference/workload-spec.md) instead. To export simulation results as TraceV2, use `--trace-output <prefix>`.
 

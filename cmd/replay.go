@@ -739,7 +739,7 @@ func init() {
 	// so no global state is mutated. BC-9.
 	var replayLazyGenerationIgnored bool
 	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with 'blis run' (#1441); has no effect on replay.")
-	markDeprecatedFlags(replayCmd)
+	markDeprecatedFlags(replayCmd, replayDeprecatedFlags)
 	rootCmd.AddCommand(replayCmd)
 }
 
