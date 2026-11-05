@@ -1,7 +1,7 @@
 package llmd
 
 import (
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 	fork "github.com/llm-d/llm-d-router/pkg/embed"
 )
 

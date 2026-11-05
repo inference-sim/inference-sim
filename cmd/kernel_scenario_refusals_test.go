@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/spf13/cobra"
 )
 
@@ -469,7 +470,7 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "v032.yaml",
-		"--catalog", "../testdata/catalog", "--speculative-acceptance-rate", "0.7",
+		"--catalog", substratedata.MustCatalog(), "--speculative-acceptance-rate", "0.7",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
 		t.Fatal("a 0.32.0 deployment stating max_model_len auto ran")

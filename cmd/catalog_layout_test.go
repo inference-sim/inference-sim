@@ -93,7 +93,7 @@ func catalogLayoutSubprocess() bool {
 	catalog := os.Getenv(catalogLayoutCatalogEnv)
 	tracePrefix := os.Getenv(catalogLayoutTraceEnv)
 
-	repos := kernelmodel.DefaultRepos()
+	repos := defaultKernelRepos()
 	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry}
 	var args []string
 	switch leg {

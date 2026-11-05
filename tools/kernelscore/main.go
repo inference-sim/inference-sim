@@ -42,24 +42,22 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/vendored"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness"
+	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 func main() {
 	corpusPath := flag.String("corpus",
-		kernelmodel.MeasurementPath("aisimulate_e2e.json"),
+		corpora.MeasurementPath("aisimulate_e2e.json"),
 		"the extracted AISimulate corpus")
 	scenarios := flag.String("scenarios",
-		kernelmodel.DefaultScenarios(), "scenario directory")
-	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
-	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
+		kernelfixtures.AISimulate(), "scenario directory")
+	catalog := flag.String("catalog", substratedata.MustCatalog(), "")
+	registry := flag.String("registry", substratedata.MustRegistry(), "")
 	settings := flag.String("engine-settings",
-		kernelmodel.MeasurementPath("inferencex_engine_settings.json"),
+		corpora.MeasurementPath("inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; configures each point as the run was")
 	seed := flag.Int64("seed", 42, "")
 	framework := flag.String("framework", "", "restrict to one framework (vllm, sglang, trt)")
@@ -71,7 +69,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
+	if err := corpora.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}

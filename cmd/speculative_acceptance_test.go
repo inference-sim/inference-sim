@@ -12,9 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -32,7 +33,7 @@ func acceptanceRepos(t *testing.T, preset string) (registry, catalog string) {
 	t.Helper()
 	root := t.TempDir()
 	registry = filepath.Join(root, "registry")
-	mustSymlinkAbs(t, "../testdata/registry/coefficients", filepath.Join(registry, "coefficients"))
+	mustSymlinkAbs(t, filepath.Join(substratedata.MustRegistry(), "coefficients"), filepath.Join(registry, "coefficients"))
 	set, err := os.ReadFile(acceptFixtureSet)
 	if err != nil {
 		t.Fatal(err)
@@ -41,9 +42,9 @@ func acceptanceRepos(t *testing.T, preset string) (registry, catalog string) {
 
 	catalog = filepath.Join(root, "catalog")
 	for _, d := range []string{"models", "hardware", "networks", "devices"} {
-		mustSymlinkAbs(t, filepath.Join("../testdata/catalog", d), filepath.Join(catalog, d))
+		mustSymlinkAbs(t, filepath.Join(substratedata.MustCatalog(), d), filepath.Join(catalog, d))
 	}
-	chat, err := os.ReadFile("../testdata/catalog/workloads/chatbot.yaml")
+	chat, err := os.ReadFile(filepath.Join(substratedata.MustCatalog(), "workloads", "chatbot.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}

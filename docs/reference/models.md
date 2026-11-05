@@ -37,8 +37,8 @@ deliberately no `blis validate` subcommand, because a separate validator would b
 accept a catalog a run rejects. The catalog is kept loadable by a whole-catalog load through
 the same code path a run uses (#1750), in two layers:
 
-- **Unconditional** -- `go test ./cmd/...` loads the committed fixture catalog
-  (`testdata/catalog`, a vendored subset of blis-catalog `0.3.0`) on every test run.
+- **Unconditional** -- `go test ./cmd/...` loads the catalog of the blis-substrate module
+  `go.mod` selects on every test run.
 - **Against the authoritative catalog** -- `scripts/catalog-load-gate.sh` clones
   `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring it into
   CI as a `catalog-load` job is a pending human step, tracked by

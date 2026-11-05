@@ -147,8 +147,8 @@ func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.Ke
 	return out
 }
 
-// buildVersions reads the BLIS, blis-latency-kernel and blis-schemas versions from the
-// binary's build information; see versionsFrom.
+// buildVersions reads the BLIS and blis-substrate versions from the binary's build
+// information; see versionsFrom.
 // buildRevision is the commit a binary was built from, set with
 //
 //	go build -ldflags "-X github.com/inference-sim/inference-sim/cmd.buildRevision=$(git rev-parse HEAD)$(git diff --quiet HEAD || echo -dirty)"
@@ -193,10 +193,11 @@ func versionsFrom(info *debug.BuildInfo) *sim.BuildVersions {
 	}
 	for _, dep := range info.Deps {
 		switch dep.Path { // the module's own path; a replacement keeps it here
-		case "github.com/inference-sim/blis-latency-kernel":
+		case "github.com/inference-sim/blis-substrate":
+			// One module holds the cost model and the contracts (design §3.2), so the
+			// kernel and the schemas are built at the same version.
 			v.Kernel = depVersion(dep)
-		case "github.com/inference-sim/blis-schemas":
-			v.Schemas = depVersion(dep)
+			v.Schemas = v.Kernel
 		}
 	}
 	return v

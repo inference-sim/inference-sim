@@ -3,7 +3,7 @@ package sim
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // A data-parallel group behind the contract with one instance per rank. Each rank's instance has

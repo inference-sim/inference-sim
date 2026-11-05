@@ -15,7 +15,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // EngineDriverConfig is the host side of an engine-driven instance.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 )
 
 // parseResult reads stdout as one Result document, failing the test when it is anything else.

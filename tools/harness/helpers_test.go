@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
@@ -15,9 +17,9 @@ import (
 // scenarios and the vendored catalog and registry.
 func testRepos() kernelmodel.Repos {
 	return kernelmodel.Repos{
-		Scenarios: kernelmodel.DefaultScenarios(),
-		Catalog:   kernelmodel.DefaultCatalog(),
-		Registry:  kernelmodel.DefaultRegistry(),
+		Scenarios: kernelfixtures.AISimulate(),
+		Catalog:   substratedata.MustCatalog(),
+		Registry:  substratedata.MustRegistry(),
 	}
 }
 

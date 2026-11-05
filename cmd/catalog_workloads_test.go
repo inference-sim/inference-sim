@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/spf13/cobra"
 )
 
@@ -137,8 +137,8 @@ func withTestCatalogPath(t *testing.T, catalog string) func() {
 // ---------------------------------------------------------------------------
 
 // TestCatalogPresets_BundledCatalogMatchesRetiredDefaults is BC-2. It reads each preset
-// through the production reader out of the committed test catalog (testdata/catalog, a
-// clone-root-shaped fixture mirroring blis-catalog) and compares every field to the
+// through the production reader out of the catalog of the blis-substrate
+// module go.mod selects and compares every field to the
 // values the deleted defaults.yaml block declared. Since the downstream path (PresetConfig →
 // SynthesizeFromPreset) is untouched by this PR, equal inputs there mean an equal workload,
 // which is the INV-6 argument for the cutover.
@@ -150,7 +150,7 @@ func TestCatalogPresets_BundledCatalogMatchesRetiredDefaults(t *testing.T) {
 		if want.PromptTokensMean <= 0 || want.OutputTokensMean <= 0 {
 			t.Fatalf("non-vacuity: golden preset %q has no token distribution", name)
 		}
-		got, err := readCatalogPresetWorkload(name, filepath.Join("..", "testdata", "catalog"))
+		got, err := readCatalogPresetWorkload(name, substratedata.MustCatalog())
 		if err != nil {
 			t.Fatalf("preset %q must resolve from the test catalog: %v", name, err)
 		}
@@ -757,7 +757,7 @@ func runPresetLeg(t *testing.T, catalog string) string {
 // if the preset were ignored entirely.
 func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if os.Getenv(presetRunLegEnv) == "1" {
-		repos := kernelmodel.DefaultRepos()
+		repos := defaultKernelRepos()
 		rootCmd.SetArgs([]string{
 			"run", "--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
 			"--workload", "chatbot", "--rate", "5", "--num-requests", "20",

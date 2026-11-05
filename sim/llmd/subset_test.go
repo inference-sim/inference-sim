@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 )
 
 // TestSupportedTypesAreHostedByTheFork: every type BLIS's signal policy allows is one the fork can

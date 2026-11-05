@@ -10,9 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
