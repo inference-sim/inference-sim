@@ -93,3 +93,23 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// The licence allow-list of X12 and D6 is closed, and its identifiers are exact SPDX
+// identifiers: a lower-case or spelled-out form is refused.
+func TestLicenceAllowList(t *testing.T) {
+	want := []string{"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0", "MIT"}
+	got := RedistributableLicences()
+	if len(got) != len(want) {
+		t.Fatalf("allow-list %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	for _, bad := range []string{"apache-2.0", "Apache 2.0", "GPL-3.0", "NOASSERTION", ""} {
+		if LicenceRedistributable(bad) {
+			t.Errorf("%q is on the allow-list", bad)
+		}
+	}
+}

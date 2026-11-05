@@ -1,21 +1,21 @@
 package vocab
 
-// This file is a stand-in for task C's contracts/vocab/licence.go on branch m1/ledger, which
-// defines the one licence allow-list of X12. It holds only the two functions the catalog's
-// licence check calls, with the list C defines. When the branches merge, C's file replaces
-// this one.
-
-var redistributable = []string{"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0", "MIT"}
-
-// RedistributableLicences returns the SPDX identifiers of the licences on the X12 allow-list.
-func RedistributableLicences() []string { return append([]string(nil), redistributable...) }
-
-// LicenceRedistributable reports whether a licence, by SPDX identifier, is on the allow-list.
-func LicenceRedistributable(spdx string) bool {
-	for _, l := range redistributable {
-		if l == spdx {
-			return true
-		}
-	}
-	return false
+// The licence allow-list of X12 and D6: the SPDX identifiers whose terms let BLIS commit and
+// redistribute an artefact, given its notice. It is defined once, here, so that the catalog's
+// config.json check, the data ledger and the measurement validator apply one list. Adding a
+// licence is a review question for the ledger owners.
+var redistributableLicences = map[string]bool{
+	"Apache-2.0":   true,
+	"MIT":          true,
+	"BSD-2-Clause": true,
+	"BSD-3-Clause": true,
+	"CC-BY-4.0":    true,
+	"CC0-1.0":      true,
 }
+
+// RedistributableLicences returns the allow-list, sorted.
+func RedistributableLicences() []string { return Enumerate(redistributableLicences) }
+
+// LicenceRedistributable reports whether spdx is on the allow-list. The comparison is exact:
+// "apache-2.0" or "Apache 2.0" is not an SPDX identifier and is refused.
+func LicenceRedistributable(spdx string) bool { return redistributableLicences[spdx] }

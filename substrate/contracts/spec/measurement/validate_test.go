@@ -327,6 +327,7 @@ func TestRegistryRejects(t *testing.T) {
 		{"evidence without url", "sources[0].evidence[0].url", func(r *Registry) { r.Sources[0].Evidence[0].URL = "LICENSE" }},
 		{"evidence without quote", "sources[0].evidence[0].quote", func(r *Registry) { r.Sources[0].Evidence[0].Quote = "" }},
 		{"evidence without location", "sources[0].evidence[0].location", func(r *Registry) { r.Sources[0].Evidence[0].Location = "" }},
+		{"redistribute under a licence off the allow-list", "sources[0].permits", func(r *Registry) { r.Sources[0].License = "GPL-3.0" }},
 	}
 	if p := permitting().Validate(); !p.OK() {
 		t.Fatalf("the fixture registry was rejected:\n%s", p.Error())
@@ -357,6 +358,14 @@ func TestRegistryPermits(t *testing.T) {
 	if reg.Permits("hud", UseScore) {
 		t.Error("an unverified source permits nothing, whatever it lists")
 	}
+	reg.Sources[0].License = "GPL-3.0"
+	if reg.Permits("synthetic-fixture", UseRedistribute) {
+		t.Error("redistribution was permitted under a licence off the allow-list")
+	}
+	if !reg.Permits("synthetic-fixture", UseScore) {
+		t.Error("the allow-list is for redistribution; scoring was refused")
+	}
+	reg.Sources[0].License = "Apache-2.0"
 	reg.Sources[0].Permits = []Use{UseScore}
 	if reg.Permits("synthetic-fixture", UseRedistribute) {
 		t.Error("a verified source permits only what it lists")

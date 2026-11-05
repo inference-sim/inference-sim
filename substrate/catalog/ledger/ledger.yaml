@@ -1,0 +1,49 @@
+# The ledger's partition (design §10.2): the partition version, the seed's hash, and each
+# source's cut-points. A unit's draw is HMAC-SHA-256(seed, canonical JSON of its role key)
+# mod 100, the digest read as a big-endian unsigned integer. A unit on no legacy side reads the
+# draw against cut_points. A unit on a legacy side (a legacy unit, or a new unit whose role
+# key holds legacy units) reads the same draw against its side's one cut-point: fit below it
+# and select from it on the FIT side, held below it and anchor from it on the HELD side.
+#
+# The seed is created by a ledger owner (README.md, "Creating the seed"); until then seed is
+# empty and no job can draw a role. Changing anything here is a new partition version, which a
+# ledger owner approves through D7's review question.
+kind: Ledger
+partition_version: 1
+seed:
+  sha256: ""
+  generated_by: ""
+  generated_on: ""
+  rotation_owner: ""
+rules:
+  # InferenceX end-to-end groups. New units: 30 fit, 10 select, 10 validate, 30 held, 20 anchor,
+  # the design's example (§10.2). On a legacy side the same proportions hold within the side:
+  # FIT 30:10 into fit and select (cut at 75), HELD 30:20 into held and anchor (cut at 60).
+  inferencex:
+    cut_points:
+      - {role: fit, from: 0, to: 29}
+      - {role: select, from: 30, to: 39}
+      - {role: validate, from: 40, to: 49}
+      - {role: held, from: 50, to: 79}
+      - {role: anchor, from: 80, to: 99}
+    legacy:
+      FIT:
+        - {role: fit, from: 0, to: 74}
+        - {role: select, from: 75, to: 99}
+      HELD:
+        - {role: held, from: 0, to: 59}
+        - {role: anchor, from: 60, to: 99}
+  # AISimulate operator sweeps: operator-level only, so no anchor (§10.3).
+  aisimulate:
+    cut_points:
+      - {role: fit, from: 0, to: 59}
+      - {role: select, from: 60, to: 69}
+      - {role: validate, from: 70, to: 79}
+      - {role: held, from: 80, to: 99}
+  # Forward-pass cells: fit, and cells kept apart for choosing forms and measuring method
+  # error; no held or anchor (§10.3).
+  aisimulate-fpm:
+    cut_points:
+      - {role: fit, from: 0, to: 69}
+      - {role: select, from: 70, to: 84}
+      - {role: validate, from: 85, to: 99}

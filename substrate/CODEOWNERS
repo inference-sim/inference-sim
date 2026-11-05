@@ -4,6 +4,9 @@
 /contracts/       @sriumcp @jgchn
 /validate/        @sriumcp @jgchn
 /catalog/         @sriumcp @jgchn
+# The data ledger: its code and its files. These owners are the ledger owners of design §10.2.
+/ledger/          @sriumcp @jgchn
+/catalog/ledger/  @sriumcp @jgchn
 /registry/        @sriumcp @jgchn @namasl
 /kernel/          @sriumcp @jgchn
 /tools/           @sriumcp @jgchn
