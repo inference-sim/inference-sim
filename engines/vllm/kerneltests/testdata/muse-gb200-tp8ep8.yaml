@@ -6,9 +6,9 @@ coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-ov
 cluster:
   hardware: gb200-nvl72
   fabric: ib-400g
+  # gpus_per_node and gpus_per_rack are omitted on purpose: gb200-nvl72's catalog entry fixes
+  # them (4 and 72), and the resolver, scenario.Cluster.Packaging, supplies them.
   nodes: 2
-  gpus_per_node: 4
-  gpus_per_rack: 72
 ---
 kind: Deployment
 name: muse-gb200-tp8ep8

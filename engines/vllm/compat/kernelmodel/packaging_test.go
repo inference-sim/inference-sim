@@ -15,8 +15,8 @@ import (
 // Placement reads the cluster's packaging as blis-substrate resolves it from the scenario
 // and the chip's catalog entry (scenario.Cluster.Packaging, design SUB-3). The P/D + DP
 // fixture states neither gpus_per_node nor gpus_per_rack, so its trays and racks are
-// GB200 NVL72's 4 and 72: its 19 trays span two racks, and its two decode ranks sit on
-// trays 17 and 18, either side of the rack boundary.
+// GB200 NVL72's 4 and 72. Its 19 trays span two racks. Its two decode ranks sit on trays 17
+// and 18, either side of the rack boundary.
 func TestPlacementReadsTheCatalogsPackaging(t *testing.T) {
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
