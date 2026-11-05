@@ -57,6 +57,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	fs2 "io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -129,6 +130,7 @@ func run(args []string, w io.Writer) error {
 	results := fs.String("results", "", "go test -json or pytest -rs output")
 	pyPkg := fs.String("python-package", "", "the directory pytest ran in, for its results")
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
+	deferral := fs.String("deferral", "", "the X20 deferral file (commits only)")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -150,6 +152,23 @@ func run(args []string, w io.Writer) error {
 			bad = append(bad, CommitPolicy(c)...)
 		}
 		fmt.Fprintf(w, "commits: %d checked\n", len(cs))
+		if *deferral != "" {
+			src, err := os.ReadFile(*deferral)
+			if err != nil && !errors.Is(err, fs2.ErrNotExist) {
+				return err
+			}
+			day := time.Now().UTC()
+			if *today != "" {
+				if day, err = time.Parse("2006-01-02", *today); err != nil {
+					return fmt.Errorf("-today: %w", err)
+				}
+			}
+			var deferred []string
+			bad, deferred = ApplyDeferral(src, day, bad)
+			if len(deferred) > 0 {
+				fmt.Fprintf(w, "commit-policy: %d finding(s) deferred (X20; see %s)\n", len(deferred), *deferral)
+			}
+		}
 		return report(w, "commit-policy", bad)
 	case "workflows":
 		var files []string

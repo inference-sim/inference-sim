@@ -546,3 +546,35 @@ func TestLicenceFiles(t *testing.T) {
 	has(t, CheckLicenceFiles(dir, "blis-vllm"), "does not name vLLM")
 	none(t, CheckLicenceFiles("../..", "blis-substrate"))
 }
+
+// X20 deferral: an unsigned commit and a missing sign-off are deferred while the file holds;
+// every other finding fails; an expired or malformed file defers nothing.
+func TestApplyDeferral(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	const file = "issue: inference-sim/blis-substrate#12\nexpires: 2026-12-05\nreason: a person signs before merge\n"
+	findings := []string{
+		"abc123abc123: the commit is not signed (X20)",
+		"abc123abc123: no Signed-off-by line; the person who takes responsibility for the commit adds the DCO sign-off (X20)",
+		"abc123abc123: Signed-off-by: Claude <noreply@anthropic.com> is not a person; an agent never signs off (X20)",
+	}
+	fail, deferred := ApplyDeferral([]byte(file), day("2026-11-05"), findings)
+	if len(deferred) != 2 || len(fail) != 1 || !strings.Contains(fail[0], "is not a person") {
+		t.Fatalf("held: fail=%v deferred=%v", fail, deferred)
+	}
+	fail, deferred = ApplyDeferral(nil, day("2026-11-05"), findings)
+	if len(fail) != 3 || len(deferred) != 0 {
+		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
+	}
+	fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), findings)
+	if len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "expired on 2026-12-05") {
+		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
+	}
+	fail, _ = ApplyDeferral([]byte("issue: nonsense\nexpires: 2026-12-05\nreason: x\n"), day("2026-11-05"), findings)
+	if len(fail) != 4 || !strings.Contains(fail[3], "owning issue") {
+		t.Fatalf("bad issue: %v", fail)
+	}
+	fail, _ = ApplyDeferral([]byte("issue: inference-sim/blis-substrate#12\nexpires: 2026-12-05\nreason: x\nextra: y\n"), day("2026-11-05"), findings)
+	if len(fail) != 4 || !strings.Contains(fail[3], "x20-deferral.yaml") {
+		t.Fatalf("unknown key: %v", fail)
+	}
+}
