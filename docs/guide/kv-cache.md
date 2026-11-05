@@ -104,6 +104,11 @@ The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` sto
 
 ### Multi-Tier Offload Config Surface (`--kv-offload-config`)
 
+!!! warning "Deprecated flag"
+    `--kv-offload-config` is deprecated in v0.16.0 and removed in v0.19.0
+    ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)). State the scenario's
+    `offload` block instead; the flag may only restate it.
+
 The scalar flags above cover the single CPU tier. For vLLM's **multi-tier** offload
 (CPU → disk / object store), BLIS captures the full config surface through one strict-YAML
 file — `--kv-offload-config <path>` — with a single top-level `kv_offload:` block. This

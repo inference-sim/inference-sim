@@ -4,6 +4,11 @@ Routing decides **which instance** receives a request. Scheduling decides **what
 
 On vLLM v0.32.0, each instance's engine orders its requests by the pool's engine block `scheduling_policy`, as vLLM does. Priority scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`, `--preemption-policy priority`, SLO priority overrides) is refused for now. Other `--scheduler` values are not applied on 0.32.0; the run warns. The priority and scheduler sections below are not yet available on 0.32.0.
 
+!!! warning "Deprecated flags"
+    `--scheduler` and `--preemption-policy` are deprecated in v0.16.0 and removed in v0.19.0
+    ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)). State the order in the
+    scenario's pool engine block, `scheduling_policy`, as vLLM does.
+
 ```bash
 # Not yet available on 0.32.0 (refused): priority-FCFS scheduling with SLO-class-based priority in a 4-instance cluster
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
