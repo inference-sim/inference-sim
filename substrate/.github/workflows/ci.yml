@@ -55,7 +55,8 @@ jobs:
           has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
           # A change to go.mod, go.sum, the workflow or the root package affects every Go job.
           shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/)'
-          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/")" >> "$GITHUB_OUTPUT"
+          # Any Python file can restate a Go rule, so a Python change runs the X15 lint here.
+          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/|\.py$")" >> "$GITHUB_OUTPUT"
           echo "kernel=$(has "$shared|^kernel/|^contracts/")"             >> "$GITHUB_OUTPUT"
           echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
           echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
@@ -123,6 +124,13 @@ jobs:
           # A skipped test is a failure unless quarantined (X16, X25); fewer than 1000
           # results means packages were not run (X22).
           go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
+      # Python code that restates a Go rule (X15). TestPythonRuleLint above runs it too;
+      # the step names the command.
+      - name: Python rule lint (X15)
+        run: |
+          set -euo pipefail
+          go run ./tools/prcheck vocab > "$RUNNER_TEMP/vocab.json"
+          python3 -I tools/pyrules/pyrules.py "$RUNNER_TEMP/vocab.json"
       # The AGENTS.md block, the pull-request template and the rendered index match the
       # invariant registry (design §13.1). The test above also checks this; the step names
       # the command that fixes it.

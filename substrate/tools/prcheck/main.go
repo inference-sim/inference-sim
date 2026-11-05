@@ -33,6 +33,8 @@
 //	    questions" section, keep given answers, and list those still unanswered.
 //	prcheck tags [-lock .github/tags.lock]
 //	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
+//	prcheck vocab
+//	    Print the Go vocabularies as JSON, for the Python rule lint (X15).
 //	prcheck quarantine [-list .github/quarantine.yaml] [-skip-pattern <pkg>]
 //	    X25: every entry has an issue and an unexpired date.
 //
@@ -51,6 +53,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 var errFindings = errors.New("findings")
@@ -322,6 +326,16 @@ func run(args []string, w io.Writer) error {
 			return err
 		}
 		return report(w, "tags", CheckTags(string(raw), tags))
+	case "vocab":
+		// The closed vocabularies the Go validators enforce, as JSON, for the Python rule
+		// lint (X15), so the lint compares Python literals with the Go sets, not a copy.
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", " ")
+		return enc.Encode(map[string][]string{
+			"units": vocab.AllUnits(), "methods": vocab.AllMethods(), "scope_keys": vocab.AllScopeKeys(),
+			"provenances": vocab.AllProvenances(), "source_kinds": vocab.AllSourceKinds(),
+			"source_roles": vocab.AllSourceRoles(), "licences": vocab.RedistributableLicences(),
+		})
 	case "quarantine":
 		src, err := os.ReadFile(*list)
 		if errors.Is(err, os.ErrNotExist) {
