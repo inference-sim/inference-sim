@@ -121,8 +121,8 @@ func TestCheckHybridDPNodeLocal(t *testing.T) {
 		t.Errorf("a replica across nodes: %v", err)
 	}
 	// The refusal names the issue that brings one endpoint per node.
-	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/28#issuecomment-6408150356") {
-		t.Errorf("a replica across nodes: %v, want the refusal to cite blis-vllm#28's hybrid comment", err)
+	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/64") {
+		t.Errorf("a replica across nodes: %v, want the refusal to cite blis-vllm#64", err)
 	}
 	// Only the last rank of the second replica crosses a node, so the check must look at each
 	// replica's last rank, and at every replica including the last one.
