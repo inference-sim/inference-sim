@@ -249,7 +249,7 @@ func TestINV13_ArrivalHookRunReplayParity(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 	records := workload.RequestsToTraceRecords(traceArrivals)
-	hdr := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	hdr := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	if err := workload.ExportTraceV2(hdr, records, headerPath, dataPath); err != nil {
 		t.Fatalf("ExportTraceV2: %v", err)
 	}

@@ -13,7 +13,7 @@ import (
 // (the encoder's law), so the absolute inputs are reconstructed at replay.
 func buildAccumulateTrace(t *testing.T, records []TraceRecord) *TraceV2 {
 	t.Helper()
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	dataPath := filepath.Join(dir, "data.csv")
@@ -472,41 +472,6 @@ func TestFixedAccumulate_FieldParityWithLoadTraceV2Requests(t *testing.T) {
 	}
 	if !reflect.DeepEqual(clear(a), clear(b)) {
 		t.Errorf("field drift between fixed-accumulate and LoadTraceV2Requests construction:\nfixed-acc: %+v\nfixed:     %+v", clear(a), clear(b))
-	}
-}
-
-// TestFixedAccumulate_NormalizesEpochSendOrigin (#1606): a corpus whose send_time_us is
-// epoch-scale while arrival_time_us is run-relative must inject on the arrival origin
-// (not at epoch scale), with send-delta spacing preserved — the same normalization
-// LoadTraceV2Requests applies, exercised on the fixed-accumulate loader.
-func TestFixedAccumulate_NormalizesEpochSendOrigin(t *testing.T) {
-	const epoch = int64(1_787_274_995_712_218)
-	// One session, two rounds. Round 0 waited 100ms for a slot, round 1 waited 300ms,
-	// so the SEND delta (200000) differs from the ARRIVAL delta (50000).
-	records := []TraceRecord{
-		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 40, OutputTokens: 10,
-			ArrivalTimeUs: 0, SendTimeUs: epoch + 100_000, DeadlineUs: 300_000_000, Status: "ok"},
-		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 5, OutputTokens: 8,
-			ArrivalTimeUs: 50_000, SendTimeUs: epoch + 300_000, DeadlineUs: 350_000_000, Status: "ok"},
-	}
-	trace := buildAccumulateTrace(t, records)
-	reqs, err := LoadTraceV2FixedAccumulateRequests(trace, 42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reqs) != 2 {
-		t.Fatalf("expected 2 requests, got %d", len(reqs))
-	}
-	// Re-based onto the arrival origin: earliest injection is 0, not epoch-scale.
-	if reqs[0].ArrivalTime != 0 {
-		t.Errorf("round 0 ArrivalTime = %d, want 0 (arrival origin, not epoch)", reqs[0].ArrivalTime)
-	}
-	if reqs[0].ArrivalTime >= reqs[0].Deadline {
-		t.Errorf("round 0 injected at %d >= deadline %d — would instant-timeout (#1606)", reqs[0].ArrivalTime, reqs[0].Deadline)
-	}
-	// Spacing follows the SEND delta (200000), not the arrival delta (50000).
-	if gotDelta := reqs[1].ArrivalTime - reqs[0].ArrivalTime; gotDelta != 200_000 {
-		t.Errorf("injection delta = %d, want 200000 (send delta)", gotDelta)
 	}
 }
 

@@ -22,6 +22,32 @@ deployment path as `blis run`.
     `mode: real` was written by `blis observe`, which v0.16.0 removed
     ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)), and is refused.
 
+## The trace format
+
+A trace is in trace format version 4, the format blis-substrate's `contracts/spec/trace`
+defines (`trace_version: 4`). The data CSV's columns are read by name: `request_id`,
+`client_id`, `tenant_id`, `slo_class`, `session_id`, `round_index`, `prefix_group`,
+`prefix_length`, `streaming`, `input_tokens`, `output_tokens`, `text_tokens`, `image_tokens`,
+`audio_tokens`, `video_tokens`, `reason_ratio`, `model`, `deadline_us`, `arrival_time_us`,
+`first_chunk_time_us`, `last_chunk_time_us` and `status`, then `slo_target_us`, `adapter`,
+`think_time_us` and `input_tokens_reset` when some row carries one. A request is injected at
+its `arrival_time_us` with a prompt of `prefix_length` plus `input_tokens` tokens.
+
+Version 3, which v0.15.0 wrote, is refused. Convert a version 3 (or 2) trace with
+
+```bash
+./blis convert trace --header old.yaml --data old.csv --trace-output new
+```
+
+Version 4 is version 3 without what only `blis observe` wrote or read: the header keys
+`created_at`, `warm_up_requests`, `workload_spec`, `server`, `network` and
+`observed_kv_metrics`, and the columns `vllm_priority`, `x_request_id`, `server_input_tokens`,
+`send_time_us`, `num_chunks`, `error_message` and `finish_reason`. A `mode: real` header
+becomes `mode: converted`. The command names each dropped field that carried a value, and
+warns for the two that v0.15.0's replay read: `server_input_tokens`, the prompt length of a
+request with no prefix group, and `send_time_us`, the injection time where it differed from
+`arrival_time_us`. A trace `blis run` wrote carries neither difference, so it replays as it did.
+
 ## `blis replay`
 
 Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of generating synthetic requests, replay loads request timing and token counts from the trace. It takes the same deployment inputs as `blis run` — `--scenario`, `--scenarios`, `--registry` and the catalog (`--catalog` or `BLIS_CATALOG`) — and builds the deployment and its kernels through the same code path.

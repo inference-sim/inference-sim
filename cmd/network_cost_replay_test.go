@@ -36,9 +36,9 @@ func writeMinimalTrace(t *testing.T, dir, extraHeaderLine string) (headerPath, d
 	t.Helper()
 	headerPath = filepath.Join(dir, "trace.yaml")
 	dataPath = filepath.Join(dir, "trace.csv")
-	header := "trace_version: 3\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n" + extraHeaderLine
-	data := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"
+	header := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n" + extraHeaderLine
+	data := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"
 	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
 		t.Fatal(err)
 	}

@@ -130,7 +130,7 @@ func runConvertWeka(inputPath, outPrefix string, opts workload.WekaConvertOption
 		growth = "" // empty header value = per-round-independent inputs
 	}
 	header := &workload.TraceHeader{
-		Version:              3,
+		Version:              workload.TraceVersion,
 		TimeUnit:             "microseconds",
 		Mode:                 workload.TraceModeConverted,
 		SessionContextGrowth: growth,

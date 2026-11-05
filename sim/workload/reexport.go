@@ -128,7 +128,7 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 				// Emit the ORACLE MaxOutputLen in the OutputTokens column (the delta was
 				// computed from actualOutputLen above): re-replay's OutputSampler yields this
 				// as MaxOutputLen, reproducing the same completion → same actualOutput → the
-				// abs sequence reconstructs exactly. Then decorate with SendTimeUs +
+				// abs sequence reconstructs exactly. Then decorate with the
 				// sim-computed chunk timing (RequestsToTraceRecords parity) and
 				// copy the surviving per-request metadata (SLO/deadline/model/adapter/…).
 				recs[i].OutputTokens = len(g.reqs[i].OutputTokens)
@@ -260,14 +260,11 @@ func reexportStatus(state sim.RequestState) string {
 	}
 }
 
-// decorateReExportTiming sets the send + client-observable chunk timestamps on an
+// decorateReExportTiming sets the client-observable chunk timestamps on an
 // accumulate-branch record from the replayed request, using the same formula as
 // RequestsToTraceRecords (LastChunkTimeUs = ArrivalTime + FirstTokenTime + sum(ITL),
-// guarded by TTFTSet). SendTimeUs == ArrivalTimeUs (no network send in simulation), so
-// the re-export's injection origin shift is 0 on re-replay (#1606), byte-identical to a
-// generated trace's injection semantics.
+// guarded by TTFTSet).
 func decorateReExportTiming(rec *TraceRecord, req *sim.Request) {
-	rec.SendTimeUs = req.ArrivalTime
 	if req.TTFTSet {
 		rec.FirstChunkTimeUs = req.ArrivalTime + req.FirstTokenTime
 		e2e := req.FirstTokenTime

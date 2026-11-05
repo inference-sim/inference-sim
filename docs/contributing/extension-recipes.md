@@ -48,14 +48,12 @@ To add a new field to TraceV2 CSV output (e.g., a per-round value a converter re
 6. **Add behavioral tests** covering round-trip, conditional logic, and simulation isolation
 
 **Column position guidelines:**
-- Observability metadata: place near related fields (e.g., `vllm_priority` after `slo_class`)
 - Timing data: group with other timestamps
 - Optional columns: prefer conditional inclusion over always-writing zero values
 
 Examples:
-- See PR #1220 (`VLLMPriority`) — optional column, simulation-isolated, conditional on SLOClass presence
-- See `FinishReason`/`ErrorMessage` fields — always-present optional strings (empty when not set)
-- See `ServerInputTokens` field — observability metadata that differs from `InputTokens`
+- See `Adapter` — an optional trailing column, written only when some record names an adapter
+- See `ThinkTimeUs` — an optional presence-signalled column (empty cell = not recorded)
 
 ## Extending Latency Pricing
 

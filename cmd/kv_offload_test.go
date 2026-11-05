@@ -58,7 +58,7 @@ func FuzzKVOffloadRoundTrip(f *testing.F) {
 		}
 		// Serialize through the real trace-header YAML path.
 		hdr := &workload.TraceHeader{
-			Version: 3, TimeUnit: "microseconds", Mode: "generated",
+			Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 			KVOffload: simToHeaderOffload(cfg),
 		}
 		out, err := yaml.Marshal(hdr)

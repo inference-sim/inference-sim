@@ -47,9 +47,11 @@ requests from distributions — the request sequence is fully determined by the 
 --results-path (deprecated) writes per-request SimResult JSON (request_id, ttft_us,
 e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us).
 
+The trace is in trace format version 4. A version 3 trace is refused; convert it with
+'blis convert trace'.
+
 Known limitations:
-  - Warm-up requests: trace.Header.warm_up_requests is not read; every request is
-    measured.
+  - Every request is measured; a trace states no warm-up.
   - Multi-model traces: per-request Model field is propagated to the simulator, but
     the deployment (--scenario) applies globally to all requests.
   - Horizon: --horizon defaults to 2x the latest arrival time. For heavy-load traces
@@ -99,7 +101,7 @@ Example:
 		var traceData *workload.TraceV2
 		if agentXRequested() {
 			agx, agxInitial = buildAgentXRun(cmd)
-			traceData = &workload.TraceV2{Header: workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}}
+			traceData = &workload.TraceV2{Header: workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}}
 			replaySessionMode = "agentic"
 		} else {
 			traceData, err = workload.LoadTraceV2(traceHeaderPath, traceDataPath)
@@ -689,7 +691,7 @@ Example:
 				records = workload.RequestsToTraceRecords(requests)
 			}
 			header := &workload.TraceHeader{
-				Version:              3,
+				Version:              workload.TraceVersion,
 				TimeUnit:             "microseconds",
 				Mode:                 "replayed",
 				SessionContextGrowth: reexportGrowth,                   // #1630: carry accumulate forward so deltas re-replay correctly
@@ -842,8 +844,7 @@ func replayFrameGenerator(agx *agentXRun) frameGenerator {
 
 // replayRunControls are the run controls a replay records: the trace's offered load (or the
 // agentic scenario's lanes), the requests it replays, the seed and the horizon it ran to. No warmup is
-// recorded for a trace: a replay measures every request (it does not read the header's
-// warm_up_requests), and an agentic replay's warmup is part of its workload.replay.
+// recorded for a trace: a replay measures every request, and an agentic replay's warmup is part of its workload.replay.
 func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) result.Run {
 	numRequests, load := len(requests), measurement.Load{}
 	var binding *schemaworkload.Binding

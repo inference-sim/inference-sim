@@ -1249,7 +1249,7 @@ var runCmd = &cobra.Command{
 			}
 			records := workload.RequestsToTraceRecords(traceArrivals)
 			header := &workload.TraceHeader{
-				Version:           3,
+				Version:           workload.TraceVersion,
 				TimeUnit:          "microseconds",
 				Mode:              "generated",
 				WorkloadSeed:      &spec.Seed,

@@ -243,6 +243,131 @@ func TestByteGate(t *testing.T) {
 	}
 }
 
+// traceCase is the byte-gate case whose trace the gate also compares: the trace format is
+// output too (trace format version 4, contracts/spec/trace), and a refactor must not move it.
+const traceCase = "moe-prefix"
+
+// TestByteGateTrace writes traceCase's trace with --trace-output, at GOMAXPROCS 1 and 4, and
+// compares the header and the data byte for byte with testdata/bytegate/trace. It then
+// replays the trace and checks that the replay reads back every request (the round trip).
+func TestByteGateTrace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the blis binary")
+	}
+	root := repoRoot(t)
+	gate := filepath.Join(root, "testdata", "bytegate")
+	cases, err := readCases(filepath.Join(gate, "cases.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var args []string
+	for _, c := range cases {
+		if c.name == traceCase {
+			args = c.args
+		}
+	}
+	if args == nil {
+		t.Fatalf("cases.txt has no case %q", traceCase)
+	}
+	catalog, registry := substratedata.MustCatalog(), substratedata.MustRegistry()
+	bin := buildBlis(t, root)
+	data := []string{"--scenarios", filepath.Join(gate, "scenarios"), "--catalog", catalog, "--registry", registry}
+	golden := filepath.Join(gate, "trace")
+	var first map[string][]byte
+	var prefix string
+	for _, procs := range []string{"1", "4"} {
+		dir := t.TempDir()
+		prefix = filepath.Join(dir, traceCase)
+		runBlis(t, bin, procs, append(append(append([]string{}, args...), data...), "--trace-output", prefix)...)
+		got := map[string][]byte{}
+		for _, ext := range []string{".yaml", ".csv"} {
+			b, err := os.ReadFile(prefix + ext)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got[ext] = b
+		}
+		if first == nil {
+			first = got
+			continue
+		}
+		for ext := range got {
+			if !bytes.Equal(first[ext], got[ext]) {
+				t.Fatalf("the trace's %s differs between GOMAXPROCS 1 and %s (X6)", ext, procs)
+			}
+		}
+	}
+	for ext, b := range first {
+		path := filepath.Join(golden, traceCase+ext)
+		if *update {
+			if err := os.WriteFile(path, b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		old, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%v (run go test ./internal/bytegate -update to create it)", err)
+		}
+		if !bytes.Equal(old, b) {
+			t.Errorf("the trace's %s differs from %s at byte %d: a refactor must not change it (SIM-4)", ext, path, firstDiff(old, b))
+		}
+	}
+	if !bytes.HasPrefix(first[".yaml"], []byte("trace_version: 4\n")) {
+		t.Errorf("the trace header does not start with trace_version: 4:\n%s", first[".yaml"])
+	}
+	// The round trip: a replay of the golden trace reads back every request it records.
+	out := runBlis(t, bin, "1", append([]string{"replay", "--scenario", args[indexOf(args, "--scenario")+1],
+		"--trace-header", filepath.Join(golden, traceCase+".yaml"), "--trace-data", filepath.Join(golden, traceCase+".csv")}, data...)...)
+	var r struct {
+		Requests struct {
+			Injected int `json:"injected"`
+		} `json:"requests"`
+	}
+	if err := json.Unmarshal(out, &r); err != nil {
+		t.Fatal(err)
+	}
+	if rows := bytes.Count(first[".csv"], []byte("\n")) - 1; r.Requests.Injected != rows || rows == 0 {
+		t.Errorf("the replay injected %d requests; the trace holds %d", r.Requests.Injected, rows)
+	}
+}
+
+// buildBlis builds the blis binary from the checkout at root.
+func buildBlis(t *testing.T, root string) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "blis")
+	build := exec.Command("go", "build", "-buildvcs=false", "-trimpath", "-o", bin, ".")
+	build.Dir = root
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
+	}
+	return bin
+}
+
+// runBlis runs bin with args outside the checkout, with only the environment a run needs
+// (X25), and returns its standard output.
+func runBlis(t *testing.T, bin, procs string, args ...string) []byte {
+	t.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = t.TempDir()
+	cmd.Env = []string{"GOMAXPROCS=" + procs, "HOME=" + cmd.Dir, "PATH=" + os.Getenv("PATH")}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("GOMAXPROCS=%s blis %s: %v\n%s", procs, strings.Join(args, " "), err, tail(stderr.String()))
+	}
+	return stdout.Bytes()
+}
+
+func indexOf(s []string, v string) int {
+	for i, x := range s {
+		if x == v {
+			return i
+		}
+	}
+	return -1
+}
+
 func firstDiff(a, b []byte) int {
 	for i := 0; i < len(a) && i < len(b); i++ {
 		if a[i] != b[i] {

@@ -1,0 +1,4 @@
+trace_version: 3
+time_unit: microseconds
+mode: generated
+warm_up_requests: 0

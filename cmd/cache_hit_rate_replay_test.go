@@ -96,7 +96,7 @@ func TestINV13_RunReplayParity_CacheHitRate(t *testing.T) {
 	runHitRate := cs1.AggregatedMetrics().CacheHitRate
 
 	traceRecords := workload.RequestsToTraceRecords(requests)
-	traceHdr := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	traceHdr := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	traceHeaderFile := filepath.Join(dir, "trace.yaml")
 	traceDataFile := filepath.Join(dir, "trace.csv")
 	if err := workload.ExportTraceV2(traceHdr, traceRecords, traceHeaderFile, traceDataFile); err != nil {
