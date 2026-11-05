@@ -3,7 +3,6 @@ package llmd
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"math/rand"
 	"sync/atomic"
 	"time"
@@ -117,9 +116,9 @@ func (rt *desRuntime) Rand(stream string) embed.Rand {
 	if r, ok := rt.streams[stream]; ok {
 		return r
 	}
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(rt.scope + "/" + stream))
-	r := &desRand{r: rand.New(rand.NewSource(rt.seed ^ int64(h.Sum64())))} //nolint:gosec // simulation RNG
+	// Each router stream is a named substream of the router seed (DEV-6): its component is the
+	// router's pool, its purpose the stream the router named.
+	r := &desRand{r: sim.NewStream(rt.seed, sim.StreamName{Component: "router/" + rt.scope, Purpose: stream})}
 	rt.streams[stream] = r
 	return r
 }
@@ -269,8 +268,9 @@ func (d *desRand) Float64() float64                   { return d.r.Float64() }
 func (d *desRand) IntN(n int) int                     { return d.r.Intn(n) }
 func (d *desRand) Shuffle(n int, swap func(i, j int)) { d.r.Shuffle(n, swap) }
 
-// streamSeed derives the router seed from the run seed so that enabling a router stream never
-// shifts another subsystem's draws.
-func streamSeed(rng *sim.PartitionedRNG) int64 {
-	return rng.ForSubsystem("epp").Int63()
+// streamSeed derives the router seed from the run seed, from a substream of its own, so that
+// enabling a router stream never shifts another component's draws. A trace records the value,
+// so a replay seeds the router as the run did.
+func streamSeed(runSeed int64) int64 {
+	return sim.NewStream(runSeed, sim.StreamName{Component: "router", Purpose: "seed"}).Int63()
 }

@@ -3,7 +3,6 @@ package workload
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -134,8 +133,6 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 		return nil, fmt.Errorf("empty trace")
 	}
 
-	rng := rand.New(rand.NewSource(seed))
-
 	// Injection-origin shift (#1606): re-base injection onto the arrival/deadline
 	// origin. 0 for generated traces (send == arrival) ⇒ byte-identical.
 	originShift := injectionOriginShift(trace.Records)
@@ -145,15 +142,17 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 	for _, rec := range trace.Records {
 		if rec.PrefixGroup != "" && rec.PrefixLength > 0 {
 			if _, exists := prefixTokens[rec.PrefixGroup]; !exists {
-				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, rec.PrefixLength)
+				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(prefixStream(seed, rec.PrefixGroup), rec.PrefixLength)
 			}
 		}
 	}
 
 	requests := make([]*sim.Request, 0, len(trace.Records))
 	for _, rec := range trace.Records {
-		// Generate synthetic token IDs, preferring server-reported count when available.
-		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		// Synthetic token IDs, preferring server-reported count when available, from the
+		// record's own streams (replayRecordStreams).
+		rs := replayRecordStreams(seed, rec)
+		inputTokens := tokens(rs, purposeInputTokens, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 
 		// Prepend prefix if in a group
 		if rec.PrefixGroup != "" {
@@ -162,7 +161,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			}
 		}
 
-		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
+		outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
 
 		req := &sim.Request{
 			ID:               fmt.Sprintf("request_%d", rec.RequestID),
@@ -241,8 +240,6 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 		horizon = math.MaxInt64
 	}
 
-	rng := rand.New(rand.NewSource(seed))
-
 	// Injection-origin shift (#1606): a single constant over ALL records so the
 	// round-0 and non-session injection sites below share one origin. 0 for
 	// generated traces (send == arrival) ⇒ byte-identical to pre-#1606 replay.
@@ -253,7 +250,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	for _, rec := range trace.Records {
 		if rec.PrefixGroup != "" && rec.PrefixLength > 0 {
 			if _, exists := prefixTokens[rec.PrefixGroup]; !exists {
-				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, rec.PrefixLength)
+				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(prefixStream(seed, rec.PrefixGroup), rec.PrefixLength)
 			}
 		}
 	}
@@ -408,18 +405,20 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			sessionThinkTimeSampler = &SequenceSampler{values: thinkTimes}
 		}
 
-		// Per-session RNG for deterministic token ID generation (INV-6)
-		sessionRNG := rand.New(rand.NewSource(rng.Int63()))
+		// The session's streams (DEV-6): round 0's tokens here, each follow-up's in the
+		// session manager, every round from its own child (roundStreams).
+		session := SessionStreams(seed, sessionID)
+		rs0 := roundStreams(session, 0)
 
 		// Build round-0 request, preferring server-reported count when available.
 		r0 := rounds[0]
-		inputTokens := sim.GenerateRandomTokenIDs(sessionRNG, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
+		inputTokens := tokens(rs0, purposeInputTokens, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
 		if r0.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[r0.PrefixGroup]; ok {
 				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 			}
 		}
-		outputTokens := sim.GenerateRandomTokenIDs(sessionRNG, r0.OutputTokens)
+		outputTokens := tokens(rs0, purposeOutputTokens, r0.OutputTokens)
 
 		var prefix []sim.TokenID
 		if r0.PrefixGroup != "" {
@@ -465,7 +464,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			OutputSampler:         &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
 			InputResetSampler:     inputResetSampler,                       // #1609; nil unless a round compacts
 			DeadlineOffsetSampler: deadlineOffsetSampler,                   // #2064; always set on replay so follow-ups honor the trace deadline
-			RNG:                   sessionRNG,
+			Streams:               session,
 			Prefix:                prefix,
 			TenantID:              r0.TenantID,
 			SLOClass:              r0.SLOClass,
@@ -478,13 +477,14 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 	// Append non-session requests (same construction as LoadTraceV2Requests).
 	for _, rec := range nonSessionRecords {
-		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		rs := replayRecordStreams(seed, rec)
+		inputTokens := tokens(rs, purposeInputTokens, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 		if rec.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[rec.PrefixGroup]; ok {
 				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 			}
 		}
-		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
+		outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", rec.RequestID),
 			ArrivalTime:     injectionTime(rec) - originShift, // #1606: on the arrival/deadline origin

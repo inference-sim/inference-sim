@@ -20,7 +20,6 @@ type ClusterSimulator struct {
 	abortErr          error
 	config            DeploymentConfig
 	instances         []*InstanceSimulator
-	rng               *sim.PartitionedRNG
 	clock             int64
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
@@ -288,14 +287,9 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		})
 	}
 
-	// The cluster's PartitionedRNG. The embedded router draws from its own "epp" partition
-	// (sim/llmd/runtime.go); give each other consumer its own subsystem so draws never interleave.
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
-
 	cs := &ClusterSimulator{
 		config:            config,
 		instances:         make([]*InstanceSimulator, 0, config.NumInstances),
-		rng:               rng,
 		requestSource:     requestSource,
 		clusterEvents:     make(ClusterEventQueue, 0),
 		lifecycleSender:   eventSender{id: senderLifecycle},
@@ -358,8 +352,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 					ov.name, ov.cfg.TP, config.TP))
 			}
 		}
-		provisionRng := rng.ForSubsystem(subsystemNodeProvisioning)
-		loadingRng := rng.ForSubsystem(subsystemInstanceLoading)
+		provisionRng := sim.NewStream(config.Seed, streamNodeProvisioning)
+		loadingRng := sim.NewStream(config.Seed, streamInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
 	}
 
@@ -511,7 +505,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			NewV2SaturationAnalyzer(analyzerCfg),
 			&UnlimitedEngine{},
 			NewDirectActuator(cs),
-			rng.ForSubsystem(subsystemAutoscaler),
+			sim.NewStream(config.Seed, streamAutoscaler),
 		)
 	}
 

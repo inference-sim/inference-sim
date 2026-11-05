@@ -3,25 +3,17 @@ package workload
 import (
 	"fmt"
 	"math"
-	"math/rand"
 )
 
 // ExpandCohorts transforms cohort population descriptions into explicit client specs.
-// Pure function: same (cohorts, seed) always produces identical output (INV-W3).
-// Each cohort derives an independent RNG sub-stream from seed and its index.
-// Note: reordering cohorts in the input changes their index-derived seeds.
-func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
+// Pure function: the same cohorts always produce identical output (INV-W3). Expansion draws
+// no randomness; each expanded member draws from its own client streams when it generates.
+func ExpandCohorts(cohorts []CohortSpec) []ClientSpec {
 	var expanded []ClientSpec
-	for i, cohort := range cohorts {
+	for _, cohort := range cohorts {
 		if cohort.Population <= 0 {
 			continue // R11: guard against div-by-zero when called without Validate()
 		}
-
-		// Derive independent RNG per cohort using multiplicative hash.
-		// Avoids XOR collision (seed=1^2 == seed=2^1) and zero-seed
-		// (seed==i+1 → XOR=0). Knuth multiplicative hash spreads entropy.
-		cohortSeed := seed*2654435761 + int64(i)
-		cohortRNG := rand.New(rand.NewSource(cohortSeed))
 
 		perMemberFraction := cohort.RateFraction / float64(cohort.Population)
 
@@ -66,7 +58,7 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 			// Build lifecycle windows from cohort patterns
 			var windows []ActiveWindow
 			if cohort.Diurnal != nil {
-				windows = append(windows, diurnalWindows(cohort.Diurnal, cohortRNG)...)
+				windows = append(windows, diurnalWindows(cohort.Diurnal)...)
 			}
 			if cohort.Spike != nil {
 				window := spikeWindow(cohort.Spike)
@@ -107,9 +99,7 @@ func ExpandCohorts(cohorts []CohortSpec, seed int64) []ClientSpec {
 //   - At trough (peakHour ± 12): multiplier = 1/R (fraction of hour active)
 //
 // The formula: multiplier = (1 + cos(2π(h - peakHour)/24)) / 2 * (1 - 1/R) + 1/R
-func diurnalWindows(d *DiurnalSpec, rng *rand.Rand) []ActiveWindow {
-	_ = rng // reserved for future session-duration jitter
-
+func diurnalWindows(d *DiurnalSpec) []ActiveWindow {
 	const hoursPerDay = 24
 	const usPerHour = int64(3600 * 1e6) // 1 hour in microseconds
 

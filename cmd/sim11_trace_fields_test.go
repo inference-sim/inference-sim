@@ -156,7 +156,7 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 		}},
 		"TraceRouterConfig.GatewayLatencyUs": {"precise", func(h *workload.TraceHeader, _ []workload.TraceRecord) { h.Router.GatewayLatencyUs = 500 }},
 		"TraceRouterConfig.ScrapeJitterUs":   {"pool", func(h *workload.TraceHeader, _ []workload.TraceRecord) { h.Router.ScrapeJitterUs = 15_000 }},
-		"TraceRouterConfig.KVEventDelayUs":   {"events-only", func(h *workload.TraceHeader, _ []workload.TraceRecord) { h.Router.KVEventDelayUs = 400_000 }},
+		"TraceRouterConfig.KVEventDelayUs":   {"events-only", func(h *workload.TraceHeader, _ []workload.TraceRecord) { h.Router.KVEventDelayUs = 20_000 }},
 		"TraceRouterConfig.Seed": {"precise", func(h *workload.TraceHeader, _ []workload.TraceRecord) {
 			s := int64(1234)
 			h.Router.Seed = &s

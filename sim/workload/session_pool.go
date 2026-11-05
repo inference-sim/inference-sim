@@ -40,12 +40,14 @@ func cloneSampler(s LengthSampler) LengthSampler {
 // cloneBlueprintForDup produces a duplicated blueprint + round-0 request with a
 // new unique SessionID and a cache-busting prefix token so the clone does not
 // share KV cache with its source. dupIdx is the global clone index (>=1).
-func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, rng *rand.Rand) (SessionBlueprint, *sim.Request) {
+// The clone's follow-up rounds and its cache-busting token draw from the clone's own session
+// streams (SessionStreams(seed, newID)).
+func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, seed int64) (SessionBlueprint, *sim.Request) {
 	newID := fmt.Sprintf("%s_dup%d", src.SessionID, dupIdx)
 	bp := src // shallow copy; stateful samplers are independently re-cloned below via cloneSampler
 	bp.SessionID = newID
-	// Fresh per-session RNG so token IDs differ deterministically from the source.
-	bp.RNG = rand.New(rand.NewSource(rng.Int63()))
+	// The clone's own streams, so its token IDs differ deterministically from the source's.
+	bp.Streams = SessionStreams(seed, newID)
 	// Give the clone independent sampler state. Interface fields copied by the
 	// shallow `bp := src` above still point at the SAME underlying sampler
 	// object as src for stateful types (e.g. *SequenceSampler's mutable index
@@ -66,7 +68,7 @@ func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, 
 
 	// Cache-busting token prepended to the clone's round-0 input so the block
 	// hash chain diverges immediately from the source session (design §6).
-	buster := sim.GenerateRandomTokenIDs(bp.RNG, 1)
+	buster := tokens(roundStreams(bp.Streams, 0), purposeCacheBuster, 1)
 	newInput := make([]sim.TokenID, 0, len(srcR0.InputTokens)+1)
 	newInput = append(newInput, buster...)
 	newInput = append(newInput, srcR0.InputTokens...)
@@ -124,7 +126,6 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 		return nil, nil, fmt.Errorf("total (%d) must be >= concurrent (%d)", total, concurrent)
 	}
 
-	rng := rand.New(rand.NewSource(seed))
 	allBPs := make([]SessionBlueprint, 0, total)
 	allR0 := make([]*sim.Request, 0, total)
 	dupIdx := 0
@@ -135,7 +136,7 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 			allR0 = append(allR0, r0Requests[srcIdx])
 		} else {
 			dupIdx++
-			bp, r0 := cloneBlueprintForDup(blueprints[srcIdx], r0Requests[srcIdx], dupIdx, rng)
+			bp, r0 := cloneBlueprintForDup(blueprints[srcIdx], r0Requests[srcIdx], dupIdx, seed)
 			allBPs = append(allBPs, bp)
 			allR0 = append(allR0, r0)
 		}

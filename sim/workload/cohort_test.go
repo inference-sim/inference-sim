@@ -107,7 +107,7 @@ func TestExpandCohorts_SpikeTraceRate_DividedByPopulation(t *testing.T) {
 			},
 		},
 	}
-	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	expanded := ExpandCohorts(spec.Cohorts)
 	if len(expanded) != 7 {
 		t.Fatalf("expected 7 clients; got %d", len(expanded))
 	}
@@ -310,8 +310,8 @@ func TestExpandCohorts_Determinism_SameSeedSameOutput(t *testing.T) {
 	}
 
 	// WHEN expanded twice with the same seed
-	result1 := ExpandCohorts(cohorts, 42)
-	result2 := ExpandCohorts(cohorts, 42)
+	result1 := ExpandCohorts(cohorts)
+	result2 := ExpandCohorts(cohorts)
 
 	// THEN both expansions produce byte-identical client lists
 	if !reflect.DeepEqual(result1, result2) {
@@ -331,7 +331,7 @@ func TestExpandCohorts_ClientIDsUnique(t *testing.T) {
 			OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}},
 		},
 	}
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	ids := make(map[string]bool)
 	for _, c := range result {
 		if ids[c.ID] {
@@ -342,7 +342,7 @@ func TestExpandCohorts_ClientIDsUnique(t *testing.T) {
 }
 
 func TestExpandCohorts_EmptyList_ReturnsEmpty(t *testing.T) {
-	result := ExpandCohorts(nil, 42)
+	result := ExpandCohorts(nil)
 	if len(result) != 0 {
 		t.Errorf("expected 0 clients, got %d", len(result))
 	}
@@ -359,7 +359,7 @@ func TestExpandCohorts_FieldInheritance(t *testing.T) {
 			Streaming: true,
 		},
 	}
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	for _, c := range result {
 		if c.TenantID != "tenant-x" {
 			t.Errorf("client %s: TenantID = %q, want %q", c.ID, c.TenantID, "tenant-x")
@@ -386,7 +386,7 @@ func TestExpandCohorts_DiurnalPattern_ProducesLifecycleWindows(t *testing.T) {
 			Diurnal: &DiurnalSpec{PeakHour: 14, PeakToTroughRatio: 4.0},
 		},
 	}
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 client, got %d", len(result))
 	}
@@ -416,7 +416,7 @@ func TestExpandCohorts_SpikePattern_ProducesLifecycleWindow(t *testing.T) {
 			Spike: &SpikeSpec{StartTimeUs: 1_000_000, DurationUs: 500_000},
 		},
 	}
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	if result[0].Lifecycle == nil {
 		t.Fatal("expected lifecycle for spike cohort")
 	}
@@ -443,7 +443,7 @@ func TestExpandCohorts_DrainPattern_ProducesRampDownWindows(t *testing.T) {
 			Drain: &DrainSpec{StartTimeUs: 1_000_000, RampDurationUs: 1_000_000},
 		},
 	}
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	if result[0].Lifecycle == nil {
 		t.Fatal("expected lifecycle for drain cohort")
 	}
@@ -520,7 +520,7 @@ func TestExpandCohorts_PrefixGroup_EachMemberGetsUniqueGroup(t *testing.T) {
 	}
 
 	// WHEN expanded
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 
 	// THEN each member has a non-empty and distinct prefix group
 	if len(result) != 4 {
@@ -555,7 +555,7 @@ func TestExpandCohorts_PrefixGroup_NamePattern(t *testing.T) {
 	}
 
 	// WHEN expanded
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 
 	// THEN each member's prefix group follows the "<prefix_group>-<j>" pattern
 	for i, c := range result {
@@ -579,7 +579,7 @@ func TestExpandCohorts_NoPrefixGroup_RemainsEmpty(t *testing.T) {
 	}
 
 	// WHEN expanded
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 
 	// THEN each member has an empty PrefixGroup (no unintended groups created)
 	for _, c := range result {
@@ -611,7 +611,7 @@ func TestExpandCohorts_PrefixSharing_SharedDefault_AllMembersShareGroup(t *testi
 			}
 
 			// WHEN expanded
-			result := ExpandCohorts(cohorts, 42)
+			result := ExpandCohorts(cohorts)
 
 			// THEN all members share the same PrefixGroup (backward-compatible behavior)
 			for _, c := range result {
@@ -783,7 +783,7 @@ func TestExpandCohorts_PrefixGroup_PerMember_SingleMember_GetsIndexedGroup(t *te
 	}
 
 	// WHEN expanded
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 
 	// THEN the single member gets "ctx-0" (not "ctx")
 	if len(result) != 1 {
@@ -816,7 +816,7 @@ func TestExpandCohorts_MixedPrefixSharing_EachCohortBehavesIndependently(t *test
 	}
 
 	// WHEN expanded
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	if len(result) != 6 {
 		t.Fatalf("expected 6 clients, got %d", len(result))
 	}
@@ -927,7 +927,7 @@ func TestExpandCohorts_NewFieldsPropagate(t *testing.T) {
 		},
 	}
 
-	result := ExpandCohorts(cohorts, 42)
+	result := ExpandCohorts(cohorts)
 	if len(result) != 3 {
 		t.Fatalf("expected 3 expanded clients, got %d", len(result))
 	}
@@ -966,7 +966,7 @@ func TestExpandCohorts_NilNewFields_NoChange(t *testing.T) {
 		},
 	}
 
-	result := ExpandCohorts(cohorts, 0)
+	result := ExpandCohorts(cohorts)
 	for _, c := range result {
 		if c.PrefixLength != 0 {
 			t.Errorf("client %s: PrefixLength = %d, want 0", c.ID, c.PrefixLength)
@@ -1079,9 +1079,9 @@ func TestExpandCohorts_IndependentRNG_ReorderingDoesNotChange(t *testing.T) {
 	}
 
 	// Expand in order [A, B]
-	resultAB := ExpandCohorts([]CohortSpec{cohortA, cohortB}, 42)
+	resultAB := ExpandCohorts([]CohortSpec{cohortA, cohortB})
 	// Expand individually
-	resultA := ExpandCohorts([]CohortSpec{cohortA}, 42)
+	resultA := ExpandCohorts([]CohortSpec{cohortA})
 
 	// Cohort A's expansion should be identical regardless of B's presence
 	// (same index 0, same seed)

@@ -99,8 +99,6 @@ type GatewayHost interface {
 	EndpointRanks(id InstanceID) []*InstanceSimulator
 	// Seed returns the run seed.
 	Seed() int64
-	// RNG returns the run's partitioned RNG.
-	RNG() *sim.PartitionedRNG
 	// BlockSizeTokens returns the KV block size of the deployment.
 	BlockSizeTokens() int64
 	// PoolRole returns an instance's P/D pool role, or 0 when the deployment is not
@@ -167,9 +165,6 @@ func (cs *ClusterSimulator) Now() int64 { return cs.clock }
 
 // Seed implements GatewayHost.
 func (cs *ClusterSimulator) Seed() int64 { return cs.config.Seed }
-
-// RNG implements GatewayHost.
-func (cs *ClusterSimulator) RNG() *sim.PartitionedRNG { return cs.rng }
 
 // BlockSizeTokens implements GatewayHost.
 func (cs *ClusterSimulator) BlockSizeTokens() int64 { return cs.config.BlockSizeTokens }
