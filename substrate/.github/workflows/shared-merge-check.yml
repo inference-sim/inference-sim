@@ -1,0 +1,85 @@
+name: shared merge check
+
+# The merge check every BLIS repository runs in its merge queue (X22, X24, X17). Called by
+# commit:
+#
+#   on:
+#     merge_group:
+#   jobs:
+#     merge:
+#       uses: inference-sim/blis-substrate/.github/workflows/shared-merge-check.yml@<40-hex commit>
+#       with:
+#         substrate-ref: <the same commit>
+#         required: "blis checks,required"
+#
+# It fails while any verdict names a tree other than the one it must have judged: every
+# required check on the merge-queue tree; every review and review-question answer on the head
+# tree, unless merging changes a path it covers, in which case it is requested again. It
+# fails while a review thread has no outcome (fixed, filed as a linked issue, or rejected
+# with a reason), and when the pull request closes an issue the merge tree still cites (X28).
+
+on:
+  workflow_call:
+    inputs:
+      substrate-ref:
+        type: string
+        required: true
+      required:
+        description: Comma-separated names of the required checks that must pass on the merge-queue tree.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  merge:
+    name: merge check
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MERGE: ${{ github.event.merge_group.head_sha }}
+      BASE: ${{ github.event.merge_group.base_sha }}
+      REF: ${{ github.event.merge_group.head_ref }}
+    steps:
+      - name: Refuse to run outside the merge queue
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "merge_group" ]; then
+            echo "the merge check judges the merge-queue tree; it runs only on merge_group (X22)" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.MERGE }}
+          fetch-depth: 0
+          path: repo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: inference-sim/blis-substrate
+          ref: ${{ inputs.substrate-ref }}
+          path: substrate
+      - uses: ./substrate/.github/actions/go-toolchain
+        with:
+          module-dir: substrate
+      - name: Build the check
+        working-directory: substrate
+        run: go build -o "$RUNNER_TEMP/prcheck" ./tools/prcheck
+      - name: Merge check (X22, X24, X28)
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          # The merge-queue ref is gh-readonly-queue/<base>/pr-<n>-<sha>.
+          pr=$(printf '%s' "$REF" | sed -n 's|.*/pr-\([0-9][0-9]*\)-.*|\1|p')
+          test -n "$pr"
+          head=$(gh api "repos/${{ github.repository }}/pulls/$pr" --jq .head.sha)
+          gh api "repos/${{ github.repository }}/pulls/$pr" --jq .body > "$RUNNER_TEMP/body.md"
+          "$RUNNER_TEMP/prcheck" merge-collect -repo "${{ github.repository }}" -pr "$pr" \
+            -merge "$MERGE" -head "$head" -base "$BASE" -required "${{ inputs.required }}" > "$RUNNER_TEMP/merge.json"
+          "$RUNNER_TEMP/prcheck" merge -input "$RUNNER_TEMP/merge.json"
+          "$RUNNER_TEMP/prcheck" issues -repo "${{ github.repository }}" -closes "$RUNNER_TEMP/body.md"

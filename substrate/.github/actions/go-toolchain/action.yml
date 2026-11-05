@@ -14,7 +14,7 @@ inputs:
 
 outputs:
   version:
-    description: The installed version, as the go command reports it (go1.27.2).
+    description: The installed version, as the go command reports it (for example go1.N.M).
     value: ${{ steps.read.outputs.version }}
 
 runs:
@@ -40,7 +40,7 @@ runs:
         version=$(tr -d '[:space:]' < "$file")
         case "$version" in
           go1.*) ;;
-          *) echo "contracts/toolchain holds '$version', not a version such as go1.27.2" >&2; exit 1 ;;
+          *) echo "contracts/toolchain holds '$version', not a Go version of the form go1.N.M" >&2; exit 1 ;;
         esac
         echo "version=$version" >> "$GITHUB_OUTPUT"
         echo "number=${version#go}" >> "$GITHUB_OUTPUT"

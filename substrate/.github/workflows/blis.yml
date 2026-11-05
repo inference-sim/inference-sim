@@ -1,0 +1,48 @@
+name: blis
+
+# This repository's use of its own shared workflows. Every other BLIS repository calls them
+# by commit (inference-sim/blis-substrate/.github/workflows/<file>@<commit>, X21); here they
+# are called by path, so a pull request that changes a shared check is judged by the changed
+# check, and substrate-ref is the pull request's own commit.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  merge_group:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pr:
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/shared-pr-checks.yml
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      repo: blis-substrate
+      substrate-ref: ${{ github.event.pull_request.head.sha }}
+
+  merge:
+    if: github.event_name == 'merge_group'
+    uses: ./.github/workflows/shared-merge-check.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    with:
+      substrate-ref: ${{ github.event.merge_group.head_sha }}
+      required: "required,blis checks / blis checks"
+
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/shared-nightly.yml
+    permissions:
+      contents: read
+      issues: read
+    with:
+      substrate-ref: ${{ github.sha }}

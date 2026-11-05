@@ -47,8 +47,8 @@ type Input struct {
 	Modules   []Module
 	Graph     [][2]string // each edge "from@version" -> "to@version"
 	GoWork    []string    // committed go.work and go.work.sum paths
-	Toolchain string      // "go1.27.2"
-	GoVersion string      // what `go version` reports, "go1.27.2"
+	Toolchain string      // as contracts/toolchain writes it, go1.N.M
+	GoVersion string      // what go env GOVERSION reports
 }
 
 // Lint returns every violation of X11 and LIF-2 in the input, sorted.
@@ -112,7 +112,7 @@ func Lint(in Input) ([]string, error) {
 	// and the router through its replace at a -blis.N tag.
 	tc := in.Toolchain
 	if !version.IsValid(tc) {
-		return nil, fmt.Errorf("contracts/toolchain holds %q, not a Go version such as go1.27.2", tc)
+		return nil, fmt.Errorf("contracts/toolchain holds %q, not a Go version of the form go1.N.M", tc)
 	}
 	for _, m := range in.Modules {
 		if m.GoVersion != "" && version.Compare("go"+m.GoVersion, tc) > 0 {

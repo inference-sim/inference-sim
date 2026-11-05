@@ -1,0 +1,3 @@
+# Every tag of this repository and the commit it names, one "<tag> <commit>" per line (LIF-1).
+# The release bot appends a line when it tags; a release owner does the same under the manual
+# procedure (design §13.6). The nightly tag check fails on any difference.
