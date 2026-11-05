@@ -1,0 +1,41 @@
+# DeepSeek-V4.1-Flash on one 8-GPU H200 node under plain tensor parallelism, with DSpark
+# drafting five tokens a step: the deployment blis-catalog#29's graph and the kernel issues it
+# raised (blis-latency-kernel#30-#40) were measured on.
+#
+# Hand-written. The cache dtype is stated as fp8, which V4.1's attention backend serves as its
+# packed fp8_ds_mla record on SM90; the block size is left unstated, so the engine picks the
+# 64-token kernel block V4.1's sparse backends accept on SM90. Expert parallelism is off, so
+# each rank holds a tensor slice of every expert and the model's own sequence parallelism,
+# which needs expert parallelism, is off too.
+kind: Scenario
+name: deepseek-v41-flash-h200-tp8
+engine_version: "0.31.0"
+
+model: deepseek-v4.1-flash
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: deepseek-v41-flash-h200-tp8
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 8
+      pp: 1
+      dp: 1
+      enable_expert_parallel: false
+    engine:
+      cache_dtype: fp8
+      max_num_batched_tokens: 8192
+      max_num_seqs: 256
+      max_model_len: 131072
+      gpu_memory_utilization: 0.9
+      speculative:
+        method: dspark
+        num_spec_tokens: 5

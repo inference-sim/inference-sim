@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/llmd"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -60,15 +61,25 @@ type routerInputs struct {
 // validateRouterFlags refuses invalid router timing flags. run and replay call it with their other
 // flag checks, before any simulation state is built (R3).
 func validateRouterFlags() {
-	if gatewayLatencyUs < 0 {
-		logrus.Fatalf("--gateway-latency must be >= 0, got %d", gatewayLatencyUs)
+	if err := routerTimingsError("--gateway-latency", "--epp-scrape-jitter", "--kv-event-delay",
+		gatewayLatencyUs, scrapeJitterUs, kvEventDelayUs); err != nil {
+		logrus.Fatalf("%v", err)
 	}
-	if scrapeJitterUs < 0 {
-		logrus.Fatalf("--epp-scrape-jitter must be >= 0, got %d", scrapeJitterUs)
+}
+
+// routerTimingsError checks the router's three environment timings with the one validator for a
+// span of simulated time (check.DurationUs), naming each by the given field names. The command
+// line and the trace header (workload.TraceRouterConfig.Validate) refuse the same values (SIM-11).
+func routerTimingsError(gatewayField, jitterField, delayField string, gatewayUs, jitterUs, delayUs int64) error {
+	for _, f := range []struct {
+		name string
+		v    int64
+	}{{gatewayField, gatewayUs}, {jitterField, jitterUs}, {delayField, delayUs}} {
+		if err := check.DurationUs(f.name, f.v); err != nil {
+			return err
+		}
 	}
-	if kvEventDelayUs < 0 {
-		logrus.Fatalf("--kv-event-delay must be >= 0, got %d", kvEventDelayUs)
-	}
+	return nil
 }
 
 // adoptScenarioRouter reads the router half of the scenario's deployment, refusing a router block

@@ -148,7 +148,7 @@ The trace summary shows:
 
 ## Event Ordering
 
-The cluster uses `(timestamp, priority, seqID)` ordering for deterministic event processing:
+The cluster orders its events by the key `(time, class, sender, sender's own count)` (design DEV-2). No counter shared by the whole simulator enters it, so the order of one instant depends only on what each component sent, not on the order the simulator happened to schedule things. Two queued events with the same key are a defect, and the simulator panics on one. Each class's position and its reason are listed beside the event types in `sim/cluster/cluster_event.go`.
 
 - Cluster events at time T process before instance events at time T
 - Same-time instance ties broken by lowest instance index

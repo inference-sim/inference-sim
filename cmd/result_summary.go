@@ -11,7 +11,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/inference-sim/blis-schemas/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"

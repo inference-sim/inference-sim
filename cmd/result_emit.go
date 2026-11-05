@@ -10,7 +10,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-schemas/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -55,6 +55,11 @@ type postRun struct {
 	extraOverrides []sim.ScenarioOverride
 	// started is when the command started, for the runtime block.
 	started time.Time
+	// frame is what the command tells the experimental frame about its request source.
+	frame frameGenerator
+	// numRequestsCap is the request cap the generator was given, 0 for none (the frame's
+	// stop rule).
+	numRequestsCap int
 }
 
 // emitRunResult builds, validates and prints the Result document, writes the deprecated
@@ -137,7 +142,7 @@ func emitRunResult(p postRun) {
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
 		Artifacts:      artifacts,
-		Revisions:      resultRevisions(resolvedCatalogRoot, kernelRegistry, docs.Scenario.EngineVersion),
+		Revisions:      resultRevisions(resolvedCatalogRoot, kernelRegistry, scenarioEngine),
 	}
 	out := resultMetrics{
 		Aggregated:      aggregated,
@@ -168,6 +173,9 @@ func emitRunResult(p postRun) {
 		logrus.Fatalf("the run simulated no time: no request arrived (generated %d) and no --horizon bounds the run, "+
 			"so there is nothing to report; check the workload's arrival windows, or pass --horizon", out.Ledger.Generated)
 	}
+	// The experimental frame (DEV-7), under engine.frame until the contracts Result carries
+	// its own field (result_frame.go).
+	r.Engine["frame"] = toGeneric(buildFrame(p.frame, r, p.numRequestsCap, cs.Horizon()))
 	r.Runtime = resultRuntime(p.started)
 
 	view := &summaryView{

@@ -46,7 +46,7 @@ func (cs *ClusterSimulator) gateArrival(req *sim.Request, now int64) bool {
 	}
 	send, more := cs.arrivalGate(req, now)
 	for _, m := range more {
-		cs.pushArrival(m, m.ArrivalTime)
+		cs.pushArrival(m, m.ArrivalTime, &cs.workloadSender)
 	}
 	return send
 }
@@ -72,6 +72,6 @@ func (cs *ClusterSimulator) notifyUnserved(req *sim.Request) {
 		return
 	}
 	for _, m := range cs.unservedHook(req, cs.clock) {
-		cs.pushArrival(m, m.ArrivalTime)
+		cs.pushArrival(m, m.ArrivalTime, &cs.workloadSender)
 	}
 }

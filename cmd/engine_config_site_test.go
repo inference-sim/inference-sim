@@ -257,7 +257,7 @@ func isKernelModel(typ types.Type) bool { return isNamed(typ, kernelModelPath, "
 
 // kernelPath is blis-schemas' kernel contract, whose Kernel prices a pool's batches, blocks and
 // transfers.
-const kernelPath = "github.com/inference-sim/blis-schemas/kernel"
+const kernelPath = "github.com/inference-sim/blis-substrate/contracts/kernel"
 
 // engineConfigValuesIn type-checks the non-test Go files of dir as package path (dependencies from
 // the build's export data) and lists, as "file:line: what", each composite literal of an engine
@@ -407,7 +407,7 @@ func f() FrontendConfig { return FrontendConfig{N: 1} }`,
 		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-schemas/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
+		src := "package probe\n\nimport (\n\t\"github.com/inference-sim/blis-substrate/contracts/kernel\"\n\t\"github.com/inference-sim/blis-vllm/compat/engine\"\n\t\"github.com/inference-sim/blis-vllm/compat/kernelmodel\"\n\t\"github.com/inference-sim/inference-sim/sim\"\n\t\"github.com/inference-sim/inference-sim/sim/cluster\"\n)\n\nvar (\n\t_ = kernel.Placement{}\n\t_ = engine.ReplicaAPIServers\n\t_ = kernelmodel.Open\n\t_ = sim.ReplicaAPIServers\n\t_ = cluster.NewSliceRequestSource\n)\n\n" + body + "\n"
 		if err := os.WriteFile(filepath.Join(pkgDir, "probe.go"), []byte(src), 0o644); err != nil {
 			t.Fatal(err)
 		}

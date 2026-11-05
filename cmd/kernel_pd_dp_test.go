@@ -1,60 +1,24 @@
 package cmd
 
 import (
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"pgregory.net/rapid"
 )
 
-// P/D disaggregation with data parallelism on the kernel backend. The fixture
+// P/D disaggregation with data parallelism. The fixture
 // (testdata/scenarios/minimax-m2.5-gb200-1p1d-dp2.yaml) states a routed MoE at dp 2 in both
-// pools, so DP-as-placement expands every logical instance into two per-rank replicas:
-//
-//   - 1P1D logical runs as 2 prefill + 2 decode replicas, conserving every request;
-//   - its exported trace replays byte-identically with the same flags and horizon (INV-13);
-//   - after the expansion, the handoff pricer between any prefill and decode replica is the
-//     prefill kernel's price between those replicas' placements in their pools.
+// pools. The v0.32.0 engine does not build a KV transfer from a data-parallel group yet
+// (blis-vllm#44), so a run of it is refused; the handoff pricer between the pools' placements
+// is checked without a run.
 
 const pdDPScenario = "minimax-m2.5-gb200-1p1d-dp2.yaml"
-
-func TestRunCmd_KernelBackend_DisaggregatedDataParallel(t *testing.T) {
-	const n = 20
-	prefix := filepath.Join(t.TempDir(), "trace")
-	common := []string{"--scenarios", pdScenarios, "--scenario", pdDPScenario,
-		"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1", "--seed", "11",
-		"--horizon", "600000000"}
-	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", strconv.Itoa(n), "--rate", "8",
-		"--trace-output", prefix}, common...)...)
-	if err != nil {
-		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
-	}
-	if ids := instanceIDs(t, runOut); len(ids) != 4 {
-		t.Fatalf("1P1D logical at dp 2 must run 2 prefill + 2 decode replicas, got %v", ids)
-	}
-	clusterConservationHolds(t, runOut, n)
-	if got := clusterMetricInt(t, runOut, "completed_requests"); got != n {
-		t.Errorf("completed %d of %d requests", got, n)
-	}
-	if got, _ := pdFigure(t, runOut, "disaggregated_requests"); int(got) != n {
-		t.Errorf("not every request was disaggregated:\n%s", runOut)
-	}
-
-	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
-		"--trace-data", prefix + ".csv"}, common...)...)
-	if err != nil {
-		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
-	}
-	if inv13View(t, repOut) != inv13View(t, runOut) {
-		t.Errorf("the dp=2 disaggregated run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
-	}
-}
 
 // After DP expansion, transferTime() between prefill replica i and decode replica j, under the
 // cluster's own instance numbering, is the prefill kernel's PDTransferTicks between rank i's and
@@ -91,7 +55,7 @@ func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 	if pools == nil {
 		t.Fatal("no pools opened for a disaggregated run")
 	}
-	// DP-as-placement multiplies every pool by the replica factor.
+	// Every pool at dp instances, one per rank, as the pricer places them.
 	dp := st.DataParallel
 	prefillInstances, decodeInstances, numInstances = dp, dp, 2*dp
 	price := pools.transferTime()

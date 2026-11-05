@@ -480,7 +480,7 @@ func TestGenerateRequests_V1SpecAutoUpgrade_EndToEnd(t *testing.T) {
 			},
 			{
 				ID: "interactive-client", RateFraction: 0.5, SLOClass: "interactive",
-				Model: "llama-3.1-8b",
+				Model:      "llama-3.1-8b",
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 200}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
@@ -1196,8 +1196,8 @@ func TestGenerateWorkload_ClosedLoop_OnlyRound0(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "reasoning", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1242,8 +1242,8 @@ func TestGenerateWorkload_OpenLoop_AllRounds(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "reasoning-openloop", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1348,8 +1348,8 @@ func TestGenerateWorkload_NonSessionWorkload_NoBlueprints(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "standard", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 			},
 		},
@@ -1376,8 +1376,8 @@ func TestGenerateWorkload_Deadline_NonSessionNoTimeout(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "std", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 			},
 		},
@@ -1403,8 +1403,8 @@ func TestGenerateWorkload_Deadline_SessionDefaultTimeout(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "reasoning", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1442,10 +1442,10 @@ func TestGenerateWorkload_Deadline_SessionExplicitZeroNoTimeout(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "session-zero-timeout", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
-				Timeout: &zero,
+				Timeout:    &zero,
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
 					MultiTurn:       &MultiTurnSpec{MaxRounds: 2, ThinkTimeUs: 1000, ContextGrowth: ""},
@@ -1476,8 +1476,8 @@ func TestGenerateWorkload_SessionManager_Integration(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "session-client", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1587,7 +1587,7 @@ func TestGenerateRequests_MutualExclusion_ServeGenAndInferencePerf_ReturnsError(
 	// BC-6: ServeGenData + InferencePerf → error
 	spec := &WorkloadSpec{
 		AggregateRate: 100.0,
-		ServeGenData: &ServeGenDataSpec{Path: "data/"},
+		ServeGenData:  &ServeGenDataSpec{Path: "data/"},
 		InferencePerf: &InferencePerfSpec{
 			Stages: []StageSpec{{Rate: 10, Duration: 60}},
 			SharedPrefix: &SharedPrefixSpec{
@@ -2636,8 +2636,8 @@ func TestGenerateRequests_PhasedWorkload_CorrectRatePerPhase(t *testing.T) {
 	// Phase 1: 0-50s, clients a (0.7) + b (0.3) → 40 req/s total
 	// Phase 2: 50-100s, client c (1.0) → 40 req/s total
 	const aggregateRate = 40.0
-	const phase1End = 50_000_000   // 50s in µs
-	const phase2End = 100_000_000  // 100s in µs
+	const phase1End = 50_000_000  // 50s in µs
+	const phase2End = 100_000_000 // 100s in µs
 
 	spec := &WorkloadSpec{
 		Version:       "2",
@@ -2775,7 +2775,7 @@ func TestGenerateRequests_CohortAbsoluteMode_UsesTraceRate(t *testing.T) {
 		},
 	}
 	// Expand cohorts
-	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	expanded := ExpandCohorts(spec.Cohorts)
 	if len(expanded) != 7 {
 		t.Fatalf("expected 7 clients; got %d", len(expanded))
 	}
@@ -2812,7 +2812,7 @@ func TestGenerateRequests_CohortProportionalMode_BackwardCompatible(t *testing.T
 			},
 		},
 	}
-	expanded := ExpandCohorts(spec.Cohorts, 12345)
+	expanded := ExpandCohorts(spec.Cohorts)
 	if len(expanded) != 5 {
 		t.Fatalf("expected 5 clients; got %d", len(expanded))
 	}
@@ -2906,7 +2906,7 @@ func TestGenerateRequests_MultiCohortAbsoluteMode_NonOverlappingSpikes(t *testin
 func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 	// BC-1: Time-varying reasoning session generation
 	// BC-5: Window boundary filtering
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-0",
@@ -2933,12 +2933,12 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 
 	window := ActiveWindow{
 		StartUs:   0,
-		EndUs:     5000000, // 5s window
+		EndUs:     5000000,         // 5s window
 		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
 	// Call generateRequestsForWindow (with nil prefix)
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -2994,13 +2994,13 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 
 func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 	// BC-6: Non-reasoning client path unchanged
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
-		ID:       "single-shot-client",
-		TenantID: "tenant-a",
-		SLOClass: "standard",
-		Model:    "qwen/qwen3-14b",
+		ID:        "single-shot-client",
+		TenantID:  "tenant-a",
+		SLOClass:  "standard",
+		Model:     "qwen/qwen3-14b",
 		Reasoning: nil, // No reasoning spec
 		InputDist: DistSpec{
 			Type:   "constant",
@@ -3019,7 +3019,7 @@ func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 		TraceRate: ptrFloat64(10.0), // 10 req/s
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3037,7 +3037,7 @@ func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 
 func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 	// BC-2: Prefix prepending in time-varying reasoning
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	prefixTokens := []sim.TokenID{999, 888, 777} // 3-token shared prefix
 
@@ -3072,7 +3072,7 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, prefixTokens)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", prefixTokens)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3114,7 +3114,7 @@ func TestGenerateRequestsForWindow_ReasoningWithPrefix(t *testing.T) {
 
 func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 	// BC-3: Deadline setting in time-varying reasoning
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	timeoutUs := int64(30000000) // 30s timeout
 
@@ -3148,7 +3148,7 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3164,7 +3164,7 @@ func TestGenerateRequestsForWindow_ReasoningWithDeadline(t *testing.T) {
 
 func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 	// BC-3: Default 300s timeout for reasoning sessions (when Timeout is nil)
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-default-timeout",
@@ -3196,7 +3196,7 @@ func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 		TraceRate: ptrFloat64(1.0),
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3214,7 +3214,7 @@ func TestGenerateRequestsForWindow_ReasoningDefaultTimeout(t *testing.T) {
 func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 	// Preemption safety: Verify reasoning requests have immutable session metadata
 	// that is preserved across preemption (SessionID, RoundIndex don't change)
-	rng := rand.New(rand.NewSource(12345))
+	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-preemption-test",
@@ -3245,7 +3245,7 @@ func TestGenerateRequestsForWindow_ReasoningPreemptionSafety(t *testing.T) {
 		TraceRate: ptrFloat64(1.0),
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}
@@ -3301,7 +3301,7 @@ func TestGenerateRequestsForWindow_ReasoningSingleSession(t *testing.T) {
 	// 1. Exactly one unique SessionID appears across all returned requests
 	// 2. All returned rounds have ArrivalTime < window.EndUs
 	// 3. RoundIndex values are sequential starting from 0
-	rng := rand.New(rand.NewSource(42))
+	rng := testWindowStreams(42)
 
 	client := ClientSpec{
 		ID:       "reasoning-client-single-session",
@@ -3333,7 +3333,7 @@ func TestGenerateRequestsForWindow_ReasoningSingleSession(t *testing.T) {
 		TraceRate: ptrFloat64(1.0),
 	}
 
-	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, nil)
+	requests, err := generateRequestsForWindow(client, window, []ClientSpec{client}, 0, rng, "sess_", nil)
 	if err != nil {
 		t.Fatalf("generateRequestsForWindow failed: %v", err)
 	}

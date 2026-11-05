@@ -56,20 +56,31 @@ registry. Nothing is fetched at run time.
 
 ## Install and run
 
-Requires Go 1.27.2+.
+<!-- BEGIN GENERATED from stack.json: toolchain -->
+Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+<!-- END GENERATED -->
 
 ```bash
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
+```
 
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog
+The catalog and registry are blis-substrate's, at the commit this build pins
+([Data compatibility](docs/getting-started/installation.md#catalog-compatibility)):
 
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+```
+<!-- END GENERATED -->
+
+```bash
 ./blis run --scenarios examplescenarios \
   --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100
 ```
 
@@ -84,9 +95,11 @@ Every `blis run` and `blis replay` needs four inputs:
 The clones are pinned to the releases BLIS is tested against; see
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
 
-**vLLM versions.** Every scenario states `engine_version: "0.32.0"`; one that omits it is
-refused. It runs blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning
-prices it, and the run says so on stderr). Older engine versions are being retired. Priority
+**vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.32.0"}`, or
+with the deprecated `engine_version: "0.32.0"`, accepted with a warning until M4. This build runs
+blis-vllm's translated vLLM v0.32.0 engine (the latency kernel's 0.31.0 tuning prices it, and the
+run says so on stderr). A scenario naming another release is refused; for vLLM 0.29.0 and 0.31.0
+the refusal names v0.15.0, the last inference-sim release that runs them. Priority
 scheduling (`scheduling_policy: priority`, `--scheduler priority-fcfs` or `reverse-priority`,
 `--preemption-policy priority`, SLO priority overrides) is refused for now. The engine block must
 state `max_model_len` as an explicit number (unstated or `auto` is refused), plus `max_num_seqs`
@@ -124,10 +137,10 @@ sessions.
 
 ```bash
 ./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --workload chatbot --rate 20 --num-requests 500
 ./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --workload-spec examples/servegen-language.yaml
 ```
 
@@ -143,7 +156,7 @@ Kernel-backed scenarios expose host and declared-rack identity to llm-d topology
 
 ```bash
 ./blis run --scenarios examples/llm-d/scenarios \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml --registry $PWD/blis-registry \
+  --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml --registry $PWD/blis-substrate/registry \
   --num-instances 8 --rate 20 --num-requests 80
 ```
 
@@ -162,7 +175,7 @@ SLO classes reach the router as `InferenceObjective` names. SLO goodput is repor
 
 ```bash
 ./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --num-instances 4 --rate 200 --num-requests 1000
 ```
 
@@ -175,7 +188,7 @@ KV handoff over the scenario's fabric.
 
 ```bash
 ./blis run --scenarios examplescenarios --scenario glm-5-h200-3p1d-ib.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --num-instances 4 --prefill-instances 3 --decode-instances 1 \
   --rate 10 --num-requests 200
 ```
@@ -208,7 +221,7 @@ byte-identical stdout.
 ```bash
 ./blis replay --trace-header t.yaml --trace-data d.csv \
   --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-registry
+  --registry $PWD/blis-substrate/registry
 ```
 
 → [Observe / Replay / Calibrate](docs/guide/observe-replay-calibrate.md).

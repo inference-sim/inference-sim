@@ -1365,8 +1365,7 @@ func TestClusterSimulator_MaxModelLen_DroppedUnservable(t *testing.T) {
 		return d
 	}()
 
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
-	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+	workloadRNG := rand.New(rand.NewSource(42))
 
 	var requests []*sim.Request
 	numFit, numGuard1a, numGuard1b := 0, 0, 0
@@ -1703,7 +1702,7 @@ func TestClusterSimulator_SessionTerminalStateCompleteness(t *testing.T) {
 			Horizon:       horizon,
 			InputSampler:  inputSampler,
 			OutputSampler: outputSampler,
-			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			Streams:       workload.SessionStreams(rng.Int63(), sessID),
 			TenantID:      "test-tenant",
 			SLOClass:      "standard",
 			Model:         "test-model",
@@ -1783,7 +1782,7 @@ func TestClusterSimulator_SessionFollowUpCausality(t *testing.T) {
 			Horizon:       math.MaxInt64,
 			InputSampler:  inputSampler,
 			OutputSampler: outputSampler,
-			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			Streams:       workload.SessionStreams(rng.Int63(), sessID),
 			TenantID:      "test-tenant",
 			SLOClass:      "standard",
 			Model:         "test-model",
@@ -1896,7 +1895,7 @@ func TestClusterSimulator_MultiTurnSession_EndToEnd(t *testing.T) {
 			Horizon:       math.MaxInt64,
 			InputSampler:  inputSampler,
 			OutputSampler: outputSampler,
-			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			Streams:       workload.SessionStreams(rng.Int63(), sessID),
 			TenantID:      "test-tenant",
 			SLOClass:      "standard",
 			Model:         "test-model",
@@ -2175,8 +2174,7 @@ func TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime(t *testing.
 		return d
 	}()
 
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
-	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+	workloadRNG := rand.New(rand.NewSource(42))
 
 	requests := make([]*sim.Request, 5)
 	for i := 0; i < 5; i++ {
@@ -2310,8 +2308,7 @@ func TestClusterSimulator_PD_OrphanedTimeout_TimingNotInflated(t *testing.T) {
 	config := newTestDisaggDeploymentConfig(4, 2, 2)
 	config.Horizon = 500_000_000 // 500s — beyond workload.DefaultTimeoutUs
 
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(42))
-	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+	workloadRNG := rand.New(rand.NewSource(42))
 
 	const n = 4
 	requests := make([]*sim.Request, n)

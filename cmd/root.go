@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,11 +14,12 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/measurement"
-	"github.com/inference-sim/blis-schemas/spec/result"
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -87,6 +89,7 @@ var (
 	kernelDeploymentExperts   int                    // routed expert count from the model graph; 0 for a dense model
 	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
 	kernelOpened              *engineModel           // the kernel adoptKernelDeployment opened; nil until it runs
+	scenarioEngine            engineRef              // the engine the scenario selects (selectEngine); set by adoptKernelDeployment
 	kernelPDOpened            *kernelPools           // the per-role kernels openKernelPools opened; nil for a colocated run
 	scenarioScheduler         string                 // the scheduler the scenario's engine states ("" = none)
 	scenarioPreemption        string                 // the preemption policy the scenario's engine states ("" = none)
@@ -244,218 +247,19 @@ type latencyResolution struct {
 	ModelConfig modelConfig
 }
 
-// dpPlacementPlan describes how an MoE deployment whose scenario states dp N expands
-// into real single-node engine replicas (#1531, DP-as-real-placement). The
-// zero-expansion case (Active=false, Replicas=1, PerRankDP=dp) covers dp 1, dense models
-// (dp>1 rejected earlier in resolveLatencyConfig), and any config planDPPlacement
-// declines to expand.
-type dpPlacementPlan struct {
-	Active    bool // true ⇒ expand into Replicas engine replicas, each configured DP=1
-	Replicas  int  // engine replicas per logical --num-instances (dp when Active, else 1)
-	PerRankDP int  // DP to configure on each replica (1 when Active, else dp)
-	// LockstepRanks is how many consecutive replicas form one vLLM DP group whose ranks
-	// step in lockstep behind one endpoint (#1909): dp when Active, else 0.
-	LockstepRanks int
-}
-
-// dpPlacementInstanceWarnThreshold: warn (not fatal) when DP-as-placement expands
-// to more than this many engine replicas, so an accidentally large scenario dp (a typo)
-// is surfaced before the run consumes a large amount of memory/time.
-const dpPlacementInstanceWarnThreshold = 512
-
-// planDPPlacement decides DP-as-real-placement expansion (for both `blis run`
-// and `blis replay` — see resolveDPPlacement) and rejects placement combinations
-// #1531 does not yet model. It is pure (no package state) so the decision is
-// unit-testable independently of the command wiring that applies it. On error it
-// returns the zero plan (Active=false, Replicas=0); callers MUST `logrus.Fatalf`
-// on error and not use the plan.
-//
-// DP-as-placement applies to an MoE model with dp>1 and no autoscaler; each rank is then a
-// TP engine sized per-rank (DP=1). vLLM data parallelism is N EngineCores, each holding a
-// disjoint share of the requests, so the BLIS equivalent is N real instances, each DP=1 (a
-// per-instance /dp factor would double-count). For an MoE model the N ranks are one DP
-// group (#1909): they step in lockstep and sit behind one router endpoint, vLLM's internal
-// DP load balancer assigning each request to a rank; LockstepRanks carries that grouping to
-// the cluster.
-//
-// PD disaggregation and node pools are SUPPORTED alongside it (#1553, lifting #1531's
-// rejections). Neither changes the plan the way the autoscaler would: the PD extension is
-// the same per-replica transformation applied to EACH pool (a topology P+D+S+E ≤ total
-// becomes P·N+D·N+S·N+E·N ≤ total·N, which preserves the topology inequality), and node
-// pools place the N×M replicas through the existing tested per-instance placement path.
-// So the plan is identical to the plain (non-PD, non-node-pool) active plan; the per-pool
-// count expansion is carried out by applyDPPlacement, not decided here.
-//
-// Expert parallelism is ALSO allowed alongside it (#1548, lifting #1531's rejection). It
-// reserves no extra GPUs — the expert-parallel group IS the N×TP GPUs this placement
-// already takes — so the plan is unchanged by it; what EP changes is how experts map onto
-// that group, which resolveDPPlacement carries into each replica's latency model as the
-// logical EP-group DP width. epOn is therefore not a rejection reason, and is kept
-// as a parameter only so the caller's decision and its diagnostics read from one place.
-//
-// Guarded combination that still fails fast (never silently mis-modeled):
-//   - Autoscaler (#1553 DECISION): the semantics of dynamically scaling a dp-expanded
-//     population are undefined (add one rank? one whole DP group of N?), and
-//     DirectActuator.scaleUp places a single-role instance with no DP-group awareness.
-//     Supporting it would ship an untested, ambiguous path — exactly what #1531 guarded
-//     against. Rejected with a clear message stating the decision.
-//
-// Dense dp>1 is rejected earlier (resolveLatencyConfig, cmd/root.go), so here it
-// is simply a no-op.
-func planDPPlacement(isMoE bool, dp int, epOn, pdActive, autoscalerActive, nodePoolsActive bool) (dpPlacementPlan, error) {
-	if dpLockstepRanks(isMoE, dp) == 0 {
-		// No lockstep group (the engine's rule: an MoE model at dp > 1 forms one) ⇒ no
-		// expansion ⇒ nothing erases the config's own DP ⇒ no EP width to carry.
-		return dpPlacementPlan{Active: false, Replicas: 1, PerRankDP: dp}, nil
+// refuseDPAutoscaler refuses the model autoscaler on an MoE scenario at dp > 1 (#1553
+// decision): the engine is the whole data-parallel group behind one endpoint, and the
+// autoscaler places single-role instances with no DP-group awareness, so whether it would add
+// one rank or one whole group is undefined. Dense dp > 1 is refused earlier
+// (resolveLatencyConfig).
+func refuseDPAutoscaler(isMoE bool, dp int, autoscalerActive bool) error {
+	if !isMoE || dp <= 1 || !autoscalerActive {
+		return nil
 	}
-	if autoscalerActive {
-		return dpPlacementPlan{}, fmt.Errorf("scenario dp > 1 (MoE) is not supported with the model autoscaler (#1553 " +
-			"decision): DP-as-placement spawns a fixed set of dp engine replicas, and the semantics of " +
-			"dynamically scaling that population (add one rank, or one whole DP group of dp?) are undefined — " +
-			"the autoscaler places single-role instances with no DP-group awareness. " +
-			"Use a scenario that states dp 1 with the autoscaler, or disable the autoscaler")
-	}
-	// pdActive / nodePoolsActive are no longer rejection reasons (#1553). They are kept as
-	// parameters so a future combination-specific guard has one home.
-	_ = pdActive
-	_ = nodePoolsActive
-	// Expert parallelism reserves no extra GPUs, so the plan is identical either way.
-	_ = epOn
-	// The dp replicas of one logical instance are one vLLM DP group behind one API endpoint
-	// (#1909); how many step in lockstep is the engine's rule (dpLockstepRanks).
-	return dpPlacementPlan{Active: true, Replicas: dp, PerRankDP: 1, LockstepRanks: dpLockstepRanks(isMoE, dp)}, nil
-}
-
-// dpPlacementDeployment carries the deployment quantities DP-as-real-placement
-// adjusts. It is both the input (pre-expansion) and the output (post-expansion) of
-// applyDPPlacement.
-//
-// The four PD pool counts (#1553) are expanded by the same Replicas factor as
-// NumInstances: a PD topology of P prefill + D decode + S shared + E encode instances
-// (with P+D+S+E ≤ total) becomes P·N + D·N + S·N + E·N replicas of total·N. Scaling
-// every term by the same N preserves ValidatePoolTopology's inequality
-// (P·N+D·N+S·N+E·N ≤ total·N), so a topology that passed at dp 1 still passes after
-// expansion. They are zero for a non-PD run, so the multiply is a strict no-op there.
-type dpPlacementDeployment struct {
-	NumInstances  int   // engine replicas (logical --num-instances on the way in)
-	TotalKVBlocks int64 // KV blocks per instance: the kernel's per-rank budget, unchanged by placement
-	MaxModelLen   int64 // engine max_model_len (0 = unset/unlimited)
-
-	// PD pool counts (#1553), each scaled by Replicas when the plan is active. Zero for
-	// a non-PD deployment.
-	PrefillInstances int
-	DecodeInstances  int
-	SharedInstances  int
-	EncodeInstances  int
-}
-
-// applyDPPlacement applies a DP-as-placement plan to the deployment quantities: it
-// expands the instance count and the PD pool counts by the replica factor. It is pure
-// (no package state) so the production arithmetic — the exact defect BC-2 guards
-// against, no dp² double-count — is directly unit-testable rather than re-implemented
-// in a test. On error the deployment is returned UNCHANGED.
-//
-// The kernel sizes KV blocks and max_model_len per rank, so both pass through unchanged. A
-// non-Active plan is the identity.
-func applyDPPlacement(plan dpPlacementPlan, dep dpPlacementDeployment) (dpPlacementDeployment, error) {
-	if !plan.Active {
-		return dep, nil
-	}
-	out := dep
-	out.NumInstances = dep.NumInstances * plan.Replicas
-	// Scale each PD pool count by the same replica factor (#1553). The topology
-	// inequality P+D+S+E ≤ total is preserved because every term (and total) scales by
-	// the same N; the pool counts are 0 for a non-PD run, so this is a no-op there.
-	out.PrefillInstances = dep.PrefillInstances * plan.Replicas
-	out.DecodeInstances = dep.DecodeInstances * plan.Replicas
-	out.SharedInstances = dep.SharedInstances * plan.Replicas
-	out.EncodeInstances = dep.EncodeInstances * plan.Replicas
-	// TotalKVBlocks is the engine's per-rank budget, passed through unchanged: blis-vllm
-	// refuses a budget with no blocks when it sizes it (compat/kernelmodel KVBudget, vLLM's
-	// "No available memory for the cache blocks"), before this runs.
-	return out, nil
-}
-
-// resolveDPPlacement plans DP-as-real-placement (#1531) and applies it to the cmd/
-// deployment vars, emitting the operator diagnostics. It is the ONE code path both
-// `blis run` and `blis replay` traverse (R23), so INV-13 parity for MoE dp>1 is
-// structural (#1556 lifted the former run-only guard in cmd/replay.go). KV blocks and
-// max_model_len are per rank from the kernel, so only the instance and pool counts change.
-//
-// Like resolveLatencyConfig and resolvePolicies, it READS AND WRITES the package-level
-// deployment vars itself rather than taking them as arguments — deliberately, so there is no
-// per-command wiring for a future edit to get right in only one of the two command
-// bodies. The pure decision (planDPPlacement) and the pure arithmetic
-// (applyDPPlacement) stay separately unit-testable.
-//
-// Reads: dataParallelism, enableExpertParallel, tensorParallelism,
-// numInstances, totalKVBlocks, maxModelLen, and the prefill/decode/prefillDecode/encode
-// instance counts (as pre-expansion pool inputs).
-//
-// Side effects (package-level vars mutated, only when the plan is active and every
-// guard passes): numInstances and the four PD pool counts (prefillInstances,
-// decodeInstances, prefillDecodeInstances, encodeInstances) — each scaled by Replicas so
-// a PD topology spawns its N per-rank replicas per pool (#1553). totalKVBlocks and
-// maxModelLen are written back unchanged.
-//
-// The plan is decided by the caller (planDPPlacement) and passed in, so the one decision
-// is made in one place while its application stays here at the single write site.
-//
-// On error NOTHING is mutated and the caller MUST `logrus.Fatalf` — the CLI boundary
-// owns termination; this function only reports. A non-Active plan (dense model, or
-// dp 1) mutates nothing, which is what makes the feature a byte-identical no-op
-// (INV-6).
-func resolveDPPlacement(lr latencyResolution, plan dpPlacementPlan) (dpPlacementPlan, error) {
-	if !plan.Active {
-		return plan, nil
-	}
-	logicalInstances := numInstances
-	dep, err := applyDPPlacement(plan, dpPlacementDeployment{
-		NumInstances:     numInstances,
-		TotalKVBlocks:    totalKVBlocks,
-		MaxModelLen:      maxModelLen,
-		PrefillInstances: prefillInstances,
-		DecodeInstances:  decodeInstances,
-		SharedInstances:  prefillDecodeInstances,
-		EncodeInstances:  encodeInstances,
-	})
-	if err != nil {
-		return dpPlacementPlan{}, err
-	}
-	// The scaled PD topology still satisfies P·N+D·N+S·N+E·N ≤ total·N by construction
-	// (the pre-scale topology passed ValidatePoolTopology at the CLI boundary and every
-	// term scales by the same N). Re-validate as defense in depth (#1553, BC-2): a future
-	// change to the scaling arithmetic that broke the invariant must fail loudly here
-	// rather than mis-place instances (R1).
-	if dep.PrefillInstances > 0 || dep.DecodeInstances > 0 || dep.SharedInstances > 0 || dep.EncodeInstances > 0 {
-		if verr := cluster.ValidatePoolTopology(dep.PrefillInstances, dep.DecodeInstances,
-			dep.SharedInstances, dep.EncodeInstances, dep.NumInstances); verr != nil {
-			return dpPlacementPlan{}, fmt.Errorf("DP-as-placement expanded the PD pool topology past the "+
-				"cluster invariant (this should be impossible — every term scales by the same dp): %w", verr)
-		}
-	}
-	numInstances, totalKVBlocks, maxModelLen = dep.NumInstances, dep.TotalKVBlocks, dep.MaxModelLen
-	prefillInstances, decodeInstances = dep.PrefillInstances, dep.DecodeInstances
-	prefillDecodeInstances, encodeInstances = dep.SharedInstances, dep.EncodeInstances
-	logrus.Infof("[cluster] DP-as-placement: scenario dp %d (MoE) → %d single-node engine replicas per logical instance "+
-		"(%d logical × %d = %d instances), each per-rank (DP=1, %d KV blocks/replica)",
-		dataParallelism, plan.Replicas, logicalInstances, plan.Replicas, numInstances, totalKVBlocks)
-	if numInstances > dpPlacementInstanceWarnThreshold {
-		logrus.Warnf("[cluster] DP-as-placement is spawning %d engine replicas (--num-instances %d × scenario dp %d); "+
-			"if the scenario's dp was a typo this will consume a large amount of memory and time", numInstances, logicalInstances, dataParallelism)
-	}
-	if err := checkHybridDPNodeLocal(plan); err != nil {
-		return dpPlacementPlan{}, err
-	}
-	if enableExpertParallel {
-		// EP-ON placement (#1548): the expert-parallel group is the whole N×TP GPU set this
-		// placement already reserves. The kernel prices each replica's steps for the
-		// scenario's own parallel layout, EP group included.
-		logrus.Infof("[cluster] EP-as-placement: the scenario's expert parallelism over the TP·DP=%d×%d=%d GPU "+
-			"expert-parallel group (no additional GPUs reserved)",
-			tensorParallelism, dataParallelism, tensorParallelism*dataParallelism)
-	}
-	return plan, nil
+	return fmt.Errorf("scenario dp %d (MoE) is not supported with the model autoscaler (#1553 decision): the "+
+		"engine is the whole data-parallel group behind one endpoint, and the autoscaler places single-role "+
+		"instances with no DP-group awareness. Use a scenario that states dp 1 with the autoscaler, or "+
+		"disable the autoscaler", dp)
 }
 
 // adoptSchedulingPolicy takes the instance scheduler from the scenario's
@@ -533,6 +337,18 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 	schedulerSource, preemptionSource, scenarioDisaggregated = "", "", false
 	scenarioRouter, scenarioStatesRouter = routerInputs{}, false
 	in := adoptInputs(cmd)
+	// The engine is selected, and a release this build does not run refused (LIF-6), before the
+	// deployment is read: no other check runs on a scenario this build cannot run.
+	if kernelScenario != "" && kernelScenarioDir != "" {
+		sel, err := selectEngine(filepath.Join(kernelScenarioDir, kernelScenario))
+		if err != nil {
+			logrus.Fatalf("%v", err)
+		}
+		if sel.Deprecated {
+			logrus.Warn(engineDeprecationWarning(kernelScenario, sel.Ref))
+		}
+		scenarioEngine = sel.Ref
+	}
 	a, err := adoptScenario(in)
 	if err != nil {
 		logrus.Fatalf("%v", err)
@@ -974,8 +790,8 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		} else if workloadType == "distribution" {
 			// Distribution mode → synthesize v2 spec from CLI flags
-			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
-				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			if err := check.PositiveFinite("--rate", rate); err != nil {
+				logrus.Fatalf("%v", err)
 			}
 			// R3: Validate distribution token bounds (shared with concurrency mode).
 			if msg := validateDistributionParams(promptTokensMin, promptTokensMax, outputTokensMin, outputTokensMax,
@@ -992,8 +808,8 @@ var runCmd = &cobra.Command{
 			spec.Seed = seed
 		} else {
 			// Preset name (chatbot, summarization, etc.) → synthesize v2 spec
-			if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
-				logrus.Fatalf("--rate must be a finite value > 0, got %v", rate)
+			if err := check.PositiveFinite("--rate", rate); err != nil {
+				logrus.Fatalf("%v", err)
 			}
 			// #1769: the preset is read from <catalog>/workloads/<name>.yaml, through the
 			// same reader `blis convert preset` and `blis observe --workload` use.
@@ -1159,6 +975,7 @@ var runCmd = &cobra.Command{
 					ScaleUpThreshold:  bundle.Autoscaler.Analyzer.ScaleUpThreshold,
 					ScaleDownBoundary: bundle.Autoscaler.Analyzer.ScaleDownBoundary,
 					AvgInputTokens:    bundle.Autoscaler.Analyzer.AvgInputTokens,
+					MinReplicas:       bundle.Autoscaler.Analyzer.MinReplicas,
 				}
 			}
 			for _, np := range bundle.NodePools {
@@ -1240,36 +1057,12 @@ var runCmd = &cobra.Command{
 
 		startTime := time.Now() // Get current time (start)
 
-		// DP-as-real-placement (#1531, #1553): on an MoE model, the scenario's dp N means N
-		// independent single-node engine replicas (vLLM's internal DP EngineCores), not one
-		// lumped instance. Expand to numInstances × N real replicas — reusing the existing
-		// per-instance placement path — each configured per-rank (DP=1). The kernel already
-		// sized KV blocks and max_model_len per rank, so only the instance and PD pool counts
-		// change. PD disaggregation and node pools are SUPPORTED (#1553, each pool spawns its
-		// own N per-rank replicas); the autoscaler fails fast (planDPPlacement).
-		// resolveDPPlacement is the ONE code path run and replay share (R23), so INV-13
-		// parity is structural (#1556). A no-op for dp 1 and dense models.
-		//
-		// The plan is decided HERE — after the policy bundle is parsed, so the autoscaler /
-		// node-pool predicates are real; this is where the autoscaler rejection (#1553
-		// decision) surfaces. resolveDPPlacement APPLIES the plan (the single write site for
-		// numInstances and the four PD pool counts).
-		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-			bundleAutoscalerIntervalUs > 0, len(bundleNodePools) > 0)
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
-		}
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
+		if err := refuseDPAutoscaler(lr.ModelConfig.IsMoE(), dataParallelism, bundleAutoscalerIntervalUs > 0); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 
-		// Log configuration after all config sources (CLI, workload spec, policy bundle)
-		// AND the DP-as-placement adjustment are resolved, so the reported block count is
-		// the per-replica one actually configured — matching the equivalent line in
-		// cmd/replay.go, which also logs after the DP block (diagnostic parity for a
-		// feature whose whole point is that the two commands agree).
+		// Log configuration after all config sources (CLI, workload spec, policy bundle) are
+		// resolved, matching the equivalent line in cmd/replay.go.
 		logrus.Infof("Starting simulation with %d KV blocks, horizon=%dticks", totalKVBlocks, simulationHorizon)
 
 		// #1590 (H1): derive per_block_bytes for the offload tier chain -- the kernel's
@@ -1290,7 +1083,7 @@ var runCmd = &cobra.Command{
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
-		// The instance counts are final (DP-as-placement applied): every instance must fit
+		// The instance counts are final: every instance must fit
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
 		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
@@ -1298,12 +1091,11 @@ var runCmd = &cobra.Command{
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
-		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		runEngine := engineConfigOfRun(ec, simulationHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:                 instanceConfigOf(runEngine),
 			NumInstances:                   numInstances,
-			DPLockstepRanks:                dpPlan.LockstepRanks,
 			DPLoadBalancing:                dpLoadBalancing,
 			TraceLevel:                     traceLevel,
 			CounterfactualK:                counterfactualK,
@@ -1315,7 +1107,7 @@ var runCmd = &cobra.Command{
 			PDTransferContention:           pdTransferContention,
 			PDTransferDemand:               pdTransferDemand,
 			PDPrefillKVHold:                kernelPD.holdsPrefillKV(),
-			PDPrefillSamplesFirstToken:     coreEngineVersions[scenarioShape.EngineVersion],
+			PDPrefillSamplesFirstToken:     true,
 			Roles:                          rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			ModelAutoscalerIntervalUs:      bundleAutoscalerIntervalUs,
 			ScaleUpStabilizationWindowUs:   bundleScaleUpStabilizationWindowUs,
@@ -1325,10 +1117,7 @@ var runCmd = &cobra.Command{
 			NodePools:                      bundleNodePools,
 			ScenarioEndpointTopology:       cluster.StaticEndpointTopology(scenarioTopology),
 			InstanceLifecycle:              bundleInstanceLifecycle,
-			NewEngine:                      engineDriverFactory(scenarioShape.EngineVersion, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
-		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
-			config.NewEngine = f
+			NewEngine:                      engineDriverFactory(scenarioEngine, simulationHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 		// Session callback installation (Constraint 3 fix):
 		// Follow-up collection must be UNCONDITIONAL for saturation analysis correctness.
@@ -1518,10 +1307,36 @@ var runCmd = &cobra.Command{
 			cs: cs, gateway: gw, run: run, goodputTargets: goodputTargets, satTracer: satTracer, extraOverrides: extra,
 			metricsPath: metricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			fitnessWeights: fitnessWeights, started: startTime,
+			frame: runFrameGenerator(spec), numRequestsCap: int(max(maxRequests, 0)),
 		})
 
 		logrus.Info("Simulation complete.")
 	},
+}
+
+// runFrameGenerator is what a run tells the experimental frame about its requests: the
+// generator that made them, the workload's identity, and the seed its draws used.
+func runFrameGenerator(spec *workload.WorkloadSpec) frameGenerator {
+	g := frameGenerator{Seed: seed}
+	if spec != nil {
+		g.Seed = spec.Seed
+	}
+	switch {
+	case workloadSpecPath != "":
+		g.Kind = generatorWorkloadSpec
+		if d, err := fileDigest(workloadSpecPath); err == nil {
+			g.Source = "sha256:" + d
+		} else {
+			logrus.Fatalf("--workload-spec %s: %v", workloadSpecPath, err)
+		}
+	case concurrency > 0:
+		g.Kind = generatorConcurrency
+	case workloadType == "distribution":
+		g.Kind = generatorDistribution
+	default:
+		g.Kind, g.Source = generatorPreset, workloadType
+	}
+	return g
 }
 
 // runLoadOf is the offered load a run generated: --concurrency, a workload spec's own clients

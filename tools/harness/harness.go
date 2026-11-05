@@ -51,12 +51,7 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/vendored"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.
 type Corpus struct {
@@ -262,7 +257,7 @@ func scaled(v int64, factor float64) int64 {
 //
 // An earlier revision built a single-instance simulator in-process, scaled max_num_seqs and the
 // token budget by dp, and priced each step through a rank-splitting wrapper -- a second model
-// of data parallelism beside the one the CLI ships (DP-as-placement: dp independent per-rank
+// of data parallelism beside the one the CLI ships (at the time, dp independent per-rank
 // replicas behind the router). The two disagreed (#1902), and the score measured the
 // harness's model rather than the simulator's. So the harness states the point -- a scenario
 // carrying the point's engine settings and a trace of its requests -- and runs the same binary,

@@ -3,7 +3,7 @@ package sim
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // A data-parallel group behind the contract with one instance per rank. Each rank's instance has
@@ -209,6 +209,7 @@ func (d *EngineDriver) kickGroup(now int64) {
 		if a {
 			drivers[k].Clock = max(drivers[k].Clock, now)
 			drivers[k].stepIdx++
+			drivers[k].noteStep(now)
 		}
 	}
 	if !active[0] {

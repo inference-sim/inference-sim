@@ -18,12 +18,23 @@ deterministic: the same seed produces byte-identical results, and no GPU is need
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
+```
+
+The catalog and registry are blis-substrate's, at the commit this build pins
+([Data compatibility](getting-started/installation.md#catalog-compatibility)):
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+```
+<!-- END GENERATED -->
+
+```bash
 ./blis run --scenarios examplescenarios \
   --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100
 ```
 

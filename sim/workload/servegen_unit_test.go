@@ -259,19 +259,26 @@ func TestServeGenMultiPeriod_EmptyPeriod(t *testing.T) {
 }
 
 // TestServeGenMultiPeriod_RateValue verifies BC-5: trace_rate is from the exact selected window.
-// Each cohort (period × SLO) independently selects one of 3 windows: [0,600), [600,1200), [1200,1800).
+// Each period selects one of 3 windows: [0,600), [600,1200), [1200,1800), from ServeGen's own
+// named stream. Whichever window the seed selects, the cohort's rate, arrival CV and fitted
+// lengths must all come from that one row: no other window's rate is summed in.
 func TestServeGenMultiPeriod_RateValue(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create a chunk with three 10-min windows in midnight span.
-	// With seed=42, midnight-critical selects window 2: [1200, 1800)
-	// So only the rate from row [1200,1800) should be included: 99.0
+	// Three 10-min windows in the midnight span, each with a distinct rate, CV and dataset.
 	chunkTrace := "0,3.0,0.8,Weibull,1.5,0.02\n" +
 		"600,2.0,0.85,Weibull,1.55,0.02\n" +
 		"1200,99.0,0.9,Weibull,1.6,0.02\n"
 	chunkDataset := map[string]map[string]string{
 		"0":    {"input_tokens": "{100: 1.0}", "output_tokens": "{50: 1.0}"},
+		"600":  {"input_tokens": "{150: 1.0}", "output_tokens": "{75: 1.0}"},
 		"1200": {"input_tokens": "{200: 1.0}", "output_tokens": "{100: 1.0}"},
+	}
+	// rows maps each window's rate to the values the same row states.
+	rows := map[float64]struct{ cv, input, output float64 }{
+		3.0:  {0.8, 100, 50},
+		2.0:  {0.85, 150, 75},
+		99.0: {0.9, 200, 100},
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "chunk-0-trace.csv"), []byte(chunkTrace), 0644); err != nil {
 		t.Fatal(err)
@@ -285,8 +292,6 @@ func TestServeGenMultiPeriod_RateValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// There should be exactly one cohort (midnight-critical with seed=42, sloIndex=0)
 	if len(spec.Cohorts) == 0 {
 		t.Fatal("expected at least one cohort")
 	}
@@ -303,50 +308,38 @@ func TestServeGenMultiPeriod_RateValue(t *testing.T) {
 		t.Fatal("no midnight cohort found")
 	}
 
-	// BC-5: trace_rate should be 99.0 (only from window [1200,1800))
-	expectedRate := 99.0
+	// BC-5: trace_rate is exactly one window's rate, never a sum of two.
 	if midnightCohort.Spike.TraceRate == nil {
 		t.Fatal("BC-5: trace_rate is nil")
 	}
 	actualRate := *midnightCohort.Spike.TraceRate
-	if math.Abs(actualRate-expectedRate) > 0.01 {
-		t.Errorf("BC-5: trace_rate = %.2f, want %.2f (only selected window should be summed)", actualRate, expectedRate)
+	row, ok := rows[actualRate]
+	if !ok {
+		t.Fatalf("BC-5: trace_rate = %.2f, want one window's rate (3, 2 or 99): only the selected window is summed", actualRate)
 	}
 
-	// BC-3: Token distributions should be lognormal (fitted from dataset at timestamp 1200), not gaussian fallback.
-	// Dataset[1200] has {200: 1.0} for input and {100: 1.0} for output.
-	// Lognormal fit of a single-point PDF: mu = ln(value), sigma = 0.
+	// BC-3: lengths are lognormal fits of the selected window's dataset (mu = ln(value)).
 	if midnightCohort.InputDist.Type != "lognormal" {
 		t.Errorf("BC-3: InputDist.Type = %q, want \"lognormal\" (should be fitted from dataset)", midnightCohort.InputDist.Type)
 	}
 	if midnightCohort.OutputDist.Type != "lognormal" {
 		t.Errorf("BC-3: OutputDist.Type = %q, want \"lognormal\" (should be fitted from dataset)", midnightCohort.OutputDist.Type)
 	}
-	// mu = ln(100) ≈ 4.605 for input, ln(50) ≈ 3.912 for output
-	if mu, ok := midnightCohort.InputDist.Params["mu"]; ok {
-		expectedMu := math.Log(200)
-		if math.Abs(mu-expectedMu) > 0.01 {
-			t.Errorf("BC-3: InputDist mu = %.4f, want %.4f (ln(200))", mu, expectedMu)
-		}
+	if mu := midnightCohort.InputDist.Params["mu"]; math.Abs(mu-math.Log(row.input)) > 0.01 {
+		t.Errorf("BC-3: InputDist mu = %.4f, want ln(%g) from the window of rate %g", mu, row.input, actualRate)
 	}
-	if mu, ok := midnightCohort.OutputDist.Params["mu"]; ok {
-		expectedMu := math.Log(100)
-		if math.Abs(mu-expectedMu) > 0.01 {
-			t.Errorf("BC-3: OutputDist mu = %.4f, want %.4f (ln(100))", mu, expectedMu)
-		}
+	if mu := midnightCohort.OutputDist.Params["mu"]; math.Abs(mu-math.Log(row.output)) > 0.01 {
+		t.Errorf("BC-3: OutputDist mu = %.4f, want ln(%g) from the window of rate %g", mu, row.output, actualRate)
 	}
 
-	// BC-4: Arrival params from the selected window [1200,1800).
-	// Row[1200] has cv=0.9, pattern=Weibull, shape=1.6, scale=0.02s
+	// BC-4: arrival parameters from the same window.
 	if midnightCohort.Arrival.Process != "weibull" {
 		t.Errorf("BC-4: Arrival.Process = %q, want \"weibull\"", midnightCohort.Arrival.Process)
 	}
-	if midnightCohort.Arrival.CV != nil {
-		expectedCV := 0.9
-		if math.Abs(*midnightCohort.Arrival.CV-expectedCV) > 0.01 {
-			t.Errorf("BC-4: Arrival.CV = %.4f, want %.4f", *midnightCohort.Arrival.CV, expectedCV)
-		}
-	} else {
-		t.Error("BC-4: Arrival.CV is nil, expected non-nil")
+	if midnightCohort.Arrival.CV == nil {
+		t.Fatal("BC-4: Arrival.CV is nil, expected non-nil")
+	}
+	if math.Abs(*midnightCohort.Arrival.CV-row.cv) > 0.01 {
+		t.Errorf("BC-4: Arrival.CV = %.4f, want %.4f from the window of rate %g", *midnightCohort.Arrival.CV, row.cv, actualRate)
 	}
 }

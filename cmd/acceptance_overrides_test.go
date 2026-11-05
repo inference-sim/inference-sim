@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 )

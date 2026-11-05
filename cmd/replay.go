@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
 	"os"
 	"sort"
 	"strconv"
@@ -14,10 +13,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-schemas/spec/measurement"
-	"github.com/inference-sim/blis-schemas/spec/result"
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -36,12 +36,6 @@ var (
 	replayTotalSessions      int  // total sessions to replay when pooling (0 = corpus size)
 	replayShuffleCorpus      bool // randomize corpus step order (pool mode only; seeded from --seed) (#1480)
 )
-
-// corpusShuffleSeedSalt is XORed with the master --seed to derive the corpus-shuffle
-// RNG stream, keeping it independent of the per-session token and clone RNGs (#1480).
-// Shared by `blis replay --shuffle-corpus` and `blis observe --shuffle-corpus` so the
-// SAME --seed selects the SAME subset/order on both — required for calibration parity.
-const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
 
 var replayCmd = &cobra.Command{
 	Use:   "replay",
@@ -139,8 +133,8 @@ Example:
 		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" && agx == nil {
 			logrus.Fatalf("--session-mode must be \"fixed\", \"closed-loop\", or \"fixed-accumulate\", got %q", replaySessionMode)
 		}
-		if replayThinkTimeMs < 0 {
-			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
+		if err := check.DurationMs("--think-time-ms", int64(replayThinkTimeMs)); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 		// --timeout override (#2064): reject 0 the same way `blis run` does — positive sets
 		// a deadline, negative disables, 0 is ambiguous. Only meaningful when explicitly set.
@@ -294,11 +288,11 @@ Example:
 				if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
 					logrus.Fatalf("--concurrent-sessions requires every trace record to belong to a session, but %d of %d records have no session_id. Pooled replay cannot mix session and non-session (single-shot) records; re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`), or drop --concurrent-sessions to replay it in plain closed-loop mode.", nonSession, len(r0Requests))
 				}
-				// Optional seeded shuffle of the corpus step order (#1480). Drawn from
-				// a distinct stream off the master seed (XOR salt) so it is reproducible
-				// from --seed yet does not perturb the per-session token / clone RNGs.
+				// Optional seeded shuffle of the corpus step order (#1480), drawn from its
+				// own named stream (workload.CorpusShuffleStream), so it is reproducible
+				// from --seed and does not move any session's token draws.
 				if replayShuffleCorpus {
-					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
+					workload.ShuffleSessions(blueprints, r0Requests, workload.CorpusShuffleStream(seed))
 				}
 				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
 				if pErr != nil {
@@ -463,16 +457,9 @@ Example:
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
 
-		// DP-as-placement plan DECISION (#1531/#1556, #1553), as runCmd makes it.
-		// planDPPlacement is pure; it is APPLIED below at the shared resolveDPPlacement (R23).
-		// autoscaler / node pools are structurally false on replay (rejected unconditionally
-		// above), so a replay plan is only ever active for PD or a plain MoE scenario dp>1.
-		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
-			bundle != nil && len(bundle.NodePools) > 0)
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
+		if err := refuseDPAutoscaler(lr.ModelConfig.IsMoE(), dataParallelism,
+			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0)); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides poolOverrides
@@ -483,20 +470,6 @@ Example:
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
 			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
-		}
-
-		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
-		// guards): on an MoE model, the scenario's dp N means N independent single-node engine
-		// replicas (vLLM's internal DP EngineCores), not one lumped instance.
-		// resolveDPPlacement is the ONE code path run and replay share (R23) — it expands
-		// numInstances × N and the four PD pool counts; KV blocks and max_model_len are
-		// already per rank from the kernel and stay unchanged — so identical flags over the
-		// same trace produce identical metrics (INV-13). Placed AFTER the PD / autoscaler /
-		// node-pool validation above and BEFORE the DeploymentConfig literal below, which
-		// reads the adjusted quantities. A no-op for dp 1 and dense models (INV-6).
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
 		}
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks", totalKVBlocks, replayHorizon)
@@ -512,12 +485,11 @@ Example:
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
-		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:             instanceConfigOf(runEngine),
 			NumInstances:               numInstances,
-			DPLockstepRanks:            dpPlan.LockstepRanks,
 			DPLoadBalancing:            dpLoadBalancing,
 			TraceLevel:                 traceLevel,
 			CounterfactualK:            counterfactualK,
@@ -529,16 +501,13 @@ Example:
 			PDTransferContention:       pdTransferContention,
 			PDTransferDemand:           pdTransferDemand,
 			PDPrefillKVHold:            kernelPD.holdsPrefillKV(),
-			PDPrefillSamplesFirstToken: coreEngineVersions[scenarioShape.EngineVersion],
+			PDPrefillSamplesFirstToken: true,
 			Roles:                      rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			InstanceLifecycle:          bundleInstanceLifecycle,
 			ScenarioEndpointTopology:   cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
-			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
-		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
-			config.NewEngine = f
+			NewEngine: engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -628,15 +597,10 @@ Example:
 			logrus.Infof("agentic replay: profiling %s -> %s, %+v", fmtUs(ps), fmtUs(pe), agx.driver.Stats())
 		}
 		if poolDriver != nil {
-			// KNOWN LIMITATION (#1483): under an explicit --horizon hard cap that truncates
-			// mid-drain, a refill pushed by a late termination but discarded by the cluster's
-			// horizon guard is still counted as started, so Unstarted() may undercount and this
-			// warning may not fire. The self-draining path (no --horizon) is exact: pre-instance
-			// drops (routing/gateway rejection, client-deadline expiry, shed/evict) now cancel
-			// the session and refill its slot via the unserved hook (#2064), so they no longer
-			// leave a session unstarted.
-			if un := poolDriver.Unstarted(); un > 0 {
-				logrus.Warnf("%d of %d pooled sessions never admitted — an explicit --horizon cap truncated the drain before every session started. Omit --horizon to self-drain (then every session is admitted; see #1483 for the horizon-cap accounting limitation).",
+			// A session is started when its round 0 arrived. A refill the horizon discarded was
+			// created and ended not_started (DEV-9), so the fate ledger counts it unstarted (#1483).
+			if un := poolDriver.TotalSessions() - poolDriver.ArrivedSessions(cs.Fates()); un > 0 {
+				logrus.Warnf("%d of %d pooled sessions never started: the --horizon cap ended the run before their first round arrived. Omit --horizon to self-drain, which starts every session.",
 					un, poolDriver.TotalSessions())
 			}
 		}
@@ -694,6 +658,7 @@ Example:
 			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
 			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
+			frame: replayFrameGenerator(agx),
 		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
@@ -865,6 +830,23 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 		}
 	}
 	return computeHorizonFromMaxArrival(maxArrival)
+}
+
+// replayFrameGenerator is what a replay tells the experimental frame about its requests: the
+// trace (by its data file's sha256) and session mode, or the agentic scenario with its seed
+// and warm-up rule.
+func replayFrameGenerator(agx *agentXRun) frameGenerator {
+	if agx != nil {
+		return frameGenerator{Kind: generatorAgenticReplay, Source: "sha256:" + agx.spec.Corpus.SHA256,
+			Seed: agx.spec.Seed(), Warmup: string(agx.spec.WarmupMode())}
+	}
+	g := frameGenerator{Kind: generatorTrace, Seed: seed, SessionMode: replaySessionMode}
+	if d, err := fileDigest(traceDataPath); err == nil {
+		g.Source = "sha256:" + d
+	} else {
+		logrus.Fatalf("--trace-data %s: %v", traceDataPath, err)
+	}
+	return g
 }
 
 // replayRunControls are the run controls a replay records: the trace's offered load (or the

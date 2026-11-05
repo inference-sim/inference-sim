@@ -176,11 +176,29 @@ func TestMeasuredAccountingClosesOverDisaggregatedRuns(t *testing.T) {
 		// pool gets as few as 10 blocks while the prefill pool admits every prompt, and no
 		// max_model_len (which would need the decode KV to hold it) bounds the prompt.
 		if rapid.Bool().Draw(rt, "tightKV") {
+			blocks := rapid.IntRange(10, 60).Draw(rt, "blocks")
+			// With no max_model_len, a decode pool can take a prompt it can never finish: one
+			// that fills the pool exactly (the engine never admits its pull), or whose prompt
+			// fits and whose prompt plus output does not (preempted, it waits forever). Both stop
+			// the run making progress, which the SIM-7 watchdog fails (the known-bad inputs of
+			// TestWatchdog_*), so they are not conservation cases. A valid deployment cannot
+			// produce them: its KV holds one max_model_len request (INV-K10). Each such request's
+			// prompt is grown past the pool, so it is dropped at decode KV instead.
+			for _, r := range requests {
+				if neverFinishesOnDecodePool(len(r.InputTokens), len(r.OutputTokens), blocks) {
+					grown := make([]sim.TokenID, blocks*16+1)
+					copy(grown, r.InputTokens)
+					for j := len(r.InputTokens); j < len(grown); j++ {
+						grown[j] = sim.TokenID(len(requests)*100_000 + j)
+					}
+					r.InputTokens = grown
+				}
+			}
 			editEngine(&config, func(c *simConfig) {
 				c.ModelHardwareConfig = cengine.NewModelHardwareConfig(testModelConfig(), "test-model", "H100", 1, 1, false, 0)
 			})
 			editEngine(&config, func(c *simConfig) {
-				c.KVCacheConfig = cengine.NewKVCacheConfig(int64(rapid.IntRange(10, 60).Draw(rt, "blocks")), 16, 0, 0, 0, 0)
+				c.KVCacheConfig = cengine.NewKVCacheConfig(int64(blocks), 16, 0, 0, 0, 0)
 			})
 			prefillBlocks := int64(100)
 			editPrefill(&config, func(c *simConfig) { c.TotalKVBlocks = prefillBlocks })

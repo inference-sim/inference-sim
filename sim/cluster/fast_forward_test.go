@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"math"
 	"math/rand"
 	"testing"
@@ -27,9 +26,9 @@ func TestNextRequestWork_MatchesLinearScan(t *testing.T) {
 			if rng.Float64() < daemonShare {
 				ev = &CallbackEvent{at: at, priority: PriorityGatewayBackground, daemon: true, fn: func() {}}
 			}
-			heap.Push(&c.clusterEvents, clusterEventEntry{event: ev, seqID: c.nextSeqID()})
+			c.scheduleTestEvent(ev)
 			if rng.Intn(4) == 0 && len(c.clusterEvents) > 0 {
-				heap.Pop(&c.clusterEvents)
+				c.popEvent()
 			}
 		}
 		want := int64(math.MaxInt64)

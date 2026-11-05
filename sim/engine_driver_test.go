@@ -1,11 +1,12 @@
 package sim
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // newFIFODriver is an EngineDriver over blis-schemas' fake FIFO engine, which prices a step as
@@ -654,5 +655,92 @@ func TestEngineDriver_EmptyRunnerStepWaitHoldsTheNextForward(t *testing.T) {
 	start, end := d.timeBatch(engine.Batch{Reqs: []engine.Scheduled{{ID: "c", Tokens: 1, Computed: 8, PromptLen: 8}}}, 0)
 	if start != 28 || end != 56 {
 		t.Fatalf("batch 2 runs %d-%d, want 28-56", start, end)
+	}
+}
+
+// stuckEngine schedules every request it holds in every step and never emits a token or
+// finishes one: each step runs and no request changes state. It is the known-bad input of
+// SIM-7's watchdog. Methods it does not override are the FIFO's, which never sees the request.
+type stuckEngine struct {
+	engine.Engine
+	ids      []string
+	next     engine.BatchID
+	inFlight bool
+}
+
+func (s *stuckEngine) Add(r engine.Request, _ engine.Time) error {
+	s.ids = append(s.ids, r.ID)
+	return nil
+}
+
+func (s *stuckEngine) Schedule(engine.Time) (engine.Batch, error) {
+	if s.inFlight {
+		return engine.Batch{}, engine.ErrNoCapacity
+	}
+	if len(s.ids) == 0 {
+		return engine.Batch{}, nil
+	}
+	s.inFlight = true
+	s.next++
+	b := engine.Batch{ID: s.next}
+	for _, id := range s.ids {
+		b.Reqs = append(b.Reqs, engine.Scheduled{ID: id, Tokens: 1, PromptLen: 10})
+	}
+	return b, nil
+}
+
+func (s *stuckEngine) StepTime(engine.Batch) engine.Duration { return 10 }
+
+func (s *stuckEngine) Complete(engine.BatchID, engine.Outcome, engine.Time) (engine.Result, error) {
+	s.inFlight = false
+	return engine.Result{}, nil
+}
+
+func (s *stuckEngine) InFlightLimit() int { return 1 }
+
+// SIM-7: an engine that keeps stepping while no request changes state fails the run after the
+// watchdog's limit of steps; the same request on an engine that makes progress does not.
+func TestEngineDriver_WatchdogFailsAStuckEngine(t *testing.T) {
+	cfg := enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100, StepPerTokenUs: 1}
+	run := func(stuck bool) error {
+		eng, err := enginetest.NewFIFO(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var e engine.Engine = eng
+		if stuck {
+			e = &stuckEngine{Engine: eng}
+		}
+		d := NewEngineDriver(e, EngineDriverConfig{Horizon: 1 << 40, StallSteps: 50})
+		d.InjectArrival(&Request{ID: "r0", InputTokens: tokens(10), OutputTokens: tokens(4)})
+		for d.HasPendingEvents() && d.StallErr() == nil {
+			d.ProcessNextEvent()
+		}
+		return d.StallErr()
+	}
+	if err := run(true); !errors.Is(err, ErrNoProgress) {
+		t.Fatalf("a stuck engine: StallErr = %v, want ErrNoProgress", err)
+	}
+	if err := run(false); err != nil {
+		t.Fatalf("an engine that makes progress: StallErr = %v, want nil", err)
+	}
+}
+
+// A long prompt prefills in many chunks that emit nothing; under the default limit that is
+// progress the watchdog must not mistake for a stall (the closest configuration that does not
+// trip it, SIM-9).
+func TestEngineDriver_WatchdogAllowsLongChunkedPrefill(t *testing.T) {
+	cfg := enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, StepBaseUs: 10, StepPerTokenUs: 0}
+	eng, err := enginetest.NewFIFO(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+	done := false
+	d.OnRequestDone = func(*Request, int64) []*Request { done = true; return nil }
+	d.InjectArrival(&Request{ID: "r0", InputTokens: tokens(8 * 5000), OutputTokens: tokens(2)})
+	d.Run()
+	if err := d.StallErr(); err != nil || !done {
+		t.Fatalf("5,000 prefill chunks: StallErr = %v, completed = %v; want nil and true", err, done)
 	}
 }

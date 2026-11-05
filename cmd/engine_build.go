@@ -7,20 +7,21 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
+	blisvllm "github.com/inference-sim/blis-vllm"
 	"github.com/inference-sim/blis-vllm/compat/build"
-	"github.com/inference-sim/blis-vllm/compat/contract"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	coreengine "github.com/inference-sim/blis-vllm/vllmengine"
+
 	// Linking these registers the compatibility engine's constructors: compat/kv the KV store
 	// sim.NewEngine builds (sim.NewKVStoreFromConfig), compat/lora the adapter registry
 	// (sim.NewAdapterRegistryFunc). The build site is the one place that links them.
 	_ "github.com/inference-sim/blis-vllm/compat/kv"
 	_ "github.com/inference-sim/blis-vllm/compat/lora"
+	"github.com/inference-sim/inference-sim/internal/stack"
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -150,7 +151,7 @@ func (p *kernelPools) pools() *build.Pools {
 	return &build.Pools{Prefill: p.prefill, Decode: p.decode, Connector: p.connector}
 }
 
-// runTopology is the run's instance counts as they stand (after DP-as-placement once applied).
+// runTopology is the run's instance counts as they stand.
 func runTopology() build.Topology {
 	return build.Topology{NumInstances: numInstances, Prefill: prefillInstances, Decode: decodeInstances,
 		SharedOrEncode: prefillDecodeInstances > 0 || encodeInstances > 0}
@@ -187,6 +188,8 @@ func openKernelPools(catalogRoot string) *kernelPools {
 		logrus.Fatalf("%v", err)
 	}
 	if bp == nil {
+		// A colocated run: no per-role kernels, whatever an earlier run in this process opened.
+		kernelPDOpened = nil
 		return nil
 	}
 	p := &kernelPools{prefill: bp.Prefill, decode: bp.Decode, connector: bp.Connector}
@@ -274,8 +277,8 @@ func requireDPLoadBalancingMode(mode string) {
 
 // adoptFirstPoolEngine takes the run's engine from the first pool's kernel
 // (build.FirstPoolSettingsOf): the caps, pages and pool the kernel priced, so the simulated
-// scheduler admits against them. Per data-parallel RANK: a dp>1 MoE deployment runs one replica
-// per rank (DP-as-placement), each sized as one EngineCore, so the placement never divides it.
+// scheduler admits against them, per data-parallel rank: each rank of the engine's
+// data-parallel group is sized as one EngineCore.
 func adoptFirstPoolEngine(m *engineModel, settings kernelmodel.Settings) {
 	fp, err := build.FirstPoolSettingsOf(kernelScenario, settings)
 	if err != nil {
@@ -583,11 +586,11 @@ func batchConfigFromCLI() batchConfig {
 
 // engineConfigFor is the engine's configuration for this run or replay (build.EngineConfigOf),
 // from the settings the scenario, the kernel and the command line resolved: the one place both
-// commands assemble it (INV-13). perRankDP is DP-as-placement's per-replica DP (#1531, #1556).
+// commands assemble it (INV-13). dp is the scenario's data parallelism.
 // It resolves the speculative configuration, which records the acceptance for the results file.
-func engineConfigFor(cmd *cobra.Command, m modelConfig, perRankDP int, offload kvOffloadConfig,
+func engineConfigFor(cmd *cobra.Command, m modelConfig, dp int, offload kvOffloadConfig,
 	cpuTierTicks int64, lora loraConfig) build.EngineConfig {
-	return build.EngineConfigOf(engineSettings(m, perRankDP, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
+	return build.EngineConfigOf(engineSettings(m, dp, offload, cpuTierTicks, lora, resolveSpeculativeConfig(cmd)))
 }
 
 // engineConfigOfRun is the run's engine configuration both commands build every instance's
@@ -599,8 +602,7 @@ func engineConfigOfRun(ec build.EngineConfig, horizon, seed int64, latency laten
 		Horizon: horizon,
 		Seed:    seed,
 		// The engine's configuration comes from the build site (engineConfigFor), the same for
-		// run and replay (INV-13). DP-as-placement (#1531): the per-replica DP is in
-		// ec.ModelHardware, from the same resolveDPPlacement for both (#1556).
+		// run and replay (INV-13).
 		KVCacheConfig:        ec.KVCache,
 		BatchConfig:          ec.Batch,
 		ModelHardwareConfig:  ec.ModelHardware,
@@ -823,101 +825,17 @@ func groupFrontendConfigFromCLI(dp int) sim.FrontendConfig {
 	return c
 }
 
-// dpLockstepRanks is how many replicas of one logical instance form one vLLM DP group that
-// steps in lockstep (build.DPLockstepRanks): dp for an MoE model at dp > 1.
-func dpLockstepRanks(isMoE bool, dp int) int { return build.DPLockstepRanks(isMoE, dp) }
-
-// checkHybridDPNodeLocal refuses --dp-load-balancing hybrid for a colocated replica whose ranks
-// span nodes (build.CheckHybridDPNodeLocal). Only a colocated run with a kernel is checked: the
-// kernel places the ranks.
-func checkHybridDPNodeLocal(plan dpPlacementPlan) error {
-	if !plan.Active || kernelOpened == nil ||
-		prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0 {
-		return nil
-	}
-	return build.CheckHybridDPNodeLocal(dpLoadBalancing, plan.Replicas, numInstances,
-		func(rank int) int { return kernelOpened.PlacementOf(rank).Node })
-}
-
-// compatContractFactory is the cluster's engine constructor for a compatibility release (0.29.0,
-// 0.31.0): the compatibility engine behind engine.Engine (blis-vllm compat/contract), built from
-// the run's instance configuration and driven by a sim.EngineDriver. nil for another release.
-func compatContractFactory(version string, global engineConfig, acceptance float64, dpPlan dpPlacementPlan) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
-	if !compatEngineVersions[version] {
-		return nil
-	}
-	build := compatEngineFactory(global, acceptance, dpPlan)
-	if dpPlan.LockstepRanks <= 1 {
-		// Build the first instance's engine now: a configuration the engine refuses is a CLI
-		// refusal, named, before the cluster is assembled.
-		if _, err := build(0, instanceConfigOf(global)); err != nil {
-			logrus.Fatalf("%v", err)
-		}
-	}
-	return build
-}
-
-// compatEngineFactory builds each instance's compatibility engine behind engine.Engine (blis-vllm
-// compat/contract) from its configuration, driven by a sim.EngineDriver: the factory a 0.29/0.31
-// run's cluster builds its instances with (compatContractFactory), and a library-level test's.
-func compatEngineFactory(global engineConfig, acceptance float64, dpPlan dpPlacementPlan) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
-	// Each instance's engine is built from its own configuration, resolved for its pool role (a
-	// P/D prefill or decode pool's overrides), as the compatibility engine's own host loop builds
-	// it (sim.NewEngine).
-	driver := func(eng engine.Engine, cfg engineConfig) (*sim.EngineDriver, error) {
-		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, Acceptance: acceptance, ResumeGapFromLastToken: true,
-			ScrapeEngineMetrics: true, ApplyAtStepStart: true}
-		hostOverheads(&dcfg, cfg.LatencyModel)
-		return sim.NewEngineDriverWithFrontend(eng, dcfg, frontendOf(cfg.Frontend))
-	}
-	// A data-parallel MoE replica (dpLockstepRanks consecutive instances, one per rank) is one
-	// engine, the compatibility engine's lockstep group (contract.DPGroup), which each rank's
-	// instance reaches through its rank's view; rank 0's driver steps the group.
-	ranks := dpPlan.LockstepRanks
-	var group *contract.DPGroup
-	var leader *sim.EngineDriver
-	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
-		cfg := engineConfigIn(ic)
-		if ranks <= 1 {
-			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
-			if err != nil {
-				return nil, err
-			}
-			return driver(eng, cfg)
-		}
-		k := index % ranks
-		if k == 0 {
-			ids := make([]string, ranks)
-			for j := range ids {
-				ids[j] = fmt.Sprintf("instance_%d", index+j)
-			}
-			g, err := contract.NewDPGroup(ids, cfg)
-			if err != nil {
-				return nil, err
-			}
-			group = g
-		}
-		if group == nil {
-			return nil, fmt.Errorf("data-parallel rank %d of instance %d was built before its rank 0", k, index)
-		}
-		d, err := driver(group.View(k), cfg)
-		if err != nil {
-			return nil, err
-		}
-		if k == 0 {
-			leader = d
-		}
-		d.JoinGroup(leader, k)
-		return d, nil
-	}
-	return build
-}
-
 // registerContractEngines registers the engine kind a contract-built release is built by:
 // blis-vllm's translated v0.32.0 engine, with the latency kernel's step pricing and KV sizing
 // (its Register). It is the one place this binary links an engine the contract reaches;
 // later calls are no-ops.
 func registerContractEngines() { coreengine.Register() }
+
+// EngineReleases are the upstream engine releases this binary runs, one per kind, as each
+// engine module records its own (for vLLM, blisvllm.Upstream). stack.json lists them (LIF-6).
+func EngineReleases() []stack.Upstream {
+	return []stack.Upstream{{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit}}
+}
 
 // contractRoots are the roots the registered factory reads: the catalog and registry clone
 // roots, and the scenario file's path, which it opens itself.

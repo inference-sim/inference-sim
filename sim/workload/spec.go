@@ -9,6 +9,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/inference-sim/sim/check"
 )
 
 // v1ToV2SLOClasses maps deprecated v1 SLO class names to v2 equivalents.
@@ -332,6 +334,9 @@ func (s *WorkloadSpec) Validate() error {
 			}
 		}
 	}
+	if err := validateGoodputTargets(s.GoodputSLOTargets); err != nil {
+		return err
+	}
 	if len(s.Clients) == 0 && s.ServeGenData == nil && len(s.Cohorts) == 0 {
 		return fmt.Errorf("at least one client, cohort, or servegen_data path required")
 	}
@@ -424,8 +429,8 @@ func validateClient(c *ClientSpec, idx int) error {
 	if c.Concurrency < 0 {
 		return fmt.Errorf("%s: concurrency must be non-negative, got %d", prefix, c.Concurrency)
 	}
-	if c.ThinkTimeUs < 0 {
-		return fmt.Errorf("%s: think_time_us must be non-negative, got %d", prefix, c.ThinkTimeUs)
+	if err := check.DurationUs(prefix+".think_time_us", c.ThinkTimeUs); err != nil {
+		return err
 	}
 	// Mutual exclusion: concurrency and rate_fraction cannot both be set
 	if c.Concurrency > 0 && c.RateFraction > 0 {
@@ -474,8 +479,8 @@ func validateClient(c *ClientSpec, idx int) error {
 			return err
 		}
 	}
-	if c.PrefixLength < 0 {
-		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	if err := check.TokenCount(prefix+".prefix_length", int64(c.PrefixLength)); err != nil {
+		return err
 	}
 	if err := validateDistSpec(prefix+".input_distribution", &c.InputDist); err != nil {
 		return err
@@ -484,11 +489,15 @@ func validateClient(c *ClientSpec, idx int) error {
 		return err
 	}
 	// R3: Validate timeout if specified (negative values are invalid)
-	if c.Timeout != nil && *c.Timeout < 0 {
-		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	if c.Timeout != nil {
+		if err := check.DurationUs(prefix+".timeout", *c.Timeout); err != nil {
+			return err
+		}
 	}
-	if c.SLOTargetUs != nil && *c.SLOTargetUs < 0 {
-		return fmt.Errorf("%s: slo_target_us must be non-negative, got %d", prefix, *c.SLOTargetUs)
+	if c.SLOTargetUs != nil {
+		if err := check.DurationUs(prefix+".slo_target_us", *c.SLOTargetUs); err != nil {
+			return err
+		}
 	}
 	// Validate MaxRounds for reasoning/multi-turn (prevents panic in NewSessionManager)
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
@@ -632,8 +641,8 @@ func validateCohort(c *CohortSpec, idx int) error {
 			return fmt.Errorf("%s: drain ramp_duration_us must be > 0, got %d", prefix, c.Drain.RampDurationUs)
 		}
 	}
-	if c.PrefixLength < 0 {
-		return fmt.Errorf("%s: prefix_length must be non-negative, got %d", prefix, c.PrefixLength)
+	if err := check.TokenCount(prefix+".prefix_length", int64(c.PrefixLength)); err != nil {
+		return err
 	}
 	if c.PrefixSharing != "" && c.PrefixSharing != "shared" && c.PrefixSharing != "per_member" {
 		return fmt.Errorf("%s: prefix_sharing must be \"shared\" or \"per_member\", got %q", prefix, c.PrefixSharing)
@@ -641,11 +650,15 @@ func validateCohort(c *CohortSpec, idx int) error {
 	if c.PrefixSharing == "per_member" && c.PrefixGroup == "" {
 		return fmt.Errorf("%s: prefix_sharing \"per_member\" requires prefix_group to be set", prefix)
 	}
-	if c.Timeout != nil && *c.Timeout < 0 {
-		return fmt.Errorf("%s: timeout must be non-negative, got %d", prefix, *c.Timeout)
+	if c.Timeout != nil {
+		if err := check.DurationUs(prefix+".timeout", *c.Timeout); err != nil {
+			return err
+		}
 	}
-	if c.SLOTargetUs != nil && *c.SLOTargetUs < 0 {
-		return fmt.Errorf("%s: slo_target_us must be non-negative, got %d", prefix, *c.SLOTargetUs)
+	if c.SLOTargetUs != nil {
+		if err := check.DurationUs(prefix+".slo_target_us", *c.SLOTargetUs); err != nil {
+			return err
+		}
 	}
 	if c.Reasoning != nil && c.Reasoning.MultiTurn != nil && c.Reasoning.MultiTurn.MaxRounds < 1 {
 		return fmt.Errorf("%s: reasoning.multi_turn.max_rounds must be >= 1, got %d", prefix, c.Reasoning.MultiTurn.MaxRounds)
@@ -659,12 +672,8 @@ func IsValidSLOClass(name string) bool {
 	return validSLOClasses[name]
 }
 
+// validateFinitePositive is the one validator for a positive rate or parameter (check.PositiveFinite),
+// which --rate meets too (SIM-11).
 func validateFinitePositive(name string, val float64) error {
-	if math.IsNaN(val) || math.IsInf(val, 0) {
-		return fmt.Errorf("%s must be a finite number, got %f", name, val)
-	}
-	if val <= 0 {
-		return fmt.Errorf("%s must be positive, got %f", name, val)
-	}
-	return nil
+	return check.PositiveFinite(name, val)
 }

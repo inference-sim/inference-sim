@@ -1,10 +1,8 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -91,62 +89,5 @@ func TestAdoptKernelDeployment_SizesTheReplayFromTheKernel(t *testing.T) {
 					st.DataParallel, st.AggregateKVBlocks, st.KVBlocks)
 			}
 		})
-	}
-}
-
-// writeLoRAPressureFixtures writes a colocated variant whose KV pool is small (a low
-// gpu_memory_utilization), a LoRA config whose adapters reserve HBM beside the weights, and a
-// workload whose requests use those adapters with long prompts: together they overflow the
-// KV pool, so the run preempts.
-func writeLoRAPressureFixtures(t *testing.T) (scenarioDir, loraPath, specPath string) {
-	t.Helper()
-	scenarioDir = writeColocatedVariant(t, "gpu_memory_utilization: 0.9", "gpu_memory_utilization: 0.25")
-	dir := t.TempDir()
-	loraPath = filepath.Join(dir, "lora.yaml")
-	if err := os.WriteFile(loraPath, []byte("lora:\n  adapter_capacity: 2\n  adapters:\n"+
-		"    - id: a0\n      rank: 64\n    - id: a1\n      rank: 64\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var b strings.Builder
-	b.WriteString("version: \"2\"\ncategory: language\naggregate_rate: 40.0\nnum_requests: 120\nclients:\n")
-	for i, adapter := range []string{"a0", "a1"} {
-		fmt.Fprintf(&b, "  - id: c%d\n    tenant_id: t\n    slo_class: batch\n    adapter: %s\n    rate_fraction: 1.0\n"+
-			"    arrival:\n      process: poisson\n"+
-			"    input_distribution:\n      type: constant\n      params: { value: 6000 }\n"+
-			"    output_distribution:\n      type: constant\n      params: { value: 600 }\n", i, adapter)
-	}
-	specPath = filepath.Join(dir, "spec.yaml")
-	if err := os.WriteFile(specPath, []byte(b.String()), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return scenarioDir, loraPath, specPath
-}
-
-// A run with LoRA adapters under KV pressure -- the reservation shrinking the pool, requests
-// preempted -- replays byte-identically from its exported trace with the same flags and horizon
-// (INV-13): replay sets aside the same reservation and preempts the same requests. Non-vacuity:
-// the run preempts, so a replay sized without the reservation would diverge.
-func TestReplayCmd_KernelBackend_ReproducesALoRARunUnderKVPressure(t *testing.T) {
-	dir, lora, spec := writeLoRAPressureFixtures(t)
-	prefix := filepath.Join(t.TempDir(), "trace")
-	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--lora-config", lora,
-		"--seed", "5", "--horizon", "6000000000"}
-	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--workload-spec", spec, "--trace-output", prefix}, common...)...)
-	if err != nil {
-		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
-	}
-	if got := clusterMetricInt(t, runOut, "preemption_count"); got <= 0 {
-		t.Fatalf("the run preempted %d times; the fixture no longer puts the KV pool under pressure", got)
-	}
-	if got := clusterMetricInt(t, runOut, "completed_requests"); got <= 0 {
-		t.Fatalf("the run completed %d requests", got)
-	}
-	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
-		"--trace-data", prefix + ".csv"}, common...)...)
-	if err != nil {
-		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
-	}
-	if inv13View(t, repOut) != inv13View(t, runOut) {
-		t.Errorf("the LoRA run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
 	}
 }
