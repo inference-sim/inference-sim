@@ -30,7 +30,7 @@ git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
 ```
 <!-- END GENERATED -->
-2. **A model runs iff it is in the catalog.** Its config is read from `<catalog>/models/<short-name>/config.json`; an absent entry is refused naming that path. No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
+2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
 3. **A scenario and the registry are required** on both `run` and `replay`: `--scenario <file> --scenarios <dir> --registry <blis-substrate registry/ directory>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
 4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload`, `observe --workload`, and `convert preset --name` (all take `--catalog`/`BLIS_CATALOG`).
 
