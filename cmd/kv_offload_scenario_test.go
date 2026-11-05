@@ -40,9 +40,8 @@ func writeOffloadScenario(t *testing.T, dir, name, marker, offload string) strin
 }
 
 // A scenario stating its CPU tier runs byte-identically to the same scenario without the
-// block given the equivalent --kv-offload-config, colocated and P/D (every engine gets its own
-// tier); the exported trace headers, which record the resolved kv_offload config, match too.
-// Stating both, agreeing, is accepted; disagreeing is refused naming the field. The scenario's
+// block given the equivalent --kv-offload-config; the exported trace headers, which record the
+// resolved kv_offload config, match too. Stating both, agreeing, is accepted; disagreeing is refused naming the field. The scenario's
 // 0-byte tier is refused by the schema. A scenario-offload run replays byte-identically.
 func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 	scenarios, _, _ := kernelRepos(t)
@@ -57,9 +56,6 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 		{"colocated", scenarios, "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml", "",
 			[]string{"--num-requests", "20", "--rate", "4", "--prefix-tokens", "512", "--seed", "5", "--horizon", "600000000"},
 			[]string{"--seed", "5", "--horizon", "600000000"}},
-		{"P/D", writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector"), "variant.yaml", "pd_transfer:",
-			append(append([]string(nil), pdTopology...), "--num-requests", "20", "--rate", "4", "--prefix-tokens", "512"),
-			pdTopology},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			withBlock := writeOffloadScenario(t, tc.src, tc.scenario, tc.marker, tier)

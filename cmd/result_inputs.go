@@ -41,13 +41,13 @@ const (
 // resultRevisions are the versions of every component and data repository the run read.
 // catalogRoot and registryRoot are the clone roots; a root that is not a git checkout is
 // recorded as unknown, never guessed.
-func resultRevisions(catalogRoot, registryRoot, engineVersion string) result.Revisions {
+func resultRevisions(catalogRoot, registryRoot string, eng engineRef) result.Revisions {
 	info, _ := debug.ReadBuildInfo()
-	return revisionsFrom(info, catalogRoot, registryRoot, engineVersion)
+	return revisionsFrom(info, catalogRoot, registryRoot, eng)
 }
 
 // revisionsFrom is resultRevisions over given build information, for tests.
-func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot, engineVersion string) result.Revisions {
+func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot string, eng engineRef) result.Revisions {
 	v := versionsFrom(info)
 	r := result.Revisions{BLIS: v.BLIS, BLISSchemas: v.Schemas, BLISLatencyKernel: v.Kernel}
 	if r.BLISLatencyKernel == "unknown" {
@@ -64,8 +64,10 @@ func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot, engineVersi
 			}
 		}
 	}
-	if engineVersion != "" {
-		r.Engine = &result.Engine{Kind: "vllm", UpstreamVersion: engineVersion, Release: engineRelease}
+	// The engine is the one the scenario selected (selectEngine): its kind and upstream release,
+	// and the engine module's own release (SIM-1).
+	if eng.Kind != "" {
+		r.Engine = &result.Engine{Kind: eng.Kind, UpstreamVersion: eng.Version, Release: engineRelease}
 	}
 	r.Catalog = dataRepoRevision(catalogRoot)
 	r.Registry = dataRepoRevision(registryRoot)
@@ -226,7 +228,6 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 
 // runGPUs is the number of GPUs the run's instances occupy: each instance its own pool's
 // tensor x pipeline x prefill-context-parallel width, the GPUs one engine replica spans.
-// Data parallelism is already one instance per rank (DP-as-placement), so it is not a factor.
 // An instance whose role names no pool (a test cluster) counts its tensor-parallel degree.
 func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
 	perRole := map[deployment.Role]int{}

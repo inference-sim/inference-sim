@@ -279,27 +279,6 @@ func tenantMix(t *testing.T, class string) string {
 // TestCapabilityMatrix_Policies is section 6 of the PR: each policy, on the kernel, conserves
 // its requests and has the effect it exists for.
 func TestCapabilityMatrix_Policies(t *testing.T) {
-	t.Run("schedulers/priority-fcfs serves critical first; reverse-priority last", func(t *testing.T) {
-		t.Parallel()
-		base := with(colocated(2), "--workload-spec", classMix(t))
-		ttft := map[string]map[string]float64{}
-		for _, sched := range []string{"fcfs", "priority-fcfs", "reverse-priority", "sjf"} {
-			o, rows := capRunRows(t, runArgs(base, "--scheduler", sched)...)
-			o.conserves(t, 120)
-			ttft[sched], _ = meanTTFTBy(rows, bySLOClass)
-		}
-		if !(ttft["priority-fcfs"]["critical"] < ttft["fcfs"]["critical"] &&
-			ttft["fcfs"]["critical"] < ttft["reverse-priority"]["critical"]) {
-			t.Errorf("critical TTFT priority-fcfs %.0f, fcfs %.0f, reverse-priority %.0f ms; want increasing",
-				ttft["priority-fcfs"]["critical"], ttft["fcfs"]["critical"], ttft["reverse-priority"]["critical"])
-		}
-		// sjf ignores priority entirely: with equal lengths its order is arrival order.
-		if ttft["sjf"]["critical"] != ttft["fcfs"]["critical"] {
-			t.Errorf("sjf over equal-length requests changed critical TTFT from %.0f to %.0f ms",
-				ttft["fcfs"]["critical"], ttft["sjf"]["critical"])
-		}
-	})
-
 	t.Run("chunked prefill/a lower chunk threshold spreads concurrent long prefills over more steps", func(t *testing.T) {
 		t.Parallel()
 		// Two 20000-token prompts at once: each smaller chunk adds a step and its fixed cost, so
@@ -506,19 +485,14 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 
 	t.Run("MoE DP/EP: expert parallelism changes the price of a dp=2 deployment", func(t *testing.T) {
 		t.Parallel()
-		// Per-rank sizing, replicas = instances x dp, node-pool placement and run/replay parity
-		// of DP-as-placement are proven by TestRunCmd_MoEDPPlacement_EachReplicaIsSizedPerRank,
-		// TestRunCmd_MoEDPPlacement_NodePools_NxM, TestINV13_RunReplayParity_MoEDPPlacement and,
-		// under P/D, TestRunCmd_KernelBackend_DisaggregatedDataParallel.
+		// One data-parallel group per logical instance, and its run/replay parity, are proven by
+		// TestINV13_RunReplayParity_MoEDP.
 		off := capVariant(t, dpScenario, "enable_expert_parallel: true", "enable_expert_parallel: false")
 		args := burst(40, 10, 512, 256)
 		ep := capRun(t, runArgs(append([]string{"--scenario", dpScenario, "--num-instances", "1", "--seed", "3"}, args...))...)
 		noEP := capRun(t, runArgs(append([]string{"--scenarios", off, "--scenario", "variant.yaml", "--num-instances", "1", "--seed", "3"}, args...))...)
 		ep.conserves(t, 40)
 		noEP.conserves(t, 40)
-		if len(ep.instances) != 2 || len(noEP.instances) != 2 {
-			t.Fatalf("one logical instance at dp 2 must run 2 replicas: %d and %d", len(ep.instances), len(noEP.instances))
-		}
 		if ep.num("e2e_mean_ms") == noEP.num("e2e_mean_ms") {
 			t.Errorf("expert parallelism on and off priced the run identically (mean E2E %.1f ms)", ep.num("e2e_mean_ms"))
 		}

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
 	"pgregory.net/rapid"
 )
 
@@ -39,7 +38,7 @@ func committedSweep(framework string) Sweep {
 // scenario the sweep names -- not from a list of known-missing models.
 func TestAModelMissingFromTheCatalogIsAGapOwnedByTheCatalog(t *testing.T) {
 	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
-	raw, err := os.ReadFile(filepath.Join(kernelfixtures.AISimulate(), name))
+	raw, err := os.ReadFile(filepath.Join(testScenarios(), name))
 	if err != nil {
 		t.Fatal(err)
 	}

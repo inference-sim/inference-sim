@@ -3,8 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -152,7 +150,9 @@ func TestRunCmd_KernelBackend_RefusesAnEngineVLLMWouldNotStart(t *testing.T) {
 }
 
 // The scenario's engine.scheduling_policy sets the instance scheduler: vLLM's priority is BLIS's
-// priority-fcfs, an unstated policy leaves the default, and an explicit --scheduler wins.
+// priority-fcfs, an unstated policy leaves the default, and an explicit --scheduler wins. The
+// adoption alone is checked here; a run of a priority scenario is refused (the host does not
+// carry priority across the engine contract, TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused).
 func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	setupKernelTestFixtures(t)
@@ -190,13 +190,15 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 		})
 	}
 	// An explicit --scheduler that departs from the scenario is kept, and says so.
-	args := []string{"run", "--scenarios", priority, "--scenario", "variant.yaml", "--num-requests", "4", "--rate", "2"}
-	_, stderr, err := runKernelCLI(t, append(args, "--scheduler", "fcfs")...)
+	fcfs := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
+		"      gpu_memory_utilization: 0.92\n      scheduling_policy: fcfs\n")
+	args := []string{"run", "--scenarios", fcfs, "--scenario", "variant.yaml", "--num-requests", "4", "--rate", "2"}
+	_, stderr, err := runKernelCLI(t, append(args, "--scheduler", "sjf")...)
 	if err != nil || !strings.Contains(stderr, "overriding scenario") {
-		t.Errorf("--scheduler fcfs over a priority scenario: want a warning naming the override, got %v\n%s",
+		t.Errorf("--scheduler sjf over an fcfs scenario: want a warning naming the override, got %v\n%s",
 			err, lastLines(stderr, 3))
 	}
-	if _, stderr, _ := runKernelCLI(t, append(args, "--scheduler", "priority-fcfs")...); strings.Contains(stderr, "overriding scenario") {
+	if _, stderr, _ := runKernelCLI(t, append(args, "--scheduler", "fcfs")...); strings.Contains(stderr, "overriding scenario") {
 		t.Errorf("--scheduler restating the scenario's policy warned of an override:\n%s", lastLines(stderr, 3))
 	}
 }
@@ -207,8 +209,8 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 // two values and what chose the run's. A run that follows its scenario records nothing, and the
 // block never reaches stdout (INV-6).
 func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
-	priority := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
-		"      gpu_memory_utilization: 0.92\n      scheduling_policy: priority\n")
+	fcfs := writeColocatedVariant(t, "      gpu_memory_utilization: 0.92\n",
+		"      gpu_memory_utilization: 0.92\n      scheduling_policy: fcfs\n")
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
 	if err := os.WriteFile(bundle, []byte("scheduler: sjf\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -217,7 +219,7 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 	overridesOf := func(t *testing.T, extra ...string) ([]override, string) {
 		t.Helper()
 		path := filepath.Join(t.TempDir(), "metrics.json")
-		args := append([]string{"run", "--scenarios", priority, "--scenario", "variant.yaml",
+		args := append([]string{"run", "--scenarios", fcfs, "--scenario", "variant.yaml",
 			"--num-requests", "4", "--rate", "2", "--metrics-path", path}, extra...)
 		stdout, stderr, err := runKernelCLI(t, args...)
 		if err != nil {
@@ -242,11 +244,11 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 		want  []override
 	}{
 		{"the scenario's own scheduler records nothing", nil, nil},
-		{"an explicit --scheduler equal to the scenario's records nothing", []string{"--scheduler", "priority-fcfs"}, nil},
+		{"an explicit --scheduler equal to the scenario's records nothing", []string{"--scheduler", "fcfs"}, nil},
 		{"an explicit --scheduler that differs is recorded", []string{"--scheduler", "sjf"},
-			[]override{{"scheduler", "priority-fcfs", "sjf", "--scheduler"}}},
+			[]override{{"scheduler", "fcfs", "sjf", "--scheduler"}}},
 		{"a policy bundle's scheduler that differs is recorded", []string{"--policy-config", bundle},
-			[]override{{"scheduler", "priority-fcfs", "sjf", "--policy-config"}}},
+			[]override{{"scheduler", "fcfs", "sjf", "--policy-config"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, stdout := overridesOf(t, tt.extra...)
@@ -269,27 +271,58 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 	}
 }
 
-// A scenario stating an engine release the compatibility engine does not model is refused
-// before anything runs, naming the release (#2021 B6: one build models one release, and a
-// version is a check, not a selector). A v0.32.0 deployment is never run as a 0.29 or 0.31
-// one.
-func TestRunCmd_RefusesAnEngineReleaseItDoesNotModel(t *testing.T) {
-	dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "0.33.0"`)
-	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
-		"--rate", "4", "--num-requests", "4", "--seed", "1")
-	if err == nil {
-		t.Fatal("a 0.33.0 scenario ran: this build models no such release")
+// LIF-6, per engine kind: a scenario naming an engine release other than the one this build
+// runs is refused before anything runs. The message names the release asked for, the one this
+// build runs, and the newest inference-sim release that runs the one asked for, or says that
+// none does. The closest accepted scenario, the same file naming vllm 0.32.0, runs (SIM-9).
+// The accepted scenario names its engine with engine_version: blis-schemas v0.10.0's scenario
+// type, which the engine decodes strictly, has no engine field yet (engine_select.go).
+func TestRunCmd_RefusesAnEngineReleaseItDoesNotRun(t *testing.T) {
+	cases := []struct {
+		name, edit string
+		want       []string
+	}{
+		{"vllm 0.29.0, last run by v0.15.0", `engine_version: "0.29.0"`,
+			[]string{"names engine vllm 0.29.0", "this build runs vllm 0.32.0", "newest inference-sim release that runs it is v0.15.0"}},
+		{"vllm 0.31.0, last run by v0.15.0", `engine_version: "0.31.0"`,
+			[]string{"names engine vllm 0.31.0", "this build runs vllm 0.32.0", "newest inference-sim release that runs it is v0.15.0"}},
+		{"vllm 0.33.0, run by no release", `engine: {kind: vllm, version: "0.33.0"}`,
+			[]string{"names engine vllm 0.33.0", "this build runs vllm 0.32.0", "no inference-sim release runs it"}},
+		{"a kind this build does not register", `engine: {kind: sglang, version: "0.5.23"}`,
+			[]string{`names engine kind \"sglang\"`, "this build runs the kinds vllm"}},
 	}
-	if !strings.Contains(stderr, `engine_version \"0.33.0\"`) {
-		t.Errorf("refusal must name the stated release; stderr:\n%s", lastLines(stderr, 3))
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := writeColocatedVariant(t, `engine_version: "0.32.0"`, c.edit)
+			_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+				"--rate", "4", "--num-requests", "4", "--seed", "1")
+			if err == nil {
+				t.Fatalf("a scenario stating %s ran", c.edit)
+			}
+			for _, w := range c.want {
+				if !strings.Contains(stderr, w) {
+					t.Errorf("refusal must contain %q; stderr:\n%s", w, lastLines(stderr, 3))
+				}
+			}
+		})
 	}
+	t.Run("the closest accepted scenario runs", func(t *testing.T) {
+		dir := writeColocatedVariant(t)
+		stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--rate", "4", "--num-requests", "4", "--seed", "1")
+		if err != nil || !completedIs(stdout, 4) {
+			t.Fatalf("vllm 0.32.0 must run: %v\n%s", err, lastLines(stderr, 3))
+		}
+	})
 }
 
 // A 0.32.0 scenario runs blis-vllm's translated v0.32.0 engine through blis-schemas' engine.Engine
-// contract (GOAL.md): every request completes, and the latency kernel's 0.31.0 tuning, which
-// prices the step, is disclosed on stderr.
+// contract: every request completes, and the latency kernel's 0.31.0 tuning, which prices the
+// step, is disclosed on stderr. A scenario that names its engine with the deprecated
+// engine_version is accepted until M4 (release plan §3.3) with a warning naming
+// engine: {kind, version}.
 func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
-	dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "0.32.0"`)
+	dir := writeColocatedVariant(t)
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err != nil {
@@ -301,13 +334,43 @@ func TestRunCmd_A032ScenarioRunsThroughTheEngineContract(t *testing.T) {
 	if !strings.Contains(stderr, "engine assumption: engine_version = 0.31.0") {
 		t.Errorf("the kernel's 0.31.0 tuning must be disclosed; stderr:\n%s", lastLines(stderr, 6))
 	}
+	if !strings.Contains(stderr, `state engine: {kind: vllm, version: \"0.32.0\"} instead`) {
+		t.Errorf("engine_version must draw a deprecation warning naming engine: {kind, version}; stderr:\n%s",
+			lastLines(stderr, 6))
+	}
+}
+
+// The Result records the engine the scenario selected, by kind and upstream release (SIM-1).
+func TestRunCmd_TheResultRecordsTheSelectedEngine(t *testing.T) {
+	{
+		dir := writeColocatedVariant(t)
+		stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+			"--rate", "4", "--num-requests", "4", "--seed", "1")
+		if err != nil {
+			t.Fatalf("%v\n%s", err, lastLines(stderr, 3))
+		}
+		var doc struct {
+			Revisions struct {
+				Engine struct {
+					Kind            string `json:"kind"`
+					UpstreamVersion string `json:"upstream_version"`
+				} `json:"engine"`
+			} `json:"revisions"`
+		}
+		if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if e := doc.Revisions.Engine; e.Kind != "vllm" || e.UpstreamVersion != "0.32.0" {
+			t.Errorf("revisions.engine = %+v, want vllm 0.32.0", e)
+		}
+	}
 }
 
 // INV-13 for a contract-built release: a 0.32.0 run's exported trace, replayed with the same
 // flags, reproduces the run byte for byte. blis replay must build the same engine through the
-// engine contract, not fall back to the compatibility engine.
+// engine contract.
 func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
-	dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "0.32.0"`)
+	dir := writeColocatedVariant(t)
 	prefix := filepath.Join(t.TempDir(), "trace")
 	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--seed", "7", "--horizon", "600000000"}
 	runOut, runErr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "24", "--rate", "15",
@@ -330,110 +393,82 @@ func TestReplayCmd_A032ScenarioReproducesTheRun(t *testing.T) {
 	}
 }
 
-// A 0.32.0 run reports its prefix cache's hit rate as the 0.29/0.31 run does: each request's
-// first admission's lookup, from the engine (engine.Scheduled.PrefixLookup). On a workload whose
-// requests share prefixes, both versions' engines hit, and their rates agree to the token: the
-// same blocks hit on each, since the shared prefixes are whole blocks.
+// A 0.32.0 run reports its prefix cache's hit rate: each request's first admission's lookup,
+// from the engine (engine.Scheduled.PrefixLookup). On a workload whose requests share prefixes,
+// the engine hits.
 func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
-	rate := func(version string) string {
-		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
-		stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
-			"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60")
-		if err != nil {
-			t.Fatalf("%s: %v\nstderr:\n%s", version, err, lastLines(stderr, 5))
-		}
-		return fmt.Sprintf("%.4f", resultNum(t, stdout, "engine.cluster.cache_hit_rate_whole_run"))
+	dir := writeColocatedVariant(t)
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60")
+	if err != nil {
+		t.Fatalf("%v\nstderr:\n%s", err, lastLines(stderr, 5))
 	}
-	got, want := rate("0.32.0"), rate("0.29.0")
-	if got == "0.0000" {
+	if resultNum(t, stdout, "engine.cluster.cache_hit_rate_whole_run") == 0 {
 		t.Fatal("the 0.32.0 engine's prefix cache reported no hits on a workload of shared prefixes")
-	}
-	if got != want {
-		t.Errorf("0.32.0 cache hit rate %s, 0.29.0 %s", got, want)
 	}
 }
 
-// --server-series-interval-s writes a 0.32.0 run's server_series block, as it does a 0.29.0
-// run's: the engine bins its own vllm:* series, and the prompt tokens it counts across the bins
-// are the run's prompt tokens.
+// --server-series-interval-s writes a 0.32.0 run's server_series block: the engine bins its own
+// vllm:* series, and it counts prefix-cache hits on a workload of shared prefixes.
 func TestRunCmd_A032ScenarioWritesItsServerSeries(t *testing.T) {
-	series := func(version string) (bins int, prompt, hits float64) {
-		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
-		path := filepath.Join(t.TempDir(), "metrics.json")
-		_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
-			"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60",
-			"--server-series-interval-s", "1", "--metrics-path", path)
-		if err != nil {
-			t.Fatalf("%s: %v\nstderr:\n%s", version, err, lastLines(stderr, 5))
-		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var out struct {
-			ServerSeries *struct {
-				Engines []struct {
-					Bins         int       `json:"bins"`
-					PromptTokens []float64 `json:"prompt_tokens"`
-					Hits         []float64 `json:"prefix_cache_hits"`
-				} `json:"engines"`
-			} `json:"server_series"`
-		}
-		if err := json.Unmarshal(raw, &out); err != nil {
-			t.Fatal(err)
-		}
-		if out.ServerSeries == nil || len(out.ServerSeries.Engines) != 1 {
-			t.Fatalf("%s: want one engine's server_series, got %+v", version, out.ServerSeries)
-		}
-		e := out.ServerSeries.Engines[0]
-		for i := range e.PromptTokens {
-			prompt += e.PromptTokens[i]
-			hits += e.Hits[i]
-		}
-		return e.Bins, prompt, hits
+	dir := writeColocatedVariant(t)
+	path := filepath.Join(t.TempDir(), "metrics.json")
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60",
+		"--server-series-interval-s", "1", "--metrics-path", path)
+	if err != nil {
+		t.Fatalf("%v\nstderr:\n%s", err, lastLines(stderr, 5))
 	}
-	bins, prompt, hits := series("0.32.0")
-	_, wantPrompt, _ := series("0.29.0")
-	if bins == 0 || hits == 0 {
-		t.Fatalf("0.32.0 server_series has %d bins and %v prefix-cache hits on a workload of shared prefixes", bins, hits)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if prompt != wantPrompt {
-		t.Errorf("0.32.0 server_series counts %v prompt tokens, 0.29.0 %v", prompt, wantPrompt)
+	var out struct {
+		ServerSeries *struct {
+			Engines []struct {
+				Bins         int       `json:"bins"`
+				PromptTokens []float64 `json:"prompt_tokens"`
+				Hits         []float64 `json:"prefix_cache_hits"`
+			} `json:"engines"`
+		} `json:"server_series"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.ServerSeries == nil || len(out.ServerSeries.Engines) != 1 {
+		t.Fatalf("want one engine's server_series, got %+v", out.ServerSeries)
+	}
+	e := out.ServerSeries.Engines[0]
+	var prompt, hits float64
+	for i := range e.PromptTokens {
+		prompt += e.PromptTokens[i]
+		hits += e.Hits[i]
+	}
+	if e.Bins == 0 || prompt == 0 || hits == 0 {
+		t.Fatalf("server_series has %d bins, %v prompt tokens and %v prefix-cache hits on a workload of shared prefixes",
+			e.Bins, prompt, hits)
 	}
 }
 
 // A 0.32.0 run keeps the host's API-server front end (INV-R1): requests that arrive together
 // queue for the one render thread (vLLM's default, --renderer-num-workers 1) before they reach
-// the engine, as on the 0.31.0 compatibility engine. The queue adds the same TTFT on both, and
-// --renderer-num-workers 0 turns it off on both.
+// the engine, and --renderer-num-workers 0 turns the queue off.
 func TestRunCmd_A032ScenarioRendersOnTheHostFrontEnd(t *testing.T) {
-	ttft := func(version string, extra ...string) float64 {
-		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
+	dir := writeColocatedVariant(t)
+	ttft := func(extra ...string) float64 {
 		args := append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--concurrency", "128", "--num-requests", "128", "--prompt-tokens", "1024", "--output-tokens", "8",
 			"--seed", "7"}, extra...)
 		stdout, stderr, err := runKernelCLI(t, args...)
 		if err != nil {
-			t.Fatalf("%s %v: %v\nstderr:\n%s", version, extra, err, lastLines(stderr, 5))
+			t.Fatalf("%v: %v\nstderr:\n%s", extra, err, lastLines(stderr, 5))
 		}
 		return metric(t, stdout, "ttft_mean_ms")
 	}
-	off := []string{"--renderer-num-workers", "0"}
-	queued31, free31 := ttft("0.31.0"), ttft("0.31.0", off...)
-	queued32, free32 := ttft("0.32.0"), ttft("0.32.0", off...)
-	if queued31-free31 <= 0.05*free31 {
-		t.Fatalf("0.31.0: the render queue adds %.1f ms of mean TTFT to %.1f ms; the workload no longer "+
-			"exercises it", queued31-free31, free31)
-	}
-	if q, c := queued32-free32, queued31-free31; q < 0.5*c {
-		t.Errorf("the render queue adds %.1f ms of mean TTFT on 0.32.0 against %.1f ms on 0.31.0; the front "+
-			"end is the host's, the same for both engines", q, c)
-	}
-	for _, p := range [][2]float64{{queued32, queued31}, {free32, free31}} {
-		if math.Abs(p[0]-p[1]) > 0.05*p[1] {
-			t.Errorf("mean TTFT %.1f ms on 0.32.0 against %.1f ms on 0.31.0 (render queue %v), want within 5%%",
-				p[0], p[1], p == [2]float64{queued32, queued31})
-		}
+	queued, free := ttft(), ttft("--renderer-num-workers", "0")
+	if queued-free <= 0.05*free {
+		t.Errorf("the render queue adds %.1f ms of mean TTFT to %.1f ms; the host front end must queue "+
+			"requests that arrive together", queued-free, free)
 	}
 }
 
@@ -460,16 +495,16 @@ func TestRunCmd_MultiConnectorWarningSurvivesARefusal(t *testing.T) {
 // exit 1 with the engine's message naming the missing piece, not a panic out of the cluster's
 // construction.
 func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
-	body := readFile(t, filepath.Join("..", "testdata", "scenarios", "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"))
-	if !strings.Contains(body, `engine_version: "0.31.0"`) {
-		t.Fatal("fixture states no engine_version 0.31.0 to edit")
+	body := readFile(t, filepath.Join(testScenarios, "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"))
+	if !strings.Contains(body, "      max_model_len: 1048576\n") {
+		t.Fatal("fixture states no max_model_len 1048576 to edit")
 	}
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "v032.yaml"),
-		[]byte(strings.Replace(body, `engine_version: "0.31.0"`, `engine_version: "0.32.0"`, 1)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "auto.yaml"),
+		[]byte(strings.Replace(body, "      max_model_len: 1048576\n", "      max_model_len: auto\n", 1)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "v032.yaml",
+	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "auto.yaml",
 		"--catalog", substratedata.MustCatalog(), "--speculative-acceptance-rate", "0.7",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
@@ -478,88 +513,83 @@ func TestRunCmd_A032ScenarioTheEngineCannotBuildIsRefusedByName(t *testing.T) {
 	if strings.Contains(stderr, "goroutine ") || strings.Contains(stderr, "panic:") {
 		t.Errorf("the refusal must be a clean CLI error, not a panic; stderr:\n%s", lastLines(stderr, 8))
 	}
-	if !strings.Contains(stderr, "engine_version 0.32.0: vllm: max_model_len must be stated") {
+	if !strings.Contains(stderr, "engine vllm 0.32.0: vllm: max_model_len must be stated") {
 		t.Errorf("the refusal must be the engine's, naming the missing piece; stderr:\n%s", lastLines(stderr, 4))
 	}
 }
 
 // The host does not carry request priority across the engine contract yet (it sends every
 // request to the v0.32.0 engine at priority 0), so a priority policy would silently run as FCFS. A
-// 0.32.0 scenario stating engine.scheduling_policy priority is refused at the build site, naming
-// the policy; the same scenario at 0.31.0, whose compatibility engine orders by priority, runs.
+// scenario stating engine.scheduling_policy priority is refused at the build site, naming the
+// policy; the same scenario stating fcfs runs.
 func TestRunCmd_A032ScenarioStatingPrioritySchedulingIsRefused(t *testing.T) {
-	priority := func(version string) []string {
-		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`,
-			"      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n      scheduling_policy: priority\n")
+	priority := func(policy string) []string {
+		dir := writeColocatedVariant(t,
+			"      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n      scheduling_policy: "+policy+"\n")
 		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
 			"--rate", "4", "--num-requests", "4", "--seed", "1"}
 	}
-	_, stderr, err := runKernelCLI(t, priority("0.32.0")...)
+	_, stderr, err := runKernelCLI(t, priority("priority")...)
 	if err == nil || !strings.Contains(stderr, "engine.scheduling_policy priority would run as FCFS") {
-		t.Errorf("a 0.32.0 scenario stating priority scheduling: want a refusal naming the policy, got err=%v\n%s",
+		t.Errorf("a scenario stating priority scheduling: want a refusal naming the policy, got err=%v\n%s",
 			err, lastLines(stderr, 3))
 	}
-	if stdout, stderr, err := runKernelCLI(t, priority("0.31.0")...); err != nil || !completedIs(stdout, 4) {
-		t.Errorf("the same priority scenario at 0.31.0 must run: %v\n%s", err, lastLines(stderr, 3))
+	if stdout, stderr, err := runKernelCLI(t, priority("fcfs")...); err != nil || !completedIs(stdout, 4) {
+		t.Errorf("the same scenario stating fcfs must run: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 
 // An SLO priority override (--policy-config priority.slo_priorities) re-ranks the SLO classes a
-// priority policy orders by, which reaches the v0.32.0 engine as nothing: a 0.32.0 run stating one
-// is refused at the build site, naming the setting. The same bundle on 0.31.0 runs.
+// priority policy orders by, which reaches the v0.32.0 engine as nothing: a run stating one is
+// refused at the build site, naming the setting. The same run without the bundle runs.
 func TestRunCmd_A032ScenarioRefusesAnSLOPriorityOverride(t *testing.T) {
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
 	if err := os.WriteFile(bundle, []byte("priority:\n  slo_priorities:\n    critical: 9\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	run := func(version string) []string {
-		dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
-		return []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--policy-config", bundle,
-			"--rate", "4", "--num-requests", "4", "--seed", "1"}
-	}
-	_, stderr, err := runKernelCLI(t, run("0.32.0")...)
+	dir := writeColocatedVariant(t)
+	run := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--rate", "4", "--num-requests", "4", "--seed", "1"}
+	_, stderr, err := runKernelCLI(t, append(run, "--policy-config", bundle)...)
 	if err == nil || !strings.Contains(stderr, "priority.slo_priorities override would be ignored") {
-		t.Errorf("a 0.32.0 run with an SLO priority override: want a refusal naming the override, got err=%v\n%s",
+		t.Errorf("a run with an SLO priority override: want a refusal naming the override, got err=%v\n%s",
 			err, lastLines(stderr, 3))
 	}
-	if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !completedIs(stdout, 4) {
-		t.Errorf("the same override on 0.31.0 must run: %v\n%s", err, lastLines(stderr, 3))
+	if stdout, stderr, err := runKernelCLI(t, run...); err != nil || !completedIs(stdout, 4) {
+		t.Errorf("the same run without the override must run: %v\n%s", err, lastLines(stderr, 3))
 	}
 }
 
 // The v0.32.0 engine schedules by its scenario's engine block alone: a priority scheduler or
-// preemption policy the run asks for on the command line reaches it as nothing, so a 0.32.0 run
-// asking for one is refused, naming it. The same flags on 0.31.0 run.
+// preemption policy the run asks for on the command line reaches it as nothing, so a run asking
+// for one is refused, naming it. The FCFS values of the same flags run.
 func TestRunCmd_A032ScenarioRefusesAPrioritySchedulerFlag(t *testing.T) {
-	for _, flags := range [][]string{{"--scheduler", "priority-fcfs"}, {"--preemption-policy", "priority"}} {
-		run := func(version string) []string {
-			dir := writeColocatedVariant(t, `engine_version: "0.29.0"`, `engine_version: "`+version+`"`)
-			return append([]string{"run", "--scenarios", dir, "--scenario", "variant.yaml",
-				"--rate", "4", "--num-requests", "4", "--seed", "1"}, flags...)
-		}
-		_, stderr, err := runKernelCLI(t, run("0.32.0")...)
+	dir := writeColocatedVariant(t)
+	run := []string{"run", "--scenarios", dir, "--scenario", "variant.yaml", "--rate", "4", "--num-requests", "4", "--seed", "1"}
+	for _, c := range []struct{ refused, accepted []string }{
+		{[]string{"--scheduler", "priority-fcfs"}, []string{"--scheduler", "fcfs"}},
+		{[]string{"--preemption-policy", "priority"}, []string{"--preemption-policy", "fcfs"}},
+	} {
+		_, stderr, err := runKernelCLI(t, append(run, c.refused...)...)
 		if err == nil || !strings.Contains(stderr, "does not carry request priority across it yet") ||
-			!strings.Contains(stderr, "so scheduler") || !strings.Contains(stderr, flags[1]) {
-			t.Errorf("a 0.32.0 run with %v: want a refusal naming it, got err=%v\n%s", flags, err, lastLines(stderr, 3))
+			!strings.Contains(stderr, "so scheduler") || !strings.Contains(stderr, c.refused[1]) {
+			t.Errorf("a run with %v: want a refusal naming it, got err=%v\n%s", c.refused, err, lastLines(stderr, 3))
 		}
-		if stdout, stderr, err := runKernelCLI(t, run("0.31.0")...); err != nil || !completedIs(stdout, 4) {
-			t.Errorf("%v on 0.31.0 must run: %v\n%s", flags, err, lastLines(stderr, 3))
+		if stdout, stderr, err := runKernelCLI(t, append(run, c.accepted...)...); err != nil || !completedIs(stdout, 4) {
+			t.Errorf("%v must run: %v\n%s", c.accepted, err, lastLines(stderr, 3))
 		}
 	}
 }
 
-// dp032Variant writes the vendored dp 2 MoE scenario (dpScenario: minimax-m2.5 on B200, TP2 x
-// DP2 with expert parallelism) at engine_version 0.32.0, with extra engine lines, into a fresh
-// scenario directory as v032-dp2.yaml.
+// dp032Variant writes the dp 2 MoE scenario (dpScenario: minimax-m2.5 on B200, TP2 x DP2 with
+// expert parallelism), with extra engine lines, into a fresh scenario directory as v032-dp2.yaml.
 func dp032Variant(t *testing.T, extra string) string {
 	t.Helper()
 	scenarios, _, _ := kernelRepos(t)
 	body := readFile(t, filepath.Join(scenarios, dpScenario))
 	const anchor = "      gpu_memory_utilization: 0.92\n"
-	if !strings.Contains(body, `engine_version: "0.29.0"`) || !strings.Contains(body, anchor) {
-		t.Fatalf("fixture %s has no engine_version 0.29.0 or %q to edit", dpScenario, anchor)
+	if !strings.Contains(body, anchor) {
+		t.Fatalf("fixture %s has no %q to edit", dpScenario, anchor)
 	}
-	body = strings.Replace(body, `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
 	body = strings.Replace(body, anchor, anchor+extra, 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "v032-dp2.yaml"), []byte(body), 0o644); err != nil {
@@ -609,7 +639,7 @@ func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
 
 // A 0.32.0 data-parallel group's endpoint renders on vLLM's default API servers for the internal
 // balancer: one per rank (api_server_count = data_parallel_size, vllm/entrypoints/cli/serve.py:
-// 123-130@5df63a72), as the compatibility path's DP replica does (ReplicaAPIServers). With one
+// 123-130@5df63a72), as sim.ReplicaAPIServers computes. With one
 // server instead, requests that arrive together queue for its render thread twice as long, so
 // the group's mean TTFT would be well above the stated-two-servers run, which it must match.
 func TestRunCmd_A032DataParallelGroupRendersOnOneAPIServerPerRank(t *testing.T) {
