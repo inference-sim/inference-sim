@@ -12,7 +12,7 @@ func TestRescaleIATsToMatchDuration(t *testing.T) {
 	t.Run("rescale to 10 second window", func(t *testing.T) {
 		// IATs sum to 20 seconds (20,000,000 us)
 		iats := []int64{5000000, 5000000, 5000000, 5000000} // 5s each
-		targetDuration := int64(10000000)                     // 10 seconds
+		targetDuration := int64(10000000)                   // 10 seconds
 
 		rescaled := rescaleIATsToMatchDuration(iats, targetDuration)
 
@@ -32,7 +32,7 @@ func TestRescaleIATsToMatchDuration(t *testing.T) {
 	t.Run("rescale preserves relative ratios", func(t *testing.T) {
 		// Unequal IATs
 		iats := []int64{1000000, 3000000, 6000000} // 1s, 3s, 6s (sum=10s)
-		targetDuration := int64(20000000)            // 20 seconds
+		targetDuration := int64(20000000)          // 20 seconds
 
 		rescaled := rescaleIATsToMatchDuration(iats, targetDuration)
 
@@ -71,7 +71,7 @@ func TestRescaleIATsToMatchDuration(t *testing.T) {
 	t.Run("rounding residual distributed to last element", func(t *testing.T) {
 		// Choose values where float64 truncation causes rounding loss
 		iats := []int64{3333333, 3333333, 3333334} // sum = 10000000
-		targetDuration := int64(5000000)             // scale factor = 0.5
+		targetDuration := int64(5000000)           // scale factor = 0.5
 
 		rescaled := rescaleIATsToMatchDuration(iats, targetDuration)
 

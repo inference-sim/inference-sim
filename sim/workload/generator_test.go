@@ -480,7 +480,7 @@ func TestGenerateRequests_V1SpecAutoUpgrade_EndToEnd(t *testing.T) {
 			},
 			{
 				ID: "interactive-client", RateFraction: 0.5, SLOClass: "interactive",
-				Model: "llama-3.1-8b",
+				Model:      "llama-3.1-8b",
 				Arrival:    ArrivalSpec{Process: "poisson"},
 				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 200}},
 				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
@@ -1196,8 +1196,8 @@ func TestGenerateWorkload_ClosedLoop_OnlyRound0(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "reasoning", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1242,8 +1242,8 @@ func TestGenerateWorkload_OpenLoop_AllRounds(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "reasoning-openloop", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1348,8 +1348,8 @@ func TestGenerateWorkload_NonSessionWorkload_NoBlueprints(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "standard", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 			},
 		},
@@ -1376,8 +1376,8 @@ func TestGenerateWorkload_Deadline_NonSessionNoTimeout(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "std", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 			},
 		},
@@ -1403,8 +1403,8 @@ func TestGenerateWorkload_Deadline_SessionDefaultTimeout(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "reasoning", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1442,10 +1442,10 @@ func TestGenerateWorkload_Deadline_SessionExplicitZeroNoTimeout(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "session-zero-timeout", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
-				Timeout: &zero,
+				Timeout:    &zero,
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
 					MultiTurn:       &MultiTurnSpec{MaxRounds: 2, ThinkTimeUs: 1000, ContextGrowth: ""},
@@ -1476,8 +1476,8 @@ func TestGenerateWorkload_SessionManager_Integration(t *testing.T) {
 		Clients: []ClientSpec{
 			{
 				ID: "session-client", TenantID: "t1", SLOClass: "standard", RateFraction: 1.0,
-				Arrival:   ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 20}},
 				OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 10}},
 				Reasoning: &ReasoningSpec{
 					ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
@@ -1587,7 +1587,7 @@ func TestGenerateRequests_MutualExclusion_ServeGenAndInferencePerf_ReturnsError(
 	// BC-6: ServeGenData + InferencePerf → error
 	spec := &WorkloadSpec{
 		AggregateRate: 100.0,
-		ServeGenData: &ServeGenDataSpec{Path: "data/"},
+		ServeGenData:  &ServeGenDataSpec{Path: "data/"},
 		InferencePerf: &InferencePerfSpec{
 			Stages: []StageSpec{{Rate: 10, Duration: 60}},
 			SharedPrefix: &SharedPrefixSpec{
@@ -2636,8 +2636,8 @@ func TestGenerateRequests_PhasedWorkload_CorrectRatePerPhase(t *testing.T) {
 	// Phase 1: 0-50s, clients a (0.7) + b (0.3) → 40 req/s total
 	// Phase 2: 50-100s, client c (1.0) → 40 req/s total
 	const aggregateRate = 40.0
-	const phase1End = 50_000_000   // 50s in µs
-	const phase2End = 100_000_000  // 100s in µs
+	const phase1End = 50_000_000  // 50s in µs
+	const phase2End = 100_000_000 // 100s in µs
 
 	spec := &WorkloadSpec{
 		Version:       "2",
@@ -2933,7 +2933,7 @@ func TestGenerateRequestsForWindow_ReasoningClient(t *testing.T) {
 
 	window := ActiveWindow{
 		StartUs:   0,
-		EndUs:     5000000, // 5s window
+		EndUs:     5000000,         // 5s window
 		TraceRate: ptrFloat64(1.0), // 1 req/s
 	}
 
@@ -2997,10 +2997,10 @@ func TestGenerateRequestsForWindow_NonReasoningClient(t *testing.T) {
 	rng := testWindowStreams(12345)
 
 	client := ClientSpec{
-		ID:       "single-shot-client",
-		TenantID: "tenant-a",
-		SLOClass: "standard",
-		Model:    "qwen/qwen3-14b",
+		ID:        "single-shot-client",
+		TenantID:  "tenant-a",
+		SLOClass:  "standard",
+		Model:     "qwen/qwen3-14b",
 		Reasoning: nil, // No reasoning spec
 		InputDist: DistSpec{
 			Type:   "constant",
