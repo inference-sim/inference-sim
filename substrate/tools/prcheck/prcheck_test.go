@@ -135,14 +135,17 @@ func TestGateDeclaresItsPaths(t *testing.T) {
 	has(t, got, "declares its trigger paths")
 }
 
-// The repository's own workflows pass the lint.
-func TestThisRepositorysWorkflowsPass(t *testing.T) {
-	var out strings.Builder
+// This repository passes its own checks, so a change that breaks one, or that fixes a
+// baselined finding without shrinking the baseline, fails go test as well as CI.
+func TestThisRepositoryPassesItsOwnChecks(t *testing.T) {
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
 	os.Chdir("../..")
-	if err := run([]string{"workflows"}, &out); err != nil {
-		t.Fatalf("%v\n%s", err, out.String())
+	for _, c := range []string{"workflows", "versions", "docrefs", "quarantine"} {
+		var out strings.Builder
+		if err := run([]string{c}, &out); err != nil {
+			t.Errorf("prcheck %s: %v\n%s", c, err, out.String())
+		}
 	}
 }
 
@@ -281,6 +284,7 @@ func TestDocReferences(t *testing.T) {
 	has(t, DocFindings("docs/a.md", []byte("[c](c.md)\n"), tree, roots), "docs/c.md does not exist")
 	has(t, DocFindings("docs/a.md", []byte("| x | y |\n|---|---|\n| 1 | 2 |\n| 1 | 2 |\n"), tree, roots), "is repeated")
 	none(t, DocFindings("docs/a.md", []byte("```\n`kernel/old.go`\n```\nprose `config.json`\n"), tree, roots))
+	none(t, DocFindings("docs/a.md", []byte("[m](catalog/reference/models/x.md) [t]([[catalog.tree]]/a.go)\n"), tree, roots))
 	has(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{}, "X26"), "docs/a.md:3: x")
 	none(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{"docs/a.md: x (X26)": true}, "X26"))
 }
