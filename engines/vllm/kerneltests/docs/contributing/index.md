@@ -49,9 +49,9 @@ not how its code is arranged. [How the laws are tested](../research/testing.md) 
 kinds of test used. Break a new law on purpose and confirm a test fails, and say in the commit
 what you broke.
 
-**Measure a change's effect.** A change to pricing reports how it moves `cmd/shape` and
-`cmd/score` in its commit message, with the figures before and after. Those commands need the
-measurement corpora, which are not in the repository.
+**Measure a change's effect.** A change to pricing reports how it moves end-to-end figures with
+accuracy-dashboard's scoring harness, run against a build of inference-sim at this change, before
+and after.
 
 ## Documentation
 

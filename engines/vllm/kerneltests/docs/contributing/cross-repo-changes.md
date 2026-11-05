@@ -26,7 +26,7 @@ fixtures that name it. To test against an unreleased catalog or registry, set `B
 ## Evidence a kernel pull request carries
 
 - the vLLM lines each pricing statement rests on, at the modelled release;
-- the `cmd/shape` / `cmd/score` figures before and after a pricing change;
+- the scoring harness's figures before and after a pricing change;
 - for a change that moves a published estimate, the held-out and gate evidence the canonical
   page requires, from a build of inference-sim against this kernel's pushed head;
 - for a coefficient the change reads or adds, the registry's

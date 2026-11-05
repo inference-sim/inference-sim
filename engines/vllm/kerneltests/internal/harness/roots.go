@@ -23,10 +23,7 @@ import (
 //
 // A caller that wants a candidate passes -catalog/-registry, or sets
 // BLIS_CATALOG/BLIS_REGISTRY. The pinned release is only the default.
-const (
-	scenariosEnv    = "BLIS_SCENARIOS"
-	measurementsEnv = "BLIS_MEASUREMENTS"
-)
+const scenariosEnv = "BLIS_SCENARIOS"
 
 // repoRoot returns the kernel tests' root: blis-vllm's kerneltests/, which holds the
 // testdata/ and docs/ these commands and tests read.
@@ -117,16 +114,4 @@ func DefaultRepos() Repos {
 		Catalog:   DefaultCatalog(),
 		Registry:  DefaultRegistry(),
 	})
-}
-
-// DefaultMeasurements is the directory holding the measurement corpora cmd/score and
-// cmd/shape score against: BLIS_MEASUREMENTS, or testdata/measurements.
-//
-// The corpora are NOT part of this repository. They are measured latencies extracted from
-// third-party publications and are not redistributed here.
-func DefaultMeasurements() string {
-	if p := os.Getenv(measurementsEnv); p != "" {
-		return p
-	}
-	return underRoot("testdata", "measurements")
 }

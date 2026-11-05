@@ -1,31 +1,13 @@
 # Commands
 
-<p class="lede">Five commands live in blis-vllm's <code>kerneltests/cmd/</code>: they open a
+<p class="lede">Three commands live in blis-vllm's <code>kerneltests/cmd/</code>: they open a
 kernel from a scenario's vLLM engine block, which blis-vllm decodes, so they live with the engine
-model. Two score the kernel against published measurements; three print what the kernel
-computes, for checking it or for use by another tool. Each runs with
+model. Each prints what the kernel computes, for checking it or for use by another tool; none
+compares with a measured end-to-end benchmark, which is accuracy-dashboard's work alone. Each runs with
 <code>go run ./kerneltests/cmd/&lt;name&gt;</code> from blis-vllm's root.</p>
 
 Every command takes `-catalog` and `-registry` to read a catalog or registry other than the
-fetched one; `BLIS_CATALOG` and `BLIS_REGISTRY` set the same defaults for all of them.
-
-## Scoring
-
-These two compare against measurement corpora that are not distributed with this repository,
-because they are other publishers' data. They read them from `-data`, or from the directory
-`BLIS_MEASUREMENTS` names, and say so when they are missing. [Accuracy](../research/accuracy.md)
-describes what they measure.
-
-`score`
-:   Inter-token latency against published benchmark runs: the absolute error per point, per
-    model and in aggregate, for every point a step-time model can be held to, with the points
-    it leaves out and why. `-verbose` prints every point.
-
-`shape`
-:   The shape of the kernel's response to concurrency against NVIDIA's AISimulate accuracy
-    snapshot: the ratio of step times across concurrency at a fixed deployment, each side
-    normalized to its own lowest concurrency, beside AISimulate's own error on the same
-    points. `-testdata` names the scenario directory, `testdata/aisimulate` by default.
+pinned blis-substrate's; `BLIS_CATALOG` and `BLIS_REGISTRY` set the same defaults for all of them.
 
 ## Inspecting
 

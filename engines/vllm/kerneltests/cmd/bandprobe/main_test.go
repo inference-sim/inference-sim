@@ -11,7 +11,7 @@ import (
 )
 
 // TestDecodeShapeMatchesTheHarness pins this command's batch construction against
-// harness.DecodeBatch, which cmd/worked-table and every scoring path already use.
+// harness.DecodeBatch, which cmd/worked-table and the step figure already use.
 //
 // It exists because two construction bugs here produced a step time 1.08x off the
 // harness's for the same stated shape, and neither was visible in the output: Computed

@@ -62,7 +62,7 @@ func TestFixedOccupancyMatchesTheFiguresTheIssueStates(t *testing.T) {
 // OCCUPANCY ENTERS NO STEP TIME. Scaling every memory magnitude in the registry threefold
 // must move FixedBytes and leave every step, transfer and overhead exactly where it was:
 // these terms decide how many sequences fit, not how long a step takes. It is the
-// metamorphic form of #22's requirement that cmd/shape and cmd/score do not move.
+// metamorphic form of #22's requirement that end-to-end figures do not move.
 func TestMemoryMagnitudesMoveOccupancyAndNoStepTime(t *testing.T) {
 	memory := func(name string) bool {
 		for _, p := range []string{"nccl_communicator_bytes_", "engine_workspace_bytes",

@@ -3,14 +3,13 @@
 // Command overlap-probe answers one question: does the per-layer overlap term change the
 // SHAPE of the concurrency response, or only its level?
 //
-// It matters because cmd/shape scores a ratio of step times normalised to a sweep's lowest
-// concurrency. Any term that scales proportionally with batch cancels in that ratio. If
-// overlap is such a term, then the shape comparison is structurally blind to it, and a shape
-// result near parity says nothing about whether resource overlap improves absolute accuracy.
+// It matters for any comparison that scores a ratio of step times normalised to a sweep's
+// lowest concurrency: a term that scales proportionally with batch cancels in that ratio. If
+// overlap is such a term, a shape comparison is structurally blind to it.
 //
 // The probe prints Overlap and NoOverlap side by side, each normalised to its own value at the
-// lowest concurrency. If the two normalised columns track each other, the ratio cannot
-// distinguish them and cmd/shape cannot reward the overlap model.
+// lowest concurrency, from the kernel alone; it reads no measurement. If the two normalised
+// columns track each other, a ratio comparison cannot distinguish them.
 //
 // Usage:
 //

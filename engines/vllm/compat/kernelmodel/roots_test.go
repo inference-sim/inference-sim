@@ -29,9 +29,6 @@ func TestTheCatalogAndRegistryDefaultToTheVendoredCopies(t *testing.T) {
 			t.Errorf("%s root %q lacks %s: %v", c.name, c.got, c.probe, err)
 		}
 	}
-	if got := DefaultMeasurements(); os.Getenv(measurementsEnv) == "" && got != "" {
-		t.Errorf("with %s unset the measurements root resolved to %q", measurementsEnv, got)
-	}
 }
 
 // An unset root fails naming itself and the command that provides it -- never a skip, and
@@ -53,15 +50,10 @@ func TestRequireReposNamesEachMissingRootAndHowToSetIt(t *testing.T) {
 	if strings.Contains(err.Error(), "scenarios") {
 		t.Errorf("an existing scenario root was reported missing:\n%v", err)
 	}
-	if err := RequireMeasurements(""); err == nil ||
-		!strings.Contains(err.Error(), measurementsEnv) {
-		t.Errorf("an unset measurements root was not reported naming %s: %v",
-			measurementsEnv, err)
-	}
 }
 
 // Every root must stay independently overridable, so a working copy can be scored against
-// live upstream artifacts -- which is what cmd/metricscore is for.
+// a candidate catalog or registry.
 func TestEachRootIsIndependentlyOverridable(t *testing.T) {
 	for _, c := range []struct {
 		env string
@@ -70,7 +62,6 @@ func TestEachRootIsIndependentlyOverridable(t *testing.T) {
 		{catalogEnv, DefaultCatalog},
 		{registryEnv, DefaultRegistry},
 		{scenariosEnv, DefaultScenarios},
-		{measurementsEnv, DefaultMeasurements},
 	} {
 		t.Run(c.env, func(t *testing.T) {
 			want := filepath.Join(t.TempDir(), "elsewhere")
@@ -86,9 +77,9 @@ func TestEachRootIsIndependentlyOverridable(t *testing.T) {
 // repositories on separate releases; a shared prefix would make it impossible to score a
 // live registry against the pinned catalog.
 func TestOverridingOneRootLeavesTheOthersAlone(t *testing.T) {
-	before := []string{DefaultRegistry(), DefaultScenarios(), DefaultMeasurements()}
+	before := []string{DefaultRegistry(), DefaultScenarios()}
 	t.Setenv(catalogEnv, filepath.Join(t.TempDir(), "only-the-catalog"))
-	after := []string{DefaultRegistry(), DefaultScenarios(), DefaultMeasurements()}
+	after := []string{DefaultRegistry(), DefaultScenarios()}
 	for i := range before {
 		if before[i] != after[i] {
 			t.Errorf("overriding %s moved another root: %q became %q",

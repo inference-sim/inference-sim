@@ -38,7 +38,7 @@ func Pinned(root string) bool { return substratedata.InModule(root) }
 // why it takes a testing.TB rather than reaching for os.Exit.
 //
 // Lives here, exported, rather than in each test package, because the first fix of this
-// applied the rule to one package of three and left cmd/shape and cmd/score masking the
+// applied the rule to one package of three and left two command packages masking the
 // same corruption under an "ok".
 //
 // root is the catalog or registry root being read; path is the specific artifact whose

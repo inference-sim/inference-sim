@@ -27,15 +27,6 @@ func fixturePaths(t *testing.T) []string {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() {
-			// Pruned by PATH rather than by base name, so a directory that happens to
-			// share one of these names deeper in the tree is still walked.
-			switch path {
-			// The corpora the fixtures are scored against, not fixtures.
-			case filepath.Join("testdata", "measurements"):
-				return filepath.SkipDir
-			}
-		}
 		// Both spellings: a fixture written as .yml would otherwise be invisible to every
 		// contract below, which is the silent kind of gap this file exists to close.
 		if !d.IsDir() && (strings.HasSuffix(path, ".yaml") || strings.HasSuffix(path, ".yml")) {

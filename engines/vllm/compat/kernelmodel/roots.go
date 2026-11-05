@@ -8,12 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 )
 
-// The artifact roots a kernel-path command or test reads: the scenario+deployment
-// fixtures, the catalog, the coefficient registry, and the measurement corpora. None is read
+// The artifact roots a kernel-path test reads: the scenario+deployment fixtures, the catalog
+// and the coefficient registry. None is read
 // from a path outside this repository, or outside the repository that names itself with
 // SetVendoredRoot:
 //
@@ -23,21 +21,15 @@ import (
 //     registry/ at the release go.mod pins, vendored at testdata/catalog and
 //     testdata/registry. They go once blis-substrate's loader is released, and the adapter
 //     reads the substrate's embedded data instead.
-//   - The measurement corpora are third-party publications this repository does not
-//     redistribute. BLIS_MEASUREMENTS names them.
 //
 // Every root is overridable by its variable. An unresolvable root is never a skip: these were
 // once absolute paths under one developer's home directory, and every affected test turned a
 // failed read into a SKIP, so a wrong root was indistinguishable from a passing suite.
 const (
-	catalogEnv      = "BLIS_CATALOG"
-	registryEnv     = "BLIS_REGISTRY"
-	scenariosEnv    = "BLIS_SCENARIOS"
-	measurementsEnv = "BLIS_MEASUREMENTS"
+	catalogEnv   = "BLIS_CATALOG"
+	registryEnv  = "BLIS_REGISTRY"
+	scenariosEnv = "BLIS_SCENARIOS"
 )
-
-const measurementsHow = "export BLIS_MEASUREMENTS=<directory holding the AISimulate and " +
-	"InferenceX corpora>"
 
 // DefaultCatalog is the catalog root: BLIS_CATALOG when set, else the vendored
 // testdata/catalog.
@@ -94,10 +86,6 @@ var scenarioRoot string
 // A caller that holds the cost model's fixtures elsewhere (the simulator) sets it once.
 func SetScenarioRoot(dir string) { scenarioRoot = dir }
 
-// DefaultMeasurements is the measurement-corpus directory, or "" when BLIS_MEASUREMENTS
-// is unset.
-func DefaultMeasurements() string { return os.Getenv(measurementsEnv) }
-
 // DefaultScenarios is the directory holding the scenario+deployment fixtures:
 // BLIS_SCENARIOS when set, else SetScenarioRoot's directory, else this repository's
 // kerneltests/testdata/aisimulate.
@@ -141,45 +129,4 @@ func RequireRepos(r Repos) error {
 	check("catalog", r.Catalog, "export "+catalogEnv+"=<a blis-substrate catalog/ directory>")
 	check("registry", r.Registry, "export "+registryEnv+"=<a blis-substrate registry/ directory>")
 	return errors.Join(errs...)
-}
-
-// RequireMeasurements checks that the measurement-corpus directory is set and exists.
-func RequireMeasurements(dir string) error {
-	if dir == "" {
-		return fmt.Errorf("measurements root is not set; to set it:\n  %s", measurementsHow)
-	}
-	if _, err := os.Stat(dir); err != nil {
-		return fmt.Errorf("measurements root %q is unreadable (%v); to set it:\n  %s",
-			dir, err, measurementsHow)
-	}
-	return nil
-}
-
-// MeasurementPath is the path of one measurement corpus under BLIS_MEASUREMENTS, or ""
-// when that variable is unset, so a command's corpus flag has no default that points at
-// nothing.
-func MeasurementPath(name string) string {
-	dir := DefaultMeasurements()
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(dir, name)
-}
-
-// RequireCorpora checks that each named corpus flag holds a path. A scoring command calls
-// it after flag parsing, so an unset corpus fails naming the flag and how to provide the
-// corpora rather than failing later on a relative filename.
-func RequireCorpora(flags map[string]string) error {
-	names := make([]string, 0, len(flags))
-	for name, path := range flags {
-		if path == "" {
-			names = append(names, "-"+name)
-		}
-	}
-	if len(names) == 0 {
-		return nil
-	}
-	sort.Strings(names)
-	return fmt.Errorf("%s not set, and %s is unset, so no default exists; either pass "+
-		"the paths or:\n  %s", strings.Join(names, ", "), measurementsEnv, measurementsHow)
 }

@@ -2,7 +2,3 @@
 /oracle/out/
 __pycache__/
 *.pyc
-
-# The measurement corpora the kernel tests score against, which this repository does not
-# redistribute (kerneltests/testdata/README.md).
-/kerneltests/testdata/measurements/

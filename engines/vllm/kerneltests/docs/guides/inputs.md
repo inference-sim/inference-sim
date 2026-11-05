@@ -55,7 +55,4 @@ name a candidate instead.
 go test ./kerneltests/...
 ```
 
-To test against a different checkout of either, set `BLIS_CATALOG` or `BLIS_REGISTRY`. The
-measurement corpora the scoring commands compare against are other publishers' data and are
-not distributed here; `testdata/README.md` says how they are produced and where the scoring
-suite looks for them.
+To test against a different checkout of either, set `BLIS_CATALOG` or `BLIS_REGISTRY`.
