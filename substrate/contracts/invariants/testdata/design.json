@@ -697,12 +697,17 @@
  {
   "ID": "COV-10",
   "Title": "",
-  "Statement": "The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client concurrency, warm-up, drain, duration and the measured-window rule. The benchmark client's seed is not copied: BLIS draws from its own substreams (DEV-6) and uses replications (DEV-11). A frame field the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved concurrency in the simulation matches the measured one within a stated tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its mean. A simulated figure compared with a measurement carries its replication interval. Where InferenceX has several measurements that differ only in their measured date, their spread is reported as the measurement's own noise, and no point is graded worse for a difference smaller than that noise."
+  "Statement": "The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run left to chance on the server, and replications (DEV-11) cover that. A frame field the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved concurrency in the simulation matches the measured one within a stated tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its mean. A simulated figure compared with a measurement carries its replication interval. Where InferenceX has several measurements that differ only in their measured date or benchmark run, their spread is reported as the measurement's own noise, and no point is graded worse for a difference smaller than that noise."
  },
  {
   "ID": "COV-11",
   "Title": "",
   "Statement": "The headline accuracy covers every graded point, G1 to G4. Beside it, the dashboard publishes the share of points in each grade and each grade's own accuracy. Every published figure shows its point count, and a figure over fewer points than the minimum stated in the dashboard's summary schema is shown as \"too few points\"."
+ },
+ {
+  "ID": "COV-12",
+  "Title": "",
+  "Statement": "The scored simulation receives the requests the measured run sent. Where the benchmark client draws its requests from a seeded generator, the dashboard recomputes them with the client's own algorithm and seed at the client's pinned release, in the client's order. The prompt and output lengths are the ones the client sent, after its own tokenisation, verified against the run's tokenizer at a pinned revision; where they cannot be verified, the point is G2 and names the gap. A warm-up the client runs before its measured phase leaves in the simulator the state it leaves in the engine, such as cached prefixes. Every difference between the run's client and the simulated one is named on the point, and makes it G2."
  },
  {
   "ID": "LIF-1",

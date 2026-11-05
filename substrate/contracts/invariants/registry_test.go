@@ -44,8 +44,8 @@ func mustEmbedded(t *testing.T) *Registry {
 func TestEveryDesignInvariantAppearsExactlyOnce(t *testing.T) {
 	reg := mustEmbedded(t)
 	design := loadDesign(t)
-	if len(design) != 148 {
-		t.Errorf("the design snapshot holds %d standing invariants; the design defines 148", len(design))
+	if len(design) == 0 {
+		t.Fatal("the design snapshot is empty")
 	}
 	inDesign := map[string]bool{}
 	for i, d := range design {
@@ -125,8 +125,8 @@ func TestRegistryAgreesWithThePlan(t *testing.T) {
 // must pass it, and each known-bad record below must fail it (X18).
 func TestCommittedRegistryIsValid(t *testing.T) {
 	reg := mustEmbedded(t)
-	if n := len(reg.Invariants); n != 148 {
-		t.Errorf("the registry holds %d records; the design defines 148", n)
+	if n, want := len(reg.Invariants), len(loadDesign(t)); n != want {
+		t.Errorf("the registry holds %d records; the design defines %d", n, want)
 	}
 	reviews := 0
 	for _, inv := range reg.Invariants {

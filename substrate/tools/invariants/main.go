@@ -287,7 +287,7 @@ func questions(reg *invariants.Registry, repo, changedPath string, stdout io.Wri
 			paths = append(paths, l)
 		}
 	}
-	for _, q := range questionsFor(reg, repo) {
+	for _, q := range reg.Questions(repo) {
 		var hit []string
 		for _, p := range paths {
 			if q.Trigger.Matches(repo, p) {

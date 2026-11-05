@@ -2,8 +2,8 @@
 #
 # One record per invariant, in the format of design §13.1. This file is the source of truth:
 # the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
-# the release plan's status table are generated from it (go run ./tools/invariants render). Edit a
-# record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
 
 - id: CFG-1
   section: §5

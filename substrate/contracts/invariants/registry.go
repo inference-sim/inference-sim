@@ -459,3 +459,32 @@ func (t Trigger) Matches(repo, name string) bool {
 	}
 	return false
 }
+
+// Question is one review question, with the invariant it belongs to.
+type Question struct {
+	ID string
+	Review
+}
+
+// Questions returns the review questions that can be added to a pull request in repo, in
+// registry order: those whose trigger names repo, and the manual ones of every invariant
+// with a check in repo.
+func (r *Registry) Questions(repo string) []Question {
+	var out []Question
+	for _, inv := range r.Invariants {
+		inScope := false
+		for _, s := range inv.Scope {
+			inScope = inScope || s == repo
+		}
+		for _, q := range inv.Review {
+			in := q.Trigger.Manual && inScope
+			for _, tr := range q.Trigger.Repos {
+				in = in || tr == repo
+			}
+			if in {
+				out = append(out, Question{inv.ID, q})
+			}
+		}
+	}
+	return out
+}

@@ -160,7 +160,7 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 			b.WriteString(line + "\n")
 		}
 	}
-	qs := questionsFor(reg, repo)
+	qs := reg.Questions(repo)
 	if len(qs) > 0 {
 		b.WriteString("\n### Review questions\n\n")
 		b.WriteString("CI adds each question below to a pull request that changes one of its paths, as a\n")
@@ -172,27 +172,6 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 	}
 	b.WriteString(endMarker + "\n")
 	return b.String()
-}
-
-type question struct {
-	ID string
-	invariants.Review
-}
-
-func questionsFor(reg *invariants.Registry, repo string) []question {
-	var out []question
-	for _, inv := range reg.Invariants {
-		for _, r := range inv.Review {
-			in := r.Trigger.Manual && applies(inv, repo)
-			for _, tr := range r.Trigger.Repos {
-				in = in || tr == repo
-			}
-			if in {
-				out = append(out, question{inv.ID, r})
-			}
-		}
-	}
-	return out
 }
 
 func triggerText(id string, t invariants.Trigger) string {
