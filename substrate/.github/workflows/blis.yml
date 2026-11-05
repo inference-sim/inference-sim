@@ -46,3 +46,5 @@ jobs:
       issues: read
     with:
       substrate-ref: ${{ github.sha }}
+    secrets:
+      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
