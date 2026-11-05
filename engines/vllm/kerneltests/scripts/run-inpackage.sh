@@ -28,8 +28,7 @@ for f in "$here"/_inpackage/*_test.go; do
 done
 cd "$work"
 # The tests import blis-vllm (the vLLM rules packs, vllmsettings, the artifact check): use this
-# checkout, at whatever it holds now.
-go mod edit -require=github.com/inference-sim/blis-vllm@v0.0.0-00010101000000-000000000000 \
-	-replace=github.com/inference-sim/blis-vllm="$repo"
+# checkout, at whatever it holds now. go mod tidy adds the requirement the replacement needs.
+go mod edit -replace=github.com/inference-sim/blis-vllm="$repo"
 GOFLAGS=-mod=mod GOWORK=off go mod tidy >/dev/null
 GOFLAGS=-mod=mod GOWORK=off go test -count=1 "$@" ./kernel/

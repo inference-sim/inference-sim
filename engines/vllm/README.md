@@ -9,13 +9,14 @@ that interface. The design is
 [inference-sim#2021](https://github.com/inference-sim/inference-sim/issues/2021).
 
 - **One release per build.** This build models vLLM **v0.32.0**
-  (`5df63a7203cdb9328d824a27b682e77c7b9928be`); see `provenance.go`. blis-vllm's first release is
-  **v0.32.0**, tagged to the vLLM release it models; it is what
-  [inference-sim v0.14.0](https://github.com/inference-sim/inference-sim/releases/tag/v0.14.0) runs.
+  (`5df63a7203cdb9328d824a27b682e77c7b9928be`); see `provenance.go`. Its releases are tagged
+  to the vLLM release they model, `v0.32.0-blis.N` (design §14.1); the inference-sim release
+  that runs each one pins it in its `go.mod`.
 - **One-way dependencies.** blis-substrate ← blis-vllm ← inference-sim. blis-vllm imports
   blis-substrate's `contracts/` packages and, until the engine boundary moves (release plan §3.3,
   M2), its cost model (`kernel/`); the cost model imports nothing from this module, and
-  inference-sim's simulator imports blis-vllm at one build site, `cmd/engine_build.go`.
+  inference-sim's simulator imports blis-vllm at one build site,
+  [cmd/engine_build.go](https://github.com/inference-sim/inference-sim/blob/be78af832794aa53eb76a5cf3ba06140510e6ddd/cmd/engine_build.go).
 - **Checked against vLLM itself.** CI feeds the same inputs to vLLM's own classes (Python, CPU
   only, the GPU mocked) and to this module, and compares every step. See
   [docs/testing.md](docs/testing.md) and the [feature matrix](docs/feature-matrix.md).
