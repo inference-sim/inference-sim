@@ -94,6 +94,13 @@ func (r *MeasuredRun) validateFields(p *validate.Problems) {
 	if r.Deployment != nil {
 		p.Merge("deployment", r.Deployment.Validate())
 		if c := r.Cluster; c != nil {
+			// The fit uses the node size the run states. A run whose cluster leaves it to
+			// the chip's catalog entry (scenario.Cluster.Packaging) is fitted only by a
+			// validator that holds the entry, and says so rather than pass unchecked.
+			if c.GPUsPerNode == 0 {
+				p.Warnf("cluster.gpus_per_node is left to the catalog entry of %q, so the deployment's per-node fit is not checked here",
+					c.Hardware)
+			}
 			p.Merge("deployment", r.Deployment.ValidateAgainstCluster(deployment.ClusterConstraints{
 				Nodes: c.Nodes, GPUsPerNode: c.GPUsPerNode, Storage: c.Storage}))
 		}

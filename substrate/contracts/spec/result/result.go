@@ -191,6 +191,13 @@ type SelectedProfile struct {
 type Input struct {
 	Scenario   scenario.Scenario     `yaml:"scenario"`
 	Deployment deployment.Deployment `yaml:"deployment"`
+	// Packaging is the scenario cluster's packaging as the run resolved it
+	// (scenario.Cluster.Packaging): the GPUs per node and per rack it simulated, and
+	// whether each was stated by the scenario or taken from the chip's catalog entry
+	// (SIM-10). The scenario above is as written, so where it leaves a value to the
+	// catalog this is the only record of the value the run used. Required when the
+	// scenario states no gpus_per_node.
+	Packaging *scenario.Packaging `yaml:"packaging,omitempty"`
 	// Policy is the simulator's policy bundle (autoscaler, node pools, instance
 	// lifecycle, priority, preemption), verbatim, when one was given.
 	Policy map[string]any `yaml:"policy,omitempty"`

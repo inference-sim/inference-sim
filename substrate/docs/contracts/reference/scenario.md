@@ -44,9 +44,31 @@ them.</p>
 | `hardware` | string | yes | A chip under `hardware/` in the catalog. Every node carries it. |
 | `fabric` | string | if `nodes` > 1 | A fabric under `networks/` in the catalog. Cross-node cost comes from it. |
 | `nodes` | integer | yes | Node count, at least 1. |
-| `gpus_per_node` | integer | yes | GPUs per node, at least 1. |
-| `gpus_per_rack` | integer | no | GPUs per rack, where a rack boundary is a different link from a node boundary. A multiple of `gpus_per_node`. |
+| `gpus_per_node` | integer | unless the chip states it | GPUs per node, at least 1. Required when the chip's entry states no `GPUsPerNode`; otherwise omit it or state the entry's value. See [Packaging](#packaging). |
+| `gpus_per_rack` | integer | no | GPUs per rack, an NVLink domain that spans nodes. Only a chip's entry states a rack: omit it or state the entry's `GPUsPerRack`. See [Packaging](#packaging). |
 | `storage` | list of strings | no | Storage classes from the catalog's `devices/storage.yaml` that the cluster provides. If any are listed, a deployment's offload tiers must use them. |
+
+### Packaging
+
+A cluster's packaging is the GPUs in one node and in one rack. A rack is an NVLink domain
+that spans nodes, priced at the chip's `IntraRackBwGBps`. Two documents own the two values:
+
+| Value | Owner when the chip's product fixes it | Owner otherwise |
+|---|---|---|
+| GPUs per node | the chip's [catalog entry](hardware.md), `GPUsPerNode` (GB200 NVL72: 4) | the scenario, `gpus_per_node` (an HGX H100 server: 8) |
+| GPUs per rack | the chip's catalog entry, `GPUsPerRack` (GB200 NVL72: 72) | nobody: the chip has no rack tier |
+
+`Cluster.Packaging(chip)` resolves the two against the chip's entry, and every reader
+calls it: the cost model, the engines' placement, the deployment-fit checks and the
+Result's [`input.packaging`](result.md#input). A field the scenario omits takes the
+entry's value. A field it restates unchanged is accepted. Any other value is refused, with a
+message naming the field, both values and the entry. The resolved packaging records each
+value's source, `stated` or `catalog`.
+
+A scenario's `gpus_per_rack` on a chip whose entry states no `GPUsPerRack` is refused. Such
+a chip has no rack tier at all: the entry may not state `IntraRackBwGBps` without
+`GPUsPerRack`, and the cost model prices a rack only from the entry. A different NVLink
+domain is a different product, and needs its own catalog entry.
 
 ## Checks
 
@@ -56,8 +78,10 @@ A scenario is invalid if
 - it states neither `engine` nor `engine_version`; `engine` lacks `kind` or `version`; or
   both are stated and `engine_version` differs from `engine.version`;
 - `coefficients` is empty;
-- `cluster.hardware` is empty, or `nodes` or `gpus_per_node` is less than 1;
-- `gpus_per_rack` is set and is not a multiple of `gpus_per_node`;
+- `cluster.hardware` is empty, `nodes` is less than 1, or `gpus_per_node` or `gpus_per_rack`
+  is negative;
+- `gpus_per_rack` and `gpus_per_node` are both set and the first is not a multiple of the
+  second;
 - the cluster has more than one node and names no `fabric`;
 - a `storage` entry is empty or appears twice;
 - `workload` is present and is not a valid [binding](workload.md#binding).
@@ -65,5 +89,17 @@ A scenario is invalid if
 
 Whether the names resolve is checked by `ValidateAgainstCatalog`, not by `Validate`; see
 [Validation](../concepts/validation.md#do-the-names-resolve).
+
+The packaging checks need the chip's entry, so `Validate` does not run them. They run in
+`Cluster.Packaging`, which `ValidateAgainstCatalog`, the bundle validator given a `Chip`, and
+the kernel call. A cluster is refused there if
+
+- `gpus_per_node` is stated and differs from the entry's `GPUsPerNode`;
+- `gpus_per_rack` is stated and differs from the entry's `GPUsPerRack`;
+- `gpus_per_node` is omitted and the entry states no `GPUsPerNode`;
+- `gpus_per_rack` is stated and the entry states no `GPUsPerRack`.
+
+A bundle with a deployment and no `Chip` is refused when the scenario omits `gpus_per_node`,
+since the deployment's fit to the cluster could not be checked.
 
 Source: [`spec/scenario`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/scenario).

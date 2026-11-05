@@ -116,11 +116,18 @@ func Validate(b Bundle) Report {
 	// width divides a node, that no engine needs more GPUs than its pool owns, and that
 	// offload tiers draw from the declared storage inventory — can only run when both
 	// are present.
-	if b.Scenario != nil && b.Deployment != nil {
+	//
+	// The GPUs per node those checks read are the cluster's resolved packaging
+	// (scenario.Cluster.Packaging), which needs the chip's catalog entry: the scenario may
+	// leave the value to it. Given the chip, the packaging is resolved, and a scenario that
+	// contradicts the entry is refused here. Without the chip, a stated value is used, and a
+	// scenario that leaves it to the catalog is refused rather than checked with no node size.
+	pk := b.packaging(field)
+	if b.Scenario != nil && b.Deployment != nil && pk != nil {
 		field.Merge("deployment", b.Deployment.ValidateAgainstCluster(
 			deployment.ClusterConstraints{
 				Nodes:       b.Scenario.Cluster.Nodes,
-				GPUsPerNode: b.Scenario.Cluster.GPUsPerNode,
+				GPUsPerNode: pk.GPUsPerNode,
 				Storage:     b.Scenario.Cluster.Storage,
 			}))
 	}
@@ -204,7 +211,7 @@ func Validate(b Bundle) Report {
 				"Bundle.Scenario and Bundle.Deployment to apply the engine rules to them")
 	}
 	if b.Scenario != nil {
-		in := rules.Input{Scenario: b.Scenario, Deployment: b.Deployment, Model: b.Model}
+		in := rules.Input{Scenario: b.Scenario, Deployment: b.Deployment, Model: b.Model, Packaging: pk}
 		if b.Rules == nil {
 			// A scenario names an engine release, and its engine blocks and version-scoped rules
 			// are that release's to check. With no rules given nothing would check them, and a
@@ -331,4 +338,38 @@ func checkAcceptanceK(p *validate.Problems, b Bundle, er rules.EngineRules) {
 			p.Merge(s.path, w)
 		}
 	}
+}
+
+// packaging returns the cluster's packaging for the checks that need a node size, and
+// records at scenario.cluster why there is none.
+//
+// With the chip it is the resolved packaging, and a cluster that contradicts the chip's
+// entry is refused. Without the chip only a stated gpus_per_node is known: it is used for
+// the deployment's fit, marked stated, and the rack is left unresolved, because whether a
+// stated rack is the entry's cannot be checked without the entry, and no check here reads
+// one. A deployment over a cluster that leaves its node size to the catalog is refused
+// when the chip is missing, since its fit could not be checked. It is nil when there is no
+// scenario, or no node size to check against.
+func (b Bundle) packaging(field *validate.Problems) *scenario.Packaging {
+	if b.Scenario == nil {
+		return nil
+	}
+	c := b.Scenario.Cluster
+	if b.Chip != nil {
+		pk, err := c.Packaging(b.Chip)
+		if err != nil {
+			field.Merge("scenario.cluster", err.(*validate.Problems))
+			return nil
+		}
+		return &pk
+	}
+	if c.GPUsPerNode > 0 {
+		return &scenario.Packaging{GPUsPerNode: c.GPUsPerNode, GPUsPerNodeSource: scenario.SourceStated}
+	}
+	if b.Deployment != nil {
+		field.Field("scenario.cluster.gpus_per_node",
+			"is left to the catalog entry of %q, which the bundle does not carry: pass Bundle.Chip, so the packaging resolves and the deployment's fit to the cluster can be checked",
+			c.Hardware)
+	}
+	return nil
 }

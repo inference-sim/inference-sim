@@ -125,9 +125,19 @@ whose new entries no lookup selects shows them here as unread.
 |---|---|---|---|
 | `scenario` | mapping | yes | The [scenario](scenario.md), resolved. |
 | `deployment` | mapping | yes | The [deployment](deployment.md), resolved, checked against the scenario's cluster. |
+| `packaging` | mapping | unless the scenario states `gpus_per_node` | The cluster's [packaging](scenario.md#packaging) as the run resolved it, with the source of each value (SIM-10). |
 | `policy` | mapping | no | The simulator's policy bundle, verbatim, when one was given. |
 | `options` | list | no | Every option that changes a byte of the Result (SIM-10), sorted by name. |
 | `workload_properties` | list | no | Each workload property and what supplied it (D8), sorted by name. |
+
+<!-- fields: scenario.Packaging -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `gpus_per_node` | integer | yes | GPUs per node the run simulated, at least 1. Equal to the scenario's `gpus_per_node` when it states one. |
+| `gpus_per_node_source` | string | yes | `stated` (the scenario, for a chip whose entry leaves it open) or `catalog` (the chip's entry). |
+| `gpus_per_rack` | integer | no | GPUs per rack, a multiple of `gpus_per_node`. Omitted when the chip has no rack tier. |
+| `gpus_per_rack_source` | string | with `gpus_per_rack` | `catalog`: only a chip's entry states a rack. |
 
 <!-- fields: result.Option -->
 

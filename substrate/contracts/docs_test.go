@@ -226,11 +226,12 @@ var documented = map[string]struct {
 	typ  reflect.Type
 	omit []string
 }{
-	"scenario.Scenario": {typ: reflect.TypeOf(scenario.Scenario{})},
-	"scenario.Cluster":  {typ: reflect.TypeOf(scenario.Cluster{})},
-	"scenario.Engine":   {typ: reflect.TypeOf(scenario.Engine{})},
-	"workload.Binding":  {typ: reflect.TypeOf(workload.Binding{})},
-	"workload.TraceRef": {typ: reflect.TypeOf(workload.TraceRef{})},
+	"scenario.Scenario":  {typ: reflect.TypeOf(scenario.Scenario{})},
+	"scenario.Cluster":   {typ: reflect.TypeOf(scenario.Cluster{})},
+	"scenario.Packaging": {typ: reflect.TypeOf(scenario.Packaging{})},
+	"scenario.Engine":    {typ: reflect.TypeOf(scenario.Engine{})},
+	"workload.Binding":   {typ: reflect.TypeOf(workload.Binding{})},
+	"workload.TraceRef":  {typ: reflect.TypeOf(workload.TraceRef{})},
 	"workload.Replay": {typ: reflect.TypeOf(workload.Replay{}),
 		omit: keyList(reflect.TypeOf(workload.ReplayDefinition{}))},
 	"workload.ReplayDefinition":   {typ: reflect.TypeOf(workload.ReplayDefinition{})},

@@ -15,6 +15,7 @@ package scenario
 
 import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
@@ -66,8 +67,9 @@ type Scenario struct {
 	EngineVersion string `yaml:"engine_version,omitempty"`
 
 	// Cluster is the available-hardware inventory: the accelerator every node carries,
-	// the inter-node fabric, how the nodes are packaged, and the storage classes a
-	// deployment may offload onto.
+	// the inter-node fabric, how many nodes there are and, where the chip's catalog entry
+	// leaves it open, how many GPUs each holds, and the storage classes a deployment may
+	// offload onto.
 	Cluster Cluster `yaml:"cluster"`
 }
 
@@ -104,10 +106,17 @@ type Cluster struct {
 	// node boundary.
 	Fabric string `yaml:"fabric,omitempty"`
 
-	Nodes       int `yaml:"nodes"`
-	GPUsPerNode int `yaml:"gpus_per_node"`
-	// GPUsPerRack is stated only where a rack boundary is a distinct link from a
-	// node boundary. Zero means the two-tier model applies.
+	// Nodes is how many nodes the user provisions.
+	Nodes int `yaml:"nodes"`
+	// GPUsPerNode is how many GPUs each node holds, where the chip's catalog entry leaves
+	// it open, as an HGX H100 entry does. Where the entry states it, as GB200 NVL72's four
+	// GPUs per tray, the scenario omits it (zero) or restates it unchanged. Read the value
+	// through Packaging, never from this field: zero here means "the catalog's".
+	GPUsPerNode int `yaml:"gpus_per_node,omitempty"`
+	// GPUsPerRack is the GPUs in one rack, an NVLink domain that spans nodes. Only a
+	// chip's catalog entry states a rack, so the scenario omits it or restates the
+	// entry's value unchanged; on a chip with no rack tier it is refused. Read the value
+	// through Packaging.
 	GPUsPerRack int `yaml:"gpus_per_rack,omitempty"`
 
 	// Storage names the catalog storage-device classes provisioned in the cluster:
@@ -117,5 +126,12 @@ type Cluster struct {
 	Storage []string `yaml:"storage,omitempty"`
 }
 
-// GPUs returns the total device count.
-func (c Cluster) GPUs() int { return c.Nodes * c.GPUsPerNode }
+// GPUs returns the cluster's total GPU count, its nodes times the GPUs per node that
+// Packaging resolves against chip.
+func (c Cluster) GPUs(chip *hardware.Chip) (int, error) {
+	pk, err := c.Packaging(chip)
+	if err != nil {
+		return 0, err
+	}
+	return c.Nodes * pk.GPUsPerNode, nil
+}

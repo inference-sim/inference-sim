@@ -437,3 +437,38 @@ func TestRowsAreOptional(t *testing.T) {
 		t.Fatalf("a result without rows must validate:\n%s", p.Error())
 	}
 }
+
+// The Result's inputs record the packaging the run resolved (SIM-10), which a scenario
+// that leaves a value to the catalog states nowhere else. The record is required there,
+// checked on its own, and checked against the scenario's cluster.
+func TestInputPackaging(t *testing.T) {
+	refusedAt := func(r *Result, path string) bool {
+		for _, p := range r.Validate().Errors() {
+			if p.Path == path || strings.HasPrefix(p.Path, path+".") {
+				return true
+			}
+		}
+		return false
+	}
+	r := valid()
+	if refusedAt(r, "input.packaging") {
+		t.Fatal("a scenario stating its node size needs no packaging record")
+	}
+	r.Input.Scenario.Cluster.GPUsPerNode = 0
+	if !refusedAt(r, "input.packaging") {
+		t.Error("a scenario leaving its node size to the catalog, with no packaging recorded, is accepted")
+	}
+	r.Input.Packaging = &scenario.Packaging{GPUsPerNode: 8, GPUsPerNodeSource: scenario.SourceCatalog}
+	if p := r.Validate(); !p.OK() {
+		t.Errorf("a recorded catalog packaging is refused:\n%s", p.Error())
+	}
+	r.Input.Packaging.GPUsPerNodeSource = scenario.SourceStated
+	if !refusedAt(r, "input.packaging") {
+		t.Error("a node size recorded as stated, over a scenario that states none, is accepted")
+	}
+	r = valid()
+	r.Input.Packaging = &scenario.Packaging{GPUsPerNode: r.Input.Scenario.Cluster.GPUsPerNode + 1, GPUsPerNodeSource: scenario.SourceStated}
+	if !refusedAt(r, "input.packaging") {
+		t.Error("a recorded node size other than the scenario's stated one is accepted")
+	}
+}

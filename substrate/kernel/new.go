@@ -147,9 +147,16 @@ func construct(in Inputs) (*Kernel, error) {
 		fab.InterNodeBwGBps = in.Fabric.InterNodeBwGBps
 		fabricName = in.Fabric.Name
 	}
+	// The cluster's packaging, resolved from the scenario and the chip's catalog entry: the
+	// one source of the node and rack sizes the kernel prices (SUB-3). validateDocuments has
+	// already refused a scenario that contradicts the entry.
+	pk, err := in.Scenario.Cluster.Packaging(in.Chip)
+	if err != nil {
+		return nil, fmt.Errorf("resolving the cluster's packaging: %w", err)
+	}
 	// A rack is one NVLink domain where the chip says so: the catalog records a rack tier
-	// only on parts whose fabric spans chassis.
-	fab.RackIsOneDomain = in.Chip.GPUsPerRack > 0 && in.Chip.IntraRackBwGBps > 0
+	// only on parts whose NVLink fabric spans chassis, and the resolved rack is the entry's.
+	fab.RackIsOneDomain = pk.GPUsPerRack > 0 && in.Chip.IntraRackBwGBps > 0
 
 	// The graph as served on this chip. A graph that states facts by GPU architecture --
 	// DeepSeek-V4.1's resident widths and KV records differ between SM90 and SM100 --
@@ -187,7 +194,7 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 	in.Model = g
 
-	layout, err := resolve.ResolveLayoutFor(in.Scenario, pool, eng, fab, in.Rules,
+	layout, err := resolve.ResolveLayoutFor(pk, pool, eng, fab, in.Rules,
 		g.Global.Architecture)
 	if err != nil {
 		return nil, fmt.Errorf("resolving the layout: %w", err)
