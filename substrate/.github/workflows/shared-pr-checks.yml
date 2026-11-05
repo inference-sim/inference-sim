@@ -116,7 +116,10 @@ jobs:
       - name: Commit policy (X20)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
-        run: prcheck commits -base "$BASE" -head "$HEAD" -signatures "$RUNNER_TEMP/signatures"
+        # X20's deferral file is read from the called substrate commit, so one file serves
+        # every repository (plan §3.3, "Deferring signing and sign-off"); the check fails
+        # once it expires.
+        run: prcheck commits -base "$BASE" -head "$HEAD" -signatures "$RUNNER_TEMP/signatures" -deferral "$GITHUB_WORKSPACE/substrate/.github/x20-deferral.yaml"
       - name: Workflow lint (X21, X22, X16)
         if: ${{ !cancelled() }}
         working-directory: repo
