@@ -118,7 +118,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
-**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing` is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
 
 **Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
 
@@ -144,7 +144,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--kv-cpu-blocks` | int64 | 0 | Legacy CPU-tier blocks. 0 disables tiered caching. The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU on the legacy `--kv-cpu-blocks` path. Range [0, 1]. |
-| `--kv-offload-config` | string | "" | Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
+| `--kv-offload-config` | string | "" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state the scenario's `offload` block instead. Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
 
 ## Batch Formation
 
@@ -154,7 +154,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay. |
 | `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
+| `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
 
 ## Latency Model
 
@@ -231,14 +231,30 @@ priority:
 
 The mapping lives in `sim/slo_priority.go` (`sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
+## Deprecated Flags
+
+v0.16.0 deprecates these flags of `blis run` and `blis replay`, and v0.19.0 removes them. Each
+restates an engine setting the scenario states, in vLLM's own field (X1,
+[#2037](https://github.com/inference-sim/inference-sim/issues/2037)). They still work in v0.16.0
+through v0.18.0. Giving one prints a notice on standard error that names its replacement; the
+Result document on standard output is unchanged.
+
+| Flag | State instead |
+|------|---------------|
+| `--scheduler` | `engine.scheduling_policy` (`fcfs` or `priority`) in the scenario's pool engine block. `sjf` and `reverse-priority` have no vLLM equivalent. |
+| `--preemption-policy` | `engine.scheduling_policy`, which decides the preemption victim as vLLM does |
+| `--dp-load-balancing` | `parallel.data_parallel_load_balancing` in the scenario's pool |
+| `--swa-bounded-replay` | `engine.swa_bounded_replay` in the scenario's pool engine block |
+| `--kv-offload-config` | the scenario's `offload` block |
+
 ## Scheduling and Priority
 
 Per-instance policies that control request ordering within the wait queue. Maps to `PolicyConfig`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode evicts the running request with the highest `Request.Priority` value (vLLM convention: background=7 is evicted first). |
+| `--scheduler` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` (`fcfs` or `priority`) in the scenario's pool engine block instead. Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
+| `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode evicts the running request with the highest `Request.Priority` value (vLLM convention: background=7 is evicted first). |
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 

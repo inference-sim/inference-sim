@@ -1568,6 +1568,8 @@ func init() {
 	// The Result document's encoding, file and summary view (#1871).
 	registerResultFlags(runCmd)
 
+	markDeprecatedFlags(runCmd)
+
 	// Attach `run` as a subcommand to `root`
 	rootCmd.AddCommand(runCmd)
 }
