@@ -898,8 +898,8 @@ type Shape struct {
 	Model           string
 	Acceptance      *acceptance.Pin
 	WorkloadBinding *workload.Binding
-	// EngineVersion is the scenario's engine_version: the engine release its deployment was
-	// written for.
+	// EngineVersion is the engine release the scenario names (EngineRelease): engine.version,
+	// or the deprecated engine_version.
 	EngineVersion string
 	// Unmodelled are each pool's stated engine settings that the compatibility engine does not
 	// model, by their scenario field names (unmodelledSettings), parallel to Roles.
@@ -953,8 +953,12 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 	if err != nil {
 		return Shape{}, err
 	}
+	release, err := EngineRelease(sc)
+	if err != nil {
+		return Shape{}, fmt.Errorf("%s: %w", scenario, err)
+	}
 	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
-		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload, EngineVersion: sc.EngineVersion,
+		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload, EngineVersion: release,
 		Router: dep.Router, Labels: make([]map[string]string, len(dep.Pools)), Dir: filepath.Dir(path)}
 	if dep.PDTransfer != nil {
 		sh.PDConnector = dep.PDTransfer.Connector
@@ -996,7 +1000,7 @@ func checkSpeculativeMethod(in latencykernel.Inputs, engine engineconfig.Engine)
 	}
 	if in.Rules == nil {
 		return fmt.Errorf("engine.speculative.method %q cannot be checked: no engine rules for "+
-			"version %q", sp.Method, in.Scenario.EngineVersion)
+			"version %q", sp.Method, in.Scenario.EngineRelease())
 	}
 	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
 		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",

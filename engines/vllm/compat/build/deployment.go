@@ -89,9 +89,9 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	// of those.
 	core := shape.EngineVersion == vllm.Version
 	if !core && !slices.Contains(CompatVersions(), shape.EngineVersion) {
-		stated := fmt.Sprintf("states engine_version %q", shape.EngineVersion)
+		stated := fmt.Sprintf("states engine release %q", shape.EngineVersion)
 		if shape.EngineVersion == "" {
-			stated = "states no engine_version"
+			stated = "states no engine release (engine.version, or the deprecated engine_version)"
 		}
 		return Adopted{}, fmt.Errorf("scenario %q %s; blis-vllm models the releases %s and %s: the "+
 			"compatibility engine runs the first ones and the v0.32.0 engine %s",

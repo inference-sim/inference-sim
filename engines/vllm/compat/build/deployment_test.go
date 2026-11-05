@@ -156,6 +156,53 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 	}
 }
 
+// The scenario names its release as engine: {kind, version} (SIM-1). Until M4 the deprecated
+// engine_version is read alone, or beside engine with the same release; the two stated unequal,
+// or an engine kind other than vllm, are refused (kernelmodel.EngineRelease).
+func TestAdopt_ReadsTheScenariosEngineRelease(t *testing.T) {
+	repos := vendoredRepos(t)
+	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const old = `engine_version: "0.29.0"` + "\n"
+	if !strings.Contains(string(raw), old) {
+		t.Fatal("fixture has no engine_version to edit")
+	}
+	for _, c := range []struct {
+		name, stated string
+		core         bool
+		refusal      string
+	}{
+		{"engine only, 0.32.0", "engine: {kind: vllm, version: \"0.32.0\"}\n", true, ""},
+		{"engine only, 0.31.0", "engine: {kind: vllm, version: \"0.31.0\"}\n", false, ""},
+		{"engine_version only", `engine_version: "0.32.0"` + "\n", true, ""},
+		{"both, equal", "engine: {kind: vllm, version: \"0.32.0\"}\n" + `engine_version: "0.32.0"` + "\n", true, ""},
+		{"both, unequal", "engine: {kind: vllm, version: \"0.32.0\"}\n" + `engine_version: "0.31.0"` + "\n", false,
+			`engine_version is "0.31.0" but engine.version is "0.32.0"`},
+		{"another kind", "engine: {kind: sglang, version: \"0.32.0\"}\n", false, `engine.kind is "sglang"`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			body := strings.Replace(string(raw), old, c.stated, 1)
+			if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
+			switch {
+			case c.refusal != "":
+				if err == nil || !strings.Contains(err.Error(), c.refusal) {
+					t.Errorf("%v, want a refusal containing %q", err, c.refusal)
+				}
+			case err != nil:
+				t.Errorf("%v, want it adopted", err)
+			case a.CoreEngine != c.core:
+				t.Errorf("CoreEngine %t, want %t", a.CoreEngine, c.core)
+			}
+		})
+	}
+}
+
 // A 0.32.0 scenario adopts with the settings blis-schemas added with the v0.32.0 engine: that
 // engine reads or refuses each of them itself (core/vllm), so they are not the compatibility
 // engine's refusal to make.
@@ -261,9 +308,9 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 // none stated, not as the release "".
 func statedVersion(v string) string {
 	if v == "" {
-		return "states no engine_version"
+		return "states no engine release"
 	}
-	return `states engine_version "` + v + `"`
+	return `states engine release "` + v + `"`
 }
 
 // The compatibility engine's releases are the ones core/vllm's factory hands to it.
