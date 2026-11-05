@@ -3,7 +3,9 @@ name: agentic-replay-on-h200
 model: deepseek-v3
 coefficients:
   - cost-model-primitives
-engine_version: "0.29.0"
+engine:
+  kind: vllm
+  version: "0.29.0"
 # --8<-- [start:workload]
 workload:
   trace:

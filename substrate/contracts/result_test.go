@@ -35,7 +35,7 @@ func TestResultRoundTripsInBothFormats(t *testing.T) {
 	r := exampleResult(t)
 	// A component-owned block is an opaque map, so a value keeps its type only if the
 	// encoding does.
-	r.Engine = map[string]any{"colocated": map[string]any{"final": map[string]any{
+	r.Reports.Engine = map[string]any{"colocated": map[string]any{"final": map[string]any{
 		"vllm:kv_cache_usage_perc": 0.31, "vllm:num_preemptions_total": 3, "note": "x\ty"}}}
 	if r.Input.Deployment.Pools[0].Engine.IsZero() {
 		t.Fatal("the example's pool must carry an engine block for this test to mean anything")
@@ -83,7 +83,7 @@ func TestLoadResultReadsJSONEscapes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := `"ref": "llama-3.1-8b-h100-tp2-dp4.c64-s1.requests.csv"`
+	src := `"ref": "llama-3.1-8b-h100-tp2-dp4.c64-s1.trace.csv"`
 	if !strings.Contains(string(b), src) {
 		t.Fatal("the example's per_request ref moved; update this test")
 	}
@@ -96,7 +96,7 @@ func TestLoadResultReadsJSONEscapes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a legal JSON escape was refused: %v", err)
 	}
-	if got := r.Artifacts["per_request"].Ref; got != "out/x.csv" {
+	if got := r.Artifacts["trace"].Ref; got != "out/x.csv" {
 		t.Errorf("ref = %q, want out/x.csv", got)
 	}
 	// A string in JSON stays a string, whatever YAML would make of its text.
@@ -135,12 +135,13 @@ func TestLoadResultReadsTheExampleAsYAML(t *testing.T) {
 func TestBundleReportsAnInvalidResult(t *testing.T) {
 	r := exampleResult(t)
 	r.Requests.Completed--
+	r.RequestRows = nil
 	rep := Validate(Bundle{Result: r})
 	if rep.Field.OK() {
 		t.Fatal("a result whose ledger does not close passed")
 	}
 	for _, p := range rep.Field.Errors() {
-		if p.Path == "result.requests" && strings.Contains(p.Message, "INV-1") {
+		if p.Path == "result.requests" && strings.Contains(p.Message, "DEV-9") {
 			return
 		}
 	}

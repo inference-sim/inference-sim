@@ -141,3 +141,48 @@ func TestScenarioAcceptancePin(t *testing.T) {
 		})
 	}
 }
+
+// TestEngine covers SIM-1's scenario side: engine {kind, version} is the field, the
+// deprecated engine_version is accepted alone or agreeing with it until M4, and a scenario
+// naming no engine is refused.
+func TestEngine(t *testing.T) {
+	withEngine := func(e *Engine, version string) *Scenario {
+		s := singleNode()
+		s.Engine, s.EngineVersion = e, version
+		return s
+	}
+	vllm := &Engine{Kind: "vllm", Version: "0.32.0"}
+	for name, s := range map[string]*Scenario{
+		"engine alone":         withEngine(vllm, ""),
+		"engine_version alone": withEngine(nil, "0.32.0"),
+		"both, agreeing":       withEngine(vllm, "0.32.0"),
+	} {
+		if p := s.Validate(); !p.OK() {
+			t.Errorf("%s: rejected:\n%s", name, p.Error())
+		}
+	}
+	if got := withEngine(vllm, "").EngineRelease(); got != "0.32.0" {
+		t.Errorf("EngineRelease with engine = %q", got)
+	}
+	if got := withEngine(nil, "0.31.0").EngineRelease(); got != "0.31.0" {
+		t.Errorf("EngineRelease with engine_version = %q", got)
+	}
+	for _, c := range []struct {
+		name, path string
+		s          *Scenario
+	}{
+		{"neither", "engine", withEngine(nil, "")},
+		{"no kind", "engine.kind", withEngine(&Engine{Version: "0.32.0"}, "")},
+		{"no version", "engine.version", withEngine(&Engine{Kind: "vllm"}, "")},
+		{"disagreeing", "engine_version", withEngine(vllm, "0.31.0")},
+	} {
+		p := c.s.Validate()
+		found := false
+		for _, it := range p.Errors() {
+			found = found || it.Path == c.path
+		}
+		if !found {
+			t.Errorf("%s: no problem at %s:\n%s", c.name, c.path, p.Error())
+		}
+	}
+}

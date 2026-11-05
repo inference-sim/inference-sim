@@ -92,7 +92,7 @@ func New(in Inputs) (*Kernel, error) {
 	}
 	if isNil(in.Rules) {
 		return nil, fmt.Errorf("a kernel needs engine rules for version %q",
-			in.Scenario.EngineVersion)
+			in.Scenario.EngineRelease())
 	}
 	if in.Engine == nil {
 		return nil, fmt.Errorf("a kernel needs the pool's engine settings, decoded by the " +
@@ -100,7 +100,7 @@ func New(in Inputs) (*Kernel, error) {
 	}
 	if err := rulesAnswer(in.Rules); err != nil {
 		return nil, fmt.Errorf("the engine rules for version %q cannot answer: %w",
-			in.Scenario.EngineVersion, err)
+			in.Scenario.EngineRelease(), err)
 	}
 	return buildGuarded(in)
 }
@@ -117,7 +117,7 @@ func buildGuarded(in Inputs) (k *Kernel, err error) {
 				panic(p)
 			}
 			k, err = nil, fmt.Errorf("the engine rules for version %q cannot answer: %v",
-				in.Scenario.EngineVersion, p.(rulesPanic).v)
+				in.Scenario.EngineRelease(), p.(rulesPanic).v)
 		}
 	}()
 	in.Rules = panicTagged{in.Rules}
@@ -413,7 +413,7 @@ func construct(in Inputs) (*Kernel, error) {
 	// declares; the rules pack follows the declared release. Where they differ, a behaviour
 	// that changed between the two is priced at v0.31.0, and that is disclosed rather than
 	// left for a reader to infer from the version string.
-	if v := in.Scenario.EngineVersion; v != EngineBehaviourVersion {
+	if v := in.Scenario.EngineRelease(); v != EngineBehaviourVersion {
 		k.assume("engine_version", EngineBehaviourVersion,
 			"the scenario declares vLLM "+v+" and its rules pack is that release's, but "+
 				"the engine behaviour this kernel encodes -- backend selection, defaults, "+

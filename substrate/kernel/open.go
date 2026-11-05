@@ -192,7 +192,7 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 			"kernel looks no rules up itself. Pass the engine model's rules for the scenario's "+
 			"engine_version (for vLLM, github.com/inference-sim/blis-vllm/rules)", scenario)
 	}
-	er := r.Rules(sc.EngineVersion)
+	er := r.Rules(sc.EngineRelease())
 	if isNil(er) {
 		known := ""
 		if r.RulesVersions != nil {
@@ -201,7 +201,7 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 		return Inputs{}, fmt.Errorf(
 			"no engine rules for version %q%s. A layout cannot be resolved without them, "+
 				"and a nearby version would misprice whatever changed between the two",
-			sc.EngineVersion, known)
+			sc.EngineRelease(), known)
 	}
 	if r.EngineSettings == nil {
 		return Inputs{}, fmt.Errorf("%s: no engine settings source: Repos.EngineSettings is unset, "+
