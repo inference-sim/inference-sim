@@ -6,30 +6,11 @@ prints, the command is right.
 
 ## What you need
 
-This repository, Go 1.27.2 or later, and the measurement corpora. Every other input is pinned to a
-tagged release and reaches you without a separate checkout:
-
-| input | release | how it arrives |
-|---|---|---|
-| blis-latency-kernel | `v0.3.0` | `go.mod`; its scenario fixtures (`testdata/aisimulate`) are read from the module cache |
-| blis-schemas | `v0.5.0` | `go.mod` (adds the deployment `router:` block) |
-| blis-catalog | `0.3.0` | vendored subset at `testdata/catalog` |
-| blis-registry | `v0.2.0` | vendored coefficient sets at `testdata/registry` |
-
-The catalog and registry releases are the ones blis-latency-kernel `v0.3.0` pins in its own
-`testdata/upstream.lock`; `TestThisRepositorysVendoredCatalogAndRegistryAreTheLockedReleases`
-(`sim/vendored`) fails if this repository's vendored copies drift from that lock, as
-`TestTheVendoredCatalogAndRegistryAreTheLockedReleases` (blis-vllm `compat/kernelmodel`, since
-#2021) does for blis-vllm's. To score against live upstream checkouts instead, clone the
-tags and point the variables at them:
-
-```
-git clone --branch 0.3.0  --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog BLIS_REGISTRY=$PWD/blis-registry
-```
-
-or pass `-catalog`, `-registry` and `-scenarios` to the scoring commands.
+This repository, the Go toolchain `stack.json` names, and the measurement corpora. The cost
+model, the catalog and the registry are blis-substrate's, at the version `stack.json` names;
+the tools read the substrate module's `catalog/` and `registry/` from the module cache, and the
+scenario fixtures from `testdata/kernel/aisimulate`. To score against another catalog or
+registry, pass `-catalog`, `-registry` and `-scenarios` to the scoring commands.
 
 ### The measurement data
 

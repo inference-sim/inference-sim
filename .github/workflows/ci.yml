@@ -75,7 +75,7 @@ jobs:
           # entries' names are required checks; this one is not.
           # scripts' TestEveryPackageWithTestsRunsInCI fails if a package with tests is in none.
           - name: "other packages"
-            packages: "./internal/substratedata ./internal/kernelfixtures ./sim/saturation ./internal/invariantscan"
+            packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./internal/invariantscan"
             timeout: "5m"
 
     steps:
@@ -111,6 +111,59 @@ jobs:
         with:
           version: v2.14.0
           install-mode: goinstall
+
+  # The stack record and the version rules (design SIM-3, LIF-2, X11, X23): stack.json equals
+  # what the build selects; go.mod has one replace and only engine excludes; the toolchain is
+  # contracts/toolchain at the selected substrate, installed exactly (GOTOOLCHAIN=local, so no
+  # build downloads one); and the documents that state versions are the ones rendered from
+  # stack.json. internal/stack's tests hold the first three; versions-doc --check the last.
+  stack:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: The toolchain is contracts/toolchain
+        run: |
+          want="$(cat "$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/contracts/toolchain")"
+          got="$(go env GOVERSION)"
+          if [ "$got" != "$want" ]; then
+            echo "go is $got; contracts/toolchain at the selected substrate is $want" >&2
+            exit 1
+          fi
+
+      - name: stack.json, go.mod and the toolchain
+        run: go test -count=1 ./internal/stack/... && go run ./internal/stack/cmd/stackgen -check
+
+      - name: Rendered version strings
+        run: go run ./internal/stack/cmd/versions-doc -check
+
+  # Before a release: every blis-vllm and llm-d router package the binary links, tested at the
+  # versions inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod.
+  selected-deps:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test engine and router packages at the selected versions
+        run: scripts/test-selected-deps.sh -count=1
 
   # A NEW job, not a step added to an existing shard: renaming a required check blocks PRs, so the
   # size guard gets its own name. Path-independent backstop for the CLAUDE.md charter — it catches

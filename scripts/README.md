@@ -340,15 +340,13 @@ and engine settings; `blis-latency-kernel` prices every step). For each rate it:
 ### Quick start
 
 ```bash
-# One-time setup: catalog and registry at their pinned releases
-# (see docs/getting-started/installation.md#catalog-compatibility)
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog
+# One-time setup: blis-substrate's catalog and registry at the commit this build pins
+# (docs/getting-started/installation.md#catalog-compatibility shows the checkout)
+export BLIS_CATALOG=$PWD/blis-substrate/catalog
 
 # Sweep 0.5..100 req/s on the chatbot preset
 SCENARIO=llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  SCENARIOS=<dir of scenario files> REGISTRY=$PWD/blis-registry \
+  SCENARIOS=<dir of scenario files> REGISTRY=$PWD/blis-substrate/registry \
   ./scripts/find-saturation.sh
 
 # Narrower sweep, different preset, one detector

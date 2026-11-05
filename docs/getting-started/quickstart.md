@@ -17,22 +17,27 @@ Every `blis run` / `blis replay` needs three things besides the binary:
   Deployment YAML naming the model, hardware, parallelism and engine settings, picked with
   `--scenario <file name>` from `--scenarios <dir>`.
 
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+```
+<!-- END GENERATED -->
+
+```bash
 export SCENARIOS=examplescenarios
 ```
 
 A scenario directory can be any directory of scenario YAMLs. `$SCENARIOS` above is this
-repository's ready-to-run set (`examplescenarios/`). The clones pin the releases BLIS is tested
-against — see [Catalog compatibility](installation.md#catalog-compatibility).
+repository's ready-to-run set (`examplescenarios/`). The checkout is the blis-substrate commit this
+build pins — see [Data compatibility](installation.md#catalog-compatibility).
 
 ## Single-Instance Simulation
 
 ```bash
 ./blis run --scenarios $SCENARIOS \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-registry \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100
 ```
 
@@ -65,7 +70,7 @@ window, under blis-schemas' standard names ([Metrics & Results](../guide/results
 
 ```bash
 ./blis run --scenarios $SCENARIOS \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-registry \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100 2>/dev/null | jq '.metrics.ttft_p99_ms'
 ```
 
@@ -79,7 +84,7 @@ ranks, up to eight instances):
 ```bash
 ./blis run \
   --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-substrate/registry \
   --num-instances 4 \
   --rate 100 --num-requests 500
 ```
@@ -96,18 +101,18 @@ This simulates a 4-instance cluster receiving 100 requests/second. Every cluster
 ```bash
 # Higher traffic rate
 ./blis run --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-substrate/registry \
   --num-instances 8 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
 ./blis run --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-substrate/registry \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --view summary
 
 # A different deployment: pick another scenario (single-node TP2: up to 4 instances)
 ./blis run --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --registry $PWD/blis-substrate/registry \
   --num-instances 2 --rate 100 --num-requests 500
 ```
 
