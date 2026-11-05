@@ -1,17 +1,18 @@
 # The kernel in BLIS
 
-<p class="lede">BLIS predicts how an LLM serving deployment performs. It is five
-repositories, each owning one kind of thing. This one owns pricing: turning a batch of
-requests into the time the GPUs take to serve one step of it.</p>
+<p class="lede">BLIS predicts how an LLM serving deployment performs. The kernel owns
+pricing: turning a batch of requests into the time the GPUs take to serve one step of it. It
+is the directory <code>kernel/</code> of blis-substrate, one Go module that also holds the
+contracts, the catalog and the registry.</p>
 
-| Repository | Owns | What the kernel takes from it, or gives it |
+| Part | Owns | What the kernel takes from it, or gives it |
 |---|---|---|
-| [blis-schemas](https://github.com/inference-sim/blis-schemas) | the formats | Imports its document types, loaders and validators, and implements its `kernel.Kernel` interface; takes engine rules through its `rules.EngineRules` interface |
-| [blis-vllm](https://github.com/inference-sim/blis-vllm) | vLLM's engine behaviour, and its rules packs | Its rules packs are what a caller passes as `Repos.Rules`; this repository's own commands and tests use them, the library does not import them |
-| [blis-catalog](https://github.com/inference-sim/blis-catalog) | declared facts: models, chips, fabrics, storage tiers, workloads | Reads a model's graph, a chip, a fabric and the storage tiers |
-| [blis-registry](https://github.com/inference-sim/blis-registry) | learned numbers: coefficients, each with its method and scope | Reads the coefficient sets a scenario names |
-| **blis-latency-kernel** | pricing | — |
-| [inference-sim](https://github.com/inference-sim/inference-sim) | simulation: queues, batching, admission, preemption | Is called by it, once per simulated step, in pull request [#1851](https://github.com/inference-sim/inference-sim/pull/1851) |
+| [`contracts/`](../../contracts/index.md) | the formats and the interfaces | Imports its document types, loaders and validators, and implements its `kernel.Kernel` interface; takes engine rules through its `rules.EngineRules` interface |
+| [`catalog/`](../../catalog/index.md) | declared facts: models, chips, fabrics, storage tiers, workloads | Reads a model's graph, a chip, a fabric and the storage tiers |
+| [`registry/`](../../registry/index.md) | learned numbers: coefficients, each with its method and scope | Reads the coefficient sets a scenario names |
+| **`kernel/`** | pricing | — |
+| [blis-vllm](https://github.com/inference-sim/blis-vllm) | vLLM's engine behaviour, and its rules packs | Its rules packs and its engine-settings decoder are what a caller passes as `Repos.Rules` and `Repos.EngineSettings`; the kernel does not import blis-vllm |
+| [inference-sim](https://github.com/inference-sim/inference-sim) | simulation: queues, batching, admission, preemption | Imports the kernel and calls it once per simulated step |
 
 --8<-- "docs/kernel/figures/repositories.html"
 
@@ -26,8 +27,8 @@ The line between them follows from one rule: the kernel is a pure function. Anyt
 value depends on *when* a request arrives belongs to the simulator: how long it waits in a
 queue, the order requests are admitted in, whether one is preempted. Anything that follows
 from a batch and the deployment belongs to the kernel. The interface that encodes this rule,
-`kernel.Kernel`, is defined in blis-schemas rather than here, so that the simulator and any
-other cost model depend on the same contract.
+`kernel.Kernel`, is defined in `contracts/kernel` rather than in `kernel/`, so that the
+simulator and any other cost model depend on the same contract.
 
 ## Pricing apart from data
 
@@ -48,33 +49,39 @@ the deployment while the scenario stays fixed;
 
 The coefficients are what make the laws match measured hardware: how far below its peak a
 matrix multiply runs at a given size, the fixed cost and the bandwidth of each collective, the
-host time per step. Each comes from the registry, not from this repository, recorded there
+host time per step. Each comes from the registry, not from the kernel's code, recorded there
 with the method that produced it, and a kernel lists every one in scope for its deployment.
 [Refuse, assume, override](resolution.md) explains how.
 
 ## Dependencies run one way
 
-This module imports blis-schemas and nothing else in BLIS. It does not import the simulator:
-the simulator imports it, and an import in the other direction would make the two
-repositories depend on each other. The command that compares this kernel with the simulator's
-older latency models therefore lives in the simulator, as `cmd/blisbaseline`.
+The kernel imports the packages under `contracts/` and nothing else in BLIS. It imports no
+engine and not the simulator: the simulator imports it, and an import in the other direction
+would make the two depend on each other. The engine repositories and the router fork import
+only `contracts/`, so a change to pricing or to a coefficient needs no engine or router
+release.
 
-The catalog and the registry are not Go modules. The kernel reads their files at the paths a
-scenario implies, through blis-schemas' loaders, and validates them with blis-schemas'
-validators. The catalog's and the registry's own CI run the same validators, each at the
-blis-schemas release it pins, so a malformed file is caught where it is written as well as
-where it is read.
+The catalog and the registry are data, not Go packages. The kernel reads their files at the
+paths a scenario implies, through the `contracts` loaders, and validates them with the same
+validators that CI runs over `catalog/` and `registry/` on every pull request. A malformed file
+is therefore caught where it is written as well as where it is read, and both checks run at the
+same commit.
 
 ## How the simulator uses it
 
-In pull request #1851 of inference-sim, the package `sim/kernelmodel` adapts a kernel to the simulator's latency interface. For each step it
-turns the scheduled requests into a `kernel.Batch`, asks the kernel for the step, and takes
-the `NoOverlap` estimate as the step's duration. It computes no cost of its own.
-[Use the kernel from a simulator](../guides/simulator.md) describes what such an adapter
-must supply.
+inference-sim imports the kernel, the data loader and the embedded data. For each step it
+turns the scheduled requests into a `kernel.Batch`, asks the kernel for the step, and takes the
+`NoOverlap` estimate as the step's duration. It computes no cost of its own.
+[Use the kernel from a simulator](../guides/simulator.md) describes what such an adapter must
+supply.
+
+A run reads the catalog and registry embedded in the substrate release the simulator is built
+with, unless it names other directories with `--catalog` and `--registry`. Every run records
+which it used, with each one's content hash.
 
 ## Versions
 
-Every input is pinned to a release, and each repository moves to a newer one when it is
-ready. [Sources of truth](../reference/sources.md) lists the pins this version of the kernel
-uses.
+The kernel, the contracts, the catalog and the registry share one version: a blis-substrate
+release `vX.Y.Z` fixes all four at one commit. A change that touches several of them is one
+pull request and one release. [Sources of truth](../reference/sources.md) lists the vLLM
+release whose behavior the kernel prices.

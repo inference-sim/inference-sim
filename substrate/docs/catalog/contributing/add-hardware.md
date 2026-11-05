@@ -29,7 +29,7 @@ _comment_sm: "SMCount ... from the NVIDIA datasheet (https://...)."
 
 ### Cite the source
 
-Put the source of each figure, and any conversion you applied, in a comment key: `_comment`, or a key that begins `_comment_` such as `_comment_interconnect` or `_comment_sm`. The validator accepts those keys and rejects every other unknown key, including other names that begin with an underscore, so a fitted factor cannot be slipped in as `_mfu`. If a figure is not on a datasheet, for instance an SM count read from a measurement, say so in its comment; if it is assumed, it belongs in blis-registry instead.
+Put the source of each figure, and any conversion you applied, in a comment key: `_comment`, or a key that begins `_comment_` such as `_comment_interconnect` or `_comment_sm`. The validator accepts those keys and rejects every other unknown key, including other names that begin with an underscore, so a fitted factor cannot be slipped in as `_mfu`. If a figure is not on a datasheet, for instance an SM count read from a measurement, say so in its comment; if it is assumed, it belongs in the [registry](../../registry/index.md) instead.
 
 Every `SMCount` should cite a source a reviewer can follow, because enabled SM counts differ between products built on the same die. No check enforces this yet; [blis-schemas#32](https://github.com/inference-sim/blis-schemas/issues/32) tracks where it should live, and review enforces it until then. The [Chips](../reference/hardware.md#sources) reference reproduces every file's notes, which show the expected detail.
 

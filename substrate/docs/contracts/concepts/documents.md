@@ -1,6 +1,6 @@
 # Documents
 
-<p class="lede">blis-schemas defines eleven kinds of YAML document. A run needs two that its
+<p class="lede">The contracts define eleven kinds of YAML document. A run needs two that its
 user writes, a scenario and a deployment. They refer by name to documents committed in the
 catalog and the registry.</p>
 

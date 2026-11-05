@@ -6,9 +6,9 @@ hide:
 
 # cost-model-fabric
 
-The effective / nominal bandwidth of each inter-node fabric class blis-catalog defines under
+The effective / nominal bandwidth of each inter-node fabric class the catalog defines under
 `networks/`. A fabric's catalog figure, `InterNodeBwGBps`, is its line rate divided by eight,
-per GPU, per direction. A transfer over it achieves less. blis-latency-kernel multiplies the
+per GPU, per direction. A transfer over it achieves less. The cost model multiplies the
 nominal rate by `fabric_bandwidth_efficiency` wherever bytes leave a node: a P/D handoff, a
 pipeline-stage boundary, and the cross-node share of a collective. It refuses a value outside
 (0, 1].

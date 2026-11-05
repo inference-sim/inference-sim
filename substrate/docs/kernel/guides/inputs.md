@@ -40,12 +40,12 @@ refuses. A missing attention, recurrent or host-overheads set leaves the terms i
 unpriced, and the kernel records each missing coefficient the deployment needed as an
 assumption.
 
-`Repos` gives the three roots: where the scenario files are, the catalog checkout, and the
-registry checkout. It also carries the engine rules, `Rules`, which the caller supplies: the
+`Repos` gives the three roots: where the scenario files are, the catalog directory, and the
+registry directory. It also carries the engine rules, `Rules`, which the caller supplies: the
 kernel looks no rules up itself, so `Open` refuses a `Repos` without them.
 [Price a batch from Go](go.md) shows it in use.
 
-## In this repository
+## The data the kernel's tests read
 
 The catalog and the registry are this repository's own `catalog/` and `registry/`, so the
 cost model's tests always read the data it is released with. To test against a candidate
@@ -56,5 +56,5 @@ go test ./kernel/...
 BLIS_REGISTRY=/path/to/candidate/registry go test ./kernel/...
 ```
 
-The scenario files the cost model was once tested against carry engine settings, so they
-need an engine to lower them; they live in inference-sim, under `testdata/kernel/`.
+The kernel's scenario fixtures carry engine blocks, so they need an engine to lower them.
+They are inference-sim's, under `testdata/kernel/`.

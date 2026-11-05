@@ -49,16 +49,14 @@ Each unread family is either given a reader or removed, and the decision is reco
   them out.
 * **Kept, with a named reader:** the `gemm_*_fp8_block` ramps. They are what vLLM runs for
   a 128×128 block-scaled FP8 checkpoint (DeepGEMM and FlashInfer block-scaled kernels), and
-  their fit differs from per-tensor FP8 (h100: 0.749 / 160 against 0.648 / 131). The kernel
-  change that selects a ramp by weight format and chip, blis-latency-kernel#34, is what
-  reads them.
-* **Committed ahead of their reader**, each naming it: `cost-model-memory`
-  (blis-latency-kernel#22); the weight-only Marlin ramps, the indexer pair and the
-  host-gather rate (§10.5), read once blis-latency-kernel#44 lands (it closes #34 and #38
-  and adds the role-keyed attention lookup). The V4.1 sparse rate's name is looked up by
-  kernel `main` too, but a V4.1 scenario fails at construction there first (#36), so it is
-  read once #44 lands as well.
-  The reference overview lists every one, so "committed" is never read as "live".
+  their fit differs from per-tensor FP8 (h100: 0.749 / 160 against 0.648 / 131). A ramp
+  selected by block scaling, blis-latency-kernel#34, is what would read them; the cost model
+  does not select one.
+* **Given readers:** `cost-model-memory` (blis-latency-kernel#22); the weight-only Marlin
+  ramps on parts with no native four-bit peak, the indexer pair and the host-gather rate
+  (§10.5), through blis-latency-kernel#44, which also added the role-keyed attention lookup.
+  The [reference overview](reference/index.md#which-sets-the-kernel-reads) lists every
+  family that has no reader, so "committed" is never read as "live".
 
 ## 2. The lane rule: fit the engine you predict
 
@@ -177,7 +175,7 @@ from AISimulate's `mla_generation_module_perf` tables, committed as `method: mea
 fitted: true`, and the fit was clean — it reproduced from its own writer, satisfied the
 schema, and sat inside every physical bound then checked. It was also wrong about *which
 quantity it measured*: those tables are MODULE measurements covering the whole MLA block
-including its down-projections, and blis-catalog prices `qkv_proj` and `o_proj` as separate
+including its down-projections, and the catalog's graph prices `qkv_proj` and `o_proj` as separate
 `GEMM` nodes in the same layer, so the kernel charged the projection weight read twice.
 `scripts/fit_attention_mla.py` had already recorded the arithmetic (DeepSeek-V3's
 projections are 293.6 MB at fp8, 61.2 µs at H200's 4.80 TB/s, against a 44.0–63.8 µs
@@ -432,9 +430,9 @@ them separately.
 
 ### 6.3 Validation gates
 
-`pytest validator/` runs the registry's **derivation / value-preservation** gates — schema
-and provenance validation now live in blis-schemas (the Go validator every consumer loads
-through; see the registry README), not here. The derivation gates that matter:
+`pytest validator/` runs the registry's **derivation / value-preservation** gates. Schema
+and provenance validation are `validate-registry`'s, the Go validator in `validate/` that
+loads through the same types every consumer uses ([Validation](reference/validation.md)). The derivation gates that matter:
 
 * **independent re-derivation** — re-runs the fitter and compares to the registry, so a
   value edited without its citation fails.
@@ -559,7 +557,7 @@ correction term, not a different collection.
 FPM is the validation source in §3, but its reach is narrower than the coefficient set:
 
 * **SWA**: unusable. No FPM model carries a sliding-window node. Four of the six models in
-  the FPM catalog have a graph in blis-catalog — MiniMax-M2.7 (`gqa`), GLM-5.2
+  the FPM catalog have a graph in the catalog — MiniMax-M2.7 (`gqa`), GLM-5.2
   (`gqa`, `sparse_mla`), DeepSeek-V4-Pro (`gqa`, `mla`, `sparse_mla`) and Kimi-K3
   (`kda`, `mla`) — and none declares `kind: swa`; the other two
   (DeepSeek-V4.1-Flash, DeepSeek-V4-Flash-0731) have no catalog graph, so the kernel cannot
@@ -630,7 +628,7 @@ The reference pages carry the current counts.
 | recurrent | `recurrent_decode_*_kda` | 6 | vllm 0.1.dev19262 |
 | recurrent | `recurrent_decode_*_mamba2` | 2 | **trtllm 1.3.0rc20** |
 | host-overheads | all part-wide | 7 | none — `method: assumed` |
-| host-overheads | deepseek-v4.1-flash | 4 | eager launch `assumed` on h200 (end-to-end anchor) and `copied` to the other eight parts (an assumed transfer), admission per token `assumed` (a front-end timing on an Apple M1 Max, transferred), per request `not_charged` 0.0 (an inference from what was timed, bounded end to end; blis-schemas requires `not_charged` for a zero), §10.6 |
+| host-overheads | deepseek-v4.1-flash | 4 | eager launch `assumed` on h200 (end-to-end anchor) and `copied` to the other eight parts (an assumed transfer), admission per token `assumed` (a front-end timing on an Apple M1 Max, transferred), per request `not_charged` 0.0 (an inference from what was timed, bounded end to end; the contracts require `not_charged` for a zero), §10.6 |
 
 Regenerate this table rather than editing it: every count above is derivable from
 `coefficients/` with a group-by on the family stem, and a retyped count is the defect
@@ -673,7 +671,7 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   one previously recorded here. Four Kimi-K3 artifacts are all vLLM and all on **GB300**,
   two of them on `vllm/0.1.dev19262` — the same collection the kernel fit used, which is
   the cleanest possible pairing. An earlier revision of this section said the catalog had
-  no `gb300` chip; it has carried one since blis-catalog#23, and this registry now carries
+  no `gb300` chip; it has carried one since blis-catalog#23, and this registry carries
   102 GB300 coefficients including the KDA pair. The dataset's own
   `catalog/index.json` lists both artifacts as `aic_fpm_forward_perf` with
   `phases: [decode, prefill]`, 5,266 and 4,874 rows at `tep8`.
@@ -694,8 +692,8 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   `collector/vllm/collect_moe.py`). Stock v0.31.0 would instead select
   `CutlassExpertsMxfp4` (W4A4) on SM100. So scoring that run needs the kernel to price
   Marlin W4A16 experts at the BF16 rate class, which is what
-  `gemm_*_w4a16_mxfp4_grouped` on gb300 measures (§10.5). blis-latency-kernel#44 selects
-  ramps by weight format and chip, which on gb300 is the FP4 class -- right for stock
+  `gemm_*_w4a16_mxfp4_grouped` on gb300 measures (§10.5). The cost model selects
+  ramps by weight format and chip (blis-latency-kernel#44), which on gb300 is the FP4 class -- right for stock
   v0.31.0 -- so this entry stays unread until a deployment can state that its MoE backend
   is Marlin. The scoring attempt recorded on
   #25 also over-predicted by ~2x with the FASTER FP4 rate class, and making the KDA read
@@ -764,7 +762,7 @@ entry rather than left for a reader to infer.
 
 **What replaces all 18 at once:** one 8-rank GB300 NCCL sweep.
 
-**The kernel enforces the boundary.** `blis-latency-kernel` reads the measured widths from
+**The kernel enforces the boundary.** The cost model reads the measured widths from
 the registry per chip rather than from a constant, and a width inside the sweep range that
 this part was never measured at is an **error naming the operator, width and chip** — not
 a silent clamp to a narrower floor. Before that change a GB200 `tp=8` group was priced at
@@ -837,16 +835,17 @@ independent sources agree:
   `let num_tokens = num_tokens.saturating_mul(self.attention_dp_size.max(1));` with the
   comment "Attention-dp scales up the total input tokens (all dp ranks all-gather into one
   shared expert pool)".
-* **blis-latency-kernel**: `kernel.go:402` —
+* **blis-latency-kernel**, at the release these cells were scored on: `kernel.go:402` —
   `routedPerRank := tokensF * float64(l.TopK) * k.localExpertShare`. **No DP factor.**
   `DP` reaches exactly one decision, `SequenceParallelMoE`
   (`internal/resolve/layout.go:106`), and that rule requires `tp > 1 && dp > 1`
-  (`blis-schemas rules/rules.go:196`) — so on the two `dep` cells, which carry `tp=1`,
+  (blis-schemas `rules/rules.go:196`, at the same release) — so on the two `dep` cells, which carry `tp=1`,
   DP influences no pricing term at all.
 
 The two `dep` cells are the two worst MiniMax results and they order by `dp` (−33.96% at
 dp=2, −46.67% at dp=4), which is the direction and roughly the magnitude a missing `×dp`
-on the routed term predicts.
+on the routed term predicts. The cost model applies that factor (`moeDPFunnel` in
+`kernel/kernel.go`, used by the routed term in `kernel/step.go`).
 
 **What this does NOT explain.** `glm-5.2 tep8` is dp=1 and still −45.04%, so a missing DP
 factor cannot be the whole account. GLM-5.2 differs from MiniMax-M2.7 in more than
@@ -882,7 +881,7 @@ the more useful.
 
 The `sparse_attention` family ships **thirteen** tables per part. Twelve floor between
 37.7 µs and 1,186 µs on h200 — at or above the **66.2 µs** it costs to read the `csa4_moe`
-layer's 317.5 MB of projections at 4.80 TB/s, which blis-catalog prices as nine separate
+layer's 317.5 MB of projections at 4.80 TB/s, which the catalog's graph prices as nine separate
 `GEMM` nodes. Those are module measurements, and fitting a kernel coefficient from one is
 the defect `scripts/correct_mla_floor.py` had to undo (§3, sixth entry).
 
@@ -904,7 +903,7 @@ the grid ceiling, which is how a wrong byte count announces itself.
 | `topk=128 + (step−128)/128` | **1.301** | 0.08 |
 | `topk=1024 + (step−1024)/4` | 1.483 | **1.00 — clamped** |
 
-The winner is exactly the geometry blis-catalog declares for `csa128_moe` (`window: 128`,
+The winner is exactly the geometry the catalog declares for `csa128_moe` (`window: 128`,
 `compress_ratio: 128`) — resolved from the catalog, not tuned. **The full-context form
 clamping at 1.00 of datasheet peak on all three parts is the quantitative statement that
 the old fallback could not describe this kernel**: it needed a physically impossible
@@ -958,8 +957,8 @@ Per-request rather than batch-wide because `min(sum) ≠ sum(min)`: a batch hold
 request below the top-k and one far above it gets both wrong if the bound is applied to the
 aggregate. Per-layer because the two geometries above differ by 32×.
 
-No schema change was needed — blis-schemas v0.2.0 already carries `index_topk` and
-`compress_ratio`; the kernel's layer plan simply was not reading them.
+No schema change was needed: the model graph already carried `index_topk` and
+`compress_ratio` (blis-schemas v0.2.0); the kernel's layer plan was not reading them.
 
 The generalizable point, and it is the same one §3 makes from the other direction: a
 coefficient can be *measurable* and still not be *identifiable for the thing it will be
@@ -1085,7 +1084,7 @@ assuming it if a future sweep's throughput stops exceeding the HBM peak.
 weight-only GEMM is two costs, a BF16 `mma.sync` compute and a narrow weight read. The
 kernel sums them for the routed term, and fitting the ramp as what remains after the
 kernel's own memory half is the only way it composes back to the measurement. That couples
-it to blis-latency-kernel's routed term as #44 (`483f6aa`) implements it:
+it to the cost model's routed term as blis-latency-kernel#44 (`483f6aa`) implements it:
 
 * compute and memory summed, the ramp evaluated at the step's token count, compute at the
   BF16 peak, memory as `ExpertsTouched` experts' stored bytes at BwPeak × `hbm_derate`,
@@ -1094,9 +1093,9 @@ it to blis-latency-kernel's routed term as #44 (`483f6aa`) implements it:
 * no Marlin padding: #44 also scales routed FLOPs and bytes by Marlin's round-up of
   `inter / tp` to a multiple of 128 (V4.1 at TP8: 288 → 384). Fitted at tp 1, where that pad
   is 1, the fit has not checked it; it is the consumer's addition;
-* stored bytes per weight as blis-schemas v0.3.0's `StoredBytes` gives them for MXFP4,
-  0.5 + 1/32, which #44 charges. At payload-only bytes (0.5, what kernel `main` `e9cf217`
-  charges) the fit would be 0.240 / 28 on h200, 0.114 / 58 on gb300.
+* stored bytes per weight as `model.StoredBytes` in `contracts/spec/model` gives them for
+  MXFP4, 0.5 + 1/32, which #44 charges. At payload-only bytes (0.5, what blis-latency-kernel
+  `e9cf217` charged) the fit would be 0.240 / 28 on h200, 0.114 / 58 on gb300.
 
 A change to any of those — sum versus max, the ramp's argument, the byte count — needs a
 refit. The fit holds out on vLLM's int4 Marlin MoE, a different geometry and weight type:
@@ -1105,8 +1104,8 @@ committed BF16 ramp does the same on BF16 Triton experts (on h200, 2.83x at ep 8
 at ep 32, printed by the writer's form check), so that growth is a property of the
 routed-term form — though #48144 above means the 0.25.0 ep > 1 rows may not be v0.31.0's.
 
-For scale: kernel `main` prices MXFP4 experts on H200 at the FP8 peak with the FP8 ramp.
-That is 1,456 TFLOPS effective where Marlin sustains about 242.
+For scale: blis-latency-kernel `e9cf217`, before #44, priced MXFP4 experts on H200 at the
+FP8 peak with the FP8 ramp. That is 1,456 TFLOPS effective where Marlin sustains about 242.
 
 **What does not ship, and why.**
 
@@ -1126,10 +1125,10 @@ and another checkpoint revision (`fb2764a5` against the catalog's `52544481`). T
 V4.1 leaf is a historical GB200 dev build labelled "comparator". So FPM cannot be the arbiter
 §3 requires for V4.1's vLLM pricing; an earlier version of this section said it could.
 blis-registry#42 stays open with no arbiter until a vLLM V4.1 forward-pass measurement
-exists. Separately, blis-latency-kernel `main` cannot
-price the model: it refuses the `fp8_ds_mla` cache (#36), charges 20,480 KV bytes per token
-against roughly 1,790 (#30), drops the 128-token window from the sparse read (#32) and
-does not pad FlashMLA's heads (#39). blis-latency-kernel#44 closes all four. Three
+exists. Separately, the kernel before blis-latency-kernel#44 could not
+price the model: it refused the `fp8_ds_mla` cache (#36), charged 20,480 KV bytes per token
+against roughly 1,790 (#30), dropped the 128-token window from the sparse read (#32) and
+did not pad FlashMLA's heads (#39). #44 closes all four. Three
 consumer-contract points go with the entries, each stated in them:
 
 * **Multi-token decode.** The sparse rate was fitted at one query token per request. Under
@@ -1146,7 +1145,7 @@ consumer-contract points go with the entries, each stated in them:
   gb300 is the FP4 class — right for stock v0.31.0. It is for scoring the Kimi-K3 preview
   build's FPM run, for blis-registry#41 (the Kimi-K3/GB300 FPM check of the KDA pair).
 
-Every V4.1 attention read in blis-catalog 0.3.0 is `sparse_mla`, the window-only layers (0,
+Every V4.1 attention read in the catalog's graph (blis-catalog 0.3.0) is `sparse_mla`, the window-only layers (0,
 1, and the DSpark drafts at a 133-token window) included, all inside the block axis above.
 
 ### 10.6 DeepSeek-V4.1-Flash prefill attention, prefill indexer, mHC and host terms
@@ -1248,7 +1247,7 @@ dispatch) + device, so e = (ITL - device) / launches - `host_launch_per_kernel` 
 device) (vLLM enqueues eager kernels asynchronously), was tried in the kernel and gave 96.14
 µs here, and was REJECTED: it does not reproduce the H200 DSpark arm's capture-ceiling
 collapse at c32, whose measured throughput the additive form matches (blis-latency-kernel
-07ed424, `TestTheEagerDecodeAnchorIsAdditive`, which pins the constant at 92.75-93.7 µs). The
+commit 07ed424, `TestTheEagerDecodeAnchorIsAdditive`, which pins the constant at 92.75-93.7 µs). The
 basis records the composition and `--check` refuses any other. The committed basis is kernel
 07ed424 (972 launches, 3.18 ms with the mHC entries). The constant is valid only with the
 basis and the composition it was divided by. It is derived on H200 nodes only:
@@ -1262,7 +1261,7 @@ end -- render, tokenize, block hash -- taken on the diagnosis workstation (Apple
 Python thread) with synthetic text. No part it is scoped to matches that host, so on every
 part it is an assumed transfer of the measurement, labelled as the eager copy is; the same
 timing on the serving node's CPU would replace it. And `host_admission_per_request` is 0.0,
-`not_charged` only because blis-schemas requires that method for a zero value: what was timed has no fixed term above noise, but the bench does not time HTTP
+`not_charged` only because the contracts require that method for a zero value: what was timed has no fixed term above noise, but the bench does not time HTTP
 handling, validation, the IPC to EngineCore or scheduler admission, so the zero is an
 inference bounded only end to end (an 8,030-token c1 TTFT of 37.15 ms in total), not a
 structural zero. These two model-scoped entries sit after their
@@ -1440,7 +1439,8 @@ which this set is kept out of for exactly that reason.
 ### 11.4 What it changes on the issue's fixture
 
 On `deepseek-v3-h200-fp8-sglang-tp8` (tp 8, `hidden_size` 7168, 8,192 batched tokens,
-`PIECEWISE`), resolved through `blis-latency-kernel`'s own `resolve.Load`:
+`PIECEWISE`), resolved through the cost model's own `resolve.Load`
+(`kernel/internal/resolve`):
 
 | term | hardcoded | registry |
 |---|---|---|
@@ -1450,13 +1450,14 @@ On `deepseek-v3-h200-fp8-sglang-tp8` (tp 8, `hidden_size` 7168, 8,192 batched to
 | engine workspace | not charged | 3,758,096,384 |
 | **total** | **1,417,674,752** | **6,202,327,040** |
 
-The set is committed **ahead of its reader**: the kernel reads none of it yet, and
-inference-sim/blis-latency-kernel#22 is sequenced to land after it.
+The cost model reads every term of the set and refuses a scenario that does not list it
+(inference-sim/blis-latency-kernel#22).
 
 ## 12. Speculative acceptance profiles
 
 `acceptance/inferencex-golden-al.yaml` holds the acceptance lengths a simulator advances
-speculating requests by (inference-sim/blis-registry#44), in blis-schemas#65's format. It
+speculating requests by (inference-sim/blis-registry#44), in the contracts' acceptance
+format (blis-schemas#65). It
 is not a coefficient set: acceptance does not price a step, it sets how many tokens a step
 yields. The generated tables and the set's caveats are on the
 [acceptance reference page](reference/acceptance.md).
@@ -1522,8 +1523,8 @@ collector it has not read fails the run.
 
 `emit_acceptance_profiles.py --check` runs in every CI job
 (`validator/test_acceptance_profiles.py`), because its inputs are vendored. The `rederive`
-job also checks the vendored curves and catalog models against InferenceX and blis-catalog
-at their pinned commits, and re-runs the emitter against the upstream checkout. Schema
-validation is blis-schemas' `cmd/validate-registry`, which reads `acceptance/` from
-blis-schemas#74 on. CI's `schema-validate` pins that pull request's head commit for now; a
-release tag carrying it must replace the commit before this merges.
+job also checks the vendored curves against InferenceX at its pinned commit
+(`INFERENCEX_SHA` in `.github/workflows/rederive.yml`), checks the catalog models against
+the repository's `catalog/`, and re-runs the emitter against the upstream checkout. Schema
+validation is `validate-registry` (`validate/cmd/validate-registry`), which reads
+`acceptance/` (blis-schemas#74), in CI's `registry` job.

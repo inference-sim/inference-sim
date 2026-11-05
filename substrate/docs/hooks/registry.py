@@ -1,8 +1,8 @@
 """MkDocs hook: render the coefficient sets into the documentation at build time.
 
 Every number the site shows about the registry's contents is computed here, from the
-committed files under coefficients/, on every build. Nothing is retyped into a page, because
-a retyped count is the defect this registry has caught most often (docs/methodology.md, §8.2).
+committed files under registry/coefficients/, on every build. Nothing is retyped into a page, because
+a retyped count is the defect this registry has caught most often (docs/registry/methodology.md, §8.2).
 
 A page asks for generated content with an HTML comment on a line of its own:
 

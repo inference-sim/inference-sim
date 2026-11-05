@@ -7,17 +7,16 @@ Three checks decide whether a change can merge, and two more build this site. Ru
 go run ./validate/cmd/validate-catalog catalog
 
 # Every graph is what the deriver produces from its config, and the deriver's tests pass.
-pip install -r requirements-dev.txt
-python3 scripts/derive_graph.py --check
-python3 -m pytest tests/test_derive_graph.py -q
+pip install -r catalog/scripts/requirements-dev.txt
+(cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 
-# The site's page generator passes its tests, and the site builds without warnings.
-pip install -r requirements-docs.txt
-python3 -m pytest tests/test_docs_pages.py -q
-mkdocs build --strict
+# The site's page generators pass their tests, and the site builds without warnings.
+pip install -r docs/requirements.txt pytest
+DOCS_RELEASE=main python3 -m pytest docs/hooks -q
+DOCS_RELEASE=main mkdocs build --strict
 ```
 
-The first needs Go; the others need Python 3. CI runs the first three in the `catalog-ci` workflow (`.github/workflows/ci.yml`) and the last two in the `docs` workflow (`.github/workflows/docs.yml`), with Go 1.24 and Python 3.12.
+The first needs Go; the others need Python 3. CI runs the first three in the `catalog` job and the last two in the `docs` job of `.github/workflows/ci.yml`, with the Go version `go.mod` names and Python 3.12. Both jobs run when a file under `catalog/` changes.
 
 ## What each check catches
 
@@ -27,11 +26,11 @@ The first needs Go; the others need Python 3. CI runs the first three in the `ca
 `derive_graph.py --check`
 :   Derives every graph again and compares it with the committed `graph.yaml`, writing nothing. It fails when a graph was edited by hand, or when a `config.json` changed and its graph was not derived again.
 
-`tests/test_derive_graph.py`
+`catalog/tests/test_derive_graph.py`
 :   Tests the deriver itself. It checks derived shapes against the upstream model implementations (attention and expert geometry, where each collective sits, how draft modules are built, how the stack is compressed) and checks that a config the deriver cannot translate is refused. `--check` shows that the committed graphs can be reproduced; these tests check that the derivation is right, for the cases they cover.
 
-`tests/test_docs_pages.py` and `mkdocs build --strict`
-:   Test the generator of the reference pages against the data, then build the site, failing on any warning, broken link or unknown placeholder. A data change can break the site, for example a model whose page links to a missing file; these checks catch it before merge.
+`docs/hooks/test_catalog_pages.py` and `mkdocs build --strict`
+:   Test the generator of the reference pages, `docs/hooks/catalog_pages.py`, against the data, then build the site, failing on any warning, broken link or unknown placeholder. A data change can break the site, for example a model whose page links to a missing file; these checks catch it before merge.
 
 ## What no check catches
 

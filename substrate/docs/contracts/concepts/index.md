@@ -5,7 +5,7 @@ checked, and the rules every document follows. Read them in order if you are new
 terms below are used with one meaning throughout.</p>
 
 [The BLIS repositories](repositories.md)
-:   What each of the six repositories owns, and what each takes from this one.
+:   What each of the seven repositories owns, and what each takes from the contracts.
 
 [Documents](documents.md)
 :   The eleven kinds of document, where each lives, and how they refer to each other.
@@ -22,24 +22,24 @@ terms below are used with one meaning throughout.</p>
 ### The project
 
 BLIS
-:   The Blackbox Inference Simulator: a simulator for LLM serving, made of the five
+:   The Blackbox Inference Simulator: a simulator for LLM serving, made of the seven
     repositories described in [The BLIS repositories](repositories.md).
 
 catalog
-:   [blis-catalog](https://github.com/inference-sim/blis-catalog): models, chips, fabrics,
-    storage classes and workload shapes, each a fact someone wrote down.
+:   The [catalog](../../catalog/index.md), `catalog/` in blis-substrate: models, chips,
+    fabrics, storage classes and workload shapes, each a fact someone wrote down.
 
 registry
-:   [blis-registry](https://github.com/inference-sim/blis-registry): coefficient sets, the
-    numbers a cost model uses, each with how it was obtained and where it holds.
+:   The [registry](../../registry/index.md), `registry/` in blis-substrate: coefficient sets,
+    the numbers a cost model uses, each with how it was obtained and where it holds.
 
 cost model
 :   A function from a batch of requests and a deployment to memory use and the time of
     one forward pass. To *price* something is to compute that time or memory for it.
 
 kernel
-:   A cost model seen through the `Kernel` interface defined here. blis-latency-kernel
-    implements it. The word also appears in its ordinary GPU sense, as in "an all-reduce
+:   A cost model seen through the `Kernel` interface defined here. The
+    [cost model](../../kernel/index.md) in `kernel/` implements it. The word also appears in its ordinary GPU sense, as in "an all-reduce
     kernel"; the context always says which.
 
 ### Documents
@@ -99,8 +99,8 @@ field layer, rule layer
     release would refuse the document, or would run it differently from what it says.
 
 rules pack
-:   The checks and accepted values for one engine release, registered under its version
-    string.
+:   The checks and accepted values for one engine release. The engine model that owns the
+    release owns its pack, and a caller passes it to a validator.
 
 problem
 :   One thing a validator reports, at a path such as `pools[0].parallel.dcp`, with a

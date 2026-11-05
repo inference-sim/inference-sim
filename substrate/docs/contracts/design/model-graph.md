@@ -1,7 +1,7 @@
 # Why a model is a graph
 
 <p class="lede">The catalog already holds each model's vendor configuration, byte for byte.
-blis-schemas does not use it as the model schema. It describes a model as the GPU work a
+The contracts do not use it as the model schema. It describes a model as the GPU work a
 forward pass launches, and the catalog derives that description from the vendor file.</p>
 
 ## A vendor configuration describes the wrong thing

@@ -15,7 +15,7 @@ reports their results through three methods: `Provenance`, `Evidence` and `Resol
 are four reasons:
 
 - **The documents are malformed.** A scenario file is decoded strictly, so a misspelled key
-  is an error, and the kernel runs blis-schemas' field-level validation on every document it
+  is an error, and the kernel runs the contracts' field-level validation on every document it
   is given. A missing field or a value out of range is the author's to fix, whatever version
   of the engine is meant.
 - **The engine would not start it.** vLLM v0.31.0 refuses some layouts at startup, for
@@ -34,15 +34,16 @@ are four reasons:
 
 Many settings may be left out of a deployment, and the engine fills them in. The kernel fills
 them in the same way, from vLLM v0.31.0's defaults, and records each one in `Provenance` as an
-entry from the set `blis-latency-kernel` with the method `assumed`. The block size, the CUDA
+entry from the set `blis-latency-kernel` (the constant `KernelAssumptionSet`) with the method
+`assumed`. The block size, the CUDA
 graph mode and the engine's token budget per step are examples.
 
 A deployment that states every setting carries almost no such entries. The exceptions are
 listed on [Provenance, Evidence, Resolved](../reference/provenance.md). The one that
 matters most is the version of vLLM: the kernel prices v0.31.0's behavior whatever version a
 scenario declares, and records `engine_version` as an assumption when the two differ. The
-scenarios in this repository declare v0.29.0 or v0.31.0, releases the vLLM rules packs
-cover. The v0.29.0 ones, nearly all of them, record the assumption; a v0.31.0 one, which
+kernel's scenario fixtures, in inference-sim's `testdata/kernel/`, declare v0.29.0 or
+v0.31.0, releases the vLLM rules packs cover. The v0.29.0 ones, nearly all of them, record the assumption; a v0.31.0 one, which
 declares the release the kernel prices, does not. The facts read from those rules do follow
 the declared version; [Sources of truth](../reference/sources.md#two-sources-of-engine-behavior)
 names them.

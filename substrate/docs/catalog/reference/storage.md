@@ -1,6 +1,6 @@
 # Storage tiers
 
-[[catalog.count.tiers]] tiers a KV cache can be offloaded to, all in [`devices/storage.yaml`](https://github.com/inference-sim/blis-catalog/blob/[[catalog.ref]]/devices/storage.yaml).
+[[catalog.count.tiers]] tiers a KV cache can be offloaded to, all in [`devices/storage.yaml`](https://github.com/inference-sim/blis-substrate/blob/[[catalog.ref]]/catalog/devices/storage.yaml).
 
 [[catalog.storage.table]]
 

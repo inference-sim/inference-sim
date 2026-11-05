@@ -1,4 +1,4 @@
-"""Tests for the documentation page generator, scripts/docs/catalog_pages.py.
+"""Tests for the documentation page generator, docs/hooks/catalog_pages.py.
 
 The generator's job is to restate the catalog's data without changing it, so these tests
 compare what it renders against the files themselves. They need PyYAML and nothing from
@@ -74,7 +74,7 @@ def test_summary_columns_ignore_speculator_only_kinds(cat):
 
 
 def test_layer_expansion_matches_every_graph(cat):
-    # The expansion follows blis-schemas' Stack.Layers: prologue, pattern x repeat,
+    # The expansion follows contracts/spec/model's Stack.Layers: prologue, pattern x repeat,
     # epilogue. Every expanded entry must name a kind the graph declares.
     for m in cat.models:
         s = m.graph["stack"]

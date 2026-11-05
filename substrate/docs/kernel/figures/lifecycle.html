@@ -1,7 +1,7 @@
 <figure class="diagram" markdown="0">
 <svg viewBox="0 0 800 240" role="img" aria-labelledby="fig-life-title fig-life-desc">
 <title id="fig-life-title">How a kernel is built once and then priced every step</title>
-<desc id="fig-life-desc">On the left, the inputs: a scenario and its deployment, a model graph and a chip from blis-catalog, and coefficient sets from blis-registry. They go into New, which runs once and returns a Kernel. A simulator then calls StepTime on that kernel once per simulated step, passing a batch and receiving a StepEstimate. The memory methods are answered from the same kernel.</desc>
+<desc id="fig-life-desc">On the left, the inputs: a scenario and its deployment, a model graph and a chip from the catalog, and coefficient sets from the registry. They go into New, which runs once and returns a Kernel. A simulator then calls StepTime on that kernel once per simulated step, passing a batch and receiving a StepEstimate. The memory methods are answered from the same kernel.</desc>
 <defs>
 <marker id="life-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,1 L9,5 L0,9 z"/></marker>
 <marker id="life-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-accent" d="M0,1 L9,5 L0,9 z"/></marker>
@@ -12,10 +12,10 @@
 <text class="small" x="24" y="75">what runs, and how it is laid out</text>
 <rect class="box" x="10" y="104" width="200" height="56" rx="5"/>
 <text class="title" x="24" y="127">model graph, chip</text>
-<text class="small" x="24" y="145">from blis-catalog</text>
+<text class="small" x="24" y="145">from the catalog</text>
 <rect class="box" x="10" y="174" width="200" height="56" rx="5"/>
 <text class="title" x="24" y="197">coefficient sets</text>
-<text class="small" x="24" y="215">from blis-registry</text>
+<text class="small" x="24" y="215">from the registry</text>
 <path class="edge" d="M210,62 L274,120" marker-end="url(#life-ah)"/>
 <path class="edge" d="M210,132 L274,132" marker-end="url(#life-ah)"/>
 <path class="edge" d="M210,202 L274,144" marker-end="url(#life-ah)"/>

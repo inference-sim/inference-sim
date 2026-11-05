@@ -24,18 +24,16 @@ The share of each set by method, with the number of entries at the right:
 
 ## Which sets the kernel reads
 
-A scenario names the sets it loads. The five `cost-model-*` sets for step time are the
-ones every committed scenario in blis-latency-kernel lists. Within them, a few families
-are committed but not looked up by the kernel. As of blis-latency-kernel
-[`e9cf217`](https://github.com/inference-sim/blis-latency-kernel/commit/e9cf217):
+A scenario names the sets it loads. Step time reads the five `cost-model-*` sets the cost
+model's scenario fixtures list, and memory occupancy reads `cost-model-memory`. Within
+them, a few families are committed but not looked up by the cost model in `kernel/` at
+this revision:
 
-| Set | Not read | Reader |
+| Set | Not read | Why |
 |---|---|---|
-| `cost-model-primitives` | every `gemm_*_fp8_block` entry: the kernel's dtype selection resolves to `bf16`, `fp8` or `nvfp4` only | selection by weight format and chip, [blis-latency-kernel#34](https://github.com/inference-sim/blis-latency-kernel/issues/34) |
-| `cost-model-primitives` | `gemm_*_w4a16_mxfp4_grouped` and `gemm_*_w8a16_mxfp8`, the Marlin weight-only ramps | the same, [blis-latency-kernel#34](https://github.com/inference-sim/blis-latency-kernel/issues/34); the gb300 grouped ramp additionally needs a deployment that states a Marlin MoE backend, since stock v0.31.0 runs CUTLASS there |
-| `cost-model-primitives` | `host_gather_rate_uva` | a host-resident gather op, [blis-schemas#48](https://github.com/inference-sim/blis-schemas/issues/48) and [blis-latency-kernel#38](https://github.com/inference-sim/blis-latency-kernel/issues/38) |
-| `cost-model-attention` | `attention_decode_{floor,rate}_block_index_scores` | a lookup keyed on the attention node's `role`; until then the kernel prices an indexer node with its layer kind's pair |
-| `cost-model-memory` | the whole set. It is committed ahead of its reader | [blis-latency-kernel#22](https://github.com/inference-sim/blis-latency-kernel/issues/22) |
+| `cost-model-primitives` | every `gemm_*_fp8_block` entry | the kernel's dtype selection resolves an FP8 GEMM to `fp8`, never to a block-scaled ramp ([blis-latency-kernel#34](https://github.com/inference-sim/blis-latency-kernel/issues/34)) |
+| `cost-model-primitives` | `gemm_*_w4a16_mxfp4_grouped` on b200, b300 and gb300 | the weight-only Marlin ramps are read only on a part with no native four-bit peak (h100, h200); a part with one is priced on its FP4 class, as stock vLLM v0.31.0 runs it |
+| `cost-model-attention` | `attention_decode_{launch_floor,split_floor,serial_rate,per_token,throughput_rate}_sparse_mla` | the two-branch FlashMLA decode form of [methodology §10.7](../methodology.md#107-deepseek-v41-flash-decode-a-two-branch-flashmla-form-and-what-stays-assumed) has no reader; the kernel prices sparse-MLA decode with `attention_decode_rate_sparse_mla` |
 
 `attention_decode_rate_sparse_mla` IS read, for the one model it is scoped to; that model is
 not yet priceable end to end ([methodology §10.5](../methodology.md#105-deepseek-v41-flash-on-h200-what-vllm-v0310-runs-and-what-is-measured-of-it)).

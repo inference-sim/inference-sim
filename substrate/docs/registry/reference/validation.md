@@ -7,32 +7,31 @@ one says nothing about the others.
 |---|---|---|
 | Schema | Could a consumer load this file? | CI, every pull request and every push to `main` |
 | Properties | Is every value physically sensible, and is its provenance complete? | CI, every pull request and every push to `main` |
-| Re-derivation | Does every value still come out of its fitter, from its cited data? | Locally, with an AISimulate clone; skipped in CI |
+| Re-derivation | Does every value still come out of its fitter, from its cited data? | Locally, with an AISimulate clone; the manual `rederive` workflow; skipped in CI's `registry` job |
 
 The documentation build is a fourth, narrower check: it fails if a set has no reference
 page, or if a set holds data the reference tables cannot represent faithfully.
 
 ## Schema
 
-The `schema-validate` job runs blis-schemas' own validator over every file under
-`coefficients/`:
+CI's `registry` job runs the repository's validator over every file under
+`coefficients/`, `acceptance/` and `routing/`. From the repository root:
 
 ```sh
-go run ./cmd/validate-registry /path/to/blis-registry   # from a blis-schemas checkout
+go run ./validate/cmd/validate-registry registry
 ```
 
 It applies exactly the rules a consumer applies when it loads a set: strict decoding,
-then field validation. The rules are listed on [File format](format.md). The registry
-keeps no schema validator of its own, so there is one definition of a valid file, and
-it is the one the kernel uses.
-
-blis-schemas is pinned to a release tag in `.github/workflows/validate.yml`. A schema
-release changes nothing here until the pin is moved.
+then field validation, through the Go types in `contracts/spec/coefficient`. The rules
+are listed on [File format](format.md). The registry keeps no schema validator of its
+own, so there is one definition of a valid file, and it is the one the cost model uses.
+The validator and the data are in the same commit, so a change to either is checked
+against the other.
 
 ## Properties
 
-`validator/test_coefficient_properties.py` reads only the committed files and a vendored
-copy of the catalog's chip descriptors, so it always runs. Each test encodes a defect
+`validator/test_coefficient_properties.py` reads only the committed files and the
+repository's own `catalog/` chip descriptors, so it always runs. Each test encodes a defect
 that this project has shipped at least once:
 
 - no bandwidth rate exceeds its part's datasheet peak, and every rate is a plausible
@@ -59,9 +58,11 @@ copy, so in CI they always skip.
 
 Run them before any pull request that changes a fitted value, and before a release:
 
+Run from `registry/`:
+
 ```sh
 export AISIMULATE_DATA=/path/to/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
-export BLIS_CATALOG=/path/to/blis-catalog
+export BLIS_CATALOG=$PWD/../catalog   # run from registry/; the repository's catalog
 export COLLECTIVEX_DATA=/path/to/collectivex-run-bodies
 scripts/rederive.sh
 ```

@@ -5,7 +5,7 @@ A latency estimate depends on three kinds of number, and BLIS keeps them apart:
 Declared facts
 :   What a vendor states about a model or a chip: layer counts, head dimensions, peak
     FLOP rates, memory bandwidth. Someone wrote them down; nothing about them is
-    learned. They live in [blis-catalog](https://github.com/inference-sim/blis-catalog).
+    learned. They live in the [catalog](../../catalog/index.md).
 
 Learned numbers
 :   What a cost model needs but no datasheet states: the latency floor of a decode

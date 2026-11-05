@@ -91,7 +91,7 @@ positive. A storage class is invalid if any of its three figures is not positive
 
 The catalog's convention that each `SMCount` cites a source in its `_comment_sm` prose is
 not checked, here or anywhere else, because comments are discarded before validation.
-[Issue #32](https://github.com/inference-sim/blis-schemas/issues/32) records why it was left
+[blis-schemas#32](https://github.com/inference-sim/blis-schemas/issues/32) records why it was left
 out of the schema.
 
 ## Why three schemas

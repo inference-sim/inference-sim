@@ -29,22 +29,23 @@ accuracy dashboard's scoring harness on the change (see
 and report the before and after figures in the pull request.
 
 **A coefficient with no reader is not live.** Before adding a family, confirm that
-blis-latency-kernel looks the key up. Search the kernel for the name, not the registry.
+the cost model looks the key up. Search `kernel/` for the name, not `registry/`.
 
 ## The usual workflow
 
-1. **Set up the data.** Clone AISimulate and a blis-catalog checkout, and export their
-   paths:
+1. **Set up the data.** Clone AISimulate and export its path. The fitters read the
+   repository's own `catalog/` unless `BLIS_CATALOG` names another directory;
+   `scripts/rederive.sh` requires `BLIS_CATALOG` to be set. From `registry/`:
 
     ```sh
     git clone https://github.com/ai-dynamo/aisimulate
     export AISIMULATE_DATA=$PWD/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
-    export BLIS_CATALOG=/path/to/blis-catalog
-    pip install -r requirements-fit.txt
+    export BLIS_CATALOG=$PWD/../catalog
+    pip install -r scripts/requirements-fit.txt
     ```
 
-    `requirements.txt` covers the property tests. `requirements-fit.txt` adds what the
-    fitters need to read the Parquet sweeps: `pyarrow`, `pandas` and `numpy`.
+    `scripts/requirements.txt` covers the property tests. `scripts/requirements-fit.txt`
+    adds what the fitters need to read the Parquet sweeps: `pyarrow`, `pandas` and `numpy`.
 
 2. **Run the family's writer.** The
    [writer table](../reproducing-coefficients.md#every-committed-value-and-the-one-command-that-regenerates-it)
@@ -65,29 +66,29 @@ blis-latency-kernel looks the key up. Search the kernel for the name, not the re
     not run.
 
 4. **Run the schema validator.** CI runs it on every pull request; running it first
-   saves a round trip. From a blis-schemas checkout at the tag pinned in
-   `.github/workflows/validate.yml`:
+   saves a round trip. From the repository root:
 
     ```sh
-    go run ./cmd/validate-registry /path/to/blis-registry
+    go run ./validate/cmd/validate-registry registry
     ```
 
 5. **Score the change end to end**, as above, if it changes a value a step time depends on.
 
 6. **Preview the documentation.** The reference pages are generated from
-   `coefficients/`, so they show your change:
+   `registry/coefficients/`, so they show your change. From the repository root:
 
     ```sh
-    pip install -r requirements-docs.txt
+    pip install -r docs/requirements.txt
     mkdocs serve
     ```
 
-7. **Open a pull request.** Three checks run: `schema-validate`, `derivation-tests` and
-   `docs`. All three must pass.
+7. **Open a pull request.** CI's `registry` job runs the schema validator and the
+   validator tests, and its `docs build` job builds the site. The `required` check
+   passes only if every job that ran passed.
 
 ## Adding a part
 
-A part must exist in blis-catalog before the registry can scope an entry to it, because
+A part must exist in the catalog before the registry can scope an entry to it, because
 `scope.hardware` uses catalog chip names. The order of the writers matters in one place
 (prefill attention reads the GEMM ramp from the registry), so follow the
 [GB300 worked example](../reproducing-coefficients.md#adding-a-part-the-gb300-worked-example).
@@ -99,24 +100,24 @@ part.
 
 ## Adding a set
 
-Add the file under `coefficients/`, then add a reference page for it at
-`docs/reference/sets/<name>.md` and list that page in the `nav` of `mkdocs.yml`. The
+Add the file under `registry/coefficients/`, then add a reference page for it at
+`docs/registry/reference/sets/<name>.md` and list that page in the `nav` of `mkdocs.yml`. The
 documentation build fails until both exist, so a set cannot be committed without a page.
 Copy an existing page; the table on it is generated, so the page needs only a short
 description of what the set prices and where its values come from.
 
 ## Writing documentation
 
-The pages under `docs/` are Markdown, built with
+The pages under `docs/registry/` are Markdown, built with
 [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/). A number that
 describes the registry's contents (a count, a value, a census) must not be typed into a
 page. Use a `registry:` directive instead, which the build computes from the committed
-files; [`docs_hooks/registry.py`](https://github.com/inference-sim/blis-substrate/blob/main/docs/hooks/registry/registry.py)
+files; [`docs/hooks/registry.py`](https://github.com/inference-sim/blis-substrate/blob/main/docs/hooks/registry.py)
 lists them. A retyped count is correct on the day it is written and wrong after the next
 refit.
 
-## Changes across the repositories
+## Changes beyond the registry
 
-A change that also touches blis-schemas, the catalog, the kernel or inference-sim follows
-[Changes across the repositories](cross-repo-changes.md), which links the canonical process and
-lists the registry's own steps.
+A change that also touches `contracts/`, `catalog/` or `kernel/` is one pull request in
+blis-substrate. A change that also needs another BLIS repository, such as inference-sim,
+follows [Changes across repositories](../../contributing/changes.md).

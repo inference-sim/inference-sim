@@ -7,27 +7,27 @@ still produces a plausible number.</p>
 ## Set up
 
 ```sh
-git clone https://github.com/inference-sim/blis-latency-kernel
-cd blis-latency-kernel
-scripts/fetch-testdata.sh
-go test ./...
+git clone https://github.com/inference-sim/blis-substrate
+cd blis-substrate
+go test ./kernel/...
 ```
 
-The fetch script brings in the catalog and registry at the commits the tests are pinned to;
-`testdata/README.md` describes what else is in `testdata/` and why some of it is not
-committed. CI runs the same tests on every pull request, with `gofmt` and `go vet`.
+The tests read the repository's own `catalog/` and `registry/`, so the kernel is always tested
+against the data it is released with. `BLIS_CATALOG` and `BLIS_REGISTRY` name other
+directories to test against a candidate. CI runs the same tests on every pull request that
+changes `kernel/` or `contracts/`, with `gofmt`, `go vet` and a race test.
 
 ## Layout
 
 | Path | Holds |
 |---|---|
-| `kernel.go` | The interface methods and the composition of a step |
-| `new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
-| `sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
-| `open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
-| `internal/price` | The cost laws, as pure functions |
-| `internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
-| blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `docs/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model and this module imports nothing from it |
+| `kernel/kernel.go` | The interface methods and the composition of a step |
+| `kernel/new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
+| `kernel/sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
+| `kernel/open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
+| `kernel/internal/price` | The cost laws, as pure functions |
+| `kernel/internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
+| blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `docs/kernel/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model, and the kernel imports nothing from them |
 
 ## Conventions
 
@@ -43,24 +43,33 @@ through `optional`, which records its absence. Nothing is defaulted silently.
 left out, carries a comment marked `KNOWN DIVERGENCE`, `KNOWN over-charge` or `COVERAGE LIMIT`,
 with the reason and the engine lines. Those notes are listed on
 [Known divergences](../reference/divergences.md), each under a plain summary kept in
-`internal/docgen/summaries.go`; the generator refuses a note without one.
+blis-vllm's `kerneltests/internal/docgen/summaries.go`; the generator refuses a note without
+one.
 
 **Test behavior, and see the test fail.** A test asserts what the kernel does for an input,
 not how its code is arranged. [How the laws are tested](../research/testing.md) describes the
 kinds of test used. Break a new law on purpose and confirm a test fails, and say in the commit
 what you broke.
 
-**Measure a change's effect.** A change to pricing reports how it moves `cmd/shape` and
-`cmd/score` in its commit message, with the figures before and after. Those commands need the
-measurement corpora, which are not in the repository.
+**Measure a change's effect.** A change to pricing reports, in its pull request, the scoring
+harness's figures on published units before and after it. End-to-end figures come from
+accuracy-dashboard's scoring harness and from nothing else.
+
+## Evidence a kernel pull request carries
+
+- the vLLM lines each pricing statement rests on, at the modelled release;
+- for a change that moves a published estimate, the held-out and gate evidence that
+  [Changes across repositories](../../contributing/changes.md) requires;
+- for a coefficient the change reads or adds, the registry's
+  [fitting principles](../../registry/fitting-principles.md).
 
 ## Documentation
 
-[Documentation and releases](documentation.md) describes the site, how its generated parts are
-kept current, and how a release publishes it.
+[Documentation and releases](../../contributing/documentation.md) describes the site, how its
+generated parts are kept current, and how a release publishes it.
 
-## Changes across the repositories
+## Changes across repositories
 
-A change that also touches blis-schemas, the catalog, the registry or inference-sim follows
-[Changes across the repositories](cross-repo-changes.md), which links the canonical process and
-lists the kernel's own steps.
+A change to the kernel and to the contracts, the catalog or the registry is one pull request in
+this repository. A change that also touches blis-vllm or inference-sim follows
+[Changes across repositories](../../contributing/changes.md).

@@ -5,7 +5,7 @@ hide:
 
 # Chips
 
-[[catalog.count.chips]] chips. Figures are nominal and per GPU. Peak rates and HBM bandwidth come from vendor datasheets. A few memory capacities and SM counts come from what a device reports, or from a vendor disclosure about the die, because no datasheet states them. Each file's notes say which. See [Sources](#sources). What a chip achieves in practice is a coefficient in [blis-registry](https://github.com/inference-sim/blis-registry).
+[[catalog.count.chips]] chips. Figures are nominal and per GPU. Peak rates and HBM bandwidth come from vendor datasheets. A few memory capacities and SM counts come from what a device reports, or from a vendor disclosure about the die, because no datasheet states them. Each file's notes say which. See [Sources](#sources). What a chip achieves in practice is a coefficient in the [registry](../../registry/index.md).
 
 <figure markdown="1">
 [[catalog.hardware.figure]]
@@ -14,7 +14,7 @@ hide:
 
 [[catalog.hardware.table]]
 
-Peak rates are dense, in TFLOP/s. A dash means the chip has no native support for the format. Intra-node bandwidth is NVLink where present, per GPU and per direction. `a100-80` is an alias of `a100-sxm`, kept because inference-sim and some blis-registry scopes name the A100 that way.
+Peak rates are dense, in TFLOP/s. A dash means the chip has no native support for the format. Intra-node bandwidth is NVLink where present, per GPU and per direction. `a100-80` is an alias of `a100-sxm`, kept because inference-sim and some registry scopes name the A100 that way.
 
 ## Rack-scale chips
 

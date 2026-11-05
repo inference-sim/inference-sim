@@ -31,10 +31,10 @@ run, and run as the document says. Backend names come and go between releases, d
 change, and a feature gains a new condition that disables it. Each of these is a fact
 about one release.
 
-Rules are therefore grouped into a **rules pack** for each release, registered under its
-version string. A scenario's `engine_version` selects the pack by exact match. Two packs
-exist, for vLLM `0.29.0` and `0.31.0`; their rules are listed in
-[Rules packs](../reference/rules.md).
+Rules are therefore grouped into a **rules pack** for each release. The engine model that
+owns the release owns its pack; for vLLM that is blis-vllm. The caller passes the rules in
+(`Bundle.Rules`), and a scenario's `engine_version` selects a release by exact match.
+[Engine rules](../reference/rules.md) describes the interface.
 
 A rule problem does not always mean the document is wrong. It may mean the document is
 right and names the wrong engine version, or that a rule needs extending for a release it
@@ -57,15 +57,15 @@ the assumption that it is well formed, and over a malformed one it reports conse
 the malformation, which a reader cannot tell apart from real problems.
 
 !!! note "An unknown engine version passes, with a warning"
-    If no pack is registered for a scenario's `engine_version`, the rule layer reports one
+    If the rules given know no release of the scenario's `engine_version`, the rule layer reports one
     warning, `engine-version-known`, and `RulesApplied` is empty. Warnings do not fail a
     report, so `OK()` is still true. A caller that requires rules to have run should also
     check that `RulesApplied` is not empty.
 
-A caller can pass the engine's own rules instead of using this module's packs, through
-`Bundle.Rules` (see [the Go guide](../guides/go.md#pass-the-engines-own-rules)). The same
-warning applies to a release they do not know. Rules that answer for a release other than the
-scenario's are an error, `engine-version-matches`, and nothing is applied.
+Rules that answer for a release other than the scenario's are an error,
+`engine-version-matches`, and nothing is applied. A bundle with a scenario and no rules is an
+error, `engine-rules-given`. [The Go guide](../guides/go.md#pass-the-engines-own-rules) shows
+how a caller passes them.
 
 ## Reports
 
@@ -120,7 +120,7 @@ A failure names the path it looked for and lists what the catalog has, so a wron
 corrected in one step:
 
 ```text
-error: references.hardware: "nvidia-h100": looked for hardware/nvidia-h100.yaml; the catalog has [a100-80 a100-sxm b200 b300 gb200-nvl72 h100 h200 l40s]
+error: references.hardware: "nvidia-h100": looked for hardware/nvidia-h100.yaml; the catalog has [a100-80 a100-sxm b200 b300 gb200-nvl72 gb300 h100 h200 l40s]
 ```
 
 The two entry points are separate so that `Validate` does not depend on where, or whether,
@@ -131,5 +131,5 @@ a catalog is checked out.
 | Caller | Runs |
 |---|---|
 | `validate-catalog`, `validate-registry`, `validate-measurements` | The field layer, for each committed document, and for measured runs the licence check and the verdict. These documents name no engine version, so no rules run. |
-| blis-latency-kernel, when it constructs a kernel | `Validate` over its inputs. A field-layer error stops construction; rule-layer problems do not. |
+| The cost model (`kernel/`), when it constructs a kernel | `Validate` over its inputs. A field-layer error stops construction; rule-layer problems do not. |
 | Your own Go program | Whatever it needs; see [Validate documents from Go](../guides/go.md). |

@@ -60,8 +60,7 @@ never inferred; the author states it.
     unknown". A value of zero under any other method is rejected.
 
 The schema also defines `literature` (a published result not reproduced here),
-`copied` (carried over from another scope, which `copied_from` names) and, since
-blis-schemas `v0.4.0`, `calibrated` (back-solved through the cost model from end-to-end
+`copied` (carried over from another scope, which `copied_from` names) and `calibrated` (back-solved through the cost model from end-to-end
 measured cases, which it cites as `measured_case` sources, with the held-out metrics in
 `validated`). No committed entry uses any of the three.
 

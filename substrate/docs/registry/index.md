@@ -3,7 +3,7 @@ hide:
   - navigation
 ---
 
-# blis-registry
+# Registry
 
 The registry holds the learned numbers behind a [BLIS](https://inference-sim.github.io/inference-sim/)
 latency estimate: the coefficients a cost model fits from measurements or, where no
@@ -19,32 +19,35 @@ AISimulate), <!-- registry:stat assumed --> `assumed`, and
 
 ## Where it sits
 
-BLIS keeps different kinds of number in different repositories. The registry holds
-one kind: numbers that a measurement could revise.
+BLIS keeps different kinds of number in different places. The registry, `registry/` in
+blis-substrate, holds one kind: numbers that a measurement could revise.
 
 ```mermaid
 flowchart LR
-    schemas["<b>blis-schemas</b><br/>shapes and validators"]
-    catalog["<b>blis-catalog</b><br/>declared facts"]
-    registry["<b>blis-registry</b><br/>learned numbers"]
-    kernel["<b>blis-latency-kernel</b><br/>prices one step"]
+    subgraph substrate["blis-substrate"]
+        contracts["<b>contracts/</b><br/>shapes and validators"]
+        catalog["<b>catalog/</b><br/>declared facts"]
+        registry["<b>registry/</b><br/>learned numbers"]
+        kernel["<b>kernel/</b><br/>prices one step"]
+    end
     sim["<b>inference-sim</b><br/>simulates serving"]
 
-    schemas -. validates .-> catalog
-    schemas -. validates .-> registry
+    contracts -. validates .-> catalog
+    contracts -. validates .-> registry
     catalog -- read by --> kernel
     registry -- read by --> kernel
-    schemas -- imported by --> kernel
+    contracts -- imported by --> kernel
     kernel -- called by --> sim
 ```
 
-[How the five repositories divide the work](concepts/index.md) explains the split and
-why it is drawn where it is.
+[How the work is divided](concepts/index.md) explains the split and why it is drawn
+where it is.
 
 ## Where to start
 
 **To run BLIS with the registry, or read it from your own code**, read
-[Using](using/index.md). You need a clone at a release tag and its path.
+[Using](using/index.md). A released simulator carries the registry it was tested with;
+you need a directory only to run another one.
 
 **To add a part, refit a family or correct an entry**, read
 [Contributing](contributing/index.md). Most sets are written by scripts, and the page

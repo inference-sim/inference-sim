@@ -30,8 +30,8 @@ vLLM's issue tracker into a committed CSV
 `FULL` and `FULL_DECODE_ONLY` have too few samples and are charged the
 `FULL_AND_PIECEWISE` figure as an upper bound. `NONE` is a declared zero.
 
-The kernel does not read this set yet; see
-[blis-latency-kernel#22](https://github.com/inference-sim/blis-latency-kernel/issues/22).
+The cost model reads every term of this set and refuses a scenario that does not list it
+([blis-latency-kernel#22](https://github.com/inference-sim/blis-latency-kernel/issues/22)).
 [Methodology §11](../../methodology.md#11-memory-occupancy-what-composes-and-where-each-term-comes-from)
 gives the composition and each scoping decision.
 

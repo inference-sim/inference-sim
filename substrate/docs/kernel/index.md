@@ -1,17 +1,17 @@
-# blis-latency-kernel
+# The cost model
 
-<p class="lede">blis-latency-kernel is the cost model of BLIS. Given a model, a GPU, a set of
-coefficients for that GPU and a deployment, it answers the two questions a serving simulator asks:
-how long one forward pass over a batch of requests takes, and how much GPU memory the
-deployment holds.</p>
+<p class="lede">The cost model of BLIS lives in the directory <code>kernel/</code>, and these
+pages call it the kernel. Given a model, a GPU, a set of coefficients for that GPU and a
+deployment, it answers the two questions a serving simulator asks: how long one forward pass
+over a batch of requests takes, and how much GPU memory the deployment holds.</p>
 
 It is a Go library. A simulator builds one kernel per *pool*, a set of GPUs running one engine
 configuration (a disaggregated deployment has a prefill pool and a decode pool), then calls it
 once per simulated step. The kernel prices the step from first principles: it counts the
 arithmetic, the bytes read from memory and the bytes moved between GPUs, and turns each count
-into time with coefficients for the hardware, most of them measured. It holds no data of its own; the model
-and the hardware come from [blis-catalog](https://github.com/inference-sim/blis-catalog), and
-the coefficients from [blis-registry](https://github.com/inference-sim/blis-registry).
+into time with coefficients for the hardware, most of them measured. It holds no data of its own: the model
+and the hardware come from the [catalog](../catalog/index.md), and the coefficients from the
+[registry](../registry/index.md), both directories of the same repository.
 
 --8<-- "docs/kernel/figures/lifecycle.html"
 
@@ -78,4 +78,4 @@ dispatches on those. A new model reaches it as data, with no change to its code.
 This kernel prices the engine behavior of vLLM v0.31.0: which kernels run, how work is split
 across GPUs, what an unstated setting defaults to. The exact pins of vLLM and of every other
 input are on [Sources of truth](reference/sources.md). These pages are published per release
-of the kernel; the selector at the top of the page switches between them.
+of blis-substrate; the selector at the top of the page switches between them.

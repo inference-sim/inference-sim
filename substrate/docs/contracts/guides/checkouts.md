@@ -1,22 +1,22 @@
-# Validate a catalog or registry
+# Validate the catalog and the registry
 
-<p class="lede">Two commands check every committed file in a data repository. The catalog
-and the registry run them in CI, pinned to a release of this module. Run the same release
-locally and a change that passes will pass in CI too.</p>
+<p class="lede">Two commands check every committed file in <code>catalog/</code> and
+<code>registry/</code>. CI runs them on every pull request, from the same commit as the
+types they check. Run them locally from the root of a blis-substrate checkout, and a change
+that passes will pass in CI too.</p>
 
-You need Go 1.24 or later. Neither command needs a checkout of blis-schemas. The examples
-use `@latest`; to match CI, use the release its workflow pins instead.
+Both commands take the directory to check. It may be the repository's own `catalog/` or
+`registry/`, or any directory with the same layout, such as a candidate registry a fitting
+script wrote.
 
 ## The catalog
 
-Point `validate-catalog` at the root of a blis-catalog checkout:
-
 ```sh
-go run github.com/inference-sim/blis-schemas/cmd/validate-catalog@latest ~/src/blis-catalog
+go run ./validate/cmd/validate-catalog catalog
 ```
 
-It walks `models/`, `hardware/`, `networks/`, `devices/` and `workloads/`, prints a line for
-each file that validates, and ends with a count:
+It walks `models/`, `hardware/`, `networks/`, `devices/`, `workloads/` and `measurements/`,
+prints a line for each file that validates, and ends with a count:
 
 ```text title="Output, abbreviated"
 # models/*/graph.yaml
@@ -30,46 +30,47 @@ h100                                           bf16 989.5, fp8 1979 TFLOP/s, 80 
 chatbot                                        prompt~256, output~256 tokens
 ...
 
-all 120 artifact(s) validate
+all 151 artifact(s) validate
 ```
 
 When something is wrong, each problem goes to standard error, under the name of the file
-it came from. Run from the catalog root as `validate-catalog .`, a failing run writes this to
-standard error:
+it came from. Run over a directory holding two broken chip files, a failing run writes this
+to standard error:
 
 ```text
 slip: error: SMCount: must be positive; every chip must declare its SM count
-slip: error: TFlopsFP8: FP8 peak 900.0 does not exceed BF16 peak 989.0; check the transcription
-typo: decoding hardware/typo.yaml: unknown field(s) [_mfu]; this type declares [BwPeakTBs GPUsPerNode GPUsPerRack IntraNodeBwGBps IntraRackBwGBps MemoryGiB Provenance SMCount TFlopsFP8 TFlopsNVFP4 TFlopsPeak]
+slip: error: TFlopsFP8: FP8 peak 900.0 does not exceed BF16 peak 989.5; check the transcription
+typo: decoding hardware/typo.yaml: unknown field(s) [_mfu]; this type declares [BwPeakTBs ComputeCapability GPUsPerNode GPUsPerRack IntraNodeBwGBps IntraRackBwGBps MemoryGiB Provenance SMCount TFlopsFP8 TFlopsNVFP4 TFlopsPeak]
 
-2 of 3 artifact(s) failed
+2 of 2 artifact(s) failed
 ```
 
-The first file has two mistakes, and both are reported. The second has a key the chip
-schema does not declare, so it does not load; the error lists the keys it could have used.
+The first file has two mistakes, and both are reported. The second has a key the chip type
+does not declare, so it does not load; the error lists the keys it could have used.
 
 What each kind of file must contain is in the reference:
 [model graph and identity](../reference/model.md), [chip, fabric and storage
-classes](../reference/hardware.md), [workload shape](../reference/workload.md#shape). Each
-model's `config.json` is checked only for being a non-empty JSON object.
+classes](../reference/hardware.md), [workload shape](../reference/workload.md#shape),
+[measured run](../reference/measurement.md). Each model's `config.json` is checked only for
+being a non-empty JSON object.
 
 ## The registry
 
-Point `validate-registry` at the root of a blis-registry checkout:
-
 ```sh
-go run github.com/inference-sim/blis-schemas/cmd/validate-registry@latest ~/src/blis-registry
+go run ./validate/cmd/validate-registry registry
 ```
 
 It finds every `.yaml` and `.yml` file under `coefficients/`, at any depth, and validates
-each as a coefficient set:
+each as a coefficient set, then the sets under `acceptance/` and `routing/`:
 
 ```text title="Output, abbreviated"
-cost-model-attention.yaml                       60 coefficient(s)
-cost-model-collectives.yaml                    864 coefficient(s)
+cost-model-attention.yaml                       90 coefficient(s)
+cost-model-collectives.yaml                    888 coefficient(s)
 ...
+acceptance/inferencex-golden-al.yaml            51 profile(s)
+routing/servingstudio-dsv41-flash.yaml           8 profile(s)
 
-all 6 set(s) validate
+all 10 set(s) validate
 ```
 
 A set that fails prints `FAILED` on standard output and its problems on standard error.
@@ -81,17 +82,12 @@ when the path is not a catalog or registry or the command was misused. The detai
 
 ## In CI
 
-Pin a release, so that a new release of blis-schemas cannot fail an unrelated pull
-request. The catalog's workflow does this:
+The `catalog` and `registry` jobs of `.github/workflows/ci.yml` run these commands on every
+pull request that changes their directory, or the Go module:
 
 ```yaml
-- uses: actions/setup-go@v5
-  with:
-    go-version: '1.24'
-- name: Validate every committed catalog entry
-  run: go run github.com/inference-sim/blis-schemas/cmd/validate-catalog@vX.Y.Z .
+- run: go run ./validate/cmd/validate-catalog catalog
 ```
 
-Replace `vX.Y.Z` with the release you have tested against. Moving to a newer one is then a
-one-line change. The releases are listed on
-[GitHub](https://github.com/inference-sim/blis-schemas/releases).
+The validators and the data are in one repository, so CI checks the data against the
+validators of the same commit. There is no version to pin.

@@ -3,7 +3,7 @@
 <p class="lede"><code>kernel.Kernel</code> is the interface a cost model implements and a
 simulator calls. One value prices one pool of one deployment: how much memory a rank
 holds, how long a forward pass over a batch takes, and what transfers and host work cost.
-blis-latency-kernel is the implementation in use.</p>
+The cost model in <code>kernel/</code> is the implementation in use.</p>
 
 Every method is a pure function of its arguments and the configuration the kernel was
 constructed from: the same inputs give the same outputs, nothing is mutated, and calls are
