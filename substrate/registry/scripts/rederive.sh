@@ -19,7 +19,7 @@
 set -euo pipefail
 
 : "${AISIMULATE_DATA:?set AISIMULATE_DATA to the AISimulate systems/data directory}"
-: "${BLIS_CATALOG:?set BLIS_CATALOG to the repository's catalog/ directory}"
+: "${BLIS_CATALOG:?set BLIS_CATALOG to the catalog/ directory of this repository}"
 : "${AISIMULATE_ALLREDUCE_DATA:?set AISIMULATE_ALLREDUCE_DATA to the systems/data of aisimulate at AISIMULATE_ALLREDUCE_SHA (rederive.yml), the h100/h200 vLLM 0.31.0 all-reduce sweep}"
 
 n=$(find "$AISIMULATE_DATA" -name '*.parquet' | wc -l)
