@@ -1237,3 +1237,24 @@ func TestLoadResultReadsJSONAndYAMLStrictly(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadWorkloadSpecRefusesRemovedFeatures: ServeGen's single-period time_window (and its
+// derived span_start and span_end) are removed, so they are unknown keys; a v1 specification
+// loads and Validate refuses it with the replacement named.
+func TestLoadWorkloadSpecRefusesRemovedFeatures(t *testing.T) {
+	for _, key := range []string{"time_window: midnight", "span_start: 0", "span_end: 1800"} {
+		path := write(t, "w.yaml", "version: \"2\"\nseed: 1\nservegen_data:\n  path: d\n  "+key+"\n")
+		if _, err := LoadWorkloadSpec(path); err == nil || !strings.Contains(err.Error(), strings.SplitN(key, ":", 2)[0]) {
+			t.Errorf("%s: got %v, want an unknown-key error", key, err)
+		}
+	}
+	path := write(t, "w.yaml", "version: \"1\"\nseed: 1\naggregate_rate: 1\nclients:\n  - id: a\n    slo_class: realtime\n    rate_fraction: 1\n    arrival: {process: poisson}\n    input_distribution: {type: constant, params: {value: 1}}\n    output_distribution: {type: constant, params: {value: 1}}\n")
+	s, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := s.Validate().Error()
+	if !strings.Contains(msgs, "version 1") || !strings.Contains(msgs, "realtime") {
+		t.Errorf("a v1 specification was not refused with the removal named:\n%s", msgs)
+	}
+}

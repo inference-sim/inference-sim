@@ -256,6 +256,18 @@ func LoadWorkload(path string) (*workload.Shape, error) {
 	return w.Shape, nil
 }
 
+// LoadWorkloadSpec reads a workload generator specification, strictly. It does not
+// validate; call Validate. A v1 specification's class names and ServeGen's removed
+// time_window are not mapped: the first is refused by Validate, the second is an unknown
+// key here.
+func LoadWorkloadSpec(path string) (*workload.Spec, error) {
+	var s workload.Spec
+	if err := decodeStrict(path, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // LoadCatalogWorkload reads one catalog workloads/<name>.yaml in either form: a traffic
 // shape, or a replay workload when the file's top-level key is replay:. Both are named
 // from the path stem, and both decode strictly. A replay file may carry the catalog's

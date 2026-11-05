@@ -1,0 +1,34 @@
+version: "2"
+seed: 42
+category: language
+aggregate_rate: 10
+num_requests: 1000
+clients:
+  - id: chat
+    tenant_id: team-a
+    slo_class: critical
+    rate_fraction: 0.7
+    arrival: {process: gamma, cv: 2.0}
+    input_distribution:
+      type: gaussian
+      params: {mean: 512, std_dev: 128, min: 16, max: 4096}
+    output_distribution:
+      type: exponential
+      params: {mean: 128}
+    prefix_group: system-prompt
+    prefix_length: 256
+    streaming: true
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 3, think_time_us: 2000000, context_growth: accumulate}
+cohorts:
+  - id: batch
+    population: 20
+    slo_class: batch
+    rate_fraction: 0.3
+    arrival: {process: poisson}
+    input_distribution: {type: lognormal, params: {mu: 6.5, sigma: 0.8}}
+    output_distribution: {type: constant, params: {value: 64}}
+    diurnal: {peak_hour: 14, peak_to_trough_ratio: 3}
+goodput_slo_targets:
+  critical: {ttft_ms: 500, itl_ms: 50}

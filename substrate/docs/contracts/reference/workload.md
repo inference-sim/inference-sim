@@ -219,6 +219,212 @@ the catalog's `chatbot`:
 A file may also carry `_comment` and `_comment_*` keys, at the top level and inside
 `prompt` and `output`. They are discarded when the file is loaded.
 
+## Generator specification
+
+The document `blis run --workload-spec` reads and `blis convert` writes: clients with an
+arrival process and token-length distributions, populations of them (cohorts), or a source
+a converter expands. `LoadWorkloadSpec` reads it strictly; `Spec.Validate` checks it as the
+generator requires. Version 1 and its SLO class names `realtime` and `interactive` are
+refused, and ServeGen's single-period `time_window` is an unknown key.
+
+```yaml
+--8<-- "docs/contracts/examples/workload-spec.yaml"
+```
+
+<!-- fields: workload.Spec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `version` | string | yes | Always `"2"`. |
+| `seed` | integer | yes | Seeds every random substream. |
+| `category` | string | no | `language`, `multimodal` or `reasoning`. |
+| `clients` | list | one of these | Clients, below. |
+| `cohorts` | list | one of these | Populations of clients, below. |
+| `aggregate_rate` | number | with a rate-based client | Requests per second, shared by `rate_fraction`. Zero selects absolute mode, where every rate-based window states `trace_rate`. |
+| `horizon` | integer | no | Generation bound, microseconds. |
+| `num_requests` | integer | no | Request cap; 0 is none. |
+| `servegen_data` | mapping | one of these | ServeGen data to expand, below. |
+| `inference_perf` | mapping | one of these | An inference-perf specification to expand, below. |
+| `goodput_slo_targets` | mapping | no | Latency targets per SLO class, as in a [trace header](trace.md#goodput_slo_targetsclass). |
+
+<!-- fields: workload.ClientSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | The client. |
+| `tenant_id` | string | no | The tenant. |
+| `slo_class` | string | no | `critical`, `standard`, `sheddable`, `batch` or `background`; all clients and cohorts state one, or none does. |
+| `model` | string | no | The model tag. |
+| `adapter` | string | no | The LoRA adapter. |
+| `rate_fraction` | number | without `concurrency` | The client's share of `aggregate_rate`. Positive. |
+| `concurrency` | integer | no | Requests kept in flight; excludes `rate_fraction`. |
+| `think_time_us` | integer | no | A concurrency client's pause between requests. |
+| `arrival` | mapping | rate-based | The inter-arrival process. |
+| `input_distribution` | mapping | yes | Prompt length. |
+| `output_distribution` | mapping | yes | Output length. |
+| `prefix_group` | string | no | The shared prefix's group. |
+| `prefix_length` | integer | no | The shared prefix's tokens. |
+| `streaming` | boolean | no | Whether requests stream. |
+| `network` | mapping | no | The client's network. |
+| `lifecycle` | mapping | no | Active windows. |
+| `multimodal` | mapping | no | Per-modality distributions. |
+| `reasoning` | mapping | no | Output split and turns. |
+| `timeout` | integer | no | Per-request timeout, microseconds; 0 is none. |
+| `slo_target_us` | integer | no | Per-request TTFT target. |
+| `closed_loop` | boolean | no | False pre-generates every round. |
+
+<!-- fields: workload.CohortSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | The cohort. |
+| `population` | integer | yes | Clients it expands into; at most 100,000. |
+| `tenant_id` | string | no | As for a client. |
+| `slo_class` | string | no | As for a client. |
+| `model` | string | no | As for a client. |
+| `adapter` | string | no | As for a client. |
+| `arrival` | mapping | yes | As for a client. |
+| `input_distribution` | mapping | yes | As for a client. |
+| `output_distribution` | mapping | yes | As for a client. |
+| `prefix_group` | string | with `per_member` | As for a client. |
+| `prefix_sharing` | string | no | `shared` or `per_member`. |
+| `streaming` | boolean | no | As for a client. |
+| `rate_fraction` | number | yes | The cohort's share. Positive. |
+| `diurnal` | mapping | no | A 24-hour sinusoid. |
+| `spike` | mapping | no | An active window; with `trace_rate` in absolute mode. |
+| `drain` | mapping | no | A linear ramp to zero. |
+| `prefix_length` | integer | no | As for a client. |
+| `reasoning` | mapping | no | As for a client. |
+| `closed_loop` | boolean | no | As for a client. |
+| `timeout` | integer | no | As for a client. |
+| `slo_target_us` | integer | no | As for a client. |
+| `network` | mapping | no | As for a client. |
+| `multimodal` | mapping | no | As for a client. |
+
+<!-- fields: workload.DiurnalSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `peak_hour` | integer | yes | In [0, 23]. |
+| `peak_to_trough_ratio` | number | yes | At least 1. |
+
+<!-- fields: workload.SpikeSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `start_time_us` | integer | yes | Not negative. |
+| `duration_us` | integer | yes | Positive. |
+| `trace_rate` | number | absolute mode | The cohort's rate, requests per second. |
+
+<!-- fields: workload.DrainSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `start_time_us` | integer | yes | Not negative. |
+| `ramp_duration_us` | integer | yes | Positive. |
+
+<!-- fields: workload.ArrivalSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `process` | string | yes | `poisson`, `gamma`, `weibull` or `constant`. |
+| `cv` | number | no | Inter-arrival coefficient of variation; for Weibull, in [0.01, 10.4] unless `shape` and `scale` are given. |
+| `shape` | number | no | Fitted gamma alpha or Weibull k. Positive. |
+| `scale` | number | no | Fitted gamma theta or Weibull lambda, microseconds. Positive. |
+
+<!-- fields: workload.DistSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `type` | string | yes | `gaussian` (`mean`, `std_dev`, `min`, `max`), `exponential` (`mean`), `pareto_lognormal` (`alpha`, `xm`, `mu`, `sigma`, `mix_weight`), `lognormal` (`mu`, `sigma`), `constant` (`value`) or `empirical`. |
+| `params` | mapping | per type | The family's parameters, finite; for `empirical`, token count to probability. |
+| `file` | string | no | An empirical distribution's file. |
+
+<!-- fields: workload.NetworkSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `rtt_ms` | number | yes | Round-trip time. |
+| `bandwidth_mbps` | number | no | Bandwidth. |
+
+<!-- fields: workload.LifecycleSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `windows` | list | yes | At least one window. |
+
+<!-- fields: workload.ActiveWindow -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `start_us` | integer | yes | Not negative. |
+| `end_us` | integer | yes | After `start_us`. |
+| `trace_rate` | number | absolute mode | A weight, or in absolute mode the rate. Positive. |
+| `arrival` | mapping | no | Overrides the client's arrival in the window. |
+| `input_distribution` | mapping | no | Overrides the prompt length. |
+| `output_distribution` | mapping | no | Overrides the output length. |
+
+<!-- fields: workload.MultimodalSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `text_distribution` | mapping | yes | Text tokens. |
+| `image_distribution` | mapping | yes | Tokens per image. |
+| `image_count_distribution` | mapping | yes | Images per request. |
+| `audio_distribution` | mapping | yes | Tokens per clip. |
+| `audio_count_distribution` | mapping | yes | Clips per request. |
+| `video_distribution` | mapping | yes | Tokens per video. |
+| `video_count_distribution` | mapping | yes | Videos per request. |
+
+<!-- fields: workload.ReasoningSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `reason_ratio_distribution` | mapping | yes | The reasoning share of output. |
+| `multi_turn` | mapping | no | Turns, below. |
+
+<!-- fields: workload.MultiTurnSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `max_rounds` | integer | yes | At least 1. |
+| `think_time_us` | integer | yes | Pause between rounds. |
+| `context_growth` | string | no | `accumulate`, or empty for independent rounds. |
+| `single_session` | boolean | no | One session per client. |
+
+<!-- fields: workload.ServeGenDataSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string | no | The data directory. |
+| `window_duration_secs` | integer | no | Each period's length. |
+| `drain_timeout_secs` | integer | no | The gap between periods. |
+
+<!-- fields: workload.InferencePerfSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `stages` | list | yes | At least one stage. |
+| `shared_prefix` | mapping | yes | The shared-prefix workload. |
+
+<!-- fields: workload.StageSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `rate` | number | yes | Requests per second. Positive. |
+| `duration` | integer | yes | Seconds. Positive. |
+
+<!-- fields: workload.SharedPrefixSpec -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `num_unique_system_prompts` | integer | yes | Positive. |
+| `num_users_per_system_prompt` | integer | yes | Positive. |
+| `system_prompt_len` | integer | yes | Not negative. |
+| `question_len` | integer | yes | Not negative. |
+| `output_len` | integer | yes | Not negative. |
+| `enable_multi_turn_chat` | boolean | no | Multi-turn chat. |
+
 ## Checks
 
 A binding is invalid unless it sets exactly one of `shape`, `trace` and `replay`. A trace reference is

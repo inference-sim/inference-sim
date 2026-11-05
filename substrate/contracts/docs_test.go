@@ -151,6 +151,12 @@ func TestDocExamplesValidate(t *testing.T) {
 			Scenario: fixture(LoadScenario(ex("trace-binding.yaml"))),
 		}))
 	})
+	t.Run("workload specification", func(t *testing.T) {
+		s := fixture(LoadWorkloadSpec(ex("workload-spec.yaml")))
+		for _, p := range s.Validate().All() {
+			t.Errorf("workload-spec.yaml: %s", p)
+		}
+	})
 	t.Run("trace file", func(t *testing.T) {
 		h, err := os.Open(ex("trace-header.yaml"))
 		if err != nil {
@@ -179,7 +185,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		"connector-registry.yaml": true,
 		"result.json":             true,
 		"field-list.json":         true,
-		"trace-header.yaml":       true, "trace-data.csv": true,
+		"trace-header.yaml":       true, "trace-data.csv": true, "workload-spec.yaml": true,
 	}
 	all, err := filepath.Glob(ex("*"))
 	if err != nil {
@@ -232,6 +238,24 @@ var documented = map[string]struct {
 	"trace.Record":               {typ: reflect.TypeOf(trace.Record{})},
 	"workload.TokenBlocks":       {typ: reflect.TypeOf(workload.TokenBlocks{})},
 	"trace.SLODimTargets":        {typ: reflect.TypeOf(trace.SLODimTargets{})},
+	"workload.Spec":              {typ: reflect.TypeOf(workload.Spec{})},
+	"workload.ClientSpec":        {typ: reflect.TypeOf(workload.ClientSpec{})},
+	"workload.CohortSpec":        {typ: reflect.TypeOf(workload.CohortSpec{})},
+	"workload.DiurnalSpec":       {typ: reflect.TypeOf(workload.DiurnalSpec{})},
+	"workload.SpikeSpec":         {typ: reflect.TypeOf(workload.SpikeSpec{})},
+	"workload.DrainSpec":         {typ: reflect.TypeOf(workload.DrainSpec{})},
+	"workload.ArrivalSpec":       {typ: reflect.TypeOf(workload.ArrivalSpec{})},
+	"workload.DistSpec":          {typ: reflect.TypeOf(workload.DistSpec{})},
+	"workload.NetworkSpec":       {typ: reflect.TypeOf(workload.NetworkSpec{})},
+	"workload.LifecycleSpec":     {typ: reflect.TypeOf(workload.LifecycleSpec{})},
+	"workload.ActiveWindow":      {typ: reflect.TypeOf(workload.ActiveWindow{})},
+	"workload.MultimodalSpec":    {typ: reflect.TypeOf(workload.MultimodalSpec{})},
+	"workload.ReasoningSpec":     {typ: reflect.TypeOf(workload.ReasoningSpec{})},
+	"workload.MultiTurnSpec":     {typ: reflect.TypeOf(workload.MultiTurnSpec{})},
+	"workload.ServeGenDataSpec":  {typ: reflect.TypeOf(workload.ServeGenDataSpec{})},
+	"workload.InferencePerfSpec": {typ: reflect.TypeOf(workload.InferencePerfSpec{})},
+	"workload.StageSpec":         {typ: reflect.TypeOf(workload.StageSpec{})},
+	"workload.SharedPrefixSpec":  {typ: reflect.TypeOf(workload.SharedPrefixSpec{})},
 	"workload.Shape":             {typ: reflect.TypeOf(workload.Shape{})},
 	"workload.Distribution":      {typ: reflect.TypeOf(workload.Distribution{})},
 	"deployment.Deployment":      {typ: reflect.TypeOf(deployment.Deployment{})},
