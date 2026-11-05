@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 
 	"github.com/sirupsen/logrus"
@@ -202,13 +201,7 @@ func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, outcome NIXLO
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
 	e.parentReq.CompletionTime = e.time
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &KVTransferCompletedEvent{
-			time:      e.time,
-			parentReq: e.parentReq,
-		},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: e.parentReq}, &cs.kvConnectorSender)
 }
 
 // scheduleTransferCompletion performs the duration calculation and
@@ -246,10 +239,7 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	}
 	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
 		parentReq.ID, numBlocks, duration)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq}, &cs.kvConnectorSender)
 }
 
 // scheduleLinkWake schedules the link arbiter's next drain or completion, superseding any wake
@@ -260,10 +250,7 @@ func (cs *ClusterSimulator) scheduleLinkWake() {
 		return
 	}
 	cs.pdLinkWakeGen++
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &PDLinkWakeEvent{time: at, gen: cs.pdLinkWakeGen},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&PDLinkWakeEvent{time: at, gen: cs.pdLinkWakeGen}, &cs.kvConnectorSender)
 }
 
 // PDLinkWakeEvent advances the link arbiter to its next drain or completion and completes the
@@ -286,10 +273,7 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 	for _, id := range cs.pdLinks.Advance(e.time) {
 		parent := cs.pdLinkFlows[id]
 		delete(cs.pdLinkFlows, id)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &KVTransferCompletedEvent{time: e.time, parentReq: parent},
-			seqID: cs.nextSeqID(),
-		})
+		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: parent}, &cs.kvConnectorSender)
 	}
 	cs.scheduleLinkWake()
 }

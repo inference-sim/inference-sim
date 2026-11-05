@@ -4,7 +4,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 	"math"
 	"math/rand"
@@ -343,10 +342,7 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 			logrus.Errorf("[autoscaler] HPAScrapeDelay.Stddev=%g but rng is nil — using Mean only; set subsystemAutoscaler in constructor", cs.config.HPAScrapeDelay.Stddev)
 		}
 		actuationAt := nowUs + cs.config.HPAScrapeDelay.Sample(p.rng)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
-			seqID: cs.nextSeqID(),
-		})
+		cs.schedule(&ScaleActuationEvent{At: actuationAt, Decisions: filtered}, &cs.autoscalerSender)
 	}
 
 	// Stage 6: Schedule next ScalingTickEvent.
@@ -371,10 +367,7 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 		}
 	}
 	nextAt := nowUs + int64(cs.config.ModelAutoscalerIntervalUs)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &ScalingTickEvent{At: nextAt},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&ScalingTickEvent{At: nextAt}, &cs.autoscalerSender)
 }
 
 // actuate calls Actuator.Apply() with decisions from a ScaleActuationEvent. No-ops when actuator is nil.

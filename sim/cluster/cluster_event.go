@@ -1,6 +1,9 @@
 package cluster
 
 import (
+	"container/heap"
+	"fmt"
+
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -8,33 +11,127 @@ import (
 
 // ClusterEvent defines the interface for cluster-level events.
 // These are separate from sim.Event and processed by ClusterSimulator's control plane.
+// Priority is the event's class: its place among the events of one instant (eventKey).
 type ClusterEvent interface {
 	Timestamp() int64
-	Priority() int // 0=Arrival, 4-6=PD, 8=ScalingTick, 9=ScaleActuation, 10+=gateway callbacks
+	Priority() int // the class; see "Classes of cluster events" below
 	Execute(*ClusterSimulator)
 }
 
-// clusterEventEntry wraps a ClusterEvent with a sequence ID for deterministic FIFO
-// tie-breaking when timestamp and priority are equal.
-type clusterEventEntry struct {
-	event ClusterEvent
-	seqID int64
+// Classes of cluster events, in the order they run at one instant (DEV-2, design §8.2). The
+// class is the event's Priority(); a lower class runs first. Each position has a reason:
+//
+//	-2  node lifecycle (NodeReadyEvent, NodeDrainedEvent): a node's state changes before any
+//	    instance on it does.
+//	-1  instance lifecycle (InstanceLoadedEvent): an instance that finishes loading at t is
+//	    routable for a request that arrives at t.
+//	 0  arrival (ClusterArrivalEvent): external input enters before anything that reacts to it.
+//	 2  router request path (CallbackEvent at PriorityGatewayRequest): the router decides on
+//	    the requests that arrived at t, where the cluster's own routing decision always ran.
+//	 4  prefill routing (PrefillRoutingEvent): a disaggregated request reaches its prefill
+//	    engine after the router chose it.
+//	 5  KV transfer start (KVTransferStartedEvent): a prefill that ended at t starts its
+//	    handoff after every routing decision of t.
+//	 6  KV transfer completion, link wake and prefill lease expiry (KVTransferCompletedEvent,
+//	    PDLinkWakeEvent, PrefillKVLeaseExpiredEvent): a transfer that starts and ends at t
+//	    completes after it starts.
+//	 8  scaling tick (ScalingTickEvent): the autoscaler observes every request-path change of t.
+//	 9  scale actuation (ScaleActuationEvent): a decision is applied after the tick that made it.
+//	10+ router background work (metrics collection, KV events, timers, housekeeping): after
+//	    every cluster event of t, as in the router's own process.
+//
+// Every cluster event of an instant runs before every instance event of that instant (the
+// cluster loop's "cluster first" rule, BC-4), so an engine sees the instant's arrivals and
+// routing before it steps. Instance events of one instant run in instance order (the
+// instance is their sender). A change to this order is a change to the model (design §8.9).
+
+// senderID names a component that sends cluster events: the sender in eventKey. Its value
+// orders two events of the same time and class from different senders, so each value's place
+// below is part of the model, and two components never share one.
+type senderID int
+
+const (
+	// senderLifecycle is the cluster's placement and lifecycle controller.
+	senderLifecycle senderID = iota
+	// senderWorkload is the workload generator: the request source, closed-loop session
+	// follow-ups and the agentic arrival gate. It comes before every instance, so an arrival
+	// the workload planned at t is routed before a drained instance's redirect at t.
+	senderWorkload
+	// senderRouter is the embedded router (every gateway callback) and the prefill routing it
+	// orders.
+	senderRouter
+	// senderKVConnector is the KV connector between prefill and decode pools: transfer
+	// starts, completions, link wakes and prefill-side lease expiries. Those of one class run
+	// in the order the connector sent them.
+	senderKVConnector
+	// senderAutoscaler is the autoscaler: its ticks and actuations.
+	senderAutoscaler
+	// senderFirstInstance is the sender of the instance at index 0; instance i sends as
+	// senderFirstInstance + i, in the order the cluster loop breaks instance ties.
+	senderFirstInstance senderID = 1 << 20
+)
+
+// eventSender is one component's outbox: its sender identity and its own count of the events
+// it has sent. The count, not a counter shared by the whole simulator, orders two events from
+// one sender at the same time and class, so the order of an instant depends only on what each
+// sender has done (DEV-2).
+type eventSender struct {
+	id   senderID
+	sent int64
 }
 
-// ClusterEventQueue is a min-heap ordered by (Timestamp, Priority, seqID).
-// Implements heap.Interface.
+// next returns the count of the event being sent and advances it.
+func (s *eventSender) next() int64 {
+	n := s.sent
+	s.sent++
+	return n
+}
+
+// eventKey orders the cluster's events: (time, class, sender, sender's own count), the key of
+// design §8.2. No global counter enters it. Two queued events with the same key are a defect:
+// ClusterSimulator.schedule panics on one.
+type eventKey struct {
+	time   int64
+	class  int
+	sender senderID
+	count  int64
+}
+
+// less orders two keys.
+func (a eventKey) less(b eventKey) bool {
+	if a.time != b.time {
+		return a.time < b.time
+	}
+	if a.class != b.class {
+		return a.class < b.class
+	}
+	if a.sender != b.sender {
+		return a.sender < b.sender
+	}
+	return a.count < b.count
+}
+
+// clusterEventEntry is a queued event with its key.
+type clusterEventEntry struct {
+	event ClusterEvent
+	key   eventKey
+	// salt is consulted only between two equal keys, which schedule refuses, so it never
+	// decides an order in a run. It is zero except under the permutation test, which sets it
+	// at random to stand for an arbitrary scheduling order: a key that stopped being total
+	// would then let the scheduling order decide, and the test would see the Result move.
+	salt int64
+}
+
+// ClusterEventQueue is a min-heap ordered by eventKey. Implements heap.Interface.
 type ClusterEventQueue []clusterEventEntry
 
 func (q ClusterEventQueue) Len() int { return len(q) }
 
 func (q ClusterEventQueue) Less(i, j int) bool {
-	if q[i].event.Timestamp() != q[j].event.Timestamp() {
-		return q[i].event.Timestamp() < q[j].event.Timestamp()
+	if q[i].key != q[j].key {
+		return q[i].key.less(q[j].key)
 	}
-	if q[i].event.Priority() != q[j].event.Priority() {
-		return q[i].event.Priority() < q[j].event.Priority()
-	}
-	return q[i].seqID < q[j].seqID
+	return q[i].salt < q[j].salt
 }
 
 func (q ClusterEventQueue) Swap(i, j int) { q[i], q[j] = q[j], q[i] }
@@ -49,6 +146,59 @@ func (q *ClusterEventQueue) Pop() any {
 	item := old[n-1]
 	*q = old[:n-1]
 	return item
+}
+
+// schedule queues ev, sent by from, under its key. It panics when another queued event already
+// has that key: two components sharing a sender identity, or a sender reusing a count (DEV-2).
+func (cs *ClusterSimulator) schedule(ev ClusterEvent, from *eventSender) {
+	k := eventKey{time: ev.Timestamp(), class: ev.Priority(), sender: from.id, count: from.next()}
+	if cs.queuedKeys == nil {
+		cs.queuedKeys = make(map[eventKey]struct{})
+	}
+	if _, dup := cs.queuedKeys[k]; dup {
+		panic(fmt.Sprintf("ClusterSimulator.schedule: two queued events share the key (time %d, class %d, sender %d, count %d); "+
+			"DEV-2 requires every key to be unique (%T)", k.time, k.class, k.sender, k.count, ev))
+	}
+	cs.queuedKeys[k] = struct{}{}
+	var salt int64
+	if cs.permuteSchedule != nil {
+		salt = cs.permuteSchedule.Int63()
+	}
+	heap.Push(&cs.clusterEvents, clusterEventEntry{event: ev, key: k, salt: salt})
+}
+
+// popEvent removes and returns the earliest queued event.
+func (cs *ClusterSimulator) popEvent() clusterEventEntry {
+	entry := heap.Pop(&cs.clusterEvents).(clusterEventEntry)
+	delete(cs.queuedKeys, entry.key)
+	if cs.observePop != nil {
+		cs.observePop(entry.key)
+	}
+	return entry
+}
+
+// instanceSender is inst's outbox for the cluster events it sends: the requests a drain
+// redirects from it. Its sender identity is its index.
+func (cs *ClusterSimulator) instanceSender(inst *InstanceSimulator) *eventSender {
+	if s, ok := cs.instanceSenders[inst.ID()]; ok {
+		return s
+	}
+	idx := -1
+	for i, in := range cs.instances {
+		if in == inst {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		panic(fmt.Sprintf("ClusterSimulator.instanceSender: instance %s is not in the cluster", inst.ID()))
+	}
+	if cs.instanceSenders == nil {
+		cs.instanceSenders = make(map[InstanceID]*eventSender)
+	}
+	s := &eventSender{id: senderFirstInstance + senderID(idx)}
+	cs.instanceSenders[inst.ID()] = s
+	return s
 }
 
 // buildRouterState constructs the autoscaler's view of the cluster from live instance state.

@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -33,8 +34,25 @@ type ClusterSimulator struct {
 	maxNodesSpanned int
 
 	// Request pipeline: arrivals go to the gateway, which dispatches or rejects them.
-	clusterEvents     ClusterEventQueue
-	seqCounter        int64
+	clusterEvents ClusterEventQueue
+	// queuedKeys holds the key of every queued cluster event, so schedule can refuse a
+	// second event with the same key (DEV-2).
+	queuedKeys map[eventKey]struct{}
+	// The cluster's senders of events (eventKey): each counts only the events it sent.
+	lifecycleSender   eventSender
+	workloadSender    eventSender
+	routerSender      eventSender
+	kvConnectorSender eventSender
+	autoscalerSender  eventSender
+	instanceSenders   map[InstanceID]*eventSender
+	// testSender is the sender of events tests schedule by hand (senderTest).
+	testSender *eventSender
+	// permuteSchedule, set only by the permutation test, gives every queued event a random
+	// salt that orders events of equal key (eventKey). Equal keys never occur, so a run's
+	// Result must not depend on it.
+	permuteSchedule *rand.Rand
+	// observePop, set only by tests, sees the key of every event the loop takes.
+	observePop        func(eventKey)
 	gateway           Gateway
 	daemonQueued      int            // daemon gateway callbacks in clusterEvents (they do not keep the run alive)
 	ffStack           []int          // nextRequestWork's scratch stack of heap indices
@@ -272,17 +290,22 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
 
 	cs := &ClusterSimulator{
-		config:           config,
-		instances:        make([]*InstanceSimulator, 0, config.NumInstances),
-		rng:              rng,
-		requestSource:    requestSource,
-		clusterEvents:    make(ClusterEventQueue, 0),
-		trace:            simTrace,
-		inFlightRequests: make(map[string]int, config.NumInstances),
-		shedByTier:       make(map[string]int),
-		injectedByClass:  make(map[string]int64),
-		fates:            sim.NewFateLedger(),
-		liveRequests:     make(map[string]*sim.Request),
+		config:            config,
+		instances:         make([]*InstanceSimulator, 0, config.NumInstances),
+		rng:               rng,
+		requestSource:     requestSource,
+		clusterEvents:     make(ClusterEventQueue, 0),
+		lifecycleSender:   eventSender{id: senderLifecycle},
+		workloadSender:    eventSender{id: senderWorkload},
+		routerSender:      eventSender{id: senderRouter},
+		kvConnectorSender: eventSender{id: senderKVConnector},
+		autoscalerSender:  eventSender{id: senderAutoscaler},
+		trace:             simTrace,
+		inFlightRequests:  make(map[string]int, config.NumInstances),
+		shedByTier:        make(map[string]int),
+		injectedByClass:   make(map[string]int64),
+		fates:             sim.NewFateLedger(),
+		liveRequests:      make(map[string]*sim.Request),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above). The gateway
@@ -551,7 +574,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 			return nil
 		}
 		for _, next := range cs.sessionCallback(req, tick) {
-			cs.pushArrival(next, next.ArrivalTime)
+			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 		return nil // don't inject locally — route through cluster pipeline
 	}
@@ -597,12 +620,11 @@ func doneOutcome(req *sim.Request) DoneOutcome {
 // OnRequestDone hooks that generate follow-ups should return them to the
 // coordinator rather than calling pushArrival directly, preserving this method
 // as the single enforcement point. See also issue #1041.
-func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
+// from is the arrival's sender: the workload generator (workloadSender) for a request the
+// workload produced, or the drained instance for a request a drain redirects.
+func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64, from *eventSender) {
 	cs.createRequest(req)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &ClusterArrivalEvent{time: timeUs, request: req},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&ClusterArrivalEvent{time: timeUs, request: req}, from)
 	cs.pendingArrivals++
 }
 
@@ -702,10 +724,7 @@ func (c *ClusterSimulator) Run() error {
 	// The autoscaler is enabled when ModelAutoscalerIntervalUs > 0 AND cs.autoscaler is non-nil.
 	// Zero-interval guard: no tick is ever scheduled when interval is 0 (INV-6).
 	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &ScalingTickEvent{At: c.clock},
-			seqID: c.nextSeqID(),
-		})
+		c.schedule(&ScalingTickEvent{At: c.clock}, &c.autoscalerSender)
 	}
 
 	// 2. Drain the request source to schedule arrival events. The source is
@@ -721,7 +740,7 @@ func (c *ClusterSimulator) Run() error {
 		if req == nil {
 			panic("ClusterSimulator: RequestSource.Next() returned (nil, true) — implementation contract violation (Next must never return ok=true with a nil request)")
 		}
-		c.pushArrival(req, req.ArrivalTime)
+		c.pushArrival(req, req.ArrivalTime, &c.workloadSender)
 		arrivalCount++
 	}
 	if arrivalCount == 0 {
@@ -786,7 +805,7 @@ func (c *ClusterSimulator) Run() error {
 			return fmt.Errorf("gateway: %w", c.abortErr)
 		}
 		if clusterTime <= instanceTime {
-			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
+			entry := c.popEvent()
 			c.clock = entry.event.Timestamp()
 			if c.clock > c.config.Horizon {
 				stoppedAtHorizon = true
@@ -1114,13 +1133,6 @@ func (c *ClusterSimulator) gatewayHeldUntil(since int64) int64 {
 // holds requests and nothing else can happen: one simulated hour.
 const gatewayStallLimitUs = int64(3600 * 1e6)
 
-// nextSeqID returns the next monotonically increasing sequence ID for event ordering.
-func (c *ClusterSimulator) nextSeqID() int64 {
-	id := c.seqCounter
-	c.seqCounter++
-	return id
-}
-
 // SetProgressHook registers an optional hook that receives periodic state
 // snapshots during cluster simulation execution. Must be called before Run().
 // When hook is nil (default), there is zero behavioral or performance impact.
@@ -1345,7 +1357,7 @@ func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
 // and schedules KV transfer events for each.
 // R2/INV-6: Collects completed IDs into a sorted slice before processing to ensure
-// deterministic nextSeqID() assignment regardless of Go's random map iteration order.
+// a deterministic order of the KV connector's sends regardless of Go's random map iteration order.
 func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	instID := string(inst.ID())
 	// Phase 1: collect completed sub-request IDs (sorted for determinism)
@@ -1374,14 +1386,9 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		c.pdPrefillOutputTokens += parent.PrefillSubReq.GeneratedTokens
 		c.startPrefillHold(parent)
 
-		// Schedule KV transfer
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &KVTransferStartedEvent{
-				time:      parent.PrefillCompleteTime,
-				parentReq: parent,
-			},
-			seqID: c.nextSeqID(),
-		})
+		// Schedule the KV transfer. The KV connector sends it: it starts every handoff, in the
+		// order the prefills that need one were detected.
+		c.schedule(&KVTransferStartedEvent{time: parent.PrefillCompleteTime, parentReq: parent}, &c.kvConnectorSender)
 	}
 }
 
@@ -1441,7 +1448,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
-				c.pushArrival(next, next.ArrivalTime)
+				c.pushArrival(next, next.ArrivalTime, &c.workloadSender)
 			}
 		}
 	}
@@ -1478,7 +1485,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// No follow-ups expected, but handle defensively.
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
-				c.pushArrival(next, next.ArrivalTime)
+				c.pushArrival(next, next.ArrivalTime, &c.workloadSender)
 			}
 		}
 	}
