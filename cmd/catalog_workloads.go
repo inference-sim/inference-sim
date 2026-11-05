@@ -81,10 +81,10 @@ func acceptanceTermsOf(s *schemaworkload.Shape) *acceptance.Workload {
 }
 
 // toPresetConfig converts a catalog preset into the library's PresetConfig. It is the ONE
-// construction site for workload.PresetConfig in cmd/ (R4): the three preset consumers
-// (`blis run --workload`, `blis convert preset`, `blis observe --workload`) each built it
-// inline, so a new preset field had to be threaded through three copies — and a field
-// missed in one of them would make the same preset mean different things per command.
+// construction site for workload.PresetConfig in cmd/ (R4): the preset consumers
+// (`blis run --workload`, `blis convert preset`) each built it inline, so a new preset field
+// had to be threaded through every copy — and a field missed in one of them would make the
+// same preset mean different things per command.
 func (w presetWorkload) toPresetConfig() workload.PresetConfig {
 	return workload.PresetConfig{
 		PrefixTokens:      w.PrefixTokens,
@@ -238,13 +238,11 @@ func readCatalogPresetWorkload(name, catalog string) (*presetWorkload, error) {
 }
 
 // loadPresetWorkload locates the catalog and reads the named preset from it. It is the
-// catalog-locating wrapper, used by `blis run --workload` and `blis convert preset`;
-// `blis observe --workload` resolves the catalog root itself (runObserve does it once, then
-// passes it down) and so calls readCatalogPresetWorkload directly.
+// catalog-locating wrapper, used by `blis run --workload` and `blis convert preset`.
 //
-// The funnel shared by all three consumers is therefore readCatalogPresetWorkload →
-// presetWorkload.toPresetConfig, not this function (R23) — that is what keeps the three from
-// resolving one preset name to different distributions.
+// The funnel shared by both consumers is readCatalogPresetWorkload →
+// presetWorkload.toPresetConfig (R23) — that is what keeps them from resolving one preset
+// name to different distributions.
 //
 // (`blis replay` resolves no preset: it replays recorded requests, so INV-13 does not reach
 // preset resolution.)

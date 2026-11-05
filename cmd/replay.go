@@ -30,7 +30,7 @@ var (
 	replaySessionMode   string
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
-	// saturationReport is declared in root.go and shared across run, replay, observe
+	// saturationReport is declared in root.go and shared by run and replay
 
 	replayConcurrentSessions int  // >0 enables fixed-pool closed-loop replay (N concurrent sessions)
 	replayTotalSessions      int  // total sessions to replay when pooling (0 = corpus size)
@@ -44,12 +44,12 @@ var replayCmd = &cobra.Command{
 exact request sequence captured in the trace. Unlike 'blis run', it does not generate
 requests from distributions — the request sequence is fully determined by the trace.
 
-Use --results-path to write per-request SimResult JSON (request_id, ttft_us, e2e_us,
-input_tokens, output_tokens, slo_class, model, itl_mean_us) for downstream consumption by blis calibrate.
+--results-path (deprecated) writes per-request SimResult JSON (request_id, ttft_us,
+e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us).
 
 Known limitations:
-  - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
-    is responsible for excluding the first N warm-up entries from calibration.
+  - Warm-up requests: trace.Header.warm_up_requests is not read; every request is
+    measured.
   - Multi-model traces: per-request Model field is propagated to the simulator, but
     the deployment (--scenario) applies globally to all requests.
   - Horizon: --horizon defaults to 2x the latest arrival time. For heavy-load traces
@@ -373,10 +373,10 @@ Example:
 		// replay (unlike --lora-config, which is flags-only). Reconstruct the recorded
 		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
 		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
-		// Observe traces (mode "real") may model the observed deployment's offload via
-		// --kv-offload-config for the sim side of the #1583 hit-rate comparison; sim-
-		// generated traces remain header-authoritative (INV-13). An agentic replay has no
-		// trace, so no recorded deployment: the scenario's offload block is its tiers.
+		// A converted trace (mode "converted", #2067) records no deployment, so the
+		// scenario's offload block or --kv-offload-config states its tiers; a trace blis
+		// run or blis replay wrote stays header-authoritative (INV-13). An agentic replay
+		// has no trace, so no recorded deployment: the scenario's offload block is its tiers.
 		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload,
 			!replayRecordsDeployment(traceData.Header, agx != nil))
 		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
@@ -384,18 +384,13 @@ Example:
 		// are distinct offload models; refuse both with a clean CLI error rather than
 		// the library-level panic in NewKVStore.
 		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), true)
-		// #1583 (BC-10): a tiered observed hit-rate in the header is only replayable
-		// into a comparable sim number if this replay reproduces a tiered offload
-		// config. Fail loudly rather than silently produce a GPU-only hit-rate.
-		if err := requireOffloadForTieredObservation(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
-			logrus.Fatalf("%v", err)
-		}
 
 		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
-		// #1583: derive PerBlockBytes for an offload config supplied by --kv-offload-config
-		// (the observe-trace calibration path). A sim-generated trace header already
+		// #1583: derive PerBlockBytes for an offload config the scenario or
+		// --kv-offload-config supplies (a converted trace or an agentic replay). A trace
+		// header blis run or blis replay wrote already
 		// carries the run-computed value (>0), so this is skipped for run/replay parity;
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
 		// the derivation in cmd/root.go (runCmd) so run and replay agree.
@@ -700,12 +695,7 @@ Example:
 				SessionContextGrowth: reexportGrowth,                   // #1630: carry accumulate forward so deltas re-replay correctly
 				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
 				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
-				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
-				// It is a real-server observation replay cannot regenerate; carrying it
-				// forward keeps it available to a downstream calibrate and never
-				// silently drops it.
-				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
-				Router:            router.header(gw.Seed()),
+				Router:               router.header(gw.Seed()),
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -721,9 +711,9 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "DEPRECATED (use --output): file to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption. Kept for one release.")
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "DEPRECATED (use --output): file to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us). Kept for one release.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
-	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy aggregate MetricsOutput JSON (incl. cache_hit_rate for 'blis calibrate --sim-metrics', #1583). Symmetric with 'blis run --metrics-path'. Kept for one release.")
+	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy aggregate MetricsOutput JSON (incl. cache_hit_rate, #1583). Symmetric with 'blis run --metrics-path'. Kept for one release.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
@@ -851,8 +841,8 @@ func replayFrameGenerator(agx *agentXRun) frameGenerator {
 
 // replayRunControls are the run controls a replay records: the trace's offered load (or the
 // agentic scenario's lanes), the requests it replays, the seed and the horizon it ran to. No warmup is
-// recorded for a trace: a replay measures every request (the header's warm_up_requests is
-// read only by calibrate), and an agentic replay's warmup is part of its workload.replay.
+// recorded for a trace: a replay measures every request (it does not read the header's
+// warm_up_requests), and an agentic replay's warmup is part of its workload.replay.
 func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) result.Run {
 	numRequests, load := len(requests), measurement.Load{}
 	var binding *schemaworkload.Binding
@@ -875,7 +865,7 @@ func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.
 	return result.Run{Seed: seed, NumRequests: numRequests, Load: load, HorizonS: horizonSeconds(horizonUs), Workload: binding}
 }
 
-// extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.
+// extractSimResults converts Metrics to the --results-path rows.
 // Only requests with both TTFT and E2E recorded (i.e., fully completed) are included.
 // Non-numeric IDs (session follow-ups, format "request_<parent>_followup_<n>") are excluded.
 // Results are sorted by RequestID for deterministic output (R2, INV-6).

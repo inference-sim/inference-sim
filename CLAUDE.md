@@ -32,7 +32,7 @@ export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every c
 <!-- END GENERATED -->
 2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
 3. **A scenario and the registry are required** on both `run` and `replay`: `--scenario <file> --scenarios <dir> --registry <blis-substrate registry/ directory>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
-4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload`, `observe --workload`, and `convert preset --name` (all take `--catalog`/`BLIS_CATALOG`).
+4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload` and `convert preset --name` (both take `--catalog`/`BLIS_CATALOG`).
 
 ## Build and Run Commands
 
@@ -40,8 +40,8 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 
 - routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
 - the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
-- KV-offload (`--kv-offload-config`) → `docs/guide/kv-offload-calibration.md`
-- closed-loop/corpus sessions, `replay` (`observe`/`calibrate` are deprecated, #1901) → `docs/guide/observe-replay-calibrate.md`
+- KV-offload (`--kv-offload-config`) → `docs/guide/kv-cache.md`
+- `replay`, trace header modes, closed-loop/corpus sessions → `docs/guide/replay.md`
 - workloads & `convert` → `docs/guide/workloads.md`
 - saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
 
@@ -159,7 +159,7 @@ The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`
 
 ## Post-Hoc Saturation Detection
 
-Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run`, `replay`, `observe`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
+Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run` and `replay`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
 
 ## File Organization
 
@@ -197,4 +197,4 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 
 ## Change History
 
-See `git log --oneline main` for the definitive commit history. Durable cross-cutting facts live in the standards docs and topic guides (admission, routing, scheduling, observe-replay-calibrate, workloads, latency models, KV offload, saturation, configuration reference).
+See `git log --oneline main` for the definitive commit history. Durable cross-cutting facts live in the standards docs and topic guides (admission, routing, scheduling, replay, workloads, latency models, KV offload, saturation, configuration reference).

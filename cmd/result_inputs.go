@@ -187,8 +187,12 @@ func traceBinding(dataPath string, h workload.TraceHeader, rows int) (*schemawor
 	if err != nil {
 		return nil, fmt.Errorf("--trace-data %s: %w", dataPath, err)
 	}
+	mode, err := resultTraceMode(h.Mode)
+	if err != nil {
+		return nil, err
+	}
 	ref := &schemaworkload.TraceRef{Data: artifactRef(dataPath), SHA256: d, Rows: rows, Header: schemaworkload.TraceHeader{
-		Version: h.Version, TimeUnit: schemaworkload.TimeUnit(h.TimeUnit), Mode: schemaworkload.Mode(h.Mode),
+		Version: h.Version, TimeUnit: schemaworkload.TimeUnit(h.TimeUnit), Mode: mode,
 		WorkloadSeed: h.WorkloadSeed,
 	}}
 	if len(h.GoodputSLOTargets) > 0 {
@@ -198,6 +202,24 @@ func traceBinding(dataPath string, h workload.TraceHeader, rows int) (*schemawor
 		}
 	}
 	return &schemaworkload.Binding{Trace: ref}, nil
+}
+
+// resultTraceMode is a trace header mode in the Result's vocabulary. blis-schemas v0.10.0's
+// closed set has no word for a converted trace: its "generated" is "synthesized from a shape
+// or converted from an external trace (blis run / blis convert)", so a converted trace is
+// recorded as generated, as it was before blis convert wrote a mode of its own (#2067). This
+// loses nothing a Result can show: the two modes differ only in whether replay accepts the
+// scenario's offload tiers for a trace recorded without them, and a generated trace refuses
+// that run outright. A mode outside the set is refused. The contracts trace type in
+// blis-substrate adds "converted" (task B of M1); this mapping goes when the Result moves there.
+func resultTraceMode(mode string) (schemaworkload.Mode, error) {
+	switch mode {
+	case workload.TraceModeGenerated, workload.TraceModeConverted:
+		return schemaworkload.ModeGenerated, nil
+	case workload.TraceModeReplayed:
+		return schemaworkload.ModeReplayed, nil
+	}
+	return "", fmt.Errorf("trace header mode %q has no Result mode", mode)
 }
 
 // resultLedger is INV-1's ledger from the cluster's own counters: arrivals are observed at

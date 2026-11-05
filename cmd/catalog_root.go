@@ -106,7 +106,7 @@ func resolveCatalogRoot() (string, error) {
 // input that decides which catalog a run reads.
 //
 // Registered by `run` and `replay` (via registerSimConfigFlags, for the kernel's catalog) and by
-// `observe` and `convert preset` (for the workload presets, #1769). The flag var is
+// `convert preset` (for the workload presets, #1769). The flag var is
 // package-level, like every other cobra binding in cmd/, so sharing it across commands is
 // safe: one command runs per process.
 func registerCatalogFlag(cmd *cobra.Command) {

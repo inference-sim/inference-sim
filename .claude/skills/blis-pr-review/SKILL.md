@@ -1,6 +1,6 @@
 ---
 name: blis-pr-review
-description: Project-specific PR self-review for BLIS. Evaluates correctness, invariants, cross-path parity (run/replay/observe), preemption safety, timeout consistency, and adherence to project standards. Run after creating a PR to catch issues before human review.
+description: Project-specific PR self-review for BLIS. Evaluates correctness, invariants, cross-path parity (run/replay), preemption safety, timeout consistency, and adherence to project standards. Run after creating a PR to catch issues before human review.
 ---
 
 # BLIS PR Self-Review
@@ -30,17 +30,16 @@ All reviews and comments in this PR are addressed
 
 Review from the 10 code review perspectives defined in @docs/contributing/perspectives.md (Code Review Perspectives section). Each catches issues the others miss: substance, code quality, test quality, UX, automated reviewer sim, DES expert, vLLM expert, distributed platform, performance, security.
 
---- CROSS-PATH PARITY (run / replay / observe) ---
+--- CROSS-PATH PARITY (run / replay) ---
 
-BLIS has three command paths that must maintain behavioral parity:
+BLIS has two command paths that must maintain behavioral parity:
 
 blis run (DES with synthetic workload)
 blis replay (DES with trace-driven workload)
-blis observe (real HTTP dispatch to live server)
 
 For every feature, flag, or behavioral change in this PR:
 
-Does this feature logically apply to the other two paths?
+Does this feature logically apply to the other path?
 If yes: does the PR implement it for all applicable paths, or at minimum file a follow-up issue?
 If the PR only covers one path: is there an explicit justification for why parity is not needed?
 
@@ -74,9 +73,8 @@ HTTP client timeout: --timeout flag (wall-clock seconds), enforced by Go http.Cl
 
 For any change that touches timeout, deadline, or horizon:
 
-Are DES deadlines and HTTP timeouts producing equivalent observable behavior?
-Does the trace pipeline preserve deadline semantics end-to-end (observe → trace → replay)?
-Is the 300s default consistent across both mechanisms (DefaultTimeoutUs in generator.go:676 vs defaultHTTPTimeoutSeconds in observe.go:22)?
+Does the trace pipeline preserve deadline semantics end-to-end (run → trace → replay)?
+Is the 300s default consistent between run's generator (DefaultTimeoutUs in sim/workload/generator.go) and replay's --timeout?
 
 Also identify any risks, edge cases, or missing considerations.
 

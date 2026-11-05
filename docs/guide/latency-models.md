@@ -407,7 +407,7 @@ vLLM's OffloadingConnector:
 transfer with `TierTime` for that device at the tier's in-service queue depth. Explicit
 `read_bandwidth`, `write_bandwidth` and `base_latency` in the tier config are refused.
 The legacy `--kv-cpu-blocks` tier is priced by the kernel from the catalog `cpu_dram`
-device. See [KV Offload](kv-offload-calibration.md).
+device. See [KV Cache & Memory](kv-cache.md).
 
 ## LoRA
 

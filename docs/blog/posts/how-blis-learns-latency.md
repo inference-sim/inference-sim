@@ -229,6 +229,12 @@ server produced rather than instrumented kernel timings. Three commands do it:
 - **`calibrate`** compares the simulated latencies against the observed ones and reports the
   error as MAPE.
 
+!!! note "Since this post"
+    `observe` and `calibrate` were removed in v0.16.0
+    ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)). Coefficients are
+    now fitted in blis-registry from measurement data, and end-to-end accuracy is scored by
+    the accuracy dashboard. `replay` remains.
+
 We ran this comparison 36 times, each a different point in the evaluation space: six models,
 three GPU types, and a sweep of serving configurations on top (the full
 [evaluation matrix](https://github.com/inference-sim/inference-sim/discussions/598) is laid

@@ -129,7 +129,7 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 				// computed from actualOutputLen above): re-replay's OutputSampler yields this
 				// as MaxOutputLen, reproducing the same completion → same actualOutput → the
 				// abs sequence reconstructs exactly. Then decorate with SendTimeUs +
-				// sim-computed chunk timing (RequestsToTraceRecords parity, for calibrate) and
+				// sim-computed chunk timing (RequestsToTraceRecords parity) and
 				// copy the surviving per-request metadata (SLO/deadline/model/adapter/…).
 				recs[i].OutputTokens = len(g.reqs[i].OutputTokens)
 				decorateReExportTiming(&recs[i], g.reqs[i])

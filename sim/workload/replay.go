@@ -11,7 +11,7 @@ import (
 // effectiveInputTokenCount returns the token count to use for generating synthetic
 // input token IDs. Priority rules:
 //  1. serverInputTokens > 0 && prefixGroup == "": return serverInputTokens (server
-//     is authoritative; covers chat-template overhead in blis-observe traces).
+//     is authoritative; covers chat-template overhead in traces of a real server).
 //  2. prefixGroup != "": return inputTokens regardless of serverInputTokens (server
 //     count includes the prefix; using it as suffix would double-count the prefix
 //     that replay.go prepends separately).
@@ -25,12 +25,10 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 }
 
 // injectionTime returns the raw DES injection basis for a trace record.
-// For traces where SendTimeUs > 0, uses SendTimeUs as the injection basis.
-// For blis observe traces with --concurrency, SendTimeUs is when the HTTP
-// request was actually dispatched (after any concurrency-slot wait), which
-// matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
-// For generated traces (blis run), SendTimeUs == ArrivalTimeUs, so both
-// branches produce the same result.
+// For traces where SendTimeUs > 0, uses SendTimeUs as the injection basis: in a
+// trace of a real client, it is when the request was actually dispatched (after
+// any concurrency-slot wait). For generated traces (blis run), SendTimeUs ==
+// ArrivalTimeUs, so both branches produce the same result.
 // Falls back to ArrivalTimeUs whenever SendTimeUs <= 0:
 //   - SendTimeUs == 0: legacy traces or generated traces (blis run) where no
 //     real network send occurred.
@@ -38,9 +36,9 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 //     a negative DES injection time would violate INV-3 (clock monotonicity).
 //
 // IMPORTANT (#1606): the value returned here is the RAW basis and may be on a
-// different clock than the trace's arrival_time_us / deadline_us columns. In a
-// real blis observe trace SendTimeUs is Unix-epoch µs (time.Now().UnixMicro())
-// while arrival_time_us / deadline_us are run-relative (t≈0 at observe start).
+// different clock than the trace's arrival_time_us / deadline_us columns. A trace
+// of a real client may record SendTimeUs as Unix-epoch µs while arrival_time_us /
+// deadline_us are run-relative (t≈0 at the start of the capture).
 // Callers building sim.Request.ArrivalTime MUST subtract injectionOriginShift so
 // injection lands on the same (arrival) origin as the deadline; using this raw
 // value as an absolute DES tick injects at epoch scale and instantly trips the
@@ -61,7 +59,7 @@ func injectionTime(rec TraceRecord) int64 {
 // origin the deadline_us column is written on (#1606). It is
 // min(injectionTime(rec)) - min(arrival_time_us(rec)) over all records:
 //
-//   - blis observe traces: send_time_us is Unix-epoch µs while arrival_time_us
+//   - epoch-scale traces: send_time_us is Unix-epoch µs while arrival_time_us
 //     is run-relative, so the shift ≈ the epoch offset and re-bases injection
 //     onto the relative clock. Without it, requests inject at ~1.79e15 ticks and
 //     the relative deadline (~3.4e8) is already past → instant timeout, 0
@@ -226,10 +224,10 @@ func sessionHasRecordedThinkTime(rounds []TraceRecord) bool {
 // thinkTimeSampler == nil: derive per-round think time from trace arrival gaps.
 //
 //	NOTE: gap-derived think time = ArrivalTimeUs[i] - ArrivalTimeUs[i-1], which
-//	equals (service_time[i-1] + client_think_time) when the trace was produced by
-//	blis observe. It is NOT pure client think time. Pass a sampler built via
+//	equals (service_time[i-1] + client_think_time) when the trace records a real
+//	client's arrivals. It is NOT pure client think time. Pass a sampler built via
 //	ParseThinkTimeDist to supply the actual client-side think time when replaying
-//	an observe-generated trace with accurate inter-round spacing.
+//	such a trace with accurate inter-round spacing.
 //
 // horizon <= 0: defaults to math.MaxInt64.
 func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler LengthSampler, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {

@@ -562,27 +562,19 @@ Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + 
 
 BLIS resolves preset workload profiles from the catalog, at `<catalog>/workloads/<name>.yaml` —
 the sibling of the `models/` namespace. Locate the catalog once with `--catalog` or
-`export BLIS_CATALOG=$PWD/blis-catalog`; all three preset consumers read the same file, so a
+`export BLIS_CATALOG=$PWD/blis-catalog`; both preset consumers read the same file, so a
 preset cannot mean different things per command (#1769; before that, the copy in
 `defaults.yaml` was the one that moved output while the catalog copy was read by nothing).
-Use them with `blis run`, `blis observe` (deprecated, #1901), or the convert command:
+Use them with `blis run` or the convert command:
 
 ```bash
 # Run simulation with a named preset
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
   --registry $PWD/blis-registry --workload chatbot --rate 10
 
-# Observe a real server with the same preset (identical token distributions as run;
-# blis observe is deprecated, #1901)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --workload chatbot --rate 10 --num-requests 100 \
-  --trace-header trace.yaml --trace-data trace.csv
-
 # Convert a preset to a v2 WorkloadSpec YAML for customization
 ./blis convert preset --name chatbot --rate 10 --num-requests 100 > chatbot.yaml
 ```
-
-Using the same preset for both `run` and `observe` ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.
 
 Available presets in the catalog (`<catalog>/workloads/`):
 

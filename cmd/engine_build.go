@@ -761,7 +761,7 @@ func kvOffloadOfRecord(r *offloadRecord) kvOffloadConfig { return build.KVOffloa
 // reconcileReplayKVOffload is replay's KV-offload config: the trace header's, authoritative
 // (BC-G6), reconciled with the scenario's offload block and --kv-offload-config, which may
 // only restate it (build.ReconcileReplayKVOffload); fatal on a conflict or an unreproducible
-// record. allowFlagAdd is for an observe trace or an agentic replay, which record no BLIS
+// record. allowFlagAdd is for a converted trace or an agentic replay, which record no BLIS
 // deployment (replayRecordsDeployment).
 func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVOffloadConfig, allowFlagAdd bool) kvOffloadConfig {
 	// The scenario's offload block is a source on replay as on run: it and the flag resolve
@@ -783,16 +783,6 @@ func reconcileReplayKVOffload(cmd *cobra.Command, headerBlock *workload.TraceKVO
 // header's record (build.ReconcileReplayKVOffload).
 func resolveReplayKVOffload(headerBlock *workload.TraceKVOffloadConfig, flagChanged bool, flagCfg kvOffloadConfig, allowFlagAdd bool) (kvOffloadConfig, error) {
 	return build.ReconcileReplayKVOffload(headerToSimOffload(headerBlock), flagChanged, flagCfg, allowFlagAdd)
-}
-
-// requireOffloadForTieredObservation refuses a replay whose trace's observed KV hit-rate came
-// from the tiered offload counters but which reproduces no offload config (BC-10, #1583;
-// build.RequireOffloadForTieredObservation).
-func requireOffloadForTieredObservation(obs *workload.TraceObservedKVMetrics, offloadEnabled bool) error {
-	if obs == nil {
-		return nil
-	}
-	return build.RequireOffloadForTieredObservation(obs.Source == workload.ObservedKVSourceTiered, obs.Source, offloadEnabled)
 }
 
 // requireOneOffloadModel refuses the offload chain together with --kv-cpu-blocks (#1590 H1;

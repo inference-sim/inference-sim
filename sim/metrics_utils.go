@@ -116,9 +116,8 @@ type MetricsOutput struct {
 	PreemptionCount      int64   `json:"preemption_count"`
 	// CacheHitRate is the aggregate KV-cache hit rate (a fraction in [0,1]) at
 	// finalization (#1583). It is populated only in the --metrics-path file
-	// (WriteMetricsFile), alongside Requests[]; the printed JSON (EmitOutput's stdout half,
-	// which blis observe uses) omits it. `blis calibrate --sim-metrics` reads it as the
-	// simulator's hit-rate for the real-vs-sim comparison.
+	// (WriteMetricsFile), alongside Requests[]; the printed JSON (EmitOutput's stdout
+	// half) omits it.
 	CacheHitRate         *float64         `json:"cache_hit_rate,omitempty"`
 	DroppedUnservable    int              `json:"dropped_unservable"`
 	LengthCappedRequests int              `json:"length_capped_requests"`
@@ -174,10 +173,6 @@ type MetricsOutput struct {
 	// into the top level. File-only, like CacheHitRate: WriteMetricsFile sets it, and the nil
 	// pointer drops every key from the printed JSON.
 	*MeasuredMetrics
-
-	// WholeRun keeps the whole-run values of the keys the file restates over the measured
-	// window (ttft_*, e2e_*, cache_hit_rate). File-only.
-	WholeRun *WholeRunLatency `json:"whole_run,omitempty"`
 
 	// KernelProvenance is blis-latency-kernel's per-pool evidence, keyed by pool role
 	// (#1942), {} when no kernel priced the run. File-only (WithKernelProvenance); a pointer

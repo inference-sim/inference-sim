@@ -108,8 +108,8 @@ func sim11Precise(t *testing.T, speculative bool) func(*workload.TraceHeader, []
 //   - Header.KVOffload, and every field of TraceKVOffloadConfig and TraceKVOffloadTier: the block
 //     is replayed whole (build.ReconcileReplayKVOffload), and the round trip is pinned by
 //     TestKVOffload_EndToEnd_RunReplayRoundTrip and TestINV13_RunReplayParity_Offload.
-//   - Header.Mode: consumed only through replayRecordsDeployment (mode real lets
-//     --kv-offload-config add a deployment), tested by TestReplayRecordsDeployment.
+//   - Header.Mode: consumed only through replayRecordsDeployment (mode converted lets
+//     --kv-offload-config add a deployment), tested by TestTraceHeader_RecordsDeployment.
 //   - Header.SessionContextGrowth, Record.ThinkTimeUs, Record.InputTokensReset: consumed by the
 //     closed-loop and fixed-accumulate modes, pinned by
 //     TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport and TestReplayFixedAccumulate_*.
@@ -118,7 +118,6 @@ func sim11Precise(t *testing.T, speculative bool) func(*workload.TraceHeader, []
 //   - Record.Streaming: the router reads it through its response-header hooks; no configuration the
 //     repository ships has a plugin whose decision depends on it (sim/llmd's gateway tests pin
 //     the headers).
-//   - TraceObservedKVMetrics.Source: a refusal gate, tested by TestValidateObservedKVReplayable.
 func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	if testing.Short() {
 		t.Skip("replays the fixture about 30 times (about 20 s)")
@@ -184,11 +183,10 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 		"TraceHeader.KVOffload": true, "TraceHeader.Mode": true, "TraceHeader.SessionContextGrowth": true,
 		"TraceRecord.ThinkTimeUs": true, "TraceRecord.InputTokensReset": true, "TraceRecord.ImageTokens": true,
 		"TraceRecord.AudioTokens": true, "TraceRecord.VideoTokens": true, "TraceRecord.Streaming": true,
-		"TraceObservedKVMetrics.Source": true,
 	}
 	var consumed []string
 	for _, typ := range []string{"TraceHeader", "TraceRouterConfig", "TraceKVOffloadConfig", "TraceKVOffloadTier",
-		"TraceServerConfig", "TraceNetworkConfig", "TraceObservedKVMetrics", "TraceRecord"} {
+		"TraceRecord"} {
 		table, _ := workload.TraceFieldStatus(typ)
 		for name, e := range table {
 			key := typ + "." + name
@@ -242,15 +240,15 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 	}
 }
 
-// TestReplayRecordsDeployment: the header's mode is consumed in one place. A trace of mode real
-// records no deployment, so --kv-offload-config may add one; a generated or replayed trace records
+// TestReplayRecordsDeployment: the header's mode is consumed in one place. A trace of mode
+// converted records no deployment, so --kv-offload-config may add one; a generated or replayed trace records
 // its deployment, and an agentic replay has no trace header at all.
 func TestReplayRecordsDeployment(t *testing.T) {
 	for _, c := range []struct {
 		mode    string
 		agentic bool
 		want    bool
-	}{{"generated", false, true}, {"replayed", false, true}, {"real", false, false}, {"generated", true, false}} {
+	}{{"generated", false, true}, {"replayed", false, true}, {"converted", false, false}, {"generated", true, false}} {
 		if got := replayRecordsDeployment(workload.TraceHeader{Mode: c.mode}, c.agentic); got != c.want {
 			t.Errorf("mode %q, agentic %v: records deployment = %v, want %v", c.mode, c.agentic, got, c.want)
 		}

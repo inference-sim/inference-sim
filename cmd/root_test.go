@@ -315,9 +315,6 @@ func TestValidateDistributionParams(t *testing.T) {
 // TestRunCmdDistributionDefaults_NoHardcodedLiterals verifies that none of the distDefaults
 // constant values appear as hardcoded literals in root.go's distribution flag IntVar calls
 // (BC-2: single source of truth).
-//
-// Companion to TestObserveDistributionDefaults_NoHardcodedLiterals in observe_cmd_test.go.
-// Together they ensure neither command can silently bypass the shared constants.
 func TestRunCmdDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 	data, err := os.ReadFile("root.go")
 	if err != nil {
@@ -348,15 +345,13 @@ func TestRunCmdDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 }
 
 // TestRunCmdNumRequestsDefault_Is100 verifies that runCmd's --num-requests defaults to 100.
-// This value is referenced in observe_cmd.go's --num-requests help text ("differs from blis run
-// default of 100"). If this default ever changes, the help text must be updated too.
 func TestRunCmdNumRequestsDefault_Is100(t *testing.T) {
 	f := runCmd.Flags().Lookup("num-requests")
 	if f == nil {
 		t.Fatal("flag --num-requests not found on runCmd")
 	}
 	if f.DefValue != "100" {
-		t.Errorf("--num-requests default: got %q, want \"100\" (referenced in observe --help text)", f.DefValue)
+		t.Errorf("--num-requests default: got %q, want \"100\"", f.DefValue)
 	}
 }
 
@@ -408,9 +403,8 @@ func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
 
 // TestReplayCmd_HasResultsPathFlag verifies blis replay exposes --results-path (the
 // per-request SimResult path) AND, as of #1583, --metrics-path (the aggregate
-// MetricsOutput path, symmetric with `blis run`). The latter carries the simulator's
-// cache_hit_rate for `blis calibrate --sim-metrics`; it aligns replay with the
-// already-documented "run/replay --metrics-path" adapter-reference workflow.
+// MetricsOutput path, symmetric with `blis run`), which carries the simulator's
+// cache_hit_rate.
 func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
 	if replayCmd.Flags().Lookup("results-path") == nil {
 		t.Error("replayCmd missing --results-path flag")
@@ -476,7 +470,7 @@ func TestApplyTimeoutToSpec_SynthesizedSpec(t *testing.T) {
 
 // TestApplyTimeoutToSpec_NonPositiveMeansDisabled verifies that timeout<=0 results in an
 // explicit no-timeout pointer (*int64 pointing to 0), not nil. Both 0 and negative values
-// disable the deadline. The CLI rejects 0 before calling this function (matching blis observe),
+// disable the deadline. The CLI rejects 0 before calling this function,
 // but the function itself treats all non-positive values identically: explicit *0 disables
 // the deadline and suppresses the 300s session default in computeDeadline (#1127).
 //

@@ -26,8 +26,8 @@ import (
 //	BC-1 the catalog file IS the preset source: its values reach the synthesized workload;
 //	BC-2 INV-6 — the cutover moves no number: the bundled catalog's presets equal the values
 //	     the deleted defaults.yaml block declared, and a preset-driven run is deterministic;
-//	BC-3 one shared reader and one shared locator behind all three preset consumers
-//	     (`blis run --workload`, `blis convert preset`, `blis observe --workload`);
+//	BC-3 one shared reader and one shared locator behind both preset consumers
+//	     (`blis run --workload`, `blis convert preset`);
 //	BC-4 an absent preset is refused naming the path looked at and the presets the catalog
 //	     does define;
 //	BC-5 strict parsing (R10): an unknown key or a missing token distribution is refused
@@ -35,9 +35,6 @@ import (
 //	BC-6 no catalog located is refused naming both --catalog and BLIS_CATALOG;
 //	BC-7 --catalog is registered on every command that resolves a preset or a model;
 //	BC-8 the retired duplicate cannot come back unnoticed.
-//
-// The cross-command parity half of BC-3 lives on the observe path in observe_cmd_test.go
-// (TestBuildPresetSpec_ParityWithRunPresetPath), where both legs are already available.
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -499,7 +496,7 @@ func TestCatalogPresets_LocatorHonorsEnvVar(t *testing.T) {
 // command that resolves a preset (or a model config) without accepting the locator fails
 // here rather than at an operator's first invocation.
 func TestCatalogPresets_CatalogFlagOnEveryConsumer(t *testing.T) {
-	for _, path := range [][]string{{"run"}, {"replay"}, {"observe"}, {"convert", "preset"}} {
+	for _, path := range [][]string{{"run"}, {"replay"}, {"convert", "preset"}} {
 		cmd := findCommandByPath(t, rootCmd, path)
 		if f := cmd.Flags().Lookup("catalog"); f == nil {
 			t.Errorf("`blis %s` must accept --catalog: it resolves a model config or a workload preset from the catalog",
@@ -671,12 +668,12 @@ func TestCatalogPresets_StaleWorkloadsBlockIsRefused(t *testing.T) {
 	}
 }
 
-// TestCatalogPresets_RetiredLocatorFlagsAreGone pins the other half of the cutover: the two
-// commands that only ever read defaults.yaml for its preset block no longer accept
+// TestCatalogPresets_RetiredLocatorFlagsAreGone pins the other half of the cutover: the
+// command that only ever read defaults.yaml for its preset block no longer accepts
 // --defaults-filepath. A flag whose sole consumer was deleted is a config key with no
 // consumer (#1768's lesson), and leaving it would silently accept a path nothing reads.
 func TestCatalogPresets_RetiredLocatorFlagsAreGone(t *testing.T) {
-	for _, path := range [][]string{{"observe"}, {"convert", "preset"}} {
+	for _, path := range [][]string{{"convert", "preset"}} {
 		cmd := findCommandByPath(t, rootCmd, path)
 		if f := cmd.Flags().Lookup("defaults-filepath"); f != nil {
 			t.Errorf("`blis %s` must not accept --defaults-filepath: its only consumer was the "+
@@ -789,5 +786,24 @@ func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if shifted == first {
 		t.Error("changing the catalog preset's token means left stdout unchanged: the preset " +
 			"definition in <catalog>/workloads/chatbot.yaml is not reaching the simulation")
+	}
+}
+
+// TestRemovedCommandsAreGone pins the v0.16.0 removal of blis observe and blis calibrate
+// (#1901): neither is a subcommand. run, replay and convert are, so the walk is not vacuous.
+func TestRemovedCommandsAreGone(t *testing.T) {
+	names := map[string]bool{}
+	for _, c := range rootCmd.Commands() {
+		names[c.Name()] = true
+	}
+	for _, gone := range []string{"observe", "calibrate"} {
+		if names[gone] {
+			t.Errorf("`blis %s` was removed in v0.16.0 (#1901) and must not be registered", gone)
+		}
+	}
+	for _, kept := range []string{"run", "replay", "convert"} {
+		if !names[kept] {
+			t.Errorf("`blis %s` must be registered", kept)
+		}
 	}
 }

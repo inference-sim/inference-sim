@@ -203,7 +203,7 @@ disaggregates every request.
 
 Block-level KV accounting with prefix caching, and tiered offload whose tiers name catalog
 storage devices (`--kv-offload-config`).
-→ [KV cache](docs/guide/kv-cache.md), [KV offload](docs/guide/kv-offload-calibration.md)
+→ [KV cache](docs/guide/kv-cache.md)
 
 ### Autoscaling
 
@@ -224,9 +224,7 @@ byte-identical stdout.
   --registry $PWD/blis-substrate/registry
 ```
 
-→ [Observe / Replay / Calibrate](docs/guide/observe-replay-calibrate.md).
-`blis observe` and `blis calibrate` are deprecated
-([#1901](https://github.com/inference-sim/inference-sim/issues/1901)).
+→ [Trace replay](docs/guide/replay.md)
 
 ### Analysis
 

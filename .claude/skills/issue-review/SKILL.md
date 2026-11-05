@@ -101,13 +101,12 @@ Use `grep`, `Read`, or `git log` to verify. Do not assume paths are current.
 
 ---
 
-## Step 5 — Cross-Path Parity (run / replay / observe)
+## Step 5 — Cross-Path Parity (run / replay)
 
 Check whether the issue applies to other command paths:
 
 - If the issue is in `sim/` (the DES kernel): it affects both `blis run` and `blis replay`. State this explicitly.
-- If the issue is in `cmd/` or `sim/workload/`: check whether the same pattern exists in `run`, `replay`, AND `observe`.
-- If the issue is in the `observe` HTTP path: does the equivalent DES path have a corresponding gap?
+- If the issue is in `cmd/` or `sim/workload/`: check whether the same pattern exists in both `run` and `replay`.
 - For features: a new flag or spec field for one command should prompt the question — do the other commands need it too?
 
 State which paths are affected and which are not, with justification for any that are excluded.

@@ -12,12 +12,12 @@ import (
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
-// Saturation CLI flags (#1516, extended in #1519, #1517), shared across run,
-// replay, and observe. --saturation-report means "per-event verdict trace file".
+// Saturation CLI flags (#1516, extended in #1519, #1517), shared by run and
+// replay. --saturation-report means "per-event verdict trace file".
 var (
 	detectorName          string // --detectors: "" = off; one name = single detector (#1516); "all" or comma-list = bank (#1519)
 	saturationConfigPath  string // --saturation-config: strict-YAML tuning file
-	saturationReport      string // --saturation-report: per-event verdict trace file (shared across run/replay/observe)
+	saturationReport      string // --saturation-report: per-event verdict trace file (shared by run and replay)
 	saturationFinalWindow string // --saturation-final-window: Go duration for the last-window final-label vote (#1517)
 )
 
@@ -26,8 +26,8 @@ var (
 // backlog_drift.window_size_sec config value is supplied (#1517).
 const defaultFinalWindowUs int64 = 30_000_000
 
-// registerDetectorFlags registers the saturation flags on cmd. Called by run,
-// replay, and observe so all three share one flag surface (#1516, #1519, #1517).
+// registerDetectorFlags registers the saturation flags on cmd. Called by run and
+// replay so both share one flag surface (#1516, #1519, #1517).
 func registerDetectorFlags(cmd *cobra.Command) {
 	// The valid-name list is derived from the roster so it cannot desync as
 	// detectors are added (#1614).
@@ -73,7 +73,7 @@ func resolveFinalWindowUs(finalWindowFlag string, cfg saturation.SaturationConfi
 
 // saturationTracer holds a resolved saturation selection and drives it over
 // completed request metrics. It hides whether the selection is #1516's single
-// streaming detector or #1519's multi-detector bank, so run/replay/observe share
+// streaming detector or #1519's multi-detector bank, so run and replay share
 // ONE call site (R23) — they build a tracer with resolveSaturation and, if it is
 // non-nil, call run(requests). Exactly one of detector/bank is set.
 //
@@ -95,9 +95,8 @@ type saturationTracer struct {
 // final label via the detector-agnostic reducer (saturation.ReduceAll), and
 // writes the {"final":...,"trace":...} report to the captured report path (only
 // when one was given). It returns the final label map (detector→level), which the
-// caller splices onto stdout (#1517). The []sim.RequestMetrics input is the only
-// per-command difference (sim-derived for run/replay, server-derived for observe);
-// the pipeline is identical.
+// caller splices onto stdout (#1517). run and replay derive the []sim.RequestMetrics
+// input the same way, so the pipeline is identical.
 //
 // Unlike #1516's trace(), run() does NOT early-return when reportPath is empty:
 // the collected records feed the stdout label even when no trace file is
@@ -111,8 +110,7 @@ func (t *saturationTracer) run(requests []sim.RequestMetrics) (map[string]satura
 	}
 	// Zero completed requests yields an empty trace and an all-STABLE degenerate
 	// final label. Warn so the empty result isn't mistaken for a detector bug —
-	// consistent across run, replay, and observe (the input source differs, this
-	// signal does not).
+	// consistent across run and replay.
 	if len(requests) == 0 {
 		logrus.Warnf("--detectors %q: 0 completed requests; saturation trace will be empty and final labels default to STABLE", t.selection)
 	}
@@ -143,8 +141,8 @@ func (t *saturationTracer) run(requests []sim.RequestMetrics) (map[string]satura
 }
 
 // resolveSaturation turns the three saturation flags into a saturationTracer, or
-// nil when saturation is off. It is the ONE shared helper (R23) run, replay, and
-// observe route through so the pipeline is identical across commands.
+// nil when saturation is off. It is the ONE shared helper (R23) run and replay
+// route through so the pipeline is identical across commands.
 //
 // Selection grammar for --detectors (isBankSelection routes on the presence of a
 // comma, so ANY comma — even a trailing one — takes the bank path):

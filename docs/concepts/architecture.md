@@ -235,8 +235,5 @@ with identical flags (including `--horizon`) yields equal `metrics`, `requests` 
 header records the router inputs (EPP flags with the configuration inlined, manifests, pod
 labels, gateway latency, scrape jitter, KV-event delay), so a replay rebuilds the same router; a replay whose
 scenario `router:` block, pool labels or router environment flags state a different router is
-refused.
-`blis observe` and `blis calibrate` are deprecated
-([#1901](https://github.com/inference-sim/inference-sim/issues/1901)). See
-[Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md) and the
+refused. See [Trace Replay](../guide/replay.md) and the
 [Configuration Reference](../reference/configuration.md).

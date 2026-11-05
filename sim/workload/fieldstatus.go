@@ -8,13 +8,8 @@ package workload
 // changes nothing the simulation computes; the reason is stated.
 //
 // TestSIM11_EveryTraceFieldHasAStatus walks TraceHeader, TraceRouterConfig, TraceKVOffloadConfig,
-// TraceKVOffloadTier, TraceServerConfig, TraceNetworkConfig, TraceObservedKVMetrics and
-// TraceRecord with reflect and fails on a field these tables do not name, and on a name that is
-// no field.
-//
-// The header's mode: real fields (Server, Network, ObservedKVMetrics, CreatedAt, the
-// x_request_id column) are classified as they are today. Their removal with blis observe is
-// separate work (inference-sim #1901, #1670).
+// TraceKVOffloadTier and TraceRecord with reflect and fails on a field these tables do not name,
+// and on a name that is no field.
 
 // FieldStatus is how replay treats one trace field.
 type FieldStatus string
@@ -38,17 +33,13 @@ type FieldEntry struct {
 var traceHeaderFields = map[string]FieldEntry{
 	"Version":              {FieldInert, "recorded in the Result's input.run.workload.trace.header; the CSV layout is read from the column header row, not from the version"},
 	"TimeUnit":             {FieldInert, "recorded in the Result's input; every timestamp is read as microseconds whatever it states (writers write \"microseconds\")"},
-	"CreatedAt":            {FieldInert, "a wall-clock stamp blis observe writes; replay never reads it (X6: no clock reads)"},
-	"Mode":                 {FieldConsumed, "recorded in the Result's input; mode real lets --kv-offload-config add a deployment the trace does not record (replayRecordsDeployment)"},
-	"WarmUpRequests":       {FieldInert, "blis calibrate's warm-up count; replay measures every request (cmd/replay.go, \"Known limitations\"); negative is refused (check.Count)"},
+	"Mode":                 {FieldConsumed, "recorded in the Result's input; mode converted lets --kv-offload-config add a deployment the trace does not record (RecordsDeployment); another mode is refused"},
+	"WarmUpRequests":       {FieldInert, "a warm-up count; replay measures every request (cmd/replay.go, \"Known limitations\"); negative is refused (check.Count)"},
 	"WorkloadSeed":         {FieldInert, "recorded in the Result's input; replay draws its token IDs from --seed, not from the seed that generated the trace"},
 	"WorkloadSpec":         {FieldInert, "provenance of the trace; replay does not read the specification"},
 	"SessionContextGrowth": {FieldConsumed, "accumulate builds each round's input on the previous round's; an unknown value is refused by the session loaders"},
-	"Server":               {FieldInert, "blis observe's record of the measured server; replay takes the deployment from --scenario (#1670)"},
-	"Network":              {FieldInert, "blis observe's measured round-trip time, read only by blis calibrate"},
 	"GoodputSLOTargets":    {FieldConsumed, "the goodput targets when no --slo-* flag states them; a non-positive or non-finite target is refused (check.LatencyTargetMs)"},
 	"KVOffload":            {FieldConsumed, "the resolved offload configuration the run used; replay rebuilds it, and refuses one it cannot reproduce"},
-	"ObservedKVMetrics":    {FieldInert, "a real server's measured hit rate, carried to a re-exported trace; it only gates the offload check of #1583"},
 	"MaxNodesSpanned":      {FieldRefused, "a value above 1 is refused: replay cannot rebuild a multi-node fleet (#1530); negative is refused (check.Count); 0 and 1 change nothing"},
 	"Router":               {FieldConsumed, "the router the run routed with; replay rebuilds it (INV-13)"},
 }
@@ -102,32 +93,6 @@ var traceKVOffloadTierFields = map[string]FieldEntry{
 	"LatencyJitterStddev":    {FieldConsumed, "the tier's latency jitter"},
 }
 
-// traceServerFields, traceNetworkFields and traceObservedKVFields belong to blocks only blis
-// observe writes (mode real). Replay reads none of them.
-var traceServerFields = map[string]FieldEntry{
-	"Type":                 {FieldInert, "the observed server's kind (#1670)"},
-	"Model":                {FieldInert, "the observed server's model; replay takes the model from --scenario (#1670)"},
-	"TensorParallel":       {FieldInert, "never written by any command (#1670)"},
-	"MaxNumSeqs":           {FieldInert, "never written by any command (#1670)"},
-	"BlockSize":            {FieldInert, "never written by any command (#1670)"},
-	"GPUMemoryUtilization": {FieldInert, "never written by any command (#1670)"},
-	"MaxModelLen":          {FieldInert, "never written by any command (#1670)"},
-}
-
-var traceNetworkFields = map[string]FieldEntry{
-	"MeasuredRTTMs": {FieldInert, "read only by blis calibrate"},
-}
-
-var traceObservedKVFields = map[string]FieldEntry{
-	"Source":         {FieldConsumed, "\"tiered\" refuses a replay that reproduces no offload configuration (#1583)"},
-	"HitRate":        {FieldInert, "carried to a re-exported trace for blis calibrate"},
-	"BlockHits":      {FieldInert, "carried to a re-exported trace for blis calibrate"},
-	"BlockQueries":   {FieldInert, "carried to a re-exported trace for blis calibrate"},
-	"ReadTimeTotal":  {FieldInert, "carried to a re-exported trace for blis calibrate"},
-	"WriteTimeTotal": {FieldInert, "carried to a re-exported trace for blis calibrate"},
-	"VLLMCommit":     {FieldInert, "carried to a re-exported trace for blis calibrate"},
-}
-
 // traceRecordFields is TraceRecord's table: one CSV row. Fields that only a router configuration,
 // an encode pool or a session mode reads are consumed under that configuration, and the
 // reflection test toggles them under it.
@@ -136,7 +101,6 @@ var traceRecordFields = map[string]FieldEntry{
 	"ClientID":          {FieldInert, "carried to the request and to a re-export; neither the router nor the engine reads it"},
 	"TenantID":          {FieldConsumed, "the router's fairness identifier, and the Result's per-tenant breakdown"},
 	"SLOClass":          {FieldConsumed, "the router's objective and the goodput class"},
-	"VLLMPriority":      {FieldInert, "the priority blis observe sent the real server; the simulated request's priority comes from its SLO class"},
 	"SessionID":         {FieldConsumed, "groups rounds into sessions (closed-loop modes) and the session breakdown"},
 	"RoundIndex":        {FieldConsumed, "orders a session's rounds; negative is refused (check.Count)"},
 	"PrefixGroup":       {FieldConsumed, "requests of one group share their first prefix_length tokens"},
@@ -154,14 +118,13 @@ var traceRecordFields = map[string]FieldEntry{
 	"SLOTargetUs":       {FieldConsumed, "the TTFT target the router reads (x-llm-d-slo-ttft-ms); negative is refused"},
 	"ServerInputTokens": {FieldConsumed, "the server-reported prompt length, preferred over input_tokens for a request with no prefix_group (#1308)"},
 	"ArrivalTimeUs":     {FieldConsumed, "when the request arrives; negative is refused (check.DurationUs)"},
-	"SendTimeUs":        {FieldConsumed, "the injection time when positive (blis observe's dispatch time)"},
-	"FirstChunkTimeUs":  {FieldInert, "a measured outcome, read only by blis calibrate"},
-	"LastChunkTimeUs":   {FieldInert, "a measured outcome, read only by blis calibrate"},
+	"SendTimeUs":        {FieldConsumed, "the injection time when positive"},
+	"FirstChunkTimeUs":  {FieldInert, "a measured outcome, carried to a re-export"},
+	"LastChunkTimeUs":   {FieldInert, "a measured outcome, carried to a re-export"},
 	"NumChunks":         {FieldInert, "a measured outcome; negative is refused (check.Count)"},
-	"Status":            {FieldInert, "a measured outcome, read only by blis calibrate"},
+	"Status":            {FieldInert, "a measured outcome, carried to a re-export"},
 	"ErrorMessage":      {FieldInert, "a measured outcome"},
 	"FinishReason":      {FieldInert, "a measured outcome"},
-	"XRequestID":        {FieldInert, "the identifier blis observe sent; not exported by replay"},
 	"Adapter":           {FieldConsumed, "the LoRA adapter the request names"},
 	"ThinkTimeUs":       {FieldConsumed, "closed-loop think time before the round; negative is refused (check.DurationUs)"},
 	"InputTokensReset":  {FieldConsumed, "accumulate replay re-seeds the session's context to this length; negative is refused"},
@@ -181,12 +144,6 @@ func TraceFieldStatus(typeName string) (map[string]FieldEntry, bool) {
 		m = traceKVOffloadFields
 	case "TraceKVOffloadTier":
 		m = traceKVOffloadTierFields
-	case "TraceServerConfig":
-		m = traceServerFields
-	case "TraceNetworkConfig":
-		m = traceNetworkFields
-	case "TraceObservedKVMetrics":
-		m = traceObservedKVFields
 	case "TraceRecord":
 		m = traceRecordFields
 	default:

@@ -322,7 +322,7 @@ jobs:
             weighs:
               1. Correctness & preservation of invariants (INV-*; esp. INV-1 conservation,
                  INV-6 determinism, INV-13 run/replay parity).
-              2. Cross-path parity — run / replay / observe behave consistently.
+              2. Cross-path parity — run and replay behave consistently.
               3. Preemption safety and timeout consistency.
               4. Separation of concerns, module boundaries/contracts, modularity.
               5. Behavioral test quality (tests assert behaviour/laws, not structure; would
