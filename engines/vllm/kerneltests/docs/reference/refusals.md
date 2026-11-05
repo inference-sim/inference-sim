@@ -97,8 +97,8 @@ Optional coefficients are not refused when missing; see
 ## In the source
 
 The checks run in `New` and the functions it calls in
-[`new.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/new.go),
-[`sparse_mla.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/sparse_mla.go)
-and [`internal/resolve`](https://github.com/inference-sim/blis-latency-kernel/tree/main/internal/resolve),
+[`kernel/new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go),
+[`kernel/sparse_mla.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/sparse_mla.go)
+and [`kernel/internal/resolve`](https://github.com/inference-sim/blis-substrate/tree/main/kernel/internal/resolve),
 and the tests in `refusals_test.go`, `sparse_mla_test.go` and `dcp_knobs_test.go` check most of
 them.

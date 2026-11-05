@@ -20,13 +20,13 @@ committed. CI runs the same tests on every pull request, with `gofmt` and `go ve
 
 | Path | Holds |
 |---|---|
-| `kernel.go` | The interface methods and the composition of a step |
-| `new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
-| `sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
-| `open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
-| `internal/price` | The cost laws, as pure functions |
-| `internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
-| blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `docs/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model and this module imports nothing from it |
+| `kernel/kernel.go` | The interface methods and the composition of a step |
+| `kernel/new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
+| `kernel/sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
+| `kernel/open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
+| `kernel/internal/price` | The cost laws, as pure functions |
+| `kernel/internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
+| blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `kerneltests/docs/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model and this module imports nothing from it |
 
 ## Conventions
 
@@ -42,7 +42,7 @@ through `optional`, which records its absence. Nothing is defaulted silently.
 left out, carries a comment marked `KNOWN DIVERGENCE`, `KNOWN over-charge` or `COVERAGE LIMIT`,
 with the reason and the engine lines. Those notes are listed on
 [Known divergences](../reference/divergences.md), each under a plain summary kept in
-`internal/docgen/summaries.go`; the generator refuses a note without one.
+`kerneltests/internal/docgen/summaries.go`; the generator refuses a note without one.
 
 **Test behavior, and see the test fail.** A test asserts what the kernel does for an input,
 not how its code is arranged. [How the laws are tested](../research/testing.md) describes the
@@ -55,8 +55,8 @@ and after.
 
 ## Documentation
 
-[Documentation and releases](documentation.md) describes the site, how its generated parts are
-kept current, and how a release publishes it.
+[Documentation](documentation.md) says where the site is built and how its generated parts and
+examples are kept current.
 
 ## Changes across the repositories
 

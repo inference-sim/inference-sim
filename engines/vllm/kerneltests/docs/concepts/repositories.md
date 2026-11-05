@@ -54,10 +54,11 @@ with the method that produced it, and a kernel lists every one in scope for its 
 
 ## Dependencies run one way
 
-This module imports blis-schemas and nothing else in BLIS. It does not import the simulator:
-the simulator imports it, and an import in the other direction would make the two
-repositories depend on each other. The command that compares this kernel with the simulator's
-older latency models therefore lives in the simulator, as `cmd/blisbaseline`.
+The kernel, blis-substrate's `kernel/`, imports the packages under `contracts/` and nothing
+else in BLIS. It imports no engine and not the simulator: the simulator imports it, and an
+import in the other direction would make the two depend on each other. The engine repositories
+import only `contracts/`, except that blis-vllm imports the kernel until the engine boundary
+moves (release plan §3.3, M2).
 
 The catalog and the registry are not Go modules. The kernel reads their files at the paths a
 scenario implies, through blis-schemas' loaders, and validates them with blis-schemas'

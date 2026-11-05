@@ -404,8 +404,10 @@ func divergences(root string) ([]byte, error) {
 	for _, n := range notes {
 		s := summaries[n.key()]
 		fmt.Fprintf(&b, "### %s\n\n", s.title)
-		fmt.Fprintf(&b, "*%s, in `%s` in [`%s`](%s/blob/main/%s).*\n\n",
-			n.heading, n.decl, n.file, repoURL, "kernel/"+n.file)
+		// The path is written as blis-substrate names it, kernel/<file>, so it is not read as a
+		// path of this repository.
+		fmt.Fprintf(&b, "*%s, in `%s` in [`kernel/%s`](%s/blob/main/kernel/%s).*\n\n",
+			n.heading, n.decl, n.file, repoURL, n.file)
 		fmt.Fprintf(&b, "%s\n\n", s.summary)
 		b.WriteString("??? quote \"The note in the source\"\n")
 		for _, line := range strings.Split(n.text, "\n") {

@@ -5,7 +5,7 @@ computed by accuracy-dashboard's scoring harness alone, which publishes every fi
 keeps the one comparison that is not end to end: measured forward passes, which decide which of
 the kernel's two estimates to use.</p>
 
-The end-to-end commands that used to live here (`cmd/shape` and `cmd/score`) are retired, with
+The end-to-end commands that used to live here (cmd/shape and cmd/score) are retired, with
 the figures they printed: a second scorer would sooner or later disagree with the dashboard
 about what a figure means (design §2.2, COV-1).
 
@@ -26,8 +26,8 @@ The exception, MiniMax-M2.7 at pure tensor-parallel width 2, is the one layout w
 resource holds most of the step. Both
 signed errors are negative: on this data the measured step is slower than either estimate.
 blis-registry records the comparison in
-[`docs/band-selection.md`](https://github.com/inference-sim/blis-registry/blob/main/docs/band-selection.md),
-with a script that reproduces it from the output of `cmd/bandprobe`.
+[band selection](https://github.com/inference-sim/blis-substrate/blob/main/docs/registry/band-selection.md),
+with a script that reproduces it from the output of `kerneltests/cmd/bandprobe`.
 
 ## Where the error is known to come from
 

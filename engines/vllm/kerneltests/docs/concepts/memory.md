@@ -192,6 +192,6 @@ request's blocks at `max_model_len` (this plus `SequenceVariableBytes(max_model_
 ## In the source
 
 The breakdown is composed in `computeFixedBytes` and its magnitudes resolved in `liftMemory`,
-both in [`new.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/new.go). The
+both in [`kernel/new.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/new.go). The
 KV and recurrent-state laws are in
-[`internal/price/memory.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/internal/price/memory.go).
+[`kernel/internal/price/memory.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/price/memory.go).

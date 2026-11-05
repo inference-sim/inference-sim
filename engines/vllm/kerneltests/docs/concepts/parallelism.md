@@ -90,8 +90,8 @@ and 4, data-parallel widths 1 and 2, and every decode-context width each of thos
 ## In the source
 
 What each kind divides is resolved in
-[`internal/resolve/layout.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/internal/resolve/layout.go).
+[`kernel/internal/resolve/layout.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/internal/resolve/layout.go).
 Group placement is in `groupStride` and `crossesNodes` in
-[`kernel.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/kernel.go), and
+[`kernel/kernel.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/kernel.go), and
 the context-parallel arithmetic is in the functions there whose names begin with `pcp` and
 `dcp`.

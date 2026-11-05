@@ -197,8 +197,8 @@ says more.
 
 ## In the source
 
-The step is composed in `stepTime` in [`step.go`](https://github.com/inference-sim/blis-latency-kernel/blob/main/step.go),
+The step is composed in `stepTime` in [`kernel/step.go`](https://github.com/inference-sim/blis-substrate/blob/main/kernel/step.go),
 which prices each layer in `priceLayers`,
 and the laws it uses are pure functions in
-[`internal/price`](https://github.com/inference-sim/blis-latency-kernel/tree/main/internal/price).
+[`kernel/internal/price`](https://github.com/inference-sim/blis-substrate/tree/main/kernel/internal/price).
 Each term's comment records the measurement that justified its form.
