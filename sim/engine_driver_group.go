@@ -209,6 +209,7 @@ func (d *EngineDriver) kickGroup(now int64) {
 		if a {
 			drivers[k].Clock = max(drivers[k].Clock, now)
 			drivers[k].stepIdx++
+			drivers[k].noteStep(now)
 		}
 	}
 	if !active[0] {

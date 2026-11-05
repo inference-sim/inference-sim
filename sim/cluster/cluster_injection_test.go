@@ -15,6 +15,8 @@ func TestClusterArrivalEvent_IncrementsInjectedByClass(t *testing.T) {
 		shedByTier:      make(map[string]int),
 		clusterEvents:   make(ClusterEventQueue, 0),
 		pendingArrivals: 3,
+		fates:           sim.NewFateLedger(),
+		liveRequests:    make(map[string]*sim.Request),
 	}
 	// The arrival hands each request to the gateway; one that rejects everything keeps the
 	// hand-built cluster free of instances.
@@ -26,6 +28,9 @@ func TestClusterArrivalEvent_IncrementsInjectedByClass(t *testing.T) {
 	req1 := &sim.Request{ID: "r1", SLOClass: "critical"}
 	req2 := &sim.Request{ID: "r2", SLOClass: "critical"}
 	req3 := &sim.Request{ID: "r3", SLOClass: ""} // empty class — counted under ""
+	for _, r := range []*sim.Request{req1, req2, req3} {
+		cs.createRequest(r) // as pushArrival does
+	}
 
 	(&ClusterArrivalEvent{time: 0, request: req1}).Execute(cs)
 	(&ClusterArrivalEvent{time: 1, request: req2}).Execute(cs)

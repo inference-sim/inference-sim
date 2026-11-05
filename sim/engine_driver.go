@@ -55,7 +55,17 @@ type EngineDriverConfig struct {
 	// a simulator that applies results at a step's start. Only the compatibility engine's
 	// contract build sets it.
 	ApplyAtStepStart bool
+	// StallSteps is the progress watchdog's limit (SIM-7): the run fails when this many engine
+	// steps in a row emit no token and finish no request while the engine holds work. Zero
+	// means DefaultStallSteps.
+	StallSteps int
 }
+
+// DefaultStallSteps is the progress watchdog's limit when EngineDriverConfig.StallSteps is
+// zero. A step that only computes prefill emits nothing, so the limit is far above the
+// chunked-prefill steps of the longest prompt a model serves (a 10M-token prompt in 512-token
+// chunks is about 20,000 steps).
+const DefaultStallSteps = 1_000_000
 
 // EngineDriver drives one engine.Engine from the host's event loop. It is the 0.32.0 engine's
 // counterpart of Simulator: the same events reach it (arrivals, steps, timeouts), and it records
@@ -131,6 +141,11 @@ type EngineDriver struct {
 	pulls         map[string]engine.TransferID
 	holds         map[string]engine.Handoff
 	OnPullStarted func(req *Request, pulledTokens int64, at int64)
+
+	// stalledSteps counts the steps since one last emitted a token or finished a request, and
+	// stallErr is the watchdog's error once the count passes the limit (SIM-7).
+	stalledSteps int
+	stallErr     error
 
 	// A data-parallel group with one instance per rank (engine_driver_group.go): leader is rank
 	// 0's driver for a member, nil for the leader or an engine of its own; members are the
@@ -621,6 +636,7 @@ func (d *EngineDriver) kick(now int64) {
 		// stream waits on the compute stream (startTierTransfer): they start when the step ends.
 		d.startTransfersAfter(b.TransfersStarted, now, end)
 		d.stepIdx++
+		d.noteStep(now)
 		d.admit(b, now, start)
 		if d.cfg.ApplyAtStepStart {
 			res, err := d.eng.Complete(b.ID, d.outcome(b), end)
@@ -908,6 +924,9 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			continue
 		}
 		n := res.Emitted[id]
+		if n > 0 {
+			d.noteProgress()
+		}
 		if firsts[id] && (r.emitted == 0 || r.remote && !r.req.TTFTSet) {
 			// A remote-prefilled request's decode steps emit before any first token; preempted, it
 			// prefills again here, and that prefill's token is its first, as the compatibility
@@ -944,6 +963,7 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		r.emitted += res.Emitted[id]
 	}
 	for _, f := range res.Finished {
+		d.noteProgress()
 		d.noteFreed(f.ID)
 		r := d.reqs[f.ID]
 		if r == nil {
@@ -952,6 +972,26 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		d.finish(r, f, end)
 	}
 }
+
+// noteStep counts a step that ran requests toward the progress watchdog (SIM-7).
+func (d *EngineDriver) noteStep(now int64) {
+	d.stalledSteps++
+	limit := d.cfg.StallSteps
+	if limit <= 0 {
+		limit = DefaultStallSteps
+	}
+	if d.stalledSteps > limit && d.stallErr == nil {
+		d.stallErr = fmt.Errorf("%w: %d engine steps in a row, to %d µs, emitted no token and finished no request while %d request(s) waited",
+			ErrNoProgress, d.stalledSteps-1, now, len(d.reqs))
+	}
+}
+
+// noteProgress resets the progress watchdog: a request emitted a token or finished.
+func (d *EngineDriver) noteProgress() { d.stalledSteps = 0 }
+
+// StallErr is the progress watchdog's error, nil while the engine makes progress (SIM-7). The
+// host checks it after each event and fails the run on it.
+func (d *EngineDriver) StallErr() error { return d.stallErr }
 
 // finishUnrun ends the requests a scheduling decision finished without running them
 // (engine.Batch.Finished, blis-schemas 45f1d4e), at now: vLLM's update_from_output of a step that

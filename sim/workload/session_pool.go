@@ -16,11 +16,10 @@ import (
 // Determinism (INV-6): session order is the expansion order of BuildSessionPool
 // (corpus order, then round-robin clones); admission is strictly in that order.
 type SessionPoolDriver struct {
-	mgr          *SessionManager
-	queued       []*sim.Request // all total round-0 requests (originals + clones), in admission order
-	nextQueued   int            // index into queued of the next session to admit
-	totalStarted int            // sessions injected so far (initial pool + admitted); read by Unstarted()
-	totalCount   int            // total sessions in the pool (== len of all round-0 requests)
+	mgr        *SessionManager
+	queued     []*sim.Request // all total round-0 requests (originals + clones), in admission order
+	nextQueued int            // index into queued of the next session to admit
+	totalCount int            // total sessions in the pool (== len of all round-0 requests)
 }
 
 // cloneSampler returns a sampler independent of s for stateful sampler types.
@@ -153,7 +152,6 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 	for i := 0; i < concurrent; i++ {
 		initial = append(initial, d.queued[d.nextQueued])
 		d.nextQueued++
-		d.totalStarted++
 	}
 	return d, initial, nil
 }
@@ -194,7 +192,6 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 		}
 		next.ArrivalTime = tick
 		d.nextQueued++
-		d.totalStarted++
 		return []*sim.Request{next}
 	}
 	return nil
@@ -224,17 +221,24 @@ func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 // unservable drop, delegating to the wrapped SessionManager (#2064, BC-5).
 func (d *SessionPoolDriver) CancelledSessions() int { return d.mgr.CancelledSessions() }
 
-// Unstarted returns the number of sessions never admitted. In the self-draining
-// configuration (no --horizon) it is 0: every session either completes or is cancelled,
-// and a cancellation refills the slot — pre-instance drops (routing rejection, gateway
-// client-deadline expiry / shed / evict) now terminate the session too, because the
-// cluster routes them through SessionPoolDriver.OnUnserved (wired as the unserved hook,
-// #2064). Unstarted() is nonzero only under a hard --horizon cap that ends the run with
-// sessions still queued (a refill pushed by a late termination can be discarded by the
-// cluster's horizon guard yet still counted as started — the known-limitation case
-// tracked in #1483). The caller logs a warning and reports this alongside totalStarted so
-// accounting stays closed: totalStarted + Unstarted() == TotalSessions() (INV-11 / INV-1).
-func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.totalStarted }
+// Unstarted is the number of pooled sessions the driver has not pushed. A session pushed and
+// then discarded by the horizon is pushed; ArrivedSessions counts what actually arrived.
+func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.nextQueued }
+
+// ArrivedSessions is the number of pooled sessions whose round 0 arrived at the cluster: those
+// the driver pushed whose fate is not not_started. A refill pushed by a late termination and
+// discarded by the horizon was pushed but never arrived, so it is not counted (#1483).
+// TotalSessions minus this is the sessions that never started.
+func (d *SessionPoolDriver) ArrivedSessions(fates *sim.FateLedger) int {
+	n := 0
+	for _, r := range d.queued[:d.nextQueued] {
+		if f, ok := fates.Fate(r.ID); ok && f.Fate == sim.FateNotStarted {
+			continue
+		}
+		n++
+	}
+	return n
+}
 
 // hasUniqueSessionIDs is a test helper: true iff all pooled round-0 requests
 // carry distinct SessionIDs.
