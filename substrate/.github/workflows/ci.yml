@@ -194,9 +194,22 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install --require-hashes -r registry/scripts/requirements.txt
+      # Without the AISimulate, CollectiveX and OperatorX data, the tests that re-derive a
+      # value from it skip here, and rederive.yml, a gate on the same paths and nightly,
+      # runs them with the data present (SUB-4, SUB-8). Every other skip fails this job
+      # (X16): the skips allowed here are exactly the data-absent ones, by their message.
       - name: The derivation and value-preservation tests
         working-directory: registry
-        run: python -m pytest validator/ -q
+        run: |
+          set -euo pipefail
+          python -m pytest validator/ -q -rs | tee "$RUNNER_TEMP/pytest.log"
+          # awk, unlike grep, exits 0 when it selects nothing.
+          unexpected=$(awk '/^SKIPPED/ && !/AISimulate data not present|CollectiveX run bodies not present|OperatorX MoE response not present|could not import .pyarrow./' "$RUNNER_TEMP/pytest.log")
+          if [ -n "$unexpected" ]; then
+            echo "skips that rederive.yml does not cover (X16):" >&2
+            echo "$unexpected" >&2
+            exit 1
+          fi
 
   # The docs site builds with every warning an error: a broken link, a missing snippet, a page
   # left out of the navigation. The hooks render the catalog's and the registry's reference

@@ -1,0 +1,14 @@
+# The checks each BLIS repository's protected branch requires (X17), as a person sets them
+# in branch protection. The nightly merge audit reads this list and fails when a merged
+# head has no successful run of each on the tree it merged. A change here and in the
+# repository's settings go together; the list states what the settings must be.
+#
+# "blis checks / blis checks" is the shared pull-request workflow's job as a caller names
+# it; "required" is a repository's own gate job, where it has one.
+blis-substrate: [required, "blis / pr / blis checks"]
+blis-vllm: ["blis / pr / blis checks"]
+blis-sglang: ["blis / pr / blis checks"]
+llm-d-router: ["blis / pr / blis checks", hosting]
+inference-sim: ["blis / pr / blis checks"]
+accuracy-dashboard: ["blis / pr / blis checks"]
+blis-config-search: ["blis / pr / blis checks"]

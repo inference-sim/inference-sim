@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
 
 func has(t *testing.T, got []string, want string) {
@@ -416,4 +418,85 @@ func TestTags(t *testing.T) {
 	has(t, CheckTags(lock, map[string]string{}), "no longer exists")
 	has(t, CheckTags(lock, map[string]string{"v0.11.0": a, "v0.11.1": b}), "is not in tags.lock")
 	has(t, CheckTags("v0.11.0 abc\n", nil), "is not \"<tag> <40-hex commit>\"")
+}
+
+// X16: the status page shows a gate not run for seven days, or never run, as failing; and a
+// gate's declared paths must equal its workflow's triggers.
+func TestStatusPage(t *testing.T) {
+	reg, err := invariants.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs, err := ParseGates([]byte("- {name: landing, workflow: gate-landing.yml, paths: [registry/**], invariants: [VAL-6]}\n- {name: rederive, workflow: rederive.yml, paths: [registry/**], invariants: [SUB-4]}\n"), reg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	last := map[string]*Run{"landing": {When: now.AddDate(0, 0, -2), Conclusion: "success", URL: "u"}}
+	page, failing := StatusPage("blis-substrate", now, gs, last, reg)
+	if len(failing) != 1 || !strings.Contains(failing[0], "rederive: failing: never run") {
+		t.Fatalf("failing %v", failing)
+	}
+	if !strings.Contains(page, "| VAL-6 |") || !strings.Contains(page, "| landing | `gate-landing.yml` | [2026-11-02](u) | success | passing |") {
+		t.Errorf("page:\n%s", page)
+	}
+	last["landing"].When = now.AddDate(0, 0, -8)
+	_, failing = StatusPage("blis-substrate", now, gs, last, reg)
+	has(t, failing, "landing: failing: last run 8 days ago")
+	has(t, CheckGatePaths(gs, map[string][]string{"gate-landing.yml": {"registry/**", "kernel/**"}}), "but gates.yaml declares")
+	has(t, CheckGatePaths(gs, map[string][]string{}), "does not exist or has no pull_request paths")
+	if _, err := ParseGates([]byte("- {name: x, workflow: y.yml, paths: [a/**], invariants: [VAL-99]}\n"), reg); err == nil {
+		t.Error("a gate citing an unknown invariant was accepted")
+	}
+	if _, err := ParseGates([]byte("- {name: x, workflow: y.yml, paths: []}\n"), reg); err == nil {
+		t.Error("a gate with no trigger paths was accepted")
+	}
+}
+
+// X17: a merge without a successful required check on its tree fails the audit.
+func TestAuditMerges(t *testing.T) {
+	req := map[string][]string{"blis-vllm": {"blis checks", "ci"}}
+	ok := Merge{Repo: "blis-vllm", PR: 1, MergeSHA: strings.Repeat("a", 40), Successes: []string{"ci", "blis checks"}}
+	none(t, AuditMerges([]Merge{ok}, req))
+	bad := ok
+	bad.Successes = []string{"ci"}
+	has(t, AuditMerges([]Merge{bad}, req), "with no successful run of blis checks")
+	other := ok
+	other.Repo = "blis-sglang"
+	has(t, AuditMerges([]Merge{other}, req), "names no required checks")
+}
+
+// X18: every known_bad entry for this repository names a test that exists and passes. The
+// sweep itself runs nightly; here every named test is checked to exist, so a rename that
+// orphans an entry fails go test.
+func TestKnownBadRunsEachTest(t *testing.T) {
+	reg, err := invariants.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests, _ := KnownBadTests(reg, "blis-substrate")
+	if len(tests) == 0 {
+		t.Fatal("the registry names no known-bad test for blis-substrate")
+	}
+	for pkg, names := range tests {
+		out, err := exec.Command("go", "test", "-list", ".", "../../"+pkg).Output()
+		if err != nil {
+			t.Errorf("go test -list ./%s: %v", pkg, err)
+			continue
+		}
+		for _, n := range names {
+			if !strings.Contains("\n"+string(out), "\n"+n+"\n") {
+				t.Errorf("%s: the registry names %s as a known-bad test, and it does not exist", pkg, n)
+			}
+		}
+	}
+	// Known-bad: an entry naming a test that does not exist is reported. runKnownBad runs
+	// from the repository root.
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	os.Chdir("../..")
+	bad := runKnownBad(map[string][]string{"tools/internal/bot": {"TestNoSuchTest"}})
+	if len(bad) != 1 || !strings.Contains(bad[0], "TestNoSuchTest did not run") {
+		t.Fatalf("an entry naming a missing test was not reported: %v", bad)
+	}
 }

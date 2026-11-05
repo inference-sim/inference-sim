@@ -836,6 +836,8 @@
     check: Release bot (§13.6)
     runs: release
     status: new
+    test: tools/release
+    known_bad: 'tools/release: TestReviewSetIsPlannedBottomUp'
   review: null
   status: new
   target:
@@ -865,6 +867,8 @@
       Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
     runs: pull_request
     status: new
+    test: tools/modlint
+    known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: >-
       Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
@@ -895,6 +899,8 @@
     check: No other module requiring github.com/llm-d/llm-d-router
     runs: pull_request
     status: new
+    test: tools/modlint
+    known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: No other module requiring github.com/llm-d/llm-d-router
     runs: pull_request
@@ -1001,6 +1007,8 @@
       A check that every committed config.json has an allow-listed licence in its model.yaml
     runs: pull_request
     status: new
+    test: 'validate/cmd/validate-catalog: TestRunLicenceCheck'
+    known_bad: 'validate/cmd/validate-catalog: TestRunLicenceCheck'
   review: null
   status: partial
   target:
@@ -1154,6 +1162,8 @@
     check: The description check, a shared workflow run in every repository
     runs: pull_request
     status: new
+    test: 'shared-pr-checks.yml: prcheck description, invariants cited'
+    known_bad: 'tools/prcheck: TestDescriptionCheck'
   - repo: blis-vllm
     check: The description check, a shared workflow run in every repository
     runs: pull_request
@@ -1196,10 +1206,14 @@
     check: The parity test in blis-substrate
     runs: pull_request
     status: new
+    test: 'tools/pyrules: TestEveryRestatementAgreesWithGo'
+    known_bad: 'tools/pyrules: TestGoRefusesEveryParityExample'
   - repo: blis-substrate
     check: A lint that flags schema-like rule code in Python scripts
     runs: pull_request
     status: new
+    test: tools/pyrules/pyrules.py
+    known_bad: 'tools/pyrules: TestPythonRuleLintFindsARestatedVocabulary'
   review: null
   status: new
   target:
@@ -1224,6 +1238,8 @@
     check: Each repository's CI configuration
     runs: pull_request
     status: new
+    test: prcheck workflows, prcheck skips
+    known_bad: 'tools/prcheck: TestWorkflowLint'
   - repo: blis-vllm
     check: Each repository's CI configuration
     runs: pull_request
@@ -1252,6 +1268,8 @@
     check: The nightly status page (§13.4)
     runs: nightly
     status: new
+    test: 'shared-nightly.yml: prcheck status'
+    known_bad: 'tools/prcheck: TestStatusPage'
   review: null
   status: new
   target:
@@ -1277,6 +1295,8 @@
       fails if any merged head has no successful required run
     runs: nightly
     status: new
+    test: 'nightly.yml: prcheck audit-merges'
+    known_bad: 'tools/prcheck: TestAuditMerges'
   - repo: blis-substrate
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
@@ -1334,6 +1354,8 @@
       check passes
     runs: nightly
     status: new
+    test: 'nightly.yml: prcheck knownbad'
+    known_bad: 'tools/prcheck: TestKnownBadRunsEachTest'
   - repo: blis-substrate
     check: >-
       The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks
@@ -1446,6 +1468,8 @@
       the pull request adds
     runs: pull_request
     status: new
+    test: 'shared-pr-checks.yml: prcheck commits'
+    known_bad: 'tools/prcheck: TestCommitPolicy'
   - repo: blis-vllm
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
@@ -1514,6 +1538,8 @@
     check: A workflow lint that refuses an action not pinned by commit
     runs: pull_request
     status: new
+    test: prcheck workflows
+    known_bad: 'tools/prcheck: TestWorkflowLint'
   - repo: blis-vllm
     check: A workflow lint that refuses an action not pinned by commit
     runs: pull_request
@@ -1542,6 +1568,8 @@
     check: Pip install --require-hashes in every Python CI job
     runs: pull_request
     status: new
+    test: prcheck workflows
+    known_bad: 'tools/prcheck: TestWorkflowLint'
   - repo: blis-vllm
     check: Pip install --require-hashes in every Python CI job
     runs: pull_request
@@ -1636,6 +1664,8 @@
       compares verdict tree hashes
     runs: pull_request
     status: new
+    test: 'shared-merge-check.yml: prcheck merge'
+    known_bad: 'tools/prcheck: TestMergeCheck'
   - repo: blis-vllm
     check: >-
       The shared merge check in blis-substrate/.github/workflows, called by every repository, which
@@ -1676,6 +1706,8 @@
     check: A workflow lint that refuses ignored exit codes
     runs: pull_request
     status: new
+    test: prcheck workflows
+    known_bad: 'tools/prcheck: TestWorkflowLint'
   - repo: blis-vllm
     check: A workflow lint that refuses ignored exit codes
     runs: pull_request
@@ -1756,6 +1788,8 @@
       that are not generated
     runs: pull_request
     status: new
+    test: prcheck versions
+    known_bad: 'tools/prcheck: TestVersionLiterals'
   - repo: blis-vllm
     check: >-
       A lint in every repository, over every file type, for version literals of BLIS modules or Go
@@ -1818,6 +1852,8 @@
       The shared merge check, which refuses a merge while a review thread has no outcome
     runs: pull_request
     status: new
+    test: 'shared-merge-check.yml: prcheck merge'
+    known_bad: 'tools/prcheck: TestMergeCheck'
   - repo: blis-vllm
     check: >-
       The shared merge check, which refuses a merge while a review thread has no outcome
@@ -1904,6 +1940,8 @@
     check: The quarantine list, which fails CI when an entry expires
     runs: pull_request
     status: new
+    test: prcheck quarantine
+    known_bad: 'tools/prcheck: TestQuarantine'
   - repo: blis-vllm
     check: The quarantine list, which fails CI when an entry expires
     runs: pull_request
@@ -1994,6 +2032,8 @@
     check: A documentation reference check in every repository
     runs: pull_request
     status: new
+    test: prcheck docrefs
+    known_bad: 'tools/prcheck: TestDocReferences'
   - repo: blis-vllm
     check: A documentation reference check in every repository
     runs: pull_request
@@ -2036,6 +2076,8 @@
     check: The release bot
     runs: release
     status: new
+    test: 'tools/release: CheckBugs'
+    known_bad: 'tools/release: TestRefusals'
   review: null
   status: new
   target:
@@ -2061,6 +2103,8 @@
       A nightly job in every repository that resolves each cited issue and fails on a closed one
     runs: nightly
     status: new
+    test: 'shared-nightly.yml: prcheck issues -resolve'
+    known_bad: 'tools/prcheck: TestCitedIssues'
   - repo: blis-vllm
     check: >-
       A nightly job in every repository that resolves each cited issue and fails on a closed one
@@ -2095,6 +2139,8 @@
     check: A merge check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
+    test: 'shared-merge-check.yml: prcheck issues -closes'
+    known_bad: 'tools/prcheck: TestCitedIssues'
   - repo: blis-vllm
     check: A merge check that refuses a change closing an issue still cited elsewhere
     runs: pull_request

@@ -351,6 +351,8 @@
       that moved match the declared class
     runs: pull_request
     status: new
+    test: .github/pull_request_template.md (generated)
+    known_bad: 'tools/invariants: TestRenderCheckFailsOnAHandEditedCopy'
   - repo: blis-vllm
     check: >-
       In every repository, the change class in the pull-request template, and a check that the outputs

@@ -50,6 +50,8 @@
     check: A nightly check that every tag resolves to its recorded commit
     runs: nightly
     status: new
+    test: 'shared-nightly.yml: prcheck tags'
+    known_bad: 'tools/prcheck: TestTags'
   - repo: blis-vllm
     check: A nightly check that every tag resolves to its recorded commit
     runs: nightly
@@ -104,6 +106,8 @@
       list -m -json reports, not the placeholder version on the require line
     runs: pull_request
     status: new
+    test: tools/modlint
+    known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: >-
       Selected-version lint (go list -m all), which for the router reads the replace target that go
@@ -133,6 +137,8 @@
       A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
     runs: pull_request
     status: new
+    test: tools/modlint
+    known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: >-
       A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
@@ -157,6 +163,8 @@
     check: A CI step that fails if go version differs from it
     runs: pull_request
     status: new
+    test: .github/actions/go-toolchain; tools/modlint
+    known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: A CI step that fails if go version differs from it
     runs: pull_request
@@ -231,6 +239,8 @@
     check: The bot's own check of every ci invariant
     runs: pull_request
     status: new
+    test: 'tools/release: CheckInvariants'
+    known_bad: 'tools/release: TestRefusals'
   - repo: blis-substrate
     check: >-
       A nightly check that every tag made by a person is signed and listed in its release notes
@@ -281,6 +291,8 @@
     check: The release bot, which writes the notes from the release's changes
     runs: release
     status: new
+    test: 'tools/release: Notes'
+    known_bad: 'tools/release: TestReviewSetIsPlannedBottomUp'
   review: null
   status: new
   target:
@@ -325,6 +337,8 @@
       no plain tag
     runs: release
     status: new
+    test: 'tools/release: CheckEngineTag'
+    known_bad: 'tools/release: TestRefusals'
   - repo: blis-vllm
     check: >-
       In engine modules, the provenance test, which refuses a ported file that names another release
@@ -394,6 +408,8 @@
       a feature deprecated in an earlier release
     runs: release
     status: new
+    test: 'tools/release: CheckDeprecations'
+    known_bad: 'tools/release: TestRefusals'
   - repo: inference-sim
     check: >-
       A whole-program dead-code check (Go's deadcode), run in stack CI's workspace from the main packages

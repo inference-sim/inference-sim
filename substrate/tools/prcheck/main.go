@@ -33,6 +33,14 @@
 //	    questions" section, keep given answers, and list those still unanswered.
 //	prcheck tags [-lock .github/tags.lock]
 //	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
+//	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
+//	    X16: each gate's declared paths equal its workflow's triggers; with -repo, the
+//	    status page, which shows a gate not run for seven days as failing.
+//	prcheck audit-merges [-required-checks .github/required-checks.yaml] [-hours 24]
+//	    X17: every merge in the last day, in every repository, had a successful run of
+//	    each required check on the tree it merged.
+//	prcheck knownbad [-repo-name blis-substrate] [-list-only]
+//	    X18: run every known-bad test the registry names for this repository.
 //	prcheck vocab
 //	    Print the Go vocabularies as JSON, for the Python rule lint (X15).
 //	prcheck quarantine [-list .github/quarantine.yaml] [-skip-pattern <pkg>]
@@ -54,6 +62,9 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/blis-substrate/contracts/invariants"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
@@ -101,6 +112,11 @@ func run(args []string, w io.Writer) error {
 	docBaseline := fs.String("doc-baseline", ".github/doc-references.txt", "documentation-reference baseline")
 	list := fs.String("list", ".github/quarantine.yaml", "quarantine list")
 	skipPkg := fs.String("skip-pattern", "", "print the go test -skip pattern for this package")
+	repoName := fs.String("repo-name", "blis-substrate", "the repository's BLIS name")
+	listOnly := fs.Bool("list-only", false, "list the known-bad tests without running them")
+	requiredFile := fs.String("required-checks", ".github/required-checks.yaml", "required checks per repository")
+	hours := fs.Int("hours", 24, "how far back the merge audit looks")
+	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
 	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
 	mergeSHA := fs.String("merge", "", "the merge-queue commit")
@@ -326,6 +342,54 @@ func run(args []string, w io.Writer) error {
 			return err
 		}
 		return report(w, "tags", CheckTags(string(raw), tags))
+	case "audit-merges":
+		// prcheck audit-merges -required .github/required-checks.yaml -hours 24
+		raw, err := os.ReadFile(*requiredFile)
+		if err != nil {
+			return err
+		}
+		var req map[string][]string
+		if err := yaml.Unmarshal(raw, &req); err != nil {
+			return fmt.Errorf("%s: %w", *requiredFile, err)
+		}
+		since := time.Now().Add(-time.Duration(*hours) * time.Hour)
+		var merges []Merge
+		names := make([]string, 0, len(req))
+		for r := range req {
+			names = append(names, r)
+		}
+		sort.Strings(names)
+		for _, r := range names {
+			m, err := ghMergesSince("inference-sim/"+r, since)
+			if err != nil {
+				return err
+			}
+			merges = append(merges, m...)
+		}
+		fmt.Fprintf(w, "audit-merges: %d merge(s) in %d repositories since %s\n", len(merges), len(names), since.UTC().Format(time.RFC3339))
+		return report(w, "audit-merges", AuditMerges(merges, req))
+	case "knownbad":
+		// prcheck knownbad -repo-name blis-substrate [-list-only]
+		reg, err := invariants.Embedded()
+		if err != nil {
+			return err
+		}
+		tests, missing := KnownBadTests(reg, *repoName)
+		n := 0
+		for _, t := range tests {
+			n += len(t)
+		}
+		fmt.Fprintf(w, "knownbad: %d test(s) in %d package(s); %d ci check(s) name no known-bad input\n", n, len(tests), len(missing))
+		for _, m := range missing {
+			fmt.Fprintln(w, "note: "+m)
+		}
+		if n == 0 {
+			return fmt.Errorf("the registry names no known-bad test for %s; the sweep processes at least one (X22)", *repoName)
+		}
+		if *listOnly {
+			return nil
+		}
+		return report(w, "knownbad", runKnownBad(tests))
 	case "vocab":
 		// The closed vocabularies the Go validators enforce, as JSON, for the Python rule
 		// lint (X15), so the lint compares Python literals with the Go sets, not a copy.
@@ -336,6 +400,49 @@ func run(args []string, w io.Writer) error {
 			"provenances": vocab.AllProvenances(), "source_kinds": vocab.AllSourceKinds(),
 			"source_roles": vocab.AllSourceRoles(), "licences": vocab.RedistributableLicences(),
 		})
+	case "status":
+		// prcheck status -repo o/n -gates .github/gates.yaml -out page.md
+		reg, err := invariants.Embedded()
+		if err != nil {
+			return err
+		}
+		raw, err := os.ReadFile(*gatesFile)
+		if err != nil {
+			return err
+		}
+		gs, err := ParseGates(raw, reg)
+		if err != nil {
+			return err
+		}
+		wp, err := workflowPRPaths(".github/workflows")
+		if err != nil {
+			return err
+		}
+		bad := CheckGatePaths(gs, wp)
+		last := map[string]*Run{}
+		if *repo != "" {
+			for _, g := range gs {
+				r, err := ghLastRealRun(*repo, g.Workflow)
+				if err != nil {
+					return err
+				}
+				last[g.Name] = r
+			}
+		}
+		name := *repo
+		if i := strings.LastIndex(name, "/"); i >= 0 {
+			name = name[i+1:]
+		}
+		page, failing := StatusPage(name, time.Now(), gs, last, reg)
+		if *outFile != "" {
+			if err := os.WriteFile(*outFile, []byte(page), 0o644); err != nil {
+				return err
+			}
+		}
+		if *repo != "" {
+			bad = append(bad, failing...)
+		}
+		return report(w, "status", bad)
 	case "quarantine":
 		src, err := os.ReadFile(*list)
 		if errors.Is(err, os.ErrNotExist) {

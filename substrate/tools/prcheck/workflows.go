@@ -20,8 +20,8 @@ import (
 //     than bash's default -e mode without "set -e";
 //   - X16: go test run with -short or a -skip flag in a job, or a skip marker written into
 //     a required job's environment (SKIP_*, *_SKIP);
-//   - X16: a gate (a workflow whose name or file starts with "gate") whose
-//     pull_request.paths do not equal the paths it declares in a "# gate-paths:" comment.
+//   - X16: a gate (a workflow whose file starts with "gate", or that carries a
+//     "# gate-paths:" comment) whose pull_request.paths do not equal the declared paths.
 //
 // A line may be exempted only by a "# lint-ok: <invariant> <reason>" comment on the same
 // line; the reason is shown, and the exemption itself is a reviewed change (design §13.7).
@@ -150,10 +150,10 @@ func gateFindings(name string, src []byte, root *yaml.Node) []finding {
 	if i := strings.LastIndex(base, "/"); i >= 0 {
 		base = base[i+1:]
 	}
-	if !strings.HasPrefix(base, "gate") {
+	m := gatePaths.FindSubmatch(src)
+	if !strings.HasPrefix(base, "gate") && m == nil {
 		return nil
 	}
-	m := gatePaths.FindSubmatch(src)
 	if m == nil {
 		return []finding{{name, 1, "a gate workflow declares its trigger paths in a \"# gate-paths:\" comment (X16)"}}
 	}

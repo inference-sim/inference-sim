@@ -1,0 +1,13 @@
+# The gates of blis-substrate: workflows whose failure blocks a merge or a release, the
+# paths that trigger each, and the invariants each checks. The nightly status page reads
+# this list, shows each gate's last real run, and shows a gate whose last real run is more
+# than seven days old as failing (X16). Each gate's paths equal its workflow's
+# pull_request paths and its "# gate-paths:" line; prcheck status checks all three agree.
+- name: re-derivation on the full data
+  workflow: rederive.yml
+  paths:
+    - registry/coefficients/**
+    - registry/scripts/**
+    - registry/validator/**
+    - .github/workflows/rederive.yml
+  invariants: [SUB-4, SUB-8, VAL-6]
