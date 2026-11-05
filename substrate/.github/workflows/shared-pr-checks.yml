@@ -160,4 +160,9 @@ jobs:
       - name: Selected-version lint (X11, LIF-2)
         if: ${{ !cancelled() && (hashFiles('repo/go.mod') != '') }}
         working-directory: repo
-        run: modlint
+        run: |
+          set -euo pipefail
+          # modlint reads the module graph and the substrate's contracts/toolchain from the
+          # module cache, so the modules must be downloaded first.
+          go mod download
+          modlint
