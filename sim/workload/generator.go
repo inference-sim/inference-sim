@@ -3,7 +3,6 @@ package workload
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
 	"strings"
 
@@ -29,13 +28,9 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// Build working client list without mutating spec.Clients (idempotency, INV-6).
 	allClients := append([]ClientSpec{}, spec.Clients...)
 	if len(spec.Cohorts) > 0 {
-		expanded := ExpandCohorts(spec.Cohorts, spec.Seed)
+		expanded := ExpandCohorts(spec.Cohorts)
 		allClients = append(allClients, expanded...)
 	}
-
-	// Create partitioned RNG for deterministic generation
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
-	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
 
 	// Normalize rate fractions
 	clientRates := normalizeRateFractions(allClients, spec.AggregateRate)
@@ -45,11 +40,11 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 	// This path uses per-window proportional allocation and IAT rescaling.
 	// Prefix generation happens inside each branch to avoid double-advancing the RNG.
 	if hasPerWindowParameters(allClients) {
-		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients, workloadRNG)
+		return generateTimeVaryingRequests(spec, horizon, maxRequests, allClients)
 	}
 
-	// Generate shared prefix tokens per prefix group (non-time-varying path only)
-	prefixes := generatePrefixTokens(allClients, workloadRNG)
+	// Shared prefix tokens per prefix group, each drawn from its group's own stream.
+	prefixes := generatePrefixTokens(allClients, spec.Seed)
 
 	// Per-client generation cap: prevent OOM when horizon >> maxRequests.
 	// Each client generates at most 2x maxRequests, then post-merge truncation finalizes.
@@ -70,21 +65,16 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 			continue // EC-4: skip zero-rate clients
 		}
 
-		// Create per-client RNG (derived from main RNG for isolation)
-		clientSeed := workloadRNG.Int63()
-		clientRNG := newRandFromSeed(clientSeed)
+		// The client's streams (DEV-6): its arrivals, and each request's own family.
+		cs := clientStreams(spec.Seed, i)
+		arrivalRNG := cs.Stream(purposeArrivals)
 
 		// Create samplers.
 		// When CustomSamplerFactory is set, clientRate is only used for the
-		// skip guard above (line 106); the factory overrides the actual arrival rate.
+		// skip guard above; the factory overrides the actual arrival rate.
 		var arrivalSampler ArrivalSampler
 		if client.CustomSamplerFactory != nil {
-			// Derive sub-RNG for factory with single entropy draw from clientRNG.
-			// This isolates the sampler's N-draw RNG consumption (for N pre-generated intervals)
-			// from downstream content sampling, keeping input/output distributions stable.
-			subSeed := clientRNG.Int63()
-			subRNG := newRandFromSeed(subSeed)
-			arrivalSampler = client.CustomSamplerFactory(subRNG)
+			arrivalSampler = client.CustomSamplerFactory(cs.Stream(purposeArrivalSchedule))
 		} else {
 			arrivalSampler = NewArrivalSampler(client.Arrival, clientRate)
 		}
@@ -111,7 +101,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				// Single session: sample one start time, generate one session,
 				// filter rounds against horizon. Models inference-perf's behavior
 				// where each client is one persistent session cycling through rounds.
-				iat := arrivalSampler.SampleIAT(clientRNG)
+				iat := arrivalSampler.SampleIAT(arrivalRNG)
 				if iat == 0 {
 					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
 					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
@@ -134,7 +124,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				// that would otherwise defeat the sessionTokenBuffer storage win
 				// (#1445). reasoning.go sets req.PrefixLength accordingly.
 				reasoningReqs, err := GenerateReasoningRequests(
-					clientRNG, client.Reasoning,
+					spec.Seed, clientSessionID(i, 0), client.Reasoning,
 					inputSampler, outputSampler,
 					startTime,
 					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
@@ -163,12 +153,13 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 			// Multi-session: generate multiple sessions based on the arrival process,
 			// each session producing MaxRounds requests.
 			var clientReqCount int64
+			var sessionIdx int
 			currentTime := int64(0)
 			for currentTime < horizon {
 				if perClientCap > 0 && clientReqCount >= perClientCap {
 					break
 				}
-				iat := arrivalSampler.SampleIAT(clientRNG)
+				iat := arrivalSampler.SampleIAT(arrivalRNG)
 				if iat == 0 {
 					// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
 					// Stateless samplers (Poisson, Gamma, etc.) never return 0.
@@ -186,7 +177,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					continue
 				}
 				reasoningReqs, err := GenerateReasoningRequests(
-					clientRNG, client.Reasoning,
+					spec.Seed, clientSessionID(i, sessionIdx), client.Reasoning,
 					inputSampler, outputSampler,
 					currentTime,
 					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
@@ -195,6 +186,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
 				}
+				sessionIdx++
 				// Prefix is seeded into the shared buffer inside reasoning.go (#1445).
 				// Set Deadline and SLOTargetUs on all reasoning requests (not set in reasoning.go)
 				for _, req := range reasoningReqs {
@@ -228,7 +220,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				break
 			}
 
-			iat := arrivalSampler.SampleIAT(clientRNG)
+			iat := arrivalSampler.SampleIAT(arrivalRNG)
 			if iat == 0 {
 				// Stateful sampler exhausted (e.g., NormalizedExponentialSampler).
 				// Stateless samplers (Poisson, Gamma, etc.) never return 0.
@@ -247,25 +239,10 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 				continue
 			}
 
-			var inputTokens []sim.TokenID
-			var outputTokens []sim.TokenID
-			var textCount, imageCount, audioCount, videoCount int
-
-			if client.Multimodal != nil {
-				// Multimodal generation (BC-8)
-				var err error
-				inputTokens, textCount, imageCount, audioCount, videoCount, err = GenerateMultimodalTokens(clientRNG, client.Multimodal)
-				if err != nil {
-					return nil, fmt.Errorf("client %q multimodal: %w", client.ID, err)
-				}
-				outputLen := outputSampler.Sample(clientRNG)
-				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
-			} else {
-				// Standard language generation
-				inputLen := inputSampler.Sample(clientRNG)
-				outputLen := outputSampler.Sample(clientRNG)
-				inputTokens = sim.GenerateRandomTokenIDs(clientRNG, inputLen)
-				outputTokens = sim.GenerateRandomTokenIDs(clientRNG, outputLen)
+			inputTokens, outputTokens, textCount, imageCount, audioCount, videoCount, err := requestContent(
+				requestStreams(cs, clientReqCount), client.Multimodal, inputSampler, outputSampler)
+			if err != nil {
+				return nil, fmt.Errorf("client %q multimodal: %w", client.ID, err)
 			}
 
 			var prefixLength int
@@ -339,6 +316,9 @@ type GeneratedWorkload struct {
 // SessionBlueprints are generated directly (concurrency clients have RateFraction=0,
 // so GenerateRequests naturally skips them).
 // For all other clients (including open-loop reasoning), identical to GenerateRequests.
+//
+// Deprecated: since v0.16.0, and removed in v0.19.0 (#1450, #1451). Use GenerateWorkloadLazy,
+// which streams the same requests and session blueprints; blis run streams by default.
 func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*GeneratedWorkload, error) {
 	// Generate all requests using existing logic.
 	// For closed-loop clients, this currently generates ALL rounds (open-loop style).
@@ -354,7 +334,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	hasConcurrency := false
 	allClients := append([]ClientSpec{}, spec.Clients...)
 	if len(spec.Cohorts) > 0 {
-		allClients = append(allClients, ExpandCohorts(spec.Cohorts, spec.Seed)...)
+		allClients = append(allClients, ExpandCohorts(spec.Cohorts)...)
 	}
 	for i := range allClients {
 		if isClosedLoop(&allClients[i]) {
@@ -368,12 +348,8 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 		return &GeneratedWorkload{Requests: reqs}, nil
 	}
 
-	// For closed-loop clients: filter requests to round-0 only, create blueprints.
-	// Blueprint RNG uses a fixed offset from spec seed to avoid colliding with
-	// GenerateRequests' internal RNG draws. The offset (spec.Seed + 7919) is a
-	// prime shift that produces an independent stream.
-	blueprintRNG := rand.New(rand.NewSource(spec.Seed + 7919))
-
+	// For closed-loop clients: filter requests to round-0 only, create blueprints. Each
+	// blueprint draws its follow-up rounds from its session's own streams (SessionStreams).
 	var sessions []SessionBlueprint
 	round0Only := make([]*sim.Request, 0, len(reqs))
 	closedLoopSessionIDs := make(map[string]bool)
@@ -445,14 +421,13 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 			logrus.Warnf("GenerateWorkload: closed-loop client %q produced no sessions — ClientID may not be set on round-0 requests", client.ID)
 		}
 
-		// Create a blueprint per session (R2: sort map keys for deterministic RNG draws)
+		// Create a blueprint per session (R2: sort map keys for a deterministic blueprint order)
 		sortedSessionIDs := make([]string, 0, len(sessionIDsForClient))
 		for sessID := range sessionIDsForClient {
 			sortedSessionIDs = append(sortedSessionIDs, sessID)
 		}
 		sort.Strings(sortedSessionIDs)
 		for _, sessID := range sortedSessionIDs {
-			sessSeed := blueprintRNG.Int63()
 			sessions = append(sessions, SessionBlueprint{
 				SessionID:     sessID,
 				ClientID:      client.ID,
@@ -463,7 +438,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 				Horizon:       horizon,
 				InputSampler:  inputSampler,
 				OutputSampler: outputSampler,
-				RNG:           rand.New(rand.NewSource(sessSeed)),
+				Streams:       SessionStreams(spec.Seed, sessID),
 				Prefix:        prefixTokens,
 				TenantID:      client.TenantID,
 				SLOClass:      client.SLOClass,
@@ -493,11 +468,8 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	// (also used by GenerateWorkloadLazy, #1459) so the RNG-draw order and cap
 	// semantics are byte-identical between eager and lazy modes.
 	//
-	// Re-derive prefix tokens by initializing a fresh RNG from spec.Seed —
-	// same seed produces same prefix tokens as GenerateRequests produced.
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(spec.Seed))
-	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkloadGen)
-	prefixes := generatePrefixTokens(allClients, workloadRNG)
+	// The prefix tokens are each group's own stream, so they equal those GenerateRequests drew.
+	prefixes := generatePrefixTokens(allClients, spec.Seed)
 
 	concurrencySeeds, concurrencyBlueprints, totalConcurrencyUsers, err :=
 		generateConcurrencySeedsAndBlueprints(allClients, prefixes, spec.Seed, horizon, maxRequests, int64(len(round0Only)))
@@ -529,9 +501,8 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 // blueprints for every concurrency client (Concurrency > 0) in allClients.
 // Extracted from GenerateWorkload (#1459) so the eager and lazy
 // (GenerateWorkloadLazy) paths share ONE construction site (R4) and are
-// byte-identical: same concurrencyRNG (spec.Seed + 10007), same per-user draw
-// order (userSeed → token samples → bpSeed), same stagger, and the same seed
-// cap that references alreadyKept.
+// byte-identical: the same per-user session streams (SessionStreams), the same
+// stagger, and the same seed cap that references alreadyKept.
 //
 // alreadyKept is the number of non-concurrency (open-loop / closed-loop round-0)
 // requests already retained under the maxRequests cap — eager passes
@@ -556,13 +527,8 @@ func generateConcurrencySeedsAndBlueprints(
 	maxRequests int64,
 	alreadyKept int64,
 ) (seeds []*sim.Request, blueprints []SessionBlueprint, totalUsers int, err error) {
-	// concurrencyRNG drives per-user seed selection and blueprint RNG seeding.
-	// Uses specSeed + 10007, distinct from the closed-loop blueprintRNG's
-	// specSeed + 7919, so the two streams do not produce identical sequences for
-	// the same spec seed. If new per-client RNG streams are added here, choose an
-	// offset not already in use and document it with the same pattern.
-	concurrencyRNG := rand.New(rand.NewSource(specSeed + 10007))
-
+	// Each virtual user's session draws from its own streams (SessionStreams): round 0 here,
+	// every follow-up in the session manager.
 	for i := range allClients {
 		client := &allClients[i]
 		if client.Concurrency <= 0 {
@@ -589,10 +555,9 @@ func generateConcurrencySeedsAndBlueprints(
 			if maxRequests > 0 && alreadyKept+int64(len(seeds)) >= maxRequests {
 				break
 			}
-			userSeed := concurrencyRNG.Int63()
-			userRNG := rand.New(rand.NewSource(userSeed))
-
 			sessionID := fmt.Sprintf("concurrency_%s_user_%d", client.ID, u)
+			session := SessionStreams(specSeed, sessionID)
+			r0 := roundStreams(session, 0)
 
 			// BC-3: Stagger seed arrivals within [0, think_time)
 			var arrivalTime int64
@@ -601,10 +566,10 @@ func generateConcurrencySeedsAndBlueprints(
 			}
 
 			// Sample token lengths
-			inputLen := inputSampler.Sample(userRNG)
-			outputLen := outputSampler.Sample(userRNG)
-			inputTokens := sim.GenerateRandomTokenIDs(userRNG, inputLen)
-			outputTokens := sim.GenerateRandomTokenIDs(userRNG, outputLen)
+			inputLen := inputSampler.Sample(r0.Stream(purposeInputLength))
+			outputLen := outputSampler.Sample(r0.Stream(purposeOutputLength))
+			inputTokens := tokens(r0, purposeInputTokens, inputLen)
+			outputTokens := tokens(r0, purposeOutputTokens, outputLen)
 
 			var prefixLength int
 			if len(prefix) > 0 {
@@ -635,7 +600,6 @@ func generateConcurrencySeedsAndBlueprints(
 			seeds = append(seeds, seed)
 
 			// Create blueprint for this virtual user's session
-			bpSeed := concurrencyRNG.Int63()
 			blueprints = append(blueprints, SessionBlueprint{
 				SessionID:       sessionID,
 				ClientID:        client.ID,
@@ -646,7 +610,7 @@ func generateConcurrencySeedsAndBlueprints(
 				Horizon:         horizon,
 				InputSampler:    inputSampler,
 				OutputSampler:   outputSampler,
-				RNG:             rand.New(rand.NewSource(bpSeed)),
+				Streams:         session,
 				Prefix:          prefix,
 				TenantID:        client.TenantID,
 				SLOClass:        client.SLOClass,
@@ -695,11 +659,6 @@ func lastWindowEndUs(lifecycle *LifecycleSpec) int64 {
 		}
 	}
 	return maxEnd
-}
-
-// newRandFromSeed creates a new *rand.Rand from a seed (avoids importing math/rand in callers).
-func newRandFromSeed(seed int64) *rand.Rand {
-	return rand.New(rand.NewSource(seed))
 }
 
 // validateAndExpandSpec performs the spec-mutating prelude shared by
@@ -801,8 +760,6 @@ func expandClientsAndCohorts(spec *WorkloadSpec) error {
 }
 
 // DefaultTimeoutUs is the default per-request timeout (300s = 5 minutes).
-// Matches cmd/observe.go HTTP client timeout for consistency between
-// simulated and real-backend modes.
 const DefaultTimeoutUs = 300_000_000
 
 // computeDeadline derives the absolute deadline tick for a request.
@@ -871,15 +828,12 @@ func generateTimeVaryingRequests(
 	horizon int64,
 	maxRequests int64,
 	allClients []ClientSpec,
-	rng *rand.Rand,
 ) ([]*sim.Request, error) {
 	var allRequests []*sim.Request
 
-	// Build prefix tokens map for all prefix groups (BC-2).
-	// Uses generatePrefixTokens() for cross-path parity with non-time-varying path.
-	// With line 89 moved into the non-time-varying branch, both paths now call
-	// generatePrefixTokens exactly once on the same RNG state.
-	prefixes := generatePrefixTokens(allClients, rng)
+	// Build prefix tokens map for all prefix groups (BC-2), from each group's own stream, as
+	// the non-time-varying path does.
+	prefixes := generatePrefixTokens(allClients, spec.Seed)
 
 	// Generate requests for each client's windows.
 	for i := range allClients {
@@ -893,12 +847,11 @@ func generateTimeVaryingRequests(
 			continue
 		}
 
-		// Create per-client RNG for determinism (isolates client entropy).
-		clientSeed := rng.Int63()
-		clientRNG := newRandFromSeed(clientSeed)
+		// The client's streams (DEV-6); each window draws from its own child family.
+		cs := clientStreams(spec.Seed, i)
 
 		// Generate requests for each window.
-		for _, window := range client.Lifecycle.Windows {
+		for k, window := range client.Lifecycle.Windows {
 			// Skip windows that start beyond the simulation horizon.
 			if window.StartUs >= horizon {
 				continue
@@ -912,7 +865,7 @@ func generateTimeVaryingRequests(
 
 			prefix := prefixes[client.PrefixGroup] // empty slice if no prefix group
 			windowRequests, err := generateRequestsForWindow(
-				*client, effectiveWindow, allClients, spec.AggregateRate, clientRNG, prefix,
+				*client, effectiveWindow, allClients, spec.AggregateRate, windowStreams(cs, k), windowSessionPrefix(i, k), prefix,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("generating window [%d-%d] for client %q: %w",
@@ -960,7 +913,8 @@ func generateRequestsForWindow(
 	window ActiveWindow,
 	allClients []ClientSpec,
 	aggregateRate float64,
-	rng *rand.Rand,
+	ws sim.Streams,
+	sessionPrefix string,
 	prefix []sim.TokenID,
 ) ([]*sim.Request, error) {
 	// Step 1: Resolve parameters with fallback to client-level defaults.
@@ -1020,9 +974,10 @@ func generateRequestsForWindow(
 	// "numRequests arrivals inside a window of length windowDurationUs" (there
 	// are numRequests+1 gaps around numRequests interior points), and it is
 	// what removes the boundary bias.
+	arrivalRNG := ws.Stream(purposeArrivals)
 	iats := make([]int64, numRequests+1)
 	for i := 0; i < numRequests+1; i++ {
-		iats[i] = arrivalSampler.SampleIAT(rng)
+		iats[i] = arrivalSampler.SampleIAT(arrivalRNG)
 	}
 
 	// Step 6: Rescale IATs to match target window duration.
@@ -1067,7 +1022,7 @@ func generateRequestsForWindow(
 
 			// BC-1: Call GenerateReasoningRequests to create session metadata
 			reasoningReqs, err := GenerateReasoningRequests(
-				rng, client.Reasoning,
+				ws.Seed, sessionPrefix+"0", client.Reasoning,
 				inputSampler, outputSampler,
 				startTime,
 				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
@@ -1126,7 +1081,7 @@ func generateRequestsForWindow(
 
 			// BC-1: Call GenerateReasoningRequests to create session metadata
 			reasoningReqs, err := GenerateReasoningRequests(
-				rng, client.Reasoning,
+				ws.Seed, fmt.Sprintf("%s%d", sessionPrefix, i), client.Reasoning,
 				inputSampler, outputSampler,
 				currentTime,
 				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
@@ -1183,11 +1138,12 @@ func generateRequestsForWindow(
 			break
 		}
 
-		// Sample token lengths from resolved distributions.
-		inputLen := inputSampler.Sample(rng)
-		outputLen := outputSampler.Sample(rng)
-		inputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
-		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
+		// Sample token lengths from resolved distributions, from the request's own streams.
+		rs := requestStreams(ws, int64(i))
+		inputLen := inputSampler.Sample(rs.Stream(purposeInputLength))
+		outputLen := outputSampler.Sample(rs.Stream(purposeOutputLength))
+		inputTokens := tokens(rs, purposeInputTokens, inputLen)
+		outputTokens := tokens(rs, purposeOutputTokens, outputLen)
 
 		req := &sim.Request{
 			ID:           "", // Assigned later after merge+sort across all windows.

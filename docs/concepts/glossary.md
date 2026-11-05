@@ -24,10 +24,6 @@ The Go module (`github.com/inference-sim/blis-latency-kernel`) that prices every
 
 The unit of KV cache allocation. Each block holds a fixed number of tokens (default: 16). Requests are allocated blocks proportional to their token count. Blocks are reference-counted and can be shared across requests via prefix caching. See [Core Engine: KV Cache](core-engine.md#the-engine-interface).
 
-### Calibration Report
-
-The JSON output of `blis calibrate` comparing real observed latencies against simulator predictions. Contains per-request TTFT and E2E deltas, aggregate error metrics (MAPE, Pearson correlation, percentile comparisons), bias assessment, and a quality rating. See [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md#blis-calibrate-deprecated).
-
 ### Chunked Prefill
 
 A vLLM optimization where long prefill sequences are split into chunks that fit within the per-step token budget (`max-num-batched-tokens`). Controlled by the scenario's `engine.long_prefill_token_threshold`. See [Core Engine: Batch Formation](core-engine.md#the-engine-interface).
@@ -51,10 +47,6 @@ The token generation phase where the model produces output tokens one at a time 
 ### Discrete Event Simulation (DES)
 
 A simulation paradigm where the system state changes only at discrete event times. BLIS maintains a priority queue of timestamped events and advances the simulation clock by jumping between events, rather than stepping through fixed time intervals. See [Core Engine: Event Queue](core-engine.md#overview).
-
-### Distribution Synthesis
-
-The `--rate` mode of `blis observe` that generates workload from statistical distributions (prompt/output token counts, arrival rate) instead of a workload spec YAML file. Useful for quick single-client experiments without crafting a full workload specification. See [Observe / Replay / Calibrate: Distribution Synthesis Flags](../guide/observe-replay-calibrate.md#distribution-synthesis-flags).
 
 ### E2E (End-to-End Latency)
 
@@ -128,10 +120,6 @@ Maximum total sequence length (input + output) for a single request, in tokens. 
 
 A transformer architecture variant where each layer routes each token to a subset of specialist sub-networks (experts) rather than processing all tokens through shared weights. blis-latency-kernel reads expert geometry (expert count, top-k) from the model graph in the catalog. A scenario's `dp > 1` runs one replica per data-parallel rank; `enable_expert_parallel` is priced by the kernel. See [Latency Models Guide](../guide/latency-models.md#data-and-expert-parallelism-moe).
 
-### Observe / Replay / Calibrate Pipeline
-
-The end-to-end workflow of `blis observe` → `blis replay` → `blis calibrate` for validating simulator accuracy against real inference servers. Each stage is independently useful: observe collects latency baselines, replay tests simulator behavior on real traces, and calibrate compares results. See [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md).
-
 ### Oracle Knowledge Boundary (INV-9)
 
 The principle that control-plane decisions (admission, routing, scheduling, priority) must not read `Request.OutputTokens`. The actual output token count is oracle knowledge — known only after generation completes. The control plane uses `MaxOutputLen` (client-declared output budget) or input-only checks instead. Only the execution engine (batch step processing, completion detection) may access `OutputTokens` for token generation and determining when a request finishes. See [Standards: Invariants](../contributing/standards/invariants.md).
@@ -178,7 +166,7 @@ An llm-d router plugin in a scheduling profile that scores each candidate endpoi
 
 ### Seed
 
-The random seed for deterministic simulation. The same input at the same revisions produces a byte-identical `Result` outside `runtime` (INV-6). BLIS uses partitioned RNG to isolate randomness across subsystems. See [Configuration Reference](../reference/configuration.md#simulation-control).
+The random seed for deterministic simulation. The same input at the same revisions produces a byte-identical `Result` outside `runtime` (INV-6). Every draw comes from a named random stream (component, purpose and entity), so one request's draws do not depend on another's. See [Configuration Reference](../reference/configuration.md#simulation-control).
 
 ### SLO Class
 
@@ -206,15 +194,11 @@ The mean inter-token latency across all decode steps for a request, computed as 
 
 ### TraceV2
 
-The trace format used by the observe/replay/calibrate pipeline, consisting of two files: a header YAML file (recording model, server config, and observation metadata) and a data CSV file (recording per-request timing: arrival time, TTFT, E2E latency, token counts). See [Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md).
+The trace format `blis run --trace-output` and `blis convert` write and `blis replay` reads, consisting of two files: a header YAML file (the trace's mode, time unit, seed, and the run's recorded router and offload configuration) and a data CSV file (per-request rows: arrival time, token counts, session and round, timing). See [Trace Replay](../guide/replay.md).
 
 ### TTFT (Time To First Token)
 
 Time from request arrival to completion of the prefill phase (first output token ready). Includes queueing delay, prefill step times, and per-token output processing overhead. A key latency SLO metric for interactive applications. See [Core Engine: Metrics](core-engine.md#metrics).
-
-### Warmup Requests
-
-Initial requests dispatched by `blis observe` that are excluded from trace output (`--warmup-requests N`). Warmup requests allow the server to populate its KV cache and reach steady-state scheduling before measurement begins, avoiding cold-start artifacts in the recorded trace. See [Observe / Replay / Calibrate: blis observe](../guide/observe-replay-calibrate.md#blis-observe-deprecated).
 
 ### Work-Conserving
 

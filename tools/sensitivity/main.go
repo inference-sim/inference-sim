@@ -43,24 +43,22 @@ import (
 	"os"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/vendored"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness"
+	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 func main() {
 	corpusPath := flag.String("corpus",
-		kernelmodel.MeasurementPath("aisimulate_e2e.json"), "")
+		corpora.MeasurementPath("aisimulate_e2e.json"), "")
 	scenarios := flag.String("scenarios",
-		kernelmodel.DefaultScenarios(), "")
-	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
-	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
+		kernelfixtures.AISimulate(), "")
+	catalog := flag.String("catalog", substratedata.MustCatalog(), "")
+	registry := flag.String("registry", substratedata.MustRegistry(), "")
 	framework := flag.String("framework", "vllm", "")
 	settings := flag.String("engine-settings",
-		kernelmodel.MeasurementPath("inferencex_engine_settings.json"),
+		corpora.MeasurementPath("inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; the baseline is the scored configuration")
 	draws := flag.Bool("draws", true, "also re-score with the numpy seed-1..4 length fixtures")
 	monotoneOnly := flag.Bool("monotone", true, "score only sweeps with a monotone measurement")
@@ -71,7 +69,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
+	if err := corpora.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}

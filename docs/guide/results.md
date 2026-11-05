@@ -33,10 +33,11 @@ jq '.metrics.ttft_p99_ms' result.json
 | `goodput` | With SLO targets: the targets, `goodput_rps`, `slo_attainment`, and per class `completed` and `met`. Unlike every other rate, `goodput_rps` is over the whole simulated run (`engine.cluster.simulated_duration_s`), not the measured window, as the results file always computed it. |
 | `breakdowns` | `per_model`, `per_tenant`, `per_adapter` (the run's own metrics over each key's requests), `pd` (the prefill/decode split, in ms), `sessions`. |
 | `engine` | What the engines reported: under `cluster` the step-interval series, preemptions, KV figures, cache hit rates, in-flight counts, the server series and the acceptance record, plus the whole-run figures under `whole_run`; under each pool role its prefix-cache record; under `instances` each instance's own figures. |
+| `engine.frame` | The run's experimental frame (design §8.6, DEV-7): `generator` (`kind`: `workload_spec`, `distribution`, `preset`, `concurrency`, `trace` or `agentic_replay`; `source`, the spec's or trace data file's sha256 or the preset's name; the `seed` its draws used; a replay's `session_mode`; and `random`, the random-number generator and how its streams are seeded), `initial_state` (every engine's caches start `empty`), `phases` (the `warmup` rule, the measured window's `measured_start` and `measured_stop`, and the `drain` rule), `stop_rule` (`request_count`, `horizon`, `both` or `exhaustion`, with the cap and the horizon), `acceptance` (the conditions under which the run produces figures, and the requests `unfinished_at_stop`), and `metrics` (the identifiers of `metric_defs`). It is under `engine` because blis-schemas v0.10.0's Result has no frame field; it moves to the contracts Result's own field. |
 | `router` | The embedded router's requirements (`embed.Requirements`), sheds by SLO class, and the priority-inversion and head-of-line counters; with `--fitness-weights`, the score under `fitness` (`score`, `components`, `weights`); with `--summarize-trace`, the decision-trace summary under `trace_summary`. |
 | `kernel` | blis-latency-kernel's coefficient provenance per pool role. |
 | `saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
-| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that only select what is reported (`--output`, `--format`, `--view`, `--log`, output paths, `--detectors`, ...) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
+| `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`, `--lazy-generation`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
 | `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
@@ -130,8 +131,7 @@ generated on top of the cap, and blis-schemas v0.9.1 states no separate follow-u
 raised to `requests.generated` and the cap as given is an `overrides` row, `num_requests_cap`;
 an uncapped run in which nothing arrived records 1, the smallest bound the
 schema accepts. A run in which nothing arrived and no `--horizon` bounded simulated time has no
-span to report over and is refused. `blis observe` (deprecated, #1901) is unchanged: it still prints the
-`=== Simulation Metrics ===` JSON.
+span to report over and is refused.
 
 The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,
 sessions, P/D, fitness, trace summary) are what `--view summary` renders to stderr.
@@ -179,7 +179,7 @@ The `--metrics-path` file contains:
 | `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
 | `catalog` | object | Model-catalog provenance: path, git revision, dirty flag (see [Catalog Provenance](#catalog-provenance)); the Result records the revision under `revisions.catalog` |
 | `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}`; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)); the Result carries the same list under `overrides` |
-| `cache_hit_rate` | fraction | GPU prefix-cache hit rate: prompt hit tokens over prompt query tokens summed across instances, as vLLM counts them (#1904); the measured window's in the file, the whole run's under `whole_run` — **file only** |
+| `cache_hit_rate` | fraction | GPU prefix-cache hit rate: prompt hit tokens over prompt query tokens summed across instances, as vLLM counts them (#1904); the measured window's in the file — **file only**; the Result carries the whole run's as `engine.cluster.cache_hit_rate_whole_run` |
 | measured-window keys | — | `ttft_p50_ms`, `request_itl_*`, `interactivity_*`, `step_interval_*`, `output_throughput_tok_s`, … — **file only**; see [Measured-Window Aggregates](#measured-window-aggregates-metrics-path-file) |
 | `kernel_provenance` | object | Per-pool coefficient evidence, assumptions and skipped release rules — **file only**; see [Kernel Provenance](#kernel-provenance) |
 | `blis_version`, `kernel_version`, `schemas_version` | string | Build pins from the binary's build information (`"unknown"` when absent) — **file only** |
@@ -203,21 +203,20 @@ percentiles are numpy-linear (`percentile_method: "numpy_linear"`).
 | `output_throughput_tok_s`, `measured_window_s`, `measured_window_source` | measured output tokens / window; `explicit` when the replay set the profiling window, `derived` (first measured arrival → last measured completion) otherwise |
 | `measured_completed_requests`, `cancelled_requests`, `context_overflow_requests`, `failed_requests` | counts in the window (INV-M1): cancelled = in flight when it closed or completed after its end; failed = timed out, dropped, rejected or shed |
 | `cpu_tier_hit_rate` | prompt tokens the CPU tier supplied / prompt tokens queried (measured admissions) |
-| `whole_run` | the whole-run `ttft_*`, `e2e_*` and `cache_hit_rate`, for consumers of the old meaning (`blis calibrate`) |
 | `gateway_queue_delay_{mean,p90}_ms` | flow-control queueing per measured request (0 without flow control) |
 | `in_flight_requests_{mean,max}` | engine-side in-flight requests (dispatched, not completed), time-weighted over the window |
 | `kv_capacity_tokens_per_replica` | GPU KV pool of the smallest instance, tokens |
 
 In the file, `ttft_*`, `e2e_*` and `cache_hit_rate` take these measured-window values; the
 top-level whole-run keys keep the whole-run figures (TTFT there also counts requests that emitted a first token but did
-not complete), and the file repeats them under `whole_run`.
+not complete).
 The legacy `itl_*` keys are **unchanged** for backward compatibility — they
 remain per verification step under speculative decoding — and `completed_requests` stays the
 run-wide INV-1 count. Invariants: INV-M1 … INV-M4.
 
 **Comparing a hit rate with aiperf 0.12.0.** Compare aiperf's `server_metrics_export.json`
-`vllm:prefix_cache_hits` / `vllm:prefix_cache_queries` "profiling" totals with
-`whole_run.cache_hit_rate`, not with the measured-window `cache_hit_rate`. aiperf takes that
+`vllm:prefix_cache_hits` / `vllm:prefix_cache_queries` "profiling" totals with the Result's
+`engine.cluster.cache_hit_rate_whole_run`, not with the measured-window `cache_hit_rate`. aiperf takes that
 total as last-profiling-scrape minus the scrape before the first PROFILING-tagged scrape
 (`server_metrics/accumulator.py:190-194, 387-401`), and in 0.12.0 a scrape at warmup start
 already carries the PROFILING tag. So the baseline precedes warmup, and the exported total

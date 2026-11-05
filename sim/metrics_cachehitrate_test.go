@@ -14,7 +14,7 @@ import (
 // field nil so omitempty drops it; the file marshal populates it.
 //
 // The file's value is the measured window's prompt-lookup rate (#1938); with no phase set
-// every lookup is measured, so it equals the whole-run rate kept under whole_run.
+// every lookup is measured, so it equals the whole-run rate.
 func TestEmitOutput_CacheHitRate_FileOnly(t *testing.T) {
 	m := NewMetrics()
 	m.PrefixCacheQueryTokens, m.PrefixCacheHitTokens = 800, 500
@@ -53,9 +53,6 @@ func TestEmitOutput_CacheHitRate_FileOnly(t *testing.T) {
 	}
 	if *fileOut.CacheHitRate != 0.625 {
 		t.Errorf("file cache_hit_rate = %v, want 0.625", *fileOut.CacheHitRate)
-	}
-	if fileOut.WholeRun == nil || fileOut.WholeRun.CacheHitRate != 0.625 {
-		t.Errorf("whole_run.cache_hit_rate = %+v, want 0.625", fileOut.WholeRun)
 	}
 }
 

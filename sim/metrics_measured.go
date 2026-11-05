@@ -125,21 +125,6 @@ type measuredLatencies struct {
 	startUs, endUs int64
 }
 
-// WholeRunLatency keeps, in the --metrics-path file, the whole-run figures stdout prints for
-// the keys the file restates over the measured window, for a consumer of the old meaning
-// (blis calibrate compares whole-run TTFT and throughput).
-type WholeRunLatency struct {
-	TTFTMeanMs   float64 `json:"ttft_mean_ms"`
-	TTFTP90Ms    float64 `json:"ttft_p90_ms"`
-	TTFTP95Ms    float64 `json:"ttft_p95_ms"`
-	TTFTP99Ms    float64 `json:"ttft_p99_ms"`
-	E2EMeanMs    float64 `json:"e2e_mean_ms"`
-	E2EP90Ms     float64 `json:"e2e_p90_ms"`
-	E2EP95Ms     float64 `json:"e2e_p95_ms"`
-	E2EP99Ms     float64 `json:"e2e_p99_ms"`
-	CacheHitRate float64 `json:"cache_hit_rate"`
-}
-
 // Measured returns the measured-window aggregates EmitOutput writes into the --metrics-path
 // file, for a caller that reads them without writing the file.
 func (m *Metrics) Measured() MeasuredMetrics {
@@ -336,14 +321,8 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 }
 
 // applyMeasured writes the measured-window values into the keys MetricsOutput already
-// carries, for the --metrics-path file, keeping the whole-run values under whole_run.
-// cacheHitRate is the whole run's prompt-lookup rate.
-func (o *MetricsOutput) applyMeasured(lat measuredLatencies, cacheHitRate float64) {
-	o.WholeRun = &WholeRunLatency{
-		TTFTMeanMs: o.TTFTMeanMs, TTFTP90Ms: o.TTFTP90Ms, TTFTP95Ms: o.TTFTP95Ms, TTFTP99Ms: o.TTFTP99Ms,
-		E2EMeanMs: o.E2EMeanMs, E2EP90Ms: o.E2EP90Ms, E2EP95Ms: o.E2EP95Ms, E2EP99Ms: o.E2EP99Ms,
-		CacheHitRate: cacheHitRate,
-	}
+// carries, for the --metrics-path file.
+func (o *MetricsOutput) applyMeasured(lat measuredLatencies) {
 	o.TTFTMeanMs, o.TTFTP90Ms, o.TTFTP95Ms, o.TTFTP99Ms = lat.ttftMean, lat.ttftP90, lat.ttftP95, lat.ttftP99
 	o.E2EMeanMs, o.E2EP90Ms, o.E2EP95Ms, o.E2EP99Ms = lat.e2eMean, lat.e2eP90, lat.e2eP95, lat.e2eP99
 	o.CacheHitRate = &lat.cacheHitRate

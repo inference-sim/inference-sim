@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
 	"os"
 	"sort"
 	"strconv"
@@ -14,10 +13,11 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	"github.com/inference-sim/blis-schemas/spec/measurement"
-	"github.com/inference-sim/blis-schemas/spec/result"
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
@@ -30,18 +30,12 @@ var (
 	replaySessionMode   string
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
-	// saturationReport is declared in root.go and shared across run, replay, observe
+	// saturationReport is declared in root.go and shared by run and replay
 
 	replayConcurrentSessions int  // >0 enables fixed-pool closed-loop replay (N concurrent sessions)
 	replayTotalSessions      int  // total sessions to replay when pooling (0 = corpus size)
 	replayShuffleCorpus      bool // randomize corpus step order (pool mode only; seeded from --seed) (#1480)
 )
-
-// corpusShuffleSeedSalt is XORed with the master --seed to derive the corpus-shuffle
-// RNG stream, keeping it independent of the per-session token and clone RNGs (#1480).
-// Shared by `blis replay --shuffle-corpus` and `blis observe --shuffle-corpus` so the
-// SAME --seed selects the SAME subset/order on both — required for calibration parity.
-const corpusShuffleSeedSalt = 0x53485546 // "SHUF"
 
 var replayCmd = &cobra.Command{
 	Use:   "replay",
@@ -50,12 +44,12 @@ var replayCmd = &cobra.Command{
 exact request sequence captured in the trace. Unlike 'blis run', it does not generate
 requests from distributions — the request sequence is fully determined by the trace.
 
-Use --results-path to write per-request SimResult JSON (request_id, ttft_us, e2e_us,
-input_tokens, output_tokens, slo_class, model, itl_mean_us) for downstream consumption by blis calibrate.
+--results-path (deprecated) writes per-request SimResult JSON (request_id, ttft_us,
+e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us).
 
 Known limitations:
-  - Warm-up requests: trace.Header.warm_up_requests is not filtered; blis calibrate
-    is responsible for excluding the first N warm-up entries from calibration.
+  - Warm-up requests: trace.Header.warm_up_requests is not read; every request is
+    measured.
   - Multi-model traces: per-request Model field is propagated to the simulator, but
     the deployment (--scenario) applies globally to all requests.
   - Horizon: --horizon defaults to 2x the latest arrival time. For heavy-load traces
@@ -139,8 +133,8 @@ Example:
 		if replaySessionMode != "fixed" && replaySessionMode != "closed-loop" && replaySessionMode != "fixed-accumulate" && agx == nil {
 			logrus.Fatalf("--session-mode must be \"fixed\", \"closed-loop\", or \"fixed-accumulate\", got %q", replaySessionMode)
 		}
-		if replayThinkTimeMs < 0 {
-			logrus.Fatalf("--think-time-ms must be non-negative, got %d", replayThinkTimeMs)
+		if err := check.DurationMs("--think-time-ms", int64(replayThinkTimeMs)); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 		// --timeout override (#2064): reject 0 the same way `blis run` does — positive sets
 		// a deadline, negative disables, 0 is ambiguous. Only meaningful when explicitly set.
@@ -294,11 +288,11 @@ Example:
 				if nonSession := len(r0Requests) - len(blueprints); nonSession > 0 {
 					logrus.Fatalf("--concurrent-sessions requires every trace record to belong to a session, but %d of %d records have no session_id. Pooled replay cannot mix session and non-session (single-shot) records; re-export the corpus so every row carries a session_id (e.g. via `blis convert otel`), or drop --concurrent-sessions to replay it in plain closed-loop mode.", nonSession, len(r0Requests))
 				}
-				// Optional seeded shuffle of the corpus step order (#1480). Drawn from
-				// a distinct stream off the master seed (XOR salt) so it is reproducible
-				// from --seed yet does not perturb the per-session token / clone RNGs.
+				// Optional seeded shuffle of the corpus step order (#1480), drawn from its
+				// own named stream (workload.CorpusShuffleStream), so it is reproducible
+				// from --seed and does not move any session's token draws.
 				if replayShuffleCorpus {
-					workload.ShuffleSessions(blueprints, r0Requests, rand.New(rand.NewSource(seed^corpusShuffleSeedSalt)))
+					workload.ShuffleSessions(blueprints, r0Requests, workload.CorpusShuffleStream(seed))
 				}
 				driver, initial, pErr := workload.BuildSessionPool(blueprints, r0Requests, replayConcurrentSessions, replayTotalSessions, seed)
 				if pErr != nil {
@@ -379,10 +373,10 @@ Example:
 		// replay (unlike --lora-config, which is flags-only). Reconstruct the recorded
 		// config, Fatalf if this binary cannot reproduce it, and Fatalf on a genuine
 		// flag/header conflict. Inert when the trace carries no offload config (BC-G5).
-		// Observe traces (mode "real") may model the observed deployment's offload via
-		// --kv-offload-config for the sim side of the #1583 hit-rate comparison; sim-
-		// generated traces remain header-authoritative (INV-13). An agentic replay has no
-		// trace, so no recorded deployment: the scenario's offload block is its tiers.
+		// A converted trace (mode "converted", #2067) records no deployment, so the
+		// scenario's offload block or --kv-offload-config states its tiers; a trace blis
+		// run or blis replay wrote stays header-authoritative (INV-13). An agentic replay
+		// has no trace, so no recorded deployment: the scenario's offload block is its tiers.
 		kvOffloadCfg := reconcileReplayKVOffload(cmd, traceData.Header.KVOffload,
 			!replayRecordsDeployment(traceData.Header, agx != nil))
 		// #1590 (H1): parity with run — the multi-tier offload chain (from the trace
@@ -390,18 +384,13 @@ Example:
 		// are distinct offload models; refuse both with a clean CLI error rather than
 		// the library-level panic in NewKVStore.
 		requireOneOffloadModel(kvOffloadCfg.IsEnabled(), true)
-		// #1583 (BC-10): a tiered observed hit-rate in the header is only replayable
-		// into a comparable sim number if this replay reproduces a tiered offload
-		// config. Fail loudly rather than silently produce a GPU-only hit-rate.
-		if err := requireOffloadForTieredObservation(traceData.Header.ObservedKVMetrics, kvOffloadCfg.IsEnabled()); err != nil {
-			logrus.Fatalf("%v", err)
-		}
 
 		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
-		// #1583: derive PerBlockBytes for an offload config supplied by --kv-offload-config
-		// (the observe-trace calibration path). A sim-generated trace header already
+		// #1583: derive PerBlockBytes for an offload config the scenario or
+		// --kv-offload-config supplies (a converted trace or an agentic replay). A trace
+		// header blis run or blis replay wrote already
 		// carries the run-computed value (>0), so this is skipped for run/replay parity;
 		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
 		// the derivation in cmd/root.go (runCmd) so run and replay agree.
@@ -463,16 +452,9 @@ Example:
 			logrus.Fatalf("Invalid PD pool topology: %v", err)
 		}
 
-		// DP-as-placement plan DECISION (#1531/#1556, #1553), as runCmd makes it.
-		// planDPPlacement is pure; it is APPLIED below at the shared resolveDPPlacement (R23).
-		// autoscaler / node pools are structurally false on replay (rejected unconditionally
-		// above), so a replay plan is only ever active for PD or a plain MoE scenario dp>1.
-		dpPlan, dpErr := planDPPlacement(lr.ModelConfig.IsMoE(), dataParallelism, enableExpertParallel,
-			prefillInstances > 0 || decodeInstances > 0 || prefillDecodeInstances > 0 || encodeInstances > 0,
-			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0),
-			bundle != nil && len(bundle.NodePools) > 0)
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
+		if err := refuseDPAutoscaler(lr.ModelConfig.IsMoE(), dataParallelism,
+			cmd.Flags().Changed("model-autoscaler-interval-us") || (bundle != nil && bundle.Autoscaler.IntervalUs > 0)); err != nil {
+			logrus.Fatalf("%v", err)
 		}
 		// Per-pool hardware override construction (same as runCmd).
 		var prefillOverrides, decodeOverrides poolOverrides
@@ -483,20 +465,6 @@ Example:
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
 			kernelPD.applyOffload(kvOffloadCfg, &prefillOverrides, &decodeOverrides)
-		}
-
-		// DP-as-real-placement (#1531 for run, #1556 for replay; #1553 lifts PD/node-pool
-		// guards): on an MoE model, the scenario's dp N means N independent single-node engine
-		// replicas (vLLM's internal DP EngineCores), not one lumped instance.
-		// resolveDPPlacement is the ONE code path run and replay share (R23) — it expands
-		// numInstances × N and the four PD pool counts; KV blocks and max_model_len are
-		// already per rank from the kernel and stay unchanged — so identical flags over the
-		// same trace produce identical metrics (INV-13). Placed AFTER the PD / autoscaler /
-		// node-pool validation above and BEFORE the DeploymentConfig literal below, which
-		// reads the adjusted quantities. A no-op for dp 1 and dense models (INV-6).
-		dpPlan, dpErr = resolveDPPlacement(lr, dpPlacementFor(scenarioShape.EngineVersion, dpPlan))
-		if dpErr != nil {
-			logrus.Fatalf("%v", dpErr)
 		}
 
 		logrus.Infof("Starting replay with %d KV blocks, horizon=%dticks", totalKVBlocks, replayHorizon)
@@ -512,12 +480,11 @@ Example:
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
 		}
-		ec := engineConfigFor(cmd, lr.ModelConfig, dpPlan.PerRankDP, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
+		ec := engineConfigFor(cmd, lr.ModelConfig, dataParallelism, kvOffloadCfg, kernelCPUTierTicks, loraCfg)
 		runEngine := engineConfigOfRun(ec, replayHorizon, seed, lr.KernelModel, sloPriorityOverrides)
 		config := cluster.DeploymentConfig{
 			InstanceConfig:             instanceConfigOf(runEngine),
 			NumInstances:               numInstances,
-			DPLockstepRanks:            dpPlan.LockstepRanks,
 			DPLoadBalancing:            dpLoadBalancing,
 			TraceLevel:                 traceLevel,
 			CounterfactualK:            counterfactualK,
@@ -529,16 +496,13 @@ Example:
 			PDTransferContention:       pdTransferContention,
 			PDTransferDemand:           pdTransferDemand,
 			PDPrefillKVHold:            kernelPD.holdsPrefillKV(),
-			PDPrefillSamplesFirstToken: coreEngineVersions[scenarioShape.EngineVersion],
+			PDPrefillSamplesFirstToken: true,
 			Roles:                      rolesOf(runEngine, prefillOverrides, decodeOverrides),
 			InstanceLifecycle:          bundleInstanceLifecycle,
 			ScenarioEndpointTopology:   cluster.StaticEndpointTopology(scenarioTopology),
 			// A contract-built release replays on the engine it ran on, built the same way as in
 			// run (INV-13); a compatibility release keeps the compatibility engine.
-			NewEngine: engineDriverFactory(scenarioShape.EngineVersion, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
-		}
-		if f := compatContractFactory(scenarioShape.EngineVersion, runEngine, ec.Speculative.Acceptance, dpPlan); f != nil {
-			config.NewEngine = f
+			NewEngine: engineDriverFactory(scenarioEngine, replayHorizon, seed, lr.KernelModel, ec.Speculative.Acceptance),
 		}
 
 		// Run simulation — wire SessionManager for closed-loop, nil for fixed mode
@@ -628,15 +592,10 @@ Example:
 			logrus.Infof("agentic replay: profiling %s -> %s, %+v", fmtUs(ps), fmtUs(pe), agx.driver.Stats())
 		}
 		if poolDriver != nil {
-			// KNOWN LIMITATION (#1483): under an explicit --horizon hard cap that truncates
-			// mid-drain, a refill pushed by a late termination but discarded by the cluster's
-			// horizon guard is still counted as started, so Unstarted() may undercount and this
-			// warning may not fire. The self-draining path (no --horizon) is exact: pre-instance
-			// drops (routing/gateway rejection, client-deadline expiry, shed/evict) now cancel
-			// the session and refill its slot via the unserved hook (#2064), so they no longer
-			// leave a session unstarted.
-			if un := poolDriver.Unstarted(); un > 0 {
-				logrus.Warnf("%d of %d pooled sessions never admitted — an explicit --horizon cap truncated the drain before every session started. Omit --horizon to self-drain (then every session is admitted; see #1483 for the horizon-cap accounting limitation).",
+			// A session is started when its round 0 arrived. A refill the horizon discarded was
+			// created and ended not_started (DEV-9), so the fate ledger counts it unstarted (#1483).
+			if un := poolDriver.TotalSessions() - poolDriver.ArrivedSessions(cs.Fates()); un > 0 {
+				logrus.Warnf("%d of %d pooled sessions never started: the --horizon cap ended the run before their first round arrived. Omit --horizon to self-drain, which starts every session.",
 					un, poolDriver.TotalSessions())
 			}
 		}
@@ -694,6 +653,7 @@ Example:
 			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
 			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
 			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
+			frame: replayFrameGenerator(agx),
 		})
 
 		// Export trace if requested (runs LAST, after all primary metrics are emitted —
@@ -735,12 +695,7 @@ Example:
 				SessionContextGrowth: reexportGrowth,                   // #1630: carry accumulate forward so deltas re-replay correctly
 				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7
 				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: carry the offload config forward
-				// #1583, BC-4: preserve the real-side observed KV hit-rate verbatim.
-				// It is a real-server observation replay cannot regenerate; carrying it
-				// forward keeps it available to a downstream calibrate and never
-				// silently drops it.
-				ObservedKVMetrics: traceData.Header.ObservedKVMetrics,
-				Router:            router.header(gw.Seed()),
+				Router:               router.header(gw.Seed()),
 			}
 			if err := workload.ExportTraceV2(header, records, replayTraceOutput+".yaml", replayTraceOutput+".csv"); err != nil {
 				logrus.Fatalf("Trace export failed: %v", err)
@@ -756,9 +711,9 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "DEPRECATED (use --output): file to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) for blis calibrate consumption. Kept for one release.")
+	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "DEPRECATED (use --output): file to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us). Kept for one release.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
-	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy aggregate MetricsOutput JSON (incl. cache_hit_rate for 'blis calibrate --sim-metrics', #1583). Symmetric with 'blis run --metrics-path'. Kept for one release.")
+	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy aggregate MetricsOutput JSON (incl. cache_hit_rate, #1583). Symmetric with 'blis run --metrics-path'. Kept for one release.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
@@ -784,6 +739,7 @@ func init() {
 	// so no global state is mutated. BC-9.
 	var replayLazyGenerationIgnored bool
 	replayCmd.Flags().BoolVar(&replayLazyGenerationIgnored, "lazy-generation", false, "Accepted for symmetry with 'blis run' (#1441); has no effect on replay.")
+	markDeprecatedFlags(replayCmd, replayDeprecatedFlags)
 	rootCmd.AddCommand(replayCmd)
 }
 
@@ -867,10 +823,27 @@ func computeReplayHorizon(requests []*sim.Request) int64 {
 	return computeHorizonFromMaxArrival(maxArrival)
 }
 
+// replayFrameGenerator is what a replay tells the experimental frame about its requests: the
+// trace (by its data file's sha256) and session mode, or the agentic scenario with its seed
+// and warm-up rule.
+func replayFrameGenerator(agx *agentXRun) frameGenerator {
+	if agx != nil {
+		return frameGenerator{Kind: generatorAgenticReplay, Source: "sha256:" + agx.spec.Corpus.SHA256,
+			Seed: agx.spec.Seed(), Warmup: string(agx.spec.WarmupMode())}
+	}
+	g := frameGenerator{Kind: generatorTrace, Seed: seed, SessionMode: replaySessionMode}
+	if d, err := fileDigest(traceDataPath); err == nil {
+		g.Source = "sha256:" + d
+	} else {
+		logrus.Fatalf("--trace-data %s: %v", traceDataPath, err)
+	}
+	return g
+}
+
 // replayRunControls are the run controls a replay records: the trace's offered load (or the
 // agentic scenario's lanes), the requests it replays, the seed and the horizon it ran to. No warmup is
-// recorded for a trace: a replay measures every request (the header's warm_up_requests is
-// read only by calibrate), and an agentic replay's warmup is part of its workload.replay.
+// recorded for a trace: a replay measures every request (it does not read the header's
+// warm_up_requests), and an agentic replay's warmup is part of its workload.replay.
 func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.Request, horizonUs int64) result.Run {
 	numRequests, load := len(requests), measurement.Load{}
 	var binding *schemaworkload.Binding
@@ -893,7 +866,7 @@ func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.
 	return result.Run{Seed: seed, NumRequests: numRequests, Load: load, HorizonS: horizonSeconds(horizonUs), Workload: binding}
 }
 
-// extractSimResults converts Metrics to a slice of workload.SimResult for calibrate consumption.
+// extractSimResults converts Metrics to the --results-path rows.
 // Only requests with both TTFT and E2E recorded (i.e., fully completed) are included.
 // Non-numeric IDs (session follow-ups, format "request_<parent>_followup_<n>") are excluded.
 // Results are sorted by RequestID for deterministic output (R2, INV-6).

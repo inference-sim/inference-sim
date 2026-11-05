@@ -138,6 +138,10 @@ func (i *InstanceSimulator) ProcessNextEvent() sim.Event {
 	return i.drv.ProcessNextEvent()
 }
 
+// StallErr is the progress watchdog's error for this instance's engine, nil while it makes
+// progress (sim.EngineDriver.StallErr, SIM-7).
+func (i *InstanceSimulator) StallErr() error { return i.drv.StallErr() }
+
 // Finalize sets SimEndedTime, captures KV metrics, and logs completion.
 func (i *InstanceSimulator) Finalize() {
 	i.drv.Finalize()

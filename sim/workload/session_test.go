@@ -19,7 +19,7 @@ func makeTestBlueprint(sessionID string, maxRounds int, thinkTime int64, context
 		Horizon:       horizon,
 		InputSampler:  &constantSampler{value: 10},
 		OutputSampler: &constantSampler{value: 5},
-		RNG:           rand.New(rand.NewSource(42)),
+		Streams:       SessionStreams(42, sessionID),
 		TenantID:      "test-tenant",
 		SLOClass:      "standard",
 		Model:         "test-model",
@@ -219,7 +219,7 @@ func TestSession_AccumulateDeterminism_ClosedLoop(t *testing.T) {
 	// and return the input/output token sequence for every follow-up round.
 	driveSession := func() (inputs, outputs [][]sim.TokenID, arrivals []int64) {
 		bp := makeTestBlueprint("sess-determinism", rounds+1, 1000, "accumulate", 1_000_000)
-		bp.RNG = rand.New(rand.NewSource(seed))
+		bp.Streams = SessionStreams(seed, bp.SessionID)
 		sm := NewSessionManager([]SessionBlueprint{bp})
 
 		// Round 0: seeded externally. Use a fixed RNG for inputR0/outputR0 so
@@ -1078,7 +1078,7 @@ func TestSession_UnlimitedRounds_AllowsZeroMaxRounds(t *testing.T) {
 		Horizon:         1_000_000,
 		InputSampler:    &constantSampler{value: 10},
 		OutputSampler:   &constantSampler{value: 5},
-		RNG:             rand.New(rand.NewSource(42)),
+		Streams:         SessionStreams(42, "sess-zero"),
 		TenantID:        "test-tenant",
 		SLOClass:        "standard",
 		Model:           "test-model",

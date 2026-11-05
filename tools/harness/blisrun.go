@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/build"
 
 	"github.com/inference-sim/inference-sim/sim"

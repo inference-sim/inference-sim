@@ -663,7 +663,7 @@ func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSession_PrefixGroup_F
 // (2026-03-14-pr653-tracev2-schema-plan.md BC-3–6), and that ServerInputTokens is used
 // as the token count when > 0 and PrefixGroup is empty (replay-server-tokens-plan.md BC-1).
 func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{
 			RequestID:         0,
@@ -783,7 +783,7 @@ func TestInjectionTime_ChoiceLogic(t *testing.T) {
 }
 
 // TestLoadTraceV2Requests_NormalizesEpochSendOrigin verifies BC-1 and BC-4: an
-// epoch-scale send_time_us trace (a real blis observe trace) is injected on the
+// epoch-scale send_time_us trace (a trace of a real client) is injected on the
 // arrival origin with send-delta spacing preserved. This is the #1606 fix.
 func TestLoadTraceV2Requests_NormalizesEpochSendOrigin(t *testing.T) {
 	// Two records. arrival_time_us is run-relative (starts ~0); send_time_us is
@@ -876,7 +876,7 @@ func TestLoadTraceV2Requests_MixedSendSign_RelativeClock_ShiftZero(t *testing.T)
 // TestLoadTraceV2Requests_MixedEpochAndFallback_StaysNonNegative documents the
 // uniform-clock PRECONDITION via the INV-3 law. A trace that mixes an epoch-clock
 // record (send_time_us > 0) with a fallback record (send_time_us <= 0, using its
-// relative arrival) is UNREACHABLE from blis observe/run/converters — every real
+// relative arrival) is UNREACHABLE from blis run and the converters — every real
 // producer writes a single uniform clock (all epoch, or all relative/send==arrival,
 // or all-fallback). Re-basing to one origin is exact only for a uniform-clock trace,
 // so the epoch record is not re-based correctly here — but INV-3 still holds for

@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"math"
 	"reflect"
 	"testing"
@@ -153,7 +152,7 @@ func TestPrefillKVHold_VanishedDecodeFreesAtLeaseExpiry(t *testing.T) {
 			cfg.PDKVLeaseUs = lease
 			cfg.Horizon = horizon
 			cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
-			heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 500_000, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
+			cs.scheduleTestEvent(&pdDrainAt{time: 500_000, inst: cs.Instances()[1].ID()})
 			mustRun(t, cs)
 			return cs
 		}
@@ -190,7 +189,7 @@ func TestPrefillKVHold_UnroutableDecodeAtStartWaitsOutTheFirstLease(t *testing.T
 		cfg.Horizon = horizon
 		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
 		// The decode instance drains after routing (at arrival) and before the prefill ends.
-		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &pdDrainAt{time: 1, inst: cs.Instances()[1].ID()}, seqID: cs.nextSeqID()})
+		cs.scheduleTestEvent(&pdDrainAt{time: 1, inst: cs.Instances()[1].ID()})
 		mustRun(t, cs)
 		return cs
 	}
@@ -262,8 +261,7 @@ func TestPrefillKVHold_DropReleasesAsTheConnectorRuleSays(t *testing.T) {
 		cfg.Horizon = horizon
 		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("r", 1, 0, 160, 4)}), nil)
 		heldAfter := -1
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &pdHandoffDropAt{time: drop, parent: "r", outcome: outcome, heldAfter: &heldAfter}, seqID: cs.nextSeqID()})
+		cs.scheduleTestEvent(&pdHandoffDropAt{time: drop, parent: "r", outcome: outcome, heldAfter: &heldAfter})
 		mustRun(t, cs)
 		return cs, heldAfter
 	}

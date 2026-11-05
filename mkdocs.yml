@@ -110,8 +110,7 @@ nav:
       - Workload Specifications: guide/workloads.md
       - Cluster Simulation: guide/cluster.md
       - Metrics & Results: guide/results.md
-      - Observe / Replay / Calibrate: guide/observe-replay-calibrate.md
-      - KV Hit-Rate Calibration: guide/kv-offload-calibration.md
+      - Trace Replay: guide/replay.md
       - Archon PR Review: guide/archon-pr-review.md
       - Skills & Plugins: guide/skills-and-plugins.md
   - Validation:

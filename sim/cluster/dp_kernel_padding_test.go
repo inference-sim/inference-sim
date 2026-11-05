@@ -2,11 +2,14 @@ package cluster
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-vllm/compat/dplb"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/dplb"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -19,7 +22,8 @@ type plainLatency struct{ cengine.LatencyModel }
 // padded token count, so it finishes later than the same run priced without padding -- and
 // never sooner, since padding only adds work.
 func TestDPLockstep_KernelPaddingReachesTheCluster(t *testing.T) {
-	m, err := kernelmodel.Open("minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml", kernelmodel.DefaultRepos())
+	m, err := kernelmodel.Open("minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml", kernelmodel.Repos{Scenarios: kernelfixtures.AISimulate(),
+		Catalog: substratedata.MustCatalog(), Registry: substratedata.MustRegistry()})
 	if err != nil {
 		t.Fatal(err)
 	}

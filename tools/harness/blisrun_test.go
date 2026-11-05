@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -20,7 +20,7 @@ import (
 // on the way would be simulated at the committed value while reported as measured.
 func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
-	src := filepath.Join(kernelmodel.DefaultScenarios(), name)
+	src := filepath.Join(testScenarios(), name)
 	for _, pc := range []PointConfig{
 		{MaxNumSeqs: 37, MaxNumBatchedTokens: 4097, BlockSize: 32, PrefixCachingDisabled: true,
 			MaxModelLen: 2304, GPUMemoryUtilization: 0.95, EnableExpertParallel: true},
@@ -101,7 +101,7 @@ func TestScenarioVariantCarriesTheResolvedSettings(t *testing.T) {
 // that already states a router block is refused rather than overwritten.
 func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
 	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
-	src := filepath.Join(kernelmodel.DefaultScenarios(), name)
+	src := filepath.Join(testScenarios(), name)
 	pc := PointConfig{MaxNumSeqs: 8, MaxNumBatchedTokens: 4096, BlockSize: 16, MaxModelLen: 2048, GPUMemoryUtilization: 0.9}
 	want := &deployment.Router{EndpointPickerConfig: vllmDPLoadBalancerFile}
 	dst := filepath.Join(t.TempDir(), name)

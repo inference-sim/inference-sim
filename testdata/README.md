@@ -45,13 +45,17 @@ invariant test. The companions are:
 
 ---
 
-## Vendored upstream releases (`catalog/`, `registry/`)
+## The cost model's scenario fixtures (`kernel/`)
 
-`testdata/catalog/` is a verbatim subset of a tagged blis-catalog release and
-`testdata/registry/` holds a tagged blis-registry release's coefficient sets. Both are pinned to
-the releases blis-latency-kernel's `testdata/upstream.lock` names, and a test fails if they
-drift. `testdata/upstream-prerelease.lock` can name an unreleased commit in a lock entry's place while
-a pinned kernel pre-release lags it; there is none now. The kernel is blis-latency-kernel v0.5.0, whose lock names
-blis-catalog 0.5.0 and blis-registry v0.3.0, and both directories equal them. See `catalog/README.md` for what is included and how to update it. The kernel's scenario
-fixtures are not copied: they are read from the blis-latency-kernel module `go.mod` pins.
+`testdata/kernel/` holds the scenario+deployment fixtures the cost model is tested on: the
+hand-written files directly under it, and the generated `aisimulate/` and `direct/`. They came
+from blis-latency-kernel v0.5.0 (commit 560bda63998700b1745c84387008ce3c1ded1b2a, its
+`testdata/`), because they carry engine blocks and need an engine to lower them, and only this
+repository imports both the engine and the cost model (release plan §2).
+`internal/kernelfixtures` locates them.
 
+## The catalog and registry
+
+Tests read the `catalog/` and `registry/` directories of the blis-substrate module that
+`go.mod` selects (`internal/substratedata`). There is no copy here and no lock file: the
+substrate requirement in `go.mod` is the one place that names the data.

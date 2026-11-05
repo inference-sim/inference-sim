@@ -2,7 +2,6 @@ package workload
 
 import (
 	"fmt"
-	"math/rand"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -70,8 +69,6 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		return nil, fmt.Errorf("session_context_growth: unknown value %q (valid: \"accumulate\" or empty)", contextGrowth)
 	}
 
-	rng := rand.New(rand.NewSource(seed))
-
 	// Injection-origin shift (#1606): re-base injection onto the arrival/deadline origin.
 	// 0 for generated traces (send == arrival) ⇒ arrivals equal the recorded ArrivalTimeUs.
 	originShift := injectionOriginShift(trace.Records)
@@ -81,7 +78,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 	for _, rec := range trace.Records {
 		if rec.PrefixGroup != "" && rec.PrefixLength > 0 {
 			if _, exists := prefixTokens[rec.PrefixGroup]; !exists {
-				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, rec.PrefixLength)
+				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(prefixStream(seed, rec.PrefixGroup), rec.PrefixLength)
 			}
 		}
 	}
@@ -114,9 +111,10 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 			}
 		}
 
-		// Per-session RNG for deterministic token IDs (INV-6), seeded from the master
-		// RNG exactly as LoadTraceV2SessionBlueprints does.
-		sessionRNG := rand.New(rand.NewSource(rng.Int63()))
+		// The session's streams, as LoadTraceV2SessionBlueprints and the session manager
+		// name them: round r's tokens come from roundStreams(session, r) whichever replay
+		// mode builds the round.
+		session := SessionStreams(seed, sessionID)
 
 		r0 := rounds[0]
 		var prefix []sim.TokenID
@@ -149,10 +147,8 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		// abs_0 from the server count while the encoder wrote deltas over the InputTokens
 		// column would shift every later reconstructed absolute by (server − input).
 		// Unreachable today — no converter (weka/otel) or re-exporter sets ServerInputTokens
-		// on an accumulate corpus, and observe (the only ServerInputTokens producer) never
-		// emits session_context_growth=accumulate, so such a trace is rejected by the CLI
-		// guard before reaching here. Left as a documented boundary rather than a guard.
-		r0Suffix := sim.GenerateRandomTokenIDs(sessionRNG, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
+		// on an accumulate corpus. Left as a documented boundary rather than a guard.
+		r0Suffix := tokens(roundStreams(session, 0), purposeInputTokens, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
 		buf.Append(r0Suffix)
 
 		// prevOutputTokens holds the previous round's generated output, appended to the
@@ -160,6 +156,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		var prevOutputTokens []sim.TokenID
 
 		for i, rec := range rounds {
+			rs := roundStreams(session, i)
 			// Reset target for compaction rounds (#1609): a round>0 with an
 			// input_tokens_reset marker re-seeds the buffer to that absolute length.
 			resetTarget := -1
@@ -176,7 +173,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 				// exactly resetTarget tokens (mirrors SessionManager.OnComplete). The
 				// just-completed round's output is intentionally NOT carried forward — it
 				// was folded into the compaction the trace recorded as this round's abs.
-				resetToks := sim.GenerateRandomTokenIDs(sessionRNG, resetTarget)
+				resetToks := tokens(rs, purposeResetTokens, resetTarget)
 				// Size the fresh array to THIS epoch's peak (rounds i..next-reset) so the
 				// new epoch's appends don't reallocate and don't keep the prior epoch's
 				// array alive beyond its own live views (PR #1696 review F1).
@@ -193,12 +190,12 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 				if len(prevOutputTokens) > 0 {
 					buf.Append(prevOutputTokens)
 				}
-				deltaToks := sim.GenerateRandomTokenIDs(sessionRNG, rec.InputTokens)
+				deltaToks := tokens(rs, purposeInputTokens, rec.InputTokens)
 				_, inputEnd := buf.Append(deltaToks)
 				inputTokens = buf.Slice(0, inputEnd)
 			}
 
-			outputTokens := sim.GenerateRandomTokenIDs(sessionRNG, rec.OutputTokens)
+			outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
 			prevOutputTokens = outputTokens
 
 			// inputTokens is a VIEW into the shared session buffer (no copy). This is the
@@ -217,13 +214,14 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 
 	// Non-session records: identical construction to LoadTraceV2Requests.
 	for _, rec := range nonSessionRecords {
-		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		rs := replayRecordStreams(seed, rec)
+		inputTokens := tokens(rs, purposeInputTokens, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 		if rec.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[rec.PrefixGroup]; ok {
 				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 			}
 		}
-		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
+		outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
 		requests = append(requests, buildFixedAccumulateRequest(rec, rec.SessionID, inputTokens, outputTokens, originShift))
 	}
 

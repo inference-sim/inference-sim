@@ -18,12 +18,23 @@ deterministic: the same seed produces byte-identical results, and no GPU is need
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
+```
+
+The catalog and registry are blis-substrate's, at the commit this build pins
+([Data compatibility](getting-started/installation.md#catalog-compatibility)):
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+```
+<!-- END GENERATED -->
+
+```bash
 ./blis run --scenarios examplescenarios \
   --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-registry \
+  --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100
 ```
 
@@ -73,7 +84,7 @@ directly to WaitQueue. See [Architecture](concepts/architecture.md).
 | P/D disaggregation | Prefill and decode pools, KV handoff priced over the scenario's fabric. | [Cluster](guide/cluster.md) |
 | KV caching and offload | Prefix caching and tiered offload over catalog storage devices. | [KV cache](guide/kv-cache.md) |
 | Autoscaling | Node pools with provisioning delays (`--policy-config`). | [Cluster](guide/cluster.md) |
-| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/observe-replay-calibrate.md) |
+| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/replay.md) |
 | Results and analysis | TTFT/ITL/E2E, saturation detectors, decision traces, fitness. | [Results](guide/results.md) |
 
 ---

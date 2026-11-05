@@ -43,12 +43,14 @@ __pycache__/*
 # data files
 *.json
 !testdata/goldendataset.json
-!testdata/catalog/models/**/config.json
+!/stack.json
+!testdata/bytegate/golden/*.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
 !sim/workload/testdata/agentx/*.json
 data/
 *.txt
+!testdata/bytegate/cases.txt
 
 # binaries
 #

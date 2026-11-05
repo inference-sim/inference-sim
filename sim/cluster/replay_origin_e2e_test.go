@@ -6,7 +6,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// epochSendTrace builds a TraceV2 that mimics a real `blis observe` trace: every
+// epochSendTrace builds a TraceV2 that mimics a trace of a real client: every
 // record carries an epoch-scale send_time_us (time.Now().UnixMicro()) alongside a
 // run-relative arrival_time_us. deadlineOffsetUs > 0 sets deadline_us = arrival +
 // offset (also on the relative clock); deadlineOffsetUs == 0 means "no timeout".

@@ -76,16 +76,21 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--scenario` | string | "" | **Required.** Scenario **file name** within `--scenarios`, e.g. `llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml`. The file is a [blis-schemas](https://github.com/inference-sim/blis-schemas) Scenario + Deployment (two YAML documents) — see [Scenario and Deployment](#scenario-and-deployment). |
-| `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The kernel module's own fixtures are at `$(go env GOMODCACHE)/github.com/inference-sim/blis-latency-kernel@v0.3.0/testdata/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`), an MTP example (`glm-5-h200-tp8-mtp3.yaml`) and a DeepSeek-V4.1-Flash DSpark example (`deepseek-v4.1-flash-h100-tp8-dspark5.yaml`). |
-| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) clone root, holding the fitted coefficient sets the scenario names. Pinned release: `v0.2.0`. |
-| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) **clone root** (pinned release `0.3.0`; see [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
+| `--scenarios` | string | "" | **Required.** Directory holding scenario YAML files. Any directory works. The cost model's fixtures are at `testdata/kernel/aisimulate`; this repository's `testdata/scenarios/` holds a P/D example (`glm-5-h200-3p1d-ib.yaml`), an MTP example (`glm-5-h200-tp8-mtp3.yaml`) and a DeepSeek-V4.1-Flash DSpark example (`deepseek-v4.1-flash-h100-tp8-dspark5.yaml`). |
+| `--registry` | string | "" | **Required.** [blis-registry](https://github.com/inference-sim/blis-registry) directory with the layout of blis-substrate's `registry/`, holding the coefficient sets the scenario names; the pinned commit is in [Data compatibility](../getting-started/installation.md#catalog-compatibility). |
+| `--catalog` | string | "" | Path to the [blis-catalog](https://github.com/inference-sim/blis-catalog) directory with the layout of blis-substrate's `catalog/` (see [Data compatibility](../getting-started/installation.md#catalog-compatibility)) — model graphs, chips, fabrics, storage devices and workload presets. **No default and no search path** — supply this flag or the `BLIS_CATALOG` environment variable, or the run is refused naming both (#1731). `--catalog` wins when both are set, and the override is announced on stderr. A relative value is resolved against the process working directory, an absolute value is used as given. Also registered on `convert preset` (and the deprecated `observe`) for the workload presets in the `workloads/` namespace. BLIS never fetches or writes a catalog file at run time (NS-6). |
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+```
+<!-- END GENERATED -->
 
 ```bash
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios <dir of scenario files> --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100
 ```
 
@@ -93,7 +98,7 @@ export BLIS_CATALOG=$PWD/blis-catalog
 
 A scenario file holds two YAML documents in the blis-schemas format:
 
-- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). `engine_version` is required: `0.32.0` runs blis-vllm's translated vLLM v0.32.0 engine; any other is refused (see [latency models](../guide/latency-models.md)).
+- **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). The engine is named `engine: {kind: vllm, version: "0.32.0"}`, or by the deprecated `engine_version: "0.32.0"` (accepted with a warning until M4; blis-schemas v0.10.0's scenario type has only this field, so `engine:` is read by the simulator until the scenario type carries it). This build runs vLLM 0.32.0; a scenario naming another release is refused with the release it asked for, the one this build runs, and the newest inference-sim release that runs the one asked for (v0.15.0 for vLLM 0.29.0 and 0.31.0). See [latency models](../guide/latency-models.md).
 - **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `cache_dtype`, `cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
 
 These settings come from the scenario (and the kernel), and no CLI flag sets them:
@@ -113,7 +118,7 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
-**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing` is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
+**Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.
 
 **Node pools.** When `node_pools` are configured in `--policy-config`, every pool's `gpu_type` must equal the scenario's `cluster.hardware`.
 
@@ -139,7 +144,7 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--kv-cpu-blocks` | int64 | 0 | Legacy CPU-tier blocks. 0 disables tiered caching. The GPU↔CPU transfer is priced by the kernel from the catalog's `cpu_dram` storage device. |
 | `--kv-offload-threshold` | float64 | 0.9 | GPU utilization fraction above which blocks are offloaded to CPU on the legacy `--kv-cpu-blocks` path. Range [0, 1]. |
-| `--kv-offload-config` | string | "" | Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
+| `--kv-offload-config` | string | "" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state the scenario's `offload` block instead. Path to a YAML file with a top-level `kv_offload:` block (multi-tier offload). Each tier must name a catalog storage `device_class`; the kernel prices every tier transfer (its `TierTime`). An explicit `read_bandwidth` / `write_bandwidth` / `base_latency` on a tier is refused. Under P/D every pool gets its own tier of this size (a MultiConnector of NIXL and the OffloadingConnector). When the scenario states an `offload` block, that block is the configuration and this flag may only restate it: a file that resolves differently is refused (#1910). See [KV Cache Management](../guide/kv-cache.md). |
 
 ## Batch Formation
 
@@ -149,11 +154,11 @@ The GPU-tier block budget and block size come from the scenario and the kernel (
 |------|------|---------|-------------|
 | `--renderer-num-workers` | int | 1 | Render threads per API server (vLLM `renderer_num_workers`). Each request's admission overhead queues for one, in arrival order (INV-R1). 0 = uncontended per-request delay. |
 | `--api-server-count` | int | 0 | API servers per endpoint (vLLM `--api-server-count`). 0 = vLLM's default: dp behind an internal or hybrid DP replica, else 1. |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
+| `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode uses `priority.slo_priorities` from the policy bundle when set. |
 
 ## Latency Model
 
-BLIS prices every step with [blis-latency-kernel](https://github.com/inference-sim/blis-latency-kernel) (`v0.3.0`, adapter blis-vllm `compat/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
+BLIS prices every step with blis-substrate's cost model (`kernel/`, at the version `stack.json` names; adapter blis-vllm `compat/kernelmodel`). There is no backend selector and no coefficient flag: the scenario names the coefficient sets and `--registry` locates them. See [Latency Models](../guide/latency-models.md).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -226,14 +231,31 @@ priority:
 
 The mapping lives in `sim/slo_priority.go` (`sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
+## Deprecated Flags
+
+v0.16.0 deprecates these flags of `blis run` and `blis replay`, and v0.19.0 removes them. The
+first five restate an engine setting the scenario states, in vLLM's own field (X1,
+[#2037](https://github.com/inference-sim/inference-sim/issues/2037)). They still work in v0.16.0
+through v0.18.0. Giving one prints a notice on standard error that names its replacement; the
+Result document on standard output is unchanged.
+
+| Flag | State instead |
+|------|---------------|
+| `--scheduler` | `engine.scheduling_policy` (`fcfs` or `priority`) in the scenario's pool engine block. `sjf` and `reverse-priority` have no vLLM equivalent. |
+| `--preemption-policy` | `engine.scheduling_policy`, which decides the preemption victim as vLLM does |
+| `--dp-load-balancing` | `parallel.data_parallel_load_balancing` in the scenario's pool |
+| `--swa-bounded-replay` | `engine.swa_bounded_replay` in the scenario's pool engine block |
+| `--kv-offload-config` | the scenario's `offload` block |
+| `--lazy-generation` | nothing: requests are streamed by default, and the eager generator that `--lazy-generation=false` selects is removed with the flag ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)) |
+
 ## Scheduling and Priority
 
 Per-instance policies that control request ordering within the wait queue. Maps to `PolicyConfig`.
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--scheduler` | string | "fcfs" | Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
-| `--preemption-policy` | string | "fcfs" | Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode evicts the running request with the highest `Request.Priority` value (vLLM convention: background=7 is evicted first). |
+| `--scheduler` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` (`fcfs` or `priority`) in the scenario's pool engine block instead. Scheduler: `fcfs`, `priority-fcfs`, `sjf`, `reverse-priority`. |
+| `--preemption-policy` | string | "fcfs" | **Deprecated in v0.16.0, removed in v0.19.0** ([#2037](https://github.com/inference-sim/inference-sim/issues/2037)): state `engine.scheduling_policy` in the scenario's pool engine block instead. Preemption victim selection: `fcfs` (tail-of-batch, default) or `priority` (least-urgent SLO tier evicted first, matching vLLM `--scheduling-policy priority`). Priority mode evicts the running request with the highest `Request.Priority` value (vLLM convention: background=7 is evicted first). |
 
 See [Core Engine: Scheduling](../concepts/core-engine.md#scheduling-policies) for policy details.
 
@@ -330,6 +352,7 @@ When `--workload-spec` is set, CLI `--seed`, `--horizon`, and `--num-requests` s
 | `--workload-spec` | string | "" | Path to workload-spec YAML. |
 | `--defaults-filepath` | string | "defaults.yaml" | Path to `defaults.yaml` (the LoRA cost block; see [defaults.yaml](#defaultsyaml)). |
 | `--trace-output` | string | "" | Export workload as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`). |
+| `--lazy-generation` | bool | true | **Deprecated in v0.16.0, removed in v0.19.0** ([#1451](https://github.com/inference-sim/inference-sim/issues/1451)). `blis run` streams requests from the workload generator by default. `--lazy-generation=false` selects the eager generator, which builds every request before the run starts and produces the same requests (INV-6); it goes with the flag. On `blis replay` the flag has no effect. |
 
 ## Policy Bundle
 
@@ -431,63 +454,6 @@ lora:
 
 ---
 
-## blis observe
-
-!!! warning "Deprecated"
-    `blis observe` is deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)).
-
-Dispatches a workload to a real inference server and records request-level timing into TraceV2 files for later replay and calibration.
-
-### Required
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--server-url` | string | "" | Inference server URL (required). |
-| `--model` | string | "" | Model name for API requests (required). |
-| `--trace-header` | string | "" | Output path for TraceV2 header YAML (required). |
-| `--trace-data` | string | "" | Output path for TraceV2 data CSV (required). |
-
-### Workload Input
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--workload-spec` | string | "" | Path to WorkloadSpec YAML (alternative to `--rate` + distribution flags). |
-| `--rate` | float64 | 0 | Requests per second for distribution synthesis. |
-
-### Optional
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--api-key` | string | "" | Bearer token for server authentication. |
-| `--server-type` | string | "vllm" | Server type (`vllm`, `tgi`, etc.). |
-| `--max-concurrency` | int | 256 | Maximum simultaneous in-flight requests. |
-| `--warmup-requests` | int | 0 | Number of initial requests to exclude from trace. |
-| `--no-streaming` | bool | false | Disable streaming (use non-streaming HTTP). |
-| `--seed` | int64 | 42 | RNG seed for workload generation. |
-| `--horizon` | int64 | 0 | Observation horizon in microseconds (0 = from spec or unlimited). |
-| `--num-requests` | int | 0 | Maximum requests to generate (0 = from spec or unlimited). |
-
-### Distribution Synthesis
-
-Used when `--rate` is set instead of `--workload-spec`. Same flag names and defaults as `blis run`.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--prompt-tokens` | int | 512 | Average prompt token count. |
-| `--prompt-tokens-stdev` | int | 256 | Prompt token standard deviation. |
-| `--prompt-tokens-min` | int | 2 | Minimum prompt tokens. |
-| `--prompt-tokens-max` | int | 7000 | Maximum prompt tokens. |
-| `--output-tokens` | int | 512 | Average output token count. |
-| `--output-tokens-stdev` | int | 256 | Output token standard deviation. |
-| `--output-tokens-min` | int | 2 | Minimum output tokens. |
-| `--output-tokens-max` | int | 7000 | Maximum output tokens. |
-| `--prefix-tokens` | int | 0 | Shared prefix token count. |
-| `--api-format` | string | "completions" | API format: `completions` (`/v1/completions`) or `chat` (`/v1/chat/completions`). |
-| `--unconstrained-output` | bool | false | Do not set `max_tokens` (let server decide output length). |
-| `--rtt-ms` | float64 | 0 | Measured network round-trip time in milliseconds (recorded in trace header for calibrate). |
-
----
-
 ## blis replay
 
 Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`) through the discrete-event simulator. Replay runs on the kernel through the same deployment path as `blis run`, so it requires the same [Deployment Inputs](#deployment-inputs-required) and accepts the same sim-config flags — see [Simulation Control](#simulation-control), [KV Cache Configuration](#kv-cache-configuration), [Batch Formation](#batch-formation), [Latency Model](#latency-model), [Cluster Configuration](#cluster-configuration), [Router](#router), [Scheduling and Priority](#scheduling-and-priority), [Decision Tracing](#decision-tracing), and [Fitness Evaluation](#fitness-evaluation). A run's exported trace replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns` (INV-13).
@@ -498,32 +464,13 @@ Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`)
 |------|------|---------|-------------|
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
-| `--timeout` | int | 300 | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round (round 0 and every session follow-up) keeps its own recorded `deadline_us`, or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. See [observe/replay/calibrate](../guide/observe-replay-calibrate.md#replay-specific-flags). |
-| `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write `[]SimResult` JSON (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`) for `blis calibrate` consumption. Replay-only — `blis run` does not register it. |
+| `--timeout` | int | 300 | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round (round 0 and every session follow-up) keeps its own recorded `deadline_us`, or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. See [Trace Replay](../guide/replay.md#replay-specific-flags). |
+| `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write a per-request JSON array (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`). Replay-only — `blis run` does not register it. |
 
 `blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under
 [Simulation Control](#simulation-control)); it is not replay-specific, so it is not repeated in the
 table above. The two are complementary rather than alternatives: `--results-path` writes per-request
-rows, `--metrics-path` writes the run aggregate that `blis calibrate --sim-metrics` reads.
-
----
-
-## blis calibrate
-
-!!! warning "Deprecated"
-    `blis calibrate` is deprecated ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)).
-
-Compares real observed latencies (from `blis observe`) against simulator predictions (from `blis replay`) and produces a calibration report with per-metric MAPE, Pearson R, and quality grades.
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--trace-header` | string | "" | Path to TraceV2 header YAML file (from `blis observe`; required). |
-| `--trace-data` | string | "" | Path to TraceV2 data CSV file (from `blis observe`; required). |
-| `--sim-results` | string | "" | Path to SimResult JSON file (from `blis replay --results-path`; required). |
-| `--report` | string | "" | Path to write calibration report JSON (required). |
-| `--warmup-requests` | int | -1 | Number of initial requests to exclude. Default: from trace header `warm_up_requests`; pass 0 to include all. |
-| `--network-rtt-us` | int64 | -1 | Network RTT in microseconds added to sim-side latencies. Default: from trace header `network.measured_rtt_ms`. |
-| `--network-bandwidth-mbps` | float64 | 0 | Network bandwidth in Mbps for upload/download delay calculation (0 = no delay). |
+rows, `--metrics-path` writes the run aggregate.
 
 ---
 
@@ -534,8 +481,8 @@ Converts external workload formats into BLIS WorkloadSpec v2 YAML. Three subcomm
 ### `blis convert preset`
 
 Generates a WorkloadSpec from a named preset in the catalog
-(`<catalog>/workloads/<name>.yaml`, #1769 — the same definition `blis run --workload` and
-`blis observe --workload` read).
+(`<catalog>/workloads/<name>.yaml`, #1769 — the same definition `blis run --workload`
+reads).
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|

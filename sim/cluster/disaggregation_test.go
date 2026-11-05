@@ -2,11 +2,12 @@ package cluster
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
 	"math/rand"
 	"strings"
 	"testing"
+
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/internal/testutil"
@@ -1728,7 +1729,7 @@ func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
 			Horizon:       math.MaxInt64,
 			InputSampler:  inputSampler,
 			OutputSampler: outputSampler,
-			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			Streams:       workload.SessionStreams(rng.Int63(), "pd_sess_0"),
 		},
 		{
 			SessionID:     "pd_sess_1",
@@ -1737,7 +1738,7 @@ func TestDisaggregation_PD_SessionManager_GeneratesFollowUps(t *testing.T) {
 			Horizon:       math.MaxInt64,
 			InputSampler:  inputSampler,
 			OutputSampler: outputSampler,
-			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			Streams:       workload.SessionStreams(rng.Int63(), "pd_sess_1"),
 		},
 	}
 
@@ -1821,7 +1822,7 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 			ContextGrowth: "accumulate",
 			InputSampler:  inputSampler,
 			OutputSampler: outputSampler,
-			RNG:           rand.New(rand.NewSource(rng.Int63())),
+			Streams:       workload.SessionStreams(rng.Int63(), "acc_sess_0"),
 		},
 	}
 

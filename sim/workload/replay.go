@@ -3,7 +3,6 @@ package workload
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -12,7 +11,7 @@ import (
 // effectiveInputTokenCount returns the token count to use for generating synthetic
 // input token IDs. Priority rules:
 //  1. serverInputTokens > 0 && prefixGroup == "": return serverInputTokens (server
-//     is authoritative; covers chat-template overhead in blis-observe traces).
+//     is authoritative; covers chat-template overhead in traces of a real server).
 //  2. prefixGroup != "": return inputTokens regardless of serverInputTokens (server
 //     count includes the prefix; using it as suffix would double-count the prefix
 //     that replay.go prepends separately).
@@ -26,12 +25,10 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 }
 
 // injectionTime returns the raw DES injection basis for a trace record.
-// For traces where SendTimeUs > 0, uses SendTimeUs as the injection basis.
-// For blis observe traces with --concurrency, SendTimeUs is when the HTTP
-// request was actually dispatched (after any concurrency-slot wait), which
-// matches calibrate's TTFT baseline of first_chunk_time_us - send_time_us.
-// For generated traces (blis run), SendTimeUs == ArrivalTimeUs, so both
-// branches produce the same result.
+// For traces where SendTimeUs > 0, uses SendTimeUs as the injection basis: in a
+// trace of a real client, it is when the request was actually dispatched (after
+// any concurrency-slot wait). For generated traces (blis run), SendTimeUs ==
+// ArrivalTimeUs, so both branches produce the same result.
 // Falls back to ArrivalTimeUs whenever SendTimeUs <= 0:
 //   - SendTimeUs == 0: legacy traces or generated traces (blis run) where no
 //     real network send occurred.
@@ -39,9 +36,9 @@ func effectiveInputTokenCount(inputTokens, serverInputTokens int, prefixGroup st
 //     a negative DES injection time would violate INV-3 (clock monotonicity).
 //
 // IMPORTANT (#1606): the value returned here is the RAW basis and may be on a
-// different clock than the trace's arrival_time_us / deadline_us columns. In a
-// real blis observe trace SendTimeUs is Unix-epoch µs (time.Now().UnixMicro())
-// while arrival_time_us / deadline_us are run-relative (t≈0 at observe start).
+// different clock than the trace's arrival_time_us / deadline_us columns. A trace
+// of a real client may record SendTimeUs as Unix-epoch µs while arrival_time_us /
+// deadline_us are run-relative (t≈0 at the start of the capture).
 // Callers building sim.Request.ArrivalTime MUST subtract injectionOriginShift so
 // injection lands on the same (arrival) origin as the deadline; using this raw
 // value as an absolute DES tick injects at epoch scale and instantly trips the
@@ -62,7 +59,7 @@ func injectionTime(rec TraceRecord) int64 {
 // origin the deadline_us column is written on (#1606). It is
 // min(injectionTime(rec)) - min(arrival_time_us(rec)) over all records:
 //
-//   - blis observe traces: send_time_us is Unix-epoch µs while arrival_time_us
+//   - epoch-scale traces: send_time_us is Unix-epoch µs while arrival_time_us
 //     is run-relative, so the shift ≈ the epoch offset and re-bases injection
 //     onto the relative clock. Without it, requests inject at ~1.79e15 ticks and
 //     the relative deadline (~3.4e8) is already past → instant timeout, 0
@@ -134,8 +131,6 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 		return nil, fmt.Errorf("empty trace")
 	}
 
-	rng := rand.New(rand.NewSource(seed))
-
 	// Injection-origin shift (#1606): re-base injection onto the arrival/deadline
 	// origin. 0 for generated traces (send == arrival) ⇒ byte-identical.
 	originShift := injectionOriginShift(trace.Records)
@@ -145,15 +140,17 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 	for _, rec := range trace.Records {
 		if rec.PrefixGroup != "" && rec.PrefixLength > 0 {
 			if _, exists := prefixTokens[rec.PrefixGroup]; !exists {
-				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, rec.PrefixLength)
+				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(prefixStream(seed, rec.PrefixGroup), rec.PrefixLength)
 			}
 		}
 	}
 
 	requests := make([]*sim.Request, 0, len(trace.Records))
 	for _, rec := range trace.Records {
-		// Generate synthetic token IDs, preferring server-reported count when available.
-		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		// Synthetic token IDs, preferring server-reported count when available, from the
+		// record's own streams (replayRecordStreams).
+		rs := replayRecordStreams(seed, rec)
+		inputTokens := tokens(rs, purposeInputTokens, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 
 		// Prepend prefix if in a group
 		if rec.PrefixGroup != "" {
@@ -162,7 +159,7 @@ func LoadTraceV2Requests(trace *TraceV2, seed int64) ([]*sim.Request, error) {
 			}
 		}
 
-		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
+		outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
 
 		req := &sim.Request{
 			ID:               fmt.Sprintf("request_%d", rec.RequestID),
@@ -227,10 +224,10 @@ func sessionHasRecordedThinkTime(rounds []TraceRecord) bool {
 // thinkTimeSampler == nil: derive per-round think time from trace arrival gaps.
 //
 //	NOTE: gap-derived think time = ArrivalTimeUs[i] - ArrivalTimeUs[i-1], which
-//	equals (service_time[i-1] + client_think_time) when the trace was produced by
-//	blis observe. It is NOT pure client think time. Pass a sampler built via
+//	equals (service_time[i-1] + client_think_time) when the trace records a real
+//	client's arrivals. It is NOT pure client think time. Pass a sampler built via
 //	ParseThinkTimeDist to supply the actual client-side think time when replaying
-//	an observe-generated trace with accurate inter-round spacing.
+//	such a trace with accurate inter-round spacing.
 //
 // horizon <= 0: defaults to math.MaxInt64.
 func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler LengthSampler, horizon int64) ([]*sim.Request, []SessionBlueprint, error) {
@@ -240,8 +237,6 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	if horizon <= 0 {
 		horizon = math.MaxInt64
 	}
-
-	rng := rand.New(rand.NewSource(seed))
 
 	// Injection-origin shift (#1606): a single constant over ALL records so the
 	// round-0 and non-session injection sites below share one origin. 0 for
@@ -253,7 +248,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 	for _, rec := range trace.Records {
 		if rec.PrefixGroup != "" && rec.PrefixLength > 0 {
 			if _, exists := prefixTokens[rec.PrefixGroup]; !exists {
-				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(rng, rec.PrefixLength)
+				prefixTokens[rec.PrefixGroup] = sim.GenerateRandomTokenIDs(prefixStream(seed, rec.PrefixGroup), rec.PrefixLength)
 			}
 		}
 	}
@@ -408,18 +403,20 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			sessionThinkTimeSampler = &SequenceSampler{values: thinkTimes}
 		}
 
-		// Per-session RNG for deterministic token ID generation (INV-6)
-		sessionRNG := rand.New(rand.NewSource(rng.Int63()))
+		// The session's streams (DEV-6): round 0's tokens here, each follow-up's in the
+		// session manager, every round from its own child (roundStreams).
+		session := SessionStreams(seed, sessionID)
+		rs0 := roundStreams(session, 0)
 
 		// Build round-0 request, preferring server-reported count when available.
 		r0 := rounds[0]
-		inputTokens := sim.GenerateRandomTokenIDs(sessionRNG, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
+		inputTokens := tokens(rs0, purposeInputTokens, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
 		if r0.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[r0.PrefixGroup]; ok {
 				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 			}
 		}
-		outputTokens := sim.GenerateRandomTokenIDs(sessionRNG, r0.OutputTokens)
+		outputTokens := tokens(rs0, purposeOutputTokens, r0.OutputTokens)
 
 		var prefix []sim.TokenID
 		if r0.PrefixGroup != "" {
@@ -465,7 +462,7 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 			OutputSampler:         &SequenceSampler{values: outputSeq[1:]}, // rounds 1..N
 			InputResetSampler:     inputResetSampler,                       // #1609; nil unless a round compacts
 			DeadlineOffsetSampler: deadlineOffsetSampler,                   // #2064; always set on replay so follow-ups honor the trace deadline
-			RNG:                   sessionRNG,
+			Streams:               session,
 			Prefix:                prefix,
 			TenantID:              r0.TenantID,
 			SLOClass:              r0.SLOClass,
@@ -478,13 +475,14 @@ func LoadTraceV2SessionBlueprints(trace *TraceV2, seed int64, thinkTimeSampler L
 
 	// Append non-session requests (same construction as LoadTraceV2Requests).
 	for _, rec := range nonSessionRecords {
-		inputTokens := sim.GenerateRandomTokenIDs(rng, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		rs := replayRecordStreams(seed, rec)
+		inputTokens := tokens(rs, purposeInputTokens, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
 		if rec.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[rec.PrefixGroup]; ok {
 				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 			}
 		}
-		outputTokens := sim.GenerateRandomTokenIDs(rng, rec.OutputTokens)
+		outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
 		req := &sim.Request{
 			ID:              fmt.Sprintf("request_%d", rec.RequestID),
 			ArrivalTime:     injectionTime(rec) - originShift, // #1606: on the arrival/deadline origin

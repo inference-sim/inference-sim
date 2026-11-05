@@ -5,12 +5,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"strconv"
 	"strings"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/check"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,8 +18,7 @@ import (
 type TraceHeader struct {
 	Version        int    `yaml:"trace_version"`
 	TimeUnit       string `yaml:"time_unit"`
-	CreatedAt      string `yaml:"created_at,omitempty"`
-	Mode           string `yaml:"mode"` // "real" (blis observe), "generated" (blis run), or "replayed" (blis replay)
+	Mode           string `yaml:"mode"` // TraceModeGenerated, TraceModeReplayed or TraceModeConverted
 	WarmUpRequests int    `yaml:"warm_up_requests"`
 	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
 	// WorkloadSpec records workload provenance:
@@ -36,11 +35,9 @@ type TraceHeader struct {
 	// (pre-existing behavior). Set by `blis convert otel`.
 	SessionContextGrowth string `yaml:"session_context_growth,omitempty"`
 
-	Server  *TraceServerConfig  `yaml:"server,omitempty"`
-	Network *TraceNetworkConfig `yaml:"network,omitempty"`
 	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
-	// measurement (issue #1409, BC-8). Persisted in trace headers so observe →
-	// replay → calibrate carry the same SLO definition. Schema bump to trace
+	// measurement (issue #1409, BC-8). Persisted in trace headers so run and
+	// replay carry the same SLO definition. Schema bump to trace
 	// version 3; old binaries reading new traces will hard-fail under
 	// KnownFields(true) — intentional, signaled by Version (BC-N3).
 	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
@@ -53,17 +50,6 @@ type TraceHeader struct {
 	// physics regardless of the replay host's defaults.yaml; replay uses them
 	// authoritatively and logrus.Fatalf's on any config it cannot reconstruct.
 	KVOffload *TraceKVOffloadConfig `yaml:"kv_offload,omitempty"`
-
-	// ObservedKVMetrics records the REAL server's KV-cache hit-rate scraped from its
-	// Prometheus /metrics endpoint during `blis observe --scrape-kv-metrics` (#1583).
-	// It is a resolved-observation block (engine-level counters, not per-request), so
-	// it lives in the header rather than a per-record column. Absent (nil, omitempty)
-	// unless --scrape-kv-metrics was set and a recognized counter family was found —
-	// so a default observe writes a byte-identical header (BC-8). It is real-side
-	// ground truth: replay preserves it verbatim on re-export (BC-4) and never
-	// regenerates it. `blis calibrate` compares it against the simulator's own
-	// aggregate cache_hit_rate.
-	ObservedKVMetrics *TraceObservedKVMetrics `yaml:"observed_kv_metrics,omitempty"`
 
 	// MaxNodesSpanned records the largest number of physical nodes any single model
 	// instance occupied during the source run (#1530). Written by `blis run` only when
@@ -91,9 +77,36 @@ type TraceHeader struct {
 	MaxNodesSpanned int `yaml:"max_nodes_spanned,omitempty"`
 
 	// Router records the inputs of the llm-d router the source run routed with, so a replay
-	// rebuilds the same router (INV-13). Absent from traces of real systems (blis observe)
-	// and from traces written before the router was embedded.
+	// rebuilds the same router (INV-13). Absent from converted traces and from traces
+	// written before the router was embedded.
 	Router *TraceRouterConfig `yaml:"router,omitempty"`
+}
+
+// Validate refuses a header value that no run could have recorded, with the validator the same
+// kind of value meets on the command line (package check, SIM-11): the router's three timings are
+// spans of simulated time, as --gateway-latency, --epp-scrape-jitter and --kv-event-delay are; each
+// goodput latency target is a positive span, as --slo-ttft, --slo-itl and --slo-e2e are. A target
+// of 0 is the encoding of an absent one (SLODimTargets omits it), so only a stated value is
+// checked. The fields are visited in a fixed order, so the first refusal is deterministic (R2).
+func (h *TraceHeader) Validate() error {
+	if r := h.Router; r != nil {
+		for _, f := range []struct {
+			name string
+			v    int64
+		}{{"router.gateway_latency_us", r.GatewayLatencyUs}, {"router.scrape_jitter_us", r.ScrapeJitterUs},
+			{"router.kv_event_delay_us", r.KVEventDelayUs}} {
+			if err := check.DurationUs(f.name, f.v); err != nil {
+				return err
+			}
+		}
+	}
+	if err := check.Count("warm_up_requests", int64(h.WarmUpRequests)); err != nil {
+		return err
+	}
+	if err := check.Count("max_nodes_spanned", int64(h.MaxNodesSpanned)); err != nil {
+		return err
+	}
+	return validateGoodputTargets(h.GoodputSLOTargets)
 }
 
 // TraceRouterConfig is the trace-header record of the embedded llm-d router's inputs: the
@@ -111,41 +124,10 @@ type TraceRouterConfig struct {
 	Seed *int64 `yaml:"seed,omitempty"`
 }
 
-// TraceObservedKVMetrics is the real-side KV-cache hit-rate observed from a vLLM
-// server's Prometheus /metrics endpoint over the measured observation window (#1583).
-// It is a workload-package struct — decoupled from any sim type — so the on-disk trace
-// format is stable, mirroring the TraceKVOffloadConfig / TraceServerConfig precedent.
-// Read strictly (KnownFields) via LoadTraceV2, so an unknown sub-key is a hard error.
-type TraceObservedKVMetrics struct {
-	// Source names which counter family produced HitRate:
-	//   "tiered"                    — vllm:kv_offload_tiering_block_hits/_block_queries
-	//                                 (the multi-tier offload family; requires an
-	//                                 unreleased vLLM, PR #48798).
-	//   "gpu-prefix-cache-fallback" — vllm:gpu_prefix_cache_* (released vLLM, GPU-only).
-	//                                 A distinct, weaker signal — never conflated with a
-	//                                 tiered number.
-	Source string `yaml:"source"`
-	// HitRate is a fraction in [0,1]: BlockHits/BlockQueries over the measured window.
-	HitRate float64 `yaml:"hit_rate"`
-	// BlockHits and BlockQueries are the cumulative-counter DELTAS over the measured
-	// window (end − start), summed across all per-tier label series of the family.
-	BlockHits    int64 `yaml:"block_hits"`
-	BlockQueries int64 `yaml:"block_queries"`
-	// ReadTimeTotal and WriteTimeTotal are the per-tier read/write time deltas summed
-	// across the family (vLLM native seconds), recorded for the documented manual
-	// bandwidth cross-check. Informational — not part of the automated comparison.
-	ReadTimeTotal  float64 `yaml:"read_time_total,omitempty"`
-	WriteTimeTotal float64 `yaml:"write_time_total,omitempty"`
-	// VLLMCommit is the pinned vLLM commit the cluster ran (operator-supplied via
-	// --vllm-commit), recorded so the dependency on an unreleased vLLM is explicit.
-	VLLMCommit string `yaml:"vllm_commit,omitempty"`
-}
-
 // TraceKVOffloadConfig is the trace-header serialization of a resolved
 // sim.KVOffloadConfig (H5, #1587). It is a workload-package struct — decoupled from
 // sim.KVOffloadConfig so the on-disk trace format is stable independent of the
-// internal config type — mirroring the TraceServerConfig / TraceNetworkConfig
-// precedent. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
+// internal config type. cmd/ owns the sim↔header conversion. Read strictly (KnownFields) via
 // LoadTraceV2, so an unknown offload sub-key is a hard error (BC-N3 version guard).
 type TraceKVOffloadConfig struct {
 	CPUBytesToUse          int64                `yaml:"cpu_bytes_to_use"`
@@ -186,29 +168,12 @@ type TraceKVOffloadTier struct {
 	LatencyJitterStddev float64 `yaml:"latency_jitter_stddev"`
 }
 
-// TraceServerConfig captures server configuration in trace header.
-type TraceServerConfig struct {
-	Type                 string  `yaml:"type,omitempty"`
-	Model                string  `yaml:"model,omitempty"`
-	TensorParallel       int     `yaml:"tensor_parallel,omitempty"`
-	MaxNumSeqs           int     `yaml:"max_num_seqs,omitempty"`
-	BlockSize            int     `yaml:"block_size,omitempty"`
-	GPUMemoryUtilization float64 `yaml:"gpu_memory_utilization,omitempty"`
-	MaxModelLen          int64   `yaml:"max_model_len,omitempty"`
-}
-
-// TraceNetworkConfig captures network configuration in trace header.
-type TraceNetworkConfig struct {
-	MeasuredRTTMs float64 `yaml:"measured_rtt_ms,omitempty"`
-}
-
 // TraceRecord represents one row in a trace v2 CSV.
 type TraceRecord struct {
 	RequestID         int
 	ClientID          string
 	TenantID          string
 	SLOClass          string
-	VLLMPriority      int // vLLM priority value (0=highest urgency, higher=lower urgency); 0 when not set
 	SessionID         string
 	RoundIndex        int
 	PrefixGroup       string
@@ -233,7 +198,6 @@ type TraceRecord struct {
 	Status            string // "ok", "error", "timeout"
 	ErrorMessage      string
 	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
-	XRequestID        string // client-generated UUID sent as x-request-id header (real-mode only); empty = not recorded
 	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
 	// ThinkTimeUs is the recorded per-round client think time in µs (gap from the
 	// previous request's end), set by agentic-trace converters (#1478) and preferred
@@ -287,10 +251,25 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	if err != nil {
 		return fmt.Errorf("creating trace data file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	return writeTraceV2Data(file, header, records)
+}
 
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
+// writeTraceV2Data writes the trace's CSV rows to w, flushes them and closes w. It returns the
+// first error among the writes, the flush and the close, so a trace that did not reach the
+// disk in full is never reported as exported (SIM-2, #661). w is closed on every path.
+func writeTraceV2Data(w io.WriteCloser, header *TraceHeader, records []TraceRecord) error {
+	err := writeTraceV2Rows(w, header, records)
+	if cerr := w.Close(); err == nil && cerr != nil {
+		err = fmt.Errorf("closing trace data file: %w", cerr)
+	}
+	return err
+}
+
+// writeTraceV2Rows writes the header row and every record to w through a csv.Writer, and
+// flushes it. The csv.Writer buffers its output, so a failing w is seen at the flush, which is
+// why the flush's error is returned.
+func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) error {
+	writer := csv.NewWriter(w)
 
 	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
 	includeSLOTarget := false
@@ -301,22 +280,8 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
-	// Conditionally include x_request_id column: present iff any record has a non-empty
-	// UUID AND the trace is from a real run. Mode-gated to ensure replay re-exports never
-	// emit UUIDs (which would no longer correspond to real EPP routing decisions).
-	// Issue #1428.
-	includeXRequestID := false
-	if header.Mode == "real" {
-		for _, r := range records {
-			if r.XRequestID != "" {
-				includeXRequestID = true
-				break
-			}
-		}
-	}
-
 	// Conditionally include adapter column (#1464): present iff any record carries
-	// a non-empty LoRA adapter id. Trailing position (like x_request_id) keeps the
+	// a non-empty LoRA adapter id. Trailing position keeps the
 	// positional parser's index math untouched. Omitted for adapter-blind traces so
 	// the no-op default adds no columns (INV-6).
 	includeAdapter := false
@@ -329,8 +294,8 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 
 	// Conditionally include think_time_us column (#1478): present iff any record carries
 	// a RECORDED (non-nil) think time — including a recorded &0 (#1608). Trailing position
-	// (like x_request_id / adapter) keeps the positional parser's index math untouched.
-	// Omitted when no record recorded think, so traces that never set it (e.g. observe,
+	// (like adapter) keeps the positional parser's index math untouched.
+	// Omitted when no record recorded think, so traces that never set it (e.g.
 	// generated, convert otel) add no column (INV-6 byte-identity).
 	includeThinkTime := false
 	for _, r := range records {
@@ -343,7 +308,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	// Conditionally include input_tokens_reset column (#1609): present iff any record
 	// carries a compaction reset marker (non-nil). Trailing position (like adapter /
 	// think_time_us) keeps the positional parser's index math untouched. Omitted for
-	// traces with no compaction round, so run/observe/monotone traces add no column
+	// traces with no compaction round, so run/monotone traces add no column
 	// (INV-6 byte-identity).
 	includeInputTokensReset := false
 	for _, r := range records {
@@ -353,39 +318,17 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		}
 	}
 
-	// Conditionally include vllm_priority column: present iff priority was actually computed.
-	// Include when either:
-	// 1. Any record has non-zero priority (batch, standard, sheddable, background from observe)
-	// 2. Any record has SLOClass in "real" mode (covers critical=0 from observe)
-	// This prevents misleading empty columns in simulation traces (Mode != "real") where
-	// priority was never sent to a server, even if SLOClass is set for admission control.
-	includeVLLMPriority := false
-	for _, r := range records {
-		if r.VLLMPriority != 0 || (r.SLOClass != "" && header.Mode == "real") {
-			includeVLLMPriority = true
-			break
-		}
-	}
-
 	// Build column header list
 	columns := make([]string, 0, len(traceV2Columns)+3)
-	for i, col := range traceV2Columns {
+	for _, col := range traceV2Columns {
 		columns = append(columns, col)
-		// Insert vllm_priority immediately after slo_class (index 3)
-		if i == 3 && includeVLLMPriority {
-			columns = append(columns, "vllm_priority")
-		}
 		// Insert slo_target_us immediately after deadline_us (matched by name)
 		if col == "deadline_us" && includeSLOTarget {
 			columns = append(columns, "slo_target_us")
 		}
 	}
-	// Append x_request_id at end (issue #1428): trailing position avoids shifting
-	// indices in the positional parser.
-	if includeXRequestID {
-		columns = append(columns, "x_request_id")
-	}
-	// Append adapter at end (#1464): also trailing; parsed by header-position lookup.
+	// Append adapter at end (#1464): trailing, so it shifts no index in the positional
+	// parser; parsed by header-position lookup.
 	if includeAdapter {
 		columns = append(columns, "adapter")
 	}
@@ -410,13 +353,6 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.ClientID,
 			r.TenantID,
 			r.SLOClass,
-		}
-		// Conditionally append vllm_priority after slo_class
-		if includeVLLMPriority {
-			row = append(row, strconv.Itoa(r.VLLMPriority))
-		}
-		// Continue with remaining fields
-		row = append(row,
 			r.SessionID,
 			strconv.Itoa(r.RoundIndex),
 			r.PrefixGroup,
@@ -431,7 +367,7 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
 			r.Model,
 			strconv.FormatInt(r.DeadlineUs, 10),
-		)
+		}
 		if includeSLOTarget {
 			row = append(row, strconv.FormatInt(r.SLOTargetUs, 10))
 		}
@@ -446,10 +382,6 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			r.ErrorMessage,
 			r.FinishReason,
 		)
-		// Append x_request_id at end (issue #1428).
-		if includeXRequestID {
-			row = append(row, r.XRequestID)
-		}
 		// Append adapter at end (#1464).
 		if includeAdapter {
 			row = append(row, r.Adapter)
@@ -476,6 +408,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}
 	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("flushing trace data CSV: %w", err)
+	}
 	return nil
 }
 
@@ -491,6 +427,12 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&header); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
+	}
+	if err := validateTraceMode(header.Mode); err != nil {
+		return nil, fmt.Errorf("parsing trace header: %w", err)
+	}
+	if err := header.Validate(); err != nil {
+		return nil, fmt.Errorf("trace header %s: %w", headerPath, err)
 	}
 
 	// Load data CSV
@@ -510,20 +452,20 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	}
 
 	// Detect optional columns from header
-	hasVLLMPriority := false
 	hasSLOTarget := false
-	xRequestIDIdx := -1       // header-position lookup; -1 = absent (issue #1428)
 	adapterIdx := -1          // header-position lookup; -1 = absent (#1464)
 	thinkTimeUsIdx := -1      // header-position lookup; -1 = absent (#1478)
 	inputTokensResetIdx := -1 // header-position lookup; -1 = absent (#1609)
 	for i, col := range headerRow {
 		switch col {
-		case "vllm_priority":
-			hasVLLMPriority = true
+		case "vllm_priority", "x_request_id":
+			// Only blis observe wrote these columns, and v0.16.0 removed it (#1901).
+			// vllm_priority sat after slo_class, so reading past it would shift every
+			// later column; the file is refused rather than misread.
+			return nil, fmt.Errorf("trace data column %q is not supported: only blis observe "+
+				"wrote it, which v0.16.0 removed (#1901)", col)
 		case "slo_target_us":
 			hasSLOTarget = true
-		case "x_request_id":
-			xRequestIDIdx = i
 		case "adapter":
 			adapterIdx = i
 		case "think_time_us":
@@ -543,13 +485,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
 		minCols := len(traceV2Columns)
-		if hasVLLMPriority {
-			minCols++
-		}
 		if hasSLOTarget {
-			minCols++
-		}
-		if xRequestIDIdx >= 0 {
 			minCols++
 		}
 		if adapterIdx >= 0 {
@@ -565,7 +501,7 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
 		}
 
-		r, err := parseTraceRecord(row, hasVLLMPriority, hasSLOTarget, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
+		r, err := parseTraceRecord(row, hasSLOTarget, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
 		if err != nil {
 			return nil, err
 		}
@@ -575,48 +511,41 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	return &TraceV2{Header: header, Records: records}, nil
 }
 
-// parseTraceRecord parses a CSV row. Handles optional columns vllm_priority
-// (after slo_class), slo_target_us (after deadline_us), and the trailing
-// columns x_request_id, adapter, think_time_us, and input_tokens_reset.
-// xRequestIDIdx, adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute
-// column indices in the row, or -1 if the respective column is absent.
-func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequestIDIdx, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
-	// Column offset: optional columns shift subsequent indices.
-	// vllm_priority appears after slo_class (index 3) → shifts everything after by +1.
-	// slo_target_us appears after deadline_us → shifts everything after by +1.
+// rowError places a field refusal from package check in its trace row. The message keeps the
+// field name and value check gives it, so a value refused here reads as the same value refused on
+// the command line (SIM-11).
+func rowError(requestID int, err error) error {
+	return fmt.Errorf("trace row request_id %d: %w", requestID, err)
+}
+
+// parseTraceRecord parses a CSV row. Handles the optional column slo_target_us (after
+// deadline_us) and the trailing columns adapter, think_time_us, and input_tokens_reset.
+// adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute column indices in the
+// row, or -1 if the respective column is absent.
+func parseTraceRecord(row []string, hasSLOTarget bool, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
+	// Column offset: slo_target_us appears after deadline_us and shifts every later
+	// column by +1.
 	offset := 0
-	if hasVLLMPriority {
-		offset = 1
-	}
 
 	requestID, err := strconv.Atoi(row[0])
 	if err != nil {
 		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
 	}
 
-	// Parse vllm_priority if present (index 4, immediately after slo_class at index 3)
-	vllmPriority := 0
-	if hasVLLMPriority {
-		vllmPriority, err = strconv.Atoi(row[4])
-		if err != nil {
-			return nil, fmt.Errorf("parsing vllm_priority %q: %w", row[4], err)
-		}
-		if vllmPriority < 0 {
-			return nil, fmt.Errorf("parsing vllm_priority: negative value %d not allowed", vllmPriority)
-		}
-	}
-
 	roundIndex, err := strconv.Atoi(row[5+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing round_index %q: %w", row[5+offset], err)
+	}
+	if err := check.Count("round_index", int64(roundIndex)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Column 7+offset: prefix_length
 	prefixLength, err := strconv.Atoi(row[7+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7+offset], err)
 	}
-	if prefixLength < 0 {
-		return nil, fmt.Errorf("parsing prefix_length: negative value %d not allowed", prefixLength)
+	if err := check.TokenCount("prefix_length", int64(prefixLength)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Column 8+offset: streaming
 	streaming, err := strconv.ParseBool(row[8+offset])
@@ -628,58 +557,60 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9+offset], err)
 	}
-	// Negative token counts cause make([]int, negative) panics in LoadTraceV2Requests.
-	if inputTokens < 0 {
-		return nil, fmt.Errorf("parsing input_tokens: negative value %d not allowed", inputTokens)
+	// A negative token count would panic in make([]int, n) in LoadTraceV2Requests. Zero is
+	// accepted: the gateway drops an empty prompt as unservable and the run continues (#2065).
+	if err := check.TokenCount("input_tokens", int64(inputTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	outputTokens, err := strconv.Atoi(row[10+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10+offset], err)
 	}
-	if outputTokens < 0 {
-		return nil, fmt.Errorf("parsing output_tokens: negative value %d not allowed", outputTokens)
+	if err := check.TokenCount("output_tokens", int64(outputTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	textTokens, err := strconv.Atoi(row[11+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11+offset], err)
 	}
-	if textTokens < 0 {
-		return nil, fmt.Errorf("parsing text_tokens: negative value %d not allowed", textTokens)
+	if err := check.TokenCount("text_tokens", int64(textTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	imageTokens, err := strconv.Atoi(row[12+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12+offset], err)
 	}
-	if imageTokens < 0 {
-		return nil, fmt.Errorf("parsing image_tokens: negative value %d not allowed", imageTokens)
+	if err := check.TokenCount("image_tokens", int64(imageTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	audioTokens, err := strconv.Atoi(row[13+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13+offset], err)
 	}
-	if audioTokens < 0 {
-		return nil, fmt.Errorf("parsing audio_tokens: negative value %d not allowed", audioTokens)
+	if err := check.TokenCount("audio_tokens", int64(audioTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	videoTokens, err := strconv.Atoi(row[14+offset])
 	if err != nil {
 		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14+offset], err)
 	}
-	if videoTokens < 0 {
-		return nil, fmt.Errorf("parsing video_tokens: negative value %d not allowed", videoTokens)
+	if err := check.TokenCount("video_tokens", int64(videoTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	reasonRatio, err := strconv.ParseFloat(row[15+offset], 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15+offset], err)
 	}
-	if math.IsNaN(reasonRatio) || math.IsInf(reasonRatio, 0) || reasonRatio < 0 || reasonRatio > 1.0 {
-		return nil, fmt.Errorf("parsing reason_ratio %q: must be in range [0.0, 1.0], got %g", row[15+offset], reasonRatio)
+	if err := check.Fraction("reason_ratio", reasonRatio); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	deadlineUs, err := strconv.ParseInt(row[17+offset], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17+offset], err)
 	}
-	if deadlineUs < 0 {
-		return nil, fmt.Errorf("parsing deadline_us: negative value %d not allowed (use 0 for no timeout)", deadlineUs)
+	// 0 means no client deadline.
+	if err := check.DurationUs("deadline_us", deadlineUs); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Parse optional slo_target_us (appears after deadline_us when present)
 	var sloTargetUs int64
@@ -688,8 +619,9 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		if err != nil {
 			return nil, fmt.Errorf("parsing slo_target_us %q: %w", row[18+offset], err)
 		}
-		if sloTargetUs < 0 {
-			return nil, fmt.Errorf("parsing slo_target_us: negative value %d not allowed (use 0 for no target)", sloTargetUs)
+		// 0 means no target.
+		if err := check.DurationUs("slo_target_us", sloTargetUs); err != nil {
+			return nil, rowError(requestID, err)
 		}
 		offset++
 	}
@@ -697,8 +629,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18+offset], err)
 	}
-	if serverInputTokens < 0 {
-		return nil, fmt.Errorf("parsing server_input_tokens: negative value %d not allowed", serverInputTokens)
+	if err := check.TokenCount("server_input_tokens", int64(serverInputTokens)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	arrivalTimeUs, err := strconv.ParseInt(row[19+offset], 10, 64)
 	if err != nil {
@@ -710,8 +642,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	// monotonicity). Reject loudly, matching the other time/count fields (R1).
 	// (send_time_us is intentionally NOT checked: injectionTime falls back to
 	// arrival_time_us when send_time_us <= 0, so a negative send is tolerated.)
-	if arrivalTimeUs < 0 {
-		return nil, fmt.Errorf("parsing arrival_time_us: negative value %d not allowed", arrivalTimeUs)
+	if err := check.DurationUs("arrival_time_us", arrivalTimeUs); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	sendTimeUs, err := strconv.ParseInt(row[20+offset], 10, 64)
 	if err != nil {
@@ -729,8 +661,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 	if err != nil {
 		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23+offset], err)
 	}
-	if numChunks < 0 {
-		return nil, fmt.Errorf("parsing num_chunks: negative value %d not allowed", numChunks)
+	if err := check.Count("num_chunks", int64(numChunks)); err != nil {
+		return nil, rowError(requestID, err)
 	}
 	// Cross-field invariant: deadline must not precede arrival (would cause immediate
 	// timeout at enqueue before any processing). Zero deadline means "no timeout";
@@ -739,13 +671,6 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
 	}
 	finishReason := strings.TrimSpace(row[26+offset])
-
-	// Optional x_request_id at trailing column (issue #1428): looked up by
-	// absolute header position so the index math above is unaffected.
-	var xRequestID string
-	if xRequestIDIdx >= 0 && xRequestIDIdx < len(row) {
-		xRequestID = strings.TrimSpace(row[xRequestIDIdx])
-	}
 
 	// Optional adapter at trailing column (#1464): looked up by absolute header
 	// position so the positional index math above is unaffected.
@@ -765,8 +690,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 			if perr != nil {
 				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, perr)
 			}
-			if parsed < 0 {
-				return nil, fmt.Errorf("parsing think_time_us: negative value %d not allowed", parsed)
+			if err := check.DurationUs("think_time_us", parsed); err != nil {
+				return nil, rowError(requestID, err)
 			}
 			thinkTimeUs = &parsed
 		}
@@ -783,8 +708,8 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 			if perr != nil {
 				return nil, fmt.Errorf("parsing input_tokens_reset %q: %w", v, perr)
 			}
-			if parsed < 0 {
-				return nil, fmt.Errorf("parsing input_tokens_reset: negative value %d not allowed", parsed)
+			if err := check.TokenCount("input_tokens_reset", parsed); err != nil {
+				return nil, rowError(requestID, err)
 			}
 			inputTokensReset = &parsed
 		}
@@ -795,7 +720,6 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		ClientID:          row[1],
 		TenantID:          row[2],
 		SLOClass:          row[3],
-		VLLMPriority:      vllmPriority,
 		SessionID:         row[4+offset],
 		RoundIndex:        roundIndex,
 		PrefixGroup:       row[6+offset],
@@ -820,7 +744,6 @@ func parseTraceRecord(row []string, hasVLLMPriority, hasSLOTarget bool, xRequest
 		Status:            row[24+offset],
 		ErrorMessage:      strings.TrimSpace(row[25+offset]),
 		FinishReason:      finishReason,
-		XRequestID:        xRequestID,
 		Adapter:           adapter,
 		ThinkTimeUs:       thinkTimeUs,
 		InputTokensReset:  inputTokensReset,
@@ -905,88 +828,4 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 		})
 	}
 	return records
-}
-
-// TraceRecordsToRequests converts TraceRecords to sim.Request objects for saturation analysis.
-// Maps observed timing data to Request fields as follows:
-//   - ArrivalTime: ArrivalTimeUs from trace
-//   - FirstTokenTime: FirstChunkTimeUs - ArrivalTimeUs (TTFT)
-//   - ITL: approximated as single value (LastChunkTimeUs - FirstChunkTimeUs) / (OutputTokens - 1)
-//   - TTFTSet: true if FirstChunkTimeUs > 0 (request reached first token)
-//   - State: derived from Status field ("ok" → Completed, "timeout" → TimedOut, "error" → TimedOut)
-//
-// Note: This is a lossy conversion — trace records don't store per-token ITL, so we use
-// a uniform approximation. For exact ITL data, use --record-itl during observe.
-// Returns empty slice if input is nil or empty.
-func TraceRecordsToRequests(records []TraceRecord) []*sim.Request {
-	if len(records) == 0 {
-		return []*sim.Request{}
-	}
-
-	requests := make([]*sim.Request, 0, len(records))
-	for _, rec := range records {
-		req := &sim.Request{
-			ArrivalTime:  rec.ArrivalTimeUs,
-			OutputTokens: []sim.TokenID{sim.TokenID(rec.OutputTokens)},
-		}
-
-		// TTFTSet and FirstTokenTime
-		if rec.FirstChunkTimeUs > 0 {
-			req.TTFTSet = true
-			req.FirstTokenTime = rec.FirstChunkTimeUs - rec.ArrivalTimeUs
-		}
-
-		// State mapping
-		switch rec.Status {
-		case "ok":
-			req.State = sim.StateCompleted
-		case "timeout", "error":
-			req.State = sim.StateTimedOut
-		default:
-			req.State = sim.StateRunning // Unknown status, treat as running
-		}
-
-		// ITL approximation: distribute total decode time uniformly across output tokens
-		if rec.OutputTokens > 1 && rec.LastChunkTimeUs > rec.FirstChunkTimeUs {
-			totalDecodeUs := rec.LastChunkTimeUs - rec.FirstChunkTimeUs
-			numITL := rec.OutputTokens - 1 // N tokens = N-1 inter-token intervals
-			avgITL := totalDecodeUs / int64(numITL)
-			req.ITL = make([]int64, numITL)
-			for i := range req.ITL {
-				req.ITL[i] = avgITL
-			}
-		} else if rec.OutputTokens == 1 && req.TTFTSet {
-			// Single-token response: no ITL
-			req.ITL = []int64{}
-		}
-
-		requests = append(requests, req)
-	}
-
-	return requests
-}
-
-// TraceRecordsToRequestMetrics converts trace records to RequestMetrics for saturation detectors.
-// Only includes completed requests (Status == "ok") with valid E2E latency (> 0).
-// This matches the filtering logic in printObserveMetrics (observe_cmd.go:610).
-// CRITICAL UNITS: ArrivedAt is in SECONDS (not milliseconds), E2E is in milliseconds.
-// This matches the canonical constructor in sim/simulator.go:261 which sets ArrivedAt as float64(req.ArrivalTime)/1e6.
-func TraceRecordsToRequestMetrics(records []TraceRecord) []sim.RequestMetrics {
-	metrics := make([]sim.RequestMetrics, 0, len(records))
-	for _, rec := range records {
-		if rec.Status != "ok" {
-			continue // Only include completed requests
-		}
-		// Compute E2E and filter invalid latencies (clock skew, malformed records)
-		e2eMs := float64(rec.LastChunkTimeUs-rec.SendTimeUs) / 1000.0
-		if e2eMs <= 0 {
-			continue // Skip records with non-positive E2E (matches printObserveMetrics filter)
-		}
-		metrics = append(metrics, sim.RequestMetrics{
-			ID:        fmt.Sprintf("request_%d", rec.RequestID), // matches sim's request_%d ids (extractor parity, #1516)
-			ArrivedAt: float64(rec.ArrivalTimeUs) / 1e6,         // µs → seconds (CRITICAL: not ms!)
-			E2E:       e2eMs,                                    // µs → ms
-		})
-	}
-	return metrics
 }

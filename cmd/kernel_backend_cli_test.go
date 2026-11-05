@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
@@ -46,12 +46,29 @@ const kernelLegEnv = "BLIS_KERNEL_LEG"
 // fails, naming the command that provides it -- never a skip, which would read as a pass.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
-	r := kernelmodel.DefaultRepos()
+	r := defaultKernelRepos()
+	r.Scenarios = testScenariosDir(t)
 	if err := kernelmodel.RequireRepos(r); err != nil {
 		t.Fatal(err)
 	}
 	return r.Scenarios, r.Catalog, r.Registry
 }
+
+// testScenariosDir is this repository's testdata/scenarios, the scenarios the tests run. The
+// latency kernel's own fixtures (blis-latency-kernel testdata/aisimulate) state vLLM 0.29.0,
+// which this build refuses (LIF-6); the ones the tests read are copied there at 0.32.0.
+func testScenariosDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.Abs(testScenarios)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// testScenarios is testScenariosDir relative to this package's directory, for a subprocess leg
+// that has no *testing.T.
+const testScenarios = "../testdata/scenarios"
 
 func runKernelLeg(t *testing.T, leg string, extra ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -785,10 +802,9 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// implement is refused by name rather than dropped.
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
 			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
-		// qwen3.5's linear-attention layers carry recurrent state, so NIXL's prefill backs off
-		// one token for the decode side to recompute (nixl/base_scheduler.py:385-407), which
-		// BLIS does not model.
-		{"a model whose NIXL prefill backs off", "BLIS does not model that recompute",
+		// qwen3.5's linear-attention layers carry recurrent state, which the v0.32.0 engine maps
+		// to no KV cache spec, so it refuses the model.
+		{"a model with recurrent state", "recurrent state is not mapped to a KV cache spec",
 			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
@@ -896,46 +912,6 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 	if prevE2E >= firstE2E {
 		t.Errorf("accepting every draft left mean E2E at %.3f ms against %.3f with none; the "+
 			"decode pool is not speculating", prevE2E, firstE2E)
-	}
-}
-
-// A disaggregated run offloads KV like a colocated one, each pool sizing and pricing the same
-// tiers by its own kernel: with the tiered offload and with the legacy CPU tier the run
-// completes, and its exported trace replays byte-identically (INV-13).
-func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
-	// An offload tier beside the NIXL handoff runs only through a MultiConnector
-	// (vllm/config/vllm.py:1124-1158).
-	multi := writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector")
-	common := []string{"--scenarios", multi, "--scenario", "variant.yaml",
-		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "5",
-		"--horizon", "600000000"}
-	for _, tt := range []struct {
-		name    string
-		offload []string
-	}{
-		{"tiered offload", []string{"--kv-offload-config", writeKernelOffloadConfig(t, "")}},
-		{"legacy CPU tier", []string{"--kv-cpu-blocks", "2000"}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			prefix := filepath.Join(t.TempDir(), "trace")
-			args := append(append([]string{"run", "--num-requests", "16", "--rate", "4", "--trace-output", prefix},
-				tt.offload...), common...)
-			runOut, stderr, err := runKernelCLI(t, args...)
-			if err != nil || !completedIs(runOut, 16) {
-				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
-			}
-			replay := append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, common...)
-			if tt.offload[0] == "--kv-cpu-blocks" {
-				replay = append(replay, tt.offload...) // the legacy tier is a flag, not a header field
-			}
-			repOut, stderr, err := runKernelCLI(t, replay...)
-			if err != nil {
-				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
-			}
-			if inv13View(t, repOut) != inv13View(t, runOut) {
-				t.Errorf("the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
-			}
-		})
 	}
 }
 

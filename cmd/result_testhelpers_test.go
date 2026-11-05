@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 )
 
 // parseResult reads stdout as one Result document, failing the test when it is anything else.
@@ -187,11 +187,40 @@ func inv13View(t *testing.T, stdout string) string {
 			view[k] = v
 		}
 	}
+	withoutFrameInvocation(view)
 	data, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+// withoutFrameInvocation removes from a Result's sections the parts of the experimental frame
+// (engine.frame) that record how the command was invoked: the generator (a run's workload spec
+// or flags against a replay's trace) and the stop rule (a run's request cap against a replay's
+// trace length). The frame's phases, initial state, acceptance and metric identifiers stay:
+// a run and its replay must agree on them (DEV-7).
+func withoutFrameInvocation(sections map[string]any) {
+	eng, ok := sections["engine"].(map[string]any)
+	if !ok {
+		return
+	}
+	f, ok := eng["frame"].(map[string]any)
+	if !ok {
+		return
+	}
+	g := map[string]any{}
+	for k, v := range f {
+		if k != "generator" && k != "stop_rule" {
+			g[k] = v
+		}
+	}
+	e := map[string]any{}
+	for k, v := range eng {
+		e[k] = v
+	}
+	e["frame"] = g
+	sections["engine"] = e
 }
 
 // completedIs reports whether stdout is one Result that completed exactly n requests.
@@ -239,6 +268,7 @@ func simulated(t *testing.T, stdout string) string {
 			view[k] = v
 		}
 	}
+	withoutFrameInvocation(view)
 	data, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
 		t.Fatal(err)

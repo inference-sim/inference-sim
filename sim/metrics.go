@@ -334,8 +334,7 @@ func (m *Metrics) BuildOutput(instanceID string) MetricsOutput {
 // ticks to milliseconds. This is the exact extraction the batch classifier and
 // the #1516 streaming replay both consume; exposing it as one method keeps the
 // run/replay saturation input identical to what BuildOutput historically built
-// internally (extractor parity — the observe leg's TraceRecordsToRequestMetrics
-// must produce the same (ArrivedAt, E2E, ID) triples for INV-13).
+// internally.
 func (m *Metrics) CompletedRequestMetrics() []RequestMetrics {
 	completedReqs := make([]RequestMetrics, 0, m.CompletedRequests)
 	for _, id := range sortedRequestIDs(m.Requests) {
@@ -531,11 +530,6 @@ func (m *Metrics) WriteMetricsFile(output MetricsOutput, outputFilePath string, 
 			opt(&resolvedOpts)
 		}
 	}
-	// Aggregate KV-cache hit rate (#1583), file-only alongside Requests[] below. calibrate
-	// --sim-metrics reads this as the simulator's hit rate. run and replay of the same trace
-	// produce identical values (INV-13).
-	hitRate := m.CacheHitRate
-
 	// Catalog provenance (#1732) and the other file-only blocks: `output` is a value copy,
 	// so these assignments cannot reach the caller's struct.
 	output.Catalog = resolvedOpts.catalog
@@ -556,7 +550,7 @@ func (m *Metrics) WriteMetricsFile(output MetricsOutput, outputFilePath string, 
 	// they are; step_interval_* restates itl_* over the measured window.
 	measured, lat := m.buildMeasured()
 	output.MeasuredMetrics = &measured
-	output.applyMeasured(lat, hitRate)
+	output.applyMeasured(lat)
 
 	output.Requests = m.RequestRows()
 

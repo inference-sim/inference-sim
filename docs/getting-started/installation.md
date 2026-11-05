@@ -2,7 +2,12 @@
 
 ## Prerequisites
 
-- **Go 1.27.2+** (the embedded llm-d router requires it) — [Download Go](https://go.dev/dl/)
+- **Go** ([Download Go](https://go.dev/dl/)):
+
+<!-- BEGIN GENERATED from stack.json: toolchain -->
+Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+<!-- END GENERATED -->
+
 - **Git** — for cloning the repository
 
 ## Build from Source
@@ -30,55 +35,43 @@ Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens
 
 ## Locate the Model Catalog
 
-`blis run` and `blis replay` must be told where the model catalog is — there is no default
-and no search path, so a run with neither `--catalog` nor `BLIS_CATALOG` is refused naming
-both forms. Clone the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
-repository **at the pinned release tag** (see [Catalog compatibility](#catalog-compatibility)
-below) and point BLIS at the clone root:
+`blis run` and `blis replay` read the catalog and the registry from directories with the
+layout of blis-substrate's `catalog/` and `registry/`: `--catalog` (or `BLIS_CATALOG`) and
+`--registry`. Check out blis-substrate at the commit this build pins (see
+[Data compatibility](#catalog-compatibility) below) and point BLIS at its directories:
 
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
 ```
+<!-- END GENERATED -->
 
-## Catalog compatibility
+## Data compatibility { #catalog-compatibility }
 
-`blis-catalog` versions independently of BLIS and keeps releasing, so the documented clone
-names an explicit tag rather than whatever `main` happens to be. This is the one place the
-compatible version is stated; every other page's clone command pins the same tag.
+The catalog, the registry and the cost model are one module, blis-substrate, and a build of
+BLIS selects exactly one version of it. `stack.json` at the repository root records that
+version and every other BLIS module and upstream release the build runs (design SIM-3); the
+table below is rendered from it (`go run ./internal/stack/cmd/versions-doc`), and CI fails if
+it is stale.
 
-<!-- Canonical declaration. cmd.TestDocExamplesPinTheCatalogVersion reads the tag from the
-     line below and requires every documented blis-catalog clone to pin exactly it, so keep
-     the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
+<!-- BEGIN GENERATED from stack.json: versions -->
+| Component | Version | Commit |
+|---|---|---|
+| `github.com/inference-sim/blis-substrate` | `v0.0.0-20261105035832-817e83e0018b` | `817e83e0018b` |
+| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261105040818-a8bf6ee4fca6` | `a8bf6ee4fca6` |
+| `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.2.0.20261105040605-fd1830412b30` | `fd1830412b30` |
+| vllm (engine) | `0.32.0` | `5df63a7203cd` |
+| llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
+| llm-d guides | | `4427f55cb626` |
+| Go toolchain | `go1.27.2` | |
+<!-- END GENERATED -->
 
-**Compatible blis-catalog release: `0.3.0`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.3.0).
-
-Why pin at all: BLIS parses every catalog file strictly (`KnownFields(true)`), and strict
-parsing is one-way — an added or renamed key in a future catalog schema is a **hard load
-error**, not a silently ignored field. An unpinned clone therefore lets a catalog release
-turn a `blis run` that worked yesterday into a startup failure with no change to BLIS
-itself. Pinning also makes results attributable: two people running the documented commands
-months apart read the same catalog. (`blis run --metrics-path` records the catalog's git
-revision and whether it was dirty — see [Results](../guide/results.md); a `--depth 1`
-tag clone still carries the revision, so that provenance is unaffected.)
-
-BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
-clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
-`v0.2.0`**, the release blis-latency-kernel is tested against (`go.mod` pins the kernel and
-blis-schemas, whose deployment `router:` block configures the llm-d router; while #2021's
-changes are unmerged these are TEMPORARY pushed-head pins, released before merge); that pair is
-recorded in the kernel's own `testdata/upstream.lock`, and this
-repository's test suite holds its vendored catalog and registry to it.
-
-```bash
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-```
-
-**Upgrading to a newer catalog release** is deliberately opt-in: clone the newer tag, run
-your workload against it, and if it works, bump the tag on the line above — the guard test
-then requires every documented clone command to match, so no page is left behind. Nothing
-stops you pointing `--catalog` at a `main` checkout or a scratch clone of your own; the pin
-is what the *documentation* promises, not a restriction the binary enforces.
+Every loader parses its files strictly, so data from another substrate version can be refused
+at load. The test suite reads the catalog and registry of the substrate module `go.mod`
+selects, so the checkout above is the data the build is tested with. A directory of your own
+works as long as the substrate's validators accept it.
 
 ## Scenarios
 
@@ -100,7 +93,7 @@ for details.
 ```bash
 ./blis run --scenarios examplescenarios \
   --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-registry --catalog $PWD/blis-catalog \
+  --registry $PWD/blis-substrate/registry --catalog $PWD/blis-substrate/catalog \
   --num-requests 10
 ```
 

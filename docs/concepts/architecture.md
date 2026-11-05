@@ -97,7 +97,8 @@ The cluster simulator maintains a single global clock shared across all instance
 - Cluster events at time T are processed before instance events at time T (cluster-first priority)
 - When multiple instances have events at the same time, the instance with the lowest index goes first
 - Router callbacks run at `PriorityGatewayRequest` (after the arrival, before P/D transfer and autoscaling); its background work runs at `PriorityGatewayBackground`, after every other cluster event at the timestamp
-- Within a single instance, events are ordered by `(timestamp, priority, seqID)` — the same three-key scheme used at the cluster level
+- Cluster events are ordered by `(time, class, sender, sender's own count)` (DEV-2); each class's position and reason are listed in `sim/cluster/cluster_event.go`
+- Within a single instance, events are ordered by `(timestamp, priority, seqID)`; the instance is the one sender, so its seqID is its own count of events sent
 
 The simulation terminates when the clock exceeds the configured horizon or only daemon events remain. While the router holds requests and nothing but its timers can happen, the run continues for at most one simulated hour (`gatewayStallLimitUs`) before it ends with a warning.
 
@@ -234,8 +235,5 @@ with identical flags (including `--horizon`) yields equal `metrics`, `requests` 
 header records the router inputs (EPP flags with the configuration inlined, manifests, pod
 labels, gateway latency, scrape jitter, KV-event delay), so a replay rebuilds the same router; a replay whose
 scenario `router:` block, pool labels or router environment flags state a different router is
-refused.
-`blis observe` and `blis calibrate` are deprecated
-([#1901](https://github.com/inference-sim/inference-sim/issues/1901)). See
-[Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md) and the
+refused. See [Trace Replay](../guide/replay.md) and the
 [Configuration Reference](../reference/configuration.md).

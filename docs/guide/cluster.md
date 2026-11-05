@@ -36,7 +36,7 @@ Arrival → gateway latency → llm-d router → dispatch → Instance WaitQueue
 | Stage | Controls | Configured by |
 |-------|----------|---------------|
 | **Admission, flow control, routing** | Whether the request is admitted, how long it waits, which instance receives it | The llm-d router's inputs: the scenario's `router:` block and `pools[].labels`; see [the router's inputs](routing.md#the-routers-inputs) |
-| **Scheduling** | What order within the instance | `--scheduler`, the policy bundle's `priority` section |
+| **Scheduling** | What order within the instance | the pool engine block's `scheduling_policy` (`--scheduler`, deprecated in v0.16.0, may override it), the policy bundle's `priority` section |
 | **Batch Formation** | Which requests form the next batch | scenario `max_num_seqs`, `max_num_batched_tokens` |
 
 With no router inputs, the router uses its built-in default configuration over every
@@ -148,7 +148,7 @@ The trace summary shows:
 
 ## Event Ordering
 
-The cluster uses `(timestamp, priority, seqID)` ordering for deterministic event processing:
+The cluster orders its events by the key `(time, class, sender, sender's own count)` (design DEV-2). No counter shared by the whole simulator enters it, so the order of one instant depends only on what each component sent, not on the order the simulator happened to schedule things. Two queued events with the same key are a defect, and the simulator panics on one. Each class's position and its reason are listed beside the event types in `sim/cluster/cluster_event.go`.
 
 - Cluster events at time T process before instance events at time T
 - Same-time instance ties broken by lowest instance index

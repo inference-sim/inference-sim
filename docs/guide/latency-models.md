@@ -19,12 +19,17 @@ chips, fabrics and storage devices from **blis-catalog** and fitted coefficients
 
 ## Running
 
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+```
+<!-- END GENERATED -->
+
+```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios <dir of scenario files> --registry $PWD/blis-substrate/registry \
   --rate 10 --num-requests 100
 ```
 
@@ -227,7 +232,7 @@ the ranks. BLIS therefore steps the group's ranks together:
   request. Dummy steps are not work: a rank's clock, and so `SimEndedTime` and the rates
   divided by it, stop at its last real event.
 
-**How requests reach ranks: `parallel.data_parallel_load_balancing` (or `--dp-load-balancing`, which may only restate a mode the scenario states).** vLLM v0.31.0's serve flags choose
+**How requests reach ranks: `parallel.data_parallel_load_balancing` (or `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, which may only restate a mode the scenario states).** vLLM v0.31.0's serve flags choose
 (`vllm/engine/arg_utils.py:536-538, 1225-1242`; `EngineCoreClient.make_async_mp_client`,
 `vllm/v1/engine/core_client.py:155-166`), and lockstep is the same in every mode:
 
@@ -402,7 +407,7 @@ vLLM's OffloadingConnector:
 transfer with `TierTime` for that device at the tier's in-service queue depth. Explicit
 `read_bandwidth`, `write_bandwidth` and `base_latency` in the tier config are refused.
 The legacy `--kv-cpu-blocks` tier is priced by the kernel from the catalog `cpu_dram`
-device. See [KV Offload](kv-offload-calibration.md).
+device. See [KV Cache & Memory](kv-cache.md).
 
 ## LoRA
 

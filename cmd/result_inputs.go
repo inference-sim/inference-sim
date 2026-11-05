@@ -19,13 +19,13 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/embed"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/measurement"
-	"github.com/inference-sim/blis-schemas/spec/result"
-	"github.com/inference-sim/blis-schemas/spec/scenario"
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -41,13 +41,13 @@ const (
 // resultRevisions are the versions of every component and data repository the run read.
 // catalogRoot and registryRoot are the clone roots; a root that is not a git checkout is
 // recorded as unknown, never guessed.
-func resultRevisions(catalogRoot, registryRoot, engineVersion string) result.Revisions {
+func resultRevisions(catalogRoot, registryRoot string, eng engineRef) result.Revisions {
 	info, _ := debug.ReadBuildInfo()
-	return revisionsFrom(info, catalogRoot, registryRoot, engineVersion)
+	return revisionsFrom(info, catalogRoot, registryRoot, eng)
 }
 
 // revisionsFrom is resultRevisions over given build information, for tests.
-func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot, engineVersion string) result.Revisions {
+func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot string, eng engineRef) result.Revisions {
 	v := versionsFrom(info)
 	r := result.Revisions{BLIS: v.BLIS, BLISSchemas: v.Schemas, BLISLatencyKernel: v.Kernel}
 	if r.BLISLatencyKernel == "unknown" {
@@ -64,8 +64,10 @@ func revisionsFrom(info *debug.BuildInfo, catalogRoot, registryRoot, engineVersi
 			}
 		}
 	}
-	if engineVersion != "" {
-		r.Engine = &result.Engine{Kind: "vllm", UpstreamVersion: engineVersion, Release: engineRelease}
+	// The engine is the one the scenario selected (selectEngine): its kind and upstream release,
+	// and the engine module's own release (SIM-1).
+	if eng.Kind != "" {
+		r.Engine = &result.Engine{Kind: eng.Kind, UpstreamVersion: eng.Version, Release: engineRelease}
 	}
 	r.Catalog = dataRepoRevision(catalogRoot)
 	r.Registry = dataRepoRevision(registryRoot)
@@ -185,8 +187,12 @@ func traceBinding(dataPath string, h workload.TraceHeader, rows int) (*schemawor
 	if err != nil {
 		return nil, fmt.Errorf("--trace-data %s: %w", dataPath, err)
 	}
+	mode, err := resultTraceMode(h.Mode)
+	if err != nil {
+		return nil, err
+	}
 	ref := &schemaworkload.TraceRef{Data: artifactRef(dataPath), SHA256: d, Rows: rows, Header: schemaworkload.TraceHeader{
-		Version: h.Version, TimeUnit: schemaworkload.TimeUnit(h.TimeUnit), Mode: schemaworkload.Mode(h.Mode),
+		Version: h.Version, TimeUnit: schemaworkload.TimeUnit(h.TimeUnit), Mode: mode,
 		WorkloadSeed: h.WorkloadSeed,
 	}}
 	if len(h.GoodputSLOTargets) > 0 {
@@ -196,6 +202,24 @@ func traceBinding(dataPath string, h workload.TraceHeader, rows int) (*schemawor
 		}
 	}
 	return &schemaworkload.Binding{Trace: ref}, nil
+}
+
+// resultTraceMode is a trace header mode in the Result's vocabulary. blis-schemas v0.10.0's
+// closed set has no word for a converted trace: its "generated" is "synthesized from a shape
+// or converted from an external trace (blis run / blis convert)", so a converted trace is
+// recorded as generated, as it was before blis convert wrote a mode of its own (#2067). This
+// loses nothing a Result can show: the two modes differ only in whether replay accepts the
+// scenario's offload tiers for a trace recorded without them, and a generated trace refuses
+// that run outright. A mode outside the set is refused. The contracts trace type in
+// blis-substrate adds "converted" (task B of M1); this mapping goes when the Result moves there.
+func resultTraceMode(mode string) (schemaworkload.Mode, error) {
+	switch mode {
+	case workload.TraceModeGenerated, workload.TraceModeConverted:
+		return schemaworkload.ModeGenerated, nil
+	case workload.TraceModeReplayed:
+		return schemaworkload.ModeReplayed, nil
+	}
+	return "", fmt.Errorf("trace header mode %q has no Result mode", mode)
 }
 
 // resultLedger is INV-1's ledger from the cluster's own counters: arrivals are observed at
@@ -226,7 +250,6 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 
 // runGPUs is the number of GPUs the run's instances occupy: each instance its own pool's
 // tensor x pipeline x prefill-context-parallel width, the GPUs one engine replica spans.
-// Data parallelism is already one instance per rank (DP-as-placement), so it is not a factor.
 // An instance whose role names no pool (a test cluster) counts its tensor-parallel degree.
 func runGPUs(cs *cluster.ClusterSimulator, dep *deployment.Deployment) int {
 	perRole := map[deployment.Role]int{}
