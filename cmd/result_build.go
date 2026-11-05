@@ -26,6 +26,11 @@ type resultInputs struct {
 	// Scenario and Deployment are the documents the run read, as decoded.
 	Scenario   *scenario.Scenario
 	Deployment *deployment.Deployment
+	// Packaging is the cluster's packaging the kernel resolved (blis-substrate
+	// scenario.Cluster.Packaging), recorded when a value came from the chip's catalog entry
+	// rather than the scenario (SIM-10). Nil when the scenario states every value, which
+	// input.scenario then records as stated.
+	Packaging *scenario.Packaging
 	// Policy is the --policy-config bundle as a generic map, nil without one.
 	Policy map[string]any
 	// Generator is the frame's generator: the workload binding, the offered load and the seed
@@ -96,6 +101,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	if in.Deployment != nil {
 		r.Input.Deployment = *in.Deployment
 	}
+	r.Input.Packaging = in.Packaging
 	r.Input.Policy = in.Policy
 	r.Frame.Generator = in.Generator // buildFrame sets the seed and RNG from the same generator
 	for _, o := range in.Overrides {
