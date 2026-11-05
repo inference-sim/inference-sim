@@ -67,11 +67,13 @@ func Factory() vllm.Factory {
 // kvBytes is the memory a hybrid model's pool was sized from (poolBlocks), 0 for one sized as
 // the compatibility engine sizes it.
 type pool struct {
-	model   *kernelmodel.Model
-	blocks  int64
-	kvBytes int64
-	engine  yaml.Node
-	pp, dp  int
+	model *kernelmodel.Model
+	// resolved are the engine settings as the release resolves them (Model.Engine).
+	resolved engineconfig.Engine
+	blocks   int64
+	kvBytes  int64
+	engine   yaml.Node
+	pp, dp   int
 	// role is the pool's role and connector the deployment's pd_transfer.connector, which a
 	// prefill or decode pool runs as kv_producer or kv_consumer.
 	role      deployment.Role
@@ -126,7 +128,13 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	return pool{model: m, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
+	// The settings as the release resolves them (Model.Engine), which the kernel prices and the
+	// engine block is completed with, so the scheduler and the cost model run one engine.
+	resolved, err := m.Engine()
+	if err != nil {
+		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
+	}
+	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
 		role: m.Role(), connector: shape.PDConnector, offload: off}, nil
 }
 
@@ -456,6 +464,12 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		block = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	}
 	block = *cloneNode(&block)
+	// What the deployment left unstated, as the release resolves it (Model.Engine): the factory
+	// (core/vllm resolve) refuses these when absent, for a caller that builds an engine with no
+	// resolver. A value the block states is never replaced.
+	setIfAbsent(&block, "block_size", fmt.Sprint(p.resolved.BlockSize))
+	setIfAbsent(&block, "max_num_seqs", fmt.Sprint(p.resolved.MaxNumSeqs))
+	setIfAbsent(&block, "max_num_batched_tokens", fmt.Sprint(p.resolved.MaxNumBatchedTokens))
 	setIfAbsent(&block, "num_gpu_blocks", fmt.Sprint(p.blocks))
 	if p.kvBytes > 0 {
 		// The memory the pool's blocks were sized from, for vLLM's start-up check's message.
