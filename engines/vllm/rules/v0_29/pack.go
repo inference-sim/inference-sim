@@ -411,9 +411,12 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name:    "custom-allreduce-reachable",
 			Because: "the SM-consuming kernel supports only certain rank counts and only within one node absent multi-node NVLink, so a request outside those falls back to the NIC",
 			Check: func(in rules.Input, out *rules.Problems) {
+				// The node size is the cluster's resolved packaging (the scenario's, or the
+				// chip's catalog entry's), not the scenario's field, which is zero where the
+				// scenario leaves it to the catalog.
 				gpusPerNode := 0
-				if in.Scenario != nil {
-					gpusPerNode = in.Scenario.Cluster.GPUsPerNode
+				if in.Packaging != nil {
+					gpusPerNode = in.Packaging.GPUsPerNode
 				}
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					if pool.Engine.AllReduceBackend != "custom" {

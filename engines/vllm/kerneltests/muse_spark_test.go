@@ -12,7 +12,8 @@ import (
 
 // Muse-Spark-Open-816B-A42B, NVFP4, on the three clusters it is served on: H100 over RoCE at
 // PP2 x TP8 (the best layout in internal deployment measurements), H200 over InfiniBand at the
-// same layout, and GB200 at TP8 x EP8 over two trays of one NVL72 rack.
+// same layout, and GB200 at TP8 x EP8 over two trays of one NVL72 rack. The GB200 fixture omits
+// gpus_per_node and gpus_per_rack: the 4 and 72 of its trays and rack come from the catalog entry.
 
 func museBatches() []kernel.Batch {
 	decode := func(n, ctx int) kernel.Batch {

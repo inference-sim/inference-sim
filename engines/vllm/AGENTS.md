@@ -89,7 +89,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: No other module requiring github.com/llm-d/llm-d-router
   - `new`, pull_request: No committed go.work
 - **X12** (partial; target ci by M1) Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list.
-  - `new`, pull_request: Name scan in every repository
+  - `new`, pull_request: Name scan in every repository, which also reads the text of every open issue each night
 - **X13** (partial; target ci by M1) Every behaviour change has a test that fails without it.
   - `new`, pull_request: The corpus comparison, run by the scoring harness at the pinned digest from each repository's CI, for pull requests declared as refactors
   - `new`, pull_request: Mutation checks: on a pull request, the functions it changes and the functions covered by any test it changes are mutated, and only the tests that cover them run
@@ -140,11 +140,11 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **VLM-2** (partial; target ci by M4) Every Go file states where it came from: derived from a vLLM path at a release and commit, moved from another repository, or original.
   - `ci`, pull_request: Provenance test: every file states its provenance (`TestEveryFileStatesItsProvenance`)
   - `new`, pull_request: Provenance test: no file names a vLLM release other than the one the Upstream record names
-- **VLM-3** (new; target ci by M2) fields.json classifies every configuration field and every environment variable the release reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled (with a trace that sets it), proven inert (with a passing proof), or not modelled (with an issue).
+- **VLM-3** (new; target ci by M2) fields.json classifies every configuration field and every environment variable the release reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled, proven inert (with a passing proof), or not modelled (with an issue).
   - `new`, pull_request: Completeness check
   - `new`, pull_request: Inertness proofs (§7.4)
   - `new`, pull_request: A perturbation test over every field marked modelled
-  - `new`, pull_request: A check that every field has an estimation rule or says it has none
+  - `new`, pull_request: A check that every field has an estimation rule or says it has none. A second check fails on any field whose type can hold a class or module path and is not marked as able to name code
 - **VLM-4** (new; target ci by M2) surface.json lists every connector, offload tier, KV-cache spec type and its manager, speculative method, scheduler policy, metric family and KV-event type the pinned release registers, each with a status (X9).
   - `new`, pull_request: Generator against vLLM's registries (§7.5)
 - **VLM-5** (ci; target reached) No clock reads and no goroutines.

@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
@@ -43,7 +44,16 @@ func reportRules(in latencykernel.Inputs) ruleReport {
 			r.skipped = append(r.skipped, name)
 		}
 	}
-	problems := in.Rules.Check(rules.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model})
+	// The rules read a node size from the cluster's resolved packaging, which fromDecoded has
+	// already resolved without error; a hand-assembled Inputs that cannot resolve it gives
+	// the rules none.
+	var pk *scenario.Packaging
+	if in.Scenario != nil {
+		if p, err := in.Scenario.Cluster.Packaging(in.Chip); err == nil {
+			pk = &p
+		}
+	}
+	problems := in.Rules.Check(rules.Input{Scenario: in.Scenario, Deployment: in.Deployment, Model: in.Model, Packaging: pk})
 	var all []sim.RuleFinding
 	for _, p := range problems.All() {
 		all = append(all, sim.RuleFinding{
