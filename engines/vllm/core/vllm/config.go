@@ -125,6 +125,9 @@ type dpSettings struct {
 	statsIntervalUs                      int64
 }
 
+// maxModelLenIssue is the open issue an unstated max_model_len cites (design X28).
+const maxModelLenIssue = "https://github.com/inference-sim/blis-vllm/issues/69"
+
 // resolve turns an engine block into the scheduler configuration vLLM v0.32.0 would run, or
 // refuses it. A setting that changes scheduling and that this engine does not model is refused
 // rather than ignored (refuseUnmodelled): a run that drops one would still produce numbers, and
@@ -163,9 +166,11 @@ func resolve(c Config) (settings, error) {
 	maxLen, ok := e.MaxModelLen.Stated()
 	if !ok {
 		// An unstated or auto window is the model's own, or one fitted to memory
-		// (vllm/config/model.py@5df63a72); either is the caller's to resolve.
-		return s, fmt.Errorf("vllm: max_model_len must be stated; an unstated or auto window is the model's " +
-			"or the memory's, which the caller resolves")
+		// (vllm/config/model.py@5df63a72); either is the caller's to resolve. The engine will
+		// resolve an unstated one from the graph's context window, with the model values moved
+		// into graph fields (https://github.com/inference-sim/blis-vllm/issues/69).
+		return s, fmt.Errorf("vllm: max_model_len must be stated; an unstated or auto window is the model's "+
+			"or the memory's, which the caller resolves (%s)", maxModelLenIssue)
 	}
 	// vLLM refuses to start when the KV cache cannot hold one max_model_len sequence: a
 	// full-attention group needs cdiv(max_model_len, block_size) blocks

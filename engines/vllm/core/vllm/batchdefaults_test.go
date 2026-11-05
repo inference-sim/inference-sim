@@ -3,6 +3,8 @@ package vllm
 import (
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // ResolveBatch is vLLM v0.32.0's resolution of an unstated max_num_seqs and
@@ -62,5 +64,17 @@ func TestResolveBatchFollowsVLLMsRule(t *testing.T) {
 				t.Errorf("sources %q and %q: a value is %q exactly when it was stated", r.MaxNumSeqsSource, r.MaxNumBatchedTokensSource, SourceStated)
 			}
 		})
+	}
+}
+
+// An unstated max_model_len is refused by a caller that builds the engine with no resolver, and
+// the refusal names the open issue that will resolve it (design X28).
+func TestAnUnstatedMaxModelLenIsRefusedNamingItsIssue(t *testing.T) {
+	pp := 1
+	_, err := resolve(Config{NumGPUBlocks: 1000, PipelineParallelSize: &pp,
+		Engine: engineconfig.Engine{BlockSize: 16, MaxNumSeqs: 256, MaxNumBatchedTokens: 2048}})
+	if err == nil || !strings.Contains(err.Error(), "max_model_len must be stated") ||
+		!strings.Contains(err.Error(), "blis-vllm/issues/69") {
+		t.Errorf("err %v, want the max_model_len refusal naming issues/69", err)
 	}
 }
