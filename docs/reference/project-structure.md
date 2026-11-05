@@ -17,6 +17,7 @@ inference-sim/
 │   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/sim_result.go
 │   ├── network_topology.go    # crossNodeSpanForTrace: normalizes a cluster's widest instance node span for the TraceV2 header (#1530). A span of 0 (no node pools) or 1 (every instance on one node) records nothing, so a run without multi-node placement writes a byte-identical header; only a real multi-node fleet is recorded, and only that makes `blis replay` refuse the trace.
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
+│   ├── convert_trace.go       # `blis convert trace`: a trace format version 3 (or 2) trace to version 4
 │   ├── compose.go             # `blis compose` for merging v2 specs
 │   ├── catalog_root.go        # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731); a run reads a model's `models/<name>/graph.yaml` within it
 │   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. resultsFileEmitOptions is the single helper both `blis run` and `blis replay` pass to the `--metrics-path` writer (INV-13); the Result records the revision under `revisions.catalog`
@@ -73,7 +74,8 @@ inference-sim/
 │   ├── client.go              # Rate normalization, prefix group management
 │   ├── generator.go           # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
-│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 27-column schema including finish_reason (backward-compat with 26-column pre-finish_reason traces)
+│   ├── tracev2.go             # Trace format version 4 (YAML header + CSV data, contracts/spec/trace); columns read by name
+│   ├── trace_v3.go            # Trace format version 3, read only to convert it (ConvertTraceV3)
 │   ├── trace_mode.go          # The header modes (generated, replayed, converted), their check at load, and RecordsDeployment (#2067)
 │   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
 │   ├── reexport.go            # ReExportClosedLoopRecords: faithful closed-loop/pool --trace-output re-export (#1630) — captures all rounds, re-derives accumulate deltas+resets, propagates think/prefix

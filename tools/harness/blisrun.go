@@ -101,7 +101,7 @@ func blisArgs(cfg Config, scenarioName, scenarioDir, headerPath, dataPath, metri
 // arrival time beyond 0 (the pool, not the trace, decides when each one starts).
 func pointTrace(pl PointLengths) (*workload.TraceHeader, []workload.TraceRecord) {
 	header := &workload.TraceHeader{
-		Version:  3,
+		Version:  workload.TraceVersion,
 		TimeUnit: "microseconds",
 		Mode:     "generated",
 	}

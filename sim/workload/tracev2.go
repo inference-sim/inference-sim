@@ -14,18 +14,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TraceHeader captures metadata for trace v2 files.
+// TraceVersion is the trace format this build reads and writes: version 4, the format
+// blis-substrate's contracts/spec/trace defines. A trace of another version is refused; a
+// version 3 trace is converted with `blis convert trace` (ConvertTraceV3).
+const TraceVersion = 4
+
+// TraceHeader is a trace's YAML header (trace format version 4).
 type TraceHeader struct {
-	Version        int    `yaml:"trace_version"`
-	TimeUnit       string `yaml:"time_unit"`
-	Mode           string `yaml:"mode"` // TraceModeGenerated, TraceModeReplayed or TraceModeConverted
-	WarmUpRequests int    `yaml:"warm_up_requests"`
-	WorkloadSeed   *int64 `yaml:"workload_seed,omitempty"`
-	// WorkloadSpec records workload provenance:
-	//   - a file path when --workload-spec is used (e.g. "workload.yaml")
-	//   - "preset:<name>" when --workload is used (e.g. "preset:chatbot")
-	//   - empty (omitted) when distribution synthesis or concurrency mode is used
-	WorkloadSpec string `yaml:"workload_spec,omitempty"`
+	Version  int    `yaml:"trace_version"`
+	TimeUnit string `yaml:"time_unit"`
+	Mode     string `yaml:"mode"` // TraceModeGenerated, TraceModeReplayed or TraceModeConverted
+	// WorkloadSeed is the workload generator's seed, when one was recorded.
+	WorkloadSeed *int64 `yaml:"workload_seed,omitempty"`
 
 	// SessionContextGrowth controls per-round input assembly in closed-loop
 	// replay. "accumulate" makes each session reuse a single growing token
@@ -37,9 +37,7 @@ type TraceHeader struct {
 
 	// GoodputSLOTargets: per-SLO-class TTFT/ITL/E2E thresholds for goodput
 	// measurement (issue #1409, BC-8). Persisted in trace headers so run and
-	// replay carry the same SLO definition. Schema bump to trace
-	// version 3; old binaries reading new traces will hard-fail under
-	// KnownFields(true) — intentional, signaled by Version (BC-N3).
+	// replay carry the same SLO definition.
 	GoodputSLOTargets map[string]SLODimTargets `yaml:"goodput_slo_targets,omitempty"`
 
 	// KVOffload records the RESOLVED KV-cache offload configuration (H5, #1587) so it
@@ -99,9 +97,6 @@ func (h *TraceHeader) Validate() error {
 				return err
 			}
 		}
-	}
-	if err := check.Count("warm_up_requests", int64(h.WarmUpRequests)); err != nil {
-		return err
 	}
 	if err := check.Count("max_nodes_spanned", int64(h.MaxNodesSpanned)); err != nil {
 		return err
@@ -168,37 +163,32 @@ type TraceKVOffloadTier struct {
 	LatencyJitterStddev float64 `yaml:"latency_jitter_stddev"`
 }
 
-// TraceRecord represents one row in a trace v2 CSV.
+// TraceRecord is one row of a trace's data CSV: one request.
 type TraceRecord struct {
-	RequestID         int
-	ClientID          string
-	TenantID          string
-	SLOClass          string
-	SessionID         string
-	RoundIndex        int
-	PrefixGroup       string
-	PrefixLength      int
-	Streaming         bool
-	InputTokens       int
-	OutputTokens      int
-	TextTokens        int
-	ImageTokens       int
-	AudioTokens       int
-	VideoTokens       int
-	ReasonRatio       float64
-	Model             string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
-	DeadlineUs        int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
-	SLOTargetUs       int64  // per-request SLO TTFT target in microseconds; 0 = no target
-	ServerInputTokens int    // server-reported prompt_tokens; 0 = not recorded (e.g., generated traces)
-	ArrivalTimeUs     int64
-	SendTimeUs        int64
-	FirstChunkTimeUs  int64
-	LastChunkTimeUs   int64
-	NumChunks         int
-	Status            string // "ok", "error", "timeout"
-	ErrorMessage      string
-	FinishReason      string // server-reported finish_reason ("stop", "length", "abort", etc.); empty = not recorded
-	Adapter           string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
+	RequestID        int
+	ClientID         string
+	TenantID         string
+	SLOClass         string
+	SessionID        string
+	RoundIndex       int
+	PrefixGroup      string
+	PrefixLength     int
+	Streaming        bool
+	InputTokens      int
+	OutputTokens     int
+	TextTokens       int
+	ImageTokens      int
+	AudioTokens      int
+	VideoTokens      int
+	ReasonRatio      float64
+	Model            string // model name (e.g., "meta-llama/Llama-3.1-8B-Instruct"); empty = default model
+	DeadlineUs       int64  // absolute deadline timestamp in microseconds (same time origin as ArrivalTimeUs); 0 = no timeout
+	SLOTargetUs      int64  // per-request SLO TTFT target in microseconds; 0 = no target
+	ArrivalTimeUs    int64
+	FirstChunkTimeUs int64
+	LastChunkTimeUs  int64
+	Status           string // "ok", "error", "timeout" or "incomplete"
+	Adapter          string // LoRA adapter id serving this request (registry key; #1464); empty = base-model-only
 	// ThinkTimeUs is the recorded per-round client think time in µs (gap from the
 	// previous request's end), set by agentic-trace converters (#1478) and preferred
 	// over arrival-gap derivation in closed-loop replay. It is a PRESENCE signal
@@ -224,34 +214,62 @@ type TraceV2 struct {
 	Records []TraceRecord
 }
 
-// CSV column headers for trace v2 format.
-var traceV2Columns = []string{
+// traceColumns are the data CSV's required columns, in the order they are written (trace
+// format version 4, the order of contracts/spec/trace's Columns).
+var traceColumns = []string{
 	"request_id", "client_id", "tenant_id", "slo_class", "session_id", "round_index",
 	"prefix_group", "prefix_length", "streaming", "input_tokens", "output_tokens",
 	"text_tokens", "image_tokens", "audio_tokens", "video_tokens", "reason_ratio",
-	"model", "deadline_us", "server_input_tokens",
-	"arrival_time_us", "send_time_us", "first_chunk_time_us", "last_chunk_time_us",
-	"num_chunks", "status", "error_message", "finish_reason",
+	"model", "deadline_us", "arrival_time_us", "first_chunk_time_us", "last_chunk_time_us",
+	"status",
 }
 
-// ExportTraceV2 writes trace header (YAML) and data (CSV) to separate files.
-// Timestamps use integer formatting (%d) to preserve microsecond precision.
+// traceOptionalColumns follow traceColumns, in this order, each written only when some
+// record carries a value for it, so a trace that uses none has exactly traceColumns.
+var traceOptionalColumns = []string{"slo_target_us", "adapter", "think_time_us", "input_tokens_reset"}
+
+// traceV3OnlyColumns are the version 3 columns version 4 does not have. Each is named in a
+// refusal, so a version 3 data file read as version 4 is pointed at the conversion.
+var traceV3OnlyColumns = map[string]bool{
+	"server_input_tokens": true, "send_time_us": true, "num_chunks": true,
+	"error_message": true, "finish_reason": true, "vllm_priority": true, "x_request_id": true,
+}
+
+// traceConversionHint names the conversion a version 3 trace needs.
+const traceConversionHint = "convert it with `blis convert trace --header <v3>.yaml --data <v3>.csv --trace-output <prefix>`"
+
+// ExportTraceV2 writes the trace header (YAML) and data (CSV) to separate files, in trace
+// format version 4. The header's Version must be TraceVersion.
 func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataPath string) error {
-	// Write header YAML
-	headerData, err := yaml.Marshal(header)
-	if err != nil {
-		return fmt.Errorf("marshaling trace header: %w", err)
+	if header.Version != TraceVersion {
+		return fmt.Errorf("trace header version %d: this build writes version %d", header.Version, TraceVersion)
 	}
-	if err := os.WriteFile(headerPath, headerData, 0644); err != nil {
+	var buf bytes.Buffer
+	if err := writeTraceHeader(&buf, header); err != nil {
+		return err
+	}
+	if err := os.WriteFile(headerPath, buf.Bytes(), 0644); err != nil {
 		return fmt.Errorf("writing trace header: %w", err)
 	}
-
-	// Write data CSV
 	file, err := os.Create(dataPath)
 	if err != nil {
 		return fmt.Errorf("creating trace data file: %w", err)
 	}
 	return writeTraceV2Data(file, header, records)
+}
+
+// writeTraceHeader writes h as YAML indented by two spaces, as contracts/spec/trace's
+// WriteHeader does.
+func writeTraceHeader(w io.Writer, h *TraceHeader) error {
+	enc := yaml.NewEncoder(w)
+	enc.SetIndent(2)
+	if err := enc.Encode(h); err != nil {
+		return fmt.Errorf("marshaling trace header: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return fmt.Errorf("marshaling trace header: %w", err)
+	}
+	return nil
 }
 
 // writeTraceV2Data writes the trace's CSV rows to w, flushes them and closes w. It returns the
@@ -267,141 +285,57 @@ func writeTraceV2Data(w io.WriteCloser, header *TraceHeader, records []TraceReco
 
 // writeTraceV2Rows writes the header row and every record to w through a csv.Writer, and
 // flushes it. The csv.Writer buffers its output, so a failing w is seen at the flush, which is
-// why the flush's error is returned.
-func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) error {
+// why the flush's error is returned. An optional column is written only when some record
+// carries a value for it: slo_target_us when a target is positive, adapter when one is named,
+// think_time_us and input_tokens_reset when one is recorded (a recorded 0 included).
+func writeTraceV2Rows(w io.Writer, _ *TraceHeader, records []TraceRecord) error {
+	has := map[string]bool{}
+	for _, r := range records {
+		has["slo_target_us"] = has["slo_target_us"] || r.SLOTargetUs != 0
+		has["adapter"] = has["adapter"] || r.Adapter != ""
+		has["think_time_us"] = has["think_time_us"] || r.ThinkTimeUs != nil
+		has["input_tokens_reset"] = has["input_tokens_reset"] || r.InputTokensReset != nil
+	}
+	columns := append([]string{}, traceColumns...)
+	for _, c := range traceOptionalColumns {
+		if has[c] {
+			columns = append(columns, c)
+		}
+	}
 	writer := csv.NewWriter(w)
-
-	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
-	includeSLOTarget := false
-	for _, r := range records {
-		if r.SLOTargetUs > 0 {
-			includeSLOTarget = true
-			break
-		}
-	}
-
-	// Conditionally include adapter column (#1464): present iff any record carries
-	// a non-empty LoRA adapter id. Trailing position keeps the
-	// positional parser's index math untouched. Omitted for adapter-blind traces so
-	// the no-op default adds no columns (INV-6).
-	includeAdapter := false
-	for _, r := range records {
-		if r.Adapter != "" {
-			includeAdapter = true
-			break
-		}
-	}
-
-	// Conditionally include think_time_us column (#1478): present iff any record carries
-	// a RECORDED (non-nil) think time — including a recorded &0 (#1608). Trailing position
-	// (like adapter) keeps the positional parser's index math untouched.
-	// Omitted when no record recorded think, so traces that never set it (e.g.
-	// generated, convert otel) add no column (INV-6 byte-identity).
-	includeThinkTime := false
-	for _, r := range records {
-		if r.ThinkTimeUs != nil {
-			includeThinkTime = true
-			break
-		}
-	}
-
-	// Conditionally include input_tokens_reset column (#1609): present iff any record
-	// carries a compaction reset marker (non-nil). Trailing position (like adapter /
-	// think_time_us) keeps the positional parser's index math untouched. Omitted for
-	// traces with no compaction round, so run/monotone traces add no column
-	// (INV-6 byte-identity).
-	includeInputTokensReset := false
-	for _, r := range records {
-		if r.InputTokensReset != nil {
-			includeInputTokensReset = true
-			break
-		}
-	}
-
-	// Build column header list
-	columns := make([]string, 0, len(traceV2Columns)+3)
-	for _, col := range traceV2Columns {
-		columns = append(columns, col)
-		// Insert slo_target_us immediately after deadline_us (matched by name)
-		if col == "deadline_us" && includeSLOTarget {
-			columns = append(columns, "slo_target_us")
-		}
-	}
-	// Append adapter at end (#1464): trailing, so it shifts no index in the positional
-	// parser; parsed by header-position lookup.
-	if includeAdapter {
-		columns = append(columns, "adapter")
-	}
-	// Append think_time_us at end (#1478): also trailing; parsed by header-position lookup.
-	if includeThinkTime {
-		columns = append(columns, "think_time_us")
-	}
-	// Append input_tokens_reset at end (#1609): also trailing; parsed by header-position lookup.
-	if includeInputTokensReset {
-		columns = append(columns, "input_tokens_reset")
-	}
-
-	// Write header row
 	if err := writer.Write(columns); err != nil {
 		return fmt.Errorf("writing CSV header: %w", err)
 	}
-
-	// Write data rows (integer formatting for timestamps)
+	ptr := func(v *int64) string {
+		if v == nil {
+			return "" // not recorded, distinct from a recorded 0 (#1608)
+		}
+		return strconv.FormatInt(*v, 10)
+	}
 	for _, r := range records {
 		row := []string{
-			strconv.Itoa(r.RequestID),
-			r.ClientID,
-			r.TenantID,
-			r.SLOClass,
-			r.SessionID,
-			strconv.Itoa(r.RoundIndex),
-			r.PrefixGroup,
-			strconv.Itoa(r.PrefixLength),
-			strconv.FormatBool(r.Streaming),
-			strconv.Itoa(r.InputTokens),
-			strconv.Itoa(r.OutputTokens),
-			strconv.Itoa(r.TextTokens),
-			strconv.Itoa(r.ImageTokens),
-			strconv.Itoa(r.AudioTokens),
-			strconv.Itoa(r.VideoTokens),
-			strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64),
-			r.Model,
-			strconv.FormatInt(r.DeadlineUs, 10),
-		}
-		if includeSLOTarget {
-			row = append(row, strconv.FormatInt(r.SLOTargetUs, 10))
-		}
-		row = append(row,
-			strconv.Itoa(r.ServerInputTokens),
-			strconv.FormatInt(r.ArrivalTimeUs, 10),    // integer format
-			strconv.FormatInt(r.SendTimeUs, 10),       // integer format
-			strconv.FormatInt(r.FirstChunkTimeUs, 10), // integer format
-			strconv.FormatInt(r.LastChunkTimeUs, 10),  // integer format
-			strconv.Itoa(r.NumChunks),
+			strconv.Itoa(r.RequestID), r.ClientID, r.TenantID, r.SLOClass, r.SessionID,
+			strconv.Itoa(r.RoundIndex), r.PrefixGroup, strconv.Itoa(r.PrefixLength),
+			strconv.FormatBool(r.Streaming), strconv.Itoa(r.InputTokens), strconv.Itoa(r.OutputTokens),
+			strconv.Itoa(r.TextTokens), strconv.Itoa(r.ImageTokens), strconv.Itoa(r.AudioTokens),
+			strconv.Itoa(r.VideoTokens), strconv.FormatFloat(r.ReasonRatio, 'f', -1, 64), r.Model,
+			strconv.FormatInt(r.DeadlineUs, 10), strconv.FormatInt(r.ArrivalTimeUs, 10),
+			strconv.FormatInt(r.FirstChunkTimeUs, 10), strconv.FormatInt(r.LastChunkTimeUs, 10),
 			r.Status,
-			r.ErrorMessage,
-			r.FinishReason,
-		)
-		// Append adapter at end (#1464).
-		if includeAdapter {
-			row = append(row, r.Adapter)
 		}
-		// Append think_time_us at end (#1478). A nil (not-recorded) think writes an
-		// empty cell so it is distinguishable from a recorded &0 on reload (#1608).
-		if includeThinkTime {
-			if r.ThinkTimeUs != nil {
-				row = append(row, strconv.FormatInt(*r.ThinkTimeUs, 10))
-			} else {
-				row = append(row, "")
+		for _, c := range traceOptionalColumns {
+			if !has[c] {
+				continue
 			}
-		}
-		// Append input_tokens_reset at end (#1609): empty cell for nil (no compaction
-		// this round), integer for a recorded absolute reset target.
-		if includeInputTokensReset {
-			if r.InputTokensReset != nil {
-				row = append(row, strconv.FormatInt(*r.InputTokensReset, 10))
-			} else {
-				row = append(row, "")
+			switch c {
+			case "slo_target_us":
+				row = append(row, strconv.FormatInt(r.SLOTargetUs, 10))
+			case "adapter":
+				row = append(row, r.Adapter)
+			case "think_time_us":
+				row = append(row, ptr(r.ThinkTimeUs))
+			case "input_tokens_reset":
+				row = append(row, ptr(r.InputTokensReset))
 			}
 		}
 		if err := writer.Write(row); err != nil {
@@ -415,18 +349,41 @@ func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) e
 	return nil
 }
 
-// LoadTraceV2 reads a trace v2 header (YAML) and data (CSV).
-func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
-	// Load header
-	headerData, err := os.ReadFile(headerPath)
+// readTraceHeader decodes a header strictly: an unknown key is an error. A header of another
+// version is refused before its keys are decoded, so a version 3 header is named as such and
+// pointed at the conversion rather than refused for a key version 4 dropped.
+func readTraceHeader(headerPath string) (*TraceHeader, error) {
+	data, err := os.ReadFile(headerPath)
 	if err != nil {
 		return nil, fmt.Errorf("reading trace header: %w", err)
 	}
+	var probe struct {
+		Version int `yaml:"trace_version"`
+	}
+	if err := yaml.Unmarshal(data, &probe); err != nil {
+		return nil, fmt.Errorf("parsing trace header: %w", err)
+	}
+	switch {
+	case probe.Version == 3:
+		return nil, fmt.Errorf("trace header %s is trace format version 3; this build reads version %d: %s",
+			headerPath, TraceVersion, traceConversionHint)
+	case probe.Version != TraceVersion:
+		return nil, fmt.Errorf("trace header %s: trace_version must be %d, got %d", headerPath, TraceVersion, probe.Version)
+	}
 	var header TraceHeader
-	decoder := yaml.NewDecoder(bytes.NewReader(headerData))
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&header); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
+	}
+	return &header, nil
+}
+
+// LoadTraceV2 reads a trace header (YAML) and data (CSV) in trace format version 4.
+func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
+	header, err := readTraceHeader(headerPath)
+	if err != nil {
+		return nil, err
 	}
 	if err := validateTraceMode(header.Mode); err != nil {
 		return nil, fmt.Errorf("parsing trace header: %w", err)
@@ -434,81 +391,69 @@ func LoadTraceV2(headerPath, dataPath string) (*TraceV2, error) {
 	if err := header.Validate(); err != nil {
 		return nil, fmt.Errorf("trace header %s: %w", headerPath, err)
 	}
-
-	// Load data CSV
 	file, err := os.Open(dataPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening trace data: %w", err)
 	}
 	defer func() { _ = file.Close() }()
+	records, err := readTraceRecords(file)
+	if err != nil {
+		return nil, fmt.Errorf("trace data %s: %w", dataPath, err)
+	}
+	return &TraceV2{Header: *header, Records: records}, nil
+}
 
-	reader := csv.NewReader(file)
-	reader.FieldsPerRecord = -1 // allow extra columns (future extensions)
-
-	// Read header row to detect optional columns
-	headerRow, err := reader.Read()
+// readTraceRecords reads the data CSV. Columns are found by name in the header row, so their
+// order does not matter; a missing required column, an unknown or repeated column, and a row
+// with another number of cells are each refused. A version 3 column is refused naming the
+// conversion.
+func readTraceRecords(r io.Reader) ([]TraceRecord, error) {
+	reader := csv.NewReader(r)
+	head, err := reader.Read()
+	if err == io.EOF {
+		return nil, fmt.Errorf("empty file; the first row names the columns")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading CSV header: %w", err)
 	}
-
-	// Detect optional columns from header
-	hasSLOTarget := false
-	adapterIdx := -1          // header-position lookup; -1 = absent (#1464)
-	thinkTimeUsIdx := -1      // header-position lookup; -1 = absent (#1478)
-	inputTokensResetIdx := -1 // header-position lookup; -1 = absent (#1609)
-	for i, col := range headerRow {
-		switch col {
-		case "vllm_priority", "x_request_id":
-			// Only blis observe wrote these columns, and v0.16.0 removed it (#1901).
-			// vllm_priority sat after slo_class, so reading past it would shift every
-			// later column; the file is refused rather than misread.
-			return nil, fmt.Errorf("trace data column %q is not supported: only blis observe "+
-				"wrote it, which v0.16.0 removed (#1901)", col)
-		case "slo_target_us":
-			hasSLOTarget = true
-		case "adapter":
-			adapterIdx = i
-		case "think_time_us":
-			thinkTimeUsIdx = i
-		case "input_tokens_reset":
-			inputTokensResetIdx = i
+	known := map[string]bool{}
+	for _, c := range append(append([]string{}, traceColumns...), traceOptionalColumns...) {
+		known[c] = true
+	}
+	at := map[string]int{}
+	for i, c := range head {
+		switch {
+		case traceV3OnlyColumns[c]:
+			return nil, fmt.Errorf("column %q belongs to trace format version 3, which this build does not read: %s",
+				c, traceConversionHint)
+		case !known[c]:
+			return nil, fmt.Errorf("column %q is not a trace column (version %d)", c, TraceVersion)
+		}
+		if _, dup := at[c]; dup {
+			return nil, fmt.Errorf("column %q appears twice", c)
+		}
+		at[c] = i
+	}
+	for _, c := range traceColumns {
+		if _, ok := at[c]; !ok {
+			return nil, fmt.Errorf("required column %q is missing", c)
 		}
 	}
-
 	var records []TraceRecord
 	for {
 		row, err := reader.Read()
 		if err == io.EOF {
-			break
+			return records, nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("reading CSV row: %w", err)
 		}
-		minCols := len(traceV2Columns)
-		if hasSLOTarget {
-			minCols++
-		}
-		if adapterIdx >= 0 {
-			minCols++
-		}
-		if thinkTimeUsIdx >= 0 {
-			minCols++
-		}
-		if inputTokensResetIdx >= 0 {
-			minCols++
-		}
-		if len(row) < minCols {
-			return nil, fmt.Errorf("CSV row has %d columns, expected at least %d", len(row), minCols)
-		}
-
-		r, err := parseTraceRecord(row, hasSLOTarget, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx)
+		rec, err := parseTraceRecord(row, at)
 		if err != nil {
 			return nil, err
 		}
-		records = append(records, *r)
+		records = append(records, *rec)
 	}
-
-	return &TraceV2{Header: header, Records: records}, nil
 }
 
 // rowError places a field refusal from package check in its trace row. The message keeps the
@@ -518,239 +463,156 @@ func rowError(requestID int, err error) error {
 	return fmt.Errorf("trace row request_id %d: %w", requestID, err)
 }
 
-// parseTraceRecord parses a CSV row. Handles the optional column slo_target_us (after
-// deadline_us) and the trailing columns adapter, think_time_us, and input_tokens_reset.
-// adapterIdx, thinkTimeUsIdx, and inputTokensResetIdx are absolute column indices in the
-// row, or -1 if the respective column is absent.
-func parseTraceRecord(row []string, hasSLOTarget bool, adapterIdx, thinkTimeUsIdx, inputTokensResetIdx int) (*TraceRecord, error) {
-	// Column offset: slo_target_us appears after deadline_us and shifts every later
-	// column by +1.
-	offset := 0
+// traceRow reads the cells of one data row by column name, keeping the first parse error.
+type traceRow struct {
+	row []string
+	at  map[string]int
+	err error
+}
 
-	requestID, err := strconv.Atoi(row[0])
-	if err != nil {
-		return nil, fmt.Errorf("parsing request_id %q: %w", row[0], err)
+// cell returns the named column's cell and whether the file has the column.
+func (t *traceRow) cell(c string) (string, bool) {
+	i, ok := t.at[c]
+	if !ok {
+		return "", false
 	}
+	return t.row[i], true
+}
 
-	roundIndex, err := strconv.Atoi(row[5+offset])
+func (t *traceRow) str(c string) string { s, _ := t.cell(c); return strings.TrimSpace(s) }
+
+func (t *traceRow) integer(c string) int {
+	if t.err != nil {
+		return 0
+	}
+	s, _ := t.cell(c)
+	v, err := strconv.Atoi(s)
 	if err != nil {
-		return nil, fmt.Errorf("parsing round_index %q: %w", row[5+offset], err)
+		t.err = fmt.Errorf("parsing %s %q: %w", c, s, err)
 	}
-	if err := check.Count("round_index", int64(roundIndex)); err != nil {
-		return nil, rowError(requestID, err)
+	return v
+}
+
+func (t *traceRow) int64(c string) int64 {
+	if t.err != nil {
+		return 0
 	}
-	// Column 7+offset: prefix_length
-	prefixLength, err := strconv.Atoi(row[7+offset])
+	s, ok := t.cell(c)
+	if !ok {
+		return 0 // an optional column the file does not have
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing prefix_length %q: %w", row[7+offset], err)
+		t.err = fmt.Errorf("parsing %s %q: %w", c, s, err)
 	}
-	if err := check.TokenCount("prefix_length", int64(prefixLength)); err != nil {
-		return nil, rowError(requestID, err)
+	return v
+}
+
+// optional reads a presence-signalled column: an absent column or an empty cell is nil, so a
+// recorded 0 stays distinct from no record (#1608).
+func (t *traceRow) optional(c string) *int64 {
+	if t.err != nil {
+		return nil
 	}
-	// Column 8+offset: streaming
-	streaming, err := strconv.ParseBool(row[8+offset])
+	s, ok := t.cell(c)
+	if s = strings.TrimSpace(s); !ok || s == "" {
+		return nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parsing streaming %q: %w", row[8+offset], err)
+		t.err = fmt.Errorf("parsing %s %q: %w", c, s, err)
+		return nil
 	}
-	// Column 9+offset: input_tokens
-	inputTokens, err := strconv.Atoi(row[9+offset])
+	return &v
+}
+
+// parseTraceRecord parses one data row; at maps each column the file has to its cell index.
+// Each value meets the validator its kind meets on the command line (package check, SIM-11).
+func parseTraceRecord(row []string, at map[string]int) (*TraceRecord, error) {
+	if len(row) != len(at) {
+		return nil, fmt.Errorf("CSV row has %d columns, the header names %d", len(row), len(at))
+	}
+	t := &traceRow{row: row, at: at}
+	rec := &TraceRecord{
+		ClientID:  t.row[at["client_id"]],
+		TenantID:  t.row[at["tenant_id"]],
+		SLOClass:  t.row[at["slo_class"]],
+		SessionID: t.row[at["session_id"]],
+		// prefix_group and model are read as written.
+		PrefixGroup: t.row[at["prefix_group"]],
+		Model:       t.row[at["model"]],
+		Status:      t.row[at["status"]],
+		Adapter:     t.str("adapter"),
+	}
+	rec.RequestID = t.integer("request_id")
+	rec.RoundIndex = t.integer("round_index")
+	rec.PrefixLength = t.integer("prefix_length")
+	rec.InputTokens = t.integer("input_tokens")
+	rec.OutputTokens = t.integer("output_tokens")
+	rec.TextTokens = t.integer("text_tokens")
+	rec.ImageTokens = t.integer("image_tokens")
+	rec.AudioTokens = t.integer("audio_tokens")
+	rec.VideoTokens = t.integer("video_tokens")
+	rec.DeadlineUs = t.int64("deadline_us")
+	rec.ArrivalTimeUs = t.int64("arrival_time_us")
+	rec.FirstChunkTimeUs = t.int64("first_chunk_time_us")
+	rec.LastChunkTimeUs = t.int64("last_chunk_time_us")
+	rec.SLOTargetUs = t.int64("slo_target_us")
+	rec.ThinkTimeUs = t.optional("think_time_us")
+	rec.InputTokensReset = t.optional("input_tokens_reset")
+	if t.err != nil {
+		return nil, t.err
+	}
+	s := t.row[at["streaming"]]
+	streaming, err := strconv.ParseBool(s)
 	if err != nil {
-		return nil, fmt.Errorf("parsing input_tokens %q: %w", row[9+offset], err)
+		return nil, fmt.Errorf("parsing streaming %q: %w", s, err)
 	}
-	// A negative token count would panic in make([]int, n) in LoadTraceV2Requests. Zero is
-	// accepted: the gateway drops an empty prompt as unservable and the run continues (#2065).
-	if err := check.TokenCount("input_tokens", int64(inputTokens)); err != nil {
-		return nil, rowError(requestID, err)
+	rec.Streaming = streaming
+	s = t.row[at["reason_ratio"]]
+	if rec.ReasonRatio, err = strconv.ParseFloat(s, 64); err != nil {
+		return nil, fmt.Errorf("parsing reason_ratio %q: %w", s, err)
 	}
-	outputTokens, err := strconv.Atoi(row[10+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing output_tokens %q: %w", row[10+offset], err)
-	}
-	if err := check.TokenCount("output_tokens", int64(outputTokens)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	textTokens, err := strconv.Atoi(row[11+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing text_tokens %q: %w", row[11+offset], err)
-	}
-	if err := check.TokenCount("text_tokens", int64(textTokens)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	imageTokens, err := strconv.Atoi(row[12+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing image_tokens %q: %w", row[12+offset], err)
-	}
-	if err := check.TokenCount("image_tokens", int64(imageTokens)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	audioTokens, err := strconv.Atoi(row[13+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing audio_tokens %q: %w", row[13+offset], err)
-	}
-	if err := check.TokenCount("audio_tokens", int64(audioTokens)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	videoTokens, err := strconv.Atoi(row[14+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing video_tokens %q: %w", row[14+offset], err)
-	}
-	if err := check.TokenCount("video_tokens", int64(videoTokens)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	reasonRatio, err := strconv.ParseFloat(row[15+offset], 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing reason_ratio %q: %w", row[15+offset], err)
-	}
-	if err := check.Fraction("reason_ratio", reasonRatio); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	deadlineUs, err := strconv.ParseInt(row[17+offset], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing deadline_us %q: %w", row[17+offset], err)
-	}
-	// 0 means no client deadline.
-	if err := check.DurationUs("deadline_us", deadlineUs); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	// The string columns before deadline_us are read here, before slo_target_us moves the offset:
-	// slo_target_us sits after deadline_us, so it shifts only the columns after it.
-	sessionID, prefixGroup, model := row[4+offset], row[6+offset], row[16+offset]
-	// Parse optional slo_target_us (appears after deadline_us when present)
-	var sloTargetUs int64
-	if hasSLOTarget {
-		sloTargetUs, err = strconv.ParseInt(row[18+offset], 10, 64)
+	id := rec.RequestID
+	for _, err := range []error{
+		check.Count("round_index", int64(rec.RoundIndex)),
+		check.TokenCount("prefix_length", int64(rec.PrefixLength)),
+		// A negative token count would panic in make([]int, n) in LoadTraceV2Requests. Zero is
+		// accepted: the gateway drops an empty prompt as unservable and the run continues (#2065).
+		check.TokenCount("input_tokens", int64(rec.InputTokens)),
+		check.TokenCount("output_tokens", int64(rec.OutputTokens)),
+		check.TokenCount("text_tokens", int64(rec.TextTokens)),
+		check.TokenCount("image_tokens", int64(rec.ImageTokens)),
+		check.TokenCount("audio_tokens", int64(rec.AudioTokens)),
+		check.TokenCount("video_tokens", int64(rec.VideoTokens)),
+		check.Fraction("reason_ratio", rec.ReasonRatio),
+		// 0 means no client deadline, and no target.
+		check.DurationUs("deadline_us", rec.DeadlineUs),
+		check.DurationUs("slo_target_us", rec.SLOTargetUs),
+		// arrival_time_us is the injection origin (#1606): a negative value would yield a
+		// negative DES injection tick (INV-3).
+		check.DurationUs("arrival_time_us", rec.ArrivalTimeUs),
+	} {
 		if err != nil {
-			return nil, fmt.Errorf("parsing slo_target_us %q: %w", row[18+offset], err)
-		}
-		// 0 means no target.
-		if err := check.DurationUs("slo_target_us", sloTargetUs); err != nil {
-			return nil, rowError(requestID, err)
-		}
-		offset++
-	}
-	serverInputTokens, err := strconv.Atoi(row[18+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing server_input_tokens %q: %w", row[18+offset], err)
-	}
-	if err := check.TokenCount("server_input_tokens", int64(serverInputTokens)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	arrivalTimeUs, err := strconv.ParseInt(row[19+offset], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing arrival_time_us %q: %w", row[19+offset], err)
-	}
-	// arrival_time_us is the injection-origin anchor (#1606): replay re-bases
-	// injection so the earliest injected request lands at min(arrival_time_us).
-	// A negative value would yield a negative DES injection tick (INV-3 clock
-	// monotonicity). Reject loudly, matching the other time/count fields (R1).
-	// (send_time_us is intentionally NOT checked: injectionTime falls back to
-	// arrival_time_us when send_time_us <= 0, so a negative send is tolerated.)
-	if err := check.DurationUs("arrival_time_us", arrivalTimeUs); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	sendTimeUs, err := strconv.ParseInt(row[20+offset], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing send_time_us %q: %w", row[20+offset], err)
-	}
-	firstChunkTimeUs, err := strconv.ParseInt(row[21+offset], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing first_chunk_time_us %q: %w", row[21+offset], err)
-	}
-	lastChunkTimeUs, err := strconv.ParseInt(row[22+offset], 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("parsing last_chunk_time_us %q: %w", row[22+offset], err)
-	}
-	numChunks, err := strconv.Atoi(row[23+offset])
-	if err != nil {
-		return nil, fmt.Errorf("parsing num_chunks %q: %w", row[23+offset], err)
-	}
-	if err := check.Count("num_chunks", int64(numChunks)); err != nil {
-		return nil, rowError(requestID, err)
-	}
-	// Cross-field invariant: deadline must not precede arrival (would cause immediate
-	// timeout at enqueue before any processing). Zero deadline means "no timeout";
-	// zero arrival means "time origin" — both are exempt from this check.
-	if deadlineUs > 0 && arrivalTimeUs > 0 && deadlineUs < arrivalTimeUs {
-		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", deadlineUs, arrivalTimeUs)
-	}
-	finishReason := strings.TrimSpace(row[26+offset])
-
-	// Optional adapter at trailing column (#1464): looked up by absolute header
-	// position so the positional index math above is unaffected.
-	var adapter string
-	if adapterIdx >= 0 && adapterIdx < len(row) {
-		adapter = strings.TrimSpace(row[adapterIdx])
-	}
-
-	// Optional think_time_us at trailing column (#1478): looked up by absolute header
-	// position so the positional index math above is unaffected. An EMPTY cell means
-	// "not recorded" and yields a nil pointer (#1608), distinct from a recorded "0";
-	// negative values are rejected — recorded think time cannot be negative (INV-3).
-	var thinkTimeUs *int64
-	if thinkTimeUsIdx >= 0 && thinkTimeUsIdx < len(row) {
-		if v := strings.TrimSpace(row[thinkTimeUsIdx]); v != "" {
-			parsed, perr := strconv.ParseInt(v, 10, 64)
-			if perr != nil {
-				return nil, fmt.Errorf("parsing think_time_us %q: %w", v, perr)
-			}
-			if err := check.DurationUs("think_time_us", parsed); err != nil {
-				return nil, rowError(requestID, err)
-			}
-			thinkTimeUs = &parsed
+			return nil, rowError(id, err)
 		}
 	}
-
-	// Optional input_tokens_reset at trailing column (#1609): looked up by absolute
-	// header position. An empty cell means "no compaction this round" → nil (the common
-	// case); a value is the recorded absolute input the accumulate buffer re-seeds to.
-	// Negative values are rejected — an input length cannot be negative.
-	var inputTokensReset *int64
-	if inputTokensResetIdx >= 0 && inputTokensResetIdx < len(row) {
-		if v := strings.TrimSpace(row[inputTokensResetIdx]); v != "" {
-			parsed, perr := strconv.ParseInt(v, 10, 64)
-			if perr != nil {
-				return nil, fmt.Errorf("parsing input_tokens_reset %q: %w", v, perr)
-			}
-			if err := check.TokenCount("input_tokens_reset", parsed); err != nil {
-				return nil, rowError(requestID, err)
-			}
-			inputTokensReset = &parsed
+	if rec.ThinkTimeUs != nil {
+		if err := check.DurationUs("think_time_us", *rec.ThinkTimeUs); err != nil {
+			return nil, rowError(id, err)
 		}
 	}
-
-	return &TraceRecord{
-		RequestID:         requestID,
-		ClientID:          row[1],
-		TenantID:          row[2],
-		SLOClass:          row[3],
-		SessionID:         sessionID,
-		RoundIndex:        roundIndex,
-		PrefixGroup:       prefixGroup,
-		PrefixLength:      prefixLength,
-		Streaming:         streaming,
-		InputTokens:       inputTokens,
-		OutputTokens:      outputTokens,
-		TextTokens:        textTokens,
-		ImageTokens:       imageTokens,
-		AudioTokens:       audioTokens,
-		VideoTokens:       videoTokens,
-		ReasonRatio:       reasonRatio,
-		Model:             model,
-		DeadlineUs:        deadlineUs,
-		SLOTargetUs:       sloTargetUs,
-		ServerInputTokens: serverInputTokens,
-		ArrivalTimeUs:     arrivalTimeUs,
-		SendTimeUs:        sendTimeUs,
-		FirstChunkTimeUs:  firstChunkTimeUs,
-		LastChunkTimeUs:   lastChunkTimeUs,
-		NumChunks:         numChunks,
-		Status:            row[24+offset],
-		ErrorMessage:      strings.TrimSpace(row[25+offset]),
-		FinishReason:      finishReason,
-		Adapter:           adapter,
-		ThinkTimeUs:       thinkTimeUs,
-		InputTokensReset:  inputTokensReset,
-	}, nil
+	if rec.InputTokensReset != nil {
+		if err := check.TokenCount("input_tokens_reset", *rec.InputTokensReset); err != nil {
+			return nil, rowError(id, err)
+		}
+	}
+	// A deadline before the arrival would time the request out at enqueue. Zero deadline means
+	// no timeout and zero arrival the time origin; both are exempt.
+	if rec.DeadlineUs > 0 && rec.ArrivalTimeUs > 0 && rec.DeadlineUs < rec.ArrivalTimeUs {
+		return nil, fmt.Errorf("parsing deadline_us: value %d precedes arrival_time_us %d (corrupt trace?)", rec.DeadlineUs, rec.ArrivalTimeUs)
+	}
+	return rec, nil
 }
 
 // RequestsToTraceRecords converts simulation requests to trace v2 records.
@@ -822,10 +684,8 @@ func RequestsToTraceRecords(requests []*sim.Request) []TraceRecord {
 			DeadlineUs:       req.Deadline,
 			SLOTargetUs:      req.SLOTargetUs,
 			ArrivalTimeUs:    req.ArrivalTime,
-			SendTimeUs:       req.ArrivalTime, // no real network send in simulation
 			FirstChunkTimeUs: firstChunkUs,
 			LastChunkTimeUs:  lastChunkUs,
-			NumChunks:        0, // not tracked in simulation
 			Status:           status,
 			Adapter:          req.Adapter, // LoRA adapter id (#1464); "" = base-model-only
 		})

@@ -69,10 +69,6 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		return nil, fmt.Errorf("session_context_growth: unknown value %q (valid: \"accumulate\" or empty)", contextGrowth)
 	}
 
-	// Injection-origin shift (#1606): re-base injection onto the arrival/deadline origin.
-	// 0 for generated traces (send == arrival) ⇒ arrivals equal the recorded ArrivalTimeUs.
-	originShift := injectionOriginShift(trace.Records)
-
 	// Shared prefix tokens per prefix group (same as LoadTraceV2Requests).
 	prefixTokens := make(map[string][]sim.TokenID)
 	for _, rec := range trace.Records {
@@ -123,7 +119,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		}
 
 		// Seed the growing buffer with round 0's input: prefix (if any) + a generated
-		// suffix of effectiveInputTokenCount tokens. Layout mirrors the closed-loop
+		// suffix of input_tokens tokens. Layout mirrors the closed-loop
 		// buffer: [prefix | r0_conversation | r0_output | r1_delta | r1_output | ...].
 		//
 		// Pre-allocate to the FIRST EPOCH's peak (rounds up to the first compaction reset),
@@ -141,14 +137,8 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 		if len(prefix) > 0 {
 			buf.Append(prefix)
 		}
-		// Round 0 seeds from effectiveInputTokenCount (server-reported count wins when set),
-		// but rounds>0 read rec.InputTokens raw as the DELTA. CAVEAT (latent): if a corpus
-		// ever carried a round-0 ServerInputTokens that differed from InputTokens, seeding
-		// abs_0 from the server count while the encoder wrote deltas over the InputTokens
-		// column would shift every later reconstructed absolute by (server − input).
-		// Unreachable today — no converter (weka/otel) or re-exporter sets ServerInputTokens
-		// on an accumulate corpus. Left as a documented boundary rather than a guard.
-		r0Suffix := tokens(roundStreams(session, 0), purposeInputTokens, effectiveInputTokenCount(r0.InputTokens, r0.ServerInputTokens, r0.PrefixGroup))
+		// Round 0 seeds the buffer with its input; rounds>0 read rec.InputTokens as the DELTA.
+		r0Suffix := tokens(roundStreams(session, 0), purposeInputTokens, r0.InputTokens)
 		buf.Append(r0Suffix)
 
 		// prevOutputTokens holds the previous round's generated output, appended to the
@@ -182,11 +172,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 			} else {
 				// Normal growth: append prev round's output, then this round's delta.
 				// A round>0 in an accumulate corpus stores its per-round DELTA directly in
-				// rec.InputTokens — read it as-is. (Do NOT route through
-				// effectiveInputTokenCount here: that helper returns the ABSOLUTE
-				// ServerInputTokens when set, which would be a large silent over-count when
-				// consumed as a delta. ServerInputTokens/PrefixGroup are round-0 concerns;
-				// the prefix is already folded into the buffer.)
+				// rec.InputTokens; the prefix is already folded into the buffer.
 				if len(prevOutputTokens) > 0 {
 					buf.Append(prevOutputTokens)
 				}
@@ -208,21 +194,21 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 			// Because the buffer was pre-sized to the peak above, the no-compaction path
 			// never reallocates, so all views alias one array; a compaction Reset shrinks it
 			// and the pre-reset views remain valid on the old array.
-			requests = append(requests, buildFixedAccumulateRequest(rec, sessionID, inputTokens, outputTokens, originShift))
+			requests = append(requests, buildFixedAccumulateRequest(rec, sessionID, inputTokens, outputTokens))
 		}
 	}
 
 	// Non-session records: identical construction to LoadTraceV2Requests.
 	for _, rec := range nonSessionRecords {
 		rs := replayRecordStreams(seed, rec)
-		inputTokens := tokens(rs, purposeInputTokens, effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+		inputTokens := tokens(rs, purposeInputTokens, rec.InputTokens)
 		if rec.PrefixGroup != "" {
 			if prefix, ok := prefixTokens[rec.PrefixGroup]; ok {
 				inputTokens = append(append([]sim.TokenID{}, prefix...), inputTokens...)
 			}
 		}
 		outputTokens := tokens(rs, purposeOutputTokens, rec.OutputTokens)
-		requests = append(requests, buildFixedAccumulateRequest(rec, rec.SessionID, inputTokens, outputTokens, originShift))
+		requests = append(requests, buildFixedAccumulateRequest(rec, rec.SessionID, inputTokens, outputTokens))
 	}
 
 	// Sort by arrival time to satisfy the RequestSource contract (cluster.Run
@@ -254,7 +240,7 @@ func LoadTraceV2FixedAccumulateRequests(trace *TraceV2, seed int64) ([]*sim.Requ
 // The buffer length after a round's input is that round's ABSOLUTE input in_i, and it
 // never exceeds in_i mid-round (the transient append of out_{i-1} brings it to
 // in_{i-1}+out_{i-1} = in_i − delta_i ≤ in_i). Within the epoch, the delta law is:
-//   - epoch's first round: in = prefixLen + delta (round 0, via effectiveInputTokenCount)
+//   - epoch's first round: in = prefixLen + delta (round 0)
 //     OR *InputTokensReset (a reset round that opens a new epoch)
 //   - subsequent round j: in_j = in_{j-1} + out_{j-1} + delta_j (delta = rec.InputTokens)
 //
@@ -271,12 +257,12 @@ func accumulateEpochPeakLen(rounds []TraceRecord, epochStart, prefixLen int) int
 		var abs int64
 		switch {
 		case i == 0:
-			abs = int64(prefixLen) + int64(effectiveInputTokenCount(rec.InputTokens, rec.ServerInputTokens, rec.PrefixGroup))
+			abs = int64(prefixLen) + int64(rec.InputTokens)
 		case isResetRound: // i == epochStart, a reset round opening this epoch
 			abs = *rec.InputTokensReset
 		default:
 			// round>0 delta is rec.InputTokens directly (see the growth branch in
-			// LoadTraceV2FixedAccumulateRequests — not effectiveInputTokenCount).
+			// LoadTraceV2FixedAccumulateRequests).
 			abs = prevAbs + prevOut + int64(rec.InputTokens)
 		}
 		if abs > peak {
@@ -293,10 +279,10 @@ func accumulateEpochPeakLen(rounds []TraceRecord, epochStart, prefixLen int) int
 // session rounds: accumulate folds the prefix into round 0's reconstructed input, so
 // re-prepending it would double-count. Non-session records keep them (their input is
 // suffix-only, exactly as fixed mode).
-func buildFixedAccumulateRequest(rec TraceRecord, sessionID string, inputTokens, outputTokens []sim.TokenID, originShift int64) *sim.Request {
+func buildFixedAccumulateRequest(rec TraceRecord, sessionID string, inputTokens, outputTokens []sim.TokenID) *sim.Request {
 	req := &sim.Request{
 		ID:               fmt.Sprintf("request_%d", rec.RequestID),
-		ArrivalTime:      injectionTime(rec) - originShift, // #1606: on the arrival/deadline origin
+		ArrivalTime:      rec.ArrivalTimeUs,
 		InputTokens:      inputTokens,
 		OutputTokens:     outputTokens,
 		MaxOutputLen:     len(outputTokens),

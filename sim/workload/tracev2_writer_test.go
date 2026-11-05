@@ -27,7 +27,7 @@ func (w *failingWriter) Write(p []byte) (int, error) {
 func (w *failingWriter) Close() error { w.closed = true; return w.closeErr }
 
 func writerTestRecords() (*TraceHeader, []TraceRecord) {
-	h := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	h := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	return h, []TraceRecord{{RequestID: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 1}}
 }
 

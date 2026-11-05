@@ -41,7 +41,7 @@ func writeAndReload(t *testing.T, header *TraceHeader) (*TraceV2, string) {
 func TestTraceHeader_MaxNodesSpanned_RoundTrips(t *testing.T) {
 	for _, span := range []int{2, 3, 8} {
 		loaded, raw := writeAndReload(t, &TraceHeader{
-			Version: 3, TimeUnit: "microseconds", Mode: "generated", MaxNodesSpanned: span,
+			Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", MaxNodesSpanned: span,
 		})
 		assert.Equal(t, span, loaded.Header.MaxNodesSpanned, "recorded span must survive the round-trip")
 		assert.Contains(t, raw, "max_nodes_spanned:", "the field must be written under its documented key")
@@ -54,7 +54,7 @@ func TestTraceHeader_MaxNodesSpanned_RoundTrips(t *testing.T) {
 // bytes it had.
 func TestTraceHeader_MaxNodesSpanned_OmittedWhenAbsent(t *testing.T) {
 	loaded, raw := writeAndReload(t, &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated",
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 	})
 	assert.NotContains(t, raw, "max_nodes_spanned",
 		"an unset span must not appear in the header at all")
@@ -74,7 +74,7 @@ func TestTraceHeader_MaxNodesSpanned_OmittedWhenAbsent(t *testing.T) {
 // format.
 func TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization(t *testing.T) {
 	_, raw := writeAndReload(t, &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated", MaxNodesSpanned: 1,
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", MaxNodesSpanned: 1,
 	})
 	assert.Contains(t, raw, "max_nodes_spanned",
 		"a span of 1 is serialized, so the writer must normalize it to 0 rather than relying on omitempty")
@@ -85,7 +85,7 @@ func TestTraceHeader_MaxNodesSpanned_OneIsNotOmittedBySerialization(t *testing.T
 // field existed looks like.
 func TestTraceHeader_MaxNodesSpanned_ZeroMatchesFieldlessHeader(t *testing.T) {
 	_, withZero := writeAndReload(t, &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated", WarmUpRequests: 0,
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 	})
 	assert.False(t, strings.Contains(withZero, "max_nodes_spanned"),
 		"the default header must carry no trace of the new field")
@@ -100,8 +100,8 @@ func TestTraceHeader_MaxNodesSpanned_AbsentKeyLoads(t *testing.T) {
 	headerPath := filepath.Join(dir, "header.yaml")
 	dataPath := filepath.Join(dir, "data.csv")
 	require.NoError(t, os.WriteFile(headerPath,
-		[]byte("trace_version: 3\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644))
-	require.NoError(t, os.WriteFile(dataPath, []byte(strings.Join(traceV2Columns, ",")+"\n"), 0644))
+		[]byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644))
+	require.NoError(t, os.WriteFile(dataPath, []byte(strings.Join(traceColumns, ",")+"\n"), 0644))
 
 	loaded, err := LoadTraceV2(headerPath, dataPath)
 	require.NoError(t, err, "a pre-feature header must still load")

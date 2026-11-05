@@ -33,17 +33,17 @@ func writeAccumulateCorpus(t *testing.T) (headerPath, dataPath string) {
 	dir := t.TempDir()
 	headerPath = filepath.Join(dir, "corpus.yaml")
 	dataPath = filepath.Join(dir, "corpus.csv")
-	header := "trace_version: 3\ntime_unit: microseconds\nmode: generated\nsession_context_growth: accumulate\nwarm_up_requests: 0\n"
+	header := "trace_version: 4\ntime_unit: microseconds\nmode: generated\nsession_context_growth: accumulate\n"
 	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
 		t.Fatal(err)
 	}
 	// deltas: s1 r0=100; s1 r1 = 180-100-50 = 30; s1 r2 = 245-180-40 = 25; s2 r0=60; s2 r1 = 95-60-15 = 20.
-	csv := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,100,50,100,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,1,,0,false,30,40,30,0,0,0,0.0,,0,0,1000000,1000000,0,0,0,ok,,\n" +
-		"2,c1,t1,standard,s1,2,,0,false,25,20,25,0,0,0,0.0,,0,0,2000000,2000000,0,0,0,ok,,\n" +
-		"3,c2,t1,standard,s2,0,,0,false,60,15,60,0,0,0,0.0,,0,0,500000,500000,0,0,0,ok,,\n" +
-		"4,c2,t1,standard,s2,1,,0,false,20,10,20,0,0,0,0.0,,0,0,1500000,1500000,0,0,0,ok,,\n"
+	csv := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,100,50,100,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,1,,0,false,30,40,30,0,0,0,0.0,,0,1000000,0,0,ok\n" +
+		"2,c1,t1,standard,s1,2,,0,false,25,20,25,0,0,0,0.0,,0,2000000,0,0,ok\n" +
+		"3,c2,t1,standard,s2,0,,0,false,60,15,60,0,0,0,0.0,,0,500000,0,0,ok\n" +
+		"4,c2,t1,standard,s2,1,,0,false,20,10,20,0,0,0,0.0,,0,1500000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csv), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -280,8 +280,8 @@ func TestReplayFixedAccumulate_RejectsNonAccumulateTrace(t *testing.T) {
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
 		// No session_context_growth → non-accumulate.
-		_ = os.WriteFile(headerPath, []byte("trace_version: 3\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 		restore := captureCmdLevelVars()
 		defer restore.restore()
 		catalogDir := setupKernelTestFixtures(t)

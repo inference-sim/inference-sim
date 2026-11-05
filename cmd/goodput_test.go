@@ -232,7 +232,7 @@ func TestGoodputTargets_RunExportReplayLoad_RoundTrip(t *testing.T) {
 	headerPath := filepath.Join(tmp, "trace.yaml")
 	dataPath := filepath.Join(tmp, "trace.csv")
 	exportHeader := &workload.TraceHeader{
-		Version:           3,
+		Version:           workload.TraceVersion,
 		TimeUnit:          "us",
 		Mode:              "generated",
 		GoodputSLOTargets: runMerged,

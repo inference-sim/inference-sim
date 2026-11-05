@@ -378,19 +378,18 @@ func TestReplayCmd_TraceOutput_FilesCreated(t *testing.T) {
 	outputPrefix := filepath.Join(dir, "out")
 
 	// Write header YAML
-	headerContent := `trace_version: 2
+	headerContent := `trace_version: 4
 time_unit: microseconds
 mode: generated
-warm_up_requests: 0
 `
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Write data CSV: 2 requests
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,100000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -532,13 +531,6 @@ warm_up_requests: 0
 		t.Errorf("BC-1: want 2 records, got %d", len(loaded.Records))
 	}
 
-	// BC-3: for all requests, send_time_us = arrival_time_us (universal)
-	for i, rec := range loaded.Records {
-		if rec.SendTimeUs != rec.ArrivalTimeUs {
-			t.Errorf("BC-3: record[%d] send_time_us=%d != arrival_time_us=%d", i, rec.SendTimeUs, rec.ArrivalTimeUs)
-		}
-	}
-
 	// BC-3: completed requests have simulation-computed timing (non-zero chunk times)
 	for i, rec := range loaded.Records {
 		if rec.Status == "ok" {
@@ -563,20 +555,19 @@ func TestReplayCmd_EndToEnd_KernelBackend(t *testing.T) {
 	resultsFilePath := filepath.Join(dir, "results.json")
 
 	// Write header YAML
-	header := `trace_version: 2
+	header := `trace_version: 4
 time_unit: microseconds
 mode: generated
-warm_up_requests: 0
 `
 	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Write data CSV: 3 requests with arrival times spread over 200ms
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n" +
-		"2,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,200000,200000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,100000,0,0,ok\n" +
+		"2,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,200000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -766,12 +757,12 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 
-	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	headerContent := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n"
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -899,13 +890,13 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 
-	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	headerContent := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n"
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,20,8,20,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,20,8,20,0,0,0,0.0,,0,100000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1054,12 +1045,12 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 
-	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	headerContent := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n"
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,1,0,0,0,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,1,0,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1203,8 +1194,8 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		}
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1281,8 +1272,8 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		}
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1353,12 +1344,12 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	if err := os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644); err != nil {
+	if err := os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,100000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1503,8 +1494,8 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1577,8 +1568,8 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1888,7 +1879,7 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 	dataPath := filepath.Join(dir, "d.csv")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000, Status: "ok"},
@@ -1927,7 +1918,7 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// 2 single-round sessions; round-0 arrivals at 0 (auto-horizon would be 600s).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 15, ArrivalTimeUs: 0, Status: "ok"},
@@ -1972,7 +1963,7 @@ func TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd(t *testing.T) {
 
 	// One non-session request with a 1µs deadline (arrival 0) — far shorter than its
 	// service time, so it times out under the trace deadline.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, DeadlineUs: 1, Status: "ok"},
 	}
@@ -2017,7 +2008,7 @@ func TestReplayCmd_Pool_TimeoutOverride_ReachesClones(t *testing.T) {
 
 	// One single-round session, no recorded deadline; a long enough output that a 1s
 	// deadline cannot be met.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 1000, OutputTokens: 8000, ArrivalTimeUs: 0, DeadlineUs: 0, Status: "ok"},
 	}
@@ -2058,7 +2049,7 @@ func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) 
 	dataPath := filepath.Join(dir, "d.csv")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 5, ArrivalTimeUs: 700_000_000, Status: "ok"},
@@ -2113,7 +2104,7 @@ func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
 	dataPath := filepath.Join(dir, "d.csv")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 	}
@@ -2170,7 +2161,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 		records := []workload.TraceRecord{
 			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 			{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 5, ArrivalTimeUs: 100_000, Status: "ok"},
@@ -2255,7 +2246,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 	// Single-round session (matches TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime's
 	// shape): completed_requests == 1 is an unambiguous "the guard let this run
 	// proceed to completion" signal, independent of round-index/think-time bookkeeping.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 	}
@@ -2301,7 +2292,7 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 		records := []workload.TraceRecord{
 			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 			{RequestID: 1, SessionID: "", RoundIndex: 0, InputTokens: 8, OutputTokens: 4, ArrivalTimeUs: 0, Status: "ok"},
@@ -2401,7 +2392,7 @@ func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
 
 	// Accumulate corpus: one 3-round session with a compaction round and a recorded
 	// think column. Encoded deltas (100, 30, 0); round 2 compacts (input_tokens_reset=40).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 30, OutputTokens: 15, ArrivalTimeUs: 5_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
@@ -2485,7 +2476,7 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 
 	// Accumulate corpus: 3 sessions x 2 rounds (with think). --total-sessions 3 == corpus
 	// size, so no cache-busting clones are added (keeps the round-trip clean to reason about).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
@@ -2575,7 +2566,7 @@ func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
 
 	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
 	// absolute per-round inputs and a recorded think column.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 60, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 45, OutputTokens: 10, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_500_000), Status: "ok"},
@@ -2648,7 +2639,7 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},

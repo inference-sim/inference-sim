@@ -213,9 +213,9 @@ Horizontal autoscaling over node pools with provisioning delays, configured in a
 
 ### Trace replay
 
-Replay any TraceV2 — exported by `blis run --trace-output`, or converted with
-`blis convert weka|otel|inference-perf|servegen` — through the same kernel and deployment
-path. A run's exported trace replayed with identical flags (including `--horizon`) gives
+Replay any trace (trace format version 4) — exported by `blis run --trace-output`, or
+converted with `blis convert weka|otel` — through the same kernel and deployment path. A
+version 3 trace from v0.15.0 is converted with `blis convert trace`. A run's exported trace replayed with identical flags (including `--horizon`) gives
 byte-identical stdout.
 
 ```bash

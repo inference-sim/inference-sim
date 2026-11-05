@@ -37,7 +37,7 @@ func TestSIM11_SameInvalidValueRefusedThroughEveryInput(t *testing.T) {
 				refuse bool
 			}{{-1, true}, {0, false}} {
 				cliErr := routerTimingsFlagError(tm.flag, c.v)
-				hdrErr := headerError(t, &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", Router: tm.header(c.v)})
+				hdrErr := headerError(t, &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", Router: tm.header(c.v)})
 				assertRefusal(t, tm.flag, c.v, c.refuse, cliErr, "-1")
 				assertRefusal(t, tm.key, c.v, c.refuse, hdrErr, "-1")
 			}
@@ -64,7 +64,7 @@ func TestSIM11_SameInvalidValueRefusedThroughEveryInput(t *testing.T) {
 				assertRefusal(t, "standard", c.ms, c.refuse, cliErr, c.show)
 			}
 			targets := map[string]workload.SLODimTargets{"standard": {TTFTMs: c.ms}}
-			hdrErr := headerError(t, &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated",
+			hdrErr := headerError(t, &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 				GoodputSLOTargets: targets})
 			assertRefusal(t, "goodput_slo_targets.standard.ttft_ms", c.ms, c.refuse, hdrErr, c.show)
 			spec := &workload.WorkloadSpec{Version: "2", Category: "language", AggregateRate: 1, GoodputSLOTargets: targets,
@@ -131,7 +131,7 @@ func TestReplayCmd_RefusesNegativeHeaderRouterTiming(t *testing.T) {
 	if os.Getenv("BLIS_SIM11_SUBPROCESS") == "1" {
 		dir := t.TempDir()
 		hp, dp := filepath.Join(dir, "h.yaml"), filepath.Join(dir, "d.csv")
-		h := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated",
+		h := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 			Router: &workload.TraceRouterConfig{GatewayLatencyUs: -1}}
 		if err := workload.ExportTraceV2(h, []workload.TraceRecord{{InputTokens: 10, OutputTokens: 2, Status: "ok"}}, hp, dp); err != nil {
 			os.Exit(2)

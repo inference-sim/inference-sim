@@ -16,12 +16,12 @@ import (
 // arriving every 700 µs, long enough that two instances queue, so a field that moves a request
 // moves a figure.
 func sim11Trace() (*workload.TraceHeader, []workload.TraceRecord) {
-	h := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	h := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	var r []workload.TraceRecord
 	for i := 0; i < 120; i++ {
 		r = append(r, workload.TraceRecord{RequestID: i, ClientID: "c", TenantID: "t", SLOClass: "standard",
 			SessionID: fmt.Sprintf("s%d", i), InputTokens: 300 + 37*i, OutputTokens: 20 + i, TextTokens: 300 + 37*i,
-			ArrivalTimeUs: int64(i) * 700, SendTimeUs: int64(i) * 700, Status: "ok"})
+			ArrivalTimeUs: int64(i) * 700, Status: "ok"})
 	}
 	return h, r
 }
@@ -215,13 +215,8 @@ func TestSIM11_TraceFieldsConsumedChangeTheResult(t *testing.T) {
 				r[i].SLOTargetUs = 1000
 			}
 		}},
-		// #1308: a server-reported prompt length is the one the simulation uses.
-		"TraceRecord.ServerInputTokens": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].ServerInputTokens = 900 }},
-		"TraceRecord.ArrivalTimeUs": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) {
-			r[119].ArrivalTimeUs, r[119].SendTimeUs = 900_000, 900_000
-		}},
-		"TraceRecord.SendTimeUs": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[119].SendTimeUs = 900_000 }},
-		"TraceRecord.Adapter":    {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].Adapter = "a" }},
+		"TraceRecord.ArrivalTimeUs": {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[119].ArrivalTimeUs = 900_000 }},
+		"TraceRecord.Adapter":       {"plain", func(_ *workload.TraceHeader, r []workload.TraceRecord) { r[0].Adapter = "a" }},
 	}
 	notToggled := map[string]bool{
 		"TraceHeader.KVOffload": true, "TraceHeader.Mode": true, "TraceHeader.SessionContextGrowth": true,
