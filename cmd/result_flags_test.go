@@ -191,3 +191,80 @@ func otherValue(t *testing.T, f *pflag.Flag) string {
 	}
 	return "x"
 }
+
+// SIM-10 (#2062): a flag that simulates nothing but writes a section of the Result -- the
+// saturation section, the engine's server series, the router's fitness score and trace
+// summary -- changes the document, so it is recorded: its section differs from the baseline,
+// and so do the overrides and the name. A flag that is exempt changes no byte of the
+// document outside runtime and the artifact paths (--counterfactual-k, --lazy-generation,
+// --log, --view). Removing a flag's row from resultFlagsExempt is what makes the first half
+// pass; adding one of these flags back to it makes this test fail.
+func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *testing.T) {
+	base, stderr, err := runKernelCLI(t, resultRunArgs()...)
+	if err != nil {
+		t.Fatalf("baseline: %v\n%s", err, lastLines(stderr, 3))
+	}
+	b := parseResult(t, base)
+	sat := filepath.Join(t.TempDir(), "sat.yaml")
+	if err := os.WriteFile(sat, []byte("composite: {sensitivity: 2}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		flags   []string
+		section string
+	}{
+		{[]string{"--detectors", "composite"}, "saturation"},
+		{[]string{"--server-series-interval-s", "1"}, "engine"},
+		{[]string{"--fitness-weights", "throughput:1"}, "router"},
+		{[]string{"--trace-level", "decisions", "--summarize-trace"}, "router"},
+	} {
+		out, stderr, err := runKernelCLI(t, resultRunArgs(tc.flags...)...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", tc.flags, err, lastLines(stderr, 3))
+		}
+		r := parseResult(t, out)
+		if v, _ := resultValue(resultDoc(t, base), tc.section); jsonEqual(t, v, resultDoc(t, out)[tc.section]) {
+			t.Fatalf("non-vacuity: %v left the %s section unchanged", tc.flags, tc.section)
+		}
+		if jsonEqual(t, r.Overrides, b.Overrides) || r.Name == b.Name {
+			t.Errorf("%v changed the %s section but not the overrides (%+v) and name (%q): SIM-10",
+				tc.flags, tc.section, r.Overrides, r.Name)
+		}
+	}
+	// --saturation-config is a file flag: it is pinned by its sha256, with --detectors.
+	out, stderr, err := runKernelCLI(t, resultRunArgs("--detectors", "composite", "--saturation-config", sat)...)
+	if err != nil {
+		t.Fatalf("--saturation-config: %v\n%s", err, lastLines(stderr, 3))
+	}
+	found := false
+	for _, o := range parseResult(t, out).Overrides {
+		if o.Setting == "saturation-config" && strings.HasPrefix(o.Run, "sha256:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("--saturation-config is not recorded by its sha256: %+v", parseResult(t, out).Overrides)
+	}
+	// Each exempt flag is added to a baseline that already has every flag it needs.
+	decisions, stderr, err := runKernelCLI(t, resultRunArgs("--trace-level", "decisions", "--summarize-trace")...)
+	if err != nil {
+		t.Fatalf("--trace-level decisions: %v\n%s", err, lastLines(stderr, 3))
+	}
+	for _, tc := range []struct {
+		base  string
+		flags []string
+	}{
+		{decisions, []string{"--trace-level", "decisions", "--summarize-trace", "--counterfactual-k", "2"}},
+		{base, []string{"--lazy-generation"}},
+		{base, []string{"--log", "info"}},
+		{base, []string{"--view", "summary"}},
+	} {
+		out, stderr, err := runKernelCLI(t, resultRunArgs(tc.flags...)...)
+		if err != nil {
+			t.Fatalf("%v: %v\n%s", tc.flags, err, lastLines(stderr, 3))
+		}
+		if a, c := withoutRuntime(t, tc.base), withoutRuntime(t, out); a != c {
+			t.Errorf("exempt %v changed the Result: %s", tc.flags, firstDiff(a, c))
+		}
+	}
+}
