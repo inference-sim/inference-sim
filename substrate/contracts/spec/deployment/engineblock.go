@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/blis-substrate/contracts/check"
 )
 
 // EngineBlock is a block of a deployment that belongs to its engine, held unopened: a pool's
@@ -54,6 +56,11 @@ func (b EngineBlock) Decode(v any) error {
 	}
 	var unknown []string
 	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Pointer && !rv.IsNil() {
+		// The engine's own types get the number rules too: a fraction in an integer
+		// setting is refused, not truncated (SUB-12).
+		if err := validate.CheckNode(b.node, rv.Type()); err != nil {
+			return err
+		}
 		unknown = unknownFields(b.node, rv.Elem().Type(), 0)
 	}
 	err := b.node.Decode(v)
@@ -97,8 +104,13 @@ func sameNode(a, b *yaml.Node) bool {
 	return true
 }
 
-// UnmarshalYAML holds the node as written.
+// UnmarshalYAML holds the node as written. A block with a recursive alias, a repeated key or
+// a non-finite number is refused here (SUB-12): the block is held as a tree, and a recursive
+// alias would make every later walk of it endless (blis-schemas#107).
 func (b *EngineBlock) UnmarshalYAML(n *yaml.Node) error {
+	if err := validate.CheckNode(n, nil); err != nil {
+		return err
+	}
 	*b = NewEngineBlock(n)
 	return nil
 }

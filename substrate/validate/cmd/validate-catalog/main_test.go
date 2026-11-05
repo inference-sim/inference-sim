@@ -291,7 +291,8 @@ BwPeakTBs: 3.35
 MemoryGiB: 80.0
 IntraNodeBwGBps: 450
 `, "SMCount"},
-		// A non-finite datasheet figure on a chip is rejected.
+		// A non-finite datasheet figure on a chip is refused when the file is decoded,
+		// naming the field (SUB-12).
 		{"NaN chip bandwidth", "hardware/h100.yaml", `Provenance: vendor_spec
 TFlopsPeak: 989.5
 TFlopsFP8: 1979.0
@@ -300,7 +301,7 @@ MemoryGiB: 80.0
 IntraNodeBwGBps: 450
 SMCount: 132
 `, "BwPeakTBs"},
-		// A non-finite inter-node bandwidth on a fabric is rejected.
+		// A non-finite inter-node bandwidth on a fabric is refused the same way.
 		{"NaN fabric bandwidth", "networks/ib-400g.yaml",
 			"Provenance: vendor_spec\nInterNodeBwGBps: .nan\n", "InterNodeBwGBps"},
 	}

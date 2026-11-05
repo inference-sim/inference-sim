@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/blis-substrate/contracts/check"
 )
 
 // Format is an encoding of a Result document.
@@ -76,6 +79,14 @@ func Unmarshal(data []byte, r *Result) error {
 		if data, err = yaml.Marshal(n); err != nil {
 			return err
 		}
+	}
+	// The rules every BLIS loader applies, on the YAML both encodings become (SUB-12).
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return err
+	}
+	if err := validate.CheckNode(&doc, reflect.TypeOf(r)); err != nil {
+		return err
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)

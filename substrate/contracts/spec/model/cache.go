@@ -188,7 +188,7 @@ func (c *Cache) UnmarshalYAML(node *yaml.Node) error {
 	}
 	type shape Cache
 	var raw shape
-	if err := node.Decode(&raw); err != nil {
+	if err := validate.DecodeNode(node, &raw); err != nil {
 		return err
 	}
 	*c = Cache(raw)
