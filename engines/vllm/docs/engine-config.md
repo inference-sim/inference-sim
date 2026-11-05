@@ -34,7 +34,7 @@ Scheduling and memory:
 | `max_num_seqs` | integer | no | Sequence cap per step. |
 | `long_prefill_token_threshold` | integer | no | The most tokens of one prefill scheduled in a step, so a long prompt cannot take the whole token budget from the decodes beside it. Not negative; omitted or 0 leaves prefills uncapped. The engine refuses one above `max_model_len`. 0.31.0 waives it for a request alone in the scheduler; 0.29.0 does not. |
 | `max_model_len` | integer or `auto` | no | Context length. `auto` (or `-1`) asks the engine to fit the window to the KV memory it has left, which is a different request from omitting the key: omitted, the engine uses the model's whole window and refuses to start if it does not fit. |
-| `gpu_memory_utilization` | number | no | Fraction of GPU memory the engine may use, in [0, 1]. Zero means the engine's default. |
+| `gpu_memory_utilization` | number | no | Fraction of GPU memory the engine may use, in [0, 1]. Zero or unstated is vLLM's default, 0.92 in each release the engine models (`vllm/config/cache.py` at v0.29.0:111, v0.31.0:103, v0.32.0:102); `Model.EngineSources()` reports it. |
 | `scheduling_policy` | string | no | `fcfs` or `priority` in vLLM 0.29.0. |
 | `async_scheduling` | boolean | no | Omitted means the engine decides through its own disqualifying conditions. |
 | `frontend` | string | no | The API server that renders and tokenizes each prompt: `python` or `rust` (`engineconfig.Frontend`, rules/engineconfig/engine.go). Omitted, `python`. `rust` is vLLM's vllm-rs frontend, selected by the environment variable `VLLM_USE_RUST_FRONTEND=1`, not a flag. It changes how long a request waits for admission, per prompt token. |

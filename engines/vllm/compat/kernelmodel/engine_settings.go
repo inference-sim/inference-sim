@@ -16,9 +16,9 @@ import (
 // and where each resolved setting came from.
 type resolvedEngine struct {
 	engine engineconfig.Engine
-	// sources names, for each setting the release resolves (max_num_seqs, max_num_batched_tokens
-	// and block_size), "stated" or the rule that set it. Empty for a release this package does
-	// not resolve (0.29.0, 0.31.0).
+	// sources names, for each setting the release resolves, "stated" or the rule that set it:
+	// gpu_memory_utilization for every release this package knows (0.29.0, 0.31.0, 0.32.0), and
+	// max_num_seqs, max_num_batched_tokens and block_size for 0.32.0.
 	sources map[string]string
 	// blockSizeErr is why an unstated block_size is not resolved, naming blis-vllm#68; nil when
 	// it is stated or resolved.
@@ -32,7 +32,18 @@ type resolvedEngine struct {
 // fill, not the generator's. For 0.29.0 and 0.31.0 the block is returned as stated, as before.
 func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngine {
 	r := resolvedEngine{engine: e}
-	if in.Scenario.EngineRelease() != vllm.Version {
+	release := in.Scenario.EngineRelease()
+	if d, ok := memoryUtilizationDefaults[release]; ok {
+		r.sources = map[string]string{"gpu_memory_utilization": vllm.SourceStated}
+		if e.GPUMemoryUtilization == 0 {
+			// 0 reads as unstated: the field is a number with omitempty, and the schema says
+			// "0 means unset" (rules/engineconfig/validate.go:65). A negative value or one above 1
+			// is not unstated, and stays what it is, for KVMemory to refuse.
+			r.engine.GPUMemoryUtilization = d.value
+			r.sources["gpu_memory_utilization"] = d.source
+		}
+	}
+	if release != vllm.Version {
 		return r
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
@@ -62,11 +73,9 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		MaxModelLen:    maxLen,
 	})
 	r.engine.MaxNumSeqs, r.engine.MaxNumBatchedTokens = b.MaxNumSeqs, b.MaxNumBatchedTokens
-	r.sources = map[string]string{
-		"max_num_seqs":           b.MaxNumSeqsSource,
-		"max_num_batched_tokens": b.MaxNumBatchedTokensSource,
-		"block_size":             vllm.SourceStated,
-	}
+	r.sources["max_num_seqs"] = b.MaxNumSeqsSource
+	r.sources["max_num_batched_tokens"] = b.MaxNumBatchedTokensSource
+	r.sources["block_size"] = vllm.SourceStated
 	if e.BlockSize <= 0 {
 		bs, err := resolveBlockSize(in, e, pool)
 		if err != nil {
@@ -77,6 +86,22 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		}
 	}
 	return r
+}
+
+// memoryUtilizationDefault is a release's CacheConfig.gpu_memory_utilization default and where it
+// is written.
+type memoryUtilizationDefault struct {
+	value  float64
+	source string
+}
+
+// memoryUtilizationDefaults are vLLM's default gpu_memory_utilization (0.92, with bounds
+// gt=0, le=1) in each release the engine models. An unstated value is the engine's to fill
+// (design §2.2): the generated scenarios state it only where the run did (X19).
+var memoryUtilizationDefaults = map[string]memoryUtilizationDefault{
+	"0.29.0": {0.92, "vLLM v0.29.0's default (vllm/config/cache.py:111@98dff2a81d)"},
+	"0.31.0": {0.92, "vLLM v0.31.0's default (vllm/config/cache.py:103@db9527a468)"},
+	"0.32.0": {0.92, "vLLM v0.32.0's default (vllm/config/cache.py:102@5df63a7203)"},
 }
 
 // resolveBlockSize resolves an unstated block_size as vLLM v0.32.0 does, for the models, GPUs
@@ -112,12 +137,14 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 // admitting 512 sequences while the kernel priced a 256-sequence engine is not a
 // disagreement the numbers would reveal.
 //
-// For vLLM 0.32.0 an unstated max_num_seqs or max_num_batched_tokens is vLLM's own default
+// An unstated gpu_memory_utilization is the release's default, 0.92, in all three releases
+// (memoryUtilizationDefaults). For vLLM 0.32.0 an unstated max_num_seqs or max_num_batched_tokens is vLLM's own default
 // for the GPU (resolveEngine), and EngineSources says which values were stated. An unstated
 // block_size is vLLM's own too, for the models, GPUs and KV dtypes the block-size oracle
 // resolves (core/vllm.ResolveBlockSize); for any other it is refused, naming why and
 // https://github.com/inference-sim/blis-vllm/issues/68. For 0.29.0 and 0.31.0 it returns the
-// deployment's own values, and refuses any of the three unstated, as before.
+// deployment's own values, and refuses an unstated max_num_seqs, max_num_batched_tokens or
+// block_size, as before.
 //
 // The settings live on the DEPLOYMENT: engine knobs are tunable configuration chosen against
 // a scenario, not part of the problem it states, so the error text says "deployment".

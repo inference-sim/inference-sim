@@ -335,10 +335,14 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
-	// An unstated block_size the release resolves is priced at the resolved size, so the kernel
-	// and Engine describe one engine (resolveEngine).
-	if r := resolveEngine(in, engine); engine.BlockSize <= 0 && r.engine.BlockSize > 0 {
+	// An unstated block_size or gpu_memory_utilization the release resolves is priced at the
+	// resolved value, so the kernel and Engine describe one engine (resolveEngine).
+	r := resolveEngine(in, engine)
+	if r.engine.BlockSize > 0 {
 		settings.BlockSize = r.engine.BlockSize
+	}
+	if r.engine.GPUMemoryUtilization > 0 {
+		settings.GPUMemoryUtilization = r.engine.GPUMemoryUtilization
 	}
 	in.Engine = &settings
 	k, err := latencykernel.New(in)
@@ -352,8 +356,10 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if err != nil {
 		return nil, err
 	}
-	m.engine = engine
+	// Every reader below sees the engine as its release resolves it (resolveEngine): the block
+	// size, the memory budget and the batch settings the deployment left unstated.
 	m.resolved = resolveEngine(in, engine)
+	m.engine = m.resolved.engine
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by
