@@ -15,6 +15,7 @@
 package blisvllm
 
 import (
+	_ "embed"
 	"fmt"
 	"runtime/debug"
 )
@@ -84,3 +85,11 @@ func ProvenanceFor(behaviour string) Provenance {
 		Behaviour:       behaviour,
 	}
 }
+
+// FieldListJSON is fields.json, the field list this build publishes (VLM-3): every
+// configuration field and environment variable the modelled vLLM release reads, with its
+// status, evidence and estimation rule. Its type is blis-substrate's contracts/spec/fields;
+// inference-sim's fields command prints it.
+//
+//go:embed fields.json
+var FieldListJSON []byte

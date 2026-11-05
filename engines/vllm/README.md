@@ -40,6 +40,32 @@ that interface. The design is
 | `docs/feature-matrix.md` | every feature our sources use, its v0.32.0 citation, owner, oracle tier and status |
 | `docs/testing.md` | the oracle tiers, the shared GPU mock, provenance, golden-trace policy |
 
+## The field list (fields.json)
+
+`fields.json` lists every configuration field and environment variable vLLM v0.32.0 reads, each
+with a status, its evidence and an estimation rule (design VLM-3, §11.2). The type is
+blis-substrate's `contracts/spec/fields`; accuracy-dashboard and blis-config-search read the list
+through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
+
+- **Names** come from vLLM's own source at the pinned commit, not by hand: `fields/gen_fields.py`
+  reads the `EngineArgs`, `AsyncEngineArgs` and front-end flag fields (expanding each config
+  object to `<field>.<subfield>`), every key of `vllm/envs.py`'s `environment_variables`, and the
+  NCCL, NVSHMEM and UCX variables vLLM reads by a literal name. CI runs
+  `python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json`, which
+  fails while a name vLLM reads has no entry or an entry names a field vLLM does not have.
+- **Status, evidence and estimation** are in `fields/status.json`, edited by hand. The first
+  version was seeded as release plan §3.3 says: a field the port reads and that changes a
+  decision is `modelled`, citing the recorded traces that set it; a field the port refuses is
+  `not_modelled`, citing its open issue; a field accuracy-dashboard's `vllm_arg_policy.yaml`
+  marked inert is `inert_unproven`; any other field is `not_modelled` with an open issue.
+  Estimation rules start from accuracy-dashboard discussion #33.
+- **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
+  other checks are M2 work and are not here yet: the inertness proofs that turn each
+  `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every
+  `modelled` field, and the value classes each modelled field's scenarios cover.
+- `TestTheFieldListLoadsAndNamesThisRelease` loads the file with the substrate's strict loader,
+  checks it names this release, is in canonical form, and that every cited trace exists.
+
 ## Licence
 
 Apache-2.0. Files translated from vLLM keep vLLM's licence and name the upstream file and commit
