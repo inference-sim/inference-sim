@@ -1,0 +1,666 @@
+{
+  "$defs": {
+    "acceptance.Pin": {
+      "additionalProperties": false,
+      "properties": {
+        "fallback_category": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/acceptance.Value"
+        }
+      },
+      "type": "object"
+    },
+    "acceptance.Value": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_length": {
+          "type": "number"
+        },
+        "acceptance_rate": {
+          "type": "number"
+        },
+        "num_spec_tokens": {
+          "type": "integer"
+        },
+        "per_position_rates": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "num_spec_tokens"
+      ],
+      "type": "object"
+    },
+    "routing.Pin": {
+      "additionalProperties": false,
+      "properties": {
+        "fallback_category": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/routing.Value"
+        }
+      },
+      "type": "object"
+    },
+    "routing.Value": {
+      "additionalProperties": false,
+      "properties": {
+        "expert_imbalance": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string"
+        },
+        "token_imbalance": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "token_imbalance"
+      ],
+      "type": "object"
+    },
+    "scenario.Cluster": {
+      "additionalProperties": false,
+      "properties": {
+        "fabric": {
+          "type": "string"
+        },
+        "gpus_per_node": {
+          "type": "integer"
+        },
+        "gpus_per_rack": {
+          "type": "integer"
+        },
+        "hardware": {
+          "type": "string"
+        },
+        "nodes": {
+          "type": "integer"
+        },
+        "storage": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "gpus_per_node",
+        "hardware",
+        "nodes"
+      ],
+      "type": "object"
+    },
+    "scenario.Engine": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "version"
+      ],
+      "type": "object"
+    },
+    "scenario.Scenario": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Pin"
+        },
+        "cluster": {
+          "$ref": "#/$defs/scenario.Cluster"
+        },
+        "coefficients": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "engine": {
+          "$ref": "#/$defs/scenario.Engine"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "Scenario"
+        },
+        "model": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing.Pin"
+        },
+        "workload": {
+          "$ref": "#/$defs/workload.Binding"
+        }
+      },
+      "required": [
+        "cluster",
+        "coefficients",
+        "kind",
+        "model",
+        "name"
+      ],
+      "type": "object"
+    },
+    "trace.Header": {
+      "additionalProperties": false,
+      "properties": {
+        "goodput_slo_targets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/trace.SLODimTargets"
+          },
+          "type": "object"
+        },
+        "kv_offload": {
+          "$ref": "#/$defs/trace.KVOffload"
+        },
+        "max_nodes_spanned": {
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "generated",
+            "replayed",
+            "converted"
+          ],
+          "type": "string"
+        },
+        "router": {
+          "$ref": "#/$defs/trace.Router"
+        },
+        "session_context_growth": {
+          "enum": [
+            "accumulate"
+          ],
+          "type": "string"
+        },
+        "time_unit": {
+          "enum": [
+            "ns",
+            "nanoseconds",
+            "us",
+            "microseconds",
+            "ms",
+            "milliseconds",
+            "s",
+            "seconds"
+          ],
+          "type": "string"
+        },
+        "trace_version": {
+          "const": 4
+        },
+        "workload_seed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "time_unit",
+        "trace_version"
+      ],
+      "type": "object"
+    },
+    "trace.KVOffload": {
+      "additionalProperties": false,
+      "properties": {
+        "block_size": {
+          "type": "integer"
+        },
+        "blocks_per_chunk": {
+          "type": "integer"
+        },
+        "cpu_bytes_to_use": {
+          "type": "integer"
+        },
+        "eviction_policy": {
+          "type": "string"
+        },
+        "lazy_offload": {
+          "type": "boolean"
+        },
+        "offload_prompt_only": {
+          "type": "boolean"
+        },
+        "per_block_bytes": {
+          "type": "integer"
+        },
+        "secondary_tiers": {
+          "items": {
+            "$ref": "#/$defs/trace.KVOffloadTier"
+          },
+          "type": "array"
+        },
+        "self_describing_kv_events": {
+          "type": "boolean"
+        },
+        "simple_cpu_offload": {
+          "type": "boolean"
+        },
+        "tokens_per_hash": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "block_size",
+        "blocks_per_chunk",
+        "cpu_bytes_to_use",
+        "eviction_policy",
+        "offload_prompt_only",
+        "per_block_bytes",
+        "self_describing_kv_events",
+        "tokens_per_hash"
+      ],
+      "type": "object"
+    },
+    "trace.KVOffloadTier": {
+      "additionalProperties": false,
+      "properties": {
+        "base_latency": {
+          "type": "number"
+        },
+        "capacity_bytes": {
+          "type": "integer"
+        },
+        "device_class": {
+          "type": "string"
+        },
+        "direct_io": {
+          "type": "boolean"
+        },
+        "enable_kv_events": {
+          "type": "boolean"
+        },
+        "latency_jitter_stddev": {
+          "type": "number"
+        },
+        "locality": {
+          "type": "string"
+        },
+        "n_read_threads": {
+          "type": "integer"
+        },
+        "n_write_threads": {
+          "type": "integer"
+        },
+        "read_bandwidth": {
+          "type": "number"
+        },
+        "root_dir": {
+          "type": "string"
+        },
+        "saturation_queue_depth": {
+          "type": "integer"
+        },
+        "single_transfer_fraction": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string"
+        },
+        "write_bandwidth": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "base_latency",
+        "direct_io",
+        "enable_kv_events",
+        "latency_jitter_stddev",
+        "n_read_threads",
+        "n_write_threads",
+        "read_bandwidth",
+        "root_dir",
+        "saturation_queue_depth",
+        "single_transfer_fraction",
+        "type",
+        "write_bandwidth"
+      ],
+      "type": "object"
+    },
+    "trace.Router": {
+      "additionalProperties": false,
+      "properties": {
+        "epp_flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gateway_latency_us": {
+          "type": "integer"
+        },
+        "kv_event_delay_us": {
+          "type": "integer"
+        },
+        "manifests": {
+          "type": "string"
+        },
+        "pod_labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "scrape_jitter_us": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "epp_flags"
+      ],
+      "type": "object"
+    },
+    "trace.SLODimTargets": {
+      "additionalProperties": false,
+      "properties": {
+        "e2e_ms": {
+          "type": "number"
+        },
+        "itl_ms": {
+          "type": "number"
+        },
+        "ttft_ms": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "workload.Binding": {
+      "additionalProperties": false,
+      "properties": {
+        "replay": {
+          "$ref": "#/$defs/workload.Replay"
+        },
+        "shape": {
+          "type": "string"
+        },
+        "trace": {
+          "$ref": "#/$defs/workload.TraceRef"
+        }
+      },
+      "type": "object"
+    },
+    "workload.Corpus": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "enum": [
+            "jsonl"
+          ],
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "weka-trace-v7"
+          ],
+          "type": "string"
+        },
+        "loader": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/workload.CorpusSource"
+        }
+      },
+      "required": [
+        "encoding",
+        "format",
+        "loader",
+        "sha256",
+        "source"
+      ],
+      "type": "object"
+    },
+    "workload.CorpusSource": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "huggingface": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "split": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "huggingface",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "workload.Replay": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Value"
+        },
+        "benchmark_duration_s": {
+          "type": "number"
+        },
+        "cache_bust": {
+          "enum": [
+            "first_turn_prefix"
+          ],
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "concurrency": {
+          "type": "integer"
+        },
+        "corpus": {
+          "$ref": "#/$defs/workload.Corpus"
+        },
+        "grace_period_s": {
+          "type": "number"
+        },
+        "harness_version": {
+          "type": "string"
+        },
+        "ignore_eos": {
+          "type": "boolean"
+        },
+        "ignore_trace_delays": {
+          "type": "boolean"
+        },
+        "inter_turn_delay_cap_s": {
+          "type": "number"
+        },
+        "max_context_length": {
+          "oneOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "const": "max_model_len"
+            }
+          ]
+        },
+        "random_seed": {
+          "type": "integer"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing.Value"
+        },
+        "scenario": {
+          "enum": [
+            "inferencex-agentx-mvp"
+          ],
+          "type": "string"
+        },
+        "split_flattened_agents": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "synthesis_max_isl": {
+          "type": "integer"
+        },
+        "system_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "thinking": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "trace_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "trajectory_start": {
+          "$ref": "#/$defs/workload.TrajectoryStart"
+        },
+        "warmup": {
+          "$ref": "#/$defs/workload.Warmup"
+        },
+        "workload": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "concurrency"
+      ],
+      "type": "object"
+    },
+    "workload.TokenBlocks": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "workload.TraceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Value"
+        },
+        "category": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string"
+        },
+        "header": {
+          "$ref": "#/$defs/trace.Header"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing.Value"
+        },
+        "rows": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "thinking": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "token_blocks": {
+          "$ref": "#/$defs/workload.TokenBlocks"
+        }
+      },
+      "required": [
+        "data",
+        "header"
+      ],
+      "type": "object"
+    },
+    "workload.TrajectoryStart": {
+      "additionalProperties": false,
+      "properties": {
+        "max_ratio": {
+          "type": "number"
+        },
+        "min_ratio": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "workload.Warmup": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "synthesized",
+            "cache_pressure"
+          ],
+          "type": "string"
+        },
+        "requests_per_lane": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://inference-sim.github.io/blis-substrate/schema/scenario.schema.json",
+  "$ref": "#/$defs/scenario.Scenario",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A BLIS scenario: the model, cluster, traffic, coefficient sets and engine a run is given. Generated from the Go types by tools/schemagen; the Go validators are the definition.",
+  "title": "scenario"
+}

@@ -1,0 +1,658 @@
+{
+  "$defs": {
+    "pointrecord.Build": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "release": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "image"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Facets": {
+      "additionalProperties": false,
+      "properties": {
+        "framework": {
+          "type": "string"
+        },
+        "gpu": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "parallelism": {
+          "$ref": "#/$defs/pointrecord.Parallelism"
+        },
+        "precision": {
+          "type": "string"
+        },
+        "scenario": {
+          "type": "string"
+        },
+        "serving": {
+          "type": "string"
+        },
+        "spec_method": {
+          "type": "string"
+        },
+        "sweep_id": {
+          "type": "string"
+        },
+        "workload": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "scenario",
+        "sweep_id"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Figure": {
+      "additionalProperties": false,
+      "properties": {
+        "interval": {
+          "$ref": "#/$defs/pointrecord.Interval"
+        },
+        "measured": {
+          "type": "number"
+        },
+        "measured_samples": {
+          "type": "integer"
+        },
+        "metric": {
+          "enum": [
+            "cache_hit_rate",
+            "e2e_mean_ms",
+            "e2e_p50_ms",
+            "e2e_p90_ms",
+            "e2e_p95_ms",
+            "e2e_p99_ms",
+            "gateway_queue_delay_mean_ms",
+            "gateway_queue_delay_p50_ms",
+            "gateway_queue_delay_p90_ms",
+            "gateway_queue_delay_p95_ms",
+            "gateway_queue_delay_p99_ms",
+            "goodput_rps",
+            "interactivity_mean",
+            "interactivity_p50",
+            "interactivity_p90",
+            "itl_mean_ms",
+            "itl_p50_ms",
+            "itl_p90_ms",
+            "itl_p95_ms",
+            "itl_p99_ms",
+            "output_tok_s",
+            "output_tok_s_per_gpu",
+            "preemptions",
+            "request_throughput",
+            "scheduling_delay_mean_ms",
+            "scheduling_delay_p50_ms",
+            "scheduling_delay_p90_ms",
+            "scheduling_delay_p95_ms",
+            "scheduling_delay_p99_ms",
+            "slo_attainment",
+            "step_interval_mean_ms",
+            "step_interval_p50_ms",
+            "step_interval_p90_ms",
+            "step_interval_p95_ms",
+            "step_interval_p99_ms",
+            "total_tok_s",
+            "tpot_mean_ms",
+            "tpot_p50_ms",
+            "tpot_p90_ms",
+            "tpot_p95_ms",
+            "tpot_p99_ms",
+            "ttft_mean_ms",
+            "ttft_p50_ms",
+            "ttft_p90_ms",
+            "ttft_p95_ms",
+            "ttft_p99_ms"
+          ],
+          "type": "string"
+        },
+        "predicted": {
+          "type": "number"
+        },
+        "predicted_samples": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "measured",
+        "measured_samples",
+        "metric",
+        "predicted",
+        "predicted_samples"
+      ],
+      "type": "object"
+    },
+    "pointrecord.G5Reason": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "code_not_visible",
+            "router_unsupported",
+            "value_not_recorded",
+            "field_not_modelled",
+            "field_unclassified",
+            "engine_unsupported",
+            "not_in_catalog",
+            "field_not_in_release",
+            "build_unparseable"
+          ],
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Identity": {
+      "additionalProperties": false,
+      "properties": {
+        "benchmark_type": {
+          "type": "string"
+        },
+        "conc": {
+          "type": "integer"
+        },
+        "framework": {
+          "type": "string"
+        },
+        "hardware": {
+          "type": "string"
+        },
+        "measured_date": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "precision": {
+          "type": "string"
+        },
+        "recipe": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "benchmark_type",
+        "conc",
+        "framework",
+        "hardware",
+        "measured_date",
+        "model",
+        "recipe",
+        "source"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Interval": {
+      "additionalProperties": false,
+      "properties": {
+        "high": {
+          "type": "number"
+        },
+        "level": {
+          "type": "number"
+        },
+        "low": {
+          "type": "number"
+        },
+        "replications": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "high",
+        "level",
+        "low",
+        "replications"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Note": {
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject",
+        "text"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Parallelism": {
+      "additionalProperties": false,
+      "properties": {
+        "dp": {
+          "type": "integer"
+        },
+        "ep": {
+          "type": "integer"
+        },
+        "pp": {
+          "type": "integer"
+        },
+        "tp": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "pointrecord.Record": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "$ref": "#/$defs/pointrecord.Build"
+        },
+        "facets": {
+          "$ref": "#/$defs/pointrecord.Facets"
+        },
+        "figures": {
+          "items": {
+            "$ref": "#/$defs/pointrecord.Figure"
+          },
+          "type": "array"
+        },
+        "g5_reason": {
+          "$ref": "#/$defs/pointrecord.G5Reason"
+        },
+        "grade": {
+          "enum": [
+            "G1",
+            "G2",
+            "G3",
+            "G4",
+            "G5"
+          ],
+          "type": "string"
+        },
+        "harness_digest": {
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/pointrecord.Identity"
+        },
+        "kernel_provenance": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "kind": {
+          "const": "PointRecord"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/pointrecord.Note"
+          },
+          "type": "array"
+        },
+        "point_id": {
+          "type": "string"
+        },
+        "replay": {
+          "$ref": "#/$defs/pointrecord.Replay"
+        },
+        "resolved": {
+          "items": {
+            "$ref": "#/$defs/pointrecord.Resolved"
+          },
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "settings": {
+          "items": {
+            "$ref": "#/$defs/pointrecord.Setting"
+          },
+          "type": "array"
+        },
+        "simulator": {
+          "$ref": "#/$defs/pointrecord.Simulator"
+        },
+        "substitutions": {
+          "items": {
+            "$ref": "#/$defs/pointrecord.Substitution"
+          },
+          "type": "array"
+        },
+        "unit_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "build",
+        "facets",
+        "grade",
+        "harness_digest",
+        "identity",
+        "kind",
+        "point_id",
+        "schema_version",
+        "simulator",
+        "unit_id"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Replay": {
+      "additionalProperties": false,
+      "properties": {
+        "client": {
+          "type": "string"
+        },
+        "client_version": {
+          "type": "string"
+        },
+        "concurrency": {
+          "type": "integer"
+        },
+        "corpus": {
+          "type": "string"
+        },
+        "corpus_sha256": {
+          "type": "string"
+        },
+        "duration_s": {
+          "type": "number"
+        },
+        "replayed_as": {
+          "type": "string"
+        },
+        "scenario": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "trajectory_start": {
+          "$ref": "#/$defs/pointrecord.TrajectoryStart"
+        }
+      },
+      "required": [
+        "client",
+        "client_version",
+        "concurrency",
+        "corpus",
+        "corpus_sha256",
+        "scenario",
+        "seed"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Resolved": {
+      "additionalProperties": false,
+      "properties": {
+        "blis": {},
+        "delta": {},
+        "match": {
+          "enum": [
+            "exact",
+            "mapped",
+            "inert",
+            "estimated",
+            "differs",
+            "absent_in_blis",
+            "unreadable",
+            "conflict"
+          ],
+          "type": "string"
+        },
+        "measured": {},
+        "occurrences": {
+          "type": "integer"
+        },
+        "quantity": {
+          "type": "string"
+        },
+        "ratio": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "blis",
+        "match",
+        "measured",
+        "quantity"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Setting": {
+      "additionalProperties": false,
+      "properties": {
+        "arg": {
+          "type": "string"
+        },
+        "blis": {},
+        "delta": {},
+        "field": {
+          "type": "string"
+        },
+        "match": {
+          "enum": [
+            "exact",
+            "mapped",
+            "inert",
+            "estimated",
+            "differs",
+            "absent_in_blis",
+            "unreadable",
+            "conflict"
+          ],
+          "type": "string"
+        },
+        "measured": {},
+        "note": {
+          "type": "string"
+        },
+        "occurrences": {
+          "type": "integer"
+        },
+        "ratio": {
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "values": {
+          "items": {},
+          "type": "array"
+        }
+      },
+      "required": [
+        "arg",
+        "blis",
+        "match",
+        "measured"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Simulator": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": "string"
+        },
+        "data": {
+          "$ref": "#/$defs/result.Data"
+        },
+        "engine": {
+          "$ref": "#/$defs/result.Engine"
+        }
+      },
+      "required": [
+        "build",
+        "data",
+        "engine"
+      ],
+      "type": "object"
+    },
+    "pointrecord.Substitution": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "coefficient_method",
+            "coefficient_range",
+            "execution_mode",
+            "kernel_hash",
+            "value_class",
+            "estimated",
+            "interim_status",
+            "other_release",
+            "changed_functions",
+            "nightly_or_custom"
+          ],
+          "type": "string"
+        },
+        "subject": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "subject"
+      ],
+      "type": "object"
+    },
+    "pointrecord.TrajectoryStart": {
+      "additionalProperties": false,
+      "properties": {
+        "max_ratio": {
+          "type": "number"
+        },
+        "min_ratio": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "result.Data": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": "string"
+        },
+        "catalog": {
+          "$ref": "#/$defs/result.DataSource"
+        },
+        "registry": {
+          "$ref": "#/$defs/result.DataSource"
+        },
+        "released_data": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "build",
+        "catalog",
+        "registry",
+        "released_data"
+      ],
+      "type": "object"
+    },
+    "result.DataSource": {
+      "additionalProperties": false,
+      "properties": {
+        "combined_hash": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "overlays": {
+          "items": {
+            "$ref": "#/$defs/result.Overlay"
+          },
+          "type": "array"
+        },
+        "source": {
+          "enum": [
+            "embedded",
+            "path"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "combined_hash",
+        "hash",
+        "source"
+      ],
+      "type": "object"
+    },
+    "result.Engine": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "version"
+      ],
+      "type": "object"
+    },
+    "result.Overlay": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://inference-sim.github.io/blis-substrate/schema/point-record.schema.json",
+  "$ref": "#/$defs/pointrecord.Record",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The scoring harness's per-point record: identity, grade, substitutions, builds and paired figures. Generated from the Go types by tools/schemagen; the Go validators are the definition.",
+  "title": "point-record"
+}
