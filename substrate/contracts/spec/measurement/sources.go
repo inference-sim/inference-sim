@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 // Registry is the catalog's licence registry, measurements/sources.yaml: one entry per
@@ -86,6 +87,10 @@ func (l License) validate(p *validate.Problems, at string) {
 		if l.License == "" {
 			p.Field(at+".license", "required for a verified source: the licence the evidence states")
 		}
+		if permitted[UseRedistribute] && !vocab.LicenceRedistributable(l.License) {
+			p.Field(at+".permits", "%q is not on the licence allow-list %v, so the source cannot permit redistribute (X12, D6)",
+				l.License, vocab.RedistributableLicences())
+		}
 		if len(l.Permits) == 0 {
 			p.Field(at+".permits", "a verified source states at least one permitted use; one that permits none is refused")
 		}
@@ -128,10 +133,14 @@ func (r *Registry) Lookup(id string) *License {
 }
 
 // Permits reports whether the source id is verified and its terms permit u. An unknown
-// id permits nothing.
+// id permits nothing. Redistribution also needs a licence on the allow-list of
+// contracts/vocab, the one list the catalog, the data ledger and this registry share (X12, D6).
 func (r *Registry) Permits(id string, u Use) bool {
 	l := r.Lookup(id)
 	if l == nil || l.Status != LicenseVerified {
+		return false
+	}
+	if u == UseRedistribute && !vocab.LicenceRedistributable(l.License) {
 		return false
 	}
 	for _, have := range l.Permits {
