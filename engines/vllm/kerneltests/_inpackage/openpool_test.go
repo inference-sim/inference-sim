@@ -72,7 +72,7 @@ func writeDisaggregated(t *testing.T) Repos {
 		filepath.Join(dir, "disagg.yaml"), []byte(disaggregated), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return withRules(Repos{Scenarios: dir, Catalog: catalogRoot, Registry: registryRoot})
+	return withRules(Repos{Scenarios: dir, Data: testData})
 }
 
 // TestOpenPoolPricesTheRequestedPool is why OpenPool exists.

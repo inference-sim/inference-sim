@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
@@ -19,12 +20,14 @@ import (
 // new slice each call, so no caller can change which releases are adopted.
 func CompatVersions() []string { return []string{"0.29.0", "0.31.0"} }
 
-// AdoptInputs name a run's scenario and the roots it reads, as the command line gave them
-// (--scenario, --scenarios, --registry), and whether the command line states a P/D topology.
+// AdoptInputs name a run's scenario and the data it reads, as the command line gave them
+// (--scenario, --scenarios, and the catalog and registry the simulator opened with
+// blis-substrate's loader), and whether the command line states a P/D topology.
 type AdoptInputs struct {
-	Scenario, ScenariosDir, Registry string
-	// Catalog locates the catalog root, asked once the scenario's shape is known.
-	Catalog CatalogLocator
+	Scenario, ScenariosDir string
+	// Data is the run's catalog and registry, opened and checked by blis-substrate's loader
+	// (load.Embedded, or load.Open with --catalog, --registry and the overlay flags).
+	Data *load.Data
 	// PDTopology is whether --prefill-instances or --decode-instances is non-zero.
 	PDTopology bool
 	// BeforeOpen runs after the shape is read and the topology checked, before the first pool
@@ -42,8 +45,6 @@ type Adopted struct {
 	// the run (the model, hardware and parallelism), and prices 0.32.0 with its 0.31.0 tuning,
 	// which it discloses.
 	CoreEngine bool
-	// CatalogRoot is the catalog root the run reads.
-	CatalogRoot string
 	// Model is the kernel for the scenario's first pool.
 	Model    *kernelmodel.Model
 	Settings kernelmodel.Settings
@@ -52,7 +53,7 @@ type Adopted struct {
 }
 
 // Adopt resolves the deployment from the scenario, and refuses a run with no scenario,
-// scenario directory or registry.
+// scenario directory or data.
 //
 // The scenario is the committed record of what was deployed: it states the model, the
 // hardware, and each pool's tensor- and data-parallel width. Accepting the same facts as
@@ -66,13 +67,14 @@ func Adopt(in AdoptInputs) (Adopted, error) {
 	if in.ScenariosDir == "" {
 		missing = append(missing, "--scenarios")
 	}
-	if in.Registry == "" {
-		missing = append(missing, "--registry")
-	}
 	if len(missing) > 0 {
 		return Adopted{}, fmt.Errorf("blis run requires %s: the kernel prices a step from a "+
 			"committed scenario plus the catalog and registry it names",
 			strings.Join(missing, ", "))
+	}
+	if in.Data == nil {
+		return Adopted{}, fmt.Errorf("scenario %q: no catalog and registry: AdoptInputs.Data is unset; "+
+			"open them with blis-substrate's load.Embedded or load.Open", in.Scenario)
 	}
 	// The scenario's roles and the CLI topology describe one deployment. A disaggregated
 	// scenario run without a P/D topology would serve every request on its first pool's
@@ -131,19 +133,12 @@ func OpenFirstPool(in AdoptInputs, a *Adopted) error {
 			"pools), so the run needs a P/D topology: pass --prefill-instances and --decode-instances",
 			in.Scenario)
 	}
-	root, err := in.Catalog()
-	if err != nil {
-		return err
-	}
-	a.CatalogRoot = root
 	if in.BeforeOpen != nil {
 		if err := in.BeforeOpen(a.Shape); err != nil {
 			return err
 		}
 	}
-	m, err := kernelmodel.Open(in.Scenario, kernelmodel.Repos{
-		Scenarios: in.ScenariosDir, Catalog: root, Registry: in.Registry,
-	})
+	m, err := kernelmodel.Open(in.Scenario, kernelmodel.Repos{Scenarios: in.ScenariosDir, Data: in.Data})
 	if err != nil {
 		// Refused rather than fallen back on: there is no other latency model to serve the run.
 		return fmt.Errorf("scenario %q: %v", in.Scenario, err)
@@ -165,10 +160,8 @@ func OpenFirstPool(in AdoptInputs, a *Adopted) error {
 
 // OpenModel opens the scenario's first pool for a caller that resolves the latency model
 // without adopting the deployment first.
-func OpenModel(scenario, scenariosDir, catalog, registry string) (*kernelmodel.Model, error) {
-	m, err := kernelmodel.Open(scenario, kernelmodel.Repos{
-		Scenarios: scenariosDir, Catalog: catalog, Registry: registry,
-	})
+func OpenModel(scenario, scenariosDir string, data *load.Data) (*kernelmodel.Model, error) {
+	m, err := kernelmodel.Open(scenario, kernelmodel.Repos{Scenarios: scenariosDir, Data: data})
 	if err != nil {
 		return nil, fmt.Errorf("scenario %q: %v", scenario, err)
 	}

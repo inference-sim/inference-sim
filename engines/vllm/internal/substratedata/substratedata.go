@@ -1,18 +1,12 @@
 // Original to blis-vllm.
 
-// Package substratedata locates the catalog and registry this module's tests and offline
-// commands read: the catalog/ and registry/ directories of the blis-substrate module that
-// go.mod pins, as the go command resolves it (go list -m), in the module cache and never in a
-// sibling checkout.
+// Package substratedata locates the catalog/ and registry/ directories of the blis-substrate
+// module go.mod pins, as the go command resolves it (go list -m), in the module cache and never
+// in a sibling checkout. BLIS_CATALOG and BLIS_REGISTRY override each directory.
 //
-// It replaces the copies this repository used to vendor under testdata/catalog and
-// testdata/registry, and the lock files that pinned them: the substrate release carries its
-// own data (design §3.3), so the go.mod pin is the one place that names which data the tests
-// read. BLIS_CATALOG and BLIS_REGISTRY override each root, so a working copy can be tested
-// against a candidate.
-//
-// When blis-substrate's loader (load/) is released, the runtime reads the embedded copy
-// through it; this package is for the tests and offline tools that take a directory.
+// Runs and most tests read the data through blis-substrate's loader (load.Embedded, or
+// load.Open with these directories). This package is for the kernel tests that load single
+// documents by path and edit them, which a shared loader Data cannot hand out.
 package substratedata
 
 import (

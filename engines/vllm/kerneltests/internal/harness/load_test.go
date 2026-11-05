@@ -9,47 +9,41 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/load"
 )
 
-// TestDefaultRootsAreThePinnedSubstratesData is the hermeticity check.
-//
-// The suite reads the catalog and registry of the blis-substrate release go.mod pins. It used
-// to read absolute paths in one developer's home directory and SKIP when that failed, which is
-// how a real incompatibility stayed hidden for the life of a dependency pin. If these
-// defaults ever resolve somewhere else, that silence comes back.
-func TestDefaultRootsAreThePinnedSubstratesData(t *testing.T) {
+// TestDefaultDataIsTheEmbeddedCopy is the hermeticity check. With neither BLIS_CATALOG nor
+// BLIS_REGISTRY set, the commands read the catalog and registry the pinned blis-substrate
+// release embeds. They used to read absolute paths in one developer's home directory and SKIP
+// when that failed, which is how a real incompatibility stayed hidden for the life of a
+// dependency pin.
+func TestDefaultDataIsTheEmbeddedCopy(t *testing.T) {
 	t.Setenv("BLIS_CATALOG", "")
 	t.Setenv("BLIS_REGISTRY", "")
-
-	for _, c := range []struct{ what, got, base, probe string }{
-		{"catalog", DefaultCatalog(), "catalog", filepath.Join("devices", "storage.yaml")},
-		{"registry", DefaultRegistry(), "registry",
-			filepath.Join("coefficients", "cost-model-primitives.yaml")},
-	} {
-		t.Run(c.what, func(t *testing.T) {
-			if !strings.Contains(c.got, "github.com/inference-sim/blis-substrate@") ||
-				filepath.Base(c.got) != c.base {
-				t.Errorf("%s root is %q, want the pinned blis-substrate module's %s/", c.what,
-					c.got, c.base)
-			}
-			// Resolving to a path is not enough; the artifacts have to be there.
-			if _, err := os.Stat(filepath.Join(c.got, c.probe)); err != nil {
-				t.Errorf("%s root %q does not hold %s: %v", c.what, c.got, c.probe, err)
-			}
-		})
+	d, err := Data("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Catalog.Source != load.SourceEmbedded || d.Registry.Source != load.SourceEmbedded {
+		t.Errorf("catalog %s, registry %s; want both embedded", d.Catalog.Source, d.Registry.Source)
+	}
+	if _, err := d.Chip("h200"); err != nil {
+		t.Errorf("the embedded catalog lacks a chip the fixtures name: %v", err)
 	}
 }
 
-// TestDefaultRootsHonourTheEnvironment keeps the escape hatch working, so a working copy
-// can be scored against a live upstream checkout.
-func TestDefaultRootsHonourTheEnvironment(t *testing.T) {
-	t.Setenv("BLIS_CATALOG", "/tmp/some-catalog")
-	t.Setenv("BLIS_REGISTRY", "/tmp/some-registry")
-	if got := DefaultCatalog(); got != "/tmp/some-catalog" {
-		t.Errorf("DefaultCatalog() = %q; BLIS_CATALOG must win", got)
+// TestAFlagOrTheEnvironmentReplacesTheEmbeddedCopy keeps the escape hatch working, so a
+// working copy can be tested against a candidate: a path replaces the embedded copy, and a
+// path that holds no catalog is refused, not ignored.
+func TestAFlagOrTheEnvironmentReplacesTheEmbeddedCopy(t *testing.T) {
+	empty := t.TempDir()
+	t.Setenv("BLIS_CATALOG", empty)
+	if _, err := Data("", ""); err == nil {
+		t.Errorf("BLIS_CATALOG=%s, an empty directory, was accepted as the catalog", empty)
 	}
-	if got := DefaultRegistry(); got != "/tmp/some-registry" {
-		t.Errorf("DefaultRegistry() = %q; BLIS_REGISTRY must win", got)
+	t.Setenv("BLIS_CATALOG", "")
+	if _, err := Data(empty, ""); err == nil {
+		t.Errorf("-catalog %s, an empty directory, was accepted as the catalog", empty)
 	}
 }
 
@@ -73,7 +67,7 @@ func TestOpenRefusesAMisspelledEngineKey(t *testing.T) {
 	if _, _, err := contracts.LoadBundle(filepath.Join(dir, "typo.yaml")); err != nil {
 		t.Fatalf("LoadBundle refused the engine block it holds unopened: %v", err)
 	}
-	_, err = Open("typo.yaml", Repos{Scenarios: dir, Catalog: DefaultCatalog(), Registry: DefaultRegistry()})
+	_, err = Open("typo.yaml", Repos{Scenarios: dir, Data: DefaultRepos().Data})
 	if err == nil || !strings.Contains(err.Error(), "cache_dytpe") || !strings.Contains(err.Error(), "typo.yaml") {
 		t.Errorf("Open: %v; want a refusal naming the misspelled key and the file", err)
 	}

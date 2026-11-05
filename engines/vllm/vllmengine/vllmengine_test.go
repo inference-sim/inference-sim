@@ -13,22 +13,32 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 
-// roots are the repository's vendored catalog and registry, which hold the dashboard models.
+// roots name the scenario only, so the engine reads the pinned substrate's embedded catalog and
+// registry, which hold the dashboard models.
 func roots(t *testing.T, scenario string) map[string]string {
 	t.Helper()
 	abs, err := filepath.Abs(filepath.Join("testdata", scenario))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
-	reg, _ := filepath.Abs(filepath.Join("..", "testdata", "registry"))
-	return map[string]string{RootCatalog: cat, RootRegistry: reg, RootScenario: abs}
+	return map[string]string{RootScenario: abs}
+}
+
+// embeddedData is the data the engine opens for roots: the embedded copy.
+func embeddedData(t *testing.T) *load.Data {
+	t.Helper()
+	d, err := kernelmodel.OpenData(load.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
 
 // poolEngine is the scenario's first pool's engine block, as a host hands it over: unopened.
@@ -60,7 +70,7 @@ func compatBlocks(t *testing.T, scenario031 string) int64 {
 	t.Helper()
 	r := roots(t, scenario031)
 	m, err := kernelmodel.OpenPool(filepath.Base(r[RootScenario]), kernelmodel.Repos{
-		Scenarios: filepath.Dir(r[RootScenario]), Catalog: r[RootCatalog], Registry: r[RootRegistry]}, 0)
+		Scenarios: filepath.Dir(r[RootScenario]), Data: embeddedData(t)}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,12 +147,10 @@ func req(id string, prompt, output int) engine.Request {
 // data parallelism as a missing piece.
 func TestDashboardDataParallelDeploymentsAreNotRefused(t *testing.T) {
 	Register()
-	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
-	reg, _ := filepath.Abs(filepath.Join("..", "testdata", "registry"))
 	for _, scenario := range []string{"d116-032.yaml", "d079-032.yaml", "d088-032.yaml", "d103-032.yaml"} {
 		abs, _ := filepath.Abs(filepath.Join("testdata", scenario))
 		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
-			Roots: map[string]string{RootCatalog: cat, RootRegistry: reg, RootScenario: abs}})
+			Roots: map[string]string{RootScenario: abs}})
 		if err != nil {
 			if strings.Contains(err.Error(), "data parallelism") {
 				t.Errorf("%s: %v refuses data parallelism, which the engine builds", scenario, err)
@@ -163,7 +171,7 @@ func openPool(t *testing.T, scenario string) pool {
 	t.Helper()
 	r := roots(t, scenario)
 	m, err := kernelmodel.OpenPool(scenario, kernelmodel.Repos{Scenarios: filepath.Dir(r[RootScenario]),
-		Catalog: r[RootCatalog], Registry: r[RootRegistry]}, 0)
+		Data: embeddedData(t)}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,5 +618,19 @@ func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
 	}
 	if block.KV.Connector != "NixlPullConnector" {
 		t.Fatalf("kv_transfer.connector %q, want the deployment's NixlPullConnector", block.KV.Connector)
+	}
+}
+
+// Roots[RootCatalog] and Roots[RootRegistry] name directories that replace the embedded copy:
+// one that holds no data is refused when the engine is built, naming the directory, never
+// ignored in favour of the embedded data.
+func TestARootDirectoryReplacesTheEmbeddedData(t *testing.T) {
+	Register()
+	r := roots(t, "d058-032.yaml")
+	empty := t.TempDir()
+	r[RootRegistry] = empty
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	if err == nil || !strings.Contains(err.Error(), empty) {
+		t.Errorf("an empty registry directory: %v, want a refusal naming %s", err, empty)
 	}
 }

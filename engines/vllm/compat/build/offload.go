@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-vllm/compat/engine"
@@ -371,17 +372,17 @@ func KnownDeviceClasses(devices map[string]KVOffloadDevice) string {
 // the same hierarchy in vLLM's kv_offload terms, and must then resolve identically -- there is
 // no precedence between two descriptions of one deployment, so a disagreement is refused,
 // naming the fields. With neither, the inert zero value. scenario names the scenario in errors;
-// catalog locates the catalog root, asked only when a tier names a device_class. Single
+// data is the run's catalog and registry, read only when a tier names a device_class. Single
 // construction site (R4), shared by run and replay for INV-13 parity.
 // It returns errors; the caller (inference-sim's CLI) turns them into its fatal exit.
 func ResolveKVOffloadConfig(scenario string, scenarioOffload *deployment.Offload, configPath string,
-	blockSizeTokens int64, catalog CatalogLocator) (engine.KVOffloadConfig, error) {
+	blockSizeTokens int64, data *load.Data) (engine.KVOffloadConfig, error) {
 	var fromScenario, fromFlag engine.KVOffloadConfig
 	if scenarioOffload != nil {
 		block, err := KVOffloadBlockFromDeployment(scenarioOffload)
 		var devices map[string]KVOffloadDevice
 		if err == nil {
-			devices, err = ResolveKVOffloadDevices(block, catalog)
+			devices, err = ResolveKVOffloadDevices(block, data)
 		}
 		if err == nil {
 			fromScenario, err = ResolveKVOffload(block, devices, blockSizeTokens)
@@ -392,7 +393,7 @@ func ResolveKVOffloadConfig(scenario string, scenarioOffload *deployment.Offload
 	}
 	if configPath != "" {
 		var err error
-		fromFlag, err = ResolveKVOffloadFile(configPath, blockSizeTokens, catalog)
+		fromFlag, err = ResolveKVOffloadFile(configPath, blockSizeTokens, data)
 		if err != nil {
 			return engine.KVOffloadConfig{}, err
 		}
@@ -416,7 +417,7 @@ func ResolveKVOffloadConfig(scenario string, scenarioOffload *deployment.Offload
 }
 
 // ResolveKVOffloadFile loads and resolves one --kv-offload-config file.
-func ResolveKVOffloadFile(path string, blockSizeTokens int64, catalog CatalogLocator) (engine.KVOffloadConfig, error) {
+func ResolveKVOffloadFile(path string, blockSizeTokens int64, data *load.Data) (engine.KVOffloadConfig, error) {
 	f, err := LoadKVOffloadConfigFile(path)
 	if err != nil {
 		return engine.KVOffloadConfig{}, err
@@ -428,7 +429,7 @@ func ResolveKVOffloadFile(path string, blockSizeTokens int64, catalog CatalogLoc
 	// the single source of truth, not from defaults.yaml. Read LAZILY — a config whose
 	// tiers all carry explicit bandwidth/latency triples never touches the catalog
 	// devices/ namespace, so it resolves exactly as it did before the cutover.
-	devices, err := ResolveKVOffloadDevices(f.KVOffload, catalog)
+	devices, err := ResolveKVOffloadDevices(f.KVOffload, data)
 	if err != nil {
 		return engine.KVOffloadConfig{}, fmt.Errorf("--kv-offload-config %q: %w", path, err)
 	}

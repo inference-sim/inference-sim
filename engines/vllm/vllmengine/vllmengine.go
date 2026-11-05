@@ -35,6 +35,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
@@ -43,9 +44,10 @@ import (
 
 // The Roots keys the factory reads.
 const (
-	// RootCatalog is a blis-catalog checkout or a pinned copy of one.
+	// RootCatalog is a directory with blis-substrate's catalog layout that replaces the
+	// embedded catalog; absent or empty means the embedded copy (design §3.3).
 	RootCatalog = "catalog"
-	// RootRegistry is a blis-registry checkout or a pinned copy of one.
+	// RootRegistry is the same for the registry.
 	RootRegistry = "registry"
 	// RootScenario is the scenario file's path: its Scenario document and its Deployment.
 	RootScenario = "scenario"
@@ -85,14 +87,15 @@ func open(s engine.Spec) (pool, error) {
 	if path == "" {
 		return pool{}, fmt.Errorf("vllmengine: Roots[%q] must name the scenario file", RootScenario)
 	}
-	for _, k := range []string{RootCatalog, RootRegistry} {
-		if s.Roots[k] == "" {
-			return pool{}, fmt.Errorf("vllmengine: Roots[%q] must name a directory", k)
-		}
+	// The loader opens one Data per distinct pair of paths (kernelmodel.OpenData), so a
+	// simulator that opened the same paths shares it, and its selected-entry report covers the
+	// engine's lookups too.
+	data, err := kernelmodel.OpenData(load.Options{Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+	if err != nil {
+		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
-	m, err := kernelmodel.OpenPool(filepath.Base(path), kernelmodel.Repos{
-		Scenarios: filepath.Dir(path), Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry],
-	}, s.Pool)
+	repos := kernelmodel.Repos{Scenarios: filepath.Dir(path), Data: data}
+	m, err := kernelmodel.OpenPool(filepath.Base(path), repos, s.Pool)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
@@ -111,8 +114,7 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, err
 	}
-	shape, err := kernelmodel.ShapeOf(filepath.Base(path), kernelmodel.Repos{
-		Scenarios: filepath.Dir(path), Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+	shape, err := kernelmodel.ShapeOf(filepath.Base(path), repos)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}

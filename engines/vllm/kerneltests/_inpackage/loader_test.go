@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
@@ -21,6 +22,16 @@ import (
 
 // catalogRoot, registryRoot and envOr are the kernel package's own (loader_test.go there):
 // blis-substrate's catalog/ and registry/, beside the package, which these tests read too.
+// testData is the same data through the loader, for the tests that open a kernel through Repos.
+var testData = mustData()
+
+func mustData() *load.Data {
+	d, err := load.Open(load.Options{Catalog: catalogRoot, Registry: registryRoot})
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
 
 // fixture builds a kernel from a committed scenario and the real catalog and registry.
 //

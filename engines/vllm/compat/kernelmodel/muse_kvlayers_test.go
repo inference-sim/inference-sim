@@ -15,7 +15,7 @@ import (
 // parallelism, each stage only its own share, the drafter's on the last.
 func TestMuseSparkKVLayersAreTheEngines(t *testing.T) {
 	r := repos()
-	r.Scenarios = filepath.Join(repoRoot(), "testdata", "scenarios")
+	r.Scenarios = filepath.Join(ownRoot(), "testdata", "scenarios")
 	count := func(runs []KVLayerRun) (full, sliding int) {
 		for _, x := range runs {
 			switch x.Spec {

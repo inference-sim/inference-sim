@@ -3,18 +3,12 @@
 package kernelmodel
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 
@@ -26,10 +20,6 @@ import (
 // loaded), the registry's default-role routing/ sets for (model, workload category, phase,
 // width), the workload's own value, the scenario's pin, and the command line. The kernel
 // prices the busiest rank from the answer; this file only gathers the layers.
-
-// registryRoutingDir is the registry's routing-profile namespace, beside coefficients/ and
-// acceptance/.
-const registryRoutingDir = "routing"
 
 // RoutingOverrides are the layers a caller supplies beyond the scenario file: a command
 // line value and a workload that is not the scenario's own binding (a catalog preset).
@@ -46,7 +36,7 @@ func SetRoutingOverrides(o RoutingOverrides) { routingOverrides = o }
 
 // resolveRouting resolves one pool's routing imbalance. A miss falls to the default and is
 // not an error; a scenario's named set that is missing or lacks the key is.
-func resolveRouting(in latencykernel.Inputs, engine engineconfig.Engine, registry string, o RoutingOverrides) (*routing.Resolution, error) {
+func resolveRouting(in latencykernel.Inputs, engine engineconfig.Engine, data *load.Data, o RoutingOverrides) (*routing.Resolution, error) {
 	pool := in.Deployment.Pools[in.PoolIndex]
 	req := routing.Request{
 		Model:          in.Scenario.Model,
@@ -64,10 +54,7 @@ func resolveRouting(in latencykernel.Inputs, engine engineconfig.Engine, registr
 		r, err := routing.Resolve(req)
 		return &r, err
 	}
-	sets, err := loadRegistryRoutingSets(registry)
-	if err != nil {
-		return nil, err
-	}
+	sets := data.RoutingSets()
 	req.Registry = sets
 	if pin := req.Scenario; pin != nil && pin.Profiles != "" {
 		for _, s := range sets {
@@ -80,6 +67,7 @@ func resolveRouting(in latencykernel.Inputs, engine engineconfig.Engine, registr
 	if err != nil {
 		return nil, fmt.Errorf("routing imbalance: %w", err)
 	}
+	data.RecordRouting(&r)
 	return &r, nil
 }
 
@@ -93,45 +81,6 @@ func bindingRoutingTerms(b *workload.Binding) routing.Workload {
 		return b.Replay.RoutingTerms()
 	}
 	return routing.Workload{}
-}
-
-// loadRegistryRoutingSets loads and validates every routing-profile set under the
-// registry's routing/ namespace, in path order. No namespace means no sets; a set that
-// fails to load or validate is an error, never skipped.
-func loadRegistryRoutingSets(registry string) ([]*routing.ProfileSet, error) {
-	if registry == "" {
-		return nil, nil
-	}
-	dir := filepath.Join(registry, registryRoutingDir)
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	var paths []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type().IsRegular() && (strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
-			paths = append(paths, p)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", dir, err)
-	}
-	sort.Strings(paths)
-	sets := make([]*routing.ProfileSet, 0, len(paths))
-	for _, p := range paths {
-		s, err := blisschemas.LoadRoutingProfileSet(p)
-		if err != nil {
-			return nil, fmt.Errorf("routing profile set %s: %w", p, err)
-		}
-		if problems := s.Validate(); !problems.OK() {
-			return nil, fmt.Errorf("routing profile set %s: %s", p, problems.Error())
-		}
-		sets = append(sets, s)
-	}
-	return sets, nil
 }
 
 // routingRecordOf is the results-file record of a resolution; nil when none was made.

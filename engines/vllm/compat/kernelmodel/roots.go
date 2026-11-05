@@ -8,66 +8,66 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
+
+	"github.com/inference-sim/blis-substrate/load"
 )
 
-// The artifact roots a kernel-path test reads: the scenario+deployment fixtures, the catalog
-// and the coefficient registry. None is read
-// from a path outside this repository, or outside the repository that names itself with
-// SetVendoredRoot:
+// What a kernel-path test or tool reads: the scenario+deployment fixtures, and the catalog and
+// coefficient registry.
 //
 //   - Scenarios are the cost model's fixtures under kerneltests/testdata/aisimulate, which
 //     this package's tests price (SetScenarioRoot names another directory).
-//   - The catalog and the registry are verbatim subsets of blis-substrate's catalog/ and
-//     registry/ at the release go.mod pins, vendored at testdata/catalog and
-//     testdata/registry. They go once blis-substrate's loader is released, and the adapter
-//     reads the substrate's embedded data instead.
+//   - The catalog and the registry are the data of the blis-substrate release go.mod pins,
+//     read through its loader (blis-substrate load): the embedded copy, or the directories
+//     BLIS_CATALOG and BLIS_REGISTRY name. Either way the data is checked when it is opened.
 //
-// Every root is overridable by its variable. An unresolvable root is never a skip: these were
-// once absolute paths under one developer's home directory, and every affected test turned a
-// failed read into a SKIP, so a wrong root was indistinguishable from a passing suite.
+// An unresolvable root is never a skip: these were once absolute paths under one developer's
+// home directory, and every affected test turned a failed read into a SKIP, so a wrong root
+// was indistinguishable from a passing suite.
 const (
 	catalogEnv   = "BLIS_CATALOG"
 	registryEnv  = "BLIS_REGISTRY"
 	scenariosEnv = "BLIS_SCENARIOS"
 )
 
-// DefaultCatalog is the catalog root: BLIS_CATALOG when set, else the vendored
-// testdata/catalog.
-func DefaultCatalog() string { return vendored(catalogEnv, "catalog") }
-
-// DefaultRegistry is the registry root: BLIS_REGISTRY when set, else the vendored
-// testdata/registry.
-func DefaultRegistry() string { return vendored(registryEnv, "registry") }
-
-// vendored resolves a root to its variable, else to testdata/<name> in the vendoring
-// repository, located from this file's compiled-in path rather than the working directory:
-// tests in several packages and commands under cmd/ each run with a different one.
-func vendored(env, name string) string {
-	if p := os.Getenv(env); p != "" {
-		return p
-	}
-	return filepath.Join(repoRoot(), "testdata", name)
+// DataOptions are the loader options BLIS_CATALOG and BLIS_REGISTRY state: each set variable
+// names a directory that replaces the embedded catalog or registry (design §3.3).
+func DataOptions() load.Options {
+	return load.Options{Catalog: os.Getenv(catalogEnv), Registry: os.Getenv(registryEnv)}
 }
 
-// vendoredRoot is the repository that vendors the catalog and registry (SetVendoredRoot);
-// empty means this file's own repository.
-var vendoredRoot string
+var (
+	dataMu    sync.Mutex
+	dataCache = map[string]*load.Data{}
+)
 
-// SetVendoredRoot names the repository whose testdata/catalog and testdata/registry are the
-// defaults. A caller that builds this adapter from another module (the simulator) sets it to
-// its own root, once, before opening a kernel.
-func SetVendoredRoot(dir string) { vendoredRoot = dir }
-
-// repoRoot is the vendoring repository: SetVendoredRoot's, else this file's own. self is
-// <repo>/compat/kernelmodel/roots.go.
-func repoRoot() string {
-	if vendoredRoot != "" {
-		return vendoredRoot
+// OpenData opens the catalog and registry o names with blis-substrate's loader, once per
+// distinct o, and returns the same Data to every later caller with the same options. A run's
+// simulator and its engine therefore read one Data, and its selected-entry report covers both.
+// Opening checks the data in full, so a malformed candidate is refused here rather than priced.
+func OpenData(o load.Options) (*load.Data, error) {
+	key := strings.Join([]string{o.Catalog, o.Registry,
+		strings.Join(o.CatalogOverlays, "\x00"), strings.Join(o.RegistryOverlays, "\x00")}, "\x01")
+	dataMu.Lock()
+	defer dataMu.Unlock()
+	if d, ok := dataCache[key]; ok {
+		return d, nil
 	}
-	return ownRoot()
+	d, err := load.Open(o)
+	if err != nil {
+		return nil, err
+	}
+	dataCache[key] = d
+	return d, nil
 }
 
-// ownRoot is this file's own repository.
+// DefaultData is the data DataOptions name (OpenData): the embedded copy when neither
+// BLIS_CATALOG nor BLIS_REGISTRY is set.
+func DefaultData() (*load.Data, error) { return OpenData(DataOptions()) }
+
+// ownRoot is this file's own repository. self is <repo>/compat/kernelmodel/roots.go.
 func ownRoot() string {
 	_, self, _, ok := runtime.Caller(0)
 	if !ok {
@@ -99,34 +99,30 @@ func DefaultScenarios() string {
 	return filepath.Join(ownRoot(), "kerneltests", "testdata", "aisimulate")
 }
 
-// DefaultRepos is the three artifact roots together, with the engine rules, which is how
-// Open takes them.
+// DefaultRepos is the scenario root and the default data together, with the engine rules,
+// which is how Open takes them. It panics when the data does not open, as a test's or tool's
+// defaults cannot report an error; RequireRepos reports the same failure as an error.
 func DefaultRepos() Repos {
-	return withEngineRules(Repos{
-		Scenarios: DefaultScenarios(),
-		Catalog:   DefaultCatalog(),
-		Registry:  DefaultRegistry(),
-	})
+	d, err := DefaultData()
+	if err != nil {
+		panic(fmt.Sprintf("kernelmodel: opening the catalog and registry: %v", err))
+	}
+	return withEngineRules(Repos{Scenarios: DefaultScenarios(), Data: d})
 }
 
-// RequireRepos checks that every root in r is set and exists, and otherwise returns one
-// error naming each missing root with the command that provides it. With no variable set
-// every root is in this repository, so in practice this reports a bad override.
-func RequireRepos(r Repos) error {
+// RequireRepos checks that the default scenario root exists and the default data opens, and
+// otherwise returns one error naming each failure and how to fix it.
+func RequireRepos() error {
 	var errs []error
-	check := func(name, path, how string) {
-		if path == "" {
-			errs = append(errs, fmt.Errorf("%s root is not set; to set it:\n  %s", name, how))
-			return
-		}
-		if _, err := os.Stat(path); err != nil {
-			errs = append(errs, fmt.Errorf("%s root %q is unreadable (%v); to set it:\n  %s",
-				name, path, err, how))
-		}
+	if p := DefaultScenarios(); p == "" {
+		errs = append(errs, fmt.Errorf("scenarios root is not set; to set it:\n  export %s=<directory>", scenariosEnv))
+	} else if _, err := os.Stat(p); err != nil {
+		errs = append(errs, fmt.Errorf("scenarios root %q is unreadable (%v); to set it:\n  export %s=<directory>",
+			p, err, scenariosEnv))
 	}
-	scenariosHow := "export " + scenariosEnv + "=<directory>"
-	check("scenarios", r.Scenarios, scenariosHow)
-	check("catalog", r.Catalog, "export "+catalogEnv+"=<a blis-substrate catalog/ directory>")
-	check("registry", r.Registry, "export "+registryEnv+"=<a blis-substrate registry/ directory>")
+	if _, err := DefaultData(); err != nil {
+		errs = append(errs, fmt.Errorf("catalog and registry (%s=%q, %s=%q; unset means the embedded copy): %w",
+			catalogEnv, os.Getenv(catalogEnv), registryEnv, os.Getenv(registryEnv), err))
+	}
 	return errors.Join(errs...)
 }

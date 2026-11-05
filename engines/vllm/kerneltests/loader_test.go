@@ -6,10 +6,12 @@ import (
 	"fmt"
 
 	. "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"path/filepath"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/internal/substratedata"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/artifacttest"
@@ -30,7 +32,23 @@ import (
 // candidate:
 //
 //	BLIS_REGISTRY=/path/to/candidate/registry go test ./kerneltests/...
+//
+// fixtureInputs reads its documents from those directories, the pinned module's own copy of the
+// data the loader embeds, because tests edit the documents they get and the loader's Data shares
+// its documents among readers. Everything that opens a kernel through Repos reads testData, the
+// loader's Data for the same pin (kernelmodel.DefaultData: the embedded copy, or the directories
+// BLIS_CATALOG and BLIS_REGISTRY name).
 var catalogRoot, registryRoot = mustRoots()
+
+var testData = mustData()
+
+func mustData() *load.Data {
+	d, err := kernelmodel.DefaultData()
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
 
 func mustRoots() (catalog, registry string) {
 	var err error

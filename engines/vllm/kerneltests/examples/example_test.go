@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
-	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
+	"github.com/inference-sim/blis-substrate/load"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
@@ -26,11 +26,20 @@ import (
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
 	Scenarios:      "../testdata",
-	Catalog:        harness.DefaultCatalog(),  // blis-substrate's catalog/, at the pinned release
-	Registry:       harness.DefaultRegistry(), // blis-substrate's registry/
+	Data:           exampleData(), // the pinned blis-substrate's embedded catalog and registry
 	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
 	RulesVersions:  vllmrules.Versions,
 	EngineSettings: vllmsettings.OfPool,
+}
+
+// exampleData is the catalog and registry the pinned blis-substrate release embeds, opened and
+// checked by its loader: data, err := load.Embedded().
+func exampleData() *load.Data {
+	d, err := load.Embedded()
+	if err != nil {
+		panic(err)
+	}
+	return d
 }
 
 func ms(d time.Duration) float64 { return d.Seconds() * 1e3 }

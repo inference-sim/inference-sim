@@ -8,20 +8,14 @@
 package build
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"syscall"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/load"
 )
 
-// catalogEnvVar names the environment variable that locates the model catalog, for the
+// catalogEnvVar names the environment variable that names a catalog directory, for the
 // diagnostics that tell an operator where to point it (inference-sim's --catalog flag and
-// BLIS_CATALOG; inference-sim resolves the root and passes it in).
+// BLIS_CATALOG; inference-sim opens the data and passes it in).
 const catalogEnvVar = "BLIS_CATALOG"
 
 const (
@@ -44,8 +38,8 @@ const (
 // defaults.yaml kv_offload_devices: block (and its Config.KVOffloadDevices field) are
 // deleted.
 //
-// The FILE format is blis-schemas' hardware.StorageDevice, decoded by its own strict
-// LoadStorageDevices, so BLIS holds no second parser for it. Its keys carry their units
+// The FILE format is blis-substrate's hardware.StorageDevice, decoded and validated by its
+// loader when the catalog is opened, so BLIS holds no second parser for it. Its keys carry their units
 // (read_bandwidth_mb_s, write_bandwidth_mb_s, base_latency_us).
 //
 // UNITS. ReadBandwidth/WriteBandwidth are bytes per microsecond; BaseLatency is
@@ -94,78 +88,33 @@ type KVOffloadDevice struct {
 // diagnostic that names it has always printed it.
 const CatalogStorageDevicesRelPath = CatalogDevicesSubdir + "/" + CatalogStorageDevicesFile
 
-// CatalogStorageDevicesPath returns <catalog>/devices/storage.yaml. Pure: the catalog
-// root is an argument, so the path law is table-testable without touching globals or
-// the environment (#1774).
-func CatalogStorageDevicesPath(catalog string) string {
-	return filepath.Join(catalog, CatalogDevicesSubdir, CatalogStorageDevicesFile)
-}
-
-// ParseCatalogStorageDevices loads and validates the storage-device table at path through
-// blis-schemas, and converts each device to BLIS's physics record. It is the one reader of
-// the file: LoadCatalogStorageDevices and the legacy transfer path both call it and differ
-// only in their diagnostics. A filesystem failure is distinguishable with IsNotReadable.
-func ParseCatalogStorageDevices(path string) (map[string]KVOffloadDevice, error) {
-	// A directory where the file belongs opens fine and fails mid-decode inside the YAML
-	// reader, which does not wrap the *fs.PathError; stat first so it reads as unreadable.
-	if info, err := os.Stat(path); err != nil {
-		return nil, err
-	} else if info.IsDir() {
-		return nil, &fs.PathError{Op: "read", Path: path, Err: syscall.EISDIR}
+// StorageDevices is the catalog's KV-offload storage-device table, read from the run's data
+// (blis-substrate's loader, which parsed and validated devices/storage.yaml when it opened
+// the catalog), converted to BLIS's physics records. It is only called when a secondary tier
+// names a device_class, so a catalog with no devices stays usable for every other run (INV-6).
+//
+// A catalog with no device classes is an error rather than an empty map: an empty map would
+// degrade into a "device_class is not defined (known: <none configured>)" message that blames
+// the operator's device_class for a missing catalog file, and zero bandwidth would be
+// plausible-but-wrong physics.
+func StorageDevices(data *load.Data) (map[string]KVOffloadDevice, error) {
+	if data == nil {
+		return nil, fmt.Errorf("kv_offload: a secondary tier names a device_class, which is resolved from "+
+			"the catalog's %s, and no catalog was given", CatalogStorageDevicesRelPath)
 	}
-	loaded, err := blisschemas.LoadStorageDevices(path)
-	if errors.Is(err, io.EOF) {
-		// A file with no YAML document at all (empty, or comments only) is a table with no
-		// classes, which the callers report with an actionable message rather than "EOF".
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+	loaded := data.StorageDevices()
+	if len(loaded) == 0 {
+		return nil, fmt.Errorf("kv_offload: the catalog (%s) defines no device classes in %s, so the "+
+			"device_class named by a secondary tier cannot be resolved; point --catalog or %s at a "+
+			"catalog that has them", data.Catalog.Source, CatalogStorageDevicesRelPath, catalogEnvVar)
 	}
 	devices := make(map[string]KVOffloadDevice, len(loaded))
 	for _, d := range loaded {
-		if problems := d.Validate(); !problems.OK() {
-			return nil, fmt.Errorf("device %q: %s", d.Name, problems.Error())
-		}
 		devices[d.Name] = KVOffloadDevice{
 			ReadBandwidth:  d.ReadBandwidthMBs,
 			WriteBandwidth: d.WriteBandwidthMBs,
 			BaseLatency:    d.BaseLatencyUs,
 		}
-	}
-	return devices, nil
-}
-
-// LoadCatalogStorageDevices reads and strictly parses the catalog's KV-offload
-// storage-device table. It is only called when a --kv-offload-config secondary tier
-// actually names a device_class, so a catalog with no devices/ namespace stays
-// perfectly usable for every other run (INV-6: nothing about a run that does not name
-// a device_class changes).
-//
-// Every failure names the path (R1). An absent, unreadable, malformed or EMPTY table is
-// a hard error rather than an empty map: an empty map would degrade into a
-// "device_class is not defined (known: <none configured>)" message that blames the
-// operator's device_class for a missing catalog file, and zero bandwidth would be
-// plausible-but-wrong physics — the silent-zero class of defect R10's strict parsing
-// exists to prevent.
-func LoadCatalogStorageDevices(catalog string) (map[string]KVOffloadDevice, error) {
-	path := CatalogStorageDevicesPath(catalog)
-	devices, err := ParseCatalogStorageDevices(path)
-	if err != nil {
-		if IsNotReadable(err) {
-			return nil, fmt.Errorf(
-				"kv_offload: a secondary tier names a device_class, but the catalog storage-device "+
-					"table at %s is not readable: %w.\n"+
-					"  Add it to the catalog (--catalog / %s names the catalog CLONE ROOT; the table "+
-					"lives at its %s), or point --catalog / %s at a catalog that has it",
-				path, err, catalogEnvVar, CatalogStorageDevicesRelPath, catalogEnvVar)
-		}
-		return nil, fmt.Errorf("kv_offload: catalog storage-device table %s is malformed: %w", path, err)
-	}
-	if len(devices) == 0 {
-		return nil, fmt.Errorf(
-			"kv_offload: catalog storage-device table %s defines no device classes, so the "+
-				"device_class named by a secondary tier cannot be resolved; fix that catalog file", path)
 	}
 	return devices, nil
 }
@@ -186,34 +135,15 @@ func BlockNamesDeviceClass(block *KVOffloadBlock) bool {
 	return false
 }
 
-// CatalogLocator resolves the catalog root a run reads (inference-sim's --catalog /
-// BLIS_CATALOG resolver). It is called only when a tier needs the storage-device table, so a
-// run that names no device_class resolves the root no more often than before (the resolver
-// reports a --catalog/BLIS_CATALOG conflict each time it runs).
-type CatalogLocator func() (string, error)
-
 // ResolveKVOffloadDevices resolves the device_class physics table for a parsed
 // kv_offload block: nil when no tier names a device_class (no catalog read at all),
-// otherwise the catalog's devices/storage.yaml, at the root catalog locates.
+// otherwise the catalog's devices/storage.yaml, from the run's data.
 //
 // run and replay both reach this through the single ResolveKVOffloadConfig site, so
 // neither can drift into reading a different table (INV-13).
-func ResolveKVOffloadDevices(block *KVOffloadBlock, catalog CatalogLocator) (map[string]KVOffloadDevice, error) {
+func ResolveKVOffloadDevices(block *KVOffloadBlock, data *load.Data) (map[string]KVOffloadDevice, error) {
 	if !BlockNamesDeviceClass(block) {
 		return nil, nil
 	}
-	root, err := catalog()
-	if err != nil {
-		return nil, fmt.Errorf("kv_offload: a secondary tier names a device_class, which is "+
-			"resolved from the catalog's %s: %w", CatalogStorageDevicesRelPath, err)
-	}
-	return LoadCatalogStorageDevices(root)
-}
-
-// IsNotReadable reports whether a catalog-loader error is a filesystem failure (absent,
-// unreadable, a directory where a file belongs) rather than a malformed document. The
-// blis-schemas loaders wrap the *fs.PathError, so the distinction survives them.
-func IsNotReadable(err error) bool {
-	var pathErr *fs.PathError
-	return errors.As(err, &pathErr)
+	return StorageDevices(data)
 }

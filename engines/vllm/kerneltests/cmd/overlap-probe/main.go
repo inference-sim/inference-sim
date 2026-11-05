@@ -25,8 +25,8 @@ import (
 )
 
 func main() {
-	catalog := flag.String("catalog", harness.DefaultCatalog(), "")
-	registry := flag.String("registry", harness.DefaultRegistry(), "")
+	catalog := flag.String("catalog", "", "a catalog directory that replaces the embedded one")
+	registry := flag.String("registry", "", "a registry directory that replaces the embedded one")
 	context := flag.Int("context", 1024, "context tokens per request")
 	flag.Parse()
 	if flag.NArg() != 1 {
@@ -34,9 +34,12 @@ func main() {
 		os.Exit(2)
 	}
 
-	k, err := harness.Open(flag.Arg(0), harness.Repos{
-		Catalog: *catalog, Registry: *registry,
-	})
+	data, err := harness.Data(*catalog, *registry)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	k, err := harness.Open(flag.Arg(0), harness.Repos{Data: data})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -8,12 +8,13 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/inference-sim/blis-vllm/internal/substratedata"
+	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
-// The roots a command or test reads by default: the committed scenario fixtures under
-// kerneltests/testdata, and blis-substrate's catalog/ and registry/ at the release go.mod
-// pins (internal/substratedata), never a checkout in anyone's home directory.
+// What a command or test reads by default: the committed scenario fixtures under
+// kerneltests/testdata, and the catalog and registry of the blis-substrate release go.mod pins,
+// through its loader (Data), never a checkout in anyone's home directory.
 //
 // They used to be absolute paths under one developer's home. That made the suite
 // unrunnable for anyone else and, because a failed read became a SKIP, silent about it:
@@ -82,20 +83,19 @@ func underRoot(parts ...string) string {
 	return filepath.Join(append([]string{root}, parts...)...)
 }
 
-// DefaultCatalog is the catalog root a command uses unless told otherwise: BLIS_CATALOG, or
-// the pinned blis-substrate's catalog/. It panics when neither resolves, for the reason
-// underRoot does.
-func DefaultCatalog() string { return must(substratedata.Catalog()) }
-
-// DefaultRegistry is the registry root a command uses unless told otherwise: BLIS_REGISTRY,
-// or the pinned blis-substrate's registry/.
-func DefaultRegistry() string { return must(substratedata.Registry()) }
-
-func must(path string, err error) string {
-	if err != nil {
-		panic(err)
+// Data opens the catalog and registry a command reads: the directories catalog and registry
+// name, each replacing the embedded copy when non-empty, else the embedded copy, or the
+// directories BLIS_CATALOG and BLIS_REGISTRY name when the arguments are empty
+// (kernelmodel.OpenData, which checks the data in full).
+func Data(catalog, registry string) (*load.Data, error) {
+	o := kernelmodel.DataOptions()
+	if catalog != "" {
+		o.Catalog = catalog
 	}
-	return path
+	if registry != "" {
+		o.Registry = registry
+	}
+	return kernelmodel.OpenData(o)
 }
 
 // DefaultScenarios is the directory holding the committed scenario+deployment fixtures.
@@ -106,12 +106,13 @@ func DefaultScenarios() string {
 	return underRoot("testdata")
 }
 
-// DefaultRepos is the three roots together, with the vLLM rules packs, which is how every
-// caller uses them.
+// DefaultRepos is the committed fixtures and the default data together, with the vLLM rules
+// packs, which is how every caller uses them. It panics when the data does not open, for the
+// reason underRoot does.
 func DefaultRepos() Repos {
-	return WithVLLMRules(Repos{
-		Scenarios: DefaultScenarios(),
-		Catalog:   DefaultCatalog(),
-		Registry:  DefaultRegistry(),
-	})
+	d, err := Data("", "")
+	if err != nil {
+		panic(err)
+	}
+	return WithVLLMRules(Repos{Scenarios: DefaultScenarios(), Data: d})
 }

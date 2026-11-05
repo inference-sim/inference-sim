@@ -41,13 +41,16 @@ import (
 func main() {
 	scen := flag.String("scenario", "", "scenario file name")
 	td := flag.String("testdata", "testdata", "directory holding the scenario")
-	cat := flag.String("catalog", harness.DefaultCatalog(), "")
-	reg := flag.String("registry", harness.DefaultRegistry(), "")
+	cat := flag.String("catalog", "", "a catalog directory that replaces the embedded one")
+	reg := flag.String("registry", "", "a registry directory that replaces the embedded one")
 	flag.Parse()
 
-	k, err := harness.Open(*scen, harness.Repos{
-		Scenarios: *td, Catalog: *cat, Registry: *reg,
-	})
+	data, err := harness.Data(*cat, *reg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	k, err := harness.Open(*scen, harness.Repos{Scenarios: *td, Data: data})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

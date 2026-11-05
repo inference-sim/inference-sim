@@ -68,6 +68,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -295,15 +296,15 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
-	if in.Routing, err = resolveRouting(in, engine, r.Registry, routingOverrides); err != nil {
+	if in.Routing, err = resolveRouting(in, engine, r.Data, routingOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
 	// Read by the kernel only under adaptive verification, which sizes its verify budget from it
 	// (blis-latency-kernel#89); nil otherwise, as the kernel then prices without it.
-	if in.Acceptance, err = resolveAcceptance(in, engine, r.Registry, acceptanceOverrides); err != nil {
+	if in.Acceptance, err = resolveAcceptance(in, engine, r.Data, acceptanceOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
-	return fromDecoded(in, engine)
+	return fromDecoded(in, engine, r.Data)
 }
 
 // fromInputs builds and adapts the kernel for loaded Inputs, decoding the priced pool's engine
@@ -313,12 +314,16 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fromDecoded(in, engine)
+	return fromDecoded(in, engine, nil)
 }
 
 // fromDecoded builds and adapts the kernel for loaded Inputs and the priced pool's decoded engine
 // block, refusing a speculative method the scenario's engine release does not accept first.
-func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, error) {
+//
+// data is where in's documents came from: the kernel is built with New, so its coefficient
+// lookups are recorded into data's selected-entry report here (design §3.3, VAL-6). A test
+// that assembled in by hand passes nil.
+func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load.Data) (*Model, error) {
 	if err := checkSpeculativeMethod(in, engine); err != nil {
 		return nil, err
 	}
@@ -331,6 +336,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, e
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
+	}
+	if data != nil {
+		k.RecordSelected(data)
 	}
 	m, err := newModel(k, identityOf(in, engine))
 	if err != nil {
