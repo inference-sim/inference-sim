@@ -89,9 +89,8 @@ func (m *SLOPriorityMap) IsSheddable(class string) bool {
 // Handles custom overrides: if an override sets critical=10, maxPri becomes 10
 // and all inversions adjust accordingly.
 //
-// Used at two call sites:
-//   - Simulator.EnqueueRequest / EnqueueDecodeSubRequest: instance-level pre-processor
-//   - cmd/observe.go: HTTP body injection for real vLLM servers
+// Used by Simulator.EnqueueRequest and EnqueueDecodeSubRequest, the instance-level
+// pre-processor.
 func (m *SLOPriorityMap) InvertForVLLM(class string) int {
 	return m.maxPri - m.Priority(class)
 }

@@ -197,8 +197,7 @@ type CatalogLocator func() (string, error)
 // otherwise the catalog's devices/storage.yaml, at the root catalog locates.
 //
 // run and replay both reach this through the single ResolveKVOffloadConfig site, so
-// neither can drift into reading a different table (INV-13). observe derives no
-// offload config and never calls it.
+// neither can drift into reading a different table (INV-13).
 func ResolveKVOffloadDevices(block *KVOffloadBlock, catalog CatalogLocator) (map[string]KVOffloadDevice, error) {
 	if !BlockNamesDeviceClass(block) {
 		return nil, nil

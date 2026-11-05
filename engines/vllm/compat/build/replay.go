@@ -22,8 +22,9 @@ import (
 //   - A stated config is accepted only if it resolves identical to the header (INV-13
 //     "identical flags"); a genuine mismatch is refused.
 //   - A stated config that would ADD offload to a trace captured without it is refused, unless
-//     allowFlagAdd: an observe trace (mode "real") or an agentic replay records no BLIS
-//     deployment, so its offload config comes from the scenario or the flag (#1583, #1937).
+//     allowFlagAdd: a converted trace (mode "converted", from blis convert) or an agentic
+//     replay records no BLIS deployment, so its offload config comes from the scenario or the
+//     flag (inference-sim#2067, #1937).
 //
 // It returns the inert zero value when neither the trace nor the caller states a config.
 func ReconcileReplayKVOffload(header engine.KVOffloadConfig, flagChanged bool, flagCfg engine.KVOffloadConfig, allowFlagAdd bool) (engine.KVOffloadConfig, error) {
@@ -46,28 +47,14 @@ func ReconcileReplayKVOffload(header engine.KVOffloadConfig, flagChanged bool, f
 	}
 	if flagChanged && flagCfg.IsEnabled() {
 		if allowFlagAdd {
-			// Observe trace (#1583): the operator supplies the offload config the
-			// server ran with, to model the observed deployment for the sim side of
-			// the hit-rate comparison. PerBlockBytes is 0 here (model not yet
-			// resolved); replay derives it after the latency config resolves.
+			// A converted trace or an agentic replay: the scenario or the flag states the
+			// offload config the deployment ran with. PerBlockBytes is 0 here (model not
+			// yet resolved); replay derives it after the latency config resolves.
 			return flagCfg, nil
 		}
-		return engine.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config or the scenario's offload block cannot add one on replay of a sim-generated trace (INV-13). Only observe traces (mode \"real\") and agentic replays, which record no BLIS deployment, take their offload config from the scenario or the flag on replay")
+		return engine.KVOffloadConfig{}, fmt.Errorf("the trace was captured without a kv_offload config; --kv-offload-config or the scenario's offload block cannot add one on replay of a trace blis run or blis replay wrote (mode \"generated\" or \"replayed\", INV-13). Only converted traces (mode \"converted\") and agentic replays, which record no BLIS deployment, take their offload config from the scenario or the flag on replay")
 	}
 	return engine.KVOffloadConfig{}, nil
-}
-
-// RequireOffloadForTieredObservation enforces BC-10 (#1583): a trace whose observed KV hit-rate
-// was captured from the multi-tier offload family is comparable on replay only if the replay
-// reproduces a tiered offload config. A replay with none would produce a GPU-only hit-rate that
-// `blis calibrate` then compares against a tiered real number -- silent degradation -- so it is
-// refused (INV-13). source is the observation's source label, tiered whether it names the tiered
-// family; the GPU-prefix-cache fallback source has no such requirement.
-func RequireOffloadForTieredObservation(tiered bool, source string, offloadEnabled bool) error {
-	if tiered && !offloadEnabled {
-		return fmt.Errorf("the trace's observed_kv_metrics were captured from the tiered KV-offload counters (source=%q) but this replay has no offload config; replay would produce a GPU-only hit-rate that calibrate cannot compare against the tiered observation — pass --kv-offload-config <file> matching the observed deployment (INV-13, never silent degradation)", source)
-	}
-	return nil
 }
 
 // RequireOneOffloadModel refuses the multi-tier offload chain together with the legacy single
