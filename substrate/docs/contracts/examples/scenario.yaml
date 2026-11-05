@@ -1,0 +1,16 @@
+kind: Scenario
+name: llama-3.1-8b-on-h100
+model: llama-3.1-8b-instruct
+coefficients:
+  - cost-model-primitives
+  - cost-model-collectives
+  - cost-model-host-overheads
+  - cost-model-attention
+  - cost-model-recurrent
+engine_version: "0.29.0"
+workload:
+  shape: chatbot
+cluster:
+  hardware: h100
+  nodes: 1
+  gpus_per_node: 8

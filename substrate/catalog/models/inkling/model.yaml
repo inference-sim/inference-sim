@@ -1,0 +1,6 @@
+name: inkling
+source:
+  provider: huggingface
+  repo: thinkingmachines/Inkling
+  revision: 828496eeae4c243ff1a22f7f28ff83694f2f7bc9
+  retrieved: 2026-09-16

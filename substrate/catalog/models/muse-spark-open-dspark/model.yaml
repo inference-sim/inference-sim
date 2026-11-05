@@ -1,0 +1,6 @@
+name: muse-spark-open-dspark
+source:
+  provider: huggingface
+  repo: Inferact/Muse-Spark-Open-DSpark
+  revision: ffc3eb50c8ae7a5a391ddedc43085d2e5249bc35
+  retrieved: 2026-10-29

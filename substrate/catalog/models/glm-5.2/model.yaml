@@ -1,0 +1,6 @@
+name: glm-5.2
+source:
+  provider: huggingface
+  repo: zai-org/GLM-5.2
+  revision: cf457fa734ab149ffef225f80893eb38c6ff5cdc
+  retrieved: 2026-09-16

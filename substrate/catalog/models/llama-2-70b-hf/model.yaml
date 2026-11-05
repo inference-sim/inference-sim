@@ -1,0 +1,6 @@
+name: llama-2-70b-hf
+source:
+  provider: huggingface
+  repo: meta-llama/Llama-2-70b-hf
+  revision: 3aba440b59558f995867ba6e1f58f21d0336b5bb
+  retrieved: 2026-09-16

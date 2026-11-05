@@ -1,0 +1,14 @@
+# Nested Shape form (the catalog's target form, issue #21 / catalog #16). The live
+# catalog's workloads are still FLAT until catalog #16 migrates them, so this fixture is
+# intentionally local rather than drawn from the live catalog.
+prefix_tokens: 0
+prompt:
+  tokens: 256
+  tokens_stdev: 100
+  tokens_min: 2
+  tokens_max: 800
+output:
+  tokens: 256
+  tokens_stdev: 100
+  tokens_min: 1
+  tokens_max: 1024

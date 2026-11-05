@@ -1,0 +1,12 @@
+# One owner group per top-level directory (design §3.2). A change to a check's own paths, or to
+# .github/, needs a code owner's review (design §13.7).
+*                 @sriumcp @jgchn
+/contracts/       @sriumcp @jgchn
+/validate/        @sriumcp @jgchn
+/catalog/         @sriumcp @jgchn
+/registry/        @sriumcp @jgchn @namasl
+/kernel/          @sriumcp @jgchn
+/tools/           @sriumcp @jgchn
+/docs/            @sriumcp @jgchn
+/.github/         @sriumcp @jgchn
+/CODEOWNERS       @sriumcp @jgchn

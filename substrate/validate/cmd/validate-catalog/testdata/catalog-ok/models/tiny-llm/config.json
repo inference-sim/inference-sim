@@ -1,0 +1,6 @@
+{
+  "architectures": ["LlamaForCausalLM"],
+  "hidden_size": 2048,
+  "num_hidden_layers": 4,
+  "vocab_size": 32000
+}

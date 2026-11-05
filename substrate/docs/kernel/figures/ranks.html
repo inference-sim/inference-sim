@@ -1,0 +1,58 @@
+<figure class="diagram" markdown="0">
+<svg viewBox="0 0 800 298" role="img" aria-labelledby="fig-ranks-title fig-ranks-desc">
+<title id="fig-ranks-title">How ranks are numbered and grouped, for tp 4, pcp 2, dp 2 on two 8-GPU nodes</title>
+<desc id="fig-ranks-desc">Sixteen ranks, numbered 0 to 15, eight per node. Tensor-parallel groups are four consecutive ranks, such as 0 to 3, and stay on one node. A prefill-context group joins ranks four apart, such as 0 and 4, also on one node. A data-parallel group joins ranks eight apart, such as 0 and 8, and so crosses from one node to the other.</desc>
+<rect class="box-plain" x="20" y="40" width="370" height="150" rx="8"/>
+<text class="small" x="378" y="180" text-anchor="end">node 0</text>
+<rect class="box-plain" x="410" y="40" width="370" height="150" rx="8"/>
+<text class="small" x="768" y="180" text-anchor="end">node 1</text>
+<rect class="box-accent" x="38" y="96" width="38" height="38" rx="4"/>
+<text class="mono accent-text" x="57" y="119" text-anchor="middle">0</text>
+<rect class="box-accent" x="82" y="96" width="38" height="38" rx="4"/>
+<text class="mono accent-text" x="101" y="119" text-anchor="middle">1</text>
+<rect class="box-accent" x="126" y="96" width="38" height="38" rx="4"/>
+<text class="mono accent-text" x="145" y="119" text-anchor="middle">2</text>
+<rect class="box-accent" x="170" y="96" width="38" height="38" rx="4"/>
+<text class="mono accent-text" x="189" y="119" text-anchor="middle">3</text>
+<rect class="box" x="214" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="233" y="119" text-anchor="middle">4</text>
+<rect class="box" x="258" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="277" y="119" text-anchor="middle">5</text>
+<rect class="box" x="302" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="321" y="119" text-anchor="middle">6</text>
+<rect class="box" x="346" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="365" y="119" text-anchor="middle">7</text>
+<rect class="box" x="428" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="447" y="119" text-anchor="middle">8</text>
+<rect class="box" x="472" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="491" y="119" text-anchor="middle">9</text>
+<rect class="box" x="516" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="535" y="119" text-anchor="middle">10</text>
+<rect class="box" x="560" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="579" y="119" text-anchor="middle">11</text>
+<rect class="box" x="604" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="623" y="119" text-anchor="middle">12</text>
+<rect class="box" x="648" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="667" y="119" text-anchor="middle">13</text>
+<rect class="box" x="692" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="711" y="119" text-anchor="middle">14</text>
+<rect class="box" x="736" y="96" width="38" height="38" rx="4"/>
+<text class="mono" x="755" y="119" text-anchor="middle">15</text>
+<path class="edge-accent" d="M38,142 L38,147 L208,147 L208,142"/>
+<text class="small accent-text" x="66" y="164">tensor-parallel group 0–3</text>
+<path class="edge" d="M214,142 L214,147 L384,147 L384,142"/>
+<text class="small" x="299.0" y="164" text-anchor="middle">4–7</text>
+<path class="edge" d="M428,142 L428,147 L598,147 L598,142"/>
+<text class="small" x="513.0" y="164" text-anchor="middle">8–11</text>
+<path class="edge" d="M604,142 L604,147 L774,147 L774,142"/>
+<text class="small" x="689.0" y="164" text-anchor="middle">12–15</text>
+<path class="edge dashed" d="M57,92 C57,72 233,72 233,92"/>
+<text class="small" x="145.0" y="62" text-anchor="middle">prefill-context group 0, 4</text>
+<path class="edge dotted" d="M57,138 L57,200 C57,236 447,236 447,200 L447,138"/>
+<circle class="dot" cx="57" cy="138" r="3"/><circle class="dot" cx="447" cy="138" r="3"/>
+<text class="small" x="252.0" y="250" text-anchor="middle">data-parallel group 0, 8: crosses nodes</text>
+<text class="small" x="20" y="276">Ranks are numbered dp × pp × pcp × tp, with tensor parallelism innermost; pp is 1 here.</text>
+<text class="small" x="20" y="292">Each bracketed four is a tensor-parallel group.</text>
+</svg>
+<figcaption>Sixteen GPUs at tp 4, pcp 2, dp 2. A group's members are as far apart as the product of the axes numbered inside its own: one for tensor parallelism, four (tp) for prefill-context parallelism, eight (tp × pcp) for data parallelism. Whether a group leaves its node, and so is priced at the network's speed rather than NVLink's, follows from that spacing, not from the group's size: the data-parallel group has two members and still crosses.</figcaption>
+</figure>

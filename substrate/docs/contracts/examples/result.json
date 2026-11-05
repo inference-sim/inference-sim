@@ -1,0 +1,105 @@
+{
+  "kind": "Result",
+  "schema_version": 1,
+  "name": "llama-3.1-8b-h100-tp2-dp4.c64-s1",
+  "input": {
+    "scenario": {
+      "kind": "Scenario",
+      "name": "llama-3.1-8b-on-h100",
+      "model": "llama-3.1-8b-instruct",
+      "coefficients": ["cost-model-primitives", "cost-model-collectives", "cost-model-host-overheads", "cost-model-attention", "cost-model-recurrent"],
+      "engine_version": "0.29.0",
+      "workload": { "shape": "chatbot" },
+      "cluster": { "hardware": "h100", "nodes": 1, "gpus_per_node": 8 }
+    },
+    "deployment": {
+      "kind": "Deployment",
+      "name": "tp2-dp4",
+      "pools": [
+        {
+          "role": "colocated",
+          "nodes": 1,
+          "parallel": { "tp": 2, "pp": 1, "dp": 4 },
+          "engine": { "block_size": 16, "max_num_seqs": 256, "max_num_batched_tokens": 8192, "gpu_memory_utilization": 0.9 }
+        }
+      ]
+    },
+    "run": {
+      "load": { "concurrency": 64 },
+      "num_requests": 2000,
+      "seed": 1,
+      "warmup": { "requests": 128 },
+      "workload": { "shape": "chatbot" }
+    }
+  },
+  "revisions": {
+    "blis": "v0.13.0",
+    "blis_schemas": "v0.8.0",
+    "blis_latency_kernel": "v0.3.0",
+    "llm_d_router": "v1.0.0-blis.1",
+    "engine": { "kind": "vllm", "upstream_version": "0.29.0" },
+    "catalog": { "release": "0.3.0" },
+    "registry": { "release": "v0.2.0" }
+  },
+  "rerun_of": { "name": "llama-3.1-8b-h100-tp2-dp4.c64-s1", "sha256": "9f2c1e0a7b3d4c5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6" },
+  "revision_changes": [
+    { "component": "blis", "from": "v0.12.0", "to": "v0.13.0" }
+  ],
+  "metric_defs": {
+    "output_tok_s": { "formula": "output_throughput", "population": "pooled_tokens", "denominator": "profiling_window", "clock": "simulated", "unit": "tokens_per_s", "cite": "inference-sim sim/metrics_measured.go OutputThroughputTokS" },
+    "output_tok_s_per_gpu": { "formula": "output_throughput", "population": "pooled_tokens", "denominator": "per_gpu", "clock": "simulated", "unit": "tokens_per_s", "cite": "output_tok_s over the GPUs the deployment's pools use" },
+    "interactivity_mean": { "formula": "user_tps", "statistic": "mean", "population": "per_request", "clock": "simulated", "unit": "tokens_per_s", "cite": "inference-sim sim/metrics_measured.go OutputTokPerUserMean" },
+    "interactivity_p90": { "formula": "interactivity", "statistic": "p90", "population": "per_request", "percentile_method": "numpy_linear", "clock": "simulated", "unit": "tokens_per_s", "cite": "inference-sim sim/metrics_measured.go InteractivityP90" },
+    "ttft_mean_ms": { "formula": "ttft", "statistic": "mean", "population": "per_request", "clock": "simulated", "unit": "ms", "cite": "inference-sim sim/metrics_measured.go TTFTMeanMs" },
+    "ttft_p99_ms": { "formula": "ttft", "statistic": "p99", "population": "per_request", "percentile_method": "numpy_linear", "clock": "simulated", "unit": "ms", "cite": "inference-sim sim/metrics_measured.go TTFTP99Ms" },
+    "itl_p99_ms": { "formula": "tpot_excl_first", "statistic": "p99", "population": "per_request", "percentile_method": "numpy_linear", "clock": "simulated", "unit": "ms", "cite": "inference-sim sim/metrics_measured.go RequestITLP99Ms" },
+    "e2e_mean_ms": { "formula": "e2el", "statistic": "mean", "population": "per_request", "clock": "simulated", "unit": "ms", "cite": "inference-sim sim/metrics_measured.go E2EMeanMs" },
+    "request_throughput": { "formula": "request_throughput", "population": "per_request", "denominator": "profiling_window", "clock": "simulated", "unit": "requests_per_s", "cite": "inference-sim sim/metrics_measured.go MeasuredCompletedRequests over MeasuredWindowS" }
+  },
+  "window": { "start": "first_send_after_warmup", "stop": "last_completion", "duration_s": 312.4, "requests": 1870 },
+  "metrics": {
+    "output_tok_s": 10240.3,
+    "output_tok_s_per_gpu": 1280.0,
+    "interactivity_mean": 41.7,
+    "interactivity_p90": 35.1,
+    "ttft_mean_ms": 182.0,
+    "ttft_p99_ms": 431.5,
+    "itl_p99_ms": 28.5,
+    "e2e_mean_ms": 2904.7,
+    "request_throughput": 6.0
+  },
+  "requests": {
+    "generated": 2000,
+    "rejected": 0,
+    "injected": 2000,
+    "completed": 1992,
+    "still_queued": 0,
+    "still_running": 8,
+    "dropped_unservable": 0,
+    "timed_out": 0,
+    "routing_rejections": 0,
+    "gateway_queue_depth": 0,
+    "gateway_queue_rejected": 0,
+    "gateway_evicted": 0,
+    "gateway_expired": 0,
+    "encode_routing_rejections": 0,
+    "length_capped": 0
+  },
+  "goodput": {
+    "targets": { "interactive": { "ttft_ms": 500, "itl_ms": 50 } },
+    "goodput_rps": 5.7,
+    "slo_attainment": 0.95,
+    "per_class": { "interactive": { "completed": 1992, "met": 1892 } }
+  },
+  "breakdowns": {
+    "pd": { "kv_transfer_mean_ms": 7.2 },
+    "per_model": { "llama-3.1-8b-instruct": { "ttft_p99_ms": 431.5, "e2e_mean_ms": 2904.7 } }
+  },
+  "overrides": [
+    { "setting": "scheduler", "input": "fcfs", "run": "priority", "source": "--scheduler" }
+  ],
+  "artifacts": {
+    "per_request": { "ref": "llama-3.1-8b-h100-tp2-dp4.c64-s1.requests.csv", "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a", "rows": 2000 }
+  },
+  "runtime": { "wall_clock_s": 18.4, "started_utc": "2026-10-28T15:02:11Z", "host": { "os": "linux", "arch": "amd64" } }
+}

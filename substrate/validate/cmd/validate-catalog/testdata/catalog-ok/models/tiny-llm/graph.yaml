@@ -1,0 +1,25 @@
+kind: ModelGraph
+name: tiny-llm
+modality: text_only
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  deriver_version: 1
+global:
+  hidden_size: 2048
+  vocab_size: 32000
+  weight_dtype: bf16
+layer_kinds:
+  - id: dense
+    nodes:
+      - {op: Elementwise, role: input_norm}
+      - {op: GEMM, role: qkv_proj, n: 2560, k: 2048}
+      - {op: Attention, kind: gqa, n_q: 16, n_kv: 2, d_h: 128}
+      - {op: GEMM, role: o_proj, n: 2048, k: 2048}
+      - {op: GEMM, role: mlp_gate_up, n: 11008, k: 2048}
+      - {op: GEMM, role: mlp_down, n: 2048, k: 5504}
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]]
+stack:
+  pattern: [dense]
+  repeat: 4

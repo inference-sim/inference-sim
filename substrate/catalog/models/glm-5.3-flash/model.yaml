@@ -1,0 +1,6 @@
+name: glm-5.3-flash
+source:
+  provider: huggingface
+  repo: zai-org/GLM-5.3-Flash
+  revision: eb9eb208eb0d988989d07a6a12d0fdeb5f52574a
+  retrieved: 2026-10-06

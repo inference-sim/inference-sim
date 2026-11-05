@@ -1,0 +1,149 @@
+kind: MeasuredRun
+name: synthetic-h100-tp4
+schema_version: 1
+source:
+  kind: vllm_bench
+  adapter:
+    name: tools/validation/adapters/vllm_bench
+    version: "1"
+    sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  inputs:
+    - role: report
+      url: https://example.org/results.json
+      size: 2048
+      sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      fetched_utc: "2026-10-15T13:58:06Z"
+    - role: manifest
+      repo: example/synthetic-fixtures
+      commit: 0123abcd
+      path: serving-tests.json
+      sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  extraction:
+    method: json
+    selectors:
+      - median_ttft_ms
+    label_verified: true
+  retrieved_utc: "2026-10-15T13:58:06Z"
+  license_ref: synthetic-fixture
+model: gpt-oss-120b
+engine_version: 0.31.0
+cluster:
+  hardware: h100
+  nodes: 1
+  gpus_per_node: 4
+deployment:
+  kind: Deployment
+  name: tp4
+  pools:
+    - role: colocated
+      nodes: 1
+      parallel:
+        tp: 4
+        pp: 1
+        dp: 1
+        enable_expert_parallel: false
+      engine:
+        max_model_len: 8192
+router:
+  kind: direct
+workload:
+  trace:
+    data: trace.csv
+    sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    header:
+      trace_version: 2
+      time_unit: us
+      mode: generated
+client:
+  harness: vllm bench serve
+  harness_version: 0.31.0
+  image_digest: vllm/vllm-openai@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  command:
+    - vllm
+    - bench
+    - serve
+    - --seed
+    - "0"
+  seed: 0
+  num_prompts: 200
+  burstiness: 1
+  ignore_eos: false
+  endpoint: completions
+  tokenizer:
+    repo: openai/gpt-oss-120b
+    revision: b5c939de
+metric_defs:
+  itl_p99:
+    formula: itl
+    statistic: p99
+    population: pooled_chunks
+    clock: client
+    percentile_method: numpy_linear
+    unit: ms
+    cite: vllm/benchmarks/serve.py:572
+  output_tps:
+    formula: output_throughput
+    population: pooled_tokens
+    denominator: main_phase_wall
+    clock: client
+    output_len_source: usage
+    unit: tokens_per_s
+    cite: vllm/benchmarks/serve.py:572
+  ttft_p50:
+    formula: ttft
+    statistic: median
+    population: per_request
+    clock: client
+    start_event: send_after_semaphore
+    stop_event: first_content_chunk
+    percentile_method: numpy_linear
+    unit: ms
+    cite: vllm/benchmarks/serve.py:572
+points:
+  - id: c1
+    load:
+      concurrency: 1
+    metrics:
+      itl_p99:
+        value: 20
+      output_tps:
+        value: 50
+      ttft_p50:
+        value: 100
+    completed: 200
+    failed: 0
+    kv_utilization: 0.1
+    prefix_hit_rate: 0
+    noise:
+      seeds: 3
+      cv: 0.05
+  - id: c4
+    load:
+      concurrency: 4
+    metrics:
+      itl_p99:
+        value: 25
+      output_tps:
+        value: 180
+      ttft_p50:
+        value: 150
+    realized:
+      mean_isl: 1024
+      mean_osl: 1024
+provenance:
+  - setting: tensor_parallel_size
+    report:
+      value: "4"
+      ref: log:12
+    blis:
+      value: "4"
+    verdict: MATCH
+    material: "yes"
+  - setting: block_size
+    blis:
+      value: "16"
+    verdict: UNSTATED
+    resolved_by: 'vllm/config/cache.py: block_size default 16 at v0.31.0'
+    material: "yes"
+verdict: EXACT
+resolution: RESOLVED

@@ -1,0 +1,19 @@
+kind: Scenario
+name: deepseek-v4-pro-agentic-on-b300
+model: deepseek-v4-pro
+coefficients:
+  - cost-model-primitives
+engine_version: "0.31.0"
+workload:
+  shape: chatbot
+# --8<-- [start:acceptance]
+acceptance:
+  value:
+    num_spec_tokens: 3
+    acceptance_length: 2.8
+    source: synthetic_acceptance_length in the scored run's server log
+# --8<-- [end:acceptance]
+cluster:
+  hardware: b300
+  nodes: 1
+  gpus_per_node: 8

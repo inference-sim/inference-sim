@@ -1,0 +1,6 @@
+name: nemotron-3-ultra-550b-a55b-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4
+  revision: 02462641f13d3af838b904f48195b9bb8a1e4ebc
+  retrieved: 2026-09-16

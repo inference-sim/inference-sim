@@ -1,0 +1,19 @@
+kind: Scenario
+name: deepseek-v3-on-h200
+model: deepseek-v3
+coefficients:
+  - cost-model-primitives
+  - cost-model-collectives
+  - cost-model-host-overheads
+  - cost-model-attention
+  - cost-model-recurrent
+engine_version: "0.29.0"
+workload:
+  shape: summarization
+cluster:
+  hardware: h200
+  fabric: ib-400g
+  nodes: 4
+  gpus_per_node: 8
+  storage:
+    - cpu_dram

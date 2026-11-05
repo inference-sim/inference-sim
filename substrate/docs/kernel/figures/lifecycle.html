@@ -1,0 +1,47 @@
+<figure class="diagram" markdown="0">
+<svg viewBox="0 0 800 240" role="img" aria-labelledby="fig-life-title fig-life-desc">
+<title id="fig-life-title">How a kernel is built once and then priced every step</title>
+<desc id="fig-life-desc">On the left, the inputs: a scenario and its deployment, a model graph and a chip from blis-catalog, and coefficient sets from blis-registry. They go into New, which runs once and returns a Kernel. A simulator then calls StepTime on that kernel once per simulated step, passing a batch and receiving a StepEstimate. The memory methods are answered from the same kernel.</desc>
+<defs>
+<marker id="life-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,1 L9,5 L0,9 z"/></marker>
+<marker id="life-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-accent" d="M0,1 L9,5 L0,9 z"/></marker>
+</defs>
+<text class="small" x="10" y="22">inputs, read once</text>
+<rect class="box" x="10" y="34" width="200" height="56" rx="5"/>
+<text class="title" x="24" y="57">scenario + deployment</text>
+<text class="small" x="24" y="75">what runs, and how it is laid out</text>
+<rect class="box" x="10" y="104" width="200" height="56" rx="5"/>
+<text class="title" x="24" y="127">model graph, chip</text>
+<text class="small" x="24" y="145">from blis-catalog</text>
+<rect class="box" x="10" y="174" width="200" height="56" rx="5"/>
+<text class="title" x="24" y="197">coefficient sets</text>
+<text class="small" x="24" y="215">from blis-registry</text>
+<path class="edge" d="M210,62 L274,120" marker-end="url(#life-ah)"/>
+<path class="edge" d="M210,132 L274,132" marker-end="url(#life-ah)"/>
+<path class="edge" d="M210,202 L274,144" marker-end="url(#life-ah)"/>
+<rect class="box-accent" x="276" y="96" width="140" height="72" rx="5"/>
+<text class="title accent-text mono" x="290" y="124">New</text>
+<text class="small" x="290" y="142">validate, fill in</text>
+<text class="small" x="290" y="157">defaults, precompute</text>
+<path class="edge-accent" d="M416,132 L456,132" marker-end="url(#life-ah-accent)"/>
+<rect class="box" x="458" y="96" width="120" height="72" rx="5"/>
+<text class="title mono" x="472" y="124">Kernel</text>
+<text class="small" x="472" y="142">immutable,</text>
+<text class="small" x="472" y="157">safe to share</text>
+<rect class="box-plain dashed" x="606" y="34" width="184" height="112" rx="5"/>
+<text class="small" x="620" y="54">every simulated step</text>
+<text class="mono" x="620" y="80">StepTime(batch)</text>
+<text class="small" x="620" y="100">→ Overlap, NoOverlap,</text>
+<text class="small" x="620" y="115">Bottleneck,</text>
+<text class="small" x="620" y="130">PerResource</text>
+<rect class="box-plain" x="606" y="160" width="184" height="70" rx="5"/>
+<text class="small" x="620" y="180">when sizing memory</text>
+<text class="mono" x="620" y="202">FixedBytes()</text>
+<text class="mono" x="620" y="220">SequenceVariableBytes(n)</text>
+<path class="edge" d="M578,118 L604,100" marker-end="url(#life-ah)"/>
+<path class="edge" d="M578,148 L604,180" marker-end="url(#life-ah)"/>
+<text class="small" x="276" y="196">runs once; refuses a deployment</text>
+<text class="small" x="276" y="211">the engine would not start</text>
+</svg>
+<figcaption>A kernel's life. <code>New</code> reads the inputs once and either refuses the deployment or returns a kernel. The kernel holds no mutable state, so a simulator can call it from any goroutine at any simulated instant and get the same answer for the same batch.</figcaption>
+</figure>

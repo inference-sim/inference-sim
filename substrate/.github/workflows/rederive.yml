@@ -1,0 +1,90 @@
+name: rederive
+
+# The re-derivation gates, with the data present.
+#
+# `validate.yml`'s derivation-tests job runs validator/ without the AISimulate sweeps, so
+# test_generated_from_aisimulate.py and test_writers_are_idempotent.py skip there: a pull
+# request that hand-edits a fitted value, or changes a writer, was caught only if its
+# author ran them locally (inference-sim/blis-registry#36). This job checks out AISimulate
+# at the commit every committed value re-derives at and runs the whole suite
+# (scripts/rederive.sh), so a value that its own fitter no longer produces fails.
+#
+# Manual only (Actions -> rederive -> Run workflow): the checkout is ~135 MB and the gates
+# take ~20 minutes, so it no longer runs on every pull request or push. Run the same gates
+# locally, where the data is present, with scripts/rederive.sh before a pull request that
+# changes a fitted value, a writer or a test.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rederive:
+    runs-on: ubuntu-latest
+    env:
+      # The AISimulate commit the committed values re-derive at. Pinned by SHA because the
+      # repository's history moves; bump it deliberately, together with the diff the
+      # writers produce at the new commit (docs/reproducing-coefficients.md).
+      AISIMULATE_SHA: 2f0f4cd8606d580567b253d02f3d699fe36db865
+      # A second AISimulate commit, for one family: the h100/h200 fp16 all-reduce triples on
+      # vLLM 0.31.0's custom all-reduce (scripts/relane_allreduce_vllm.py), a sweep the main
+      # pin predates. Moving AISIMULATE_SHA itself would refit every family at once.
+      AISIMULATE_ALLREDUCE_SHA: 7980e9500c00d9f85d7f296451d12768a743c70e
+      # The InferenceX commit validator/testdata/inferencex vendors the golden acceptance
+      # curves from (VENDORED.md), and INFERENCEX_SHA in emit_acceptance_profiles.py.
+      INFERENCEX_SHA: 9fa76586ed1ef66caadc6b95a9b1448acde94c6b
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The whole aisimulate_core package (~135 MB): the sweeps under systems/, the model
+      # configs fit_deepseek_v41_h200.py asserts geometry from, and the sdk/ source
+      # emit_memory.py reads NVIDIA's activation table out of. A narrower checkout once
+      # left sdk/ out and failed the memory writer.
+      - name: Check out AISimulate (pinned, the aisimulate_core package only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisimulate
+          ref: ${{ env.AISIMULATE_SHA }}
+          path: aisimulate
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisimulate/src/aisimulate_core
+
+      - name: Check out AISimulate at the all-reduce pin (h100/h200 comm only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aisimulate
+          ref: ${{ env.AISIMULATE_ALLREDUCE_SHA }}
+          path: aisimulate-allreduce
+          fetch-depth: 1
+          sparse-checkout: |
+            python/aisimulate/src/aisimulate_core/systems/data/h100_sxm/comm
+            python/aisimulate/src/aisimulate_core/systems/data/h200_sxm/comm
+
+      - name: Check out InferenceX (pinned to the vendored commit)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: SemiAnalysisAI/InferenceX
+          ref: ${{ env.INFERENCEX_SHA }}
+          path: inferencex
+          fetch-depth: 1
+          sparse-checkout: |
+            inferencex-e2e/infx/golden_al_distribution
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: registry/scripts/requirements-fit.txt
+
+      - name: Install the fitters' dependencies
+        run: pip install -r registry/scripts/requirements-fit.txt
+
+      - name: Run every gate with the data present
+        env:
+          AISIMULATE_DATA: ${{ github.workspace }}/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
+          BLIS_CATALOG: ${{ github.workspace }}/catalog
+          AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data
+          INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
+        working-directory: registry
+        run: scripts/rederive.sh

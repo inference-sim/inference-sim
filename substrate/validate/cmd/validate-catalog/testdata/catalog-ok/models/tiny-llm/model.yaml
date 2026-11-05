@@ -1,0 +1,6 @@
+name: tiny-llm
+source:
+  provider: huggingface
+  repo: example/Tiny-LLM
+  revision: 0123456789abcdef0123456789abcdef01234567
+  retrieved: 2026-01-01

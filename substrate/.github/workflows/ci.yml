@@ -1,0 +1,195 @@
+name: ci
+
+# One workflow for the whole repository, with a job per directory (design §3.4). Each job runs
+# when its own paths change. The cross-directory checks run on every change, because catching
+# a mismatch between directories is why the four repositories became one: the validators run
+# against the data, and the cost model against the data it embeds.
+#
+# Every action is pinned by commit (X21). The comment beside each pin names its release.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: changed directories
+    runs-on: ubuntu-latest
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+      kernel: ${{ steps.filter.outputs.kernel }}
+      catalog: ${{ steps.filter.outputs.catalog }}
+      registry: ${{ steps.filter.outputs.registry }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # On a push with no usable base, or a manual run, every job runs.
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            for k in contracts kernel catalog registry docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            exit 0
+          fi
+          changed=$(git diff --name-only "$BASE" HEAD)
+          has() { if printf '%s\n' "$changed" | grep -Eq "$1"; then echo true; else echo false; fi; }
+          # A change to go.mod, go.sum, the workflow or the root package affects every Go job.
+          shared='^(go\.mod|go\.sum|[^/]+\.go|\.github/)'
+          echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/")" >> "$GITHUB_OUTPUT"
+          echo "kernel=$(has "$shared|^kernel/|^contracts/")"             >> "$GITHUB_OUTPUT"
+          echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
+          echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
+          echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
+
+  # Formatting, vet and build for the whole module, on every change. They are fast, and a
+  # change in one directory can break the build of another.
+  go:
+    name: format, vet and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - run: go vet ./...
+      - run: go build ./...
+      # The root package's tests: one module, no nested go.mod, and the module zip under
+      # 100 MB (SUB-13).
+      - run: go test -count=1 .
+
+  contracts:
+    name: contracts and validators
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go test -race -count=1 ./contracts/... ./validate/... ./tools/...
+
+  kernel:
+    name: cost model
+    needs: changes
+    if: needs.changes.outputs.kernel == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      # The scoring suite needs measurement corpora this repository does not distribute, so it
+      # is compiled and vetted here but not run.
+      - run: go vet -tags scoring ./kernel/...
+      - run: go test -count=1 -timeout 30m ./kernel/...
+      # The race detector reports races between goroutines, and the one place the cost model
+      # starts any is the concurrency test: a kernel is safe to call from many goroutines.
+      - run: go test -race -count=1 -run TestStepTimeIsPureAndSafeUnderConcurrency ./kernel/
+      - name: Python script tests that need no corpus
+        run: |
+          python3 kernel/scripts/test_extract_inferencex_engine_settings.py
+          python3 kernel/scripts/test_gen_aisimulate_scenarios.py
+
+  # Every catalog entry validates, and every model graph is what the deriver produces from
+  # its vendor configuration. The validator is this repository's own, so the catalog and the
+  # code that reads it are checked at the same commit.
+  catalog:
+    name: catalog
+    needs: changes
+    if: needs.changes.outputs.catalog == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go run ./validate/cmd/validate-catalog catalog
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install -r catalog/scripts/requirements-dev.txt
+      - name: Every graph re-derives from its vendor configuration
+        working-directory: catalog
+        run: python3 scripts/derive_graph.py --check
+      - name: The deriver's tests
+        working-directory: catalog
+        run: python3 -m pytest tests -q
+
+  # Every coefficient set validates through the Go types, and the registry's derivation
+  # tests pass. The full re-derivation with the AISimulate sweeps present is rederive.yml.
+  registry:
+    name: registry
+    needs: changes
+    if: needs.changes.outputs.registry == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go run ./validate/cmd/validate-registry registry
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - run: pip install -r registry/scripts/requirements.txt
+      - name: The derivation and value-preservation tests
+        working-directory: registry
+        run: python -m pytest validator/ -q
+
+  # The docs site builds with every warning an error: a broken link, a missing snippet, a page
+  # left out of the navigation. The hooks render the catalog's and the registry's reference
+  # pages from the committed data, so a data change can break the site too.
+  docs:
+    name: docs build
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install -r docs/requirements.txt pytest
+      - env:
+          DOCS_RELEASE: main
+        run: python -m pytest docs/hooks -q
+      - env:
+          DOCS_SOURCE_REF: ${{ github.sha }}
+          DOCS_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
+        run: mkdocs build --strict
+
+  # The one check branch protection requires. A job its paths did not trigger counts as
+  # passed; a job that ran and failed, or was cancelled, fails this one (X16, X17).
+  required:
+    name: required
+    if: always()
+    needs: [changes, go, contracts, kernel, catalog, registry, docs]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          bad=$(printf '%s' "$RESULTS" | python3 -c 'import json,sys; n=json.load(sys.stdin); print(" ".join(k for k,v in n.items() if v["result"] not in ("success","skipped")))')
+          if [ -n "$bad" ]; then echo "failed or cancelled: $bad"; exit 1; fi
+          echo "every job that ran passed"

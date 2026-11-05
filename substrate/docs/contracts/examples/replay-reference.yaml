@@ -1,0 +1,17 @@
+kind: Scenario
+name: agentx-mvp-c32-on-h200
+model: deepseek-v4-pro
+coefficients:
+  - cost-model-primitives
+engine_version: "0.31.0"
+# --8<-- [start:workload]
+workload:
+  replay:
+    workload: workload-replay
+    concurrency: 32
+    grace_period_s: 1800
+# --8<-- [end:workload]
+cluster:
+  hardware: h200
+  nodes: 1
+  gpus_per_node: 8

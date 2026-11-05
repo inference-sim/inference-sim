@@ -1,0 +1,6 @@
+name: minimax-m3-mxfp8
+source:
+  provider: huggingface
+  repo: MiniMaxAI/MiniMax-M3-MXFP8
+  revision: c5454eb03678d8710e54a4e0fc681b9f3b4a3dba
+  retrieved: 2026-10-16

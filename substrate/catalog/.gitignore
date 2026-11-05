@@ -1,0 +1,31 @@
+# The payload is YAML and JSON, so this file deliberately ignores
+# NOTHING by extension. Before adding a pattern, check that it cannot
+# match:
+#   models/*/config.json   models/*/model.yaml
+#   hardware/*.yaml        workloads/*.yaml       devices/*.yaml
+
+# Directory patterns are ANCHORED with a leading slash so they match only at
+# the repo root. An unanchored `scratch/` would also match `models/scratch/`
+# and silently swallow that model — the exact NS-6 failure this file guards.
+
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+/.idea/
+/.vscode/
+
+# Scratch clones, as a safety net; see the convention in the design note
+/scratch/
+/local/
+
+# Tooling caches from the catalog CI gate (scripts/, tests/). Anchored so they
+# match only these known tooling locations, never a catalog namespace.
+/__pycache__/
+/scripts/__pycache__/
+/tests/__pycache__/
+/.pytest_cache/
+/.venv/
+/node_modules/
+

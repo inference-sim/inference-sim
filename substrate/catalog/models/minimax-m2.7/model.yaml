@@ -1,0 +1,6 @@
+name: minimax-m2.7
+source:
+  provider: huggingface
+  repo: MiniMaxAI/MiniMax-M2.7
+  revision: d494266a4affc0d2995ba1fa35c8481cbd84294b
+  retrieved: 2026-10-03

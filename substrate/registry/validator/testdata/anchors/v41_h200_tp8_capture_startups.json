@@ -1,0 +1,66 @@
+{
+ "source": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/35494445931 (head bc2b235fc26a), server.log of each tp8 artifact",
+ "vllm_build": "vLLM 0.29.1rc1.dev128+gcd10ed6f9",
+ "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+ "hardware": "h200",
+ "tensor_parallel_size": 8,
+ "rank": 0,
+ "units": "GiB per rank, as logged (two decimals)",
+ "startups": [
+  {
+   "artifact": "tp8_c1_deb173ce194549605de2",
+   "server_log_sha256": "29eac2bfb36f34cc143f6c30fccf7b59cbb9b5e144d0a91513579877c9bebba1",
+   "max_cudagraph_capture_size": 64,
+   "max_num_seqs": 1024,
+   "max_num_batched_tokens": 8192,
+   "num_spec_tokens": 5,
+   "estimated_gib": 1.69,
+   "profiling_took_gib": 1.34,
+   "actual_gib": 0.75
+  },
+  {
+   "artifact": "tp8_c16_99db02ae95ab4b6c360c",
+   "server_log_sha256": "80305c5324997534763973b35f23506ff914b1413a37ef7d2b73c83e7fdc004a",
+   "max_cudagraph_capture_size": 128,
+   "max_num_seqs": 1024,
+   "max_num_batched_tokens": 8192,
+   "num_spec_tokens": 5,
+   "estimated_gib": 2.71,
+   "profiling_took_gib": 1.93,
+   "actual_gib": 1.38
+  },
+  {
+   "artifact": "tp8_c32_9ae72a8173e9d098e1f4",
+   "server_log_sha256": "ae255e819e4895e81c2115d896c64c7f1e2fe6527d3d3359738ca17efe9c8740",
+   "max_cudagraph_capture_size": 256,
+   "max_num_seqs": 1024,
+   "max_num_batched_tokens": 8192,
+   "num_spec_tokens": 5,
+   "estimated_gib": 4.9,
+   "profiling_took_gib": 3.32,
+   "actual_gib": 2.52
+  },
+  {
+   "artifact": "tp8_c64_e205cf6ca36e0ced6d12",
+   "server_log_sha256": "a4ca8bbf0e873118e91d9670ab40088efda705e6bc9a9e8081c7c7220889a78e",
+   "max_cudagraph_capture_size": 512,
+   "max_num_seqs": 1024,
+   "max_num_batched_tokens": 8192,
+   "num_spec_tokens": 5,
+   "estimated_gib": 8.61,
+   "profiling_took_gib": 5.49,
+   "actual_gib": 4.65
+  },
+  {
+   "artifact": "tp8_c128_a6bcf280494821203458",
+   "server_log_sha256": "993c97fa03ceebd920365d935cddcb96d49227f6e512ab2605ab60a0b739d85e",
+   "max_cudagraph_capture_size": 1024,
+   "max_num_seqs": 1024,
+   "max_num_batched_tokens": 8192,
+   "num_spec_tokens": 5,
+   "estimated_gib": 16.67,
+   "profiling_took_gib": 10.3,
+   "actual_gib": 9.33
+  }
+ ]
+}

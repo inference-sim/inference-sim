@@ -1,0 +1,6 @@
+name: nemotron-3.5-lightning-30b-a3b-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4
+  revision: bee7596271d1495f6992ae224aefde4410e816b8
+  retrieved: 2026-09-16

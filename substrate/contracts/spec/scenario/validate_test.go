@@ -1,0 +1,143 @@
+package scenario
+
+import (
+	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+)
+
+// multiNode is the immutable problem behind a prefill/decode cluster: a model on 60
+// H200 nodes behind a 400G fabric. The mutable layout that runs on it is a Deployment,
+// which this package no longer carries.
+func multiNode() *Scenario {
+	return &Scenario{
+		Kind: "Scenario", Name: "glm-5.3-60node-h200",
+		Model: "glm-5.3", Coefficients: []string{"cost-model-primitives-h200"},
+		EngineVersion: "0.29.0",
+		Cluster: Cluster{Hardware: "h200", Fabric: "ib-400g", Nodes: 60,
+			GPUsPerNode: 8, Storage: []string{"cpu_dram", "nvme_gen4"}},
+	}
+}
+
+// singleNode is the colocated problem the published Granite runs pose: eight GPUs on
+// one node, no fabric because nothing crosses a node.
+func singleNode() *Scenario {
+	return &Scenario{
+		Kind: "Scenario", Name: "granite-230b-h100",
+		Model: "granite-5-230b", Coefficients: []string{"cost-model-primitives-h100"},
+		EngineVersion: "0.29.0",
+		Cluster:       Cluster{Hardware: "h100", Nodes: 1, GPUsPerNode: 8},
+	}
+}
+
+func TestValidScenariosPass(t *testing.T) {
+	for _, s := range []*Scenario{multiNode(), singleNode()} {
+		if p := s.Validate(); !p.OK() {
+			t.Fatalf("%s rejected:\n%s", s.Name, p.Error())
+		}
+	}
+}
+
+// TestScenarioWorkloadBinding covers the "what traffic" slot the Scenario now carries: a
+// capacity-only scenario omits it, each arm is accepted, and an ill-formed binding
+// surfaces through the Scenario's own validation (the exactly-one law is the binding's,
+// and the Scenario must not swallow it).
+func TestScenarioWorkloadBinding(t *testing.T) {
+	traceArm := &workload.Binding{Trace: &workload.TraceRef{
+		Data:   "traces/run.csv",
+		Header: workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: workload.ModeReal},
+	}}
+	pass := map[string]*workload.Binding{
+		"no workload (capacity question)": nil,
+		"shape arm":                       {Shape: "chatbot"},
+		"trace arm":                       traceArm,
+	}
+	for name, b := range pass {
+		t.Run(name, func(t *testing.T) {
+			s := singleNode()
+			s.Workload = b
+			if p := s.Validate(); !p.OK() {
+				t.Fatalf("expected a valid scenario, got:\n%s", p.Error())
+			}
+		})
+	}
+
+	fail := map[string]*workload.Binding{
+		"both arms":     {Shape: "chatbot", Trace: traceArm.Trace},
+		"empty binding": {},
+		"invalid trace": {Trace: &workload.TraceRef{Data: "t.csv"}}, // header missing required fields
+	}
+	for name, b := range fail {
+		t.Run(name, func(t *testing.T) {
+			s := singleNode()
+			s.Workload = b
+			if p := s.Validate(); p.OK() {
+				t.Fatal("expected the scenario to reject an ill-formed workload binding")
+			}
+		})
+	}
+}
+
+func TestClusterGPUs(t *testing.T) {
+	if got := (Cluster{Nodes: 60, GPUsPerNode: 8}).GPUs(); got != 480 {
+		t.Errorf("GPUs() = %d, want 480", got)
+	}
+}
+
+func TestRejects(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*Scenario)
+	}{
+		{"wrong kind", func(s *Scenario) { s.Kind = "Deployment" }},
+		{"no model", func(s *Scenario) { s.Model = "" }},
+		{"no hardware", func(s *Scenario) { s.Cluster.Hardware = "" }},
+		{"no engine version", func(s *Scenario) { s.EngineVersion = "" }},
+		{"no coefficients", func(s *Scenario) { s.Coefficients = nil }},
+		{"zero nodes", func(s *Scenario) { s.Cluster.Nodes = 0 }},
+		{"multi-node without a fabric", func(s *Scenario) { s.Cluster.Fabric = "" }},
+		{"rack not a multiple of node", func(s *Scenario) { s.Cluster.GPUsPerRack = 70 }},
+		{"empty storage class", func(s *Scenario) {
+			s.Cluster.Storage = []string{""}
+		}},
+		{"duplicate storage class", func(s *Scenario) {
+			s.Cluster.Storage = []string{"cpu_dram", "cpu_dram"}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := multiNode()
+			tc.mutate(s)
+			if p := s.Validate(); p.OK() {
+				t.Fatal("expected rejection, got none")
+			}
+		})
+	}
+}
+
+// The acceptance pin is optional, and a present one must be well formed.
+func TestScenarioAcceptancePin(t *testing.T) {
+	length := 2.8
+	for _, c := range []struct {
+		name string
+		pin  *acceptance.Pin
+		ok   bool
+	}{
+		{"omitted", nil, true},
+		{"a named set", &acceptance.Pin{Profiles: "inferencex-golden-al"}, true},
+		{"an inline value", &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: 3, AcceptanceLength: &length}}, true},
+		{"empty", &acceptance.Pin{}, false},
+		{"set and value", &acceptance.Pin{Profiles: "x",
+			Value: &acceptance.Value{NumSpecTokens: 3, AcceptanceLength: &length}}, false},
+		{"value above K+1", &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: 1, AcceptanceLength: &length}}, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := singleNode()
+			s.Acceptance = c.pin
+			if p := s.Validate(); p.OK() != c.ok {
+				t.Errorf("OK = %v, want %v:\n%s", p.OK(), c.ok, p.Error())
+			}
+		})
+	}
+}

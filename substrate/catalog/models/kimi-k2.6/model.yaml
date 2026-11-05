@@ -1,0 +1,6 @@
+name: kimi-k2.6
+source:
+  provider: huggingface
+  repo: moonshotai/Kimi-K2.6
+  revision: 7eb5002f6aadc958aed6a9177b7ed26bb94011bb
+  retrieved: 2026-10-16

@@ -1,0 +1,63 @@
+<figure class="diagram" markdown="0">
+<svg viewBox="0 0 800 350" role="img" aria-labelledby="fig-docs-title fig-docs-desc">
+<title id="fig-docs-title">How the documents refer to each other</title>
+<desc id="fig-docs-desc">A scenario names catalog entries by key: model, cluster.hardware, cluster.fabric, cluster.storage and workload.shape, and names registry coefficient sets under coefficients. A deployment is applied to a scenario. An evaluation run names the scenario it measured.</desc>
+<defs>
+<marker id="docs-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,1 L9,5 L0,9 z"/></marker>
+<marker id="docs-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-accent" d="M0,1 L9,5 L0,9 z"/></marker>
+</defs>
+<rect class="box-plain" x="10" y="12" width="200" height="326" rx="8"/>
+<text class="small" x="24" y="32">blis-catalog</text>
+<rect class="box" x="24" y="44" width="172" height="44" rx="4"/>
+<text x="36" y="63">Model graph</text>
+<text class="mono" x="36" y="79">models/&lt;name&gt;/</text>
+<rect class="box" x="24" y="102" width="172" height="44" rx="4"/>
+<text x="36" y="121">Chip</text>
+<text class="mono" x="36" y="137">hardware/&lt;name&gt;.yaml</text>
+<rect class="box" x="24" y="160" width="172" height="44" rx="4"/>
+<text x="36" y="179">Fabric</text>
+<text class="mono" x="36" y="195">networks/&lt;name&gt;.yaml</text>
+<rect class="box" x="24" y="218" width="172" height="44" rx="4"/>
+<text x="36" y="237">Storage classes</text>
+<text class="mono" x="36" y="253">devices/storage.yaml</text>
+<rect class="box" x="24" y="276" width="172" height="44" rx="4"/>
+<text x="36" y="295">Workload shape</text>
+<text class="mono" x="36" y="311">workloads/&lt;name&gt;.yaml</text>
+<rect class="box-accent" x="370" y="118" width="170" height="110" rx="5"/>
+<text class="title accent-text" x="384" y="144">Scenario</text>
+<text class="small" x="384" y="164">the problem, fixed:</text>
+<text class="small" x="384" y="180">model, cluster, traffic,</text>
+<text class="small" x="384" y="196">coefficients, engine</text>
+<text class="small" x="384" y="212">version</text>
+<path class="edge-accent" d="M340,66 L198,66" marker-end="url(#docs-ah-accent)"/>
+<text class="mono accent-text" x="214" y="60">model</text>
+<path class="edge-accent" d="M340,124 L198,124" marker-end="url(#docs-ah-accent)"/>
+<text class="mono accent-text" x="214" y="118">cluster.hardware</text>
+<path class="edge-accent" d="M340,182 L198,182" marker-end="url(#docs-ah-accent)"/>
+<text class="mono accent-text" x="214" y="176">cluster.fabric</text>
+<path class="edge-accent" d="M340,240 L198,240" marker-end="url(#docs-ah-accent)"/>
+<text class="mono accent-text" x="214" y="234">cluster.storage</text>
+<path class="edge-accent" d="M340,298 L198,298" marker-end="url(#docs-ah-accent)"/>
+<text class="mono accent-text" x="214" y="292">workload.shape</text>
+<path class="edge-accent" d="M340,66 L340,298"/>
+<path class="edge-accent" d="M370,182 L340,182"/>
+<rect class="box-plain" x="600" y="12" width="190" height="104" rx="8"/>
+<text class="small" x="614" y="32">blis-registry</text>
+<rect class="box" x="614" y="44" width="162" height="56" rx="4"/>
+<text x="626" y="65">Coefficient sets</text>
+<text class="mono" x="626" y="85">coefficients/&lt;name&gt;.yaml</text>
+<path class="edge-accent" d="M540,135 L612,90" marker-end="url(#docs-ah-accent)"/>
+<text class="mono accent-text" x="548" y="146">coefficients</text>
+<rect class="box" x="614" y="162" width="162" height="56" rx="4"/>
+<text class="title" x="626" y="184">Deployment</text>
+<text class="small" x="626" y="204">the choices, varied</text>
+<path class="edge" d="M614,184 L542,184" marker-end="url(#docs-ah)"/>
+<text class="small" x="552" y="178">made against</text>
+<rect class="box" x="614" y="262" width="162" height="56" rx="4"/>
+<text class="title" x="626" y="284">Evaluation run</text>
+<text class="small" x="626" y="304">a measurement</text>
+<path class="edge" d="M614,290 L455,290 L455,231" marker-end="url(#docs-ah)"/>
+<text class="mono" x="520" y="283">scenario</text>
+</svg>
+<figcaption>A scenario refers to everything else by name. Each arrow is labeled with the scenario key that holds the name. A deployment names catalog entries in one place only: each offload tier names a storage class, which must be one the scenario's cluster lists, if the cluster lists any.</figcaption>
+</figure>

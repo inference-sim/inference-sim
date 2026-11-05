@@ -1,0 +1,6 @@
+name: kimi-k3
+source:
+  provider: huggingface
+  repo: moonshotai/Kimi-K3
+  revision: f831ab66814297da540d832a5235f8e904f29d06
+  retrieved: 2026-09-16

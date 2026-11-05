@@ -1,0 +1,6 @@
+name: mixtral-8x22b-v0.1
+source:
+  provider: huggingface
+  repo: mistralai/Mixtral-8x22B-v0.1
+  revision: e1cd34ff1747406fb2277635ed25242803009bc2
+  retrieved: 2026-09-16

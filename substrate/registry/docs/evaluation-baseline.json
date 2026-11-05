@@ -1,0 +1,46 @@
+{
+  "framework": "vllm",
+  "length_range_ratio": "1.0",
+  "revisions": [
+    "scorer   /private/tmp/blis-kernel-wt: e5a0a110 feat(cli): reach blis-latency-kernel from blis run and replay",
+    "catalog  /private/tmp/catalog-b25fb03: b25fb03 Merge pull request #15 from inference-sim/modeling"
+  ],
+  "tiers": {
+    "measured": {
+      "TPOT shape": [
+        11.63,
+        "292"
+      ],
+      "TPOT mape": [
+        11.95,
+        "360"
+      ],
+      "TTFT shape": [
+        25.32,
+        "288"
+      ],
+      "TTFT mape": [
+        31.12,
+        "356"
+      ]
+    },
+    "resolved": {
+      "TPOT shape": [
+        10.34,
+        "168"
+      ],
+      "TPOT mape": [
+        17.64,
+        "213"
+      ],
+      "TTFT shape": [
+        16.47,
+        "168"
+      ],
+      "TTFT mape": [
+        22.82,
+        "213"
+      ]
+    }
+  }
+}

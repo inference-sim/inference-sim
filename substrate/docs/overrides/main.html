@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{#- Each section of the site (contracts, catalog, registry, cost model) keeps the styling its
+    pages were written with. The stylesheet scopes a section's own rules under
+    .section-<name>, which is set here from the page's top-level directory. -#}
+{% block content %}
+  {%- set section = page.file.src_uri.split("/")[0] if page and page.file and "/" in page.file.src_uri else "home" -%}
+  <div class="section-{{ section }}">
+    {{ super() }}
+  </div>
+{% endblock %}
+
+{% block outdated %}
+  These pages describe a version of blis-substrate other than the newest release.
+  <a href="{{ '../' ~ base_url }}"><strong>Go to the latest release.</strong></a>
+{% endblock %}

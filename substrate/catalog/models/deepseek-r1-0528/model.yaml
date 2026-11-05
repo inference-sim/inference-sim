@@ -1,0 +1,6 @@
+name: deepseek-r1-0528
+source:
+  provider: huggingface
+  repo: deepseek-ai/DeepSeek-R1-0528
+  revision: 4236a6af538feda4548eca9ab308586007567f52
+  retrieved: 2026-10-16
