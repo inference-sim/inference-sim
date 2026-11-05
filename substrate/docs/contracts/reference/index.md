@@ -24,6 +24,7 @@ source; each page links to it.
 | [Evaluation run](evaluation.md) | `EvaluationRun` | [`spec/evaluation`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/evaluation) |
 | [Measured run](measurement.md) | `MeasuredRun`, the licence registry | [`spec/measurement`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/measurement) |
 | [Result](result.md) | `Result` | [`spec/result`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/result) |
+| [Field list](fields.md) | `FieldList`, an engine release's `fields.json` | [`spec/fields`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/fields) |
 | [Kernel interface](kernel.md) | the `Kernel` a cost model implements | [`kernel`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/kernel) |
 | [Engine interface](engine.md) | the `Engine` an inference-engine model implements, its `Spec` envelope and its contract checks | [`engine`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/engine) |
 | [Router contract](embed.md) | the `Runtime` a simulator implements, and the `Router` a hosted router implements | [`embed`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/embed) |
