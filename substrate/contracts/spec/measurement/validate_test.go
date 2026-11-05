@@ -138,7 +138,7 @@ func TestRejects(t *testing.T) {
 		{"unknown extraction", "source.extraction.method", func(r *MeasuredRun) { r.Source.Extraction.Method = "eval" }},
 		{"bad retrieval time", "source.retrieved_utc", func(r *MeasuredRun) { r.Source.RetrievedUTC = "yesterday" }},
 		{"no licence ref", "source.license_ref", func(r *MeasuredRun) { r.Source.LicenseRef = "" }},
-		{"invalid cluster", "cluster.gpus_per_node", func(r *MeasuredRun) { r.Cluster.GPUsPerNode = 0 }},
+		{"invalid cluster", "cluster.gpus_per_node", func(r *MeasuredRun) { r.Cluster.GPUsPerNode = -1 }},
 		{"invalid deployment", "deployment.pools[0].parallel.tp", func(r *MeasuredRun) { r.Deployment.Pools[0].Parallel.TP = 0 }},
 		{"deployment overfills cluster", "deployment.pools[0].parallel", func(r *MeasuredRun) { r.Deployment.Pools[0].Parallel.TP = 8 }},
 		{"invalid router", "router.kind", func(r *MeasuredRun) { r.Router.Kind = "haproxy" }},

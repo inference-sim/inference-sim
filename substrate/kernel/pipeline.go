@@ -388,10 +388,7 @@ func (k *Kernel) pipelineRecvGatherSeconds(st *pipelineStage, tokens float64) (o
 
 // sameRack reports whether every stage sits in one NVLink rack domain.
 func (k *Kernel) sameRack() bool {
-	rack := k.layout.GPUsPerRack
-	if rack <= 0 {
-		rack = k.chip.GPUsPerRack
-	}
+	rack := k.layout.GPUsPerRack // the resolved rack, which is the chip's
 	if rack <= 0 {
 		return false
 	}

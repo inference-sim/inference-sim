@@ -32,6 +32,12 @@ type Input struct {
 	Scenario   *scenario.Scenario
 	Deployment *deployment.Deployment
 	Model      *model.Graph
+	// Packaging is the scenario cluster's resolved packaging (scenario.Cluster.Packaging):
+	// the GPUs per node and per rack, from the scenario or the chip's catalog entry. A rule
+	// that needs a node size reads it here, never from Scenario.Cluster, which is zero where
+	// the scenario leaves the value to the catalog. Nil when the caller could not resolve
+	// it; a rule then has no node size and checks nothing that needs one.
+	Packaging *scenario.Packaging
 }
 
 // Rule is one named, version-scoped check.

@@ -63,7 +63,20 @@ func ValidateAgainstCatalog(b Bundle, catalogRoot, registryRoot string) Report {
 
 	// hardware → hardware/<name>.yaml, fabric → networks/<name>.yaml. Both are single files
 	// named by stem (#27: the stem is the identity).
-	resolveFile(field, "references.hardware", catalogRoot, "hardware", s.Cluster.Hardware)
+	//
+	// The chip's entry also owns the cluster's packaging where its product fixes it
+	// (scenario.Cluster.Packaging), so a hardware reference that resolves is loaded and the
+	// cluster's packaging resolved against it: a gpus_per_node or gpus_per_rack that
+	// contradicts the entry is refused here, at scenario.cluster.
+	if resolveFile(field, "references.hardware", catalogRoot, "hardware", s.Cluster.Hardware) {
+		chip, err := LoadChip(filepath.Join(catalogRoot, "hardware", s.Cluster.Hardware+".yaml"))
+		if err != nil {
+			field.Field("references.hardware", "%q did not load, so the cluster's packaging cannot be resolved: %v",
+				s.Cluster.Hardware, err)
+		} else {
+			field.Merge("scenario.cluster", s.Cluster.ValidatePackaging(chip))
+		}
+	}
 	if s.Cluster.Fabric != "" {
 		resolveFile(field, "references.fabric", catalogRoot, "networks", s.Cluster.Fabric)
 	}

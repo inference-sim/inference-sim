@@ -81,8 +81,14 @@ func TestScenarioWorkloadBinding(t *testing.T) {
 }
 
 func TestClusterGPUs(t *testing.T) {
-	if got := (Cluster{Nodes: 60, GPUsPerNode: 8}).GPUs(); got != 480 {
-		t.Errorf("GPUs() = %d, want 480", got)
+	if got, err := (Cluster{Hardware: "h200", Nodes: 60, GPUsPerNode: 8}).GPUs(hgx()); err != nil || got != 480 {
+		t.Errorf("GPUs() = %d, %v, want 480", got, err)
+	}
+	if got, err := (Cluster{Hardware: "gb200-nvl72", Nodes: 18}).GPUs(nvl72()); err != nil || got != 72 {
+		t.Errorf("GPUs() on NVL72 trays = %d, %v, want 72", got, err)
+	}
+	if _, err := (Cluster{Hardware: "gb200-nvl72", Nodes: 18, GPUsPerNode: 8}).GPUs(nvl72()); err == nil {
+		t.Error("GPUs() on a cluster contradicting its chip: got no error")
 	}
 }
 
@@ -97,6 +103,8 @@ func TestRejects(t *testing.T) {
 		{"no engine version", func(s *Scenario) { s.EngineVersion = "" }},
 		{"no coefficients", func(s *Scenario) { s.Coefficients = nil }},
 		{"zero nodes", func(s *Scenario) { s.Cluster.Nodes = 0 }},
+		{"negative gpus per node", func(s *Scenario) { s.Cluster.GPUsPerNode = -8 }},
+		{"negative gpus per rack", func(s *Scenario) { s.Cluster.GPUsPerRack = -72 }},
 		{"multi-node without a fabric", func(s *Scenario) { s.Cluster.Fabric = "" }},
 		{"rack not a multiple of node", func(s *Scenario) { s.Cluster.GPUsPerRack = 70 }},
 		{"empty storage class", func(s *Scenario) {

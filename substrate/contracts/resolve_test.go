@@ -20,9 +20,10 @@ func scenarioRef() *scenario.Scenario {
 		Model:         "deepseek-v3",
 		EngineVersion: "0.29.0",
 		Cluster: scenario.Cluster{
-			Hardware: "h200",
-			Fabric:   "ib-400g",
-			Nodes:    2,
+			Hardware:    "h200",
+			Fabric:      "ib-400g",
+			Nodes:       2,
+			GPUsPerNode: 8,
 		},
 	}
 }
@@ -235,5 +236,44 @@ func TestResolveNilScenarioIsReported(t *testing.T) {
 	}
 	if !strings.Contains(rep.Field.Error(), "no scenario") {
 		t.Errorf("the error should say there was no scenario to resolve; got:\n%s", rep.Field.Error())
+	}
+}
+
+// The hardware reference also resolves the cluster's packaging against the chip's entry
+// (SUB-3): a scenario contradicting the entry is refused at the field it states, and the
+// same scenario restating the entry, or omitting what the entry fixes, resolves (SIM-9).
+func TestResolveAgainstCatalogChecksPackaging(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		hardware string
+		gpn, gpr int
+		refused  string
+	}{
+		{"NVL72 trays omitted", "gb200-nvl72", 0, 0, ""},
+		{"NVL72 trays restated", "gb200-nvl72", 4, 72, ""},
+		{"NVL72 at 8 per node", "gb200-nvl72", 8, 0, "scenario.cluster.gpus_per_node"},
+		{"NVL72 at 12 per rack", "gb200-nvl72", 4, 12, "scenario.cluster.gpus_per_rack"},
+		{"H200 at 8 per node", "h200", 8, 0, ""},
+		{"H200 with no node size", "h200", 0, 0, "scenario.cluster.gpus_per_node"},
+		{"H200 with a rack", "h200", 8, 16, "scenario.cluster.gpus_per_rack"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := scenarioRef()
+			s.Cluster.Hardware, s.Cluster.GPUsPerNode, s.Cluster.GPUsPerRack = c.hardware, c.gpn, c.gpr
+			rep := ValidateAgainstCatalog(Bundle{Scenario: s}, catalogFixtures, "")
+			if c.refused == "" {
+				if !rep.OK() {
+					t.Fatalf("refused:\n%s", rep.Field.Error())
+				}
+				return
+			}
+			found := false
+			for _, p := range rep.Field.Errors() {
+				found = found || p.Path == c.refused
+			}
+			if !found {
+				t.Fatalf("not refused at %s:\n%s", c.refused, rep.Field.Error())
+			}
+		})
 	}
 }

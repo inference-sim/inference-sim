@@ -140,16 +140,19 @@ func (f Fabric) Ratio() float64 {
 	return f.IntraNodeBwGBps / inter
 }
 
-// ResolveLayout derives a pool's layout from the scenario, the fabric it runs on, and the
-// engine rules for its declared version.
-func ResolveLayout(s *scenario.Scenario, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
+// ResolveLayout derives a pool's layout from the cluster's resolved packaging
+// (scenario.Cluster.Packaging), the fabric it runs on, and the engine rules for its
+// declared version. It takes the packaging, not the scenario, so the node and rack sizes
+// it prices are the ones the scenario and the chip's catalog entry resolve to, never a
+// field the scenario left to the catalog.
+func ResolveLayout(pk scenario.Packaging, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
 	rules EngineRules) (Layout, error) {
-	return ResolveLayoutFor(s, pool, eng, fab, rules, "")
+	return ResolveLayoutFor(pk, pool, eng, fab, rules, "")
 }
 
 // ResolveLayoutFor is ResolveLayout for a model whose graph names its architecture, which
 // decides whether the model's own sequence parallelism is on.
-func ResolveLayoutFor(s *scenario.Scenario, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
+func ResolveLayoutFor(pk scenario.Packaging, pool deployment.Pool, eng enginesettings.Settings, fab Fabric,
 	rules EngineRules, architecture string) (Layout, error) {
 	pl := pool.Parallel
 	if pl.TP < 1 || pl.DP < 1 {
@@ -158,8 +161,8 @@ func ResolveLayoutFor(s *scenario.Scenario, pool deployment.Pool, eng enginesett
 	l := Layout{
 		TP: pl.TP, PP: pl.PP, DP: pl.DP, PCP: pl.PCP, DCP: pl.DCP,
 		ExpertWidth: pl.ExpertParallelWidth(),
-		GPUsPerNode: s.Cluster.GPUsPerNode,
-		GPUsPerRack: s.Cluster.GPUsPerRack,
+		GPUsPerNode: pk.GPUsPerNode,
+		GPUsPerRack: pk.GPUsPerRack,
 	}
 
 	// The widest group decides how many nodes a collective spans. Expert parallelism is

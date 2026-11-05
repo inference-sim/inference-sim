@@ -631,10 +631,7 @@ func (k *Kernel) crossesNodes(key collKey) bool {
 	// group whose rank footprint fits inside it never reaches the inter-node fabric,
 	// however many trays it spans.
 	if k.fabric.RackIsOneDomain {
-		rack := k.layout.GPUsPerRack
-		if rack <= 0 {
-			rack = k.chip.GPUsPerRack
-		}
+		rack := k.layout.GPUsPerRack // the resolved rack, which is the chip's
 		if footprint := width * k.groupStride(key.Group); rack > 0 && footprint <= rack {
 			return false
 		}

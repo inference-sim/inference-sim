@@ -83,6 +83,9 @@ func (s *Scenario) validateCluster(p *validate.Problems) {
 // document that states a cluster without the rest of a scenario: a measured run records
 // the cluster it ran on, and the coefficients a scenario names are BLIS's choice, not a
 // fact of the measurement.
+//
+// It does not check the cluster's packaging against its chip, which needs the chip's
+// catalog entry: Packaging does, and every validator that holds the entry calls it.
 func (c Cluster) Validate() *validate.Problems {
 	p := &validate.Problems{}
 	if c.Hardware == "" {
@@ -92,8 +95,14 @@ func (c Cluster) Validate() *validate.Problems {
 	if c.Nodes < 1 {
 		p.Field("nodes", "must be at least 1")
 	}
-	if c.GPUsPerNode < 1 {
-		p.Field("gpus_per_node", "must be at least 1")
+	// gpus_per_node and gpus_per_rack may be omitted: whether a value is required, and
+	// whether a stated one is accepted, depends on the chip's catalog entry, which only
+	// Packaging sees. What can be refused without the entry is a value no entry accepts.
+	if c.GPUsPerNode < 0 {
+		p.Field("gpus_per_node", "must be at least 1 when stated, got %d", c.GPUsPerNode)
+	}
+	if c.GPUsPerRack < 0 {
+		p.Field("gpus_per_rack", "must be at least 1 when stated, got %d", c.GPUsPerRack)
 	}
 	if c.GPUsPerRack > 0 && c.GPUsPerNode > 0 && c.GPUsPerRack%c.GPUsPerNode != 0 {
 		p.Field("gpus_per_rack", "%d is not a multiple of gpus_per_node %d",

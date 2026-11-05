@@ -203,8 +203,18 @@ func (in Input) validate(p *validate.Problems) {
 	p.Merge("input.scenario", in.Scenario.Validate())
 	p.Merge("input.deployment", in.Deployment.Validate())
 	c := in.Scenario.Cluster
+	gpusPerNode := c.GPUsPerNode
+	switch {
+	case in.Packaging != nil:
+		p.Merge("input.packaging", in.Packaging.Validate())
+		p.Merge("input.packaging", in.Packaging.ValidateAgainst(c))
+		gpusPerNode = in.Packaging.GPUsPerNode
+	case c.GPUsPerNode == 0:
+		p.Field("input.packaging", "required: the scenario leaves gpus_per_node to the catalog entry of %q, so the Result records the value the run resolved",
+			c.Hardware)
+	}
 	p.Merge("input.deployment", in.Deployment.ValidateAgainstCluster(deployment.ClusterConstraints{
-		Nodes: c.Nodes, GPUsPerNode: c.GPUsPerNode, Storage: c.Storage}))
+		Nodes: c.Nodes, GPUsPerNode: gpusPerNode, Storage: c.Storage}))
 	for i, o := range in.Options {
 		at := fmt.Sprintf("input.options[%d]", i)
 		switch {

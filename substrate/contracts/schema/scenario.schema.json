@@ -101,7 +101,6 @@
         }
       },
       "required": [
-        "gpus_per_node",
         "hardware",
         "nodes"
       ],

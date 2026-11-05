@@ -96,6 +96,13 @@ func scenarioWith(nodes, gpusPerNode int,
 	}
 }
 
+// packagingOf is the packaging a chip that leaves both fields open resolves the test
+// scenario's cluster to: the cluster's own values. The resolver itself is tested in
+// contracts/spec/scenario.
+func packagingOf(s *scenario.Scenario) scenario.Packaging {
+	return scenario.Packaging{GPUsPerNode: s.Cluster.GPUsPerNode, GPUsPerRack: s.Cluster.GPUsPerRack}
+}
+
 // pool is a colocated pool with the parallel block pl. Its engine block is unstated: resolve
 // takes the engine settings it reads separately (enginesettings.Settings).
 func pool(pl deployment.Parallelism) deployment.Pool {
@@ -285,7 +292,7 @@ func TestNodesSpannedFollowsTheWidestGroup(t *testing.T) {
 		t.Run(c.what, func(t *testing.T) {
 			s, d := scenarioWith(1, c.gpusPerNode, pool(c.pl))
 			s.Cluster.GPUsPerRack = c.rack
-			l, err := ResolveLayout(s, d.Pools[0], enginesettings.Settings{},
+			l, err := ResolveLayout(packagingOf(s), d.Pools[0], enginesettings.Settings{},
 				Fabric{RackIsOneDomain: c.rackDomain}, newStubRules())
 			if err != nil {
 				t.Fatalf("ResolveLayout: %v", err)
@@ -320,7 +327,7 @@ func TestCustomAllReduceRequestIsResolvedNotObeyed(t *testing.T) {
 		t.Run(c.what, func(t *testing.T) {
 			s, d := scenarioWith(1, c.gpusPerNode, pool(
 				deployment.Parallelism{TP: c.tp, PP: 1, DP: 1}))
-			l, err := ResolveLayout(s, d.Pools[0], enginesettings.Settings{DisableCustomAllReduce: &no},
+			l, err := ResolveLayout(packagingOf(s), d.Pools[0], enginesettings.Settings{DisableCustomAllReduce: &no},
 				Fabric{RackIsOneDomain: c.rackDomain}, newStubRules())
 			if err != nil {
 				t.Fatalf("ResolveLayout: %v", err)

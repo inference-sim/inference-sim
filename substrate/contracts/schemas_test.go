@@ -404,3 +404,68 @@ func TestValidate_HoldsTheCallersRulesToTheContract(t *testing.T) {
 		}
 	}
 }
+
+// A bundle carrying the chip resolves the cluster's packaging against it (SUB-3): the
+// deployment's fit is checked at the resolved node size, and a scenario contradicting the
+// entry is refused at scenario.cluster. Without the chip, a scenario that leaves its node
+// size to the catalog cannot have its deployment fitted, and is refused (SIM-9 pairs).
+func TestValidateResolvesPackagingFromTheChip(t *testing.T) {
+	nvl := func(gpn, gpr int) Bundle {
+		b := bundle()
+		b.Scenario.Cluster = scenario.Cluster{Hardware: "gb200-nvl72", Nodes: 2, Fabric: "ib-400g",
+			GPUsPerNode: gpn, GPUsPerRack: gpr}
+		b.Deployment.Pools[0].Nodes = 2
+		b.Chip.Name, b.Chip.GPUsPerNode, b.Chip.GPUsPerRack, b.Chip.IntraRackBwGBps = "gb200-nvl72", 4, 72, 900
+		b.Coefficients[0].Coefficients[0].Scope.Hardware = []string{"gb200-nvl72"}
+		return b
+	}
+	at := func(rep Report, path string) bool {
+		for _, p := range rep.Field.Errors() {
+			if p.Path == path {
+				return true
+			}
+		}
+		return false
+	}
+	for _, c := range []struct {
+		name    string
+		b       Bundle
+		refused string
+	}{
+		{"NVL72, packaging omitted: tp 8 over two 4-GPU trays fits", nvl(0, 0), ""},
+		{"NVL72, packaging restated", nvl(4, 72), ""},
+		{"NVL72 stated at 8 per node", nvl(8, 0), "scenario.cluster.gpus_per_node"},
+		{"NVL72 stated at 12 per rack", nvl(4, 12), "scenario.cluster.gpus_per_rack"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rep := Validate(c.b)
+			if c.refused == "" {
+				if !rep.Field.OK() {
+					t.Fatalf("refused:\n%s", rep.Field.Error())
+				}
+				return
+			}
+			if !at(rep, c.refused) {
+				t.Fatalf("not refused at %s:\n%s", c.refused, rep.Field.Error())
+			}
+		})
+	}
+
+	// The resolved node size is the one the fit uses: at 4 GPUs per tray, tp 8 on one tray
+	// does not fit, though it would on a stated 8-GPU node.
+	one := nvl(0, 0)
+	one.Scenario.Cluster.Nodes, one.Scenario.Cluster.Fabric, one.Deployment.Pools[0].Nodes = 1, "", 1
+	if rep := Validate(one); !at(rep, "deployment.pools[0].parallel") {
+		t.Errorf("tp 8 on one 4-GPU tray is not refused:\n%s", rep.Field.Error())
+	}
+
+	noChip := nvl(0, 0)
+	noChip.Chip = nil
+	if rep := Validate(noChip); !at(rep, "scenario.cluster.gpus_per_node") {
+		t.Errorf("a deployment over a node size left to a chip the bundle lacks is not refused:\n%s", rep.Field.Error())
+	}
+	noChip.Scenario.Cluster.GPUsPerNode = 4
+	if rep := Validate(noChip); at(rep, "scenario.cluster.gpus_per_node") {
+		t.Errorf("a stated node size without the chip is refused:\n%s", rep.Field.Error())
+	}
+}

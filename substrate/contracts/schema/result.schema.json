@@ -855,6 +855,9 @@
           },
           "type": "array"
         },
+        "packaging": {
+          "$ref": "#/$defs/scenario.Packaging"
+        },
         "policy": {
           "additionalProperties": {},
           "type": "object"
@@ -1631,7 +1634,6 @@
         }
       },
       "required": [
-        "gpus_per_node",
         "hardware",
         "nodes"
       ],
@@ -1650,6 +1652,36 @@
       "required": [
         "kind",
         "version"
+      ],
+      "type": "object"
+    },
+    "scenario.Packaging": {
+      "additionalProperties": false,
+      "properties": {
+        "gpus_per_node": {
+          "type": "integer"
+        },
+        "gpus_per_node_source": {
+          "enum": [
+            "stated",
+            "catalog"
+          ],
+          "type": "string"
+        },
+        "gpus_per_rack": {
+          "type": "integer"
+        },
+        "gpus_per_rack_source": {
+          "enum": [
+            "stated",
+            "catalog"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "gpus_per_node",
+        "gpus_per_node_source"
       ],
       "type": "object"
     },

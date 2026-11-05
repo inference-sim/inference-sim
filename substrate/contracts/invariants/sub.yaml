@@ -86,6 +86,15 @@
     status: ci
     test: go run ./validate/cmd/validate-catalog catalog
   - repo: blis-substrate
+    check: >-
+      The packaging check and its test pair: a scenario's gpus_per_node or gpus_per_rack that
+      contradicts the chip's catalog entry, a missing gpus_per_node on a chip that states none, and a
+      gpus_per_rack on a chip with no rack tier are refused, each beside the closest accepted cluster
+    runs: pull_request
+    status: ci
+    test: 'contracts/spec/scenario: TestPackagingRefusals'
+    known_bad: 'contracts/spec/scenario: TestPackagingRefusals'
+  - repo: blis-substrate
     check: A test that no runtime package opens config.json
     runs: pull_request
     status: new
