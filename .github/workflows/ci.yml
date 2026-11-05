@@ -32,7 +32,7 @@ jobs:
     # Spelled out as GitHub derives a matrix job's name, because the names are main's required
     # checks: an entry whose packages moved keeps its old name (name_packages), byte for byte.
     name: test (${{ matrix.name }}, ${{ matrix.name_packages || matrix.packages }}, ${{ matrix.timeout }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +81,12 @@ jobs:
           - name: "byte gate"
             packages: "./internal/bytegate"
             timeout: "10m"
+          # The same gate on arm64: the outputs must be identical across platforms (design X6),
+          # and arm64 is where Go fuses a multiply and an add that amd64 does not.
+          - name: "byte gate arm64"
+            packages: "./internal/bytegate"
+            timeout: "10m"
+            runner: "ubuntu-24.04-arm"
           - name: "other packages"
             packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./internal/invariantscan"
             timeout: "5m"
@@ -95,7 +101,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Test ${{ matrix.name }}
+      # Tests read only their declared inputs (X25): the module cache starts empty, so a test
+      # that needs a module it does not download itself fails here rather than passing on a
+      # cache a previous job filled.
+      - name: Test ${{ matrix.name }} from an empty module cache
+        env:
+          GOMODCACHE: ${{ runner.temp }}/gomodcache
+          GOFLAGS: -modcacherw
         run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
 
   lint:
@@ -140,7 +152,12 @@ jobs:
 
       - name: The toolchain is contracts/toolchain
         run: |
-          want="$(cat "$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/contracts/toolchain")"
+          dir="$(go mod download -json "github.com/inference-sim/blis-substrate@$(go list -m -f '{{.Version}}' github.com/inference-sim/blis-substrate)" | jq -r .Dir)"
+          if [ -z "$dir" ] || [ "$dir" = null ] || [ ! -f "$dir/contracts/toolchain" ]; then
+            echo "cannot find contracts/toolchain: go mod download reported directory '$dir' for blis-substrate" >&2
+            exit 1
+          fi
+          want="$(cat "$dir/contracts/toolchain")"
           got="$(go env GOVERSION)"
           if [ "$got" != "$want" ]; then
             echo "go is $got; contracts/toolchain at the selected substrate is $want" >&2

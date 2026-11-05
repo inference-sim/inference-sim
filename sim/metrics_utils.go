@@ -322,7 +322,10 @@ func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 		return 0
 	}
 
-	rank := p / 100.0 * float64(n-1)
+	// float64(...) rounds the product before rank is used, so no platform fuses it into the
+	// subtraction below: arm64 fused p/100*(n-1) - lowerIdx into one FNMSUBD and amd64 did not,
+	// which moved the last bit of a percentile between platforms (design X6).
+	rank := float64(p / 100.0 * float64(n-1))
 	lowerIdx := int(math.Floor(rank))
 	upperIdx := int(math.Ceil(rank))
 
