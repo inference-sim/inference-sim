@@ -6,7 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 
 	"github.com/inference-sim/inference-sim/sim"
 )

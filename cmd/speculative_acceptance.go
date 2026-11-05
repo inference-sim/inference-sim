@@ -3,7 +3,7 @@ package cmd
 import (
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 

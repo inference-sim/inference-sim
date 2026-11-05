@@ -3,8 +3,8 @@ package sim
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // failsUnrun is a FIFO that never runs request "a": its first schedule after "a" arrives ends it

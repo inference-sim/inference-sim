@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"

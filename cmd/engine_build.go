@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/contract"

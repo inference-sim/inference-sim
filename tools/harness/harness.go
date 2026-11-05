@@ -51,12 +51,7 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
-	"github.com/inference-sim/inference-sim/sim/vendored"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.
 type Corpus struct {

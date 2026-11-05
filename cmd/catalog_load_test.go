@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 )
 
 // This file is the R1/C6 acceptance GATE (#1750): CI runs a load over every catalog entry,
@@ -15,8 +17,8 @@ import (
 //
 // Three layers:
 //
-//  1. TestCatalogStrictLoad_CommittedFixtureCatalog — unconditional, over the committed
-//     testdata/catalog. Proves every committed model graph loads and validates through the
+//  1. TestCatalogStrictLoad_CommittedFixtureCatalog — unconditional, over the catalog of the
+//     blis-substrate module go.mod selects. Proves every committed model graph loads and validates through the
 //     loader a run uses, every committed preset loads through the production preset reader, and the
 //     committed storage-device table loads — on real data, in every `go test ./cmd/...` run.
 //  2. TestCatalogStrictLoad_CompleteCatalogLoadsClean and the contract tables — a fully
@@ -28,11 +30,11 @@ import (
 //     test skips when the variable is unset, so a local `go test ./...` needs no catalog
 //     checkout.
 
-// fixtureCatalog is the committed clone-root-shaped test catalog.
-const fixtureCatalog = "../testdata/catalog"
+// fixtureCatalog is the catalog/ of the blis-substrate module go.mod selects.
+var fixtureCatalog = substratedata.MustCatalog()
 
-// The well-formed bodies every temp catalog is built from are the committed fixture
-// catalog's own files -- a verbatim subset of a tagged blis-catalog release -- rather than
+// The well-formed bodies every temp catalog is built from are the substrate catalog's own
+// files rather than
 // hand-written copies of their shape, so a temp catalog is real catalog data and cannot
 // drift from the format the release publishes.
 var (
@@ -147,15 +149,15 @@ func TestCatalogStrictLoad_CompleteCatalogLoadsClean(t *testing.T) {
 	}
 }
 
-// TestCatalogStrictLoad_CommittedFixtureCatalog loads the committed testdata/catalog. It is
-// the unconditional half of the gate. The fixture is a verbatim subset of a tagged
-// blis-catalog release (testdata/README.md), so it must load with NO problems through the
+// TestCatalogStrictLoad_CommittedFixtureCatalog loads the substrate's catalog. It is
+// the unconditional half of the gate. The catalog is the pinned substrate's own, so it must
+// load with NO problems through the
 // same readers a run uses, and every namespace a run can consume must be represented --
 // otherwise the gate would be vacuous for it.
 func TestCatalogStrictLoad_CommittedFixtureCatalog(t *testing.T) {
 	report := loadOrFatal(t, fixtureCatalog)
 	if err := report.Err(); err != nil {
-		t.Fatalf("the fixture catalog is a verbatim subset of a release and must load clean: %v", err)
+		t.Fatalf("the pinned substrate's catalog must load clean: %v", err)
 	}
 	for _, got := range []struct {
 		namespace string
@@ -183,7 +185,7 @@ func TestCatalogStrictLoad_CommittedFixtureCatalog(t *testing.T) {
 // EDIT — the delivery loop's token cannot push workflow files (docs/contributing/automated-delivery.md),
 // so the job body is quoted verbatim in the script's header for a human to paste. Until it
 // lands, this test runs on demand rather than on every PR; the unconditional coverage is
-// TestCatalogStrictLoad_CommittedFixtureCatalog over testdata/catalog.
+// TestCatalogStrictLoad_CommittedFixtureCatalog over the substrate's catalog.
 func TestCatalogStrictLoad_RealCatalog(t *testing.T) {
 	root := os.Getenv(catalogEnvVar)
 	if root == "" {
@@ -239,7 +241,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantFile:    catalogModelEntryFile,
 			wantPhrases: []string{"licence"},
 		},
-			{
+		{
 			name: "unknown key in a replay workload",
 			mutate: func(t *testing.T, root string) {
 				body := fixtureCatalogFile(filepath.Join(catalogWorkloadsSubdir, "agentx-mvp.yaml"))
@@ -259,7 +261,7 @@ func TestCatalogStrictLoad_StrictRules(t *testing.T) {
 			wantFile:    "agentx-mvp.yaml",
 			wantPhrases: []string{"replay workload is not valid", "benchmark_duration"},
 		},
-	{
+		{
 			name: "unknown key in hardware entry",
 			mutate: func(t *testing.T, root string) {
 				writeCatalogFile(t, filepath.Join(root, catalogHardwareSubdir, "h100"+catalogYAMLExt),
@@ -698,7 +700,7 @@ func TestCatalogStrictLoad_MissingNamespaceIsNotAProblem(t *testing.T) {
 // because the script is what holds the pinned revision and what a workflow job calls (that job
 // is a pending human edit to .github/workflows/ci.yml, tracked by #1823; see the script header).
 // So until #1823 lands, the leg that runs unconditionally on every `go test ./cmd/...` is
-// TestCatalogStrictLoad_CommittedFixtureCatalog below, over the committed testdata/catalog.
+// TestCatalogStrictLoad_CommittedFixtureCatalog, over the substrate's catalog.
 
 // TestNormalizeCatalogKey pins the key folding the deployment-fact rule relies on, so a
 // separator or case variant of a banned key cannot slip through.

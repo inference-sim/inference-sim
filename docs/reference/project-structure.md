@@ -45,7 +45,6 @@ inference-sim/
 │   ├── bundle.go              # PolicyBundle YAML loading (priority, scheduler, preemption, node_pools, autoscaler, instance_lifecycle), LoadPolicyBundle, Validate
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
-│   ├── vendored/              # Names this repository as the kernel adapter's vendoring root (testdata/catalog, testdata/registry)
 │   └── internal/              # Shared internal packages
 │       └── testutil/          # Shared test infrastructure (golden dataset loading, the fake latency model)
 │                              # (The engine itself -- request scheduling, batch formation, the KV cache,
@@ -97,12 +96,12 @@ inference-sim/
 │                               # (The model catalog is NOT in this repo: it is the external blis-catalog
 │                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
 │                               #  It holds model graphs, chips, fabrics, storage devices and workload
-│                               #  presets. A verbatim
-│                               #  subset of a tagged release is vendored at testdata/catalog/ for tests,
-│                               #  blis-registry's coefficient sets at testdata/registry/, and this repo's
-│                               #  own scenario fixtures (P/D, MTP) at testdata/scenarios/.)
+│                               #  presets. Tests read the catalog/ and registry/ of the blis-substrate
+│                               #  module go.mod selects (internal/substratedata); this repo's own
+│                               #  scenario fixtures (P/D, MTP) are at testdata/scenarios/.)
 ├── tools/                     # Offline scoring tools, outside the simulator (sim/, cmd/ link blis-vllm only through cmd/engine_build.go)
 │   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel)
+│   │   ├── corpora/           # The scorers' default roots: substrate data and the measurement corpora (BLIS_MEASUREMENTS)
 │   │   └── internal/artifacts/ # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
 │   ├── metricscore/           # The scorer behind the evaluation tables: every estimator on every metric, on three tiers of points
 │   ├── kernelscore/           # Scores the concurrency-response shape against the AISimulate snapshot
