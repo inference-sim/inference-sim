@@ -74,6 +74,13 @@ jobs:
           # tools/, which "kernel backend" runs). A new entry, not a renamed one, since the
           # entries' names are required checks; this one is not.
           # scripts' TestEveryPackageWithTestsRunsInCI fails if a package with tests is in none.
+          # The byte gate (design SIM-4, X13): a fixed set of runs whose standard output must not
+          # change in a refactor, compared byte for byte (outside the Result's runtime member)
+          # with testdata/bytegate/golden, at GOMAXPROCS 1 and 4. A pull request that moves a
+          # golden file is not a refactor and says so, with the diff and its price-change report.
+          - name: "byte gate"
+            packages: "./internal/bytegate"
+            timeout: "10m"
           - name: "other packages"
             packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./internal/invariantscan"
             timeout: "5m"

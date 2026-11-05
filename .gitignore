@@ -44,6 +44,7 @@ __pycache__/*
 *.json
 !testdata/goldendataset.json
 !/stack.json
+!testdata/bytegate/golden/*.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
 !sim/workload/testdata/agentx/*.json
