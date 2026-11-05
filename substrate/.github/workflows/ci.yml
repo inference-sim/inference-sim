@@ -35,6 +35,7 @@ jobs:
       contracts: ${{ steps.filter.outputs.contracts }}
       kernel: ${{ steps.filter.outputs.kernel }}
       catalog: ${{ steps.filter.outputs.catalog }}
+      ledger: ${{ steps.filter.outputs.ledger }}
       registry: ${{ steps.filter.outputs.registry }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
@@ -48,7 +49,7 @@ jobs:
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-            for k in contracts kernel catalog registry docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
+            for k in contracts kernel catalog ledger registry docs; do echo "$k=true" >> "$GITHUB_OUTPUT"; done
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
@@ -60,6 +61,7 @@ jobs:
           echo "contracts=$(has "$shared|^contracts/|^validate/|^tools/|^load/|^catalog/|^registry/|\.py$")" >> "$GITHUB_OUTPUT"
           echo "kernel=$(has "$shared|^kernel/|^contracts/|^load/|^validate/")" >> "$GITHUB_OUTPUT"
           echo "catalog=$(has "$shared|^catalog/")"                      >> "$GITHUB_OUTPUT"
+          echo "ledger=$(has "$shared|^catalog/ledger/|^ledger/")"       >> "$GITHUB_OUTPUT"
           echo "registry=$(has "$shared|^registry/")"                    >> "$GITHUB_OUTPUT"
           echo "docs=$(has "$shared|^docs/|^mkdocs\.yml|^catalog/|^registry/|^contracts/example_test\.go")" >> "$GITHUB_OUTPUT"
 
@@ -180,6 +182,40 @@ jobs:
         working-directory: catalog
         run: python3 -m pytest tests -q
 
+  # The data ledger (design §10.2): the committed files load and pass their checks (D3), no
+  # tracked file lists roles (D4), every unit at the merge base keeps its unit_id and role key
+  # or is aliased (D4), and the seed-holding workflows hold the seed only from main (D7).
+  # The byte-for-byte regeneration from the pinned dump needs the 34 GB dump, so it runs in
+  # ledger.yml's nightly job, not here.
+  ledger:
+    name: ledger
+    needs: changes
+    if: needs.changes.outputs.ledger == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/go-toolchain
+      - run: go test -count=1 ./ledger/...
+      - run: go run ./ledger/cmd/ledger check catalog/ledger
+      - run: go run ./ledger/cmd/ledger scan-roles .
+      - run: go run ./ledger/cmd/ledger lint-workflows .github/workflows
+      - name: Against the ledger at the merge base (D4)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base=$(git merge-base "$BASE" HEAD)
+          if ! git cat-file -e "$base:catalog/ledger/ledger.yaml" 2>/dev/null; then
+            echo "the merge base has no ledger; nothing to compare"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive "$base" catalog/ledger | tar -x -C "$RUNNER_TEMP/base"
+          go run ./ledger/cmd/ledger check-base "$RUNNER_TEMP/base/catalog/ledger" catalog/ledger
+
   # Every coefficient set validates through the Go types, and the registry's derivation
   # tests pass. The full re-derivation with the AISimulate sweeps present is rederive.yml.
   registry:
@@ -241,7 +277,7 @@ jobs:
   required:
     name: required
     if: always()
-    needs: [changes, go, contracts, kernel, catalog, registry, docs]
+    needs: [changes, go, contracts, kernel, catalog, ledger, registry, docs]
     runs-on: ubuntu-latest
     steps:
       - env:

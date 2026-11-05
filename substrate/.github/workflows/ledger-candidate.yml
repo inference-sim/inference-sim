@@ -1,0 +1,59 @@
+name: ledger candidate
+
+# The candidate half of every operator-level scoring run (design §10.2, D7). It runs the pull
+# request's code with no secret, no environment and a read-only token. It is handed every unit
+# not on the published fit, anchor and report lists, predicts each with no network, and
+# uploads one file, predictions.json (ledger.Predictions, at most 64 MB). ledger.yml's select,
+# error and gate jobs read that file from main, in the environment that holds the seed.
+#
+# It runs on a pull request that changes the registry or the cost model. Its predictions
+# decide nothing until a seed-holding job reduces them.
+
+on:
+  pull_request:
+    paths:
+      - registry/**
+      - kernel/**
+      - catalog/**
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/go-toolchain
+      # Fetch every module first; the prediction itself runs with no network.
+      - run: go mod download && go build -o "$RUNNER_TEMP/ledger" ./ledger/cmd/ledger
+      - run: '"$RUNNER_TEMP/ledger" candidate-units -out "$RUNNER_TEMP/units.json" catalog/ledger'
+      - name: Predict, with no network
+        run: |
+          set -euo pipefail
+          # The operator-level predictor is the cost model's own (kernel/). Until it exists for
+          # InferenceX units, this step records each unit as not predicted, so the shape of the
+          # run is in place and a seed-holding job decides nothing from it.
+          # No network: a new network namespace with no interface but loopback. The step fails
+          # if the namespace cannot be made; it never falls back to running with the network.
+          sudo unshare --net -- sudo -u "$USER" env PATH="$PATH" \
+            python3 -I - "$RUNNER_TEMP/units.json" "$RUNNER_TEMP/predictions.json" "$GITHUB_SHA" <<'EOF'
+          import json, sys
+          units = json.load(open(sys.argv[1]))
+          out = {"kind": "Predictions", "candidate": sys.argv[3],
+                 "predictions": [{"source": u["source"], "unit_id": u["unit_id"],
+                                  "reason": "no operator-level predictor for this source"} for u in units]}
+          json.dump(out, open(sys.argv[2], "w"))
+          EOF
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: predictions
+          path: ${{ runner.temp }}/predictions.json
+          retention-days: 7
