@@ -66,6 +66,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"
@@ -190,7 +191,10 @@ type identity struct {
 	capabilityMajor int
 }
 
-func identityOf(in latencykernel.Inputs, engine engineconfig.Engine) identity {
+// identityOf reads the pool's placement from pk, the cluster's packaging as the scenario and
+// the chip's catalog entry resolve it (scenario.Cluster.Packaging), never from the scenario's
+// own gpus_per_node and gpus_per_rack, which are zero where it leaves them to the catalog.
+func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario.Packaging) identity {
 	experts, topK := expertCounts(in.Model)
 	pool := in.Deployment.Pools[in.PoolIndex]
 	first := 0
@@ -209,8 +213,8 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine) identity {
 		role:            pool.Role,
 		firstNode:       first,
 		poolNodes:       pool.Nodes,
-		gpusPerNode:     in.Scenario.Cluster.GPUsPerNode,
-		gpusPerRack:     in.Scenario.Cluster.GPUsPerRack,
+		gpusPerNode:     pk.GPUsPerNode,
+		gpusPerRack:     pk.GPUsPerRack,
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
@@ -328,7 +332,11 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, err
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
-	if err := checkDPLocal(pool.Parallel, in.Scenario.Cluster.GPUsPerNode); err != nil {
+	pk, err := in.Scenario.Cluster.Packaging(in.Chip)
+	if err != nil {
+		return nil, fmt.Errorf("the scenario's cluster: %w", err)
+	}
+	if err := checkDPLocal(pool.Parallel, pk.GPUsPerNode); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
@@ -340,7 +348,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if data != nil {
 		k.RecordSelected(data)
 	}
-	m, err := newModel(k, identityOf(in, engine))
+	m, err := newModel(k, identityOf(in, engine, pk))
 	if err != nil {
 		return nil, err
 	}

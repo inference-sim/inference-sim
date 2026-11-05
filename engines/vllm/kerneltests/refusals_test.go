@@ -50,6 +50,11 @@ func TestWhatTheKernelCannotPriceItRefuses(t *testing.T) {
 			chip := *in.Chip
 			chip.Name = name
 			in.Chip = &chip
+			// The scenario names the renamed part too: its cluster's packaging resolves
+			// against the entry it names, and a chip of another name is refused.
+			sc := *in.Scenario
+			sc.Cluster.Hardware = name
+			in.Scenario = &sc
 		}
 	}
 	for _, c := range []struct {
