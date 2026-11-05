@@ -213,6 +213,9 @@ func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyze
 	if cfg.AvgInputTokens == 0 {
 		cfg.AvgInputTokens = 512
 	}
+	if cfg.MinReplicas == 0 {
+		cfg.MinReplicas = 1
+	}
 	return cfg
 }
 

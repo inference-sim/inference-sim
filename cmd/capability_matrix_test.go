@@ -609,16 +609,43 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 
 	t.Run("autoscaler with node pools: runs and conserves", func(t *testing.T) {
 		t.Parallel()
-		// The analyzer reads each replica's live KV capacity (#1916), so on an idle start it
-		// would drain every replica at the first tick; the Kubernetes HPA default scale-down
-		// stabilization window (5 min) holds them through this short run.
-		bundle := capFile(t, "autoscale.yaml", "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n"+
-			"    gpu_memory_gib: 139.80072021\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"+
-			"autoscaler:\n  interval_us: 1000000\n  scale_down_stabilization_window_us: 300000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
-			"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n")
+		// No stabilization window: the idle first tick scales down at once, and must keep a
+		// replica serving (#2015).
+		bundle := capFile(t, "autoscale.yaml", autoscaleBundle("", ""))
 		o := capRun(t, runArgs(colocated(2), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)
 		o.conserves(t, 60)
 	})
+
+	// #2015's known-bad input: an idle start, where the first tick sees zero demand and spare
+	// capacity equal to the whole supply. With a 2.5 s HPA scrape delay, the decisions of the
+	// first three ticks are all computed before the first is applied, so a bound applied only
+	// when a decision is made still drains every replica. The run keeps the configured minimum
+	// at every instant, so no request is rejected for want of a replica.
+	for _, tc := range []struct{ name, min string }{{"default minimum", ""}, {"min_replicas 2", "2"}} {
+		t.Run("autoscaler idle start with a scrape delay keeps the "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			bundle := capFile(t, "autoscale.yaml", autoscaleBundle("  hpa_scrape_delay:\n    mean: 2.5\n    stddev: 0\n", tc.min))
+			o := capRun(t, runArgs(colocated(4), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)
+			o.conserves(t, 60)
+			if n := o.ledger["routing_rejections"]; n != 0 {
+				t.Errorf("%d requests rejected at routing: scale-down left the model no replica (ledger %v)", n, o.ledger)
+			}
+		})
+	}
+}
+
+// autoscaleBundle is a policy bundle with four h200 nodes and the autoscaler on a 1 s tick.
+// extra is spliced into the autoscaler block; minReplicas, when not "", is the analyzer's
+// min_replicas.
+func autoscaleBundle(extra, minReplicas string) string {
+	minLine := ""
+	if minReplicas != "" {
+		minLine = "    min_replicas: " + minReplicas + "\n"
+	}
+	return "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n" +
+		"    gpu_memory_gib: 139.80072021\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n" +
+		"autoscaler:\n  interval_us: 1000000\n" + extra + "  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n" +
+		"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n" + minLine
 }
 
 // inferencePerfSpec is an inference-perf style spec: one 5 s stage at 4 req/s over two
