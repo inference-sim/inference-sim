@@ -1,0 +1,328 @@
+# The COV invariants: Accuracy coverage (BLIS target design §11.8).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: COV-1
+  section: §11.8
+  statement: >-
+    One scorer produces every number, and it lives only in accuracy-dashboard: no other repository
+    compares a simulation with a measured end-to-end benchmark. Every anchor unit is either graded
+    G1 to G4 or listed as G5 with a reason, and the counts sum to the total.
+  scope:
+  - accuracy-dashboard
+  - blis-config-search
+  - blis-sglang
+  - blis-substrate
+  - blis-vllm
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: accuracy-dashboard
+    check: Summary tests in the dashboard
+    runs: pull_request
+    status: ci
+    test: orchestrator/test_build_summary.py
+  - repo: blis-substrate
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  - repo: blis-vllm
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to
+      compute an error
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    the dashboard has the per-point scorer; blis-registry, inference-sim and blis-vllm also score
+    end-to-end
+- id: COV-2
+  section: §11.8
+  statement: >-
+    Only ledger anchor units are scored, using the simulator release's embedded data and the anchor
+    list embedded in its substrate release (inference-sim ledger).
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: >-
+      A scorer check that every scored point is an anchor unit from the release's embedded anchor
+      list
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-3
+  section: §11.8
+  statement: >-
+    The dashboard copies recorded configuration verbatim, and reads field status and estimation rules
+    only from the engine's fields.json.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: >-
+      A check that the dashboard holds no settings table, and that every scenario's engine block equals
+      the run's recorded configuration field for field, after parsing both with the engine's own argument
+      parser, except engine.version, which equals the release in stack.json, and each field an estimation
+      rule set, which the point names
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-4
+  section: §11.8
+  statement: Every point has one grade, computed from data, with every substitution named.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: >-
+      A scorer check that every point has exactly one grade and every substitution is named
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-5
+  section: §11.8
+  statement: G5 is used only for the reasons in §11.4. Any other reason fails CI.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: A scorer check that every G5 reason is one of the listed reasons
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-6
+  section: §11.8
+  statement: >-
+    Every point in a release's scores is scored by that one inference-sim release. Each point shows
+    its recorded engine build, and is graded G3 or G4 when that build is not the engine release inference-sim
+    runs.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: >-
+      A scorer check that one simulator release produced every score, and that each point's grade
+      agrees with its recorded build and stack.json
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-7
+  section: §11.8
+  statement: >-
+    Coverage (graded anchor units over all anchor units, by engine, engine release, chip and grade,
+    with the share in each grade) is published beside accuracy, and the backlog is published every
+    night.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: The nightly publish job, which fails if coverage or the backlog is missing
+    runs: nightly
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-8
+  section: §11.8
+  statement: A failed or partial night publishes nothing; published snapshots never change.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: Publish guards in api-nightly.yml
+    runs: nightly
+    status: ci
+    test: .github/workflows/api-nightly.yml job publish
+  review: null
+  status: ci
+  target:
+    status: ci
+    milestone: null
+- id: COV-9
+  section: §11.8
+  statement: >-
+    Each simulator release is scored exactly once. The nightly run scores, in the order they were
+    tagged, every release that has no scores. Every provenance field is recomputed at every publish.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: The nightly scoring job
+    runs: nightly
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A test that each published pull date is no earlier than the newest measurement it covers
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: COV-10
+  section: §11.8
+  statement: >-
+    The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client
+    concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones
+    the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run left to chance
+    on the server, and replications (DEV-11) cover that. A frame field the run did not record makes
+    the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved
+    concurrency in the simulation matches the measured one within a stated tolerance. Each lane is
+    scored on its percentiles and a distribution distance, not only on its mean. A simulated figure
+    compared with a measurement carries its replication interval. Where InferenceX has several measurements
+    that differ only in their measured date or benchmark run, their spread is reported as the measurement's
+    own noise, and no point is graded worse for a difference smaller than that noise.
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: A check that every scored scenario's frame equals the recorded one
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A concurrency check per point
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: The summary schema
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: COV-11
+  section: §11.8
+  statement: >-
+    The headline accuracy covers every graded point, G1 to G4. Beside it, the dashboard publishes
+    the share of points in each grade and each grade's own accuracy. Every published figure shows
+    its point count, and a figure over fewer points than the minimum stated in the dashboard's summary
+    schema is shown as "too few points".
+  scope:
+  - accuracy-dashboard
+  checks:
+  - repo: accuracy-dashboard
+    check: The summary schema, which requires a count with every figure
+    runs: pull_request
+    status: ci
+    test: orchestrator/validate_summary.py
+  - repo: accuracy-dashboard
+    check: A publish check that refuses a figure under the minimum count
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    the dashboard headlines all scored points; the per-grade shares and point counts are new
+- id: COV-12
+  section: §11.8
+  statement: >-
+    The scored simulation receives the requests the measured run sent. Where the benchmark client
+    draws its requests from a seeded generator, the dashboard recomputes them with the client's own
+    algorithm and seed at the client's pinned release, in the client's order. The prompt and output
+    lengths are the ones the client sent, after its own tokenisation, verified against the run's tokenizer
+    at a pinned revision; where they cannot be verified, the point is G2 and names the gap. A warm-up
+    the client runs before its measured phase leaves in the simulator the state it leaves in the engine,
+    such as cached prefixes. Every difference between the run's client and the simulated one is named
+    on the point, and makes it G2.
+  scope:
+  - accuracy-dashboard
+  - inference-sim
+  checks:
+  - repo: accuracy-dashboard
+    check: >-
+      A test that recomputes every scored point's request lengths with an independent implementation
+      of the client's generator and compares them with the replayed trace
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      A test per client release that its pinned source still draws as the dashboard recomputes
+    runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: A check that every scored point's trace has the run's request count and order
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: >-
+      The single-turn recomputation of the client's seed-0 lengths and the sent-length check, in inference-sim's
+      tools/harness, until they move into the dashboard's harness
+    runs: pull_request
+    status: ci
+    test: 'tools/harness: TestEveryMeasuredOrResolvedPointSentItsTarget'
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: >-
+    the single-turn recomputation of the client's seed-0 lengths and the sent-length check exist,
+    in inference-sim's tools/harness; they move into the dashboard's harness

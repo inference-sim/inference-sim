@@ -1,0 +1,121 @@
+# The CFG invariants: blis-config-search (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: CFG-1
+  section: §5
+  statement: >-
+    One pin file names the simulator release, and every report states it. A committed report uses
+    that release's embedded data; exploratory runs with other data are labelled experimental and are
+    never committed as reports.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: Scripts/test_build.py
+    runs: pull_request
+    status: ci
+    test: scripts/test_build.py
+  - repo: blis-config-search
+    check: Workflows that stop if the cloned commit differs from the pinned one
+    runs: pull_request
+    status: ci
+    test: 'checks.yml: pin guard on the cloned commit'
+  review: null
+  status: ci
+  target:
+    status: ci
+    milestone: null
+- id: CFG-2
+  section: §5
+  statement: >-
+    Everything after the specification is deterministic and produced by a bot. Comparisons between
+    arms follow DEV-11.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: Scripts/test_experiment.py
+    runs: pull_request
+    status: ci
+    test: scripts/test_experiment.py
+  - repo: blis-config-search
+    check: Reports arrive only through the bot's pull request
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: one seed per run is checked; shared seeds across arms and replications are new
+- id: CFG-3
+  section: §5
+  statement: >-
+    Settings are the named engine's own settings, read from the simulator. No list of settings is
+    copied by hand.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: >-
+      A check that every settings list is read from inference-sim fields at the pinned release, and
+      that the repository holds no copy
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+- id: CFG-4
+  section: §5
+  statement: >-
+    Service-level checks use the worst instance, and every metric they use has one definition from
+    the metric registry, shared by the search, the ranking and the report (DEV-8). A run that is overloaded
+    or incomplete is never ranked (DEV-10).
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: 'Regression tests: worst-instance checks'
+    runs: pull_request
+    status: ci
+    test: scripts/test_experiment.py
+  - repo: blis-config-search
+    check: 'Regression tests: the metric registry and the overload rule'
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 3
+  note: worst-instance checks run; the metric registry and the overload rule are new
+- id: CFG-5
+  section: §5
+  statement: >-
+    A search varies only settings that the engine's field list marks as modelled at the pinned release.
+    A ranking states the least trusted coefficient method and, from the dashboard's published summary
+    at the release its pin file names, the grades of the dashboard points in the lanes it relies on,
+    and a recommendation in a lane with no G1 or G2 points is labelled an extrapolation, with that
+    lane's measured error.
+  scope:
+  - blis-config-search
+  checks:
+  - repo: blis-config-search
+    check: A specification check against inference-sim fields
+    runs: pull_request
+    status: new
+  - repo: blis-config-search
+    check: The report schema
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

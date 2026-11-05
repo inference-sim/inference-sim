@@ -13,7 +13,7 @@ directory, so that a malformed edit fails here rather than in the middle of a ru
 repository root:
 
 ```sh
-pip install -r catalog/scripts/requirements-dev.txt
+pip install --require-hashes -r catalog/scripts/requirements-dev.txt
 python3 catalog/scripts/derive_graph.py --model qwen3-14b
 go run ./validate/cmd/validate-catalog catalog
 ```

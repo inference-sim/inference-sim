@@ -1,0 +1,8 @@
+# Fitter dependencies: everything the validator needs, plus what reading the AISimulate
+# Parquet sweeps needs. CI's `rederive` job installs this; the lighter `derivation-tests`
+# job installs requirements.txt only. Each .txt beside a .in file is generated from it with
+# hashes (X21); edit the .in file and regenerate, as the .txt file's header says.
+-r requirements.in
+numpy>=1.26,<3.0
+pandas>=2.0,<4.0
+pyarrow>=14.0

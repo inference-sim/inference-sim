@@ -41,7 +41,7 @@ the cost model looks the key up. Search `kernel/` for the name, not `registry/`.
     git clone https://github.com/ai-dynamo/aisimulate
     export AISIMULATE_DATA=$PWD/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
     export BLIS_CATALOG=$PWD/../catalog
-    pip install -r scripts/requirements-fit.txt
+    pip install --require-hashes -r scripts/requirements-fit.txt
     ```
 
     `scripts/requirements.txt` covers the property tests. `scripts/requirements-fit.txt`
@@ -78,7 +78,7 @@ the cost model looks the key up. Search `kernel/` for the name, not `registry/`.
    `registry/coefficients/`, so they show your change. From the repository root:
 
     ```sh
-    pip install -r docs/requirements.txt
+    pip install --require-hashes -r docs/requirements.txt
     mkdocs serve
     ```
 

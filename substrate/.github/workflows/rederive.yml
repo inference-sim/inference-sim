@@ -78,7 +78,7 @@ jobs:
           cache-dependency-path: registry/scripts/requirements-fit.txt
 
       - name: Install the fitters' dependencies
-        run: pip install -r registry/scripts/requirements-fit.txt
+        run: pip install --require-hashes -r registry/scripts/requirements-fit.txt
 
       - name: Run every gate with the data present
         env:

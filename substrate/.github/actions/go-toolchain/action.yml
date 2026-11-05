@@ -1,0 +1,62 @@
+name: go-toolchain
+description: >-
+  Install exactly the Go toolchain named in blis-substrate's contracts/toolchain, and fail if
+  the go command reports any other version (LIF-2). In blis-substrate the file is read from the
+  checkout; in another repository it is read from the blis-substrate version that repository's
+  go.mod requires. Callers set GOTOOLCHAIN=local on the job, so no build downloads a toolchain.
+  Call it after actions/checkout, by commit:
+  uses: inference-sim/blis-substrate/.github/actions/go-toolchain@<commit>
+
+inputs:
+  module-dir:
+    description: The directory holding the module's go.mod.
+    default: .
+
+outputs:
+  version:
+    description: The installed version, as the go command reports it (for example go1.N.M).
+    value: ${{ steps.read.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - id: read
+      shell: bash
+      working-directory: ${{ inputs.module-dir }}
+      run: |
+        set -euo pipefail
+        if [ "$(sed -n 's/^module //p' go.mod)" = "github.com/inference-sim/blis-substrate" ]; then
+          file=contracts/toolchain
+        else
+          v=$(awk '$1=="github.com/inference-sim/blis-substrate" {print $2; exit} $1=="require" && $2=="github.com/inference-sim/blis-substrate" {print $3; exit}' go.mod)
+          if [ -z "$v" ]; then
+            echo "go.mod does not require github.com/inference-sim/blis-substrate, so contracts/toolchain cannot be read" >&2
+            exit 1
+          fi
+          # Any installed go can download a module by path and version outside a module.
+          dir=$(cd "$RUNNER_TEMP" && GOTOOLCHAIN=local GOFLAGS= go mod download -json "github.com/inference-sim/blis-substrate@$v" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Dir"])')
+          file="$dir/contracts/toolchain"
+        fi
+        version=$(tr -d '[:space:]' < "$file")
+        case "$version" in
+          go1.*) ;;
+          *) echo "contracts/toolchain holds '$version', not a Go version of the form go1.N.M" >&2; exit 1 ;;
+        esac
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "number=${version#go}" >> "$GITHUB_OUTPUT"
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: ${{ steps.read.outputs.number }}
+        check-latest: false
+    - shell: bash
+      env:
+        WANT: ${{ steps.read.outputs.version }}
+      run: |
+        set -euo pipefail
+        got=$(GOTOOLCHAIN=local go env GOVERSION)
+        if [ "$got" != "$WANT" ]; then
+          echo "go reports $got; contracts/toolchain names $WANT (LIF-2)" >&2
+          exit 1
+        fi
+        echo "GOTOOLCHAIN=local" >> "$GITHUB_ENV"
+        echo "go toolchain: $got"

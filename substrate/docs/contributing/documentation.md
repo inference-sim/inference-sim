@@ -12,7 +12,7 @@ From the repository root:
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install -r docs/requirements.txt
+.venv/bin/pip install --require-hashes -r docs/requirements.txt
 DOCS_RELEASE=main .venv/bin/mkdocs serve
 ```
 

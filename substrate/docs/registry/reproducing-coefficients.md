@@ -26,7 +26,7 @@ the data comes from, and which command regenerates which file.
 | Provenance | Successor to [`ai-dynamo/aiconfigurator`](https://github.com/ai-dynamo/aiconfigurator); method described in arXiv:2601.06288. |
 | Fetch | `git clone https://github.com/ai-dynamo/aisimulate` — the sweeps are checked into git as Parquet. Git LFS is needed only for retained legacy `.txt` assets, which no fit in this registry reads. `pip install aisimulate` also ships the tree inside the wheel. |
 | Pin | Every committed value re-derives at `2f0f4cd8606d580567b253d02f3d699fe36db865` (2026-10-10), with the repository's own `catalog/` at the same commit as the registry. The `rederive` workflow checks out AISimulate at `AISIMULATE_SHA`; bump it deliberately, with the diff the writers produce. A catalog change to a part's datasheet figure moves every rate fitted as a fraction of it, so the writers' `--check` runs on the pull request that makes it. |
-| Python | `pip install -r scripts/requirements-fit.txt`, from `registry/`: the validator's dependencies plus `numpy`, `pandas` and `pyarrow`, which the fitters need to read Parquet. |
+| Python | `pip install --require-hashes -r scripts/requirements-fit.txt`, from `registry/`: the validator's dependencies plus `numpy`, `pandas` and `pyarrow`, which the fitters need to read Parquet. |
 
 The two trees the fits read are **not** at the repository root:
 

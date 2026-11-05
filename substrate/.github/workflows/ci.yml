@@ -9,12 +9,19 @@ name: ci
 
 on:
   pull_request:
+  # The required check also runs on the merge-queue tree, which is the tree a CI verdict
+  # judges (X22).
+  merge_group:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# No build downloads a toolchain: every Go job installs exactly contracts/toolchain (LIF-2).
+env:
+  GOTOOLCHAIN: local
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -36,7 +43,7 @@ jobs:
           fetch-depth: 0
       - id: filter
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
@@ -61,15 +68,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - name: gofmt
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
       - run: go vet ./...
       - run: go build ./...
+      # The selected-version lint (X11, LIF-2): replace and exclude directives, no go.work,
+      # every module's go directive at or below contracts/toolchain, and go version equal
+      # to it.
+      - run: go run ./tools/modlint
       # The root package's tests: one module, no nested go.mod, and the module zip under
       # 100 MB (SUB-13).
       - run: go test -count=1 .
@@ -81,10 +90,43 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # The source-comparison tests re-derive constants from the upstream code they cite.
+      # Each checkout is pinned to the commit of the release the test names, and the
+      # *_SOURCE_REQUIRED variables make a missing checkout a failure, not a skip (X16).
+      - name: Check out vLLM v0.31.0 (the files the contracts tests read)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version-file: go.mod
-      - run: go test -race -count=1 ./contracts/... ./validate/... ./tools/...
+          repository: vllm-project/vllm
+          ref: db9527a46873454610df6dbedf79a36d6bf1a7f6 # v0.31.0
+          path: upstream/vllm
+          sparse-checkout: |
+            vllm/v1/worker
+            vllm/config
+      - name: Check out aiperf v0.12.0 (the files the workload tests read)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ai-dynamo/aiperf
+          ref: be53bf2953d30e46c500e6a80fc1f8b6f84bc718 # v0.12.0
+          path: upstream/aiperf
+          sparse-checkout: |
+            src/aiperf
+      - uses: ./.github/actions/go-toolchain
+      - name: Tests, with every skip reported
+        env:
+          VLLM_SOURCE: ${{ github.workspace }}/upstream/vllm
+          VLLM_SOURCE_REQUIRED: "1"
+          AIPERF_SOURCE: ${{ github.workspace }}/upstream/aiperf/src/aiperf
+          AIPERF_SOURCE_REQUIRED: "1"
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -json ./contracts/... ./validate/... ./tools/... > "$RUNNER_TEMP/go-test.json" || { go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000; exit 1; }
+          # A skipped test is a failure unless quarantined (X16, X25); fewer than 1000
+          # results means packages were not run (X22).
+          go run ./tools/prcheck skips -results "$RUNNER_TEMP/go-test.json" -min 1000
+      # The AGENTS.md block, the pull-request template and the rendered index match the
+      # invariant registry (design §13.1). The test above also checks this; the step names
+      # the command that fixes it.
+      - run: go run ./tools/invariants render -check
 
   kernel:
     name: cost model
@@ -93,9 +135,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       # The scoring suite needs measurement corpora this repository does not distribute, so it
       # is compiled and vetted here but not run.
       - run: go vet -tags scoring ./kernel/...
@@ -118,14 +158,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - run: go run ./validate/cmd/validate-catalog catalog
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: pip install -r catalog/scripts/requirements-dev.txt
+      - run: pip install --require-hashes -r catalog/scripts/requirements-dev.txt
       - name: Every graph re-derives from its vendor configuration
         working-directory: catalog
         run: python3 scripts/derive_graph.py --check
@@ -142,14 +180,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
+      - uses: ./.github/actions/go-toolchain
       - run: go run ./validate/cmd/validate-registry registry
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
-      - run: pip install -r registry/scripts/requirements.txt
+      - run: pip install --require-hashes -r registry/scripts/requirements.txt
       - name: The derivation and value-preservation tests
         working-directory: registry
         run: python -m pytest validator/ -q
@@ -169,7 +205,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - run: pip install -r docs/requirements.txt pytest
+      - run: pip install --require-hashes -r docs/requirements.txt
       - env:
           DOCS_RELEASE: main
         run: python -m pytest docs/hooks -q

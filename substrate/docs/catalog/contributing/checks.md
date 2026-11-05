@@ -7,11 +7,11 @@ Three checks decide whether a change can merge, and two more build this site. Ru
 go run ./validate/cmd/validate-catalog catalog
 
 # Every graph is what the deriver produces from its config, and the deriver's tests pass.
-pip install -r catalog/scripts/requirements-dev.txt
+pip install --require-hashes -r catalog/scripts/requirements-dev.txt
 (cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 
 # The site's page generators pass their tests, and the site builds without warnings.
-pip install -r docs/requirements.txt pytest
+pip install --require-hashes -r docs/requirements.txt
 DOCS_RELEASE=main python3 -m pytest docs/hooks -q
 DOCS_RELEASE=main mkdocs build --strict
 ```

@@ -134,3 +134,20 @@ func TestEmbedImportsOnlyTheStandardLibrary(t *testing.T) {
 		}
 	}
 }
+
+// TestInvariantsImportOnlyTheStandardLibraryAndYAML: every BLIS repository reads the
+// invariant registry at the substrate version it pins, the engine repositories and the
+// router fork included, so the package may import only what SUB-1 allows a contracts/
+// package: the standard library and the YAML parser.
+func TestInvariantsImportOnlyTheStandardLibraryAndYAML(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}", "./invariants").Output()
+	if err != nil {
+		t.Fatalf("go list -deps ./invariants: %v", err)
+	}
+	for _, dep := range strings.Fields(string(out)) {
+		if dep == "github.com/inference-sim/blis-substrate/contracts/invariants" || dep == "gopkg.in/yaml.v3" {
+			continue
+		}
+		t.Errorf("contracts/invariants depends on %s; it may use only the standard library and gopkg.in/yaml.v3 (SUB-1)", dep)
+	}
+}

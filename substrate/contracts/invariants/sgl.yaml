@@ -1,0 +1,132 @@
+# The SGL invariants: blis-sglang (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: SGL-1
+  section: §5
+  statement: >-
+    The oracle drives SGLang's own Python classes at the pinned tag, in a locked environment, with
+    the Python tree core of the radix cache selected.
+  scope:
+  - blis-sglang
+  checks:
+  - repo: blis-sglang
+    check: >-
+      The oracle's lock check and recorded-trace provenance check, from contracts/harness
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SGL-2
+  section: §5
+  statement: Every Go file states its provenance, as for VLM-2.
+  scope:
+  - blis-sglang
+  checks:
+  - repo: blis-sglang
+    check: Shared harness test
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SGL-3
+  section: §5
+  statement: >-
+    fields.json covers SGLang's ServerArgs and its SGLANG_* environment variables, under the rules
+    of VLM-3. Defaults are resolved as SGLang's own resolution hooks resolve them.
+  scope:
+  - blis-sglang
+  checks:
+  - repo: blis-sglang
+    check: >-
+      The field-list completeness check against SGLang's ServerArgs and environment variables, and
+      the T1 default-resolution tier
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SGL-4
+  section: §5
+  statement: >-
+    surface.json lists every transfer backend, HiCache storage backend, tree cache, tree core, allocator
+    and memory-pool type, speculative algorithm, scheduling policy, metric family and KV-event type
+    the pinned release can select, each with a status (X9).
+  scope:
+  - blis-sglang
+  checks:
+  - repo: blis-sglang
+    check: >-
+      A generator that reads SGLang's registration tables and selection code at the pinned tag (§7.5),
+      and a check that every item has a status
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SGL-5
+  section: §5
+  statement: >-
+    KV events are emitted exactly as SGLang emits them: one BlockStored per page, merged in SGLang's
+    event queue with the queue's last event when it has the same medium, LoRA adapter, block size,
+    cache salt and session, and its parent hash continues that event's chain (mem_cache/events.py:140-170).
+    Consecutive BlockRemoved events of the same medium are merged too. Both tree cores, Python and
+    Rust, merge the same way (§6.4).
+  scope:
+  - blis-sglang
+  checks:
+  - repo: blis-sglang
+    check: Byte comparison with SGLang's queued events, for both tree cores
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A routing test at page size 1 and at page size 16 or more
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
+- id: SGL-6
+  section: §5
+  statement: >-
+    Every tree cache, tree core, allocator and memory-pool type the pinned release can select has
+    a status in surface.json that X9 allows. A modelled type has its Go counterpart, with oracle scenarios
+    that insert, match, lock against eviction, evict and free through it. A configuration that selects
+    a refused type is refused before the run starts, with a message naming the type.
+  scope:
+  - blis-sglang
+  checks:
+  - repo: blis-sglang
+    check: >-
+      A generator that parses SGLang's tree-cache, allocator and pool selection branches at the pinned
+      tag, with an unlisted branch as its known-bad input (§7.5)
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A T2 scenario per ported type
+    runs: pull_request
+    status: new
+  - repo: blis-sglang
+    check: A start-up refusal test for each refused type
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3
