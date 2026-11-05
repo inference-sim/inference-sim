@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
@@ -46,7 +47,7 @@ func TestValidScenariosPass(t *testing.T) {
 func TestScenarioWorkloadBinding(t *testing.T) {
 	traceArm := &workload.Binding{Trace: &workload.TraceRef{
 		Data:   "traces/run.csv",
-		Header: workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: workload.ModeReal},
+		Header: trace.Header{Version: trace.Version, TimeUnit: "microseconds", Mode: trace.ModeConverted},
 	}}
 	pass := map[string]*workload.Binding{
 		"no workload (capacity question)": nil,

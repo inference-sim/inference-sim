@@ -22,6 +22,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
@@ -256,6 +257,18 @@ func LoadWorkload(path string) (*workload.Shape, error) {
 	return w.Shape, nil
 }
 
+// LoadWorkloadSpec reads a workload generator specification, strictly. It does not
+// validate; call Validate. A v1 specification's class names and ServeGen's removed
+// time_window are not mapped: the first is refused by Validate, the second is an unknown
+// key here.
+func LoadWorkloadSpec(path string) (*workload.Spec, error) {
+	var s workload.Spec
+	if err := decodeStrict(path, &s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // LoadCatalogWorkload reads one catalog workloads/<name>.yaml in either form: a traffic
 // shape, or a replay workload when the file's top-level key is replay:. Both are named
 // from the path stem, and both decode strictly. A replay file may carry the catalog's
@@ -353,6 +366,20 @@ func LoadResult(path string) (*result.Result, error) {
 	}
 	var r result.Result
 	if err := result.Unmarshal(data, &r); err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", path, err)
+	}
+	return &r, nil
+}
+
+// LoadPointRecord reads a per-point record, JSON or YAML, refusing an unknown key in
+// either. It does not validate; call Validate.
+func LoadPointRecord(path string) (*pointrecord.Record, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s: %w", path, err)
+	}
+	var r pointrecord.Record
+	if err := result.UnmarshalStrict(data, &r); err != nil {
 		return nil, fmt.Errorf("decoding %s: %w", path, err)
 	}
 	return &r, nil

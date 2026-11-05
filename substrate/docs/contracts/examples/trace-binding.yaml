@@ -12,13 +12,9 @@ workload:
     data: traces/agentic-run.csv
     rows: 1048576
     header:
-      trace_version: 3
+      trace_version: 4
       time_unit: microseconds
-      mode: real
-      server:
-        type: vllm
-        tensor_parallel: 8
-        gpu_memory_utilization: 0.9
+      mode: converted
       goodput_slo_targets:
         critical: {ttft_ms: 500, itl_ms: 50, e2e_ms: 30000}
 # --8<-- [end:workload]

@@ -150,6 +150,7 @@ nav:
     - Scenario: contracts/reference/scenario.md
     - Deployment: contracts/reference/deployment.md
     - Workload: contracts/reference/workload.md
+    - Trace: contracts/reference/trace.md
     - Model graph: contracts/reference/model.md
     - Hardware: contracts/reference/hardware.md
     - Coefficient set: contracts/reference/coefficients.md
@@ -160,6 +161,8 @@ nav:
     - Measured run: contracts/reference/measurement.md
     - Result: contracts/reference/result.md
     - Metric registry: contracts/reference/metrics.md
+    - Point record: contracts/reference/point-record.md
+    - JSON Schemas: contracts/reference/schemas.md
     - Field list: contracts/reference/fields.md
     - Kernel interface: contracts/reference/kernel.md
     - Engine interface: contracts/reference/engine.md

@@ -8,6 +8,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/router"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +47,7 @@ func exactRun() *MeasuredRun {
 			Engine:   engineBlock("{max_model_len: 8192}")}}},
 		Router: &router.Router{Kind: router.KindDirect},
 		Workload: &workload.Binding{Trace: &workload.TraceRef{Data: "trace.csv", SHA256: digest("d"),
-			Header: workload.TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}}},
+			Header: trace.Header{Version: trace.Version, TimeUnit: "us", Mode: trace.ModeGenerated}}},
 		Client: ClientSpec{Harness: "vllm bench serve", HarnessVersion: "0.31.0",
 			ImageDigest: "vllm/vllm-openai@sha256:" + digest("e"),
 			Command:     []string{"vllm", "bench", "serve", "--seed", "0"},

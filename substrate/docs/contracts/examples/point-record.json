@@ -1,0 +1,37 @@
+{
+  "kind": "PointRecord",
+  "schema_version": 1,
+  "point_id": "cefb7a8bc91bf8efe67963ead7154970bb206bde0ac36c091f33643213871084",
+  "unit_id": "5a0b2e6f1d3c4b7a8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f",
+  "identity": { "source": "inferencex", "model": "dsv41flash", "hardware": "h200", "precision": "fp8", "framework": "vllm", "benchmark_type": "single_turn", "recipe": "row:445802", "conc": 64, "measured_date": "2026-10-21" },
+  "grade": "G4",
+  "substitutions": [
+    { "kind": "estimated", "subject": "max_model_len", "detail": "leave_unset" },
+    { "kind": "nightly_or_custom", "subject": "vllm/vllm-openai:nightly-20ebb28", "detail": "nightly build" },
+    { "kind": "other_release", "subject": "0.33.0rc0", "detail": "scored on 0.32.0" }
+  ],
+  "build": { "image": "vllm/vllm-openai:nightly-20ebb28", "commit": "20ebb28c1d2e3f40516273849506a7b8c9d0e1f2", "source": "image_tag", "version": "0.33.0rc0.dev12+g20ebb28" },
+  "simulator": {
+    "build": "v0.16.0",
+    "engine": { "kind": "vllm", "version": "0.32.0" },
+    "data": {
+      "catalog": { "source": "embedded", "hash": "3f2a9c0d81b7e6f5a4c3b2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1", "combined_hash": "3f2a9c0d81b7e6f5a4c3b2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1" },
+      "registry": { "source": "embedded", "hash": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d", "combined_hash": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d" },
+      "released_data": true,
+      "build": "v0.16.0"
+    }
+  },
+  "harness_digest": "sha256:7c9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6",
+  "figures": [
+    { "metric": "tpot_mean_ms", "predicted": 4.7, "measured": 4.9, "predicted_samples": 640, "measured_samples": 640, "interval": { "low": 4.6, "high": 4.8, "level": 0.95, "replications": 5 } },
+    { "metric": "ttft_mean_ms", "predicted": 1410.0, "measured": 1490.0, "predicted_samples": 640, "measured_samples": 640 }
+  ],
+  "settings": [
+    { "arg": "max_model_len", "measured": null, "blis": null, "match": "estimated", "rule": "leave_unset" },
+    { "arg": "max_num_seqs", "measured": 256, "source": "args", "blis": 256, "match": "exact" }
+  ],
+  "resolved": [
+    { "quantity": "kv_cache_tokens_per_replica", "measured": 412160, "blis": 409600, "delta": -2560, "ratio": "0.9938", "match": "differs" }
+  ],
+  "facets": { "sweep_id": "dsv41-h200-fp8-8k1k", "scenario": "dsv41flash-h200-fp8-vllm-tp8", "label": "8k1k", "workload": "8192:1024", "model": "deepseek-v4.1-flash", "gpu": "h200", "precision": "fp8", "framework": "vllm", "serving": "aggregated", "spec_method": "none", "parallelism": { "tp": 8, "pp": 1, "dp": 1, "ep": 1 } }
+}

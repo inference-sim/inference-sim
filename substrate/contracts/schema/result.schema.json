@@ -1,0 +1,2196 @@
+{
+  "$defs": {
+    "acceptance.Pin": {
+      "additionalProperties": false,
+      "properties": {
+        "fallback_category": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/acceptance.Value"
+        }
+      },
+      "type": "object"
+    },
+    "acceptance.Value": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_length": {
+          "type": "number"
+        },
+        "acceptance_rate": {
+          "type": "number"
+        },
+        "num_spec_tokens": {
+          "type": "integer"
+        },
+        "per_position_rates": {
+          "items": {
+            "type": "number"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "num_spec_tokens"
+      ],
+      "type": "object"
+    },
+    "coefficient.Scope": {
+      "additionalProperties": false,
+      "properties": {
+        "ep": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "fabric": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hardware": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "nodes_spanned": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "tp": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.Deployment": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "Deployment"
+        },
+        "name": {
+          "type": "string"
+        },
+        "offload": {
+          "$ref": "#/$defs/deployment.Offload"
+        },
+        "pd_transfer": {
+          "$ref": "#/$defs/deployment.PDTransfer"
+        },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/deployment.Pool"
+          },
+          "type": "array"
+        },
+        "router": {
+          "$ref": "#/$defs/deployment.Router"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "pools"
+      ],
+      "type": "object"
+    },
+    "deployment.Offload": {
+      "additionalProperties": false,
+      "properties": {
+        "connector": {
+          "type": "string"
+        },
+        "connector_options": {
+          "description": "The pool's engine settings, in the engine's own names; validated by the engine, not by this schema.",
+          "type": "object"
+        },
+        "eviction_policy": {
+          "type": "string"
+        },
+        "prefetch_depth": {
+          "type": "integer"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "tiers": {
+          "items": {
+            "$ref": "#/$defs/deployment.Tier"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tiers"
+      ],
+      "type": "object"
+    },
+    "deployment.PDTransfer": {
+      "additionalProperties": false,
+      "properties": {
+        "connector": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.Parallelism": {
+      "additionalProperties": false,
+      "properties": {
+        "data_parallel_load_balancing": {
+          "enum": [
+            "",
+            "internal",
+            "hybrid",
+            "external"
+          ],
+          "type": "string"
+        },
+        "dcp": {
+          "type": "integer"
+        },
+        "dp": {
+          "type": "integer"
+        },
+        "dp_local": {
+          "type": "integer"
+        },
+        "enable_expert_parallel": {
+          "type": "boolean"
+        },
+        "pcp": {
+          "type": "integer"
+        },
+        "pp": {
+          "type": "integer"
+        },
+        "tp": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dp",
+        "pp",
+        "tp"
+      ],
+      "type": "object"
+    },
+    "deployment.Pool": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "description": "The pool's engine settings, in the engine's own names; validated by the engine, not by this schema.",
+          "type": "object"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "nodes": {
+          "type": "integer"
+        },
+        "parallel": {
+          "$ref": "#/$defs/deployment.Parallelism"
+        },
+        "role": {
+          "enum": [
+            "colocated",
+            "prefill",
+            "decode"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "nodes",
+        "parallel",
+        "role"
+      ],
+      "type": "object"
+    },
+    "deployment.Router": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint_picker_config": {
+          "type": "string"
+        },
+        "epp_flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "manifests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.Tier": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "tier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "tier"
+      ],
+      "type": "object"
+    },
+    "measurement.Load": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer"
+        },
+        "request_rate": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "result.AcceptanceCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "enum": [
+            "achieved_concurrency_within",
+            "unfinished_fraction_at_most"
+          ],
+          "type": "string"
+        },
+        "met": {
+          "type": "boolean"
+        },
+        "observed": {
+          "type": "number"
+        },
+        "threshold": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "condition",
+        "met",
+        "observed",
+        "threshold"
+      ],
+      "type": "object"
+    },
+    "result.AgenticTag": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "root",
+            "subagent",
+            "flat"
+          ],
+          "type": "string"
+        },
+        "lane": {
+          "type": "integer"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string"
+        },
+        "stream_instance": {
+          "type": "integer"
+        },
+        "trace_id": {
+          "type": "string"
+        },
+        "tree": {
+          "type": "integer"
+        },
+        "turn": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "lane",
+        "stream",
+        "stream_instance",
+        "trace_id",
+        "tree",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "result.Artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "result.Breakdowns": {
+      "additionalProperties": false,
+      "properties": {
+        "pd": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "per_adapter": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "cache_hit_rate",
+                "e2e_mean_ms",
+                "e2e_p50_ms",
+                "e2e_p90_ms",
+                "e2e_p95_ms",
+                "e2e_p99_ms",
+                "gateway_queue_delay_mean_ms",
+                "gateway_queue_delay_p50_ms",
+                "gateway_queue_delay_p90_ms",
+                "gateway_queue_delay_p95_ms",
+                "gateway_queue_delay_p99_ms",
+                "goodput_rps",
+                "interactivity_mean",
+                "interactivity_p50",
+                "interactivity_p90",
+                "itl_mean_ms",
+                "itl_p50_ms",
+                "itl_p90_ms",
+                "itl_p95_ms",
+                "itl_p99_ms",
+                "output_tok_s",
+                "output_tok_s_per_gpu",
+                "preemptions",
+                "request_throughput",
+                "scheduling_delay_mean_ms",
+                "scheduling_delay_p50_ms",
+                "scheduling_delay_p90_ms",
+                "scheduling_delay_p95_ms",
+                "scheduling_delay_p99_ms",
+                "slo_attainment",
+                "step_interval_mean_ms",
+                "step_interval_p50_ms",
+                "step_interval_p90_ms",
+                "step_interval_p95_ms",
+                "step_interval_p99_ms",
+                "total_tok_s",
+                "tpot_mean_ms",
+                "tpot_p50_ms",
+                "tpot_p90_ms",
+                "tpot_p95_ms",
+                "tpot_p99_ms",
+                "ttft_mean_ms",
+                "ttft_p50_ms",
+                "ttft_p90_ms",
+                "ttft_p95_ms",
+                "ttft_p99_ms"
+              ]
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "per_model": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "cache_hit_rate",
+                "e2e_mean_ms",
+                "e2e_p50_ms",
+                "e2e_p90_ms",
+                "e2e_p95_ms",
+                "e2e_p99_ms",
+                "gateway_queue_delay_mean_ms",
+                "gateway_queue_delay_p50_ms",
+                "gateway_queue_delay_p90_ms",
+                "gateway_queue_delay_p95_ms",
+                "gateway_queue_delay_p99_ms",
+                "goodput_rps",
+                "interactivity_mean",
+                "interactivity_p50",
+                "interactivity_p90",
+                "itl_mean_ms",
+                "itl_p50_ms",
+                "itl_p90_ms",
+                "itl_p95_ms",
+                "itl_p99_ms",
+                "output_tok_s",
+                "output_tok_s_per_gpu",
+                "preemptions",
+                "request_throughput",
+                "scheduling_delay_mean_ms",
+                "scheduling_delay_p50_ms",
+                "scheduling_delay_p90_ms",
+                "scheduling_delay_p95_ms",
+                "scheduling_delay_p99_ms",
+                "slo_attainment",
+                "step_interval_mean_ms",
+                "step_interval_p50_ms",
+                "step_interval_p90_ms",
+                "step_interval_p95_ms",
+                "step_interval_p99_ms",
+                "total_tok_s",
+                "tpot_mean_ms",
+                "tpot_p50_ms",
+                "tpot_p90_ms",
+                "tpot_p95_ms",
+                "tpot_p99_ms",
+                "ttft_mean_ms",
+                "ttft_p50_ms",
+                "ttft_p90_ms",
+                "ttft_p95_ms",
+                "ttft_p99_ms"
+              ]
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "per_tenant": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "cache_hit_rate",
+                "e2e_mean_ms",
+                "e2e_p50_ms",
+                "e2e_p90_ms",
+                "e2e_p95_ms",
+                "e2e_p99_ms",
+                "gateway_queue_delay_mean_ms",
+                "gateway_queue_delay_p50_ms",
+                "gateway_queue_delay_p90_ms",
+                "gateway_queue_delay_p95_ms",
+                "gateway_queue_delay_p99_ms",
+                "goodput_rps",
+                "interactivity_mean",
+                "interactivity_p50",
+                "interactivity_p90",
+                "itl_mean_ms",
+                "itl_p50_ms",
+                "itl_p90_ms",
+                "itl_p95_ms",
+                "itl_p99_ms",
+                "output_tok_s",
+                "output_tok_s_per_gpu",
+                "preemptions",
+                "request_throughput",
+                "scheduling_delay_mean_ms",
+                "scheduling_delay_p50_ms",
+                "scheduling_delay_p90_ms",
+                "scheduling_delay_p95_ms",
+                "scheduling_delay_p99_ms",
+                "slo_attainment",
+                "step_interval_mean_ms",
+                "step_interval_p50_ms",
+                "step_interval_p90_ms",
+                "step_interval_p95_ms",
+                "step_interval_p99_ms",
+                "total_tok_s",
+                "tpot_mean_ms",
+                "tpot_p50_ms",
+                "tpot_p90_ms",
+                "tpot_p95_ms",
+                "tpot_p99_ms",
+                "ttft_mean_ms",
+                "ttft_p50_ms",
+                "ttft_p90_ms",
+                "ttft_p95_ms",
+                "ttft_p99_ms"
+              ]
+            },
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "sessions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "result.ClassGoodput": {
+      "additionalProperties": false,
+      "properties": {
+        "completed": {
+          "type": "integer"
+        },
+        "met": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "completed",
+        "met"
+      ],
+      "type": "object"
+    },
+    "result.Data": {
+      "additionalProperties": false,
+      "properties": {
+        "build": {
+          "type": "string"
+        },
+        "catalog": {
+          "$ref": "#/$defs/result.DataSource"
+        },
+        "registry": {
+          "$ref": "#/$defs/result.DataSource"
+        },
+        "released_data": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "build",
+        "catalog",
+        "registry",
+        "released_data"
+      ],
+      "type": "object"
+    },
+    "result.DataSource": {
+      "additionalProperties": false,
+      "properties": {
+        "combined_hash": {
+          "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "overlays": {
+          "items": {
+            "$ref": "#/$defs/result.Overlay"
+          },
+          "type": "array"
+        },
+        "source": {
+          "enum": [
+            "embedded",
+            "path"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "combined_hash",
+        "hash",
+        "source"
+      ],
+      "type": "object"
+    },
+    "result.DrainPhase": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "type": "number"
+        },
+        "rule": {
+          "enum": [
+            "none",
+            "until_complete",
+            "grace"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule"
+      ],
+      "type": "object"
+    },
+    "result.Engine": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "version"
+      ],
+      "type": "object"
+    },
+    "result.Figure": {
+      "additionalProperties": false,
+      "properties": {
+        "samples": {
+          "type": "integer"
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "samples",
+        "value"
+      ],
+      "type": "object"
+    },
+    "result.Frame": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "items": {
+            "$ref": "#/$defs/result.AcceptanceCondition"
+          },
+          "type": "array"
+        },
+        "generator": {
+          "$ref": "#/$defs/result.Generator"
+        },
+        "initial_state": {
+          "$ref": "#/$defs/result.InitialState"
+        },
+        "kind": {
+          "enum": [
+            "terminating",
+            "steady_state"
+          ],
+          "type": "string"
+        },
+        "metrics": {
+          "items": {
+            "enum": [
+              "cache_hit_rate",
+              "e2e_mean_ms",
+              "e2e_p50_ms",
+              "e2e_p90_ms",
+              "e2e_p95_ms",
+              "e2e_p99_ms",
+              "gateway_queue_delay_mean_ms",
+              "gateway_queue_delay_p50_ms",
+              "gateway_queue_delay_p90_ms",
+              "gateway_queue_delay_p95_ms",
+              "gateway_queue_delay_p99_ms",
+              "goodput_rps",
+              "interactivity_mean",
+              "interactivity_p50",
+              "interactivity_p90",
+              "itl_mean_ms",
+              "itl_p50_ms",
+              "itl_p90_ms",
+              "itl_p95_ms",
+              "itl_p99_ms",
+              "output_tok_s",
+              "output_tok_s_per_gpu",
+              "preemptions",
+              "request_throughput",
+              "scheduling_delay_mean_ms",
+              "scheduling_delay_p50_ms",
+              "scheduling_delay_p90_ms",
+              "scheduling_delay_p95_ms",
+              "scheduling_delay_p99_ms",
+              "slo_attainment",
+              "step_interval_mean_ms",
+              "step_interval_p50_ms",
+              "step_interval_p90_ms",
+              "step_interval_p95_ms",
+              "step_interval_p99_ms",
+              "total_tok_s",
+              "tpot_mean_ms",
+              "tpot_p50_ms",
+              "tpot_p90_ms",
+              "tpot_p95_ms",
+              "tpot_p99_ms",
+              "ttft_mean_ms",
+              "ttft_p50_ms",
+              "ttft_p90_ms",
+              "ttft_p95_ms",
+              "ttft_p99_ms"
+            ]
+          },
+          "type": "array"
+        },
+        "phases": {
+          "$ref": "#/$defs/result.Phases"
+        },
+        "stop": {
+          "$ref": "#/$defs/result.StopRule"
+        }
+      },
+      "required": [
+        "generator",
+        "initial_state",
+        "kind",
+        "metrics",
+        "phases",
+        "stop"
+      ],
+      "type": "object"
+    },
+    "result.Generator": {
+      "additionalProperties": false,
+      "properties": {
+        "load": {
+          "$ref": "#/$defs/measurement.Load"
+        },
+        "rng": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "workload": {
+          "$ref": "#/$defs/workload.Binding"
+        }
+      },
+      "required": [
+        "rng",
+        "seed"
+      ],
+      "type": "object"
+    },
+    "result.Goodput": {
+      "additionalProperties": false,
+      "properties": {
+        "per_class": {
+          "additionalProperties": {
+            "$ref": "#/$defs/result.ClassGoodput"
+          },
+          "type": "object"
+        },
+        "targets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/trace.SLODimTargets"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "type": "object"
+    },
+    "result.InitialState": {
+      "additionalProperties": false,
+      "properties": {
+        "caches": {
+          "enum": [
+            "empty",
+            "warmed"
+          ],
+          "type": "string"
+        },
+        "rule": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "caches"
+      ],
+      "type": "object"
+    },
+    "result.Input": {
+      "additionalProperties": false,
+      "properties": {
+        "deployment": {
+          "$ref": "#/$defs/deployment.Deployment"
+        },
+        "options": {
+          "items": {
+            "$ref": "#/$defs/result.Option"
+          },
+          "type": "array"
+        },
+        "policy": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "scenario": {
+          "$ref": "#/$defs/scenario.Scenario"
+        },
+        "workload_properties": {
+          "items": {
+            "$ref": "#/$defs/result.WorkloadProperty"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "deployment",
+        "scenario"
+      ],
+      "type": "object"
+    },
+    "result.MeasuredPhase": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "enum": [
+            "first_arrival_after_warmup",
+            "profiling_start",
+            "simulation_start"
+          ],
+          "type": "string"
+        },
+        "stop": {
+          "enum": [
+            "last_completion",
+            "profiling_end",
+            "simulation_end"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "stop"
+      ],
+      "type": "object"
+    },
+    "result.Option": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "command_line",
+            "environment",
+            "default"
+          ],
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "source",
+        "value"
+      ],
+      "type": "object"
+    },
+    "result.Overlay": {
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash"
+      ],
+      "type": "object"
+    },
+    "result.Override": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "type": "string"
+        },
+        "run": {
+          "type": "string"
+        },
+        "setting": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "setting",
+        "source"
+      ],
+      "type": "object"
+    },
+    "result.Phases": {
+      "additionalProperties": false,
+      "properties": {
+        "drain": {
+          "$ref": "#/$defs/result.DrainPhase"
+        },
+        "measured": {
+          "$ref": "#/$defs/result.MeasuredPhase"
+        },
+        "warmup": {
+          "$ref": "#/$defs/result.WarmupPhase"
+        }
+      },
+      "required": [
+        "drain",
+        "measured",
+        "warmup"
+      ],
+      "type": "object"
+    },
+    "result.Reference": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "result.Reports": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "kernel": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "router": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "saturation": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "result.RequestRow": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "agentic": {
+          "$ref": "#/$defs/result.AgenticTag"
+        },
+        "arrival_us": {
+          "type": "integer"
+        },
+        "cached_external_tokens": {
+          "type": "integer"
+        },
+        "cached_local_tokens": {
+          "type": "integer"
+        },
+        "completion_index": {
+          "type": "integer"
+        },
+        "computed_tokens": {
+          "type": "integer"
+        },
+        "drop_reason": {
+          "enum": [
+            "admission_rejected",
+            "routing_rejected",
+            "encode_routing_rejected",
+            "gateway_queue_rejected",
+            "gateway_evicted",
+            "gateway_expired",
+            "unservable",
+            "context_overflow",
+            "decode_kv_unavailable"
+          ],
+          "type": "string"
+        },
+        "e2e_us": {
+          "type": "integer"
+        },
+        "fate": {
+          "enum": [
+            "completed",
+            "dropped",
+            "timed_out",
+            "in_flight_at_horizon",
+            "queued_at_horizon",
+            "not_started"
+          ],
+          "type": "string"
+        },
+        "gateway_queue_delay_us": {
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instance": {
+          "type": "string"
+        },
+        "length_capped": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "phase": {
+          "enum": [
+            "warmup",
+            "profile",
+            "grace"
+          ],
+          "type": "string"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "round_index": {
+          "type": "integer"
+        },
+        "scheduling_delay_us": {
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slo_class": {
+          "type": "string"
+        },
+        "tenant_id": {
+          "type": "string"
+        },
+        "tpot_us": {
+          "type": "number"
+        },
+        "ttft_us": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "arrival_us",
+        "fate",
+        "id",
+        "output_tokens",
+        "prompt_tokens"
+      ],
+      "type": "object"
+    },
+    "result.Requests": {
+      "additionalProperties": false,
+      "properties": {
+        "completed": {
+          "type": "integer"
+        },
+        "dropped": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "propertyNames": {
+            "enum": [
+              "admission_rejected",
+              "routing_rejected",
+              "encode_routing_rejected",
+              "gateway_queue_rejected",
+              "gateway_evicted",
+              "gateway_expired",
+              "unservable",
+              "context_overflow",
+              "decode_kv_unavailable"
+            ]
+          },
+          "type": "object"
+        },
+        "generated": {
+          "type": "integer"
+        },
+        "in_flight_at_horizon": {
+          "type": "integer"
+        },
+        "length_capped": {
+          "type": "integer"
+        },
+        "not_started": {
+          "type": "integer"
+        },
+        "queued_at_horizon": {
+          "type": "integer"
+        },
+        "timed_out": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "completed",
+        "generated",
+        "in_flight_at_horizon",
+        "length_capped",
+        "not_started",
+        "queued_at_horizon",
+        "timed_out"
+      ],
+      "type": "object"
+    },
+    "result.Result": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "additionalProperties": {
+            "$ref": "#/$defs/result.Artifact"
+          },
+          "type": "object"
+        },
+        "breakdowns": {
+          "$ref": "#/$defs/result.Breakdowns"
+        },
+        "data": {
+          "$ref": "#/$defs/result.Data"
+        },
+        "engine": {
+          "$ref": "#/$defs/result.Engine"
+        },
+        "frame": {
+          "$ref": "#/$defs/result.Frame"
+        },
+        "goodput": {
+          "$ref": "#/$defs/result.Goodput"
+        },
+        "input": {
+          "$ref": "#/$defs/result.Input"
+        },
+        "kind": {
+          "const": "Result"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "$ref": "#/$defs/result.Figure"
+          },
+          "propertyNames": {
+            "enum": [
+              "cache_hit_rate",
+              "e2e_mean_ms",
+              "e2e_p50_ms",
+              "e2e_p90_ms",
+              "e2e_p95_ms",
+              "e2e_p99_ms",
+              "gateway_queue_delay_mean_ms",
+              "gateway_queue_delay_p50_ms",
+              "gateway_queue_delay_p90_ms",
+              "gateway_queue_delay_p95_ms",
+              "gateway_queue_delay_p99_ms",
+              "goodput_rps",
+              "interactivity_mean",
+              "interactivity_p50",
+              "interactivity_p90",
+              "itl_mean_ms",
+              "itl_p50_ms",
+              "itl_p90_ms",
+              "itl_p95_ms",
+              "itl_p99_ms",
+              "output_tok_s",
+              "output_tok_s_per_gpu",
+              "preemptions",
+              "request_throughput",
+              "scheduling_delay_mean_ms",
+              "scheduling_delay_p50_ms",
+              "scheduling_delay_p90_ms",
+              "scheduling_delay_p95_ms",
+              "scheduling_delay_p99_ms",
+              "slo_attainment",
+              "step_interval_mean_ms",
+              "step_interval_p50_ms",
+              "step_interval_p90_ms",
+              "step_interval_p95_ms",
+              "step_interval_p99_ms",
+              "total_tok_s",
+              "tpot_mean_ms",
+              "tpot_p50_ms",
+              "tpot_p90_ms",
+              "tpot_p95_ms",
+              "tpot_p99_ms",
+              "ttft_mean_ms",
+              "ttft_p50_ms",
+              "ttft_p90_ms",
+              "ttft_p95_ms",
+              "ttft_p99_ms"
+            ]
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "overrides": {
+          "items": {
+            "$ref": "#/$defs/result.Override"
+          },
+          "type": "array"
+        },
+        "reports": {
+          "$ref": "#/$defs/result.Reports"
+        },
+        "request_rows": {
+          "items": {
+            "$ref": "#/$defs/result.RequestRow"
+          },
+          "type": "array"
+        },
+        "requests": {
+          "$ref": "#/$defs/result.Requests"
+        },
+        "rerun_of": {
+          "$ref": "#/$defs/result.Reference"
+        },
+        "revision_changes": {
+          "items": {
+            "$ref": "#/$defs/result.RevisionChange"
+          },
+          "type": "array"
+        },
+        "revisions": {
+          "$ref": "#/$defs/result.Revisions"
+        },
+        "runtime": {
+          "$ref": "#/$defs/result.Runtime"
+        },
+        "schema_version": {
+          "const": 2
+        },
+        "selected_entries": {
+          "$ref": "#/$defs/result.SelectedEntries"
+        },
+        "window": {
+          "$ref": "#/$defs/result.Window"
+        }
+      },
+      "required": [
+        "data",
+        "engine",
+        "frame",
+        "input",
+        "kind",
+        "name",
+        "requests",
+        "revisions",
+        "schema_version",
+        "selected_entries",
+        "window"
+      ],
+      "type": "object"
+    },
+    "result.RevisionChange": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
+    "result.Revisions": {
+      "additionalProperties": false,
+      "properties": {
+        "engine_module": {
+          "type": "string"
+        },
+        "router": {
+          "type": "string"
+        },
+        "simulator": {
+          "type": "string"
+        },
+        "substrate": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "simulator",
+        "substrate"
+      ],
+      "type": "object"
+    },
+    "result.Runtime": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "started_utc": {
+          "type": "string"
+        },
+        "wall_clock_s": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "result.SelectedCoefficient": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "measured",
+            "literature",
+            "vendor_spec",
+            "copied",
+            "assumed",
+            "not_charged",
+            "calibrated"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/coefficient.Scope"
+        },
+        "set": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "method",
+        "name",
+        "scope",
+        "set"
+      ],
+      "type": "object"
+    },
+    "result.SelectedEntries": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_profiles": {
+          "items": {
+            "$ref": "#/$defs/result.SelectedProfile"
+          },
+          "type": "array"
+        },
+        "coefficients": {
+          "items": {
+            "$ref": "#/$defs/result.SelectedCoefficient"
+          },
+          "type": "array"
+        },
+        "routing_profiles": {
+          "items": {
+            "$ref": "#/$defs/result.SelectedProfile"
+          },
+          "type": "array"
+        },
+        "unread_files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "result.SelectedProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "set": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "key",
+        "set"
+      ],
+      "type": "object"
+    },
+    "result.StopRule": {
+      "additionalProperties": false,
+      "properties": {
+        "horizon_s": {
+          "type": "number"
+        },
+        "requests": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "result.WarmupPhase": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "type": "number"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "rule": {
+          "enum": [
+            "none",
+            "requests",
+            "duration",
+            "marked",
+            "mser5"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule"
+      ],
+      "type": "object"
+    },
+    "result.Window": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "type": "number"
+        },
+        "end_us": {
+          "type": "integer"
+        },
+        "requests": {
+          "type": "integer"
+        },
+        "start_us": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "duration_s",
+        "end_us",
+        "requests",
+        "start_us"
+      ],
+      "type": "object"
+    },
+    "result.WorkloadProperty": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "command_line",
+            "scenario",
+            "workload",
+            "profile",
+            "default"
+          ],
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "source"
+      ],
+      "type": "object"
+    },
+    "routing.Pin": {
+      "additionalProperties": false,
+      "properties": {
+        "fallback_category": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/routing.Value"
+        }
+      },
+      "type": "object"
+    },
+    "routing.Value": {
+      "additionalProperties": false,
+      "properties": {
+        "expert_imbalance": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string"
+        },
+        "token_imbalance": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "token_imbalance"
+      ],
+      "type": "object"
+    },
+    "scenario.Cluster": {
+      "additionalProperties": false,
+      "properties": {
+        "fabric": {
+          "type": "string"
+        },
+        "gpus_per_node": {
+          "type": "integer"
+        },
+        "gpus_per_rack": {
+          "type": "integer"
+        },
+        "hardware": {
+          "type": "string"
+        },
+        "nodes": {
+          "type": "integer"
+        },
+        "storage": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "gpus_per_node",
+        "hardware",
+        "nodes"
+      ],
+      "type": "object"
+    },
+    "scenario.Engine": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "version"
+      ],
+      "type": "object"
+    },
+    "scenario.Scenario": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Pin"
+        },
+        "cluster": {
+          "$ref": "#/$defs/scenario.Cluster"
+        },
+        "coefficients": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "engine": {
+          "$ref": "#/$defs/scenario.Engine"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "Scenario"
+        },
+        "model": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing.Pin"
+        },
+        "workload": {
+          "$ref": "#/$defs/workload.Binding"
+        }
+      },
+      "required": [
+        "cluster",
+        "coefficients",
+        "kind",
+        "model",
+        "name"
+      ],
+      "type": "object"
+    },
+    "trace.Header": {
+      "additionalProperties": false,
+      "properties": {
+        "goodput_slo_targets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/trace.SLODimTargets"
+          },
+          "type": "object"
+        },
+        "kv_offload": {
+          "$ref": "#/$defs/trace.KVOffload"
+        },
+        "max_nodes_spanned": {
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "generated",
+            "replayed",
+            "converted"
+          ],
+          "type": "string"
+        },
+        "router": {
+          "$ref": "#/$defs/trace.Router"
+        },
+        "session_context_growth": {
+          "enum": [
+            "accumulate"
+          ],
+          "type": "string"
+        },
+        "time_unit": {
+          "enum": [
+            "ns",
+            "nanoseconds",
+            "us",
+            "microseconds",
+            "ms",
+            "milliseconds",
+            "s",
+            "seconds"
+          ],
+          "type": "string"
+        },
+        "trace_version": {
+          "const": 4
+        },
+        "workload_seed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "time_unit",
+        "trace_version"
+      ],
+      "type": "object"
+    },
+    "trace.KVOffload": {
+      "additionalProperties": false,
+      "properties": {
+        "block_size": {
+          "type": "integer"
+        },
+        "blocks_per_chunk": {
+          "type": "integer"
+        },
+        "cpu_bytes_to_use": {
+          "type": "integer"
+        },
+        "eviction_policy": {
+          "type": "string"
+        },
+        "lazy_offload": {
+          "type": "boolean"
+        },
+        "offload_prompt_only": {
+          "type": "boolean"
+        },
+        "per_block_bytes": {
+          "type": "integer"
+        },
+        "secondary_tiers": {
+          "items": {
+            "$ref": "#/$defs/trace.KVOffloadTier"
+          },
+          "type": "array"
+        },
+        "self_describing_kv_events": {
+          "type": "boolean"
+        },
+        "simple_cpu_offload": {
+          "type": "boolean"
+        },
+        "tokens_per_hash": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "block_size",
+        "blocks_per_chunk",
+        "cpu_bytes_to_use",
+        "eviction_policy",
+        "offload_prompt_only",
+        "per_block_bytes",
+        "self_describing_kv_events",
+        "tokens_per_hash"
+      ],
+      "type": "object"
+    },
+    "trace.KVOffloadTier": {
+      "additionalProperties": false,
+      "properties": {
+        "base_latency": {
+          "type": "number"
+        },
+        "capacity_bytes": {
+          "type": "integer"
+        },
+        "device_class": {
+          "type": "string"
+        },
+        "direct_io": {
+          "type": "boolean"
+        },
+        "enable_kv_events": {
+          "type": "boolean"
+        },
+        "latency_jitter_stddev": {
+          "type": "number"
+        },
+        "locality": {
+          "type": "string"
+        },
+        "n_read_threads": {
+          "type": "integer"
+        },
+        "n_write_threads": {
+          "type": "integer"
+        },
+        "read_bandwidth": {
+          "type": "number"
+        },
+        "root_dir": {
+          "type": "string"
+        },
+        "saturation_queue_depth": {
+          "type": "integer"
+        },
+        "single_transfer_fraction": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string"
+        },
+        "write_bandwidth": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "base_latency",
+        "direct_io",
+        "enable_kv_events",
+        "latency_jitter_stddev",
+        "n_read_threads",
+        "n_write_threads",
+        "read_bandwidth",
+        "root_dir",
+        "saturation_queue_depth",
+        "single_transfer_fraction",
+        "type",
+        "write_bandwidth"
+      ],
+      "type": "object"
+    },
+    "trace.Router": {
+      "additionalProperties": false,
+      "properties": {
+        "epp_flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gateway_latency_us": {
+          "type": "integer"
+        },
+        "kv_event_delay_us": {
+          "type": "integer"
+        },
+        "manifests": {
+          "type": "string"
+        },
+        "pod_labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "scrape_jitter_us": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "epp_flags"
+      ],
+      "type": "object"
+    },
+    "trace.SLODimTargets": {
+      "additionalProperties": false,
+      "properties": {
+        "e2e_ms": {
+          "type": "number"
+        },
+        "itl_ms": {
+          "type": "number"
+        },
+        "ttft_ms": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "workload.Binding": {
+      "additionalProperties": false,
+      "properties": {
+        "replay": {
+          "$ref": "#/$defs/workload.Replay"
+        },
+        "shape": {
+          "type": "string"
+        },
+        "trace": {
+          "$ref": "#/$defs/workload.TraceRef"
+        }
+      },
+      "type": "object"
+    },
+    "workload.Corpus": {
+      "additionalProperties": false,
+      "properties": {
+        "encoding": {
+          "enum": [
+            "jsonl"
+          ],
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "weka-trace-v7"
+          ],
+          "type": "string"
+        },
+        "loader": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/workload.CorpusSource"
+        }
+      },
+      "required": [
+        "encoding",
+        "format",
+        "loader",
+        "sha256",
+        "source"
+      ],
+      "type": "object"
+    },
+    "workload.CorpusSource": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "huggingface": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "split": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "huggingface",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "workload.Replay": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Value"
+        },
+        "benchmark_duration_s": {
+          "type": "number"
+        },
+        "cache_bust": {
+          "enum": [
+            "first_turn_prefix"
+          ],
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "concurrency": {
+          "type": "integer"
+        },
+        "corpus": {
+          "$ref": "#/$defs/workload.Corpus"
+        },
+        "grace_period_s": {
+          "type": "number"
+        },
+        "harness_version": {
+          "type": "string"
+        },
+        "ignore_eos": {
+          "type": "boolean"
+        },
+        "ignore_trace_delays": {
+          "type": "boolean"
+        },
+        "inter_turn_delay_cap_s": {
+          "type": "number"
+        },
+        "max_context_length": {
+          "oneOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "const": "max_model_len"
+            }
+          ]
+        },
+        "random_seed": {
+          "type": "integer"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing.Value"
+        },
+        "scenario": {
+          "enum": [
+            "inferencex-agentx-mvp"
+          ],
+          "type": "string"
+        },
+        "split_flattened_agents": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "synthesis_max_isl": {
+          "type": "integer"
+        },
+        "system_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "thinking": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "trace_idle_gap_cap_s": {
+          "type": "number"
+        },
+        "trajectory_start": {
+          "$ref": "#/$defs/workload.TrajectoryStart"
+        },
+        "warmup": {
+          "$ref": "#/$defs/workload.Warmup"
+        },
+        "workload": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "concurrency"
+      ],
+      "type": "object"
+    },
+    "workload.TokenBlocks": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "workload.TraceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "$ref": "#/$defs/acceptance.Value"
+        },
+        "category": {
+          "type": "string"
+        },
+        "data": {
+          "type": "string"
+        },
+        "header": {
+          "$ref": "#/$defs/trace.Header"
+        },
+        "routing": {
+          "$ref": "#/$defs/routing.Value"
+        },
+        "rows": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "thinking": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "type": "string"
+        },
+        "token_blocks": {
+          "$ref": "#/$defs/workload.TokenBlocks"
+        }
+      },
+      "required": [
+        "data",
+        "header"
+      ],
+      "type": "object"
+    },
+    "workload.TrajectoryStart": {
+      "additionalProperties": false,
+      "properties": {
+        "max_ratio": {
+          "type": "number"
+        },
+        "min_ratio": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "workload.Warmup": {
+      "additionalProperties": false,
+      "properties": {
+        "duration_s": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "synthesized",
+            "cache_pressure"
+          ],
+          "type": "string"
+        },
+        "requests_per_lane": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://inference-sim.github.io/blis-substrate/schema/result.schema.json",
+  "$ref": "#/$defs/result.Result",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A BLIS Result: what one run predicts, with the engine, data, options, frame and fates it records. Generated from the Go types by tools/schemagen; the Go validators are the definition.",
+  "title": "result"
+}

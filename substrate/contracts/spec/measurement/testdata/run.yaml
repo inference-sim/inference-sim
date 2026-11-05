@@ -51,7 +51,7 @@ workload:
     data: trace.csv
     sha256: dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
     header:
-      trace_version: 2
+      trace_version: 4
       time_unit: us
       mode: generated
 client:

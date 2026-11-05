@@ -1,0 +1,350 @@
+{
+  "$defs": {
+    "trace.Header": {
+      "additionalProperties": false,
+      "properties": {
+        "goodput_slo_targets": {
+          "additionalProperties": {
+            "$ref": "#/$defs/trace.SLODimTargets"
+          },
+          "type": "object"
+        },
+        "kv_offload": {
+          "$ref": "#/$defs/trace.KVOffload"
+        },
+        "max_nodes_spanned": {
+          "type": "integer"
+        },
+        "mode": {
+          "enum": [
+            "generated",
+            "replayed",
+            "converted"
+          ],
+          "type": "string"
+        },
+        "router": {
+          "$ref": "#/$defs/trace.Router"
+        },
+        "session_context_growth": {
+          "enum": [
+            "accumulate"
+          ],
+          "type": "string"
+        },
+        "time_unit": {
+          "enum": [
+            "ns",
+            "nanoseconds",
+            "us",
+            "microseconds",
+            "ms",
+            "milliseconds",
+            "s",
+            "seconds"
+          ],
+          "type": "string"
+        },
+        "trace_version": {
+          "const": 4
+        },
+        "workload_seed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mode",
+        "time_unit",
+        "trace_version"
+      ],
+      "type": "object"
+    },
+    "trace.KVOffload": {
+      "additionalProperties": false,
+      "properties": {
+        "block_size": {
+          "type": "integer"
+        },
+        "blocks_per_chunk": {
+          "type": "integer"
+        },
+        "cpu_bytes_to_use": {
+          "type": "integer"
+        },
+        "eviction_policy": {
+          "type": "string"
+        },
+        "lazy_offload": {
+          "type": "boolean"
+        },
+        "offload_prompt_only": {
+          "type": "boolean"
+        },
+        "per_block_bytes": {
+          "type": "integer"
+        },
+        "secondary_tiers": {
+          "items": {
+            "$ref": "#/$defs/trace.KVOffloadTier"
+          },
+          "type": "array"
+        },
+        "self_describing_kv_events": {
+          "type": "boolean"
+        },
+        "simple_cpu_offload": {
+          "type": "boolean"
+        },
+        "tokens_per_hash": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "block_size",
+        "blocks_per_chunk",
+        "cpu_bytes_to_use",
+        "eviction_policy",
+        "offload_prompt_only",
+        "per_block_bytes",
+        "self_describing_kv_events",
+        "tokens_per_hash"
+      ],
+      "type": "object"
+    },
+    "trace.KVOffloadTier": {
+      "additionalProperties": false,
+      "properties": {
+        "base_latency": {
+          "type": "number"
+        },
+        "capacity_bytes": {
+          "type": "integer"
+        },
+        "device_class": {
+          "type": "string"
+        },
+        "direct_io": {
+          "type": "boolean"
+        },
+        "enable_kv_events": {
+          "type": "boolean"
+        },
+        "latency_jitter_stddev": {
+          "type": "number"
+        },
+        "locality": {
+          "type": "string"
+        },
+        "n_read_threads": {
+          "type": "integer"
+        },
+        "n_write_threads": {
+          "type": "integer"
+        },
+        "read_bandwidth": {
+          "type": "number"
+        },
+        "root_dir": {
+          "type": "string"
+        },
+        "saturation_queue_depth": {
+          "type": "integer"
+        },
+        "single_transfer_fraction": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string"
+        },
+        "write_bandwidth": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "base_latency",
+        "direct_io",
+        "enable_kv_events",
+        "latency_jitter_stddev",
+        "n_read_threads",
+        "n_write_threads",
+        "read_bandwidth",
+        "root_dir",
+        "saturation_queue_depth",
+        "single_transfer_fraction",
+        "type",
+        "write_bandwidth"
+      ],
+      "type": "object"
+    },
+    "trace.Record": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "type": "string"
+        },
+        "arrival_time_us": {
+          "type": "integer"
+        },
+        "audio_tokens": {
+          "type": "integer"
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "deadline_us": {
+          "type": "integer"
+        },
+        "first_chunk_time_us": {
+          "type": "integer"
+        },
+        "image_tokens": {
+          "type": "integer"
+        },
+        "input_tokens": {
+          "type": "integer"
+        },
+        "input_tokens_reset": {
+          "type": "integer"
+        },
+        "last_chunk_time_us": {
+          "type": "integer"
+        },
+        "model": {
+          "type": "string"
+        },
+        "output_tokens": {
+          "type": "integer"
+        },
+        "prefix_group": {
+          "type": "string"
+        },
+        "prefix_length": {
+          "type": "integer"
+        },
+        "reason_ratio": {
+          "type": "number"
+        },
+        "request_id": {
+          "type": "integer"
+        },
+        "round_index": {
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slo_class": {
+          "type": "string"
+        },
+        "slo_target_us": {
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "error",
+            "timeout",
+            "incomplete"
+          ],
+          "type": "string"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "tenant_id": {
+          "type": "string"
+        },
+        "text_tokens": {
+          "type": "integer"
+        },
+        "think_time_us": {
+          "type": "integer"
+        },
+        "video_tokens": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "arrival_time_us",
+        "audio_tokens",
+        "client_id",
+        "deadline_us",
+        "first_chunk_time_us",
+        "image_tokens",
+        "input_tokens",
+        "last_chunk_time_us",
+        "model",
+        "output_tokens",
+        "prefix_group",
+        "prefix_length",
+        "reason_ratio",
+        "request_id",
+        "round_index",
+        "session_id",
+        "slo_class",
+        "status",
+        "streaming",
+        "tenant_id",
+        "text_tokens",
+        "video_tokens"
+      ],
+      "type": "object"
+    },
+    "trace.Router": {
+      "additionalProperties": false,
+      "properties": {
+        "epp_flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gateway_latency_us": {
+          "type": "integer"
+        },
+        "kv_event_delay_us": {
+          "type": "integer"
+        },
+        "manifests": {
+          "type": "string"
+        },
+        "pod_labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "scrape_jitter_us": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "epp_flags"
+      ],
+      "type": "object"
+    },
+    "trace.SLODimTargets": {
+      "additionalProperties": false,
+      "properties": {
+        "e2e_ms": {
+          "type": "number"
+        },
+        "itl_ms": {
+          "type": "number"
+        },
+        "ttft_ms": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://inference-sim.github.io/blis-substrate/schema/trace.schema.json",
+  "$ref": "#/$defs/trace.Header",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A BLIS trace header. The data CSV's row is defined as $defs.Record; its columns are the record's keys. Generated from the Go types by tools/schemagen; the Go validators are the definition.",
+  "title": "trace"
+}

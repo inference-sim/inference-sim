@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
@@ -27,7 +28,7 @@ func speculating(k int) Bundle {
 func TestAcceptanceKMustMatchTheDeployment(t *testing.T) {
 	trace := func(v *acceptance.Value) *workload.Binding {
 		return &workload.Binding{Trace: &workload.TraceRef{Data: "t.csv",
-			Header:     workload.TraceHeader{Version: 3, TimeUnit: "us", Mode: workload.ModeReal},
+			Header:     trace.Header{Version: trace.Version, TimeUnit: "us", Mode: trace.ModeConverted},
 			Acceptance: v}}
 	}
 	cases := []struct {
