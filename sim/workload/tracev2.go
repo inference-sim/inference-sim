@@ -287,10 +287,25 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 	if err != nil {
 		return fmt.Errorf("creating trace data file: %w", err)
 	}
-	defer func() { _ = file.Close() }()
+	return writeTraceV2Data(file, header, records)
+}
 
-	writer := csv.NewWriter(file)
-	defer writer.Flush()
+// writeTraceV2Data writes the trace's CSV rows to w, flushes them and closes w. It returns the
+// first error among the writes, the flush and the close, so a trace that did not reach the
+// disk in full is never reported as exported (SIM-2, #661). w is closed on every path.
+func writeTraceV2Data(w io.WriteCloser, header *TraceHeader, records []TraceRecord) error {
+	err := writeTraceV2Rows(w, header, records)
+	if cerr := w.Close(); err == nil && cerr != nil {
+		err = fmt.Errorf("closing trace data file: %w", cerr)
+	}
+	return err
+}
+
+// writeTraceV2Rows writes the header row and every record to w through a csv.Writer, and
+// flushes it. The csv.Writer buffers its output, so a failing w is seen at the flush, which is
+// why the flush's error is returned.
+func writeTraceV2Rows(w io.Writer, header *TraceHeader, records []TraceRecord) error {
+	writer := csv.NewWriter(w)
 
 	// Conditionally include slo_target_us column: present iff any record has non-zero SLO target.
 	includeSLOTarget := false
@@ -475,6 +490,10 @@ func ExportTraceV2(header *TraceHeader, records []TraceRecord, headerPath, dataP
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("writing CSV row %d: %w", r.RequestID, err)
 		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return fmt.Errorf("flushing trace data CSV: %w", err)
 	}
 	return nil
 }
