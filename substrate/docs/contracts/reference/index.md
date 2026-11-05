@@ -40,6 +40,7 @@ than these pages, read the source; each page links to it.
 | [Acceptance profiles](acceptance.md) | `AcceptanceProfileSet`, inline acceptance values, a scenario's pin | [`spec/acceptance`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/acceptance) |
 | [Evaluation run](evaluation.md) | `EvaluationRun` | [`spec/evaluation`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/evaluation) |
 | [Result](result.md) | `Result` | [`spec/result`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/result) |
+| [Field list](fields.md) | `FieldList`, an engine release's `fields.json` | [`spec/fields`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/fields) |
 | [Acceptance profiles](acceptance.md) | `AcceptanceProfileSet`, inline acceptance values, a scenario's pin | [`spec/acceptance`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/spec/acceptance) |
 | [Kernel interface](kernel.md) | the `Kernel` a cost model implements | [`kernel`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/kernel) |
 | [Engine interface](engine.md) | the `Engine` an inference-engine model implements, its `Spec` envelope and its contract checks | [`engine`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/engine) |

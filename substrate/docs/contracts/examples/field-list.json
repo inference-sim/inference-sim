@@ -1,0 +1,59 @@
+{
+  "kind": "FieldList",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.32.0"
+  },
+  "fields": [
+    {
+      "name": "VLLM_LOGGING_LEVEL",
+      "source": "env",
+      "status": "inert_unproven",
+      "evidence": {
+        "note": "sets log verbosity only"
+      },
+      "estimation": {
+        "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "kv_cache_dtype",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#5"
+      },
+      "estimation": {
+        "rule": "substitute",
+        "setting": {
+          "kv_cache_dtype": "auto"
+        },
+        "reason": "the cache is priced at the model's own data type"
+      }
+    },
+    {
+      "name": "max_num_seqs",
+      "source": "config",
+      "status": "modelled",
+      "evidence": {
+        "traces": [
+          "oracle/traces/t2-basic.json"
+        ]
+      },
+      "estimation": {
+        "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "seed",
+      "source": "config",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "TestSeedChangesNoDecision"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    }
+  ]
+}

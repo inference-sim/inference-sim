@@ -21,6 +21,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/connector"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/evaluation"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -139,6 +140,11 @@ func TestDocExamplesValidate(t *testing.T) {
 			Result: fixture(LoadResult(ex("result.json"))),
 		}))
 	})
+	t.Run("field list", func(t *testing.T) {
+		if _, err := fields.Load(ex("field-list.json")); err != nil {
+			t.Error(err)
+		}
+	})
 	t.Run("trace", func(t *testing.T) {
 		requireSilent(t, "trace", Validate(Bundle{Rules: openAnyEngine,
 			Scenario: fixture(LoadScenario(ex("trace-binding.yaml"))),
@@ -156,6 +162,7 @@ func TestDocExamplesValidate(t *testing.T) {
 		"measured-run.yaml": true, "measurement-sources.yaml": true,
 		"connector-registry.yaml": true,
 		"result.json":             true,
+		"field-list.json":         true,
 	}
 	all, err := filepath.Glob(ex("*"))
 	if err != nil {
@@ -275,6 +282,11 @@ var documented = map[string]struct {
 	"connector.Entry":           {typ: reflect.TypeOf(connector.Entry{})},
 	"router.EPP":                {typ: reflect.TypeOf(router.EPP{})},
 	"router.ConfigRef":          {typ: reflect.TypeOf(router.ConfigRef{})},
+	"fields.FieldList":          {typ: reflect.TypeOf(fields.FieldList{})},
+	"fields.Engine":             {typ: reflect.TypeOf(fields.Engine{})},
+	"fields.Field":              {typ: reflect.TypeOf(fields.Field{})},
+	"fields.Evidence":           {typ: reflect.TypeOf(fields.Evidence{})},
+	"fields.Estimation":         {typ: reflect.TypeOf(fields.Estimation{})},
 	"result.Result":             {typ: reflect.TypeOf(result.Result{})},
 	"result.Input":              {typ: reflect.TypeOf(result.Input{})},
 	"result.Run":                {typ: reflect.TypeOf(result.Run{})},
@@ -420,6 +432,7 @@ func TestDocEveryDocumentTypeHasATable(t *testing.T) {
 		reflect.TypeOf(measurement.MeasuredRun{}), reflect.TypeOf(measurement.Registry{}),
 		reflect.TypeOf(connector.Registry{}),
 		reflect.TypeOf(result.Result{}),
+		reflect.TypeOf(fields.FieldList{}),
 	}
 	// Types whose wire form is not a mapping of this schema's keys, so they have no key table:
 	// an interval, and a pool's engine block, which is the engine model's and held unopened.

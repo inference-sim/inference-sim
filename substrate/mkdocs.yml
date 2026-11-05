@@ -158,6 +158,7 @@ nav:
     - Evaluation run: contracts/reference/evaluation.md
     - Measured run: contracts/reference/measurement.md
     - Result: contracts/reference/result.md
+    - Field list: contracts/reference/fields.md
     - Kernel interface: contracts/reference/kernel.md
     - Engine interface: contracts/reference/engine.md
     - Router contract: contracts/reference/embed.md
