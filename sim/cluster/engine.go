@@ -35,11 +35,9 @@ func (e *UnlimitedEngine) Optimize(results []AnalyzerResult, _ GPUInventory) []S
 			vcs := sortedByDescCost(r.VariantCapacities)
 			for _, vc := range vcs {
 				if vc.ReplicaCount > 0 {
-					decisions = append(decisions, ScaleDecision{
-						ModelID: r.ModelID,
-						Variant: vc.Variant,
-						Delta:   -scaleDownN(r.SpareCapacity, vc),
-					})
+					if n := scaleDownN(r.SpareCapacity, vc, totalReplicas(vcs)); n > 0 {
+						decisions = append(decisions, ScaleDecision{ModelID: r.ModelID, Variant: vc.Variant, Delta: -n})
+					}
 					break
 				}
 			}
@@ -85,11 +83,9 @@ func (e *GreedyEngine) Optimize(results []AnalyzerResult, inventory GPUInventory
 			vcs := sortedByDescCost(r.VariantCapacities)
 			for _, vc := range vcs {
 				if vc.ReplicaCount > 0 {
-					decisions = append(decisions, ScaleDecision{
-						ModelID: r.ModelID,
-						Variant: vc.Variant,
-						Delta:   -scaleDownN(r.SpareCapacity, vc),
-					})
+					if n := scaleDownN(r.SpareCapacity, vc, totalReplicas(vcs)); n > 0 {
+						decisions = append(decisions, ScaleDecision{ModelID: r.ModelID, Variant: vc.Variant, Delta: -n})
+					}
 					break
 				}
 			}
@@ -114,25 +110,25 @@ func scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int {
 }
 
 // scaleDownN returns exact replicas to remove from vc.
-// Returns 0 when vc has no active replicas (safe no-op regardless of caller).
-// Falls back to 1 when perReplicaCapacity == 0; clamps to [1, replicaCount].
-func scaleDownN(spareCapacity float64, vc VariantCapacity) int {
+// Returns 0 when vc has no active replicas or the model has only one replica left;
+// callers emit no decision then (INV-19). Otherwise floor(spare/prc), at least 1,
+// at most vc.ReplicaCount, and never the model's last replica.
+func scaleDownN(spareCapacity float64, vc VariantCapacity, modelReplicas int) int {
 	if vc.ReplicaCount <= 0 {
 		return 0
 	}
-	if vc.Supply <= 0 {
-		return 1
+	n := 1
+	if prc := vc.Supply / float64(vc.ReplicaCount); prc > 0 {
+		n = max(1, int(math.Floor(spareCapacity/prc)))
 	}
-	prc := vc.Supply / float64(vc.ReplicaCount)
-	if prc <= 0 {
-		return 1
-	}
-	n := int(math.Floor(spareCapacity / prc))
-	if n < 1 {
-		n = 1
-	}
-	if n > vc.ReplicaCount {
-		n = vc.ReplicaCount
+	return min(n, vc.ReplicaCount, modelReplicas-1)
+}
+
+// totalReplicas returns the model's active replicas summed across its variants.
+func totalReplicas(vcs []VariantCapacity) int {
+	n := 0
+	for _, vc := range vcs {
+		n += vc.ReplicaCount
 	}
 	return n
 }

@@ -607,14 +607,12 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		}
 	})
 
-	t.Run("autoscaler with node pools: runs and conserves", func(t *testing.T) {
+	t.Run("autoscaler with node pools: runs and conserves (scale-down keeps a replica serving)", func(t *testing.T) {
 		t.Parallel()
-		// The analyzer reads each replica's live KV capacity (#1916), so on an idle start it
-		// would drain every replica at the first tick; the Kubernetes HPA default scale-down
-		// stabilization window (5 min) holds them through this short run.
+		// No stabilization window: the idle first tick scales down at once, and must keep a replica (#1916).
 		bundle := capFile(t, "autoscale.yaml", "node_pools:\n  - name: pool-h200\n    gpu_type: h200\n    gpus_per_node: 8\n"+
 			"    gpu_memory_gib: 139.80072021\n    initial_nodes: 4\n    min_nodes: 1\n    max_nodes: 4\n    cost_per_hour: 30.0\n"+
-			"autoscaler:\n  interval_us: 1000000\n  scale_down_stabilization_window_us: 300000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
+			"autoscaler:\n  interval_us: 1000000\n  analyzer:\n    kv_cache_threshold: 0.8\n    scale_up_threshold: 0.8\n"+
 			"    scale_down_boundary: 0.4\n    avg_input_tokens: 1000\n")
 		o := capRun(t, runArgs(colocated(2), with(burst(60, 10, 1000, 100), "--policy-config", bundle)...)...)
 		o.conserves(t, 60)
