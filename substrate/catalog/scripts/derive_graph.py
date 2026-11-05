@@ -4901,6 +4901,28 @@ def speculative_method(arch: str, model: str) -> str:
     return method
 
 
+def pinned_config_sha256(model_yaml: Path) -> str | None:
+    """Return model.yaml's config.sha256, or None when the config.json is committed."""
+    if not model_yaml.is_file():
+        return None
+    card = yaml.safe_load(model_yaml.read_text()) or {}
+    pin = card.get("config")
+    if pin is None:
+        return None
+    sha = pin.get("sha256") if isinstance(pin, dict) else None
+    if not isinstance(sha, str) or len(sha) != 64:
+        raise DeriveError(f"{model_yaml.parent.name}: model.yaml config.sha256 is not a SHA-256")
+    return sha
+
+
+def graph_source_sha256(graph_yaml: Path) -> str | None:
+    """Return the config hash a committed graph records it was derived from."""
+    if not graph_yaml.is_file():
+        return None
+    g = yaml.safe_load(graph_yaml.read_text()) or {}
+    return (g.get("derived_from") or {}).get("sha256")
+
+
 def dump(graph: dict[str, Any]) -> str:
     """Render a graph deterministically, so a re-derivation diffs cleanly."""
     return yaml.safe_dump(graph, sort_keys=False, default_flow_style=False, width=100)
@@ -4913,6 +4935,10 @@ def main() -> int:
     ap.add_argument("--check", action="store_true",
                     help="re-derive and report differences without writing")
     ap.add_argument("--model", default=None, help="derive one model only")
+    ap.add_argument("--fetched", default=None,
+                    help="directory holding <model>/config.json for models whose model.yaml "
+                         "pins config.sha256 instead of committing the file (X12); the nightly "
+                         "fetch job fills it. Without it such models are checked by hash only.")
     args = ap.parse_args()
 
     root = Path(args.root) if args.root else Path(__file__).resolve().parent.parent
@@ -4926,6 +4952,33 @@ def main() -> int:
         if args.model and entry.name != args.model:
             continue
         cfg = entry / "config.json"
+        pinned = pinned_config_sha256(entry / "model.yaml")
+        # A model whose licence is not on the allow-list commits only the config's hash
+        # (X12). Pull-request jobs check that the graph was derived from that hash; the
+        # nightly job, which holds the access token, fetches the file and re-derives.
+        if pinned is not None:
+            if cfg.exists():
+                failed.append(f"{entry.name}: config.json is committed although model.yaml "
+                              f"pins config.sha256; commit one or the other")
+                continue
+            out = entry / "graph.yaml"
+            recorded = graph_source_sha256(out)
+            if recorded != pinned:
+                failed.append(f"{entry.name}: graph.yaml derived_from.sha256 {recorded} is not "
+                              f"model.yaml's config.sha256 {pinned}")
+                continue
+            if args.fetched is None:
+                unchanged.append(entry.name)
+                continue
+            cfg = Path(args.fetched) / entry.name / "config.json"
+            if not cfg.is_file():
+                failed.append(f"{entry.name}: no fetched config.json at {cfg}")
+                continue
+            got = hashlib.sha256(cfg.read_bytes()).hexdigest()
+            if got != pinned:
+                failed.append(f"{entry.name}: the fetched config.json has sha256 {got}, "
+                              f"not the pinned {pinned}")
+                continue
         # Each entry is the full line to print. A DeriveError already names the model,
         # because derive() is also called directly and its message has to stand alone
         # there; the other failures do not, so only they get the prefix.

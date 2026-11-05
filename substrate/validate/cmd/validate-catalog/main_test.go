@@ -50,6 +50,9 @@ source:
   provider: huggingface
   repo: example/Tiny-LLM
   revision: deadbeef
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/example/Tiny-LLM/raw/deadbeef/README.md
 `
 	validConfigJSON = `{"hidden_size": 2048}
 `
@@ -76,7 +79,7 @@ func TestRunValidCatalogValidatesEveryKind(t *testing.T) {
 	// entry contributes three artifacts.
 	for _, want := range []string{
 		"tiny-llm", "config.json", "h100", "ib-400g", "cpu_dram", "nvme_gen4", "chatbot",
-		"measurements/sources.yaml", "EXACT/RESOLVED", "all 10 artifact(s) validate",
+		"measurements/sources.yaml", "EXACT/RESOLVED", "tiny-llm licence", "all 11 artifact(s) validate",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report does not mention %q:\n%s", want, out)
@@ -151,6 +154,9 @@ source:
   provider: huggingface
   repo: example/Tiny-LLM
   revision: deadbeef
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/example/Tiny-LLM/raw/deadbeef/README.md
 `,
 	})
 	code, _, errb := exercise(t, root)
@@ -502,5 +508,42 @@ func TestRunRefusesAnUnredistributableMeasurement(t *testing.T) {
 	code, _, errb := exercise(t, root)
 	if code != 1 || !strings.Contains(errb, "does not permit redistribution") {
 		t.Fatalf("exit = %d, want 1 with a redistribution refusal; stderr:\n%s", code, errb)
+	}
+}
+
+// X12: a committed config.json needs an allow-listed licence or a listed exception; a
+// model pinned by hash commits no config.json. Each case is a known-bad catalog (X18).
+func TestRunLicenceCheck(t *testing.T) {
+	model := func(lic string, extra string) string {
+		return "name: tiny-llm\nsource:\n  provider: huggingface\n  repo: example/Tiny-LLM\n  revision: deadbeef\n" +
+			"licence:\n  id: " + lic + "\n  evidence: https://huggingface.co/example/Tiny-LLM/raw/deadbeef/README.md\n" + extra
+	}
+	pending := func(lic string) string {
+		return "pending:\n  - model: tiny-llm\n    licence: " + lic + "\n    status: pending licence review\n"
+	}
+	const pin = "config:\n  sha256: " + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" + "\n"
+	cases := []struct {
+		name  string
+		files map[string]string
+		code  int
+		want  string
+	}{
+		{"allowed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", "")}, 0, "tiny-llm licence"},
+		{"not allowed, not listed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", "")}, 1, "not on the allow-list"},
+		{"listed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", ""), "licence-exceptions.yaml": pending("LicenseRef-llama2")}, 0, "pending licence review"},
+		{"listed under another licence", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", ""), "licence-exceptions.yaml": pending("LicenseRef-llama3.1")}, 1, "lists LicenseRef-llama3.1"},
+		{"listed but allowed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", ""), "licence-exceptions.yaml": pending("MIT")}, 1, "is on the allow-list; remove the model"},
+		{"listed model missing", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("MIT", ""), "licence-exceptions.yaml": strings.Replace(pending("X"), "tiny-llm", "gone", 1)}, 1, "lists gone, which is not a model"},
+		{"bad status", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", ""), "licence-exceptions.yaml": strings.Replace(pending("LicenseRef-llama2"), "pending licence review", "approved", 1)}, 1, `status "approved"`},
+		{"pinned by hash", map[string]string{"models/tiny-llm/model.yaml": model("LicenseRef-llama2", pin)}, 0, "not committed; pinned by sha256"},
+		{"pinned and committed", map[string]string{"models/tiny-llm/config.json": validConfigJSON, "models/tiny-llm/model.yaml": model("LicenseRef-llama2", pin)}, 1, "commit one or the other"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			code, out, errb := exercise(t, catalogWith(t, c.files))
+			if code != c.code || !strings.Contains(out+errb, c.want) {
+				t.Fatalf("exit %d (want %d), want %q in:\n%s\n%s", code, c.code, c.want, out, errb)
+			}
+		})
 	}
 }

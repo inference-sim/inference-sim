@@ -1,6 +1,11 @@
 package model
 
-import "github.com/inference-sim/blis-substrate/contracts/check"
+import (
+	"regexp"
+	"strings"
+
+	"github.com/inference-sim/blis-substrate/contracts/check"
+)
 
 // Identity is a catalog model entry's identity manifest: the file blis-catalog commits
 // as models/<name>/model.yaml, beside the verbatim vendor config.json and the derived
@@ -38,6 +43,27 @@ import "github.com/inference-sim/blis-substrate/contracts/check"
 type Identity struct {
 	Name   string  `yaml:"name"`
 	Source *Source `yaml:"source"`
+	// Licence is the licence the model's vendor config.json is published under (X12).
+	Licence *Licence `yaml:"licence"`
+	// Config pins the vendor config.json by hash, for a model whose licence is not on the
+	// allow-list: such a model commits only this hash and the source revision, and the
+	// deriver fetches the file in a nightly job that holds the access token (X12).
+	Config *ConfigPin `yaml:"config,omitempty"`
+}
+
+// Licence records a model's licence and where it was read.
+type Licence struct {
+	// ID is the licence's SPDX identifier, or LicenseRef-<name> for a licence SPDX does not
+	// list, written as the model card at the pinned revision names it.
+	ID string `yaml:"id"`
+	// Evidence is the URL the licence was read from, at the pinned revision: the model
+	// card's front matter, or the provider's API record of that revision.
+	Evidence string `yaml:"evidence"`
+}
+
+// ConfigPin is the SHA-256 of a vendor config.json that is not committed.
+type ConfigPin struct {
+	SHA256 string `yaml:"sha256"`
 }
 
 // Source records where a model entry's vendor config was retrieved from, so a derived
@@ -70,6 +96,31 @@ func (id *Identity) Validate() *validate.Problems {
 		return p
 	}
 	p.Merge("source", id.Source.Validate())
+	if id.Licence == nil {
+		p.Field("licence", "required: a model entry records its config.json's licence (X12)")
+	} else {
+		p.Merge("licence", id.Licence.Validate(id.Source))
+	}
+	if id.Config != nil && !validate.IsSHA256(id.Config.SHA256) {
+		p.Field("config.sha256", "%q is not a lowercase hex SHA-256", id.Config.SHA256)
+	}
+	return p
+}
+
+var licenceRef = regexp.MustCompile(`^(LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.+-]*)$`)
+
+// Validate checks a licence record: an identifier in SPDX form, and evidence at the
+// source's pinned revision.
+func (l *Licence) Validate(src *Source) *validate.Problems {
+	p := &validate.Problems{}
+	if !licenceRef.MatchString(l.ID) {
+		p.Field("id", "%q is not an SPDX identifier or LicenseRef-<name>", l.ID)
+	}
+	if !strings.HasPrefix(l.Evidence, "https://") {
+		p.Field("evidence", "%q is not an https URL", l.Evidence)
+	} else if src != nil && src.Revision != "" && !strings.Contains(l.Evidence, src.Revision) {
+		p.Field("evidence", "the URL does not name the pinned revision %s; read the licence at that revision", src.Revision)
+	}
 	return p
 }
 

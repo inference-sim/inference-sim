@@ -409,6 +409,8 @@ the entry is and where its `config.json` came from.
 |---|---|---|---|
 | `name` | string | yes | Must equal the model's directory name. |
 | `source` | mapping | yes | Where the vendor configuration was fetched from, below. |
+| `licence` | mapping | yes | The licence `config.json` is published under, below (X12). |
+| `config` | mapping | no | The SHA-256 of a `config.json` that is not committed, below (X12). |
 
 ### `source`
 
@@ -420,6 +422,31 @@ the entry is and where its `config.json` came from.
 | `repo` | string | yes | The repository on that service. |
 | `revision` | string | yes | The exact revision the configuration was taken at. |
 | `retrieved` | string | no | The date it was fetched. |
+
+### `licence`
+
+<!-- fields: model.Licence -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `id` | string | yes | The SPDX identifier, or `LicenseRef-<name>` for a licence SPDX does not list. |
+| `evidence` | string | yes | The `https` URL the licence was read from, naming the pinned revision. |
+
+A model's `config.json` is committed only when its licence is on the allow-list
+(`vocab.RedistributableLicences`), or while the model is listed in
+`catalog/licence-exceptions.yaml` pending a person's review of its licence.
+
+### `config`
+
+<!-- fields: model.ConfigPin -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `sha256` | string | yes | The SHA-256 of the vendor `config.json` at the source revision. |
+
+A model whose licence is not on the allow-list commits this hash in place of the file. The
+nightly fetch job retrieves the file with the access token, checks the hash, and derives the
+graph; pull-request jobs check the hash, the revision and the graph's `derived_from` hash only.
 
 `model.yaml` and `graph.yaml` do not accept `_comment` keys, unlike the chip, fabric,
 storage-class and workload-shape files.
@@ -505,7 +532,9 @@ Two problems are warnings: a layer kind that neither the stack nor the speculato
 and an `emit` condition on a node that is not a collective.
 
 A model identity is invalid if `name` is empty, `source` is absent, or `source` lacks a
-`provider`, `repo` or `revision`.
+`provider`, `repo` or `revision`; if `licence` is absent, its `id` is not an SPDX identifier or
+`LicenseRef-<name>`, or its `evidence` is not an `https` URL naming the pinned revision; or if
+`config.sha256` is not a lowercase hex SHA-256.
 
 `validate-catalog` also checks that `name` in both `graph.yaml` and `model.yaml` equals the
 directory name.

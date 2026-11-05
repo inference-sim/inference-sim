@@ -69,8 +69,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		r.loadFail("models", "%v", err)
 	} else {
 		validateModelGraphs(r, dirs)
-		validateModelConfigs(r, dirs)
-		validateModelIdentities(r, dirs)
+		ids := validateModelIdentities(r, dirs)
+		validateModelConfigs(r, dirs, ids)
+		validateLicences(r, root, dirs, ids)
 	}
 	validateHardware(r, root)
 	validateNetworks(r, root)
@@ -175,7 +176,7 @@ func validateModelGraphs(r *reporter, dirs []string) {
 	}
 }
 
-func validateModelConfigs(r *reporter, dirs []string) {
+func validateModelConfigs(r *reporter, dirs []string, ids map[string]*model.Identity) {
 	if len(dirs) == 0 {
 		return
 	}
@@ -184,6 +185,17 @@ func validateModelConfigs(r *reporter, dirs []string) {
 		name := filepath.Base(dir)
 		label := name + "/config.json"
 		path := filepath.Join(dir, "config.json")
+		// A model whose licence is not on the allow-list commits only the file's hash and
+		// revision (X12): model.yaml's config.sha256 stands in for the file, which the
+		// nightly fetch job retrieves with the access token.
+		if id := ids[name]; id != nil && id.Config != nil {
+			if _, err := os.Stat(path); err == nil {
+				r.loadFail(label, "committed although model.yaml pins it by hash (config.sha256); commit one or the other (X12)")
+			} else {
+				r.pass(fmt.Sprintf("%-46s not committed; pinned by sha256 %s", label, id.Config.SHA256[:12]))
+			}
+			continue
+		}
 		// config.json is the verbatim vendor file every model entry pairs with its
 		// model.yaml, and it is REQUIRED: this is the structural half of blis-catalog's
 		// validate_models — present, parseable, a non-empty JSON object — reproduced so the
@@ -221,9 +233,10 @@ func validateModelConfigs(r *reporter, dirs []string) {
 	}
 }
 
-func validateModelIdentities(r *reporter, dirs []string) {
+func validateModelIdentities(r *reporter, dirs []string) map[string]*model.Identity {
+	ids := map[string]*model.Identity{}
 	if len(dirs) == 0 {
-		return
+		return ids
 	}
 	r.section("# models/*/model.yaml")
 	for _, dir := range dirs {
@@ -249,6 +262,7 @@ func validateModelIdentities(r *reporter, dirs []string) {
 			r.loadFail(label, "%v", err)
 			continue
 		}
+		ids[name] = id
 		p := id.Validate()
 		if id.Name != name {
 			p.Field("name", "model.yaml names itself %q but its directory is %q", id.Name, name)
@@ -258,6 +272,7 @@ func validateModelIdentities(r *reporter, dirs []string) {
 		}
 		r.pass(fmt.Sprintf("%-46s %s", label, summarizeSource(id.Source)))
 	}
+	return ids
 }
 
 func validateHardware(r *reporter, root string) {

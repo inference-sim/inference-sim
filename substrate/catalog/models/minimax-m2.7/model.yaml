@@ -4,3 +4,6 @@ source:
   repo: MiniMaxAI/MiniMax-M2.7
   revision: d494266a4affc0d2995ba1fa35c8481cbd84294b
   retrieved: 2026-10-03
+licence:
+  id: LicenseRef-other
+  evidence: https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/d494266a4affc0d2995ba1fa35c8481cbd84294b/README.md

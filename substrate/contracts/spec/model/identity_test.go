@@ -18,6 +18,7 @@ func TestIdentityValidateAcceptsAWellFormedCard(t *testing.T) {
 			Revision:  "b5968e9190ef611bbf34a7229255be88a0e937c1",
 			Retrieved: "2026-10-02",
 		},
+		Licence: &Licence{ID: "MIT", Evidence: "https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/README.md"},
 	}
 	if p := id.Validate(); !p.OK() {
 		t.Fatalf("a well-formed identity failed validation:\n%s", p.Error())
@@ -34,6 +35,7 @@ func TestIdentityValidateAcceptsAMissingRetrieved(t *testing.T) {
 			Repo:     "Qwen/Qwen3-14B",
 			Revision: "abc123",
 		},
+		Licence: &Licence{ID: "Apache-2.0", Evidence: "https://huggingface.co/Qwen/Qwen3-14B/raw/abc123/README.md"},
 	}
 	if p := id.Validate(); !p.OK() {
 		t.Fatalf("a card omitting retrieved failed validation:\n%s", p.Error())

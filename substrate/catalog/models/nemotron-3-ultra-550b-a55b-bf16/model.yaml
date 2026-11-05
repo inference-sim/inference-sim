@@ -4,3 +4,6 @@ source:
   repo: nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16
   revision: 77df655d5e9f8362164ed14dd8b48f8bce657498
   retrieved: 2026-09-16
+licence:
+  id: LicenseRef-openmdw-1.1
+  evidence: https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-BF16/raw/77df655d5e9f8362164ed14dd8b48f8bce657498/README.md

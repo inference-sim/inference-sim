@@ -4,3 +4,6 @@ source:
   repo: meta-llama/Llama-2-70b-hf
   revision: 3aba440b59558f995867ba6e1f58f21d0336b5bb
   retrieved: 2026-09-16
+licence:
+  id: LicenseRef-llama2
+  evidence: https://huggingface.co/api/models/meta-llama/Llama-2-70b-hf/revision/3aba440b59558f995867ba6e1f58f21d0336b5bb

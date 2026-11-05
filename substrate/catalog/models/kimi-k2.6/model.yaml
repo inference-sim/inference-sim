@@ -4,3 +4,6 @@ source:
   repo: moonshotai/Kimi-K2.6
   revision: 7eb5002f6aadc958aed6a9177b7ed26bb94011bb
   retrieved: 2026-10-16
+licence:
+  id: LicenseRef-modified-mit
+  evidence: https://huggingface.co/moonshotai/Kimi-K2.6/raw/7eb5002f6aadc958aed6a9177b7ed26bb94011bb/README.md
