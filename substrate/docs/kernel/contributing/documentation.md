@@ -9,7 +9,7 @@ the code or tested against it. The prose is kept right by review.</p>
 
 ```sh
 python3 -m venv .venv
-.venv/bin/pip install -r docs/requirements.txt
+.venv/bin/pip install --require-hashes -r docs/requirements.txt
 .venv/bin/mkdocs serve
 ```
 

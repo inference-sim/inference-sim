@@ -4,7 +4,7 @@
 # by-design ramp-form ones and a named cited-bodies-absent skip (below). A skip is a gate
 # that did not run, so it fails here.
 #
-# Run from registry/ after `pip install -r scripts/requirements-fit.txt`:
+# Run from registry/ after `pip install --require-hashes -r scripts/requirements-fit.txt`:
 #
 #   export AISIMULATE_DATA=<aisimulate>/python/aisimulate/src/aisimulate_core/systems/data
 #   export BLIS_CATALOG=<the repository's catalog/ directory>

@@ -27,7 +27,7 @@ go run ./validate/cmd/validate-registry registry
 (cd catalog && python3 scripts/derive_graph.py --check)
 ```
 
-The docs site builds with `pip install -r docs/requirements.txt && mkdocs build --strict`.
+The docs site builds with `pip install --require-hashes -r docs/requirements.txt && mkdocs build --strict`.
 
 ## History
 

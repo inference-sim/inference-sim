@@ -7,7 +7,7 @@ Three checks decide whether a change can merge, and two more build this site. Ru
 go run ./validate/cmd/validate-catalog catalog
 
 # Every graph is what the deriver produces from its config, and the deriver's tests pass.
-pip install -r requirements-dev.txt
+pip install --require-hashes -r catalog/scripts/requirements-dev.txt
 python3 scripts/derive_graph.py --check
 python3 -m pytest tests/test_derive_graph.py -q
 

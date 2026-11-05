@@ -49,7 +49,7 @@ source:
 ## 4. Derive the graph
 
 ```sh
-pip install -r requirements-dev.txt
+pip install --require-hashes -r catalog/scripts/requirements-dev.txt
 python3 scripts/derive_graph.py --model qwen3-14b
 ```
 

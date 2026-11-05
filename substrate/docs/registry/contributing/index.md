@@ -40,7 +40,7 @@ blis-latency-kernel looks the key up. Search the kernel for the name, not the re
     git clone https://github.com/ai-dynamo/aisimulate
     export AISIMULATE_DATA=$PWD/aisimulate/python/aisimulate/src/aisimulate_core/systems/data
     export BLIS_CATALOG=/path/to/blis-catalog
-    pip install -r requirements-fit.txt
+    pip install --require-hashes -r requirements-fit.txt
     ```
 
     `requirements.txt` covers the property tests. `requirements-fit.txt` adds what the

@@ -12,7 +12,7 @@ export BLIS_CATALOG=~/scratch/catalog-wide-heads
 If you edit a model's `config.json`, derive its graph again, so that `graph.yaml` matches the edited config; the kernel reads `graph.yaml`, not `config.json`. Then run the schema check, so that a malformed edit fails here rather than in the middle of a run:
 
 ```sh
-pip install -r requirements-dev.txt
+pip install --require-hashes -r catalog/scripts/requirements-dev.txt
 python3 scripts/derive_graph.py --model qwen3-14b
 go run ./validate/cmd/validate-catalog catalog
 ```
