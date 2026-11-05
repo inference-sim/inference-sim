@@ -2,7 +2,7 @@
 
 // Package blisvllm is a Go model of the vLLM inference engine's scheduling, KV-cache,
 // connector and metrics behaviour, for a discrete-event simulator to call through the
-// engine-neutral contract in github.com/inference-sim/blis-schemas/engine.
+// engine-neutral contract in github.com/inference-sim/blis-substrate/contracts/engine.
 //
 // One build of this module models one vLLM release, Upstream. Its behaviour is checked
 // against that release's own code in CI (see docs/testing.md): the same inputs, fed to the
@@ -19,7 +19,7 @@ import (
 	"runtime/debug"
 )
 
-// Kind is the engine kind this module registers with blis-schemas' engine factory.
+// Kind is the engine kind this module registers with the contracts' engine factory.
 const Kind = "vllm"
 
 // Upstream identifies the vLLM release this build models.
