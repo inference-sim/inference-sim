@@ -373,8 +373,8 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 		datasetPath := filepath.Join(dataDir, fmt.Sprintf("chunk-%s-dataset.json", chunkID))
 
-		// Load chunk without time filtering (pass empty ServeGenDataSpec with just path)
-		client, err := loadServeGenChunk(chunkID, tracePath, datasetPath, &ServeGenDataSpec{Path: dataDir})
+		// Load the chunk with every window.
+		client, err := loadServeGenChunk(chunkID, tracePath, datasetPath)
 		if err != nil {
 			return fmt.Errorf("loading chunk %s: %w", chunkID, err)
 		}
@@ -502,7 +502,7 @@ func loadServeGenData(spec *WorkloadSpec) error {
 
 		for _, chunk := range chunks {
 			// Load this chunk's dataset to fit lognormal for this cohort's window
-			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
+			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath)
 			if dsErr != nil {
 				logrus.Warnf("Skipping chunk %s for cohort %s: dataset load failed: %v", chunk.id, cohortID, dsErr)
 				continue
@@ -715,9 +715,9 @@ type datasetWindow struct {
 
 // loadServeGenDatasetAllWindows loads per-window token distributions from
 // a ServeGen dataset JSON file. Returns map[timestamp] -> {inputPDF, outputPDF}.
-// Skips empty windows (represented as "{}" in JSON) and applies span filtering.
+// Skips empty windows (represented as "{}" in JSON).
 // Non-numeric keys are skipped with a warning.
-func loadServeGenDatasetAllWindows(path string, sgConfig *ServeGenDataSpec) (map[int]datasetWindow, error) {
+func loadServeGenDatasetAllWindows(path string) (map[int]datasetWindow, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("reading dataset: %w", err)
@@ -741,13 +741,6 @@ func loadServeGenDatasetAllWindows(path string, sgConfig *ServeGenDataSpec) (map
 				continue
 			}
 			timestamp = int(tsFloat)
-		}
-
-		// Filter dataset entries that are after the span end.
-		// Keep entries before span start - they may be needed for nearest-preceding lookup.
-		// Example: Hour 8 trace windows (28800-30600) need Hour 6 dataset (21600).
-		if sgConfig.SpanEnd > 0 && int64(timestamp) >= sgConfig.SpanEnd {
-			continue
 		}
 
 		// Parse PDFs
@@ -822,7 +815,7 @@ func findNearestDataset(queryTimestamp int, datasetByTimestamp map[int]datasetWi
 // The resulting ClientSpec uses per-window overrides on ActiveWindow, triggering
 // the time-varying generator path in GenerateRequests. Client-level fields
 // provide fallback defaults (used only if a window lacks overrides).
-func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGenDataSpec) (*ClientSpec, error) {
+func loadServeGenChunk(chunkID, tracePath, datasetPath string) (*ClientSpec, error) {
 	// Parse all trace rows.
 	rows, err := parseServeGenTrace(tracePath)
 	if err != nil {
@@ -830,7 +823,7 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 	}
 
 	// Load per-window distributions from dataset JSON.
-	datasetByTimestamp, err := loadServeGenDatasetAllWindows(datasetPath, sgConfig)
+	datasetByTimestamp, err := loadServeGenDatasetAllWindows(datasetPath)
 	if err != nil {
 		return nil, err
 	}
@@ -849,14 +842,6 @@ func loadServeGenChunk(chunkID, tracePath, datasetPath string, sgConfig *ServeGe
 	var windowInfos []windowInfo
 
 	for _, row := range rows {
-		// Filter by time span if configured.
-		if sgConfig.SpanStart > 0 && row.startTimeSec < float64(sgConfig.SpanStart) {
-			continue
-		}
-		if sgConfig.SpanEnd > 0 && row.startTimeSec >= float64(sgConfig.SpanEnd) {
-			continue
-		}
-
 		// Skip inactive windows (rate = 0).
 		if row.rate <= 0 {
 			continue
@@ -1164,110 +1149,6 @@ func parseServeGenTrace(path string) ([]serveGenTraceRow, error) {
 	return rows, nil
 }
 
-func loadServeGenDataset(path string, sgConfig *ServeGenDataSpec) (map[int]float64, map[int]float64, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading dataset: %w", err)
-	}
-
-	// Parse JSON: map of window_start_time → {input_tokens: "...", output_tokens: "..."}
-	var dataset map[string]map[string]string
-	if err := json.Unmarshal(data, &dataset); err != nil {
-		return nil, nil, fmt.Errorf("parsing dataset JSON: %w", err)
-	}
-
-	// Find the first valid window (or the one matching span)
-	var inputPDFStr, outputPDFStr string
-	// Sort keys for determinism
-	keys := make([]string, 0, len(dataset))
-	for k := range dataset {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		window := dataset[k]
-		startTime, parseErr := strconv.ParseFloat(k, 64)
-		if parseErr != nil {
-			logrus.Warnf("loadServeGenDataset: skipping non-numeric key %q: %v", k, parseErr)
-			continue
-		}
-		if sgConfig.SpanStart > 0 && startTime < float64(sgConfig.SpanStart) {
-			continue
-		}
-		if sgConfig.SpanEnd > 0 && startTime >= float64(sgConfig.SpanEnd) {
-			continue
-		}
-		inputPDFStr = window["input_tokens"]
-		outputPDFStr = window["output_tokens"]
-		// Skip empty dicts (represented as "{}" string) and truly empty strings
-		// Matches ServeGen Python library behavior (clientpool.py:166-168)
-		if inputPDFStr != "" && inputPDFStr != "{}" &&
-			outputPDFStr != "" && outputPDFStr != "{}" {
-			break
-		}
-		// Log skipped windows for debugging (common in real ServeGen data warm-up periods)
-		logrus.Debugf("loadServeGenDataset: skipping window %q: input=%q output=%q (empty dict or missing)", k, inputPDFStr, outputPDFStr)
-	}
-
-	if inputPDFStr == "" || inputPDFStr == "{}" ||
-		outputPDFStr == "" || outputPDFStr == "{}" {
-		return nil, nil, fmt.Errorf("no valid PDF windows found in dataset")
-	}
-
-	inputPDF, err := parseServeGenPDF(inputPDFStr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parsing input PDF: %w", err)
-	}
-	outputPDF, err := parseServeGenPDF(outputPDFStr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parsing output PDF: %w", err)
-	}
-
-	return inputPDF, outputPDF, nil
-}
-
-// normalizeLifecycleTimestamps shifts all lifecycle window timestamps to start
-// from zero while preserving relative timing. Finds the minimum StartUs across
-// all clients' lifecycle windows and subtracts it from every StartUs and EndUs.
-// No-op if clients list is empty or no clients have lifecycle windows.
-func normalizeLifecycleTimestamps(clients *[]ClientSpec) {
-	if len(*clients) == 0 {
-		return
-	}
-
-	// Pass 1: Find global minimum StartUs across all clients and windows.
-	minStartUs := int64(math.MaxInt64)
-	for i := range *clients {
-		client := &(*clients)[i]
-		if client.Lifecycle == nil || len(client.Lifecycle.Windows) == 0 {
-			continue
-		}
-		for _, window := range client.Lifecycle.Windows {
-			if window.StartUs < minStartUs {
-				minStartUs = window.StartUs
-			}
-		}
-	}
-
-	// If no windows found, nothing to normalize.
-	if minStartUs == math.MaxInt64 {
-		return
-	}
-
-	// Pass 2: Shift all timestamps by subtracting the minimum.
-	for i := range *clients {
-		client := &(*clients)[i]
-		if client.Lifecycle == nil {
-			continue
-		}
-		for j := range client.Lifecycle.Windows {
-			client.Lifecycle.Windows[j].StartUs -= minStartUs
-			client.Lifecycle.Windows[j].EndUs -= minStartUs
-		}
-	}
-}
-
 // buildReasoningCohorts converts reasoning chunks into cohorts with single-window
 // temporal structure (no morning/afternoon periods). Generates 5 cohorts (one per SLO class)
 // with empirical reason_ratio distributions that preserve bimodality.
@@ -1439,7 +1320,7 @@ func buildReasoningCohorts(spec *WorkloadSpec, traceFiles []string, rng *rand.Ra
 
 		for _, chunk := range cohortChunks {
 			// Load dataset to fit input/output token distributions
-			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath, &ServeGenDataSpec{Path: dataDir})
+			datasets, dsErr := loadServeGenDatasetAllWindows(chunk.datasetPath)
 			if dsErr != nil {
 				logrus.Warnf("Skipping chunk %s for cohort %s: dataset load failed: %v", chunk.id, cohortID, dsErr)
 				continue

@@ -87,7 +87,7 @@ func TestFindNearestDataset(t *testing.T) {
 	}
 }
 
-// TestLoadServeGenDatasetAllWindows verifies dataset JSON loading with span filtering.
+// TestLoadServeGenDatasetAllWindows verifies dataset JSON loading.
 // Review finding #2: Direct unit tests for loadServeGenDatasetAllWindows.
 func TestLoadServeGenDatasetAllWindows(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -104,28 +104,13 @@ func TestLoadServeGenDatasetAllWindows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Run("no span filtering", func(t *testing.T) {
-		config := &ServeGenDataSpec{Path: tmpDir}
-		result, err := loadServeGenDatasetAllWindows(datasetPath, config)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if len(result) != 3 {
-			t.Errorf("expected 3 dataset windows, got %d", len(result))
-		}
-	})
-
-	t.Run("span end filtering", func(t *testing.T) {
-		config := &ServeGenDataSpec{Path: tmpDir, SpanEnd: 30000}
-		result, err := loadServeGenDatasetAllWindows(datasetPath, config)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		// Should include timestamps 0 and 21600 (both < 30000), exclude 43200
-		if _, ok := result[43200]; ok {
-			t.Error("expected timestamp 43200 to be filtered out by SpanEnd=30000")
-		}
-	})
+	result, err := loadServeGenDatasetAllWindows(datasetPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 3 {
+		t.Errorf("expected 3 dataset windows, got %d", len(result))
+	}
 }
 
 // TestServeGenMultiPeriod_EmptyPeriod verifies BC-8: periods with no chunks are skipped.
