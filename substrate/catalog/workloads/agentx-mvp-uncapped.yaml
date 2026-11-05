@@ -1,0 +1,32 @@
+_comment: "Provenance: the agentic workload InferenceX replays for most models, aiperf 0.12.0 --scenario inferencex-agentx-mvp over the public-dataset alias semianalysis_cc_traces_weka_062126, the uncapped corpus (inference-sim/blis-catalog#49). It is agentx-mvp with only the corpus changed: agentx-mvp replays the 256k-capped corpus, and this entry keeps the requests over 256k tokens that fill a 1M-token KV pool. The corpus is not vendored: a consumer fetches traces.jsonl from the Hugging Face dataset semianalysisai/cc-traces-weka-062126 at the pinned revision and checks it against sha256 before replaying it. A real aiperf 0.12.0 run does not pin the revision: the alias's plugin metadata sets hf_dataset_name and hf_split but no hf_revision (plugin/plugins.yaml:2409-2427), so the loader reads the dataset's HEAD (dataset/loader/base_hf_dataset.py:77), and aiperf exposes no CLI flag to override it (--tokenizer-revision is the tokenizer's). A run that claims this workload must therefore check the downloaded traces.jsonl against sha256. The lane count (aiperf --concurrency) is each run's choice, so it is stated where the workload is bound, not here."
+_comment_corpus: "Corpus: Apache-2.0 (the dataset card's license field), ungated. traces.jsonl is 1,847,151,435 bytes, 3.2 times the capped corpus. The dataset's stats.txt at the pinned revision states 393 traces, 56,798 main turns, 1,697 subagent groups, 42,029 subagent inner requests, 98,827 model requests, 21,635,381,376 input tokens and 106,474,498 output tokens. Its README.md says it was built on 2026-06-21 by utils/agentic/build_weka_hf_dataset.py from SemiAnalysis Claude Code proxy traces (trace version 7 only), and that each request's input is capped at 990,016 tokens to drop KV-cache-block overcount artifacts; there is no 256k cap."
+_comment_choice: "Which corpus InferenceX replays: at InferenceX commit b9c6fc3020f90b2be827b1df5ee35aa7f80bac68, inferencex-e2e/infx/bench/agentic/traces.py replays the uncapped corpus by default (lines 7 and 18), the 256k-capped corpus for model prefixes dsr1, qwen3.5 and qwen3.8next (line 13), and either one when WEKA_LOADER_OVERRIDE names it (lines 17-21). Earlier commits had the opposite default, so this rule holds only at that commit. The corpus a run actually loaded, read from its recorded aiperf command (--public-dataset), decides which entry it is scored with: semianalysis_cc_traces_weka_062126 is this entry, semianalysis_cc_traces_weka_062126_256k is agentx-mvp."
+_comment_run: "Run settings, as our calibration runs use them: random_seed 42 (aiperf alone would draw a random seed); benchmark_duration_s 900, the scenario's floor (its default is 1800); grace_period_s 30, aiperf's --benchmark-grace-period default, which the scenario does not set; max_context_length max_model_len, the deployment's resolved --max-model-len, which drops every trace whose recorded peak prompt plus output exceeds it."
+_comment_locked: "cache_bust, system_idle_gap_cap_s, trajectory_start, warmup and split_flattened_agents are stated at the values aiperf 0.12.0 applies under the scenario (common/scenario/inferencex_agentx_mvp.py; common/environment.py WEKA_SPLIT_FLATTENED_AGENTS), so the file reads as the whole run. category coding is the corpus plugin's default_prompt_corpus, and thinking on is the THINKING_MODE InferenceX's benchmark workflows set (InferenceX 9fa76586 .github/workflows/benchmark-tmpl.yml:96), which its launcher requires for speculative AgentX throughput runs (inferencex-e2e/infx/launch/request.py:141-146); together they select the acceptance profile."
+replay:
+  scenario: inferencex-agentx-mvp
+  harness_version: 0.12.0
+  corpus:
+    loader: semianalysis_cc_traces_weka_062126
+    format: weka-trace-v7
+    encoding: jsonl
+    source:
+      huggingface: semianalysisai/cc-traces-weka-062126
+      revision: 23f152f6f0f9399a85901b89a6458def0ef16729
+      file: traces.jsonl
+      split: train
+    sha256: 29b6a19e751ff5230771519aab755f80a0f43a4ba9cf96b72d3a6a437ec99276
+  random_seed: 42
+  benchmark_duration_s: 900
+  grace_period_s: 30
+  max_context_length: max_model_len
+  cache_bust: first_turn_prefix
+  system_idle_gap_cap_s: 10
+  trajectory_start:
+    min_ratio: 0.0
+    max_ratio: 1.0
+  warmup:
+    mode: synthesized
+  split_flattened_agents: true
+  category: coding
+  thinking: "on"
