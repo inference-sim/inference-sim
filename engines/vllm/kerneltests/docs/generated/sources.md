@@ -3,4 +3,4 @@
 | What | Version | Commit | Pinned in |
 |---|---|---|---|
 | Engine behavior: [vLLM](https://github.com/vllm-project/vllm/tree/v0.31.0) | `v0.31.0` | `db9527a46873` | `EngineBehaviourVersion`, `EngineBehaviourCommit` in `kernel/new.go` |
-| Contracts, catalog, registry and cost model: [blis-substrate](https://github.com/inference-sim/blis-substrate) | `v0.0.0-20261105035832-817e83e0018b` | — | `go.mod` |
+| Contracts, catalog, registry and cost model: [blis-substrate](https://github.com/inference-sim/blis-substrate) | `v0.0.0-20261105043623-a45740a8e517` | — | `go.mod` |
