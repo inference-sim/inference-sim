@@ -213,8 +213,8 @@
 - id: DEV-8
   section: §8.10
   statement: >-
-    Every reported metric names its definition (§8.7), and a comparison is refused unless both sides
-    use the same definition.
+    Every reported metric names its definition and scope (§8.7), and a comparison is refused unless
+    both sides have the same definition, scope and aggregate.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -228,22 +228,26 @@
     runs: pull_request
     status: new
   - repo: inference-sim
-    check: A test that they compare only matching definitions
+    check: >-
+      A test that they compare only figures with matching definitions, scopes and aggregates
     runs: pull_request
     status: new
   - repo: blis-config-search
-    check: A test that they compare only matching definitions
+    check: >-
+      A test that they compare only figures with matching definitions, scopes and aggregates
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
-    check: A test that they compare only matching definitions
+    check: >-
+      A test that they compare only figures with matching definitions, scopes and aggregates
     runs: pull_request
     status: new
   review: null
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
+  note: definitions in M1; scope and aggregate in M2
 - id: DEV-9
   section: §8.10
   statement: >-

@@ -35,7 +35,10 @@
   target:
     status: ci
     milestone: 2
-  note: fitted coefficients cite units; other data-derived values do not
+  note: >-
+    fitted coefficients cite units; other data-derived values do not. Coefficients fitted on legacy
+    FIT units that the keyed rule sends to select are refitted from the fit list in M2, with held-out
+    evidence
 - id: D2
   section: §10.4
   statement: No unit is read under two roles across all consumers.
@@ -102,8 +105,14 @@
     status: new
   - repo: blis-substrate
     check: >-
-      A check that every unit at the merge base keeps its unit_id and role key, or is in an alias
-      table
+      A check that every unit at the merge base keeps its unit_id and role key, or is covered by an
+      alias table or by a new partition version a person approved
+    runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      A check that each alias table equals the one generated from the merge-base and candidate ingest
+      tools on the same source revision
     runs: pull_request
     status: new
   review: null
@@ -220,7 +229,27 @@
     never stored as a coefficient scoped only to a chip or model. Its value is taken from the command
     line if stated there, else from the scenario, else derived from the trace, else taken from the
     substrate's profile for that workload identity, and the Result's inputs record which supplied
-    it (SIM-10).
+    it (SIM-10). Speculative acceptance is keyed by the target model, the drafter, the speculative
+    method, the number of speculative tokens K, and the workload's category and thinking mode. The
+    drafter is the model's own in-graph speculator, such as its MTP layers, or a separate drafter
+    checkpoint with its own catalog entry. A value stated on the command line, in the scenario or
+    by the workload is used as stated. A profile lookup, in the substrate's profiles or in a profile
+    set the scenario names, may borrow when no measured profile has the run's exact key. It takes
+    the closest measured one, in this order. First, the same target and drafter at another K. Between
+    measured values of K it interpolates linearly. Above the largest it takes the largest's value.
+    Below the smallest it takes that profile's stated per-position rates for the first K positions.
+    A profile that states none gives 1 + K(AL − 1)/K₀, where K₀ is its K. That figure cannot exceed
+    what the profile's own rates would give, so it does not overstate drafting's gain. The lookup
+    never extrapolates. Second, another drafter of the same target, preferring the same method and
+    then the lowest value at the run's K, found by the first step's rules, so that drafting's gain
+    is not overstated. Third, the same method on another target whose graph records the same architecture.
+    Every step keeps the category and thinking mode, apart from a fallback category the user requested.
+    Two profiles that share a key but record different sampling or rejection settings are not interchangeable,
+    and an exact key found in two profile sets is ambiguous; the lookup refuses both. Any remaining
+    tie breaks in an order the substrate's acceptance reference states, so the choice is deterministic.
+    With no profile on any step, the run is refused. The Result records the profile used, the step,
+    and each key field that differed. A scenario or command-line option limits the lookup to exact
+    matches.
   scope:
   - blis-substrate
   checks:
@@ -228,8 +257,17 @@
     check: A validator rule refusing such families in the registry without a workload key
     runs: pull_request
     status: new
+  - repo: blis-substrate
+    check: >-
+      A test per borrowing step, for a tie, for each bound of K with and without stated per-position
+      rates, for an ambiguous key, for the exact-only option and for the refusal
+    runs: pull_request
+    status: new
   review: null
   status: new
   target:
     status: ci
     milestone: 2
+  note: >-
+    profiles state no drafter, and the lookup matches the exact key, substituting only a requested
+    fallback category; a run with no match is refused unless a value is stated

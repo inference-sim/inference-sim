@@ -74,9 +74,12 @@
 - id: CFG-4
   section: §5
   statement: >-
-    Service-level checks use the worst instance, and every metric they use has one definition from
-    the metric registry, shared by the search, the ranking and the report (DEV-8). A run that is overloaded
-    or incomplete is never ranked (DEV-10).
+    A specification ranks and checks configurations on any metric of the metric registry, at any scope
+    (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99 time to
+    first token over instances, and output tokens per second per accelerator for one pool. Every metric
+    it uses has one definition from the registry, shared by the search, the ranking and the report
+    (DEV-8), and every figure states its metric, scope and aggregate. A run that is overloaded or
+    incomplete is never ranked (DEV-10).
   scope:
   - blis-config-search
   checks:
@@ -94,7 +97,9 @@
   target:
     status: ci
     milestone: 3
-  note: worst-instance checks run; the metric registry and the overload rule are new
+  note: >-
+    worst-instance checks run on whole-run figures; registry metrics and scopes in M2, the overload
+    rule with the steady-state detector in M3 (DEV-10)
 - id: CFG-5
   section: §5
   statement: >-
@@ -102,7 +107,10 @@
     A ranking states the least trusted coefficient method and, from the dashboard's published summary
     at the release its pin file names, the grades of the dashboard points in the lanes it relies on,
     and a recommendation in a lane with no G1 or G2 points is labelled an extrapolation, with that
-    lane's measured error.
+    lane's measured error. A speculative-decoding arm states its acceptance in its scenario (D8).
+    The value comes from the substrate's profiles, read through inference-sim acceptance, which runs
+    D8's lookup, or from another cited measurement. The report names the source and each key field
+    in which it differs from the arm.
   scope:
   - blis-config-search
   checks:

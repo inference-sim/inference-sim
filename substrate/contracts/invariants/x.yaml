@@ -957,7 +957,8 @@
     and the deriver fetches it in a nightly job that holds the access token; pull-request jobs check
     only the committed hash and revision and the graph's derived_from hash, so no pull-request job
     needs a secret. Each derived value cites its source by URL and commit or hash. No private names
-    appear in files, commits or pull-request text.
+    appear in files, commits, pull-request text or issue text, and reports and documents name internal
+    data neutrally, as internal experiments.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -968,33 +969,38 @@
   - llm-d-router
   checks:
   - repo: blis-substrate
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
-    status: ci
-    test: .github/workflows/private-names.yml
+    status: new
   - repo: blis-vllm
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
     status: new
   - repo: blis-sglang
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
     status: new
   - repo: llm-d-router
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
     status: new
   - repo: inference-sim
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
-    status: ci
-    test: .github/workflows/private-names.yml
+    status: new
   - repo: blis-config-search
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
-    check: Name scan in every repository
+    check: >-
+      Name scan in every repository, which also reads the text of every open issue each night
     runs: pull_request
     status: new
   - repo: blis-substrate
@@ -1373,7 +1379,8 @@
     Scripts and generators, in every language, never write an engine default. They leave an unstated
     setting unstated, or read the default with inference-sim fields. A rendered scenario or report
     shows each resolved value with its source: stated by the user, recorded by the measured run (including
-    a value it logs as resolved), or the engine's default.
+    a value it logs as resolved), the engine's default, or, for a workload-dependent value, a cited
+    measurement (D8).
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1421,22 +1428,22 @@
   - repo: inference-sim
     check: >-
       In every scenario generator, a test that a generated scenario contains only stated or recorded
-      values. The name lint cannot see a bare number under a neutral key, so the second test is the
-      one that catches it
+      values, and workload-dependent values with their citation. The name lint cannot see a bare number
+      under a neutral key, so the second test is the one that catches it
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
       In every scenario generator, a test that a generated scenario contains only stated or recorded
-      values. The name lint cannot see a bare number under a neutral key, so the second test is the
-      one that catches it
+      values, and workload-dependent values with their citation. The name lint cannot see a bare number
+      under a neutral key, so the second test is the one that catches it
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
       In every scenario generator, a test that a generated scenario contains only stated or recorded
-      values. The name lint cannot see a bare number under a neutral key, so the second test is the
-      one that catches it
+      values, and workload-dependent values with their citation. The name lint cannot see a bare number
+      under a neutral key, so the second test is the one that catches it
     runs: pull_request
     status: new
   review: null
