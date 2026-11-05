@@ -301,7 +301,7 @@
     "ttft_p50_ms": 166.0265,
     "ttft_p90_ms": 188.9652,
     "ttft_p95_ms": 193.232,
-    "ttft_p99_ms": 204.9709
+    "ttft_p99_ms": 204.97090000000003
   },
   "requests": {
     "generated": 30,
@@ -329,14 +329,14 @@
       "kv_transfer_mean_ms": 0.5897333333333333,
       "kv_transfer_p50_ms": 0.6225,
       "kv_transfer_p90_ms": 0.917,
-      "kv_transfer_p95_ms": 0.9890499999999999,
+      "kv_transfer_p95_ms": 0.9890499999999997,
       "kv_transfer_p99_ms": 1.048,
       "kv_transfers": 30,
       "load_imbalance_ratio": 1,
       "parent_ttft_mean_ms": 162.08803333333333,
       "parent_ttft_p50_ms": 166.0265,
-      "parent_ttft_p95_ms": 193.232,
-      "parent_ttft_p99_ms": 204.9709,
+      "parent_ttft_p95_ms": 193.23199999999997,
+      "parent_ttft_p99_ms": 204.97090000000003,
       "prefill_kv_hold_peak_tokens": 1024,
       "prefill_sub_request_throughput": 1.0162976196412659
     }
@@ -383,7 +383,7 @@
         "ttft_mean_ms": 162.08803333333333,
         "ttft_p90_ms": 188.9652,
         "ttft_p95_ms": 193.232,
-        "ttft_p99_ms": 204.9709
+        "ttft_p99_ms": 204.97090000000003
       }
     },
     "decode": {
@@ -398,7 +398,7 @@
         "dropped_unservable": 0,
         "e2e_mean_ms": 113.737,
         "e2e_p90_ms": 126.5683,
-        "e2e_p95_ms": 128.79265,
+        "e2e_p95_ms": 128.79264999999998,
         "e2e_p99_ms": 130.57213,
         "injected_requests": 10,
         "instance_id": "instance_0",
@@ -506,7 +506,7 @@
         "ttft_mean_ms": 183.17270000000002,
         "ttft_p90_ms": 212.2003,
         "ttft_p95_ms": 218.1022,
-        "ttft_p99_ms": 231.30085,
+        "ttft_p99_ms": 231.30085000000003,
         "vllm_estimated_duration_s": 29.518912
       }
     },

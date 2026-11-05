@@ -14,6 +14,7 @@ package substratedata
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -30,23 +31,47 @@ var (
 	dirErr error
 )
 
-// Dir is the on-disk directory of the blis-substrate module this build selects. A test runs
-// in its package directory, inside this module, so the answer is this module's selection.
+// Dir is the on-disk directory of the blis-substrate module this build selects. It runs
+// `go mod download -json` on the selected version, which downloads the module when the cache
+// does not hold it, so a test needs no earlier `go mod download` (X25: the module go.mod
+// selects is the test's declared input). A test runs in its package directory, inside this
+// module, so the version is this module's selection.
 func Dir() (string, error) {
-	once.Do(func() {
-		cmd := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", Module)
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		out, err := cmd.Output()
-		if err != nil {
-			dirErr = fmt.Errorf("go list -m %s: %v: %s", Module, err, strings.TrimSpace(stderr.String()))
-			return
-		}
-		if dir = strings.TrimSpace(string(out)); dir == "" {
-			dirErr = fmt.Errorf("go list -m %s reports no directory; run `go mod download`", Module)
-		}
-	})
+	once.Do(func() { dir, dirErr = download() })
 	return dir, dirErr
+}
+
+func download() (string, error) {
+	version, err := goOutput("list", "-m", "-f", "{{.Version}}", Module)
+	if err != nil {
+		return "", err
+	}
+	if version == "" {
+		return "", fmt.Errorf("go list -m %s reports no version: this module does not require it", Module)
+	}
+	out, err := goOutput("mod", "download", "-json", Module+"@"+version)
+	if err != nil {
+		return "", err
+	}
+	var d struct{ Dir, Error string }
+	if err := json.Unmarshal([]byte(out), &d); err != nil {
+		return "", fmt.Errorf("go mod download -json %s@%s: %w", Module, version, err)
+	}
+	if d.Error != "" || d.Dir == "" {
+		return "", fmt.Errorf("go mod download %s@%s: no directory (%s)", Module, version, d.Error)
+	}
+	return d.Dir, nil
+}
+
+func goOutput(args ...string) (string, error) {
+	cmd := exec.Command("go", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // Catalog is the selected substrate's catalog/ directory.

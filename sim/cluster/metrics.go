@@ -69,14 +69,17 @@ func percentile(sorted []float64, p float64) float64 {
 	if len(sorted) == 1 {
 		return sorted[0]
 	}
-	rank := p / 100.0 * float64(len(sorted)-1)
+	// Each product is rounded with float64(...) before it is added or subtracted, so no
+	// platform fuses a multiply and an add here: arm64's compiler does and amd64's does not,
+	// which moved the last bit of a percentile between platforms (design X6).
+	rank := float64(p / 100.0 * float64(len(sorted)-1))
 	lower := int(math.Floor(rank))
 	upper := int(math.Ceil(rank))
 	if lower == upper {
 		return sorted[lower]
 	}
 	frac := rank - float64(lower)
-	return sorted[lower] + frac*(sorted[upper]-sorted[lower])
+	return sorted[lower] + float64(frac*(sorted[upper]-sorted[lower]))
 }
 
 // SLOMetrics holds per-SLO-class latency distributions.

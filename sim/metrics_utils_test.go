@@ -2,6 +2,7 @@ package sim
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 )
@@ -204,5 +205,19 @@ func TestMetricsOutput_GoodputFields_PresentWhenSet(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("MetricsOutput JSON missing %q: %s", want, s)
 		}
+	}
+}
+
+// TestCalculatePercentile_RoundsTheRankOnEveryPlatform pins the last bit of a percentile whose
+// rank fraction rounds differently when the multiply and the subtraction are fused, as arm64's
+// compiler fuses p/100*(n-1) - floor into one FNMSUBD and amd64's does not (design X6). The
+// expected bits are the unfused result, which every platform must give. Without the rounding,
+// arm64 gives 0x40012474538ef34d for these samples; amd64 passes either way, which is why the
+// byte gate also runs on an arm64 runner.
+func TestCalculatePercentile_RoundsTheRankOnEveryPlatform(t *testing.T) {
+	got := CalculatePercentile([]float64{0, 1000, 2000, 2204}, 90)
+	if want := math.Float64frombits(0x40012474538ef34e); got != want {
+		t.Errorf("p99 = %v (%#x), want %v (%#x): the rank's product was fused into the subtraction",
+			got, math.Float64bits(got), want, math.Float64bits(want))
 	}
 }
