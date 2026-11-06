@@ -113,7 +113,32 @@ func ConvertInferencePerf(path string) (*WorkloadSpec, error) {
 		return nil, fmt.Errorf("expanding inference-perf spec: %w", err)
 	}
 	expanded.Version = "2"
+	serialiseStageRates(expanded, spec.InferencePerf)
 	return expanded, nil
+}
+
+// serialiseStageRates replaces the in-memory per-stage samplers of a multi-stage expansion
+// with rates a spec file can carry (#1915, DEV-7). The expansion gives each stage's clients a
+// Poisson sampler at the stage's own per-client rate; a file cannot hold that sampler, and
+// summed aggregate_rate with equal fractions would offer every stage the total of all stages.
+// Absolute-rate mode (aggregate_rate 0) states each client's rate in its stage window instead.
+func serialiseStageRates(w *WorkloadSpec, ip *InferencePerfSpec) {
+	if len(ip.Stages) <= 1 {
+		return
+	}
+	sp := ip.SharedPrefix
+	perStage := float64(sp.NumUniqueSystemPrompts * sp.NumUsersPerSystemPrompt)
+	for i := range w.Clients {
+		c := &w.Clients[i]
+		if c.CustomSamplerFactory == nil || c.Lifecycle == nil || len(c.Lifecycle.Windows) != 1 {
+			continue
+		}
+		stage := i / int(perStage)
+		rate := ip.Stages[stage].Rate / perStage
+		c.CustomSamplerFactory = nil
+		c.Lifecycle.Windows[0].TraceRate = &rate
+	}
+	w.AggregateRate = 0
 }
 
 // ComposeSpecs merges multiple WorkloadSpecs into a single spec.
@@ -129,6 +154,24 @@ func ComposeSpecs(specs []*WorkloadSpec) (*WorkloadSpec, error) {
 	merged := &WorkloadSpec{
 		Version:  "2",
 		Category: specs[0].Category,
+		Seed:     specs[0].Seed,
+	}
+	// #1906: keep what the inputs bound. num_requests is the sum when every input caps its
+	// run and is refused when only some do (the sum would silently uncap the others); the
+	// horizon is the largest; the seed is the one the inputs share.
+	capped := 0
+	for _, s := range specs {
+		if s.Seed != merged.Seed {
+			return nil, fmt.Errorf("compose: specs have different seeds (%d and %d); give them one seed", merged.Seed, s.Seed)
+		}
+		if s.NumRequests > 0 {
+			capped++
+			merged.NumRequests += s.NumRequests
+		}
+		merged.Horizon = max(merged.Horizon, s.Horizon)
+	}
+	if capped != 0 && capped != len(specs) {
+		return nil, fmt.Errorf("compose: %d of %d specs set num_requests; set it on all or none", capped, len(specs))
 	}
 
 	var totalRate float64
