@@ -568,7 +568,10 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		if cs.sessionCallback == nil {
 			return nil
 		}
-		for _, next := range cs.sessionCallback(req, tick) {
+		// The next round follows the response the client has received in full: a completed
+		// request's last chunk reaches it after the post-decode overhead, the same instant the
+		// P/D path releases from (parent.CompletionTime), so think time counts from there (#1913).
+		for _, next := range cs.sessionCallback(req, doneTime(inst, req, tick)) {
 			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 		return nil // don't inject locally — route through cluster pipeline
