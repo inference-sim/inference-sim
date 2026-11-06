@@ -70,7 +70,7 @@ func TestResolveReplayKVOffload_UnrecordedDeploymentAllowsFlagAdd(t *testing.T) 
 
 // TestINV13_RunReplayParity_CacheHitRate verifies BC-5: with the KV-offload chain
 // active, a run and a replay of the same shared-prefix requests produce identical
-// aggregate cache_hit_rate, the value --metrics-path writes (INV-13).
+// aggregate cache_hit_rate, the value the Result's engine report states (INV-13).
 func TestINV13_RunReplayParity_CacheHitRate(t *testing.T) {
 	const fixedSeed int64 = 99
 	requests := makeSharedPrefixGroupRequests()

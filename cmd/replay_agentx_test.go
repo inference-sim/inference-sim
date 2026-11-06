@@ -34,28 +34,26 @@ func agentXSliceSHA(t *testing.T) string {
 	return hex.EncodeToString(s[:])
 }
 
-// runAgentXReplay runs replayCmd over the committed corpus slice and returns stdout and
-// the --metrics-path file.
+// runAgentXReplay runs replayCmd over the committed corpus slice and returns stdout (the Result)
+// and the figures the tests read from it, in the shape the legacy metrics file had.
 func runAgentXReplay(t *testing.T, args ...string) (stdout, file []byte) {
 	t.Helper()
 	restore := captureCmdLevelVars()
-	origSession, origMetrics := replaySessionMode, replayMetricsPath
+	origSession := replaySessionMode
 	defer func() {
 		restore.restore()
-		replaySessionMode, replayMetricsPath = origSession, origMetrics
+		replaySessionMode = origSession
 		agxScenarioFlag, agxWorkloadSpec, agxCorpusPath, agxCorpusSHA256 = "", "", "", ""
 		agxConcurrency, agxBenchmarkDur, agxGracePeriod, agxMaxContextLength, agxCorpusCache = 0, 0, "", "", ""
 		workloadAcceptance = nil
 	}()
 	catalogDir := setupKernelTestFixtures(t)
-	metrics := filepath.Join(t.TempDir(), "m.json")
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	registerAgentXReplayFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
 	testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
-	testCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "")
 	base := []string{
 		// The vendored DeepSeek-V4.1-Flash scenario: its auto max_model_len (1 Mi tokens)
 		// holds the corpus's long agentic prompts, as the campaign's deployment does.
@@ -63,7 +61,7 @@ func runAgentXReplay(t *testing.T, args ...string) (stdout, file []byte) {
 		"--registry", kernelRegistryDir(t), "--speculative-acceptance-rate", "0.502",
 		"--defaults-filepath", "../defaults.yaml",
 		"--agentic-scenario", "inferencex-agentx-mvp", "--corpus", agentXSlice, "--corpus-sha256", agentXSliceSHA(t),
-		"--benchmark-duration", "900s", "--metrics-path", metrics,
+		"--benchmark-duration", "900s",
 	}
 	// noDefaultAcceptance drops the default CLI acceptance, so a lower layer can supply it.
 	if len(args) > 0 && args[0] == noDefaultAcceptance {
@@ -82,11 +80,7 @@ func runAgentXReplay(t *testing.T, args ...string) (stdout, file []byte) {
 	_ = w.Close()
 	os.Stdout = origStdout
 	stdout = <-done
-	file, err := os.ReadFile(metrics)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return stdout, file
+	return stdout, agentXView(t, stdout)
 }
 
 type agentXFile struct {
@@ -115,6 +109,43 @@ type agentXFile struct {
 			Outcome string `json:"outcome"`
 		} `json:"agentic"`
 	} `json:"requests"`
+}
+
+// agentXView is the figures the tests below read, taken from the Result: the request ledger
+// (injected, completed, and the requests still held at the end), the engine report's agentic
+// block and acceptance record, and one row per request with its phase and agentic tag. It is
+// returned as JSON in the shape agentXFile reads.
+func agentXView(t *testing.T, stdout []byte) []byte {
+	t.Helper()
+	r := parseResult(t, string(stdout))
+	doc := resultDoc(t, string(stdout))
+	eng, _ := doc["reports"].(map[string]any)["engine"].(map[string]any)
+	cluster, _ := eng["cluster"].(map[string]any)
+	view := map[string]any{
+		"injected_requests":  r.Requests.Generated,
+		"completed_requests": r.Requests.Completed,
+		"still_running":      r.Requests.InFlightAtHorizon,
+		"still_queued":       r.Requests.QueuedAtHorizon,
+		"agentic":            cluster["agentic"],
+		"acceptance":         cluster["acceptance"],
+	}
+	if f, ok := resultValue(doc, "engine.cluster.measured_window_s"); ok {
+		view["measured_window_s"] = f
+	}
+	rows := make([]map[string]any, 0, len(r.RequestRows))
+	for _, row := range r.RequestRows {
+		m := map[string]any{"phase": string(row.Phase)}
+		if a := row.Agentic; a != nil {
+			m["agentic"] = map[string]any{"lane": a.Lane, "stream": a.Stream, "outcome": a.Outcome}
+		}
+		rows = append(rows, m)
+	}
+	view["requests"] = rows
+	data, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 // TestReplayAgentX_DeterministicConservingAndTagged: INV-6 (two runs' Results are
@@ -331,21 +362,16 @@ func TestReplayAgentX_CorpusCacheIsInvisible(t *testing.T) {
 	}
 }
 
-// The Result of an agentic replay measures over the replay's profiling window, the same window
-// the results file's measured aggregates are over (#1871): window.duration_s is the file's
-// measured_window_s and the window is the explicit one.
+// The Result of an agentic replay measures over the replay's profiling window (#1871): the
+// window is the explicit one, and it spans the benchmark duration the replay was given.
 func TestReplayAgentX_ResultMeasuresTheProfilingWindow(t *testing.T) {
-	stdout, file := runAgentXReplay(t, "--concurrency", "2")
-	var f map[string]any
-	if err := json.Unmarshal(file, &f); err != nil {
-		t.Fatal(err)
-	}
+	stdout, _ := runAgentXReplay(t, "--concurrency", "2")
 	r := parseResult(t, string(stdout))
 	if got := r.Frame.Phases.Measured.Start; got != result.StartProfiling {
 		t.Errorf("frame.phases.measured.start = %q, want the explicit profiling window %q", got, result.StartProfiling)
 	}
-	if want := f["measured_window_s"].(float64); want <= 0 || r.Window.DurationS != want {
-		t.Errorf("window.duration_s = %v, want the file's measured_window_s %v", r.Window.DurationS, want)
+	if r.Window.DurationS < 900 {
+		t.Errorf("window.duration_s = %v, want at least the 900 s benchmark duration", r.Window.DurationS)
 	}
 	if r.Reports.Engine["cluster"].(map[string]any)["agentic"] == nil {
 		t.Error("the agentic replay's counts are not in engine.cluster.agentic")

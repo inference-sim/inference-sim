@@ -19,7 +19,7 @@ package cmd
 //
 //  2. BC-4 (INV-13 run/replay parity): a trace exported from a `blis run`
 //     replays (via `blis replay --session-mode fixed`) to identical per-request
-//     SimResults, and the eager-sourced and lazy-sourced replays agree. This is
+//     rows, and the eager-sourced and lazy-sourced replays agree. This is
 //     INV-13 under both generation modes.
 //
 // It also pins BC-5 (lazy determinism, INV-6: two lazy runs at the same seed
@@ -40,7 +40,7 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"io"
 	"os"
 	"path/filepath"
@@ -48,8 +48,6 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
-
-	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // parityShape is one entry in the coverage matrix: a workload-spec YAML plus a
@@ -490,13 +488,13 @@ func TestParity_RunStdout_DeterministicAndEagerLazyIdentical(t *testing.T) {
 }
 
 // replaySpecTrace replays a previously-exported trace through replayCmd.Run
-// with --session-mode fixed and returns the parsed per-request SimResults.
+// with --session-mode fixed and returns the Result's rows of completed requests.
 // Mirrors the var-setup dance in TestINV13_RunReplayParity_PD_CLI but for a
 // single-instance non-PD cluster.
-func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []workload.SimResult {
+func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []result.RequestRow {
 	t.Helper()
 	tmpDir := t.TempDir()
-	resultsFile := filepath.Join(tmpDir, "results.json")
+	resultsFile := filepath.Join(tmpDir, "result.json")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	orig := captureCmdLevelVars()
@@ -524,7 +522,9 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	maxNumSeqs = 64
 	maxNumBatchedTokens = 2048
 	numInstances = 1
-	resultsPath = resultsFile
+	origOutput := resultOutput
+	defer func() { resultOutput = origOutput }()
+	resultOutput = resultsFile
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9
@@ -550,11 +550,9 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
 		"--trace-header", traceHeaderFile, "--trace-data", traceDataFile,
-		"--results-path", resultsFile,
 		"--num-instances", "1",
 		"--horizon", "120000000",
 		"--defaults-filepath", defaultsPath,
@@ -565,13 +563,19 @@ func replaySpecTrace(t *testing.T, traceHeaderFile, traceDataFile string) []work
 
 	data, err := os.ReadFile(resultsFile)
 	if err != nil {
-		t.Fatalf("results file not written: %v", err)
+		t.Fatalf("the Result was not written to --output: %v", err)
 	}
-	var results []workload.SimResult
-	if err := json.Unmarshal(data, &results); err != nil {
-		t.Fatalf("parse SimResult JSON: %v", err)
+	var doc result.Result
+	if err := result.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("parse the Result: %v", err)
 	}
-	return results
+	var completed []result.RequestRow
+	for _, row := range doc.RequestRows {
+		if row.Fate == result.FateCompleted {
+			completed = append(completed, row)
+		}
+	}
+	return completed
 }
 
 // runSpecToTraceFiles drives runCmd.Run at a fixed seed/mode and returns the
@@ -629,20 +633,24 @@ func runSpecToTraceFiles(t *testing.T, specYAML string, seedVal, horizon int64, 
 	return headerFile, dataFile
 }
 
-// simResultMaps indexes SimResults by request ID for order-independent
-// comparison (extractSimResults iterates a map, so slice order is not stable).
-func simResultMaps(results []workload.SimResult) (ttft, e2e map[int]float64) {
-	ttft = make(map[int]float64, len(results))
-	e2e = make(map[int]float64, len(results))
-	for _, r := range results {
-		ttft[r.RequestID] = r.TTFT
-		e2e[r.RequestID] = r.E2E
+// rowMaps indexes completed request rows by request ID for order-independent comparison, as
+// the id's number: ttft and e2e in microseconds.
+func rowMaps(rows []result.RequestRow) (ttft, e2e map[string]float64) {
+	ttft = make(map[string]float64, len(rows))
+	e2e = make(map[string]float64, len(rows))
+	for _, r := range rows {
+		if r.TTFTUs != nil {
+			ttft[r.ID] = float64(*r.TTFTUs)
+		}
+		if r.E2EUs != nil {
+			e2e[r.ID] = float64(*r.E2EUs)
+		}
 	}
 	return ttft, e2e
 }
 
 // TestParity_RunReplay_INV13_BothModes pins BC-4 (INV-13) end-to-end: a trace
-// exported from `blis run` replays to non-empty per-request SimResults, and the
+// exported from `blis run` replays to non-empty per-request rows, and the
 // eager-sourced and lazy-sourced replays produce identical TTFT/E2E per request.
 //
 // Uses the chatbot shape (bounded runtime); the byte-identity matrix above
@@ -670,19 +678,19 @@ func TestParity_RunReplay_INV13_BothModes(t *testing.T) {
 			len(eagerResults), len(lazyResults))
 	}
 
-	eagerTTFT, eagerE2E := simResultMaps(eagerResults)
-	lazyTTFT, lazyE2E := simResultMaps(lazyResults)
+	eagerTTFT, eagerE2E := rowMaps(eagerResults)
+	lazyTTFT, lazyE2E := rowMaps(lazyResults)
 	for id, wantTTFT := range eagerTTFT {
 		gotTTFT, ok := lazyTTFT[id]
 		if !ok {
-			t.Errorf("INV-13: request %d present in eager replay, missing from lazy replay", id)
+			t.Errorf("INV-13: request %s present in eager replay, missing from lazy replay", id)
 			continue
 		}
 		if gotTTFT != wantTTFT {
-			t.Errorf("INV-13: request %d TTFT eager=%f lazy=%f", id, wantTTFT, gotTTFT)
+			t.Errorf("INV-13: request %s TTFT eager=%f lazy=%f", id, wantTTFT, gotTTFT)
 		}
 		if eagerE2E[id] != lazyE2E[id] {
-			t.Errorf("INV-13: request %d E2E eager=%f lazy=%f", id, eagerE2E[id], lazyE2E[id])
+			t.Errorf("INV-13: request %s E2E eager=%f lazy=%f", id, eagerE2E[id], lazyE2E[id])
 		}
 	}
 }

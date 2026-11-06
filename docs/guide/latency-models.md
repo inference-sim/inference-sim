@@ -311,7 +311,7 @@ mode, a value stated for another K or an AL outside `[1, K+1]` is refused, unles
 fallback category names one to use, which is then recorded: the scenario pin's
 `fallback_category`, or `--speculative-fallback-category` when the pin states none (blis-schemas'
 `acceptance.Resolve` lets the scenario's fallback win; the CLI outranks it only for the
-acceptance value itself). The `--metrics-path` file records
+acceptance value itself). The Result's engine report records
 `acceptance: {length, rate, source_layer, entry}`, the length and rate being those the run
 advanced requests by and `entry` the profile set, key, provenance, any fallback, the hardware a
 profile was measured on when it is not the run's, and the per-position rates (vLLM's
@@ -341,9 +341,9 @@ Progress stops at the completion boundary: the final step is granted only the to
 request still needs, as vLLM trims the accepted tail once `check_stop` fires. A request's
 output-token count, and a closed-loop `accumulate` session's context growth, are therefore
 identical to a `K=0` run. Under speculation the `itl_*` and `step_interval_*` percentiles are
-per verification step; the `--metrics-path` file's `request_itl_*` (aiperf's per-token ITL) and
+per verification step; the Result's `tpot_*` (aiperf's per-token ITL) and
 `interactivity_*` are per token, about the step interval over `1 + α·K` (see
-[Metrics & Results](results.md#measured-window-aggregates-metrics-path-file)).
+[Metrics & Results](results.md#measured-window-aggregates)).
 
 **Occupancy: the speculative footprint (#1627).** As vLLM v0.31.0 does, a speculating decode
 schedules its whole verify width, `1 + K` tokens, and debits all of it from

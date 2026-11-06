@@ -3,10 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"math"
-	"os"
-	"path/filepath"
 	"runtime/debug"
-	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
@@ -17,59 +14,21 @@ import (
 // dsparkScenario drafts K=5 DSpark tokens on DeepSeek-V4.1-Flash.
 const dsparkScenario = "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"
 
-// contractKeys are the cluster-aggregate keys docs/BLIS_CLI_CONTRACT.md promises at the top
-// level of the --metrics-path file (those this metrics work owns).
-var contractKeys = []string{
-	"ttft_mean_ms", "ttft_p50_ms", "ttft_p90_ms", "ttft_p99_ms",
-	"request_itl_mean_ms", "request_itl_p50_ms", "request_itl_p90_ms", "request_itl_p99_ms",
-	"interactivity_p50", "interactivity_p90", "output_tok_per_user_mean",
-	"e2e_mean_ms", "e2e_p50_ms", "e2e_p90_ms", "e2e_p99_ms",
-	"step_interval_mean_ms", "step_interval_p90_ms",
-	"output_throughput_tok_s", "measured_window_s",
-	"measured_completed_requests", "cancelled_requests", "context_overflow_requests", "failed_requests",
-	"cache_hit_rate", "cpu_tier_hit_rate", "preemption_count",
-	"gateway_queue_delay_mean_ms", "gateway_queue_delay_p90_ms",
-	"in_flight_requests_mean", "in_flight_requests_max", "kv_capacity_tokens_per_replica",
-	"kernel_provenance", "blis_version", "kernel_version", "schemas_version",
-	"percentile_method",
-}
-
 // Under DSpark K=5 a verify step advances AL = 1 + alpha*K tokens on average, so aiperf's
 // per-token request ITL is the per-step interval divided by AL (#1938 acceptance). The run is
 // light enough that step times barely vary, which is what lets the two p90s be compared. The
 // 10% band holds for 39 of 40 seeds checked (101-120 on the named random streams and on the
 // sequential ones before them); seed 2 is one of them.
-// The same run pins that the file carries every contract key at top level, and that the
-// Result names the two series as blis-schemas does (#1871): its itl_p90_ms is the per-token
-// request ITL, never the per-step interval, which it reports as engine step_interval_p90_ms.
-func TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *testing.T) {
+// The same run pins that the Result names the two series as blis-schemas does (#1871): its
+// tpot_p90_ms is the per-token request ITL, never the per-step interval, which it reports as
+// the engine's step_interval_p90_ms; and that the kernel's evidence reaches the report.
+func TestResult_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *testing.T) {
 	const alpha, k = 0.502, 5
 	acceptedLength := 1 + alpha*k
-	path := filepath.Join(t.TempDir(), "metrics.json")
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", dsparkScenario,
-		"--num-requests", "40", "--rate", "0.5", "--seed", "2",
-		"--speculative-acceptance-rate", "0.502", "--metrics-path", path)
+		"--num-requests", "40", "--rate", "0.5", "--seed", "2", "--speculative-acceptance-rate", "0.502")
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var file map[string]any
-	if err := json.Unmarshal(data, &file); err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range contractKeys {
-		if _, ok := file[key]; !ok {
-			t.Errorf("--metrics-path file lacks contract key %q", key)
-		}
-	}
-	if got, want := metric(t, stdout, "tpot_p90_ms"), file["request_itl_p90_ms"].(float64); got != want {
-		t.Errorf("the Result's tpot_p90_ms = %v, want the per-token request_itl_p90_ms %v", got, want)
-	}
-	if got, want := resultNum(t, stdout, "engine.cluster.step_interval_p90_ms"), file["step_interval_p90_ms"].(float64); got != want {
-		t.Errorf("the Result's engine step_interval_p90_ms = %v, want the file's %v", got, want)
 	}
 	if def, ok := metrics.Lookup("tpot_p90_ms"); !ok || def.Formula != metrics.FormulaTPOT {
 		t.Errorf("tpot_p90_ms is defined as %+v, want the registry's per-request tpot", def)
@@ -77,31 +36,29 @@ func TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *t
 	if _, ok := parseResult(t, stdout).Metrics["itl_p90_ms"]; ok {
 		t.Error("the Result reports itl_p90_ms: the registry's itl pools every token gap, which BLIS does not compute")
 	}
-	if got := file["measured_completed_requests"].(float64); got != 40 {
-		t.Fatalf("%v of 40 requests completed in the measured window; the comparison would be vacuous", got)
+	if got := parseResult(t, stdout).Requests.Completed; got != 40 {
+		t.Fatalf("%d of 40 requests completed; the comparison would be vacuous", got)
 	}
 
-	itl, step := file["request_itl_p90_ms"].(float64), file["step_interval_p90_ms"].(float64)
+	itl := metric(t, stdout, "tpot_p90_ms")
+	step := resultNum(t, stdout, "engine.cluster.step_interval_p90_ms")
 	if want := step / acceptedLength; math.Abs(itl-want)/want > 0.10 {
-		t.Errorf("request_itl_p90_ms = %.4f, want step_interval_p90_ms/AL = %.4f/%.3f = %.4f within 10%%",
+		t.Errorf("tpot_p90_ms = %.4f, want step_interval_p90_ms/AL = %.4f/%.3f = %.4f within 10%%",
 			itl, step, acceptedLength, want)
 	}
-	if got, want := file["interactivity_p90"].(float64), 1000/itl; math.Abs(got-want) > 1e-9*want {
-		t.Errorf("interactivity_p90 = %v, want 1000/request_itl_p90_ms = %v", got, want)
-	}
-	if legacy := file["itl_p90_ms"].(float64); legacy != step {
-		t.Errorf("with no phase set, step_interval_p90_ms (%v) must equal the legacy itl_p90_ms (%v)", step, legacy)
+	if got, want := metric(t, stdout, "interactivity_p90"), 1000/itl; math.Abs(got-want) > 1e-9*want {
+		t.Errorf("interactivity_p90 = %v, want 1000/tpot_p90_ms = %v", got, want)
 	}
 
-	prov, ok := file["kernel_provenance"].(map[string]any)["colocated"].(map[string]any)
+	prov, ok := resultDoc(t, stdout)["reports"].(map[string]any)["kernel"].(map[string]any)["colocated"].(map[string]any)
 	if !ok {
-		t.Fatalf("kernel_provenance has no colocated pool: %v", file["kernel_provenance"])
+		t.Fatalf("reports.kernel has no colocated pool")
 	}
 	if total := prov["total"].(float64); total <= 0 || prov["evidenced"].(float64) > total {
-		t.Errorf("kernel_provenance.colocated: evidenced %v of total %v", prov["evidenced"], total)
+		t.Errorf("reports.kernel.colocated: evidenced %v of total %v", prov["evidenced"], total)
 	}
 	if len(prov["assumptions"].([]any)) == 0 {
-		t.Error("the V4.1 kernel records assumptions on h100, but none reached the file")
+		t.Error("the V4.1 kernel records assumptions on h100, but none reached the report")
 	}
 	if len(prov["skipped_rules"].([]any)) == 0 {
 		t.Error("no skipped release rules reported, though the kernel applies only the field layer")
@@ -148,31 +105,19 @@ func TestVersionsFromBuildInfo(t *testing.T) {
 	}
 }
 
-// A run no kernel priced still states its provenance block, empty, so the file's shape does
-// not depend on the backend.
+// A run no kernel priced still states its provenance as an empty map, so the report's shape
+// does not depend on the backend.
 func TestKernelProvenance_IsEmptyNotAbsentWithoutAKernel(t *testing.T) {
 	got := kernelProvenance(nil, nil)
 	if got == nil || len(got) != 0 {
 		t.Fatalf("kernelProvenance(nil, nil) = %v, want an empty map", got)
 	}
-	m := sim.NewMetrics()
-	path := filepath.Join(t.TempDir(), "m.json")
-	if err := m.EmitOutput(m.BuildOutput("cluster"), path, sim.WithKernelProvenance(got)); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `"kernel_provenance": {}`) {
-		t.Errorf("the file must carry an empty kernel_provenance block:\n%s", data)
-	}
 }
 
-// The results file's prefix_cache block is each pool's prefix-hit resolution as the engine model
+// The Result's engine report carries, per pool, a prefix_cache block: each pool's prefix-hit resolution as the engine model
 // gives it (build.PrefixHitOf), --swa-bounded-replay included: DeepSeek-V4.1's bounded replay on
 // by vLLM v0.31.0's default (a replay window), and off by the flag (the window group instead).
-func TestMetricsPath_PrefixCacheIsTheModelsResolution(t *testing.T) {
+func TestResult_PrefixCacheIsTheModelsResolution(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	m, err := kernelmodel.Open(dsparkScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
@@ -187,26 +132,25 @@ func TestMetricsPath_PrefixCacheIsTheModelsResolution(t *testing.T) {
 		{nil, nil, "v0.31.0 default"},
 		{[]string{"--swa-bounded-replay", "false"}, &off, "--swa-bounded-replay"},
 	} {
-		path := filepath.Join(t.TempDir(), "metrics.json")
 		args := append([]string{"run", "--scenarios", pdScenarios, "--scenario", dsparkScenario,
-			"--num-requests", "5", "--rate", "2", "--seed", "4", "--speculative-acceptance-length", "3.2",
-			"--metrics-path", path}, c.flags...)
-		if _, stderr, err := runKernelCLI(t, args...); err != nil {
+			"--num-requests", "5", "--rate", "2", "--seed", "4", "--speculative-acceptance-length", "3.2"}, c.flags...)
+		stdout, stderr, err := runKernelCLI(t, args...)
+		if err != nil {
 			t.Fatalf("run %v: %v\n%s", c.flags, err, lastLines(stderr, 5))
 		}
-		data, err := os.ReadFile(path)
+		eng, _ := resultDoc(t, stdout)["reports"].(map[string]any)["engine"].(map[string]any)
+		pool, _ := eng["colocated"].(map[string]any)
+		raw, ok := pool["prefix_cache"]
+		if !ok {
+			t.Fatalf("flags %v: no colocated prefix_cache record in the engine report", c.flags)
+		}
+		enc, err := json.Marshal(raw)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var file struct {
-			PrefixCache map[string]sim.PrefixCacheRecord `json:"prefix_cache"`
-		}
-		if err := json.Unmarshal(data, &file); err != nil {
-			t.Fatal(err)
-		}
-		got, ok := file.PrefixCache["colocated"]
-		if !ok {
-			t.Fatalf("flags %v: no colocated prefix_cache record in %s", c.flags, data)
+		var got sim.PrefixCacheRecord
+		if err := json.Unmarshal(enc, &got); err != nil {
+			t.Fatalf("flags %v: the prefix_cache record: %v", c.flags, err)
 		}
 		want := m.PrefixHit(c.override)
 		if got.Layout != sim.KVPrefixHit(want.Hit) || got.ModelRunner != want.Runner || got.SWABoundedReplayFrom != c.from ||

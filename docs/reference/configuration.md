@@ -137,8 +137,8 @@ Top-level settings that control the simulation run.
 | `--log` | string | "warn" | Log verbosity: trace, debug, info, warn, error, fatal, panic. Logs go to stderr. |
 | `--format` | string | `json` | Encoding of the `Result` document on stdout and in `--output`: `json` or `yaml` (#1871). `run` and `replay`. |
 | `--output` | string | "" | File to write the `Result` document to: the same bytes stdout carries. `run` and `replay`. |
+| `--from-result` | string | "" | Reproduce the `Result` in this file from the scenario, deployment, policy bundle and options it records (SIM-10): pass again each file an option named (the `Result` holds only its sha256) and, for a router that names files, `--scenarios`. The new `Result` names the original in `rerun_of` and lists the revisions that changed in `revision_changes`. `run` and `replay`. |
 | `--view` | string | "" | `summary` also renders the text sections (anomaly counters, KV cache, per-SLO, per-model, per-tenant, sessions, P/D, fitness, trace summary) to stderr, from the `Result`. `run` and `replay`. |
-| `--metrics-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File path to write MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, plus the file-only `cache_hit_rate`, `catalog`, measured-window aggregates (#1938), `kernel_provenance` (#1942) and build-version fields; see the results guide). Accepted on **both** `blis run` and `blis replay` (#1583). Distinct from replay's `--results-path`, which writes the **per-request** `[]SimResult` array and is replay-only. Empty = no file output. |
 
 ## KV Cache Configuration
 
@@ -454,7 +454,7 @@ lora:
 | **DeploymentConfig** | `--num-instances`, `--prefill-instances`, `--decode-instances`, `--pd-transfer-contention`, `--trace-level`, `--counterfactual-k`. YAML-only (no CLI flag): `node_pools`, `instance_lifecycle` |
 | **Router** | the scenario's `router:` block and `pools[].labels`; `--gateway-latency`, `--epp-scrape-jitter`, `--kv-event-delay` |
 | **LoRA** | `--lora-config`, `--lora-adapter-capacity`, `--lora-*` cost overrides, `--defaults-filepath` (the `lora:` block) |
-| **Top-level** | `--seed`, `--horizon`, `--log`, `--format`, `--output`, `--view`, `--metrics-path` (`run` and `replay`), `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
+| **Top-level** | `--seed`, `--horizon`, `--log`, `--format`, `--output`, `--view`, `--from-result`, `--trace-output`, `--policy-config`, `--fitness-weights`, `--summarize-trace` |
 
 ---
 
@@ -469,12 +469,9 @@ Replays a captured TraceV2 file (any TraceV2, including one from `blis convert`)
 | `--trace-header` | string | "" | Path to TraceV2 header YAML file (required). |
 | `--trace-data` | string | "" | Path to TraceV2 data CSV file (required). |
 | `--timeout` | int | 300 | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round (round 0 and every session follow-up) keeps its own recorded `deadline_us`, or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. See [Trace Replay](../guide/replay.md#replay-specific-flags). |
-| `--results-path` | string | "" | **Deprecated** (use `--output`; kept for one release, logs a deprecation). File to write a per-request JSON array (fields: `request_id`, `ttft_us`, `e2e_us`, `input_tokens`, `output_tokens`). Replay-only — `blis run` does not register it. |
 
-`blis replay` also accepts `--metrics-path` (the aggregate `MetricsOutput` JSON, documented under
-[Simulation Control](#simulation-control)); it is not replay-specific, so it is not repeated in the
-table above. The two are complementary rather than alternatives: `--results-path` writes per-request
-rows, `--metrics-path` writes the run aggregate.
+`--metrics-path` and `--results-path` were removed in v0.16.0 (#2071): the `Result` carries the aggregate
+figures and a row per request (`request_rows`); see [Metrics & Results](../guide/results.md).
 
 ---
 

@@ -1,9 +1,9 @@
 package cmd
 
 // The Result's per-request rows (DEV-9, #2071): one row per generated request, with its fate,
-// the times the run measured for it, and the token record the engine emitted. They replace the
-// requests array of the --metrics-path file and the []SimResult of --results-path, which the
-// accuracy harness read; the harness reads the rows from the Result now.
+// the times the run measured for it, and the token record the engine emitted. They replaced the
+// requests array of the --metrics-path file and the []SimResult of --results-path, both removed;
+// the accuracy harness reads the rows from the Result.
 
 import (
 	"sort"

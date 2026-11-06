@@ -17,7 +17,7 @@ package cmd
 //	BC-R7 --view summary renders the text sections to stderr and leaves stdout unchanged.
 //	BC-R8 input records the resolved scenario, deployment and the --policy-config bundle
 //	      verbatim; frame records the run controls; engine, revisions and data what the run read.
-//	BC-R9 --metrics-path keeps its content and logs a deprecation pointing at --output.
+//	BC-R9 --metrics-path is refused; the Result carries what the file held.
 //	BC-R10 a document blis-schemas refuses is fatal, naming the problem.
 
 import (
@@ -33,7 +33,6 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
-	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -170,31 +169,19 @@ func jsonEqual(t *testing.T, a, b any) bool {
 	return bytes.Equal(x, y)
 }
 
-// BC-R5: tpot_*_ms is the per-request time per output token (schema 1's itl_*, the file's
-// request_itl_*); the per-step interval is step_interval_*_ms. Under speculative decoding they
-// differ by the accepted length, which is what makes the distinction observable.
+// BC-R5: tpot_*_ms is the per-request time per output token; the per-step interval is
+// step_interval_*_ms. Under speculative decoding they differ by the accepted length, which is
+// what makes the distinction observable. The Result's tpot_mean_ms is also the mean of its rows'
+// tpot_us, a figure computed a second way.
 func TestResult_TPOTIsPerTokenAndTheStepIntervalIsPerStep(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "metrics.json")
 	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", pdScenarios, "--scenario", dsparkScenario,
-		"--num-requests", "20", "--rate", "0.5", "--seed", "42", "--speculative-acceptance-rate", "0.502",
-		"--metrics-path", path)
+		"--num-requests", "20", "--rate", "0.5", "--seed", "42", "--speculative-acceptance-rate", "0.502")
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
-	}
-	var file map[string]any
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &file); err != nil {
-		t.Fatal(err)
 	}
 	r := parseResult(t, stdout)
 	for _, stat := range []string{"mean", "p50", "p90", "p99"} {
 		name := "tpot_" + stat + "_ms"
-		if got, want := r.Metrics[name].Value, file["request_itl_"+stat+"_ms"].(float64); got != want {
-			t.Errorf("%s = %v, want the per-token request_itl_%s_ms %v", name, got, stat, want)
-		}
 		if d, ok := metrics.Lookup(name); !ok || d.Formula != metrics.FormulaTPOT {
 			t.Errorf("%s is defined %+v, want the registry's per-request tpot", name, d)
 		}
@@ -202,10 +189,18 @@ func TestResult_TPOTIsPerTokenAndTheStepIntervalIsPerStep(t *testing.T) {
 			t.Errorf("itl_%s_ms is reported: the registry's itl pools token gaps, which BLIS does not compute", stat)
 		}
 	}
-	step := metric(t, stdout, "step_interval_p90_ms")
-	if step != file["step_interval_p90_ms"].(float64) {
-		t.Errorf("step_interval_p90_ms %v, want the file's %v", step, file["step_interval_p90_ms"])
+	var sum float64
+	var n int
+	for _, row := range r.RequestRows {
+		if row.TPOTUs != nil {
+			sum += *row.TPOTUs / 1e3
+			n++
+		}
 	}
+	if want := r.Metrics["tpot_mean_ms"].Value; n == 0 || math.Abs(sum/float64(n)-want) > 1e-6*want {
+		t.Errorf("tpot_mean_ms %v, want the mean %v of the %d rows' tpot_us", want, sum/float64(max(n, 1)), n)
+	}
+	step := metric(t, stdout, "step_interval_p90_ms")
 	// Non-vacuity: with drafts accepted, a step emits more than one token, so the two differ.
 	if tpot := r.Metrics["tpot_p90_ms"].Value; step <= tpot {
 		t.Errorf("under speculation the step interval %v must exceed the per-token TPOT %v", step, tpot)
@@ -305,31 +300,16 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	}
 }
 
-// BC-R9: --metrics-path keeps its content (the legacy MetricsOutput, with per-request rows)
-// and logs a deprecation pointing at --output; the document references the file by digest.
-func TestResult_MetricsPathIsDeprecatedButKept(t *testing.T) {
+// BC-R9 (#2071): the legacy output files are gone. blis run and blis replay refuse
+// --metrics-path, and the Result carries the rows and aggregates those files held.
+func TestResult_MetricsPathIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metrics.json")
-	stdout, stderr, err := runKernelCLI(t, resultRunArgs("--metrics-path", path)...)
-	if err != nil {
-		t.Fatal(err)
+	_, stderr, err := runKernelCLI(t, resultRunArgs("--metrics-path", path)...)
+	if err == nil || !strings.Contains(stderr, "unknown flag: --metrics-path") {
+		t.Errorf("--metrics-path was not refused: %v\n%s", err, lastLines(stderr, 3))
 	}
-	if !strings.Contains(stderr, "--metrics-path is deprecated") || !strings.Contains(stderr, "--output") {
-		t.Errorf("no deprecation naming --output on stderr:\n%s", lastLines(stderr, 10))
-	}
-	var file sim.MetricsOutput
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &file); err != nil {
-		t.Fatal(err)
-	}
-	if file.CompletedRequests != 30 || len(file.Requests) != 30 || file.InstanceID != "cluster" {
-		t.Errorf("the file lost its content: completed %d, %d rows, instance %q", file.CompletedRequests, len(file.Requests), file.InstanceID)
-	}
-	a, ok := parseResult(t, stdout).Artifacts["metrics_file"]
-	if !ok || a.SHA256 != bytesDigest(data) {
-		t.Errorf("the Result does not reference the file by its digest: %+v", a)
+	if _, statErr := os.Stat(path); statErr == nil {
+		t.Error("a --metrics-path file was written")
 	}
 }
 

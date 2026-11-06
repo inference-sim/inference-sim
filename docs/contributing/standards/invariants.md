@@ -473,7 +473,7 @@ The router-side prefix-cache index (`sim/prefix_cache_index.go`) is gone with BL
 
 ### Metrics output
 
-These bind the measured-window aggregates of the `--metrics-path` file (`sim/metrics_measured.go`,
+These bind the measured-window aggregates of the Result (`sim/metrics_measured.go`,
 #1938) and the cluster cache hit rate (#1904). The definitions mirror aiperf 0.12.0; the
 code comments cite the aiperf lines.
 

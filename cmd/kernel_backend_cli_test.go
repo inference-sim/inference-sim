@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -178,30 +179,27 @@ func TestRunCmd_KernelBackend(t *testing.T) {
 	}
 }
 
-// A kernel run's results file must attribute the result to the catalog it read, as every
-// other backend's does (#1900): the catalog supplies the model graph, the chip and the
-// fabric, so a result without a catalog revision cannot be reproduced. Before the fix the
-// kernel path resolved the catalog without recording it, and the block was simply absent.
+// A kernel run's Result must attribute the result to the catalog it read, as every other
+// backend's does (#1900): the catalog supplies the model graph, the chip and the fabric, so a
+// result without a catalog record cannot be reproduced. The Result's data.catalog names the
+// source and the content hash.
 func TestRunCmd_KernelBackend_RecordsCatalogProvenance(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
 	t.Setenv("BLIS_KERNEL_SCENARIOS", scenarios)
 	t.Setenv("BLIS_KERNEL_CATALOG", catalog)
 	t.Setenv("BLIS_KERNEL_REGISTRY", registry)
 	t.Setenv("BLIS_KERNEL_SCENARIO", "gpt-oss-120b-h200-fp4-vllm-tp4.yaml")
-	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
-	if _, stderr, err := runKernelLeg(t, "go", "--metrics-path", metricsFile); err != nil {
+	stdout, stderr, err := runKernelLeg(t, "go")
+	if err != nil {
 		t.Fatalf("kernel run failed: %v\nstderr:\n%s", err, stderr)
 	}
-	got := readMetricsFile(t, metricsFile).Catalog
-	if got == nil {
-		t.Fatal("the kernel run's results file carries no catalog provenance block")
+	got := parseResult(t, stdout).Data.Catalog
+	if got.Source != result.SourcePath {
+		t.Errorf("data.catalog.source is %q, want %q (the catalog the run read)", got.Source, result.SourcePath)
 	}
-	if got.Path != catalog {
-		t.Errorf("catalog provenance path is %q, want the catalog the run read, %q", got.Path, catalog)
-	}
-	if got.Revision == "" {
-		t.Error("catalog provenance carries no revision field")
+	if len(got.Hash) != 64 || got.CombinedHash == "" {
+		t.Errorf("data.catalog carries no content hash: %+v", got)
 	}
 }
 
