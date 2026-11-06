@@ -2,7 +2,13 @@ package latencykernel
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -170,5 +176,60 @@ func TestANonFabricEntryDoesNotHideTheFabricsEfficiency(t *testing.T) {
 		if e, ok, err := resolveFabricEfficiency(co, roce); err != nil || !ok || e != 0.6 {
 			t.Errorf("%s: %v stated=%v err=%v, want the fabric's 0.6", c.what, e, ok, err)
 		}
+	}
+}
+
+// SUB-6, end to end: a pipeline-parallel scenario whose engine settings omit
+// gpu_memory_utilization is refused, naming the field and saying the engine resolves it, and
+// the same scenario with 0.92 stated is priced. This is the path an engine repository's
+// settings reader takes when it passes an omitted value through as zero.
+func TestAPipelineScenarioNeedsTheUtilizationStated(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const body = `kind: Scenario
+name: pp2
+model: llama-3.1-8b-instruct
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-memory, cost-model-fabric]
+engine_version: "0.32.0"
+cluster:
+  hardware: h100
+  fabric: ib-400g
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: pp2
+pools:
+  - role: colocated
+    nodes: 1
+    parallel: {tp: 2, pp: 2, dp: 1}
+`
+	build := func(util float64) error {
+		r, name := openRepos(t, d, body)
+		r.Rules = func(string) rules.EngineRules { return inertRules{} }
+		r.EngineSettings = func(*deployment.Deployment, int) (enginesettings.Settings, error) {
+			return enginesettings.Settings{BlockSize: 16, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192,
+				MaxModelLen: 8192, GPUMemoryUtilization: util}, nil
+		}
+		in, err := OpenInputs(name, r, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = New(in)
+		return err
+	}
+	err = build(0)
+	if err == nil {
+		t.Fatal("a pipeline scenario with gpu_memory_utilization omitted was priced")
+	}
+	for _, want := range []string{"gpu_memory_utilization", "SUB-6", "engine"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q does not name %q", err, want)
+		}
+	}
+	if err := build(0.92); err != nil {
+		t.Errorf("the same scenario with gpu_memory_utilization 0.92 stated: %v", err)
 	}
 }
