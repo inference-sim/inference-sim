@@ -13,10 +13,12 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/internal/substratedata"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/artifacttest"
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -108,6 +110,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	if err != nil {
 		t.Fatalf("committed fixture %s: decoding its engine block: %v", scenario, err)
 	}
+	resolveMemoryUtilization(&eng, sc.EngineRelease())
 	// A drafter the deployment names by speculative.draft_model is a catalog model of its own.
 	var draft *model.Graph
 	if eng.Speculative != nil && eng.Speculative.DraftModel != "" {
@@ -138,7 +141,10 @@ func rulesFor(version string) *pack.Pack {
 func withRules(r Repos) Repos {
 	r.Rules = RulesFrom(vllmrules.Lookup)
 	r.RulesVersions = vllmrules.Versions
-	r.EngineSettings = vllmsettings.OfPool
+	r.EngineSettings = func(dep *deployment.Deployment, pool int) (enginesettings.Settings, error) {
+		eng, err := vllmsettings.OfPool(dep, pool)
+		return eng, err
+	}
 	return r
 }
 
@@ -162,6 +168,7 @@ func newKernel(in Inputs) (*Kernel, error) {
 		if err != nil {
 			return nil, err
 		}
+		resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
 		in.Engine = &eng
 	}
 	return New(in)
@@ -274,4 +281,15 @@ func editInputsEngine(in *Inputs, edit func(*engineconfig.Engine)) {
 		panic(err)
 	}
 	pool.Engine = b
+}
+
+// resolveMemoryUtilization gives a pool that states no gpu_memory_utilization vLLM's default for the
+// release, as blis-vllm's resolver does before it builds the kernel; the cost model resolves none
+// (SUB-6), and a fixture states only what its run stated (X19).
+func resolveMemoryUtilization(eng *enginesettings.Settings, release string) {
+	if eng.GPUMemoryUtilization == 0 {
+		if d, ok := vllm.DefaultMemoryUtilization(release); ok {
+			eng.GPUMemoryUtilization = d.Value
+		}
+	}
 }

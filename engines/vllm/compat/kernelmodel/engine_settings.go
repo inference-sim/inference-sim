@@ -33,14 +33,14 @@ type resolvedEngine struct {
 func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngine {
 	r := resolvedEngine{engine: e}
 	release := in.Scenario.EngineRelease()
-	if d, ok := memoryUtilizationDefaults[release]; ok {
+	if d, ok := vllm.DefaultMemoryUtilization(release); ok {
 		r.sources = map[string]string{"gpu_memory_utilization": vllm.SourceStated}
 		if e.GPUMemoryUtilization == 0 {
 			// 0 reads as unstated: the field is a number with omitempty, and the schema says
 			// "0 means unset" (rules/engineconfig/validate.go:65). A negative value or one above 1
 			// is not unstated, and stays what it is, for KVMemory to refuse.
-			r.engine.GPUMemoryUtilization = d.value
-			r.sources["gpu_memory_utilization"] = d.source
+			r.engine.GPUMemoryUtilization = d.Value
+			r.sources["gpu_memory_utilization"] = d.Source
 		}
 	}
 	if release != vllm.Version {
@@ -86,22 +86,6 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		}
 	}
 	return r
-}
-
-// memoryUtilizationDefault is a release's CacheConfig.gpu_memory_utilization default and where it
-// is written.
-type memoryUtilizationDefault struct {
-	value  float64
-	source string
-}
-
-// memoryUtilizationDefaults are vLLM's default gpu_memory_utilization (0.92, with bounds
-// gt=0, le=1) in each release the engine models. An unstated value is the engine's to fill
-// (design §2.2): the generated scenarios state it only where the run did (X19).
-var memoryUtilizationDefaults = map[string]memoryUtilizationDefault{
-	"0.29.0": {0.92, "vLLM v0.29.0's default (vllm/config/cache.py:111@98dff2a81d)"},
-	"0.31.0": {0.92, "vLLM v0.31.0's default (vllm/config/cache.py:103@db9527a468)"},
-	"0.32.0": {0.92, "vLLM v0.32.0's default (vllm/config/cache.py:102@5df63a7203)"},
 }
 
 // resolveBlockSize resolves an unstated block_size as vLLM v0.32.0 does, for the models, GPUs

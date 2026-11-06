@@ -10,8 +10,10 @@ import (
 	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
 	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/vllm"
 
 	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
@@ -80,6 +82,9 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	if err != nil {
 		t.Fatalf("committed fixture %s: decoding its engine block: %v", scenario, err)
 	}
+	// A fixture states only what its run stated (X19); the cost model resolves no default
+	// (SUB-6), so gpu_memory_utilization is the engine's: blis-vllm's resolver gives vLLM's.
+	resolveMemoryUtilization(&eng, sc.EngineRelease())
 	return Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Chip: chip, Fabric: fabric,
@@ -116,6 +121,7 @@ func newKernel(in Inputs) (*Kernel, error) {
 		if err != nil {
 			return nil, err
 		}
+		resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
 		in.Engine = &eng
 	}
 	return New(in)
@@ -221,4 +227,37 @@ func mustDecode(t testing.TB, pool deployment.Pool) engineconfig.Engine {
 func setEngine(t testing.TB, pool *deployment.Pool, e engineconfig.Engine) {
 	t.Helper()
 	pool.Engine = engineBlock(t, e)
+}
+
+// resolvedMemoryUtilization is what blis-vllm's resolver gives a pool that states no
+// gpu_memory_utilization at the scenario's release: vLLM's default with its source. The cost model
+// resolves none (SUB-6), so a fixture that states none (X19) reaches the kernel through this.
+func resolvedMemoryUtilization(t *testing.T, in Inputs) (float64, string) {
+	t.Helper()
+	d, ok := vllm.DefaultMemoryUtilization(in.Scenario.EngineRelease())
+	if !ok {
+		t.Fatalf("no default gpu_memory_utilization for release %q", in.Scenario.EngineRelease())
+	}
+	return d.Value, d.Source
+}
+
+// withResolvedMemoryUtilization states the resolver's default on a pool that states none.
+func withResolvedMemoryUtilization(t *testing.T, in Inputs) Inputs {
+	t.Helper()
+	e := mustDecode(t, in.Deployment.Pools[in.PoolIndex])
+	if e.GPUMemoryUtilization == 0 {
+		e.GPUMemoryUtilization, _ = resolvedMemoryUtilization(t, in)
+		setEngine(t, &in.Deployment.Pools[in.PoolIndex], e)
+	}
+	return in
+}
+
+// resolveMemoryUtilization gives a pool that states no gpu_memory_utilization vLLM's default for the
+// release, as blis-vllm's resolver does before it builds the kernel; the cost model resolves none.
+func resolveMemoryUtilization(eng *enginesettings.Settings, release string) {
+	if eng.GPUMemoryUtilization == 0 {
+		if d, ok := vllm.DefaultMemoryUtilization(release); ok {
+			eng.GPUMemoryUtilization = d.Value
+		}
+	}
 }
