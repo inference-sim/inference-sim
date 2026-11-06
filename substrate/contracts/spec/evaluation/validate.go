@@ -56,6 +56,16 @@ func (r *Run) Validate() *validate.Problems {
 				p.Field(at+"."+field, "must lie in [0, 1], got %v", v)
 			}
 		}
+		// The three counts are ints, so finiteness cannot fail; they must not be negative.
+		// Zero is legal for each: all three are omitempty, so zero is how a harness that
+		// did not report them reads back. A collapsed level shows as a count below a lower
+		// level's, which a per-point check cannot see, not as a zero.
+		for field, v := range map[string]int{"completed_requests": pt.CompletedRequests,
+			"mean_isl": pt.MeanISL, "mean_osl": pt.MeanOSL} {
+			if v < 0 {
+				p.Field(at+"."+field, "must not be negative, got %d", v)
+			}
+		}
 		if pt.Preemptions < 0 {
 			p.Field(at+".preemptions", "must not be negative")
 		}
