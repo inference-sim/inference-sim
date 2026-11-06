@@ -287,7 +287,8 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 
 // evictParent stops a disaggregated request at its current stage, releasing what that stage
 // holds: the prefill sub-request on its prefill engine (no transfer starts); the decode KV
-// reserved for a transfer in flight (its completion then finds nothing to promote); or the decode
+// reserved for a transfer in flight (its completion then finds nothing to promote); the handoff
+// waiting on its decode engine for KV (its prefill KV is freed by the abort notice); or the decode
 // sub-request on its decode engine. It reports false when the request is between stages (on its
 // way to an engine, or in the step that computes its prefill, whose end starts the transfer) or
 // has finished; the gateway retries.
@@ -304,6 +305,20 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 		}
 		delete(cs.pendingPrefillCompletions, parent.PrefillSubReqID)
 		cs.releaseInFlight(prefill.AssignedInstance)
+	case parent.DecodeWaiting != nil:
+		// Waiting for decode KV: the decode engine holds the handoff and has not started its pull
+		// (SIM-8). It aborts the request it had received, so the prefill side frees its held KV
+		// at once (NIXLDecodeRejected: the connector's abort notice), and no transfer exists to
+		// settle.
+		inst := cs.instanceByID(parent.DecodeInstanceID)
+		if inst == nil {
+			return false
+		}
+		inst.AbortReservedKV(parent.DecodeWaiting, cs.clock)
+		delete(cs.remotePulls, parent.DecodeSubReqID)
+		parent.DecodeWaiting = nil
+		cs.releasePrefillOnDrop(parent, NIXLDecodeRejected, cs.clock)
+		cs.pdEvictedAfterPrefill++
 	case decode == nil:
 		return false // its prefill is computing in the current step; its transfer starts at the step's end
 	case decode.State == sim.StateWaitingForRemoteKVs:
