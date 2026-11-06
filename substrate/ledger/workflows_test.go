@@ -174,3 +174,65 @@ func TestRepositoryWorkflows(t *testing.T) {
 		t.Errorf("%d seed-holding jobs, want at least %d", n, len(SeedJobs))
 	}
 }
+
+const goodSelectWorkflow = `name: ledger
+on:
+  workflow_run:
+    workflows: [ledger candidate]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  select:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.id == github.repository_id
+    runs-on: ubuntu-latest
+    environment: ledger
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+`
+
+const goodErrorWorkflow = `name: ledger
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  error:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: ledger
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+      - run: |
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" \
+            --jq '[.name, .conclusion, .head_branch, (.head_repository.id | tostring)] | join("|")')
+          [ "$run" = "ledger candidate|success|main|$REPO_ID" ]
+`
+
+// D7: the select and error jobs report only for a candidate on main.
+func TestLintSelectErrorOnlyForMain(t *testing.T) {
+	for name, body := range map[string]string{"select": goodSelectWorkflow, "error": goodErrorWorkflow} {
+		if err := lint(t, map[string]string{"a.yml": body}); err != nil {
+			t.Errorf("good %s refused: %v", name, err)
+		}
+	}
+	bad := map[string]string{
+		"select for any branch":     strings.Replace(goodSelectWorkflow, " && github.event.workflow_run.head_branch == 'main'", "", 1),
+		"select for any repository": strings.Replace(goodSelectWorkflow, " && github.event.workflow_run.head_repository.id == github.repository_id", "", 1),
+		"error without the branch":  strings.Replace(goodErrorWorkflow, " .head_branch,", "", 1),
+		"error compares no main":    strings.Replace(goodErrorWorkflow, "success|main|", "success|", 1),
+	}
+	for name, body := range bad {
+		if err := lint(t, map[string]string{"a.yml": body}); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

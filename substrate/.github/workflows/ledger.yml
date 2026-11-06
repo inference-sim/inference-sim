@@ -85,9 +85,10 @@ jobs:
           path: ${{ runner.temp }}/published
           retention-days: 7
 
-  # The select job: aggregates on select units, for a candidate's predictions.
+  # The select job: aggregates on select units, for a candidate's predictions. Only a candidate
+  # run on main of this repository is reduced, so a pull request gets no select report.
   select:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.id == github.repository_id
     runs-on: ubuntu-latest
     environment: ledger
     permissions:
@@ -134,7 +135,7 @@ jobs:
           path: ${{ runner.temp }}/report.json
 
   # The error job: method error on validate units (VAL-5). A ledger owner starts it on main
-  # for a candidate run; the nightly schedule that runs it over every method is the error
+  # for a candidate run that is itself on main (a merged change; a pull request's run is refused); the nightly schedule that runs it over every method is the error
   # job's next step (README).
   error:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.job == 'error'
@@ -161,9 +162,9 @@ jobs:
           # must be a successful run of the ledger candidate workflow of this repository, not a
           # run of another workflow or of a fork.
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" \
-            --jq '[.name, .conclusion, (.head_repository.id | tostring)] | join("|")')
-          if [ "$run" != "ledger candidate|success|$REPO_ID" ]; then
-            echo "run $RUN_ID is not a successful ledger candidate run of this repository" >&2
+            --jq '[.name, .conclusion, .head_branch, (.head_repository.id | tostring)] | join("|")')
+          if [ "$run" != "ledger candidate|success|main|$REPO_ID" ]; then
+            echo "run $RUN_ID is not a successful ledger candidate run of this repository on main" >&2
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/in"

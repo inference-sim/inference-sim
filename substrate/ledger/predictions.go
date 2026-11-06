@@ -116,12 +116,10 @@ func ReadPredictions(r io.Reader, want map[string]bool, wantCandidate string) (*
 // What this protects, and what it does not (D7, design §10.2). Protected: no unit is named, no
 // figure covers fewer than MinAggregateUnits units, and the units a figure covers, and so Units,
 // are fixed by the seed and the measured data alone, never by the candidate's predictions.
-// Not protected: Value moves with the predictions. A candidate that resubmits with one unit's
-// prediction corrupted can read the change in Value and learn whether that unit is in the
-// reported role. The design counts and restricts only the held role (the gate job runs for a
-// pre-registered change, and every further evaluation is counted); it promises no such limit
-// for the select and error jobs. Today a run of the select job is neither counted nor limited
-// to main-branch candidates.
+// The select and error jobs report only for a candidate whose run is on main of this
+// repository, so differencing across a pull request's pushes is not possible: a candidate on
+// main is a merged change, and the number of evaluations is the number of merges. The held
+// role stays pre-registered and counted (design §10.2).
 type Aggregate struct {
 	Lane   string  `json:"lane"`
 	Metric string  `json:"metric"`
