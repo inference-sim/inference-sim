@@ -37,8 +37,11 @@ configuration:
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
 
-The `precise-prefix-cache-producer`, which reads vLLM KV-cache events, is refused: the simulated
-engines do not publish KV events.
+The `precise-prefix-cache-producer`, which reads vLLM KV-cache events, runs: with it in the
+router configuration each simulated engine publishes vLLM's KV events (a block stored, a block
+removed, and a CPU-tier location event), the router receives them `--kv-event-delay` later and
+indexes the blocks each engine can serve. [Routing](routing.md) gives the configuration and the cases that are
+refused.
 
 ### Disabling reuse across requests
 
