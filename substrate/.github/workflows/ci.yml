@@ -183,6 +183,21 @@ jobs:
           python3 kernel/scripts/test_extract_inferencex_engine_settings.py
           python3 kernel/scripts/test_gen_aisimulate_scenarios.py
 
+  # The mutation check (X13) for the cost model's guarded properties: kernel/mutation_test.go
+  # breaks each in turn, in the source, with go test -overlay, and requires the test that guards
+  # it to fail. A property with a surviving mutant is a property no test pins. It is also the
+  # known-bad input of this check (X18). The sweep covers the listed properties, not every
+  # changed function; widening it is a row in that file.
+  mutants:
+    name: mutation check
+    needs: changes
+    if: needs.changes.outputs.kernel == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - run: go test -count=1 -v -run '^TestGuardedPropertiesKillTheirMutants$' ./kernel/
+
   # Every catalog entry validates, and every model graph is what the deriver produces from
   # its vendor configuration. The validator is this repository's own, so the catalog and the
   # code that reads it are checked at the same commit.
@@ -301,7 +316,7 @@ jobs:
   required:
     name: required
     if: always()
-    needs: [changes, go, lint, contracts, kernel, catalog, ledger, registry, docs]
+    needs: [changes, go, lint, contracts, kernel, mutants, catalog, ledger, registry, docs]
     runs-on: ubuntu-latest
     steps:
       - env:

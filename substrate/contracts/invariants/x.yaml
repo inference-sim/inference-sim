@@ -1097,6 +1097,14 @@
     status: new
   - repo: blis-substrate
     check: >-
+      Mutation check of the cost model's guarded properties: each is broken in turn and the test
+      that guards it must fail
+    runs: pull_request
+    status: ci
+    test: 'ci.yml: mutants'
+    known_bad: 'kernel: TestGuardedPropertiesKillTheirMutants'
+  - repo: blis-substrate
+    check: >-
       Mutation checks: on a pull request, the functions it changes and the functions covered by any
       test it changes are mutated, and only the tests that cover them run
     runs: pull_request

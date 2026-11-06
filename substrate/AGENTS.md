@@ -91,6 +91,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X13** (partial; target ci by M1) Every behaviour change has a test that fails without it.
   - `new`, pull_request: The corpus comparison, run by the scoring harness at the pinned digest from each repository's CI, for pull requests declared as refactors
   - `new`, pull_request: Landing gate (VAL-6)
+  - `ci`, pull_request: Mutation check of the cost model's guarded properties: each is broken in turn and the test that guards it must fail (`ci.yml: mutants`)
   - `new`, pull_request: Mutation checks: on a pull request, the functions it changes and the functions covered by any test it changes are mutated, and only the tests that cover them run
   - `new`, nightly: The full sweep runs nightly and on release tags
 - **X14** (new; target ci by M1) A pull request's description is accurate: the commit hashes it lists are the branch heads, it merges cleanly, and every invariant it cites exists.
