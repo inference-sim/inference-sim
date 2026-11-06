@@ -102,6 +102,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The scripts package parses every inline github-script body with Node (#1811). The Node is
+      # pinned here, not taken from the runner, which can be too old for optional chaining; a
+      # missing Node fails that test (REQUIRE_NODE) instead of skipping it (X16).
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
       # Tests read only their declared inputs (X25): the module cache starts empty, so a test
       # that needs a module it does not download itself fails here rather than passing on a
       # cache a previous job filled.
@@ -109,6 +117,7 @@ jobs:
         env:
           GOMODCACHE: ${{ runner.temp }}/gomodcache
           GOFLAGS: -modcacherw
+          REQUIRE_NODE: "1"
         run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
 
   lint:
@@ -196,6 +205,24 @@ jobs:
   # delivery-verify `claude_md_edit` guard never sees. The ceiling leaves generous headroom over
   # the lean file so a legitimate operating-rule addition does not trip it; it fires only on
   # changelog-scale bloat, which is what #1818 removed.
+  # actionlint parses every workflow and its expressions and the inline github-script bodies'
+  # syntax is checked by the scripts package (#1811). actionlint is pinned to a release; its
+  # shellcheck and pyflakes integrations are off because the existing run blocks have not been
+  # through them, and a gate that fails on first contact would be switched off, not fixed.
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Lint the workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= -pyflakes=
+
   claude-md-size:
     runs-on: ubuntu-latest
     steps:
