@@ -117,7 +117,7 @@
  {
   "ID": "X24",
   "Title": "",
-  "Statement": "Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason. An issue closes only through a commit or pull request that names it, or as not planned, by a code owner, with a reason."
+  "Statement": "Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason. An issue closes only through a commit or pull request that names it, or as not planned, by a reviewer with write access (an owner, once the repository has a CODEOWNERS file), with a reason."
  },
  {
   "ID": "X25",

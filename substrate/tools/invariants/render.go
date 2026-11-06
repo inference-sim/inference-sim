@@ -164,7 +164,7 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 	if len(qs) > 0 {
 		b.WriteString("\n### Review questions\n\n")
 		b.WriteString("CI adds each question below to a pull request that changes one of its paths, as a\n")
-		b.WriteString("required checklist item. A code owner answers it yes or no with a one-line reason; an agent\n")
+		b.WriteString("required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent\n")
 		b.WriteString("may propose an answer but never gives one (design §13.7).\n\n")
 		for _, q := range qs {
 			fmt.Fprintf(&b, "- **%s** %s Reviewer: %s. When: %s. %s\n", q.ID, q.Question, q.Reviewer, q.When, triggerText(q.ID, q.Trigger))
@@ -176,7 +176,7 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 
 func triggerText(id string, t invariants.Trigger) string {
 	if t.Manual {
-		return "Added by a code owner with the label `review:" + id + "`."
+		return "Added by a reviewer with the label `review:" + id + "`."
 	}
 	s := "Paths: `" + strings.Join(t.Paths, "`, `") + "`"
 	if len(t.Exclude) > 0 {
@@ -234,7 +234,7 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 ## Review questions
 
 <!-- CI adds a required checklist item here for each review question whose paths this pull
-request changes (design §13.2). A code owner answers each one: tick it, and write "yes" or
+request changes (design §13.2). A reviewer with write access answers each one: tick it, and write "yes" or
 "no" with a one-line reason. -->
 
 ## Checklist

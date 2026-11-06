@@ -1173,3 +1173,18 @@ func TestThePullRequestCheckWritesTheAnswerRecord(t *testing.T) {
 		}
 	}
 }
+
+// A body written before the reviewer wording carries the old automation comment. The parser
+// reads items only, so it keeps the answers and rewrites the comment to the current text.
+func TestMergeQuestionsAcceptsOldComment(t *testing.T) {
+	old := "## Review questions\n\n<!-- Added by the review-question automation (design §13.2). A code owner ticks each item and writes yes or no with a one-line reason after \"Answer:\". -->\n\n" +
+		"- [x] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: no, it is the datasheet figure\n"
+	qs := "- [ ] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: \n"
+	nb, open := MergeQuestions(old, qs)
+	if len(open) != 0 {
+		t.Fatalf("an answered item under the old comment was reopened: %v\n%s", open, nb)
+	}
+	if !strings.Contains(nb, "Answer: no, it is the datasheet figure") || strings.Contains(nb, "code owner") || !strings.Contains(nb, "A reviewer ticks each item") {
+		t.Fatalf("the answer was lost or the comment not rewritten:\n%s", nb)
+	}
+}

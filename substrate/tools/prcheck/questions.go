@@ -10,7 +10,7 @@ import (
 // puts them in the pull-request body under "## Review questions", keeps every answer already
 // given, and reports the questions still unanswered.
 //
-// An item is "- [ ] **<ID>** <question> ... Answer: <text>". A code owner answers by ticking
+// An item is "- [ ] **<ID>** <question> ... Answer: <text>". A reviewer with write access answers by ticking
 // it and writing yes or no with a reason after "Answer:". An item stays required while it is
 // unticked or its answer does not start with yes or no. Branch protection makes this job
 // required, so the merge waits for every answer. The check does not look up who ticked an
@@ -61,7 +61,7 @@ func MergeQuestions(body, questions string) (string, []string) {
 	var b strings.Builder
 	var open []string
 	b.WriteString(questionsHeading + "\n\n")
-	b.WriteString("<!-- Added by the review-question automation (design §13.2). A code owner ticks each item and writes yes or no with a one-line reason after \"Answer:\". -->\n\n")
+	b.WriteString("<!-- Added by the review-question automation (design §13.2). A reviewer ticks each item and writes yes or no with a one-line reason after \"Answer:\". -->\n\n")
 	for _, w := range want {
 		it := w
 		if h, ok := have[w.key()]; ok {

@@ -97,7 +97,7 @@ type Check struct {
 	KnownBad string `yaml:"known_bad,omitempty"`
 }
 
-// Review is a yes/no question a code owner answers on a pull request (design §13.2).
+// Review is a yes/no question a reviewer with write access answers on a pull request (design §13.2).
 type Review struct {
 	Question string  `yaml:"question"`
 	Reviewer string  `yaml:"reviewer"`
@@ -107,7 +107,7 @@ type Review struct {
 
 // Trigger says when CI adds a review question to a pull request: when the pull request,
 // in one of Repos, changes a path that matches a glob in Paths and none in Exclude. A
-// manual trigger has no paths; a code owner adds the question by label.
+// manual trigger has no paths; a reviewer adds the question by label.
 type Trigger struct {
 	Manual  bool     `yaml:"manual,omitempty"`
 	Repos   []string `yaml:"repos,omitempty"`

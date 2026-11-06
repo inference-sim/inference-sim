@@ -1,7 +1,7 @@
 # Releasing BLIS repositories
 
 Every BLIS release is made by the release bot, `tools/release` in this repository, or, while
-the bot is unavailable, by two release owners following the manual procedure below (design
+the bot is unavailable, by two release owners, named by the project team under its own procedure, following the manual procedure below (design
 §13.6, LIF-3). Both produce the same tags in the same order. blis-substrate's first release is
 tagged by the manual procedure, because the bot's code arrives with it (release
 plan §3.1).
