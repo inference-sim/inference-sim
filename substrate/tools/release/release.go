@@ -29,7 +29,16 @@ type Env struct {
 	// Bugs returns the open issues labelled invariant-bug in a repository and in each
 	// repository whose code it ships.
 	Bugs func(repo string) ([]Bug, error)
+	// Lint runs the selected-module-graph lint (tools/modlint) on a checkout of a staged tip,
+	// with no deferral, and returns its findings. It sees the whole graph, so a transitive
+	// BLIS pseudo-version or a BLIS replace is found as a direct one is. Tag refuses to run
+	// without it.
+	Lint func(dir string) ([]string, error)
 }
+
+// DeferralFile is the pin-by-commit deferral. It is removed in the change that re-pins to
+// tags, so a staged tip never carries it.
+const DeferralFile = ".github/modlint-deferral.yaml"
 
 // Step is one repository's planned release.
 type Step struct {
@@ -437,6 +446,9 @@ func Tag(env Env, lock *StackLock, steps []Step, sign bool) error {
 		if bad := CheckInvariants(env.Registry, st.Repo, passed, lock.Milestone, lock.MilestoneRelease); len(bad) > 0 {
 			return fmt.Errorf("%s: staged tip %s is not checked: %s", st.Repo, short(tip), strings.Join(bad, "; "))
 		}
+		if err := checkStagedTip(env, st, tip); err != nil {
+			return err
+		}
 		tips[i] = tip
 	}
 	ident := []string{"-c", "user.name=" + bot.Name, "-c", "user.email=" + bot.Email}
@@ -451,6 +463,41 @@ func Tag(env Env, lock *StackLock, steps []Step, sign bool) error {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("%s: tag %s: %v: %s", st.Repo, st.Tag, err, out)
 		}
+	}
+	return nil
+}
+
+// checkStagedTip validates the commit that will carry the tag: the deferral file is gone
+// from it, and the selected module graph of its checkout passes the lint with no deferral
+// (X11, LIF-2). The direct requirements in the review head do not stand in for this: a BLIS
+// pseudo-version can arrive through another module's requirements.
+func checkStagedTip(env Env, st Step, tip string) error {
+	if _, err := gitIn(st.Dir, "cat-file", "-e", tip+":"+DeferralFile); err == nil {
+		return fmt.Errorf("%s: staged tip %s still holds %s; remove it in the change that re-pins to tags", st.Repo, short(tip), DeferralFile)
+	}
+	if env.Lint == nil {
+		return fmt.Errorf("%s: no module lint is configured, so the staged tip's module graph cannot be checked", st.Repo)
+	}
+	tmp, err := os.MkdirTemp("", "release-lint-")
+	if err != nil {
+		return err
+	}
+	wt := filepath.Join(tmp, "tip")
+	if _, err := gitIn(st.Dir, "worktree", "add", "--detach", "-q", wt, tip); err != nil {
+		return err
+	}
+	bad, lerr := env.Lint(wt)
+	if _, err := gitIn(st.Dir, "worktree", "remove", wt); err != nil {
+		return err
+	}
+	if err := os.Remove(tmp); err != nil {
+		return err
+	}
+	if lerr != nil {
+		return fmt.Errorf("%s: module lint of staged tip %s: %w", st.Repo, short(tip), lerr)
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("%s: staged tip %s fails the module lint: %s", st.Repo, short(tip), strings.Join(bad, "; "))
 	}
 	return nil
 }
