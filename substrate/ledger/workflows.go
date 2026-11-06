@@ -139,11 +139,11 @@ func lintWorkflow(path string) (int, error) {
 			if prControlled.MatchString(text) {
 				errs = append(errs, fmt.Errorf("%s: holds the seed and reads a ref or sha a pull request controls (D7)", at))
 			}
-			if listsUnitReads.MatchString(text) && !(unitReadsOnMain.MatchString(text) && unitReadsOwnRepo.MatchString(text)) {
+			if listsUnitReads.MatchString(text) && (!unitReadsOnMain.MatchString(text) || !unitReadsOwnRepo.MatchString(text)) {
 				errs = append(errs, fmt.Errorf("%s: lists unit-reads artifacts without keeping only those a run on main of this repository uploaded (workflow_run.head_branch == \"main\" and workflow_run.head_repository_id) (D2)", at))
 			}
-			if takesRunID.MatchString(text) && !(runVerifyAPI.MatchString(text) && runVerifyName.MatchString(text) &&
-				runVerifyState.MatchString(text) && runVerifyRepo.MatchString(text)) {
+			if takesRunID.MatchString(text) && (!runVerifyAPI.MatchString(text) || !runVerifyName.MatchString(text) ||
+				!runVerifyState.MatchString(text) || !runVerifyRepo.MatchString(text)) {
 				errs = append(errs, fmt.Errorf("%s: downloads the run in inputs.run_id without checking, through actions/runs/$RUN_ID, that it is a successful ledger candidate run of this repository (D7)", at))
 			}
 			checkouts := 0

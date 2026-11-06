@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -138,8 +139,12 @@ func ClosedBy(repo, body string) []Issue {
 			if at == "" {
 				at = repo
 			}
-			var n int
-			fmt.Sscan(r[2], &n)
+			n, err := strconv.Atoi(r[2])
+			if err != nil {
+				// The pattern matched digits only, so this is a number too large for an int.
+				rest = rest[len(r[0]):]
+				continue
+			}
 			out = append(out, Issue{at, n})
 			rest = rest[len(r[0]):]
 		}
