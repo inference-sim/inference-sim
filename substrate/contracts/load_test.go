@@ -836,8 +836,11 @@ func TestLoadCatalogModels(t *testing.T) {
 		dir := filepath.Join(modelsDir, name)
 		// config.json is part of the vendored layout but blis-schemas never parses it,
 		// so only its presence is checked; a missing one is a missing fixture and fails.
+		// A model that pins its config by hash (X12) commits no config.json.
 		if _, err := os.Stat(filepath.Join(dir, "config.json")); err != nil {
-			t.Errorf("%s: missing config.json: %v", name, err)
+			if b, rerr := os.ReadFile(filepath.Join(dir, "model.yaml")); rerr != nil || !strings.Contains(string(b), "\nconfig:\n") {
+				t.Errorf("%s: missing config.json: %v", name, err)
+			}
 		}
 		// model.yaml and graph.yaml must be present, load, and validate. The load is
 		// gated on presence so a missing file reports once (the stat error) rather than

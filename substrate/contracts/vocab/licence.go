@@ -65,13 +65,6 @@ var redistributableLicences = map[string]bool{
 	// notice to, or authorisation from, MiniMax. Redistribution: keep the copyright notice
 	// and the licence.
 	"LicenseRef-minimax-community": true,
-	// MiniMax-M2.7 NON-COMMERCIAL LICENSE,
-	// https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/d494266a4affc0d2995ba1fa35c8481cbd84294b/LICENSE,
-	// sha256 6373a886779a26e56af8070699ebaa8f90104cadcc7bbf6897037f72017bedfe. This licence
-	// forbids commercial use without MiniMax's prior written authorisation. It permits
-	// distribution for non-commercial purposes, keeping the copyright notice and the licence;
-	// a config.json in a public research repository is such a distribution.
-	"LicenseRef-minimax-m2.7": true,
 	// Two texts carry this name. Kimi K2.5 and K2.6's "Modified MIT License",
 	// https://huggingface.co/moonshotai/Kimi-K2.5/raw/4d01dfe0332d63057c186e0b262165819efb6611/LICENSE,
 	// sha256 c524b41658421b8b143c5b50637ef008909da56013ad12ccaba0536139ee35b0 (K2.6's differs
