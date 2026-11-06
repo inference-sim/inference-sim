@@ -108,7 +108,7 @@
   - question: >-
       Does this new scenario field describe something the real system would observe, rather than a
       setting the upstream does not have?
-    reviewer: contracts owners
+    reviewer: contracts expertise
     when: a key is added to the environment list
     trigger:
       repos:
@@ -118,7 +118,7 @@
   - question: >-
       Does this router flag only change how a deployed router is served or observed, with no effect
       on any routing, admission or flow-control decision?
-    reviewer: router fork owners
+    reviewer: router fork expertise
     when: a flag is added to the fork's list of flags that only matter in a cluster
     trigger:
       repos:
@@ -180,7 +180,7 @@
   - question: >-
       Does this change hide one engine's policy (a default, threshold, backend choice or padding rule)
       behind a neutral name? Would the other engine need the same edit?
-    reviewer: owners of the changed directory
+    reviewer: expertise in the changed directory
     when: any non-test change under catalog/, registry/ or kernel/
     trigger:
       repos:
@@ -255,7 +255,7 @@
   - question: >-
       Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator
       instead of an engine repository?
-    reviewer: inference-sim owners
+    reviewer: inference-sim expertise
     when: a change to the simulator's request-lifecycle or capacity code
     trigger:
       repos:
@@ -334,7 +334,7 @@
   - question: >-
       Does this change to how the router is hosted keep upstream behaviour on paths the recorded streams
       do not cover, such as errors, timeouts and cancellation?
-    reviewer: fork owners
+    reviewer: router fork expertise
     when: a fork pull request converts a call site or updates the lint baseline
     trigger:
       repos:
@@ -410,7 +410,7 @@
       Does this new replacement stand in only for the GPU, clock, transport, environment settings,
       the hardware platform or an outside service, and not for a decision? If it reproduces a decision,
       is it declared as a transcription?
-    reviewer: engine repository owners
+    reviewer: engine repository expertise
     when: the manifest changes
     trigger:
       repos:
@@ -504,7 +504,7 @@
     status: new
   review:
   - question: Could this floating-point reduction give a different result on another platform?
-    reviewer: owners of the changed repository
+    reviewer: expertise in the changed repository
     when: >-
       a parallel or floating-point reduction is added, or the cross-platform check fails
     trigger:
@@ -630,7 +630,7 @@
     status: new
   review:
   - question: Does this change give a second home to a fact another repository owns?
-    reviewer: owners of the changed repository
+    reviewer: expertise in the changed repository
     when: >-
       a pull request adds a literal list or table, or a constant that cites another repository
     trigger:
@@ -734,7 +734,7 @@
   review:
   - question: >-
       Was this fitting method, gate or threshold chosen after seeing evaluation results?
-    reviewer: owners of the repository landing the change
+    reviewer: expertise in the repository landing the change
     when: a pull request changes a fitting method, gate or threshold
     trigger:
       repos:
@@ -818,7 +818,7 @@
   - question: >-
       Is this "out of scope" reason one of the three allowed, with a citation that supports it, and
       does the llm-d stack never use the feature on the hardware BLIS targets?
-    reviewer: engine repository owners
+    reviewer: engine repository expertise
     when: an item is marked out of scope
     trigger:
       repos:

@@ -69,7 +69,7 @@
   - question: >-
       Does this startup-assembly change only alter how the router is built or hosted, never which
       plugins run or what they decide?
-    reviewer: router fork owners
+    reviewer: router fork expertise
     when: a hunk is classified as startup assembly
     trigger:
       manual: true
@@ -179,7 +179,7 @@
   - question: >-
       Does this baselined use stay off every decision path, lie only inside a refused plugin, or lie
       only on a path the embedding never builds?
-    reviewer: router fork owners
+    reviewer: router fork expertise
     when: an entry is added to the baseline
     trigger:
       repos:

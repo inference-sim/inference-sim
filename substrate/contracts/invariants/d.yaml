@@ -24,7 +24,7 @@
     status: new
   review:
   - question: Was this value read from, or tuned against, any measurement?
-    reviewer: registry owners
+    reviewer: registry expertise
     when: an assumed entry is added or changed
     trigger:
       repos:
@@ -217,7 +217,7 @@
     status: new
   review:
   - question: Was the new seed generated as the ledger records?
-    reviewer: ledger owners
+    reviewer: ledger expertise
     when: a seed is created or rotated
     trigger:
       manual: true

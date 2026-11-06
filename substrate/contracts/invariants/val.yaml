@@ -276,7 +276,7 @@
     status: new
   review:
   - question: Is this change kept or rejected because it offsets an error elsewhere?
-    reviewer: owners of the changed directory
+    reviewer: expertise in the changed directory
     when: >-
       a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level
       evidence

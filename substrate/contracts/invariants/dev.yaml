@@ -396,7 +396,7 @@
     status: new
   review:
   - question: Does this change alter what is modelled?
-    reviewer: owners of the changed directory
+    reviewer: expertise in the changed directory
     when: >-
       a pull request is declared a verification change but moves a Result outside the byte gate
     trigger:
