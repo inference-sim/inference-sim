@@ -86,7 +86,8 @@
   statement: >-
     pkg/embed.New passes the router conformance suite and changes only compatibly within an upstream
     major version, except through a contract-change review set (§12.8), which runs the API diff in
-    accept-break mode and releases every implementer together (SUB-1).
+    accept-break mode and releases every implementer together (SUB-1). Once the fork imports
+    contracts/embed from blis-substrate, the diff covers that package.
   scope:
   - llm-d-router
   checks:
