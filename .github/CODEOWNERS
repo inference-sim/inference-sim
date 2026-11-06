@@ -1,4 +1,0 @@
-# Owners review every change (design §3.4, §13.7). A change to .github/ needs a code owner's
-# review; the shared checks in .github/workflows/blis.yml are the merge check's inputs.
-*                 @mtoslalibu @sriumcp @jgchn
-/.github/         @mtoslalibu @sriumcp @jgchn

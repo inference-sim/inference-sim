@@ -6,7 +6,7 @@ name: blis
 # AGENTS.md section and pull-request template, the selected-version lint), the merge check on
 # the merge-queue tree, and the nightly checks (cited issues stay open, X28).
 #
-# The commit is the head of blis-substrate's m1/integration at the time of writing (d7ccfae); it moves to
+# The commit is the blis-substrate release v0.12.0 (d98137b); it moves to
 # a substrate release tag's commit when that release is cut.
 
 on:
@@ -23,30 +23,30 @@ permissions:
 jobs:
   pr:
     if: github.event_name == 'pull_request'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@d7ccfaeef3d9a0c9ab34ba5c29df3a6d10de3c6c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@d98137b23553da787f71a4ff08f4122f3f6f30bf
     permissions:
       contents: read
       pull-requests: write
     with:
       repo: inference-sim
-      substrate-ref: d7ccfaeef3d9a0c9ab34ba5c29df3a6d10de3c6c
+      substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
 
   merge:
     if: github.event_name == 'merge_group'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-merge-check.yml@d7ccfaeef3d9a0c9ab34ba5c29df3a6d10de3c6c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-merge-check.yml@d98137b23553da787f71a4ff08f4122f3f6f30bf
     permissions:
       contents: read
       pull-requests: read
       checks: read
     with:
-      substrate-ref: d7ccfaeef3d9a0c9ab34ba5c29df3a6d10de3c6c
+      substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
       required: "build,lint,blis checks / blis checks"
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@d7ccfaeef3d9a0c9ab34ba5c29df3a6d10de3c6c
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@d98137b23553da787f71a4ff08f4122f3f6f30bf
     permissions:
       contents: read
       issues: read
     with:
-      substrate-ref: d7ccfaeef3d9a0c9ab34ba5c29df3a6d10de3c6c
+      substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf

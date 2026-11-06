@@ -156,7 +156,10 @@ jobs:
         run: |
           # PR body as the declaration source; written as file CONTENTS, never a
           # shell argument.
-          gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/decl.txt" || : > "$RUNNER_TEMP/decl.txt"
+          if ! gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/decl.txt"; then
+            echo "::warning::could not read the PR body; reviewing with no declarations"
+            printf '' > "$RUNNER_TEMP/decl.txt"
+          fi
           echo "file=$RUNNER_TEMP/decl.txt" >> "$GITHUB_OUTPUT"
       - name: Run archon
         continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
