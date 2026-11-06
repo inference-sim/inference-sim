@@ -167,7 +167,14 @@ repos:
 
 	// Applying merges, pins once and tags, locally, in order; nothing is pushed (the test
 	// repositories have no remote).
-	if err := Apply(steps, false); err != nil {
+	e := env(t, nil)
+	if err := Stage(steps, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sim.git("tag", "--list"), "v0.17.0") {
+		t.Fatal("Stage made a tag")
+	}
+	if err := Tag(e, l, steps, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := sim.git("show", "v0.17.0:go.mod"); !strings.Contains(got, "github.com/inference-sim/blis-vllm v0.32.0-blis.3") || !strings.Contains(got, "github.com/inference-sim/blis-substrate v0.12.0") {
@@ -296,7 +303,7 @@ func TestRefusals(t *testing.T) {
 		}
 	})
 	t.Run("apply refuses when anything is refused", func(t *testing.T) {
-		if err := Apply([]Step{{Repo: "x", Refusals: []string{"no"}}}, false); err == nil {
+		if err := Stage([]Step{{Repo: "x", Refusals: []string{"no"}}}, false); err == nil {
 			t.Fatal("applied a refused release")
 		}
 	})
@@ -428,4 +435,105 @@ func TestMilestoneReleaseIsHeldToItsTargets(t *testing.T) {
 	h := sub.branch("b", "a.go", "package a\n", "Change")
 	st := planOne(t, env(t, nil), "blis-substrate", sub.dir, h, "bump: minor\nmilestone_release: true", 1)
 	has(t, st.Refusals, "X14: milestone M1 is reached and the invariant is new")
+}
+
+// stagedSet plans and stages a one-repository set and returns what Tag needs.
+func stagedSet(t *testing.T, e Env) (*repo, *StackLock, []Step) {
+	t.Helper()
+	sub := newRepo(t, subMod)
+	sub.git("tag", "v0.11.0")
+	h := sub.branch("b", "a.go", "package a\n", "Change")
+	l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: " + h + ", bump: patch}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps, err := Plan(e, l, map[string]string{"blis-substrate": sub.dir}, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Stage(steps, false); err != nil {
+		t.Fatal(err)
+	}
+	return sub, l, steps
+}
+
+// LIF-3 regression: the tag lands on the commit whose results were checked, and a tip that
+// moved after the check is refused. The results are looked up by the tip's own SHA.
+func TestTagTargetIsTheCheckedCommit(t *testing.T) {
+	var asked []string
+	e := env(t, nil)
+	reg := e.Registry
+	e.Passed = func(repo, commit string) (map[string]bool, error) {
+		asked = append(asked, commit)
+		return allPassed(reg, repo), nil
+	}
+	sub, l, steps := stagedSet(t, e)
+	tip := sub.git("rev-parse", "release/v0.11.1")
+	if err := Tag(e, l, steps, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := sub.git("rev-list", "-n1", "v0.11.1"); got != tip {
+		t.Errorf("tag v0.11.1 is on %s, the staged tip is %s", got, tip)
+	}
+	if len(asked) == 0 || asked[len(asked)-1] != tip {
+		t.Errorf("results were asked for %v, want the tip %s last", asked, tip)
+	}
+}
+
+func TestTagRefusesATipThatMovedAfterTheCheck(t *testing.T) {
+	e := env(t, nil)
+	reg := e.Registry
+	sub, l, steps := stagedSet(t, e)
+	checked := sub.git("rev-parse", "release/v0.11.1")
+	// Results exist only for the commit that was checked.
+	e.Passed = func(repo, commit string) (map[string]bool, error) {
+		if commit != checked {
+			return nil, nil
+		}
+		return allPassed(reg, repo), nil
+	}
+	sub.git("checkout", "-q", "release/v0.11.1")
+	sub.write("late.go", "package late\n")
+	sub.commit("A change after the check")
+	if err := Tag(e, l, steps, false); err == nil {
+		t.Fatal("tagged a tip with no results")
+	}
+	if strings.Contains(sub.git("tag", "--list"), "v0.11.1") {
+		t.Error("a tag exists after a refusal")
+	}
+}
+
+// Re-planning a head that is already released is refused (LIF-1).
+func TestPlanRefusesAReleasedHead(t *testing.T) {
+	sub := newRepo(t, subMod)
+	sub.git("tag", "v0.11.0")
+	h := sub.branch("b", "a.go", "package a\n", "Change")
+	sub.git("tag", "v0.12.0", h)
+	st := planOne(t, env(t, nil), "blis-substrate", sub.dir, h, "bump: minor", 1)
+	has(t, st.Refusals, "already carries the release tag v0.12.0")
+}
+
+// A requirement on a BLIS module at a pseudo-version, even one the set does not re-pin, is
+// refused (X11, LIF-2).
+func TestPlanRefusesAPseudoVersionRequirement(t *testing.T) {
+	mod := "module github.com/inference-sim/inference-sim\n\ngo 1.27.2\n\nrequire github.com/inference-sim/blis-substrate v0.0.0-20261105193227-4a3becf2d09a\n"
+	sim := newRepo(t, mod)
+	sim.git("tag", "v0.16.0")
+	h := sim.branch("b", "sim/a.go", "package sim\n", "Change")
+	st := planOne(t, env(t, nil), "inference-sim", sim.dir, h, "bump: minor", 1)
+	has(t, st.Refusals, "pseudo-version v0.0.0-20261105193227-4a3becf2d09a")
+}
+
+// The router fork's bare v1.0.0-blis tag counts as N=0, and an earlier upstream's tags are
+// the previous release of a new upstream, so the notes do not say "First release".
+func TestPreviousTagSeesTheBareAndEarlierUpstreamTags(t *testing.T) {
+	if got := previousTag([]string{"v1.0.0-blis"}, KindRouter, "v1.0.0"); got != "v1.0.0-blis" {
+		t.Errorf("previous of a bare-tag router = %q", got)
+	}
+	if got := previousTag([]string{"v1.0.0-blis", "v1.0.0-blis.1", "v1.0.0-blis.2"}, KindRouter, "v1.0.0"); got != "v1.0.0-blis.2" {
+		t.Errorf("previous = %q", got)
+	}
+	if got := previousTag([]string{"v0.31.0-blis.4", "v0.29.0-blis.9"}, KindEngine, "v0.32.0"); got != "v0.31.0-blis.4" {
+		t.Errorf("previous on a new upstream = %q", got)
+	}
 }
