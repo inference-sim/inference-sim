@@ -141,6 +141,7 @@ func rulesFor(version string) *pack.Pack {
 func withRules(r Repos) Repos {
 	r.Rules = RulesFrom(vllmrules.Lookup)
 	r.RulesVersions = vllmrules.Versions
+	r.RulesKind = "vllm"
 	r.EngineSettings = func(dep *deployment.Deployment, pool int) (enginesettings.Settings, error) {
 		eng, err := vllmsettings.OfPool(dep, pool)
 		return eng, err

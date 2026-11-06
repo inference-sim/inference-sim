@@ -106,7 +106,16 @@ func TestMuseSparkPricesItsFabricPerCluster(t *testing.T) {
 	}
 	derate := func(name, fabric string, eff float64) kernel.StepEstimate {
 		in := fixtureInputs(t, name)
-		in.Coefficients = append(in.Coefficients, &coefficient.Set{Kind: "CoefficientSet", Name: "fabric",
+		// A coefficient is its name, scope and method, and two methods for one name and scope
+		// are refused until rank selection exists: the measurement replaces the registry's
+		// fabric set rather than joining it.
+		kept := in.Coefficients[:0:0]
+		for _, s := range in.Coefficients {
+			if s.Name != "cost-model-fabric" {
+				kept = append(kept, s)
+			}
+		}
+		in.Coefficients = append(kept, &coefficient.Set{Kind: "CoefficientSet", Name: "fabric",
 			Coefficients: []coefficient.Entry{{Name: "fabric_bandwidth_efficiency", Value: eff,
 				Units: vocab.UnitDimensionless, Method: vocab.MethodMeasured,
 				Scope: coefficient.Scope{Fabric: []string{fabric}}}}})

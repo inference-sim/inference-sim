@@ -94,6 +94,7 @@ func withEngineRules(r Repos) Repos {
 	if r.Rules == nil {
 		r.Rules = latencykernel.RulesFrom(vllmrules.Lookup)
 		r.RulesVersions = vllmrules.Versions
+		r.RulesKind = "vllm"
 	}
 	if r.EngineSettings == nil {
 		// The kernel prices the engine settings its caller decodes, as it takes its rules from

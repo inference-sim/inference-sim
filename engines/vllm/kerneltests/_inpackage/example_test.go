@@ -23,6 +23,7 @@ var repos = latencykernel.Repos{
 	Data:           exampleData(),
 	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
 	RulesVersions:  vllmrules.Versions,
+	RulesKind:      "vllm",
 	EngineSettings: vllmsettings.OfPool,
 }
 
