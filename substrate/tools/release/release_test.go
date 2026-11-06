@@ -536,4 +536,13 @@ func TestPreviousTagSeesTheBareAndEarlierUpstreamTags(t *testing.T) {
 	if got := previousTag([]string{"v0.31.0-blis.4", "v0.29.0-blis.9"}, KindEngine, "v0.32.0"); got != "v0.31.0-blis.4" {
 		t.Errorf("previous on a new upstream = %q", got)
 	}
+	// The first -blis.1 of a new router upstream: the baseline is the last release of the old
+	// one, whether or not the retained bare tag is among the tags.
+	old := []string{"v1.0.0-blis", "v1.0.0-blis.1", "v1.0.0-blis.2"}
+	if got := previousTag(old, KindRouter, "v1.1.0"); got != "v1.0.0-blis.2" {
+		t.Errorf("previous on a new router upstream = %q", got)
+	}
+	if got := previousTag([]string{"v1.0.0-blis"}, KindRouter, "v1.1.0"); got != "v1.0.0-blis" {
+		t.Errorf("previous of a bare tag on a new router upstream = %q", got)
+	}
 }
