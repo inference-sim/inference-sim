@@ -204,3 +204,33 @@ func TestAnOverlayPathThatDiffersOnlyInCaseIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// An overlay that changes a set's role or caveats, which the merge cannot apply, is refused
+// naming the field; one that repeats them loads.
+func TestARegistryOverlayThatChangesSetLevelFieldsIsRefused(t *testing.T) {
+	base, err := os.ReadFile(filepath.Join(repoDir, "registry", "routing", "servingstudio-dsv41-flash.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(base)
+	if !strings.Contains(src, "role: sensitivity\n") {
+		t.Fatal("the routing set no longer has role: sensitivity")
+	}
+	open := func(body string) error {
+		ov := t.TempDir()
+		write(t, filepath.Join(ov, "routing", "servingstudio-dsv41-flash.yaml"), body)
+		_, err := Open(Options{RegistryOverlays: []string{ov}})
+		return err
+	}
+	if err := open(src); err != nil {
+		t.Fatalf("an overlay that repeats the set's role and caveats is refused: %v", err)
+	}
+	err = open(strings.Replace(src, "role: sensitivity\n", "role: default\n", 1))
+	if err == nil || !strings.Contains(err.Error(), "role") {
+		t.Errorf("an overlay that changes role was not refused: %v", err)
+	}
+	err = open(strings.Replace(src, "caveats:\n", "caveats:\n- an added caveat\n", 1))
+	if err == nil || !strings.Contains(err.Error(), "caveats") {
+		t.Errorf("an overlay that changes caveats was not refused: %v", err)
+	}
+}

@@ -138,6 +138,9 @@ func Open(o Options) (*Data, error) {
 		if err := refuse(dir, problems); err != nil {
 			return nil, err
 		}
+		if err := checkSetLevelFields(r, or); err != nil {
+			return nil, err
+		}
 		applyRegistryOverlay(r, or)
 		for stem := range or.Sets {
 			if _, ok := d.setFile[stem]; !ok {

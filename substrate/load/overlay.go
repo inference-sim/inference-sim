@@ -143,3 +143,28 @@ func applyRegistryOverlay(r, ov *dataset.Registry) {
 		r.Routing[stem] = &merged
 	}
 }
+
+// checkSetLevelFields refuses an overlay that states a different role or caveats for a set
+// the registry already has. The merge applies profiles and coefficients only, so it would
+// drop those fields while the hash and provenance said the overlay applied. An overlay that
+// states no caveats leaves the set's own.
+func checkSetLevelFields(r, ov *dataset.Registry) error {
+	for stem, os := range ov.Acceptance {
+		if base, ok := r.Acceptance[stem]; ok && len(os.Caveats) > 0 && !slices.Equal(os.Caveats, base.Caveats) {
+			return fmt.Errorf("the registry overlay's acceptance/%s.yaml changes the set's caveats; an overlay adds or replaces profiles, it cannot change set-level fields", stem)
+		}
+	}
+	for stem, os := range ov.Routing {
+		base, ok := r.Routing[stem]
+		if !ok {
+			continue
+		}
+		if os.Role != base.Role {
+			return fmt.Errorf("the registry overlay's routing/%s.yaml changes the set's role from %q to %q; an overlay adds or replaces profiles, it cannot change set-level fields", stem, base.Role, os.Role)
+		}
+		if len(os.Caveats) > 0 && !slices.Equal(os.Caveats, base.Caveats) {
+			return fmt.Errorf("the registry overlay's routing/%s.yaml changes the set's caveats; an overlay adds or replaces profiles, it cannot change set-level fields", stem)
+		}
+	}
+	return nil
+}
