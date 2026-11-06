@@ -7,7 +7,9 @@ parity test that runs it and the Go rule on the same failing examples.
 This lint reads every tracked Python file outside tests and reports two kinds of
 schema-like rule code:
 
-  set     a literal list, tuple, set or dict whose string members include two or more
+  set     a literal list, tuple, set or dict (or a constant expression that builds one:
+          a | b, a + b, a.union(b), set(x), frozenset(x), names assigned once) whose string
+          members include two or more
           members of one closed Go value vocabulary (units, methods, provenances, source
           kinds, source roles, licences). Restating a vocabulary is restating the rule
           that it is closed. Scope keys are left out: they are document keys, and a
@@ -57,14 +59,51 @@ def field_of(node: ast.AST) -> str | None:
     return None
 
 
-def strings_of(node: ast.AST) -> list[str]:
+def strings_of(node: ast.AST, env: dict[str, list[str]] | None = None) -> list[str]:
+    """The string constants a container expression holds, folding the constant
+    expressions that build one: a | b, a + b, a.union(b), set(x), frozenset(x),
+    tuple(x), list(x), sorted(x), and names assigned once from such an expression."""
+    env = env or {}
+    if isinstance(node, ast.Name):
+        return list(env.get(node.id, []))
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.BitOr, ast.Add)):
+        return strings_of(node.left, env) + strings_of(node.right, env)
+    if isinstance(node, ast.Call):
+        f = node.func
+        if isinstance(f, ast.Name) and f.id in ("set", "frozenset", "tuple", "list", "sorted") \
+                and len(node.args) == 1:
+            return strings_of(node.args[0], env)
+        if isinstance(f, ast.Attribute) and f.attr == "union":
+            return strings_of(f.value, env) + [s for a in node.args for s in strings_of(a, env)]
+        return []
     elts = node.keys if isinstance(node, ast.Dict) else getattr(node, "elts", [])
     return [e.value for e in elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+
+
+def names_of(tree: ast.AST) -> dict[str, list[str]]:
+    """Names assigned exactly once, to an expression that folds to string constants."""
+    count: dict[str, int] = {}
+    value: dict[str, ast.AST] = {}
+    for n in ast.walk(tree):
+        targets = n.targets if isinstance(n, ast.Assign) else [n.target] if isinstance(n, ast.AnnAssign) and n.value else []
+        for t in targets:
+            if isinstance(t, ast.Name):
+                count[t.id] = count.get(t.id, 0) + 1
+                value[t.id] = n.value
+    env: dict[str, list[str]] = {}
+    for _ in range(len(value)):  # a name may be built from names assigned later in the file
+        for k, v in value.items():
+            if count[k] == 1:
+                got = strings_of(v, env)
+                if got:
+                    env[k] = got
+    return env
 
 
 def findings(path: str, src: str, vocab: dict[str, list[str]]) -> list[str]:
     tree = ast.parse(src, filename=path)
     sets = {k: set(v) for k, v in vocab.items() if k != "scope_keys"}
+    env = names_of(tree)
     out = []
     fns: list[tuple[int, int, str]] = []
     for n in ast.walk(tree):
@@ -79,8 +118,8 @@ def findings(path: str, src: str, vocab: dict[str, list[str]]) -> list[str]:
         return best
 
     for n in ast.walk(tree):
-        if isinstance(n, (ast.List, ast.Tuple, ast.Set, ast.Dict)):
-            members = strings_of(n)
+        if isinstance(n, (ast.List, ast.Tuple, ast.Set, ast.Dict, ast.BinOp, ast.Call)):
+            members = strings_of(n, env)
             for name, words in sets.items():
                 hit = sorted(set(members) & words)
                 if len(hit) >= 2:
@@ -89,7 +128,7 @@ def findings(path: str, src: str, vocab: dict[str, list[str]]) -> list[str]:
             f = field_of(n.left)
             if f in FIELDS and CHECK_FN.search(fn_at(n.lineno)):
                 for c in n.comparators:
-                    vals = [c.value] if isinstance(c, ast.Constant) else strings_of(c)
+                    vals = [c.value] if isinstance(c, ast.Constant) else strings_of(c, env)
                     for v in vals:
                         if isinstance(v, str) and v in sets[FIELDS[f]]:
                             out.append(f"{path}: compare {f} {v} in {fn_at(n.lineno)}")

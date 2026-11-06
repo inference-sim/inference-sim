@@ -10,7 +10,7 @@ import (
 func (h *Header) Validate() *validate.Problems {
 	p := &validate.Problems{}
 	if h.Version != Version {
-		p.Field("trace_version", "must be %d, got %d: this format is the one version %d defines", Version, h.Version, Version)
+		p.Field("trace_version", "must be %d, got %d: %s", Version, h.Version, versionMessage(h.Version))
 	}
 	switch {
 	case h.TimeUnit == "":

@@ -10,7 +10,9 @@
 //   - a fraction in an integer field (yaml.v3 truncates it, blis-schemas#114);
 //   - an integer a float64 field cannot hold exactly (yaml.v3 rounds it);
 //   - a non-finite number, .nan and .inf, in a float field;
-//   - a recursive alias (blis-schemas#107).
+//   - a recursive alias (blis-schemas#107);
+//   - the unknown key and the number cases again, each written inside the sequence form of a
+//     merge key (<<: [{...}]), which a checker that reads only <<: *anchor would miss.
 //
 // A case that needs a field the document does not have, such as an integer field, is not
 // made for it; Run reports which cases ran, and a caller checks that across its loaders
@@ -33,6 +35,9 @@ type Case struct {
 	Doc  []byte
 	// Want is a substring the refusal must contain: the key or the value it is about.
 	Want string
+	// Or is a second substring that also counts: a loader may refuse a merge key outright,
+	// naming "<<", and that is as strict as naming the value inside it.
+	Or string
 }
 
 // Cases returns the malformed documents made from valid, a YAML document that decodes into
@@ -59,7 +64,11 @@ func Cases(valid []byte, target any) ([]Case, error) {
 		if err != nil {
 			return err
 		}
-		out = append(out, Case{Name: name, Doc: b, Want: want})
+		c := Case{Name: name, Doc: b, Want: want}
+		if strings.HasSuffix(name, "in a merge sequence") {
+			c.Or = "<<"
+		}
+		out = append(out, c)
 		return nil
 	}
 
@@ -73,6 +82,21 @@ func Cases(valid []byte, target any) ([]Case, error) {
 		}
 		m.Content = append(m.Content, scalar("!!str", "zz_not_a_field"), scalar("!!int", "1"))
 		if err := add("unknown key", "zz_not_a_field", d); err != nil {
+			return nil, err
+		}
+	}
+	// An unknown key inside a merge sequence.
+	if d, err := parse(); err == nil {
+		m := d.Content[0]
+		if tt := reflect.TypeOf(target); tt.Kind() == reflect.Pointer && tt.Elem().Kind() == reflect.Map &&
+			len(m.Content) > 1 && m.Content[1].Kind == yaml.MappingNode {
+			m = m.Content[1]
+		}
+		bad := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{
+			scalar("!!str", "zz_not_a_field"), scalar("!!int", "1")}}
+		m.Content = append(m.Content, scalar("!!merge", "<<"),
+			&yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{bad}})
+		if err := add("unknown key in a merge sequence", "zz_not_a_field", d); err != nil {
 			return nil, err
 		}
 	}
@@ -93,6 +117,13 @@ func Cases(valid []byte, target any) ([]Case, error) {
 		if err := add("fraction in an integer field", "1.5", d); err != nil {
 			return nil, err
 		}
+		d, _ = parse()
+		n = follow(d.Content[0], path)
+		n.Tag, n.Value = "!!float", "1.5"
+		intoMergeSequence(d.Content[0], path)
+		if err := add("fraction in an integer field in a merge sequence", "1.5", d); err != nil {
+			return nil, err
+		}
 	}
 	if path := find(top, t, isFloat); path != nil {
 		for _, c := range []struct{ name, tag, value string }{
@@ -104,6 +135,13 @@ func Cases(valid []byte, target any) ([]Case, error) {
 			n := follow(d.Content[0], path)
 			n.Tag, n.Value, n.Style = c.tag, c.value, 0
 			if err := add(c.name, c.value, d); err != nil {
+				return nil, err
+			}
+			d, _ = parse()
+			n = follow(d.Content[0], path)
+			n.Tag, n.Value, n.Style = c.tag, c.value, 0
+			intoMergeSequence(d.Content[0], path)
+			if err := add(c.name+" in a merge sequence", c.value, d); err != nil {
 				return nil, err
 			}
 		}
@@ -154,11 +192,24 @@ func Run(t *testing.T, valid []byte, target any, load func([]byte) error) []stri
 		switch {
 		case err == nil:
 			t.Errorf("%s: loaded:\n%s", c.Name, c.Doc)
-		case !strings.Contains(err.Error(), c.Want):
+		case !strings.Contains(err.Error(), c.Want) && (c.Or == "" || !strings.Contains(err.Error(), c.Or)):
 			t.Errorf("%s: refused, but the error does not name %q: %v", c.Name, c.Want, err)
 		}
 	}
 	return ran
+}
+
+// intoMergeSequence moves the key at path, and its value, out of its mapping into a
+// sequence merge: k: v becomes <<: [{k: v}].
+func intoMergeSequence(root *yaml.Node, path []int) {
+	parent := follow(root, path[:len(path)-1])
+	i := path[len(path)-1]
+	if parent.Kind != yaml.MappingNode {
+		return // the field is a sequence element; nothing to merge
+	}
+	pair := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map", Content: []*yaml.Node{parent.Content[i-1], parent.Content[i]}}
+	parent.Content[i-1] = scalar("!!merge", "<<")
+	parent.Content[i] = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq", Content: []*yaml.Node{pair}}
 }
 
 func scalar(tag, v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: v} }

@@ -37,6 +37,11 @@ const MaxNodes = 1 << 22
 // file in the catalog is about 7 MB; a file past this is not a configuration document.
 const MaxDocumentBytes = 64 << 20
 
+// MaxDepth bounds how deeply the number rules descend into a document. A document nested
+// deeper than this is refused, not passed unchecked: stopping the descent quietly would
+// leave every number below it unread. No document the project reads nests a tenth as deep.
+const MaxDepth = 256
+
 // CheckSize refuses a document of n bytes that is larger than MaxDocumentBytes.
 func CheckSize(path string, n int) error {
 	if n > MaxDocumentBytes {
@@ -146,10 +151,12 @@ func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool, count *int) error {
 var unmarshaler = reflect.TypeOf((*yaml.Unmarshaler)(nil)).Elem()
 
 // checkNumbers applies the number rules that depend on the field type, descending as the
-// decoder does. Aliases are followed; checkShape has already refused a recursive one.
+// decoder does. Aliases are followed; checkShape has already refused a recursive one, so
+// the descent ends, and a document deeper than MaxDepth is refused.
 func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
-	if depth > 256 {
-		return nil
+	if depth > MaxDepth {
+		return fmt.Errorf("line %d: %s: the document nests deeper than %d levels (MaxDepth); "+
+			"its numbers below this point cannot be checked", lineOf(n), name(at), MaxDepth)
 	}
 	for n != nil && n.Kind == yaml.AliasNode {
 		n = n.Alias
@@ -182,8 +189,16 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k, v := n.Content[i], n.Content[i+1]
 			if k.Value == "<<" {
-				if err := checkNumbers(v, t, at, depth+1); err != nil {
-					return err
+				// A merge names one mapping or a sequence of them; each member is
+				// read as if its keys were written here.
+				members := []*yaml.Node{v}
+				if m := resolve(v); m != nil && m.Kind == yaml.SequenceNode {
+					members = m.Content
+				}
+				for _, m := range members {
+					if err := checkNumbers(m, t, at, depth+1); err != nil {
+						return err
+					}
 				}
 				continue
 			}
@@ -304,4 +319,19 @@ func name(at string) string {
 		return "the value"
 	}
 	return at
+}
+
+// resolve follows aliases to the node they name.
+func resolve(n *yaml.Node) *yaml.Node {
+	for n != nil && n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+	return n
+}
+
+func lineOf(n *yaml.Node) int {
+	if n == nil {
+		return 0
+	}
+	return n.Line
 }

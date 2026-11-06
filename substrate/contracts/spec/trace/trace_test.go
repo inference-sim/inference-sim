@@ -115,6 +115,7 @@ func TestReaderIsStrict(t *testing.T) {
 		{"unknown key", "trace_version: 4\ntime_unit: us\nmode: generated\nserver: {}\n", "server"},
 		{"observe's created_at", "trace_version: 4\ntime_unit: us\nmode: generated\ncreated_at: x\n", "created_at"},
 		{"duplicate key", "trace_version: 4\ntrace_version: 4\ntime_unit: us\nmode: generated\n", "already defined"},
+		{"version 3 with v3-only keys", "trace_version: 3\ntime_unit: us\nmode: generated\nserver: {}\n", "blis convert trace"},
 		{"two documents", "trace_version: 4\ntime_unit: us\nmode: generated\n---\na: 1\n", "more than one"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -202,5 +203,15 @@ func TestWritersReturnTheirErrors(t *testing.T) {
 	}
 	if err := WriteHeader(failingWriter{}, &tr.Header); err == nil || !strings.Contains(err.Error(), "disk full") {
 		t.Errorf("WriteHeader: got %v", err)
+	}
+}
+
+// A version 3 trace is refused with the name of the command that converts it (release plan,
+// trace v4 item), whether its header fails to read or reads and fails to validate.
+func TestVersion3TraceNamesTheConverter(t *testing.T) {
+	h := &Header{Version: 3, TimeUnit: TimeUnitMicroseconds, Mode: ModeGenerated}
+	p := h.Validate()
+	if p.OK() || !strings.Contains(p.Error(), "blis convert trace") {
+		t.Errorf("Validate: got %v", p)
 	}
 }

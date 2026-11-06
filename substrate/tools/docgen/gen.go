@@ -150,19 +150,23 @@ func typedStringConsts(dir string) (string, map[string][]string, error) {
 func metricsTable() file {
 	var b bytes.Buffer
 	b.WriteString(header)
-	b.WriteString("| Identifier | Formula | Statistic | Population | Window | Unit | Unfinished | Meaning |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Identifier | Formula | Statistic | Population | Window | Unit | Denominator | Unfinished | Meaning |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|\n")
 	for _, d := range metrics.All() {
 		st := string(d.Statistic)
 		if d.PercentileMethod != "" {
 			st += " (" + string(d.PercentileMethod) + ")"
 		}
+		denom := "-"
+		if d.Denominator != "" {
+			denom = string(d.Denominator)
+		}
 		desc := d.Description
 		if d.Follows != "" {
 			desc += " Follows " + d.Follows + "."
 		}
-		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | `%s` | %s | %s | %s |\n",
-			d.ID, d.Formula, st, d.Population, d.Window, d.Unit, d.Unfinished, desc)
+		fmt.Fprintf(&b, "| `%s` | `%s` | %s | `%s` | `%s` | %s | %s | %s | %s |\n",
+			d.ID, d.Formula, st, d.Population, d.Window, d.Unit, denom, d.Unfinished, desc)
 	}
 	return file{path: outDir + "/metrics.md", content: b.Bytes()}
 }

@@ -1,6 +1,7 @@
 package trace
 
 import (
+	"bytes"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -27,10 +28,22 @@ var OptionalColumns = []string{"slo_target_us", "adapter", "think_time_us", "inp
 // ReadHeader reads a header strictly: an unknown key, a duplicate key or a value of the
 // wrong type is an error. It does not validate; call Validate.
 func ReadHeader(r io.Reader) (*Header, error) {
-	dec := yaml.NewDecoder(r)
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("trace header: %w", err)
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
 	var h Header
 	if err := dec.Decode(&h); err != nil {
+		// An older header has keys this version dropped; say which version it is, not
+		// which key is unknown.
+		var v struct {
+			Version int `yaml:"trace_version"`
+		}
+		if yaml.Unmarshal(raw, &v) == nil && v.Version != 0 && v.Version != Version {
+			return nil, fmt.Errorf("trace header: %s (%v)", versionMessage(v.Version), err)
+		}
 		return nil, fmt.Errorf("trace header: %w", err)
 	}
 	var extra yaml.Node
@@ -38,6 +51,13 @@ func ReadHeader(r io.Reader) (*Header, error) {
 		return nil, errors.New("trace header: more than one YAML document")
 	}
 	return &h, nil
+}
+
+// versionMessage is the refusal of a trace in a format version this package does not read.
+func versionMessage(v int) string {
+	return fmt.Sprintf("trace format version %d is not read; this package reads version %d. "+
+		"Convert the trace with blis convert trace, which maps each field to its version %d home",
+		v, Version, Version)
 }
 
 // WriteHeader writes h as YAML.
