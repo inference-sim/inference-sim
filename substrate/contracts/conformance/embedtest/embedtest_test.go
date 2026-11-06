@@ -240,6 +240,6 @@ func TestCoverageCanBeRequired(t *testing.T) {
 	if len(rec.errs) != 1 || !strings.Contains(rec.errs[0], "not a part") {
 		t.Errorf("a misspelt part: %v", rec.errs)
 	}
-	// Run still reports the skip rather than failing: the target decides.
-	embedtest.Run(t, lacking)
+	// Run reports the skip and leaves the failure to RequireCoverage: TestNilConfigsAreReportedSkipped
+	// pins that, without running a skipping test here, which CI refuses (X16).
 }
