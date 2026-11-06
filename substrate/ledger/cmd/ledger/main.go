@@ -25,7 +25,7 @@
 //	    List the units a candidate job predicts: every unit not on the published lists.
 //	ledger measured-inferencex -rows R -out FILE LEDGER
 //	    Write each InferenceX unit's measured values and lane, for the seed-holding jobs.
-//	ledger aggregate -job J -role R -predictions P -measured M -out FILE LEDGER  (seed-holding)
+//	ledger aggregate -job J -role R -predictions P -candidate SHA -measured M -out FILE LEDGER  (seed-holding)
 //	    Reduce a candidate's predictions on the units of role R to aggregates (D7).
 //
 // Exit 0 when everything passes, 1 when a check fails, 2 on misuse.
@@ -622,10 +622,11 @@ func cmdAggregate(args []string, stdout io.Writer) error {
 	job := fs.String("job", "", "select, error or gate")
 	role := fs.String("role", "", "select, validate or held")
 	predPath := fs.String("predictions", "", "the candidate job's predictions file (untrusted)")
+	candidate := fs.String("candidate", "", "head_sha of the Actions run that produced the predictions, from the runs API")
 	unitsPath := fs.String("units", "", "the units the candidate was handed (candidate-units, run from main)")
 	measPath := fs.String("measured", "", "measured values (measured-inferencex)")
 	out := fs.String("out", "", "report to write")
-	if err := parse(fs, args, 1, "aggregate -job J -role R -predictions P -units U -measured M -out FILE LEDGER"); err != nil {
+	if err := parse(fs, args, 1, "aggregate -job J -role R -predictions P -candidate SHA -units U -measured M -out FILE LEDGER"); err != nil {
 		return err
 	}
 	pairs := map[string]string{"select": "select", "error": "validate", "gate": "held"}
@@ -660,7 +661,7 @@ func cmdAggregate(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	pred, err := ledger.ReadPredictions(pf, want)
+	pred, err := ledger.ReadPredictions(pf, want, *candidate)
 	if cerr := pf.Close(); err == nil {
 		err = cerr
 	}

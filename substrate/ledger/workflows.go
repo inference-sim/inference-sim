@@ -61,7 +61,21 @@ var (
 	runVerifyName  = regexp.MustCompile(`ledger candidate`)
 	runVerifyState = regexp.MustCompile(`success`)
 	runVerifyRepo  = regexp.MustCompile(`head_repository`)
-	prControlled   = regexp.MustCompile(`github\.event\.(pull_request|workflow_run)\.(head|head_sha|head_branch|head_repository)|github\.head_ref`)
+	// runsAggregate matches a job that reduces predictions. It must pass -candidate the head_sha
+	// the runs API reports for the run it downloaded, so the loader can refuse an artifact that
+	// names another commit.
+	runsAggregate = regexp.MustCompile(`ledger aggregate\b`)
+	passesHeadSHA = regexp.MustCompile(`-candidate\s+"?\$`)
+	readsHeadSHA  = regexp.MustCompile(`actions/runs/\$RUN_ID"?\s[^\n]*\.head_sha|\.head_sha[^\n]*actions/runs/\$RUN_ID`)
+	// The select job is guarded by the run's branch and repository; the error job's run check
+	// compares the run's branch with main.
+	selectOnMain  = regexp.MustCompile(`workflow_run\.head_branch\s*==\s*'main'`)
+	selectOwnRepo = regexp.MustCompile(`workflow_run\.head_repository\.id\s*==\s*github\.repository_id`)
+	errorOnMain   = regexp.MustCompile(`\.head_branch[^\n]*\n[^\n]*\|main\|`)
+	// selectGuard is the comparison of the select job's guard, which reads the run's branch and
+	// repository only to refuse a pull request; it is not a use of them as input.
+	selectGuard  = regexp.MustCompile(`github\.event\.workflow_run\.head_(branch\s*==\s*'main'|repository\.id\s*==\s*github\.repository_id)`)
+	prControlled = regexp.MustCompile(`github\.event\.(pull_request|workflow_run)\.(head|head_sha|head_branch|head_repository)|github\.head_ref`)
 )
 
 // LintWorkflows is D7's workflow lint. For every workflow under dir it checks:
@@ -77,6 +91,11 @@ var (
 //     request run can upload an artifact of that name.
 //   - A seed-holding job that takes inputs.run_id checks, before downloading, that the run is a
 //     successful run of "ledger candidate" whose head repository is this one.
+//   - A seed-holding job that runs `ledger aggregate` passes -candidate the head_sha of the run
+//     it downloaded, read through actions/runs/$RUN_ID, which the strict loader compares with
+//     the artifact's candidate (X22).
+//   - The select job runs only for a candidate run on main of this repository, and the error
+//     job checks the same of the run it downloads, so a pull request gets neither report.
 //   - No other job reads the seed secret.
 //   - A candidate job (job id "candidate" or "candidate-…") reads no secret, runs in no
 //     environment and declares read-only permissions.
@@ -136,7 +155,7 @@ func lintWorkflow(path string) (int, error) {
 			if !mainOnlyIf.MatchString(j.If) {
 				errs = append(errs, fmt.Errorf("%s: holds the seed without `if: github.ref == 'refs/heads/main'` (D7)", at))
 			}
-			if prControlled.MatchString(text) {
+			if prControlled.MatchString(selectGuard.ReplaceAllString(text, "")) {
 				errs = append(errs, fmt.Errorf("%s: holds the seed and reads a ref or sha a pull request controls (D7)", at))
 			}
 			if listsUnitReads.MatchString(text) && (!unitReadsOnMain.MatchString(text) || !unitReadsOwnRepo.MatchString(text)) {
@@ -145,6 +164,15 @@ func lintWorkflow(path string) (int, error) {
 			if takesRunID.MatchString(text) && (!runVerifyAPI.MatchString(text) || !runVerifyName.MatchString(text) ||
 				!runVerifyState.MatchString(text) || !runVerifyRepo.MatchString(text)) {
 				errs = append(errs, fmt.Errorf("%s: downloads the run in inputs.run_id without checking, through actions/runs/$RUN_ID, that it is a successful ledger candidate run of this repository (D7)", at))
+			}
+			if runsAggregate.MatchString(text) && (!passesHeadSHA.MatchString(text) || !readsHeadSHA.MatchString(text)) {
+				errs = append(errs, fmt.Errorf("%s: reduces predictions without passing -candidate the head_sha that actions/runs/$RUN_ID reports for the run it downloaded, so an artifact could name another commit (X22, D7)", at))
+			}
+			if id == "select" && (!selectOnMain.MatchString(j.If) || !selectOwnRepo.MatchString(j.If)) {
+				errs = append(errs, fmt.Errorf("%s: the select job must run only for a candidate on main of this repository: `if` needs github.event.workflow_run.head_branch == 'main' and head_repository.id == github.repository_id, so a pull request gets no select report (D7)", at))
+			}
+			if id == "error" && !errorOnMain.MatchString(text) {
+				errs = append(errs, fmt.Errorf("%s: the error job must check that the run it downloads is on main (.head_branch compared with main) before reading its predictions, so a pull request gets no error report (D7)", at))
 			}
 			checkouts := 0
 			for i, s := range j.Steps {

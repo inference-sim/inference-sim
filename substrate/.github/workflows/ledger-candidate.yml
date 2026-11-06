@@ -36,6 +36,11 @@ jobs:
       - run: go mod download && go build -o "$RUNNER_TEMP/ledger" ./ledger/cmd/ledger
       - run: '"$RUNNER_TEMP/ledger" candidate-units -out "$RUNNER_TEMP/units.json" catalog/ledger'
       - name: Predict, with no network
+        env:
+          # The pull request's head commit, which is the run's head_sha. GITHUB_SHA is the
+          # merge commit on a pull_request run, and the seed-holding job compares this field
+          # with the run's head_sha (X22).
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # The operator-level predictor is the cost model's own (kernel/). Until it exists for
@@ -44,7 +49,7 @@ jobs:
           # No network: a new network namespace with no interface but loopback. The step fails
           # if the namespace cannot be made; it never falls back to running with the network.
           sudo unshare --net -- sudo -u "$USER" env PATH="$PATH" \
-            python3 -I - "$RUNNER_TEMP/units.json" "$RUNNER_TEMP/predictions.json" "$GITHUB_SHA" <<'EOF'
+            python3 -I - "$RUNNER_TEMP/units.json" "$RUNNER_TEMP/predictions.json" "$HEAD_SHA" <<'EOF'
           import json, sys
           units = json.load(open(sys.argv[1]))
           out = {"kind": "Predictions", "candidate": sys.argv[3],

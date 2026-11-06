@@ -43,9 +43,14 @@ var metricName = regexpMust(`^[a-z][a-z0-9_]{0,63}$`)
 
 // ReadPredictions reads a predictions file strictly: at most MaxPredictionsBytes, no unknown
 // field, no trailing data, each unit once, each value finite, each name a short identifier,
-// and every unit one of want (the units the job handed the candidate). It never trusts the
-// file to say which units are which role.
-func ReadPredictions(r io.Reader, want map[string]bool) (*Predictions, error) {
+// the candidate commit equal to wantCandidate, the head of the run the file came from, which
+// the caller learns from Actions and not from the file (X22), every prediction for a unit in want (the units the job handed the candidate) and every unit
+// of want predicted: coverage is complete and fixed by the job, never chosen by the file
+// (D7). It never trusts the file to say which units are which role.
+func ReadPredictions(r io.Reader, want map[string]bool, wantCandidate string) (*Predictions, error) {
+	if !gitCommit.MatchString(wantCandidate) {
+		return nil, fmt.Errorf("predictions: expected candidate %q is not a full commit", wantCandidate)
+	}
 	raw, err := io.ReadAll(io.LimitReader(r, MaxPredictionsBytes+1))
 	if err != nil {
 		return nil, err
@@ -67,6 +72,9 @@ func ReadPredictions(r io.Reader, want map[string]bool) (*Predictions, error) {
 	}
 	if !gitCommit.MatchString(p.Candidate) {
 		return nil, fmt.Errorf("predictions: candidate %q is not a full commit", p.Candidate)
+	}
+	if p.Candidate != wantCandidate {
+		return nil, fmt.Errorf("predictions: candidate %s is not the commit %s of the run they came from (X22)", p.Candidate, wantCandidate)
 	}
 	seen := map[string]bool{}
 	for i, x := range p.Predictions {
@@ -93,10 +101,25 @@ func ReadPredictions(r io.Reader, want map[string]bool) (*Predictions, error) {
 			}
 		}
 	}
+	if len(seen) != len(want) {
+		for k := range want {
+			if !seen[k] {
+				return nil, fmt.Errorf("predictions: %d of %d handed units have no prediction (first missing: %s); an artifact that omits a unit is refused whole (D7)", len(want)-len(seen), len(want), k)
+			}
+		}
+	}
 	return &p, nil
 }
 
 // Aggregate is one reported figure over a lane of units. It names no unit.
+//
+// What this protects, and what it does not (D7, design §10.2). Protected: no unit is named, no
+// figure covers fewer than MinAggregateUnits units, and the units a figure covers, and so Units,
+// are fixed by the seed and the measured data alone, never by the candidate's predictions.
+// The select and error jobs report only for a candidate whose run is on main of this
+// repository, so differencing across a pull request's pushes is not possible: a candidate on
+// main is a merged change, and the number of evaluations is the number of merges. The held
+// role stays pre-registered and counted (design §10.2).
 type Aggregate struct {
 	Lane   string  `json:"lane"`
 	Metric string  `json:"metric"`
@@ -158,7 +181,12 @@ type Measured struct {
 // AggregatePredictions reduces predictions to aggregates over the units whose role is role:
 // the mean absolute percentage error of each metric in each lane. Units on a legacy side
 // (onLegacySide) and the others are reduced apart, into figures marked not blind and blind.
-// Within each, a lane with fewer than MinAggregateUnits units is merged into the lane "other",
+// What a figure covers does not depend on the candidate. A unit of the role is every handed
+// unit the seed puts in it; a metric is every metric measured for that unit. A prediction that
+// is absent (a reason, or a value left out) scores as a 100% error, so omitting a prediction
+// can lower neither the figure nor the units it covers, and it cannot be used to learn a unit's
+// role from a change in a count. The one exception is an artifact with no value at all, which
+// decides nothing and reports nothing. Within each, a lane with fewer than MinAggregateUnits units is merged into the lane "other",
 // and if "other" is still too small it is not reported (design §10.2). The units of other
 // roles are dropped before anything is computed, so a candidate's predictions on them change
 // nothing.
@@ -172,20 +200,30 @@ func AggregatePredictions(job, role string, p *Predictions, m *Measured, roleOf 
 		lane, metric string
 	}
 	sums := map[key]*acc{}
+	predicted := false
+	for _, x := range p.Predictions {
+		predicted = predicted || len(x.Values) > 0
+	}
+	if !predicted {
+		return &Report{Kind: "AggregateReport", Job: job, Candidate: p.Candidate, Aggregates: []Aggregate{}}, nil
+	}
 	for _, x := range p.Predictions {
 		k := x.Source + "/" + x.UnitID
 		r, err := roleOf(x.Source, x.UnitID)
 		if err != nil {
 			return nil, err
 		}
-		if string(r) != role || len(x.Values) == 0 {
+		if string(r) != role {
 			continue
 		}
 		nb := onLegacySide != nil && onLegacySide(x.Source, x.UnitID)
-		for metric, pred := range x.Values {
-			meas, ok := m.Values[k][metric]
-			if !ok || meas == 0 {
+		for metric, meas := range m.Values[k] {
+			if meas == 0 {
 				continue
+			}
+			pred := 0.0 // an absent prediction is a 100% error
+			if v, ok := x.Values[metric]; ok {
+				pred = v
 			}
 			kk := key{nb, m.Lanes[k], metric}
 			a := sums[kk]

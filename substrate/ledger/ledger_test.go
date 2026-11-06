@@ -440,7 +440,7 @@ func TestDecodeReadsStrict(t *testing.T) {
 func TestPredictionsAndReports(t *testing.T) {
 	want := map[string]bool{"s/" + hexID(1): true, "s/" + hexID(2): true}
 	good := `{"kind":"Predictions","candidate":"` + strings.Repeat("a", 40) + `","predictions":[{"source":"s","unit_id":"` + hexID(1) + `","values":{"ttft_ms":1.5}},{"source":"s","unit_id":"` + hexID(2) + `","reason":"refused"}]}`
-	if _, err := ReadPredictions(strings.NewReader(good), want); err != nil {
+	if _, err := ReadPredictions(strings.NewReader(good), want, strings.Repeat("a", 40)); err != nil {
 		t.Fatalf("good predictions refused: %v", err)
 	}
 	for name, body := range map[string]string{
@@ -450,11 +450,21 @@ func TestPredictionsAndReports(t *testing.T) {
 		"bad name":      strings.Replace(good, "ttft_ms", "TTFT ms", 1),
 		"short commit":  strings.Replace(good, strings.Repeat("a", 40), "abc", 1),
 		"trailing":      good + "{}",
+		"omitted unit":  strings.Replace(good, `,{"source":"s","unit_id":"`+hexID(2)+`","reason":"refused"}`, "", 1),
+		"none at all":   `{"kind":"Predictions","candidate":"` + strings.Repeat("a", 40) + `","predictions":[]}`,
 		"too large":     good + strings.Repeat(" ", MaxPredictionsBytes),
 	} {
-		if _, err := ReadPredictions(strings.NewReader(body), want); err == nil {
+		if _, err := ReadPredictions(strings.NewReader(body), want, strings.Repeat("a", 40)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+
+	// X22/D7: the artifact's candidate must be the commit of the run it came from.
+	if _, err := ReadPredictions(strings.NewReader(good), want, strings.Repeat("b", 40)); err == nil {
+		t.Error("predictions for another commit accepted")
+	}
+	if _, err := ReadPredictions(strings.NewReader(good), want, ""); err == nil {
+		t.Error("no expected commit accepted")
 	}
 
 	ids := []string{hexID(1), hexID(2)}
@@ -642,8 +652,13 @@ func TestAggregatePredictions(t *testing.T) {
 		t.Error("predictions on fit units moved a held aggregate")
 	}
 	// Too few units in all: nothing reported, and the report says it decides nothing.
-	small := &Predictions{Kind: "Predictions", Candidate: p.Candidate, Predictions: p.Predictions[:6]}
-	none, _ := AggregatePredictions("gate", "held", small, m, roleOf, nil)
+	fewHeld := func(_, id string) (Role, error) {
+		if id == hexID(1) || id == hexID(2) || id == hexID(4) {
+			return RoleHeld, nil
+		}
+		return RoleFit, nil
+	}
+	none, _ := AggregatePredictions("gate", "held", p, m, fewHeld, nil)
 	if none.Evaluated || len(none.Aggregates) != 0 {
 		t.Errorf("small lane reported: %+v", none.Aggregates)
 	}
@@ -658,6 +673,78 @@ func TestAggregatePredictions(t *testing.T) {
 	if len(split.Aggregates) != 2 || split.Aggregates[0].Lane != "other" || split.Aggregates[1].Lane != "other" ||
 		split.Aggregates[0].NotBlind == split.Aggregates[1].NotBlind {
 		t.Fatalf("aggregates %+v, want one blind and one not-blind figure in lane other", split.Aggregates)
+	}
+}
+
+// D7: what a seed-holding report covers is fixed by the seed and the measured data. A candidate
+// that gives a reason for a unit, or a metric for only some units, changes the figure but not
+// the units it covers, so it cannot choose the population by omission (probing the partition).
+func TestAggregateCoverageIsNotCandidateChosen(t *testing.T) {
+	m := &Measured{Values: map[string]map[string]float64{}, Lanes: map[string]string{}}
+	roles := map[string]Role{}
+	full := &Predictions{Kind: "Predictions", Candidate: strings.Repeat("a", 40)}
+	for i := 0; i < 30; i++ {
+		id := hexID(i)
+		m.Values["s/"+id] = map[string]float64{"ttft": 100, "tpot": 10}
+		m.Lanes["s/"+id] = "h200"
+		roles[id] = RoleFit
+		if i%2 == 0 {
+			roles[id] = RoleHeld
+		}
+		full.Predictions = append(full.Predictions, Prediction{Source: "s", UnitID: id, Values: map[string]float64{"ttft": 100, "tpot": 10}})
+	}
+	roleOf := func(_, id string) (Role, error) { return roles[id], nil }
+	base, err := AggregatePredictions("gate", "held", full, m, roleOf, nil)
+	if err != nil || len(base.Aggregates) != 2 {
+		t.Fatalf("base %+v, %v", base, err)
+	}
+	units := func(r *Report) string {
+		var s string
+		for _, a := range r.Aggregates {
+			s += fmt.Sprintf("%s/%s=%d ", a.Lane, a.Metric, a.Units)
+		}
+		return s
+	}
+	// Variant 1: a reason for one held unit. Variant 2: tpot for only one held unit.
+	// Variant 3: ttft supplied by no held unit at all, tpot by every one.
+	reason := &Predictions{Kind: full.Kind, Candidate: full.Candidate, Predictions: append([]Prediction(nil), full.Predictions...)}
+	reason.Predictions[0] = Prediction{Source: "s", UnitID: hexID(0), Reason: "refused"}
+	some := &Predictions{Kind: full.Kind, Candidate: full.Candidate}
+	noTTFT := &Predictions{Kind: full.Kind, Candidate: full.Candidate}
+	for i, x := range full.Predictions {
+		y := Prediction{Source: x.Source, UnitID: x.UnitID, Values: map[string]float64{"ttft": 100}}
+		if i != 2 {
+			y.Values["tpot"] = 10
+		}
+		some.Predictions = append(some.Predictions, y)
+		z := Prediction{Source: x.Source, UnitID: x.UnitID, Values: map[string]float64{"tpot": 10}}
+		noTTFT.Predictions = append(noTTFT.Predictions, z)
+	}
+	for name, p := range map[string]*Predictions{"reason": reason, "partial metric": some} {
+		got, err := AggregatePredictions("gate", "held", p, m, roleOf, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if units(got) != units(base) {
+			t.Errorf("%s: covers %s, want %s", name, units(got), units(base))
+		}
+		if fmt.Sprint(got.Aggregates) == fmt.Sprint(base.Aggregates) {
+			t.Errorf("%s: a missing prediction scored as if it were exact", name)
+		}
+	}
+	got, _ := AggregatePredictions("gate", "held", noTTFT, m, roleOf, nil)
+	for _, a := range got.Aggregates {
+		if a.Units != 15 {
+			t.Errorf("%+v: covers %d units, want 15", a, a.Units)
+		}
+	}
+	// Reasons for every held unit: nothing was predicted, so nothing is evaluated.
+	allReasons := &Predictions{Kind: full.Kind, Candidate: full.Candidate}
+	for _, x := range full.Predictions {
+		allReasons.Predictions = append(allReasons.Predictions, Prediction{Source: x.Source, UnitID: x.UnitID, Reason: "refused"})
+	}
+	if none, _ := AggregatePredictions("gate", "held", allReasons, m, roleOf, nil); none.Evaluated || len(none.Aggregates) != 0 {
+		t.Errorf("all reasons reported %+v", none.Aggregates)
 	}
 }
 

@@ -131,6 +131,13 @@ names no unit (`ledger.CheckReport`). Units on a legacy side, legacy or new, are
 apart and reported as separate figures marked `not_blind`, because the old labels and the
 side rules are public. `ledger lint-workflows` refuses any change to that shape.
 
+What the reports protect. A report names no unit and covers at least 10 units, and the units
+it covers are fixed by the seed and the measured data, not by the candidate: the loader refuses
+predictions that omit a handed unit, and an absent prediction scores as a full error. Select
+and error reports exist only for main-branch candidates, so differencing across a pull
+request's pushes is not possible; a candidate on main is a merged change, so the number of
+evaluations is the number of merges. Held stays pre-registered and counted.
+
 What is not in place yet:
 
 - The operator-level predictor. The candidate job records every unit as not predicted, so
