@@ -139,6 +139,7 @@ func partUnclassified(e *env) {
 // Unclassified: a host counts the two differently.
 func partUnavailable(e *env) {
 	if e.s.Unavailable == nil {
+		e.skipped = "Suite.Unavailable is nil: no configuration that serves no request was supplied, so the Unavailable outcome is not checked"
 		return
 	}
 	if !e.build(*e.s.Unavailable) {
@@ -385,6 +386,7 @@ func (e *env) ctx() context.Context { return context.Background() }
 // one through its eviction signal.
 func partEvict(e *env) {
 	if e.s.Evict == nil {
+		e.skipped = "Suite.Evict is nil: no configuration with eviction enabled was supplied, so the eviction signal is not checked"
 		return
 	}
 	if !e.build(*e.s.Evict) {

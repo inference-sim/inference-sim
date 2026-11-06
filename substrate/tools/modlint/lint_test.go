@@ -87,6 +87,14 @@ func TestEachRuleHasAKnownBadInput(t *testing.T) {
 		{"a BLIS module at a pseudo-version", func(in *Input) {
 			in.Modules[1].Version = "v0.32.1-0.20261101000000-abcdefabcdef"
 		}, "is not a release tag"},
+		{"an engine at a plain upstream tag", func(in *Input) { in.Modules[1].Version = "v0.32.0" }, "must be a -blis.N tag"},
+		{"an engine at a release candidate", func(in *Input) { in.Modules[1].Version = "v0.32.0-rc.1" }, "must be a -blis.N tag"},
+		{"the substrate at a release candidate", func(in *Input) { in.Modules[2].Version = "v0.12.0-rc.1" }, "must be a plain vX.Y.Z tag"},
+		{"the substrate at a -blis.N tag", func(in *Input) { in.Modules[2].Version = "v0.12.0-blis.1" }, "must be a plain vX.Y.Z tag"},
+		{"the substrate with build metadata", func(in *Input) { in.Modules[2].Version = "v0.12.0+meta" }, "must be a plain vX.Y.Z tag"},
+		{"the router fork at a plain tag", func(in *Input) {
+			in.Modules = append(in.Modules, Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0"})
+		}, "must be a -blis.N tag"},
 		{"the router selected without its replace", func(in *Input) { in.Modules[3].Replace = nil }, "without the router fork's replace"},
 		{"a module above the toolchain", func(in *Input) { in.Modules[2].GoVersion = "1.28" }, "above contracts/toolchain"},
 		{"a go command other than the toolchain", func(in *Input) { in.GoVersion = "go1.27.3" }, "go version reports go1.27.3"},
@@ -173,7 +181,7 @@ func TestThisRepositoryIsClean(t *testing.T) {
 // other finding fails; an expired, unowned or malformed file defers nothing.
 func TestApplyDeferral(t *testing.T) {
 	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const file = "issue: inference-sim/blis-substrate#14\nexpires: 2026-12-05\nreason: tags follow review\n"
+	const file = "issue: inference-sim/blis-substrate#14\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate, blis-vllm, llm-d-router]\nreason: tags follow review\n"
 	pin := "github.com/inference-sim/blis-substrate resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
 	other := "go version reports go1.24.0; contracts/toolchain names go1.27.2 (LIF-2)"
 	fail, deferred := ApplyDeferral([]byte(file), day("2026-11-05"), []string{pin, other})
@@ -209,7 +217,45 @@ func TestApplyDeferral(t *testing.T) {
 	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), []string{pin}); len(deferred) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "expired") {
 		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
 	}
-	if fail, _ = ApplyDeferral([]byte("issue: x\nexpires: 2026-12-05\nreason: y\n"), day("2026-11-05"), []string{pin}); len(fail) != 2 || !strings.Contains(fail[1], "owning issue") {
+	if fail, _ = ApplyDeferral([]byte("issue: x\nadded: 2026-11-05\nexpires: 2026-12-05\nmodules: [blis-substrate]\nreason: y\n"), day("2026-11-05"), []string{pin}); len(fail) != 2 || !strings.Contains(fail[1], "owning issue") {
 		t.Fatalf("bad issue: %v", fail)
+	}
+}
+
+// The deferral lasts at most 30 days from the day the file was added (plan §3.3), covers
+// only the BLIS modules the file lists, and is not dated in the future.
+func TestDeferralBounds(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	file := func(added, expires, modules string) []byte {
+		return []byte("issue: inference-sim/blis-substrate#14\nadded: " + added + "\nexpires: " + expires + "\nmodules: " + modules + "\nreason: r\n")
+	}
+	pin := func(m string) string {
+		return "github.com/inference-sim/" + m + " resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
+	}
+	today := day("2026-11-06")
+	if fail, def := ApplyDeferral(file("2026-11-05", "2099-01-01", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "30 days") {
+		t.Errorf("expires 2099: fail=%v deferred=%v", fail, def)
+	}
+	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 1 || len(fail) != 0 {
+		t.Errorf("exactly 30 days: fail=%v deferred=%v", fail, def)
+	}
+	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-06", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 0 || len(fail) != 2 {
+		t.Errorf("31 days: fail=%v deferred=%v", fail, def)
+	}
+	if fail, def := ApplyDeferral(file("2026-11-07", "2026-11-20", "[blis-substrate]"), today, []string{pin("blis-substrate")}); len(def) != 0 || len(fail) != 2 || !strings.Contains(fail[1], "future") {
+		t.Errorf("added in the future: fail=%v deferred=%v", fail, def)
+	}
+	// A module the file does not list, or one outside BLIS, is not deferred.
+	f := file("2026-11-05", "2026-12-05", "[blis-substrate]")
+	other := "github.com/inference-sim/blis-vllm resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
+	foreign := "github.com/example/blis-substrate resolves to v0.0.0-20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"
+	if fail, def := ApplyDeferral(f, today, []string{other, foreign}); len(def) != 0 || len(fail) != 2 {
+		t.Errorf("unlisted module: fail=%v deferred=%v", fail, def)
+	}
+	if fail, _ := ApplyDeferral(file("2026-11-05", "2026-12-05", "[]"), today, []string{pin("blis-substrate")}); len(fail) != 2 || !strings.Contains(fail[1], "modules") {
+		t.Errorf("empty modules: %v", fail)
+	}
+	if fail, _ := ApplyDeferral(file("2026-11-05", "2026-12-05", "[inference-sim]"), today, []string{pin("blis-substrate")}); len(fail) != 2 || !strings.Contains(fail[1], "modules") {
+		t.Errorf("unknown module name: %v", fail)
 	}
 }
