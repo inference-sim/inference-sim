@@ -73,7 +73,10 @@ func CommitPolicy(c Commit) []string {
 			}
 		}
 	}
-	isBot := strings.Contains(c.Author, "<"+releaseBotEmail+">")
+	// The bot exemption from a sign-off needs both identities to be the bot's: an author
+	// line is free text a person can write, and the committer is who made the commit.
+	bot := "<" + releaseBotEmail + ">"
+	isBot := strings.Contains(c.Author, bot) && strings.Contains(c.Committer, bot)
 	switch {
 	case isBot && len(signoffs) > 0:
 		add("a release-bot commit carries a Signed-off-by line; the bot never signs off (X20)")

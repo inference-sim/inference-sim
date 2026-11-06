@@ -33,7 +33,8 @@ func TestCommitPolicy(t *testing.T) {
 	good := Commit{Hash: strings.Repeat("a", 40), Signed: true, Author: "Ada Person <ada@example.com>",
 		Message: "Add a check\n\nBody.\n\nAssisted-by: Claude Code (Claude Opus 5.5)\nSigned-off-by: Ada Person <ada@example.com>\n"}
 	none(t, CommitPolicy(good))
-	bot := Commit{Hash: "b", Signed: true, Author: "release bot <" + releaseBotEmail + ">", Message: "Release v0.11.1\n"}
+	bot := Commit{Hash: "b", Signed: true, Author: "release bot <" + releaseBotEmail + ">",
+		Committer: "release bot <" + releaseBotEmail + ">", Message: "Release v0.11.1\n"}
 	none(t, CommitPolicy(bot))
 
 	cases := []struct {
@@ -52,8 +53,19 @@ func TestCommitPolicy(t *testing.T) {
 		{"two assisted-by", func(c *Commit) {
 			c.Message = "Add\n\nAssisted-by: Claude Code\nAssisted-by: Copilot\nSigned-off-by: Ada Person <ada@example.com>\n"
 		}, "2 Assisted-by lines"},
+		{"bot author, person committer", func(c *Commit) {
+			c.Author = "release bot <" + releaseBotEmail + ">"
+			c.Committer = "Ada Person <ada@example.com>"
+			c.Message = "Release\n"
+		}, "no Signed-off-by"},
+		{"bot author, no committer", func(c *Commit) {
+			c.Author = "release bot <" + releaseBotEmail + ">"
+			c.Committer = ""
+			c.Message = "Release\n"
+		}, "no Signed-off-by"},
 		{"bot signs off", func(c *Commit) {
 			c.Author = "release bot <" + releaseBotEmail + ">"
+			c.Committer = "release bot <" + releaseBotEmail + ">"
 			c.Message = "Release\n\nSigned-off-by: Ada Person <ada@example.com>\n"
 		}, "the bot never signs off"},
 	}
