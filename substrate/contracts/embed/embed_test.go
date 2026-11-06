@@ -58,13 +58,13 @@ func TestRefusalErrorSurvivesWrapping(t *testing.T) {
 	}
 }
 
-// TestKVEventsAreTheTwoBlockEvents: KVEvent is closed to this package, so a router's type
-// switch over the two kinds is exhaustive within a major version.
-func TestKVEventsAreTheTwoBlockEvents(t *testing.T) {
-	events := []KVEvent{BlockStored{}, BlockRemoved{}}
+// TestKVEventsAreTheBlockEvents: KVEvent is closed to this package, so a router's type
+// switch over the three kinds is exhaustive until a contract-change review set adds one.
+func TestKVEventsAreTheBlockEvents(t *testing.T) {
+	events := []KVEvent{BlockStored{}, BlockRemoved{}, AllBlocksCleared{}}
 	for _, e := range events {
 		switch e.(type) {
-		case BlockStored, BlockRemoved:
+		case BlockStored, BlockRemoved, AllBlocksCleared:
 		default:
 			t.Errorf("unexpected event type %T", e)
 		}
