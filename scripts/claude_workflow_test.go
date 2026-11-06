@@ -313,7 +313,7 @@ func TestClaudeWorkflow_VerdictIsBoundToTheJudgedCommit(t *testing.T) {
 				agent = i
 			}
 		}
-		if !(checkout >= 0 && checkout < record && record < agent) {
+		if checkout < 0 || checkout >= record || record >= agent {
 			t.Errorf("%s: want checkout (step %d), then the reviewed step (%d), then the agent (%d)", name, checkout, record, agent)
 		}
 	}
