@@ -440,6 +440,7 @@ jobs:
           # env, never interpolated into the script — an author login is data.
           PR_AUTHOR: ${{ steps.target.outputs.pr_author }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           block_reason=""
           probe_fail=""
@@ -459,7 +460,7 @@ jobs:
           }
           pr_author="$PR_AUTHOR"
           # The sub-issue author is resolved here (an `/issues/` read carries no PR-creation risk).
-          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null || echo "")
+          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null) || { best_effort "could not read the sub-issue author"; issue_author=""; }
           check_author "delivery PR #$PR author" "$pr_author"
           check_author "sub-issue #$ISSUE_NUMBER author" "$issue_author"
           if [[ -z "$block_reason" && -z "$probe_fail" ]]; then
@@ -480,8 +481,8 @@ jobs:
           else
             echo "::warning::could not post the author-gate refusal on #$PR; the generic failure reporter will report instead"
           fi
-          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || best_effort "could not remove the ready-for-merge label from #$PR"
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || best_effort "could not label #$PR needs-human"
           exit 1
 
       # No PR checkout INTO THE WORKSPACE, and no execution of PR code anywhere in this job. The
@@ -521,6 +522,7 @@ jobs:
           POLL_SECONDS: '20'
           MAX_ATTEMPTS: '120'   # 40 minutes; ci.yml's heaviest job allows 15
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           status=unknown
           failing=""
@@ -536,7 +538,7 @@ jobs:
           run_id=""
           for (( i = 0; i < 30; i++ )); do
             run_id=$(gh api "/repos/$REPO/actions/workflows/ci.yml/runs?branch=$BRANCH&event=workflow_dispatch&per_page=20" \
-                       --jq "[.workflow_runs[] | select(.created_at >= \"$dispatched_at\")] | sort_by(.created_at) | last | .id // empty" 2>/dev/null || true)
+                       --jq "[.workflow_runs[] | select(.created_at >= \"$dispatched_at\")] | sort_by(.created_at) | last | .id // empty" 2>/dev/null) || best_effort "could not list the ci.yml runs"
             [[ -n "$run_id" ]] && break
             sleep 5
           done
@@ -556,13 +558,14 @@ jobs:
           fi
 
           for (( attempt = 1; attempt <= MAX_ATTEMPTS; attempt++ )); do
-            read -r run_status conclusion < <(gh api "/repos/$REPO/actions/runs/$run_id" \
-              --jq '"\(.status) \(.conclusion // "none")"' 2>/dev/null || echo "unreadable none")
+            run_info=$(gh api "/repos/$REPO/actions/runs/$run_id" \
+              --jq '"\(.status) \(.conclusion // "none")"' 2>/dev/null) || { best_effort "could not read run $run_id"; run_info="unreadable none"; }
+            read -r run_status conclusion <<< "$run_info"
             if [[ "$run_status" == "completed" ]]; then
               if [[ "$conclusion" != "success" ]]; then
                 status=failure
                 failing=$(gh api "/repos/$REPO/actions/runs/$run_id/jobs?per_page=100" --paginate \
-                  --jq '[.jobs[] | select(.conclusion != "success") | .name] | join(", ")' 2>/dev/null || echo "$conclusion")
+                  --jq '[.jobs[] | select(.conclusion != "success") | .name] | join(", ")' 2>/dev/null) || { best_effort "could not list the failing jobs of run $run_id"; failing="$conclusion"; }
                 break
               fi
               # A green run conclusion is NOT proof the ruleset is satisfied. The dispatch runs
@@ -748,14 +751,19 @@ jobs:
         id: ci_edit
         if: steps.paused.outputs.paused == 'false'
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           touched=$(gh api "/repos/$REPO/pulls/$PR/files?per_page=100" --paginate \
-            --jq '[.[] | select(.filename | startswith(".github/workflows/")) | .filename] | join(", ")' 2>/dev/null || echo "unreadable")
+            --jq '[.[] | select(.filename | startswith(".github/workflows/")) | .filename] | join(", ")' 2>/dev/null) || { best_effort "could not list the PR files"; touched="unreadable"; }
           if [[ "$touched" == "unreadable" ]]; then
             echo "::warning::could not list changed files; treating as a verification-affecting change"
             touched="(file list unreadable)"
           fi
-          [[ -n "$touched" ]] && echo "self-verification files touched: $touched" || echo "no workflow files touched"
+          if [[ -n "$touched" ]]; then
+            echo "self-verification files touched: $touched"
+          else
+            echo "no workflow files touched"
+          fi
           echo "touched=$touched" >> "$GITHUB_OUTPUT"
 
       # CLAUDE.md is loaded into every Claude session, so it is agent operating context, not a
@@ -768,9 +776,10 @@ jobs:
         id: claude_md_edit
         if: steps.paused.outputs.paused == 'false'
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           touched=$(gh api "/repos/$REPO/pulls/$PR/files?per_page=100" --paginate \
-            --jq '[.[] | select(.filename == "CLAUDE.md") | .filename] | join(", ")' 2>/dev/null || echo "unreadable")
+            --jq '[.[] | select(.filename == "CLAUDE.md") | .filename] | join(", ")' 2>/dev/null) || { best_effort "could not list the PR files"; touched="unreadable"; }
           if [[ "$touched" == "unreadable" ]]; then
             echo "::warning::could not list changed files; treating CLAUDE.md as edited"
             echo "unauthorized=CLAUDE.md (file list unreadable)" >> "$GITHUB_OUTPUT"
@@ -833,8 +842,9 @@ jobs:
         id: mergehint
         if: steps.paused.outputs.paused == 'false'
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
-          raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>/dev/null || echo "")
+          raw=$(gh api "/repos/$REPO/pulls/$PR" --jq '.mergeable_state // ""' 2>/dev/null) || { best_effort "could not read the PR merge state"; raw=""; }
           # Mapped through the same tested script as the authoritative read (R23): two spellings of
           # this mapping is how a conflicting branch gets called mergeable.
           hint=$(scripts/map-merge-state.sh "$raw")
@@ -866,9 +876,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           scripts/deliver-trusted-comments.sh --pr "$PR" \
-            > "$RUNNER_TEMP/trusted-comments.md" || true
+            > "$RUNNER_TEMP/trusted-comments.md" || best_effort "could not read the trusted comments"
           if [[ ! -s "$RUNNER_TEMP/trusted-comments.md" ]]; then
             printf 'COMMENT-READ-FAILED\n\nThe comment filter produced no output at all.\n' \
               > "$RUNNER_TEMP/trusted-comments.md"
@@ -1049,6 +1060,7 @@ jobs:
         env:
           SINCE: ${{ steps.since.outputs.at }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           # An empty SINCE would make `select(.created_at > "")` match every comment on the PR, so
           # `tail -n 1` could return a PREVIOUS round's verdict as this round's — including a stale
@@ -1065,9 +1077,9 @@ jobs:
                   | split(\"\n\")
                   | map(select(test(\"\\\\S\")))
                   | (last // \"\")
-                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null || true)
+                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null) || best_effort "could not read the PR comments; no verdict marker will be found"
           marker=$(grep -xE 'DELIVER-VERDICT: (GREEN|NOT-GREEN)' <<< "$lastlines" \
-                   | tail -n 1 | sed 's/^DELIVER-VERDICT: //' || true)
+                   | tail -n 1 | sed 's/^DELIVER-VERDICT: //') || [[ $? -eq 1 ]]
           [[ -n "$marker" ]] || marker=MISSING
           echo "AGENT_VERDICT=$marker"
           echo "value=$marker" >> "$GITHUB_OUTPUT"
@@ -1165,6 +1177,7 @@ jobs:
           HEAD_SHA: ${{ steps.target.outputs.sha }}
           WORKTREE: ${{ runner.temp }}/qa-head
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           skip() { echo "::warning::$1 — no QA-VERDICT marker will be posted, so the gate reads MISSING and stops for a human"; exit 0; }
 
@@ -1202,7 +1215,7 @@ jobs:
           # emoji rather than a machine marker, so a rendering change must not be able to move the
           # gate. An empty or non-array answer set is NOT a PASS — nothing was actually reviewed —
           # so it takes the same MISSING path as a crash.
-          n=$(jq -r 'if type == "array" then length else 0 end' "$RUNNER_TEMP/qa-answers.json" 2>/dev/null || echo 0)
+          n=$(jq -r 'if type == "array" then length else 0 end' "$RUNNER_TEMP/qa-answers.json" 2>/dev/null) || { best_effort "could not count the qa-review answers"; n=0; }
           [[ "$n" =~ ^[0-9]+$ && "$n" -gt 0 ]] \
             || skip "the qa-review answerer produced no answers, so there is no verdict to derive"
           # Every answer must carry a RECOGNIZED status. The any()/else derivation below would score
@@ -1293,6 +1306,7 @@ jobs:
           # the API belongs in the text of a command.
           ROUND: ${{ steps.round.outputs.value }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           skip() { echo "::warning::$1 — no QA-VERDICT marker will be posted, so the gate reads MISSING and stops for a human"; exit 0; }
 
@@ -1316,14 +1330,14 @@ jobs:
             --out "$RUNNER_TEMP/qa-report.md" \
             2> "$RUNNER_TEMP/qa-adjudication.err" \
             || rc=$?
-          cat "$RUNNER_TEMP/qa-adjudication.err" >&2 || true
+          cat "$RUNNER_TEMP/qa-adjudication.err" >&2 || best_effort "could not print the adjudicator stderr"
           [[ "$rc" -eq 0 ]] \
             || skip "the qa-review adjudicator exited $rc (no prior report to adjudicate, or a failure)"
 
           # -x anchors the whole line, so a rationale QUOTING the verdict line — the adjudicator's
           # own report text is written by a model — cannot be read as the verdict.
           verdict=$(grep -xE '\[adjudication verdict: (PASS|BLOCK)\]' "$RUNNER_TEMP/qa-adjudication.err" \
-                    | tail -n 1 | sed -E 's/^\[adjudication verdict: (PASS|BLOCK)\]$/\1/' || true)
+                    | tail -n 1 | sed -E 's/^\[adjudication verdict: (PASS|BLOCK)\]$/\1/') || [[ $? -eq 1 ]]
           [[ "$verdict" == PASS || "$verdict" == BLOCK ]] \
             || skip "the qa-review adjudicator emitted no usable verdict line, so there is no verdict to derive"
           [[ -s "$RUNNER_TEMP/qa-report.md" ]] \
@@ -1345,8 +1359,9 @@ jobs:
         env:
           WORKTREE: ${{ runner.temp }}/qa-head
         run: |
+          source scripts/lib-best-effort.sh
           git worktree remove --force "$WORKTREE" >/dev/null 2>&1 || rm -rf "$WORKTREE"
-          git worktree prune >/dev/null 2>&1 || true
+          git worktree prune >/dev/null 2>&1 || best_effort "git worktree prune failed"
           if [[ -e "$WORKTREE" ]]; then
             echo "::warning::could not remove the qa-review worktree at $WORKTREE"
           fi
@@ -1363,6 +1378,7 @@ jobs:
         env:
           SINCE: ${{ steps.since.outputs.at }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           # Same reasoning as the verdict reader: an empty SINCE would match every comment on the
           # PR, so `tail -n 1` could return a PREVIOUS round's qa-review verdict as this round's.
@@ -1376,9 +1392,9 @@ jobs:
                   | split(\"\n\")
                   | map(select(test(\"\\\\S\")))
                   | (last // \"\")
-                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null || true)
+                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null) || best_effort "could not read the PR comments; no QA marker will be found"
           marker=$(grep -xE 'QA-VERDICT: (PASS|BLOCK)' <<< "$lastlines" \
-                   | tail -n 1 | sed 's/^QA-VERDICT: //' || true)
+                   | tail -n 1 | sed 's/^QA-VERDICT: //') || [[ $? -eq 1 ]]
           [[ -n "$marker" ]] || marker=MISSING
           echo "QA_VERDICT=$marker"
           echo "value=$marker" >> "$GITHUB_OUTPUT"
@@ -1421,6 +1437,7 @@ jobs:
           # because of the `Fetch the PR head into the trusted tree` step above.
           HEAD_SHA: ${{ steps.target.outputs.sha }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           # REST, not `gh pr view --json mergeable`, for the reason the rest of this file uses REST
           # (see `Validate the target PR`): the field's availability must not depend on the runner's
@@ -1482,7 +1499,7 @@ jobs:
           # loop could not pretty-print a path list (R1 — it says so rather than pretending).
           files=""
           if [[ "$merge_state" == conflicting ]]; then
-            git fetch --no-tags --quiet origin main || echo "::warning::could not fetch origin/main; the conflicting paths will not be named"
+            git fetch --no-tags --quiet origin main || best_effort "could not fetch origin/main; the conflicting paths will not be named"
             if ! files=$(scripts/conflicting-files.sh origin/main "$HEAD_SHA"); then
               files=""
               echo "::warning::could not determine which paths conflict with main; the reason will name the conflict but not the files"
@@ -1559,6 +1576,7 @@ jobs:
           CLAUDE_MD_UNAUTHORIZED: ${{ steps.claude_md_edit.outputs.unauthorized }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           decision="$DECISION"
           reason="$REASON"
@@ -1633,11 +1651,11 @@ jobs:
           # correction agent pushed further unverified commits — advertising merge-ready during
           # an active correction. A 404 when a label was never applied is the normal case.
           for stale in ready-for-merge needs-human; do
-            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$stale" >/dev/null 2>&1 || true
+            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/$stale" >/dev/null 2>&1 || best_effort "could not remove the $stale label from #$PR (a 404 for a label never applied is normal)"
           done
           if [[ -n "$label" ]]; then
             gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=$label" >/dev/null \
-              || echo "::warning::could not apply the '$label' label — does it exist in this repository?"
+              || best_effort "could not apply the '$label' label — does it exist in this repository?"
           fi
           # Carried in the environment rather than as a step output because the moved-head
           # downgrade above can differ from what the gate returned, and the hand-off must follow
@@ -1703,6 +1721,7 @@ jobs:
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           {
             echo "## Delivery stopped — the verify phase failed or timed out"
@@ -1720,6 +1739,6 @@ jobs:
             echo "The loop will not resume on its own. See the [run](${RUN_URL}) for the failing"
             echo "step, then re-issue \`/approve-issue-for-pr-delivery\` once fixed."
           } > "$RUNNER_TEMP/failure.md"
-          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
-          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || best_effort "could not post the failure comment on #$PR"
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || best_effort "could not remove the ready-for-merge label from #$PR"
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || best_effort "could not label #$PR needs-human"

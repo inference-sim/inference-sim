@@ -129,7 +129,11 @@ jobs:
             done
           done
           echo "active=$active" >> "$GITHUB_OUTPUT"
-          [[ "$active" == "0" ]] && echo "no recent phase run — sweeping" || echo "standing down"
+          if [[ "$active" == "0" ]]; then
+            echo "no recent phase run — sweeping"
+          else
+            echo "standing down"
+          fi
           # Standing down because a phase IS running is success. Standing down because the run list
           # could not be READ is a detector that did not run, and reporting that as a green scheduled
           # job means stall detection can be off indefinitely with nothing but a buried warning to
@@ -145,6 +149,7 @@ jobs:
         env:
           CUTOFF: ${{ steps.cutoff.outputs.at }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           # See the stand-down step: an empty cutoff here makes every PR compare as recent, which
           # turns the sweep into a silent no-op that still reports success every 30 minutes.
@@ -245,7 +250,7 @@ jobs:
               echo "verification without repeating the implementation."
             } > "$RUNNER_TEMP/stall-$pr.md"
             gh pr comment "$pr" --repo "$REPO" --body-file "$RUNNER_TEMP/stall-$pr.md" \
-              || echo "::warning::could not comment on #$pr"
+              || best_effort "could not comment on #$pr"
             gh api -X POST "/repos/$REPO/issues/$pr/labels" -f 'labels[]=needs-human' >/dev/null \
-              || echo "::warning::could not label #$pr"
+              || best_effort "could not label #$pr"
           done <<< "$candidates"

@@ -273,6 +273,7 @@ jobs:
           AUTHOR: ${{ github.event.issue.user.login }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           rc=0
           verdict=$(scripts/deliver-author-gate.sh "$AUTHOR") || rc=$?
@@ -287,7 +288,7 @@ jobs:
           # silent refusal: the job already fails loudly (exit 1 → `deliver` skips), and now the
           # WHY is on the run regardless of whether the PR/issue comment posted (parity with claude.yml).
           echo "::error::$body"
-          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" || true
+          gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body "$body" || best_effort "could not post the failure comment on issue $ISSUE"
           exit 1
 
   deliver:

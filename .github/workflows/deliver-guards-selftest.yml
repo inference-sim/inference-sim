@@ -60,7 +60,7 @@ jobs:
     # the workflow would be permanently red on every PR and the check would be worthless. It applies
     # at JOB level, so it only changes what the WORKFLOW makes of this job; the step-level status
     # functions inside still see the real statuses, which is what is being measured.
-    continue-on-error: true
+    continue-on-error: true # lint-ok: X22 the scenario job must be allowed to fail: the assert job reads its result
     outputs:
       victim_outcome: ${{ steps.victim_outcome.outputs.value }}
       new_guard: ${{ steps.new_guard.outputs.fired || 'false' }}
@@ -176,7 +176,7 @@ jobs:
         env:
           RESULT: ${{ needs.paused-exit-scenario.result }}
           REPORTER: ${{ needs.paused-exit-scenario.outputs.reporter }}
-          SKIP_PROBE: ${{ needs.paused-exit-scenario.outputs.skip_probe }}
+          SKIP_PROBE: ${{ needs.paused-exit-scenario.outputs.skip_probe }} # lint-ok: X16 the self-test of a gate: the skip probe is what it measures
         run: |
           set -uo pipefail
           echo "scenario result=$RESULT reporter=$REPORTER skip_probe=$SKIP_PROBE"
