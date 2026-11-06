@@ -25,28 +25,27 @@ one of them to say nothing it does not already say. harness.LoadBundle reads the
 
 # What the corpus states, and what it does not
 
-STATED, and written here: tp_size, pp_size, attention_dp_size, moe_ep_size, moe_tp_size,
-framework, precision, serving, gpu, model.
+Every value written is stated by the corpus (design X19: a generator never writes an engine
+default). The artifact corpus's topology record states model, gpu, precision, framework and
+the parallelism block; a sweep carrying `stated_config` (the InferenceX direct corpus: what the
+run's own args line passed) also states block_size, gpu_memory_utilization,
+enable_prefix_caching and the speculative config. Those are written as stated, and nothing
+else is: an unstated setting is left out, so the engine resolves it as vLLM does
+(`blis fields` lists each field and its rule). In particular no block_size, cache dtype,
+batch caps or CUDA-graph mode is written unless the run stated it.
 
-NOT stated by the artifact corpus, and therefore set here: max_num_seqs, max_model_len,
-block_size, gpu_memory_utilization, cudagraph_mode. A sweep carrying `stated_config` (the
-InferenceX direct corpus: what the run's own args line passed) supplies
-gpu_memory_utilization, block_size, enable_prefix_caching and the speculative config, which
-are then written as stated. gpu_memory_utilization not stated is vLLM v0.31.0's default,
-0.92 (vllm/config/cache.py:103); prefix caching and speculation not stated are left out, so
-v0.31.0's defaults apply (caching on, no drafting). A stated drafter the catalog graph does
-not describe is not written (see UNPRICED_SPECULATORS), and the file's header says so.
-The rest are NOT vLLM's defaults, and the written header says how each differs: block_size
-16 is only the nominal default, which a backend may raise (vllm/platforms/interface.py),
-and a DSA sparse-MLA model is stated at 64, the size vLLM picks for it and a multiple of the
-only kernel block its indexer runs (see DSA_MODELS);
-max_num_seqs 256 is the default only below 70 GiB or on an A100
-(EngineArgs.get_batch_defaults, vllm/engine/arg_utils.py); cudagraph_mode's default is
-FULL_AND_PIECEWISE (vllm/config/compilation.py) -- all at v0.29.0 and v0.31.0. They are held fixed so committed scores stay comparable,
-and the comparison scores the RATIO of step times across concurrency at a fixed deployment,
-which is what a setting held constant affects least. Where a value could NOT be held it is
-derived from the workload instead -- max_model_len must admit the longest sequence the
-workload runs, or the scenario would describe a deployment that cannot serve its own points.
+Two values are not engine settings but the deployment's shape, and are derived rather than
+stated: the cluster's node count (from the rank count and eight GPUs per node) and, for a
+multi-node deployment, its fabric (ib-400g, the catalog's InfiniBand entry). max_model_len is
+the third: vLLM 0.32's port requires it stated (an unstated window is the model's or the
+memory's, which the caller resolves), and the corpus does not state it, so it is the smallest
+power of two, at least 32768, that admits the longest isl+osl the deployment is scored at.
+A window shorter than that would describe a deployment that cannot serve its own points.
+
+Every file names engine {kind: vllm, version: "0.32.0"}, the release inference-sim runs
+(release plan §3.3). The kernel encodes vLLM 0.31.0's behaviour whatever release a fixture
+names until the boundary transition (M2), and scripts/kernel/priceprobe reports
+what this regeneration moved.
 
 # Expert parallelism
 
@@ -59,15 +58,19 @@ the corpus is consistent with it rather than assuming it.
 
 Usage:
 
-    python scripts/gen_aisimulate_scenarios.py testdata/measurements/aisimulate_e2e.json \
-        -o testdata/aisimulate
+    python3 scripts/kernel/gen_aisimulate_scenarios.py <corpora>/aisimulate_e2e.json \
+        -o testdata/kernel/aisimulate
+    python3 scripts/kernel/gen_aisimulate_scenarios.py <corpora>/inferencex_direct.json \
+        -o testdata/kernel/direct
 """
 
 import argparse
 import collections
 import json
 import os
+import re
 import sys
+from pathlib import Path
 
 COEFFICIENTS = (
     "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, "
@@ -83,36 +86,89 @@ COEFFICIENTS = (
 # compressed-tensors at group_size 32, which the catalog derives as weight_dtype int4.
 QUANT = {"fp4": "nvfp4", "fp8": "fp8", "bf16": None, "int4": None}
 
-# The DSA sparse-MLA models in the corpus. Their indexer runs on 64-token kernel blocks
-# (vllm/v1/attention/backends/mla/indexer.py:203-204 at v0.31.0), so vLLM picks block_size 64
-# for them when none is stated and refuses a stated size that is not a multiple of 64. They
-# are stated at 64; every other model at 16.
-DSA_MODELS = {"glm-5"}
-
-# The DeepSeek-V4 models in the corpus. Their sparse attention and indexer backends accept
-# exactly one kernel block, 256 on every part (vllm/models/deepseek_v4/sparse_mla.py:59-61,
-# vllm/v1/attention/backends/mla/indexer.py:259-262 at v0.31.0), so vLLM picks it when none
-# is stated and refuses a stated size it does not accept. They are stated at it.
-V4_MODELS = {"deepseek-v4-pro"}
-
-
-def v4_block_size(gpu: str) -> int:
-    return 256
-
-
-# vLLM v0.31.0's CacheConfig.gpu_memory_utilization default (vllm/config/cache.py:103).
-GPU_MEMORY_UTILIZATION_DEFAULT = 0.92
-
 # Stated drafters the catalog graph does not describe: the kernel refuses a deployment that
 # drafts with a method other than its graph's speculator (liftDraft, draft.go). MiniMax-M3's
 # graph states its own MTP head; EAGLE3 runs a separate draft checkpoint.
 UNPRICED_SPECULATORS = {("minimax-m3", "eagle3")}
 
-# A KV cache dtype is not stated by the corpus. fp8 KV is the default for the fp8 and fp4
-# arms in these frameworks; bf16 serving keeps an unquantised cache.
-CACHE_DTYPE = {"fp4": "fp8", "fp8": "fp8", "bf16": "auto", "int4": "auto"}
+# The blis-substrate catalog whose hardware/ entries say which chips fix their own packaging:
+# $BLIS_CATALOG, else the catalog/ of a blis-substrate checkout beside this repository.
+# --catalog names another.
+DEFAULT_CATALOG = Path(os.environ.get("BLIS_CATALOG") or
+                       Path(__file__).resolve().parents[3] / "blis-substrate" / "catalog")
 
-GPUS_PER_NODE = 8
+
+def catalog_packaging(chip: str, catalog: Path) -> dict[str, int]:
+    """The GPUsPerNode and GPUsPerRack that chip's catalog entry fixes, by key; {} if none.
+
+    A chip whose product fixes its packaging (GB200 NVL72's 4 per tray and 72 per rack) owns
+    those figures, and a scenario for it states neither (design SUB-3; scenario.Cluster.Packaging
+    resolves them). Read as plain top-level `Key: integer` lines, so the script needs no YAML
+    library; a missing entry is an error, not "fixes nothing".
+    """
+    path = catalog / "hardware" / f"{chip}.yaml"
+    try:
+        text = path.read_text()
+    except OSError as e:
+        raise SystemExit(f"error: cannot read the catalog entry for {chip!r}: {e}")
+    out = {}
+    for key in ("GPUsPerNode", "GPUsPerRack"):
+        m = re.search(rf"^{key}:\s*(\d+)\s*$", text, re.M)
+        if m and int(m.group(1)) > 0:
+            out[key] = int(m.group(1))
+    return out
+
+
+def node_size(dep: dict, catalog: Path) -> tuple[int, bool]:
+    """(GPUs per node, whether the scenario states it) for one deployment row.
+
+    A chip whose catalog entry fixes GPUsPerNode owns it: the scenario omits the field. For any
+    other chip the row states the node size, and a row that does not is refused: no node size is
+    invented here (X19). No chip in the current corpora fixes its own packaging.
+    """
+    fixed = catalog_packaging(dep["gpu"], catalog)
+    if "GPUsPerNode" in fixed:
+        return fixed["GPUsPerNode"], False
+    if "gpus_per_node" in dep:
+        n = dep["gpus_per_node"]
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            raise SystemExit(f"error: {dep['scenario']}: gpus_per_node {n!r} is not a positive integer")
+        return n, True
+    if dep["gpu"] not in HGX_8GPU_CHIPS:
+        raise SystemExit(
+            f"error: {dep['scenario']}: the catalog entry for {dep['gpu']!r} does not fix "
+            f"GPUsPerNode, the row states no gpus_per_node, and {dep['gpu']!r} is not one of the "
+            f"8-GPU HGX chips this script assumes ({', '.join(sorted(HGX_8GPU_CHIPS))}); "
+            f"no node size is invented (X19)")
+    return DEFAULT_NODE_SIZE, True
+
+
+# The node size of a row that states none, for a chip whose catalog entry leaves it open.
+#
+# The corpora state no node size: no AISimulate or InferenceX row has a gpus_per_node. This
+# script assumes 8 for the chips in HGX_8GPU_CHIPS, and every fixture it writes says so in a
+# comment, so a reader sees the value was not recorded. The assumption is a fact about the
+# cluster the sweep ran on, which the scenario owns where the catalog leaves it open, not an
+# engine default. What supports it, exactly:
+#   - b200, b300: the catalog entries name the part as the 8-GPU HGX baseboard
+#     (blis-substrate catalog/hardware/b200.yaml: "8-GPU HGX B200 baseboard"; b300.yaml: "HGX
+#     B300 system total of 62 TB/s divided by 8 GPUs").
+#   - h100, h200: the catalog entries say SXM (SXM5, NVLink 4) and fix no node size; the
+#     catalog's storage-device note speaks of "a DGX/HGX H100 node" (catalog/devices/
+#     storage.yaml). Neither document states 8 for them; the 8 is NVIDIA's HGX H100/H200
+#     board, which the corpora's tp8 and ep8 sweeps on one node also presuppose.
+#   - a100-80, a100-sxm: the same HGX A100 8-GPU board; no corpus row uses them.
+# A chip outside the list is refused: a future corpus row for another chip cannot silently get 8.
+DEFAULT_NODE_SIZE = 8
+HGX_8GPU_CHIPS = frozenset({"h100", "h200", "b200", "b300", "a100-80", "a100-sxm"})
+
+# The engine release every generated file names: the one inference-sim runs (LIF-6).
+ENGINE_KIND = "vllm"
+ENGINE_VERSION = "0.32.0"
+
+# The fields a run's stated_config may carry, in the order the header names them.
+STATED_FIELDS = ("block_size", "gpu_memory_utilization", "enable_prefix_caching",
+                 "speculative_method", "num_speculative_tokens")
 
 
 def context_length(workloads: set[str]) -> int:
@@ -129,23 +185,19 @@ def context_length(workloads: set[str]) -> int:
     return window
 
 
-def emit(dep: dict, workloads: set[str], labels: set[str]) -> str:
+def emit(dep: dict, workloads: set[str], labels: set[str], catalog: Path = DEFAULT_CATALOG) -> str:
     par = dep["parallelism"]
     tp, ep, dp = par["tp_size"], par["moe_ep_size"], par["attention_dp_size"]
     # A dense model records moe_ep_size as null: it has no expert group, which is a different
     # thing from one unsharded group (ep=1). Expert parallelism is off either way.
     expert_parallel = ep is not None and ep > 1
     ranks = tp * dp
-    nodes = max(1, -(-ranks // GPUS_PER_NODE))
+    per_node, states_node_size = node_size(dep, catalog)
+    nodes = max(1, -(-ranks // per_node))
     quant = QUANT[dep["precision"]]
     max_len = context_length(workloads)
     name = dep["scenario"][: -len(".yaml")]
-    block_size = 64 if dep["model"] in DSA_MODELS else 16
-    if dep["model"] in V4_MODELS:
-        block_size = v4_block_size(dep["gpu"])
     stated = dep.get("stated_config", {})
-    block_size = stated.get("block_size", block_size)
-    gmu = stated.get("gpu_memory_utilization", GPU_MEMORY_UTILIZATION_DEFAULT)
     spec = stated.get("speculative_method")
     unpriced_spec = (dep["model"], spec) in UNPRICED_SPECULATORS
 
@@ -153,62 +205,29 @@ def emit(dep: dict, workloads: set[str], labels: set[str]) -> str:
         f"# {dep['model']} on {dep['gpu']}, {dep['precision']} under {dep['framework']},",
         f"# as NVIDIA's AISimulate end-to-end accuracy artifact records this deployment.",
         "#",
-        "# GENERATED by scripts/gen_aisimulate_scenarios.py from the corpus's own topology",
+        "# GENERATED by scripts/kernel/gen_aisimulate_scenarios.py from the corpus's own",
         "# record. Re-run after a corpus update rather than editing here.",
         "#",
         f"# Topology states: tp_size {tp}, pp_size {par['pp_size']}, attention_dp_size {dp},",
         f"# moe_ep_size {ep}, moe_tp_size {par['moe_tp_size']}. Workloads scored at this",
         f"# deployment: {', '.join(sorted(labels))}.",
         "#",
-        f"# gpu_memory_utilization {gmu}: "
-        + ("stated by the run." if "gpu_memory_utilization" in stated else
-           "not stated, so vLLM v0.31.0's default (vllm/config/cache.py:103)."),
-        f"# block_size {block_size}: "
-        + ("stated by the run." if "block_size" in stated else "not stated; see below."),
+        "# Only stated values are written (design X19); the engine resolves every other",
+        "# setting as vLLM 0.32.0 does. Stated by the run: "
+        + (", ".join(k for k in STATED_FIELDS if k in stated) or "none beyond the topology") + ".",
+        f"# max_model_len {max_len} is derived from the workload: the engine requires it stated",
+        "# and the corpus does not state it.",
     ]
-    if "enable_prefix_caching" in stated:
-        lines.append("# enable_prefix_caching: stated by the run.")
     if spec and unpriced_spec:
         lines += [f"# speculative: the run drafts with {spec} x"
                   f"{stated['num_speculative_tokens']}, NOT written: the catalog graph",
                   "# describes no such drafter, so the kernel would refuse the file."]
-    elif spec:
-        lines.append("# speculative: stated by the run.")
-    lines += [
-        "#",
-        "# max_num_seqs and cudagraph_mode are not in the corpus, nor is an unstated",
-        "# block_size, so they are set here -- and not to vLLM's defaults. block_size 16 is its",
-        "# nominal default, which a backend may raise;",
-        "# max_num_seqs 256 is its default only below 70 GiB or on an A100; and its cudagraph_mode",
-        "# default is FULL_AND_PIECEWISE, not PIECEWISE (all at v0.29.0 and v0.31.0). They are held",
-        "# fixed so committed scores stay comparable; moving them to the engine's defaults is a",
-        "# re-scoring decision. The comparison scores a ratio across concurrency at a fixed",
-        "# deployment, which is what a setting held constant affects least. max_model_len is",
-        "# derived from the workload instead, since a window shorter than isl+osl would describe a",
-        "# deployment that cannot serve its own points.",
-    ]
-    if "block_size" in stated:
-        pass  # stated by the run; the rule notes below do not apply
-    elif dep["model"] in V4_MODELS:
-        lines += [
-            "#",
-            f"# block_size is {block_size} here, not 16: this is a DeepSeek-V4 model, whose sparse",
-            f"# attention and indexer accept only {block_size}-token kernel blocks: vLLM v0.31.0",
-            "# picks that size when none is stated and refuses a stated size it does not accept",
-            "# (vllm/models/deepseek_v4/sparse_mla.py:59-61).",
-        ]
-    elif block_size != 16:
-        lines += [
-            "#",
-            f"# block_size is {block_size} here, not 16: this is a DSA sparse-MLA model, whose indexer",
-            "# runs on 64-token kernel blocks: vLLM v0.31.0 picks 64 for it when none is stated and",
-            "# refuses a stated size that is not a multiple of 64",
-            "# (vllm/v1/attention/backends/mla/indexer.py:203-204).",
-        ]
     lines += [
         "kind: Scenario",
         f"name: {name}",
-        'engine_version: "0.29.0"',
+        "engine:",
+        f"  kind: {ENGINE_KIND}",
+        f'  version: "{ENGINE_VERSION}"',
         "",
         f"model: {dep['model']}",
         f"coefficients: {COEFFICIENTS}",
@@ -222,7 +241,14 @@ def emit(dep: dict, workloads: set[str], labels: set[str]) -> str:
         lines.append("  fabric: ib-400g")
     lines += [
         f"  nodes: {nodes}",
-        f"  gpus_per_node: {GPUS_PER_NODE}",
+    ]
+    if states_node_size and "gpus_per_node" not in dep:
+        lines.append("  # gpus_per_node: 8 assumed: the corpus states none; every chip in it is an 8-GPU HGX board.")
+    if states_node_size:
+        # Only a chip whose entry leaves the node size open has it stated here. One that fixes
+        # it (and its rack) is left to the catalog: Cluster.Packaging fills both in.
+        lines.append(f"  gpus_per_node: {per_node}")
+    lines += [
         # The tunable half, as its own document. Same file because a measurement row
         # addresses a deployment by one filename; same name because there is exactly one
         # deployment per scenario here.
@@ -242,15 +268,11 @@ def emit(dep: dict, workloads: set[str], labels: set[str]) -> str:
     ]
     if quant is not None:
         lines.append(f"      quantization: {quant}")
-    lines += [
-        f"      cache_dtype: {CACHE_DTYPE[dep['precision']]}",
-        f"      block_size: {block_size}",
-        "      max_num_batched_tokens: 8192",
-        "      max_num_seqs: 256",
-        f"      max_model_len: {max_len}",
-        "      cudagraph_mode: PIECEWISE",
-        f"      gpu_memory_utilization: {gmu}",
-    ]
+    if "block_size" in stated:
+        lines.append(f"      block_size: {stated['block_size']}")
+    lines.append(f"      max_model_len: {max_len}")
+    if "gpu_memory_utilization" in stated:
+        lines.append(f"      gpu_memory_utilization: {stated['gpu_memory_utilization']}")
     if "enable_prefix_caching" in stated:
         pc = str(stated["enable_prefix_caching"]).lower()
         lines.append(f"      enable_prefix_caching: {pc}")
@@ -268,6 +290,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("corpus")
     ap.add_argument("-o", "--out", required=True, help="scenario directory")
+    ap.add_argument("--catalog", type=Path, default=DEFAULT_CATALOG,
+                    help="blis-substrate catalog whose hardware/ entries fix packaging")
     ap.add_argument("--check", action="store_true",
                     help="verify the files on disk match what would be generated")
     args = ap.parse_args()
@@ -308,7 +332,7 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
     stale = []
     for name, dep in sorted(deps.items()):
-        text = emit(dep, workloads[name], labels[name])
+        text = emit(dep, workloads[name], labels[name], args.catalog)
         path = os.path.join(args.out, name)
         if args.check:
             try:

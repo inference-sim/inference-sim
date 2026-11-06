@@ -31,12 +31,10 @@ type FieldEntry struct {
 
 // traceHeaderFields is TraceHeader's table, keyed by Go field name.
 var traceHeaderFields = map[string]FieldEntry{
-	"Version":              {FieldInert, "recorded in the Result's input.run.workload.trace.header; the CSV layout is read from the column header row, not from the version"},
+	"Version":              {FieldRefused, "a version other than 4 is refused; version 3 names `blis convert trace`. The CSV layout is read from the column header row"},
 	"TimeUnit":             {FieldInert, "recorded in the Result's input; every timestamp is read as microseconds whatever it states (writers write \"microseconds\")"},
 	"Mode":                 {FieldConsumed, "recorded in the Result's input; mode converted lets --kv-offload-config add a deployment the trace does not record (RecordsDeployment); another mode is refused"},
-	"WarmUpRequests":       {FieldInert, "a warm-up count; replay measures every request (cmd/replay.go, \"Known limitations\"); negative is refused (check.Count)"},
 	"WorkloadSeed":         {FieldInert, "recorded in the Result's input; replay draws its token IDs from --seed, not from the seed that generated the trace"},
-	"WorkloadSpec":         {FieldInert, "provenance of the trace; replay does not read the specification"},
 	"SessionContextGrowth": {FieldConsumed, "accumulate builds each round's input on the previous round's; an unknown value is refused by the session loaders"},
 	"GoodputSLOTargets":    {FieldConsumed, "the goodput targets when no --slo-* flag states them; a non-positive or non-finite target is refused (check.LatencyTargetMs)"},
 	"KVOffload":            {FieldConsumed, "the resolved offload configuration the run used; replay rebuilds it, and refuses one it cannot reproduce"},
@@ -97,37 +95,32 @@ var traceKVOffloadTierFields = map[string]FieldEntry{
 // an encode pool or a session mode reads are consumed under that configuration, and the
 // reflection test toggles them under it.
 var traceRecordFields = map[string]FieldEntry{
-	"RequestID":         {FieldInert, "names the request (request_<id>) and orders a re-export; no figure depends on the name"},
-	"ClientID":          {FieldInert, "carried to the request and to a re-export; neither the router nor the engine reads it"},
-	"TenantID":          {FieldConsumed, "the router's fairness identifier, and the Result's per-tenant breakdown"},
-	"SLOClass":          {FieldConsumed, "the router's objective and the goodput class"},
-	"SessionID":         {FieldConsumed, "groups rounds into sessions (closed-loop modes) and the session breakdown"},
-	"RoundIndex":        {FieldConsumed, "orders a session's rounds; negative is refused (check.Count)"},
-	"PrefixGroup":       {FieldConsumed, "requests of one group share their first prefix_length tokens"},
-	"PrefixLength":      {FieldConsumed, "the shared prefix's length, for a request with a prefix_group; negative is refused (check.TokenCount)"},
-	"Streaming":         {FieldConsumed, "the response is streamed, which the router sees through its response headers"},
-	"InputTokens":       {FieldConsumed, "the prompt's length; negative is refused (check.TokenCount); 0 is dropped as unservable at the gateway"},
-	"OutputTokens":      {FieldConsumed, "the output budget; negative is refused (check.TokenCount)"},
-	"TextTokens":        {FieldInert, "the text share of the prompt; only image, audio and video counts are read"},
-	"ImageTokens":       {FieldConsumed, "makes the request multimodal: a chat request, placed on an encode pod; negative is refused"},
-	"AudioTokens":       {FieldConsumed, "as image_tokens"},
-	"VideoTokens":       {FieldConsumed, "as image_tokens"},
-	"ReasonRatio":       {FieldInert, "carried to the request; no part of the simulation reads it; outside [0, 1] is refused (check.Fraction)"},
-	"Model":             {FieldConsumed, "the model the request names, and the per-model breakdown"},
-	"DeadlineUs":        {FieldConsumed, "the client deadline; negative is refused (check.DurationUs); 0 is none"},
-	"SLOTargetUs":       {FieldConsumed, "the TTFT target the router reads (x-llm-d-slo-ttft-ms); negative is refused"},
-	"ServerInputTokens": {FieldConsumed, "the server-reported prompt length, preferred over input_tokens for a request with no prefix_group (#1308)"},
-	"ArrivalTimeUs":     {FieldConsumed, "when the request arrives; negative is refused (check.DurationUs)"},
-	"SendTimeUs":        {FieldConsumed, "the injection time when positive"},
-	"FirstChunkTimeUs":  {FieldInert, "a measured outcome, carried to a re-export"},
-	"LastChunkTimeUs":   {FieldInert, "a measured outcome, carried to a re-export"},
-	"NumChunks":         {FieldInert, "a measured outcome; negative is refused (check.Count)"},
-	"Status":            {FieldInert, "a measured outcome, carried to a re-export"},
-	"ErrorMessage":      {FieldInert, "a measured outcome"},
-	"FinishReason":      {FieldInert, "a measured outcome"},
-	"Adapter":           {FieldConsumed, "the LoRA adapter the request names"},
-	"ThinkTimeUs":       {FieldConsumed, "closed-loop think time before the round; negative is refused (check.DurationUs)"},
-	"InputTokensReset":  {FieldConsumed, "accumulate replay re-seeds the session's context to this length; negative is refused"},
+	"RequestID":        {FieldInert, "names the request (request_<id>) and orders a re-export; no figure depends on the name"},
+	"ClientID":         {FieldInert, "carried to the request and to a re-export; neither the router nor the engine reads it"},
+	"TenantID":         {FieldConsumed, "the router's fairness identifier, and the Result's per-tenant breakdown"},
+	"SLOClass":         {FieldConsumed, "the router's objective and the goodput class"},
+	"SessionID":        {FieldConsumed, "groups rounds into sessions (closed-loop modes) and the session breakdown"},
+	"RoundIndex":       {FieldConsumed, "orders a session's rounds; negative is refused (check.Count)"},
+	"PrefixGroup":      {FieldConsumed, "requests of one group share their first prefix_length tokens"},
+	"PrefixLength":     {FieldConsumed, "the shared prefix's length, for a request with a prefix_group; negative is refused (check.TokenCount)"},
+	"Streaming":        {FieldConsumed, "the response is streamed, which the router sees through its response headers"},
+	"InputTokens":      {FieldConsumed, "the prompt's length; negative is refused (check.TokenCount); 0 is dropped as unservable at the gateway"},
+	"OutputTokens":     {FieldConsumed, "the output budget; negative is refused (check.TokenCount)"},
+	"TextTokens":       {FieldInert, "the text share of the prompt; only image, audio and video counts are read"},
+	"ImageTokens":      {FieldConsumed, "makes the request multimodal: a chat request, placed on an encode pod; negative is refused"},
+	"AudioTokens":      {FieldConsumed, "as image_tokens"},
+	"VideoTokens":      {FieldConsumed, "as image_tokens"},
+	"ReasonRatio":      {FieldInert, "carried to the request; no part of the simulation reads it; outside [0, 1] is refused (check.Fraction)"},
+	"Model":            {FieldConsumed, "the model the request names, and the per-model breakdown"},
+	"DeadlineUs":       {FieldConsumed, "the client deadline; negative is refused (check.DurationUs); 0 is none"},
+	"SLOTargetUs":      {FieldConsumed, "the TTFT target the router reads (x-llm-d-slo-ttft-ms); negative is refused"},
+	"ArrivalTimeUs":    {FieldConsumed, "when the request arrives; negative is refused (check.DurationUs)"},
+	"FirstChunkTimeUs": {FieldInert, "a measured outcome, carried to a re-export"},
+	"LastChunkTimeUs":  {FieldInert, "a measured outcome, carried to a re-export"},
+	"Status":           {FieldInert, "a measured outcome, carried to a re-export"},
+	"Adapter":          {FieldConsumed, "the LoRA adapter the request names"},
+	"ThinkTimeUs":      {FieldConsumed, "closed-loop think time before the round; negative is refused (check.DurationUs)"},
+	"InputTokensReset": {FieldConsumed, "accumulate replay re-seeds the session's context to this length; negative is refused"},
 }
 
 // TraceFieldStatus returns the table for one trace struct, keyed by its Go type name
@@ -136,15 +129,17 @@ var traceRecordFields = map[string]FieldEntry{
 func TraceFieldStatus(typeName string) (map[string]FieldEntry, bool) {
 	var m map[string]FieldEntry
 	switch typeName {
-	case "TraceHeader":
+	// The trace types are contracts/spec/trace's, under their own names; each is accepted by
+	// either name.
+	case "TraceHeader", "Header":
 		m = traceHeaderFields
-	case "TraceRouterConfig":
+	case "TraceRouterConfig", "Router":
 		m = traceRouterFields
-	case "TraceKVOffloadConfig":
+	case "TraceKVOffloadConfig", "KVOffload":
 		m = traceKVOffloadFields
-	case "TraceKVOffloadTier":
+	case "TraceKVOffloadTier", "KVOffloadTier":
 		m = traceKVOffloadTierFields
-	case "TraceRecord":
+	case "TraceRecord", "Record":
 		m = traceRecordFields
 	default:
 		return nil, false

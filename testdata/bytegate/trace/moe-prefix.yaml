@@ -1,0 +1,9 @@
+trace_version: 4
+time_unit: microseconds
+mode: generated
+workload_seed: 13
+router:
+  epp_flags:
+    - --endpoint-selector=llm-d.ai/inference-serving=true
+    - --endpoint-target-ports=8000
+  seed: 4267288175126347664

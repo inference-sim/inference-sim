@@ -6,13 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 	header := &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated",
-		WarmUpRequests: 5, WorkloadSpec: "test.yaml",
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 		GoodputSLOTargets: map[string]SLODimTargets{
 			"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
 			"batch":    {E2EMs: 120000},
@@ -24,8 +24,8 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 			Status: "ok"},
 		{RequestID: 1, ClientID: "c2", TenantID: "t2", SLOClass: "critical",
 			InputTokens: 256, OutputTokens: 64, ArrivalTimeUs: 100000,
-			SendTimeUs: 100010, FirstChunkTimeUs: 100800, LastChunkTimeUs: 101500,
-			NumChunks: 5, Streaming: true, Status: "ok"},
+			FirstChunkTimeUs: 100800, LastChunkTimeUs: 101500,
+			Streaming: true, Status: "ok"},
 	}
 
 	dir := t.TempDir()
@@ -39,11 +39,8 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if loaded.Header.Version != 3 {
-		t.Errorf("version = %d, want 3", loaded.Header.Version)
-	}
-	if loaded.Header.WarmUpRequests != 5 {
-		t.Errorf("warm_up = %d, want 5", loaded.Header.WarmUpRequests)
+	if loaded.Header.Version != TraceVersion {
+		t.Errorf("version = %d, want %d", loaded.Header.Version, TraceVersion)
 	}
 	// BC-8: GoodputSLOTargets round-trips per (class, dimension).
 	if got := loaded.Header.GoodputSLOTargets["critical"].TTFTMs; got != 100 {
@@ -78,27 +75,18 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 	if r1.ArrivalTimeUs != 100000 {
 		t.Errorf("record 1 arrival = %d, want 100000", r1.ArrivalTimeUs)
 	}
-	if r1.SendTimeUs != 100010 {
-		t.Errorf("record 1 send = %d, want 100010", r1.SendTimeUs)
-	}
 	if r1.FirstChunkTimeUs != 100800 {
 		t.Errorf("record 1 first_chunk = %d, want 100800", r1.FirstChunkTimeUs)
 	}
 	if !r1.Streaming {
 		t.Error("record 1 should be streaming")
 	}
-	if r1.NumChunks != 5 {
-		t.Errorf("record 1 chunks = %d, want 5", r1.NumChunks)
-	}
 }
 
-// TestTraceV2_LoadHeader_UnknownField_ReturnsError verifies BC-N3: KnownFields(true)
-// causes an old binary reading a header with an unknown field (e.g. a future
-// schema addition past v3) to hard-fail rather than silently dropping the field.
-// Strict parsing is enforced at sim/workload/tracev2.go:223; the trace Version
-// field is the schema-change signal.
+// TestTraceV2_LoadHeader_UnknownField_ReturnsError verifies BC-N3: an unknown header key is
+// refused rather than silently dropped.
 func TestTraceV2_LoadHeader_UnknownField_ReturnsError(t *testing.T) {
-	yamlText := []byte("trace_version: 99\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\nbogus_unknown_field: 42\n")
+	yamlText := []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\nbogus_unknown_field: 42\n")
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	if err := os.WriteFile(headerPath, yamlText, 0o644); err != nil {
@@ -117,40 +105,36 @@ func TestTraceV2_LoadHeader_UnknownField_ReturnsError(t *testing.T) {
 // TestTraceV2_RoundTrip_NewFields verifies BC-1 and BC-2: all three new
 // schema fields survive export → load with correct values.
 func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "converted"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{
-			RequestID:         0,
-			Model:             "meta-llama/Llama-3.1-8B-Instruct",
-			DeadlineUs:        5000000,
-			ServerInputTokens: 512,
-			InputTokens:       256,
-			OutputTokens:      64,
-			ArrivalTimeUs:     1000,
-			SendTimeUs:        1010,
-			FirstChunkTimeUs:  1800,
-			LastChunkTimeUs:   2500,
-			Status:            "ok",
+			RequestID:        0,
+			Model:            "meta-llama/Llama-3.1-8B-Instruct",
+			DeadlineUs:       5000000,
+			InputTokens:      256,
+			OutputTokens:     64,
+			ArrivalTimeUs:    1000,
+			FirstChunkTimeUs: 1800,
+			LastChunkTimeUs:  2500,
+			Status:           "ok",
 		},
 		{
-			RequestID:         1,
-			Model:             "", // zero value: default model
-			DeadlineUs:        0,  // zero value: no timeout
-			ServerInputTokens: 0,  // zero value: not recorded
-			InputTokens:       128,
-			OutputTokens:      32,
-			ArrivalTimeUs:     5000,
-			Status:            "ok",
+			RequestID:     1,
+			Model:         "", // zero value: default model
+			DeadlineUs:    0,  // zero value: no timeout
+			InputTokens:   128,
+			OutputTokens:  32,
+			ArrivalTimeUs: 5000,
+			Status:        "ok",
 		},
 		{
-			RequestID:         2,
-			Model:             "org/model,with-comma", // CSV-special: encoding/csv quotes automatically
-			DeadlineUs:        9000,                   // > ArrivalTimeUs (6000) — valid per cross-field invariant
-			ServerInputTokens: 0,
-			InputTokens:       64,
-			OutputTokens:      16,
-			ArrivalTimeUs:     6000,
-			Status:            "ok",
+			RequestID:     2,
+			Model:         "org/model,with-comma", // CSV-special: encoding/csv quotes automatically
+			DeadlineUs:    9000,                   // > ArrivalTimeUs (6000) — valid per cross-field invariant
+			InputTokens:   64,
+			OutputTokens:  16,
+			ArrivalTimeUs: 6000,
+			Status:        "ok",
 		},
 	}
 
@@ -176,15 +160,9 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 	if r0.DeadlineUs != 5000000 {
 		t.Errorf("record 0 deadline_us = %d, want 5000000", r0.DeadlineUs)
 	}
-	if r0.ServerInputTokens != 512 {
-		t.Errorf("record 0 server_input_tokens = %d, want 512", r0.ServerInputTokens)
-	}
 	// BC-2: existing timing fields unaffected by index shift
 	if r0.ArrivalTimeUs != 1000 {
 		t.Errorf("record 0 arrival_time_us = %d, want 1000", r0.ArrivalTimeUs)
-	}
-	if r0.SendTimeUs != 1010 {
-		t.Errorf("record 0 send_time_us = %d, want 1010", r0.SendTimeUs)
 	}
 	if r0.FirstChunkTimeUs != 1800 {
 		t.Errorf("record 0 first_chunk_time_us = %d, want 1800", r0.FirstChunkTimeUs)
@@ -201,9 +179,6 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 	if r1.DeadlineUs != 0 {
 		t.Errorf("record 1 deadline_us = %d, want 0", r1.DeadlineUs)
 	}
-	if r1.ServerInputTokens != 0 {
-		t.Errorf("record 1 server_input_tokens = %d, want 0", r1.ServerInputTokens)
-	}
 
 	r2 := loaded.Records[2]
 	// CSV-special chars: encoding/csv quotes fields containing commas automatically
@@ -217,11 +192,11 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 
 func TestTraceV2_IntegerTimestamps_Preserved(t *testing.T) {
 	// Large timestamp values should not lose precision
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "converted"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{RequestID: 0, ArrivalTimeUs: 1708100000000000, // epoch-like value
-			SendTimeUs: 1708100000000010, FirstChunkTimeUs: 1708100000045200,
-			LastChunkTimeUs: 1708100001590300, Status: "ok"},
+			FirstChunkTimeUs: 1708100000045200,
+			LastChunkTimeUs:  1708100001590300, Status: "ok"},
 	}
 
 	dir := t.TempDir()
@@ -239,8 +214,8 @@ func TestTraceV2_IntegerTimestamps_Preserved(t *testing.T) {
 	if r.ArrivalTimeUs != 1708100000000000 {
 		t.Errorf("arrival = %d, want 1708100000000000 (precision lost)", r.ArrivalTimeUs)
 	}
-	if r.SendTimeUs != 1708100000000010 {
-		t.Errorf("send = %d, want 1708100000000010", r.SendTimeUs)
+	if r.LastChunkTimeUs != 1708100001590300 {
+		t.Errorf("last chunk = %d, want 1708100001590300", r.LastChunkTimeUs)
 	}
 }
 
@@ -251,7 +226,7 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 	dataPath := filepath.Join(dir, "data.csv")
 
 	// GIVEN a header with a typo
-	if err := os.WriteFile(headerPath, []byte("tme_unit: microseconds\ntrace_version: 2\n"), 0644); err != nil {
+	if err := os.WriteFile(headerPath, []byte("tme_unit: microseconds\ntrace_version: 4\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(dataPath, []byte("request_id\n1\n"), 0644); err != nil {
@@ -273,14 +248,10 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_InvalidInteger_ReturnsError verifies BC-12: CSV error propagation.
 func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	// GIVEN a row with a non-numeric request_id
-	row := make([]string, 27) // must match current column count
-	row[0] = "abc"            // request_id should be integer
-	for i := 1; i < len(row); i++ {
-		row[i] = "0"
-	}
+	row, at := zeroRow(map[string]string{"request_id": "abc"})
 
 	// WHEN parsing
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -293,13 +264,9 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidDeadlineUs_ReturnsError verifies BC-9.
 func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
+	row, at := zeroRow(map[string]string{"deadline_us": "not_a_number"})
 
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric deadline_us, got nil")
@@ -309,33 +276,11 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseTraceRecord_InvalidServerInputTokens_ReturnsError verifies BC-10.
-func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
-
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
-
-	if err == nil {
-		t.Fatal("expected error for non-numeric server_input_tokens, got nil")
-	}
-	if !strings.Contains(err.Error(), "server_input_tokens") {
-		t.Errorf("error should mention 'server_input_tokens', got: %s", err.Error())
-	}
-}
-
 // TestParseTraceRecord_NegativeDeadlineUs_ReturnsError verifies R3 validation.
 func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[17] = "-1" // negative deadline_us (shifted +1)
+	row, at := zeroRow(map[string]string{"deadline_us": "-1"})
 
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative deadline_us, got nil")
@@ -348,16 +293,11 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError verifies the #1606
 // hardening: arrival_time_us is the injection-origin anchor, so a negative value
 // (which would yield a negative DES injection tick, violating INV-3) is rejected
-// loudly, matching the other time/count fields (R1). send_time_us stays exempt
-// (injectionTime falls back to arrival when send <= 0).
+// loudly, matching the other time/count fields (R1).
 func TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[19] = "-1" // arrival_time_us column (offset 0 without slo_target_us)
+	row, at := zeroRow(map[string]string{"arrival_time_us": "-1"})
 
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative arrival_time_us, got nil")
@@ -370,36 +310,12 @@ func TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseTraceRecord_NegativeSendTimeUs_Tolerated verifies the deliberate
-// asymmetry (#1606): a negative send_time_us is NOT rejected — injectionTime
-// falls back to arrival_time_us for send <= 0, so a corrupt/absent send column
-// must not fail trace loading.
-func TestParseTraceRecord_NegativeSendTimeUs_Tolerated(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[20] = "-100" // send_time_us column; must be tolerated
-
-	rec, err := parseTraceRecord(row, false, -1, -1, -1)
-	if err != nil {
-		t.Fatalf("negative send_time_us must be tolerated (falls back to arrival), got error: %v", err)
-	}
-	if rec.SendTimeUs != -100 {
-		t.Errorf("send_time_us = %d, want -100 (preserved verbatim; fallback happens at injection)", rec.SendTimeUs)
-	}
-}
-
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
 // input_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[9] = "-1" // input_tokens column (shifted +1)
+	row, at := zeroRow(map[string]string{"input_tokens": "-1"})
 
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative input_tokens, got nil")
@@ -412,13 +328,9 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeOutputTokens_ReturnsError verifies R3 for
 // output_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[10] = "-1" // output_tokens column (shifted +1)
+	row, at := zeroRow(map[string]string{"output_tokens": "-1"})
 
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative output_tokens, got nil")
@@ -428,36 +340,12 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseTraceRecord_NegativeServerInputTokens_ReturnsError verifies R3
-// for server_input_tokens (consistent validation for all token count fields).
-func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[18] = "-1" // server_input_tokens column (shifted +1)
-
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
-
-	if err == nil {
-		t.Fatal("expected error for negative server_input_tokens, got nil")
-	}
-	if !strings.Contains(err.Error(), "server_input_tokens") {
-		t.Errorf("error should mention 'server_input_tokens', got: %s", err.Error())
-	}
-}
-
 // TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError verifies cross-field
 // validation: deadline_us must not precede arrival_time_us when both are nonzero.
 func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[17] = "1000" // deadline_us = 1000 (shifted +1)
-	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
+	row, at := zeroRow(map[string]string{"deadline_us": "1000", "arrival_time_us": "5000"})
 
-	_, err := parseTraceRecord(row, false, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for deadline before arrival, got nil")
@@ -480,13 +368,9 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		{"1.5"},
 	}
 	for _, tc := range cases {
-		row := make([]string, 27)
-		for i := range row {
-			row[i] = "0"
-		}
-		row[15] = tc.value // reason_ratio column (shifted +1)
+		row, at := zeroRow(map[string]string{"reason_ratio": tc.value})
 
-		_, err := parseTraceRecord(row, false, -1, -1, -1)
+		_, err := parseTraceRecord(row, at)
 
 		if err == nil {
 			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)
@@ -498,40 +382,10 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestTraceV2_FinishReason_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 1, TimeUnit: "us", Mode: "converted"}
-	records := []TraceRecord{{
-		RequestID:     1,
-		InputTokens:   10,
-		OutputTokens:  5,
-		ArrivalTimeUs: 1000,
-		SendTimeUs:    2000,
-		Status:        "ok",
-		FinishReason:  "stop",
-	}}
-
-	headerPath := filepath.Join(t.TempDir(), "h.yaml")
-	dataPath := filepath.Join(t.TempDir(), "d.csv")
-	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-
-	tv2, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tv2.Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(tv2.Records))
-	}
-	if tv2.Records[0].FinishReason != "stop" {
-		t.Errorf("FinishReason: got %q, want %q", tv2.Records[0].FinishReason, "stop")
-	}
-}
-
 func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
 	// BC-1: PrefixGroup and PrefixLength survive export → load
 	seed := int64(42)
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: &seed}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: &seed}
 	records := []TraceRecord{
 		{RequestID: 0, PrefixGroup: "group-a", PrefixLength: 128,
 			InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
@@ -691,9 +545,6 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 	if r.ArrivalTimeUs != 10000 {
 		t.Errorf("ArrivalTimeUs: got %d, want 10000", r.ArrivalTimeUs)
 	}
-	if r.SendTimeUs != 10000 {
-		t.Errorf("SendTimeUs: got %d, want 10000 (= ArrivalTime)", r.SendTimeUs)
-	}
 	// FirstChunkTimeUs = ArrivalTime + FirstTokenTime = 10000 + 5000 = 15000
 	if r.FirstChunkTimeUs != 15000 {
 		t.Errorf("FirstChunkTimeUs: got %d, want 15000", r.FirstChunkTimeUs)
@@ -717,7 +568,7 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 func TestRequestsToTraceRecords_StatusMapping(t *testing.T) {
 	cases := []struct {
 		state sim.RequestState
-		want  string
+		want  trace.Status
 	}{
 		{sim.StateCompleted, "ok"},
 		{sim.StateTimedOut, "timeout"},
@@ -839,7 +690,7 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 	dataPath := filepath.Join(dir, "data.csv")
 
 	header := &TraceHeader{
-		Version:  2,
+		Version:  TraceVersion,
 		TimeUnit: "microseconds",
 		Mode:     "generated",
 	}
@@ -930,7 +781,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "header.yaml")
 		dataPath := filepath.Join(dir, "data.csv")
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		header := &TraceHeader{Version: TraceVersion, TimeUnit: "us", Mode: "generated"}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -973,7 +824,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "header.yaml")
 		dataPath := filepath.Join(dir, "data.csv")
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		header := &TraceHeader{Version: TraceVersion, TimeUnit: "us", Mode: "generated"}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1012,7 +863,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "header.yaml")
 		dataPath := filepath.Join(dir, "data.csv")
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		header := &TraceHeader{Version: TraceVersion, TimeUnit: "us", Mode: "generated"}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1029,7 +880,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 }
 
 func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 
 	t.Run("present: value round-trips and column is emitted", func(t *testing.T) {
 		dir := t.TempDir()
@@ -1140,7 +991,7 @@ func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
 }
 
 func TestTraceV2_InputTokensReset_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	i64 := func(v int64) *int64 { return &v }
 
 	t.Run("present: marker round-trips and column is emitted", func(t *testing.T) {
@@ -1227,7 +1078,7 @@ func TestParseTraceRecord_NegativeInputTokensReset_Errors(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	i64 := func(v int64) *int64 { return &v }
 	records := []TraceRecord{
 		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50},
@@ -1252,7 +1103,7 @@ func TestParseTraceRecord_NegativeThinkTime_Errors(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: i64p(5000)},
 	}
@@ -1274,7 +1125,7 @@ func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		hp := filepath.Join(dir, "h.yaml")
 		dp := filepath.Join(dir, "d.csv")
-		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		h := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1290,7 +1141,7 @@ func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		hp := filepath.Join(dir, "h.yaml")
 		dp := filepath.Join(dir, "d.csv")
-		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		h := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1311,7 +1162,7 @@ func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapter(t *testing.T) {
 	dir := t.TempDir()
 	hp := filepath.Join(dir, "h.yaml")
 	dp := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "converted"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", ThinkTimeUs: i64p(0)},
 		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", ThinkTimeUs: i64p(7000)},
@@ -1337,7 +1188,7 @@ func TestTraceV2_SLOTargetUs_RoundTrip(t *testing.T) {
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
 
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, SLOTargetUs: 200000, DeadlineUs: 500000, ArrivalTimeUs: 100, Status: "ok"},
 		{RequestID: 1, SLOTargetUs: 0, DeadlineUs: 300000, ArrivalTimeUs: 200, Status: "ok"},
@@ -1374,7 +1225,7 @@ func TestTraceV2_SLOTargetUs_AllZero_ColumnOmitted(t *testing.T) {
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
 
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, SLOTargetUs: 0, ArrivalTimeUs: 100, Status: "ok"},
 	}
@@ -1399,21 +1250,21 @@ func TestTraceV2_SLOTargetUs_AllZero_ColumnOmitted(t *testing.T) {
 	}
 }
 
-// TestTraceV2_SLOTargetUs_ShiftsLaterColumns verifies that slo_target_us, inserted after
-// deadline_us, shifts every later column by one on load.
+// TestTraceV2_SLOTargetUs_ShiftsLaterColumns verifies that slo_target_us, an optional column,
+// leaves every other column read by name.
 func TestTraceV2_SLOTargetUs_ShiftsLaterColumns(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
 
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{
 			RequestID: 0, SLOClass: "critical",
 			SLOTargetUs: 150000, DeadlineUs: 400000,
-			ArrivalTimeUs: 1000, SendTimeUs: 1100,
+			ArrivalTimeUs:    1000,
 			FirstChunkTimeUs: 2000, LastChunkTimeUs: 3000,
-			NumChunks: 5, Status: "ok",
+			Status: "ok",
 		},
 	}
 
@@ -1435,11 +1286,8 @@ func TestTraceV2_SLOTargetUs_ShiftsLaterColumns(t *testing.T) {
 	if r.ArrivalTimeUs != 1000 {
 		t.Errorf("ArrivalTimeUs=%d, want 1000 (offset corruption)", r.ArrivalTimeUs)
 	}
-	if r.SendTimeUs != 1100 {
-		t.Errorf("SendTimeUs=%d, want 1100 (offset corruption)", r.SendTimeUs)
-	}
-	if r.NumChunks != 5 {
-		t.Errorf("NumChunks=%d, want 5 (offset corruption)", r.NumChunks)
+	if r.FirstChunkTimeUs != 2000 || r.LastChunkTimeUs != 3000 || r.Status != "ok" {
+		t.Errorf("record %+v: offset corruption", r)
 	}
 }
 
@@ -1448,7 +1296,7 @@ func TestTraceV2_SLOTargetUs_ShiftsLaterColumns(t *testing.T) {
 // without offload omits the key (BC-G5).
 func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
 	header := &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated",
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 		KVOffload: &TraceKVOffloadConfig{
 			CPUBytesToUse:          17179869184,
 			BlockSize:              16,
@@ -1500,7 +1348,7 @@ func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
 // TestTraceV2_NoKVOffload_OmitsKey verifies a header without offload writes no
 // kv_offload key (BC-G5 byte-identity for the disabled case).
 func TestTraceV2_NoKVOffload_OmitsKey(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	dataPath := filepath.Join(dir, "data.csv")
@@ -1530,8 +1378,8 @@ func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	dataPath := filepath.Join(dir, "data.csv")
-	yaml := "trace_version: 3\ntime_unit: microseconds\nmode: generated\n" +
-		"warm_up_requests: 0\nkv_offload:\n  cpu_bytes_to_use: 1\n  future_knob: 42\n"
+	yaml := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n" +
+		"kv_offload:\n  cpu_bytes_to_use: 1\n  future_knob: 42\n"
 	if err := os.WriteFile(headerPath, []byte(yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1540,5 +1388,58 @@ func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
 	}
 	if _, err := LoadTraceV2(headerPath, dataPath); err == nil {
 		t.Fatal("expected strict-parse error for unknown kv_offload sub-key, got nil")
+	}
+}
+
+// zeroRow is a data row of the required columns, every cell "0" except the values set, and
+// the column index the parser reads it by.
+func zeroRow(set map[string]string) ([]string, map[string]int) {
+	at := make(map[string]int, len(traceColumns))
+	row := make([]string, len(traceColumns))
+	for i, c := range traceColumns {
+		at[c] = i
+		row[i] = "0"
+		if c == "streaming" {
+			row[i] = "false"
+		}
+		if v, ok := set[c]; ok {
+			row[i] = v
+		}
+	}
+	return row, at
+}
+
+// TestTraceV2_SLOTargetUs_KeepsTheColumnsBeforeIt: slo_target_us sits after deadline_us, so the
+// columns before it are read where they are. A record with a target keeps its session_id,
+// prefix_group and model through a round trip, and so does a record without one in the same
+// file (the column is in every row once one row carries it). The version 3 loader read those
+// three one column to the right (fixed in the commit before trace format version 4); version 4
+// reads every column by name.
+func TestTraceV2_SLOTargetUs_KeepsTheColumnsBeforeIt(t *testing.T) {
+	dir := t.TempDir()
+	headerPath, dataPath := filepath.Join(dir, "h.yaml"), filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, ClientID: "c", TenantID: "t", SLOClass: "critical", SessionID: "s0", PrefixGroup: "g",
+			PrefixLength: 16, Model: "m", DeadlineUs: 900000, SLOTargetUs: 150000, InputTokens: 30, OutputTokens: 5,
+			ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 1, ClientID: "c", TenantID: "t", SLOClass: "standard", SessionID: "s1", PrefixGroup: "",
+			Model: "", InputTokens: 31, OutputTokens: 6, ArrivalTimeUs: 2000, Status: "ok"},
+	}
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	for i, want := range records {
+		got := loaded.Records[i]
+		if got.SessionID != want.SessionID || got.PrefixGroup != want.PrefixGroup || got.Model != want.Model ||
+			got.SLOTargetUs != want.SLOTargetUs || got.DeadlineUs != want.DeadlineUs || got.Status != want.Status {
+			t.Errorf("record %d: session %q prefix %q model %q slo %d deadline %d status %q; want %q %q %q %d %d %q", i,
+				got.SessionID, got.PrefixGroup, got.Model, got.SLOTargetUs, got.DeadlineUs, got.Status,
+				want.SessionID, want.PrefixGroup, want.Model, want.SLOTargetUs, want.DeadlineUs, want.Status)
+		}
 	}
 }

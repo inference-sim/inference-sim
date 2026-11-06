@@ -29,8 +29,7 @@ does:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml \
-  --scenarios examples/llm-d/scenarios \
-  --registry $PWD/blis-registry --num-instances 2 --workload-spec my-workload.yaml
+  --scenarios examples/llm-d/scenarios --num-instances 2 --workload-spec my-workload.yaml
 ```
 
 | SLO class | Objective priority | Sheddable |

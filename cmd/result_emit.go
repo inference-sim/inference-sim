@@ -10,7 +10,10 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -28,12 +31,21 @@ func floatMapAny(in map[string]float64) map[string]any {
 	return out
 }
 
+// runControls are what a command tells the frame's generator and stop rule: the offered load,
+// the request bound the run kept, the seed, and the workload binding.
+type runControls struct {
+	Load        measurement.Load
+	NumRequests int
+	Seed        int64
+	Binding     *schemaworkload.Binding
+}
+
 // postRun is what a finished run hands the emitter.
 type postRun struct {
 	cs      *cluster.ClusterSimulator
 	gateway *llmd.Gateway
 	// run are the run controls the document records.
-	run result.Run
+	run runControls
 	// goodputTargets are the resolved SLO targets.
 	goodputTargets map[string]workload.SLODimTargets
 	// satTracer is the saturation tracer, nil when no detector was selected.
@@ -109,7 +121,7 @@ func emitRunResult(p postRun) {
 		}
 		extra := append([]sim.EmitOption{sim.WithPD(pdMetrics.Output()), sim.WithServerSeries(series)}, p.extraFileOptions...)
 		if err := aggregated.WriteMetricsFile(legacy, p.metricsPath,
-			append(resultsFileEmitOptions(p.metricsPath, resolvedCatalogRoot), extra...)...); err != nil {
+			append(resultsFileEmitOptions(p.metricsPath), extra...)...); err != nil {
 			logrus.Fatalf("--metrics-path: %v", err)
 		}
 	}
@@ -132,17 +144,22 @@ func emitRunResult(p postRun) {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
+	data := mustRunData()
 	in := resultInputs{
 		Scenario:       docs.Scenario,
 		Deployment:     docs.Deployment,
+		Packaging:      resultPackaging(kernelOpened),
 		Policy:         policy,
-		Run:            p.run,
+		Generator:      result.Generator{Workload: p.run.Binding, Load: p.run.Load, Seed: p.frame.Seed},
+		NumRequests:    p.run.NumRequests,
 		Overrides:      runOverrides(p.extraOverrides...),
 		GPUs:           runGPUs(cs, docs.Deployment),
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
 		Artifacts:      artifacts,
-		Revisions:      resultRevisions(resolvedCatalogRoot, kernelRegistry, scenarioEngine),
+		Engine:         result.Engine{Kind: scenarioEngine.Kind, Version: scenarioEngine.Version},
+		Revisions:      resultRevisions(),
+		Data:           resultData(data),
 	}
 	out := resultMetrics{
 		Aggregated:      aggregated,
@@ -155,13 +172,10 @@ func emitRunResult(p postRun) {
 		ClockUs:         cs.Clock(),
 		HorizonUs:       cs.Horizon(),
 	}
-	// blis-schemas reads num_requests as the most requests the run generates and checks
-	// generated <= num_requests. BLIS's --num-requests caps what the workload generator emits;
-	// a closed-loop session's follow-up rounds are generated during the run on top of it, and
-	// v0.9.1 has no field for them. The document states the bound the run kept, and records the
-	// cap the run was given as an override row, so it is not lost.
-	if cap := in.Run.NumRequests; cap < out.Ledger.Generated {
-		in.Run.NumRequests = out.Ledger.Generated
+	// The generator's request cap bounds what it emits; a closed-loop session's follow-up
+	// rounds are generated during the run on top of it. The frame's stop rule states the cap
+	// the run was given; when the run generated more, an override row says so.
+	if cap := in.NumRequests; cap > 0 && cap < out.Ledger.Generated {
 		in.Overrides = append(in.Overrides, sim.ScenarioOverride{Setting: "num_requests_cap",
 			Scenario: fmt.Sprint(out.Ledger.Generated), Run: fmt.Sprint(cap),
 			Source: "the workload generator's cap; closed-loop follow-up rounds are generated beyond it"})
@@ -173,9 +187,10 @@ func emitRunResult(p postRun) {
 		logrus.Fatalf("the run simulated no time: no request arrived (generated %d) and no --horizon bounds the run, "+
 			"so there is nothing to report; check the workload's arrival windows, or pass --horizon", out.Ledger.Generated)
 	}
-	// The experimental frame (DEV-7), under engine.frame until the contracts Result carries
-	// its own field (result_frame.go).
-	r.Engine["frame"] = toGeneric(buildFrame(p.frame, r, p.numRequestsCap, cs.Horizon()))
+	// The experimental frame (DEV-7, result_frame.go), then the selected-entry report, read
+	// last so it covers every lookup the run made (VAL-6).
+	buildFrame(p.frame, r, windowRulesOf(aggregated, sum), p.numRequestsCap, cs.Horizon())
+	r.SelectedEntries = data.Report().Result()
 	r.Runtime = resultRuntime(p.started)
 
 	view := &summaryView{
@@ -198,16 +213,30 @@ func emitRunResult(p postRun) {
 		view.Fitness = &fitness
 		// The score is reported in the document too, under router: it scores the run's routing
 		// outcome from its raw metrics (#1871 review S5).
-		r.Router["fitness"] = map[string]any{"score": fitness.Score, "components": floatMapAny(fitness.Components),
+		r.Reports.Router["fitness"] = map[string]any{"score": fitness.Score, "components": floatMapAny(fitness.Components),
 			"weights": p.fitnessWeights}
 	}
 	if cs.Trace() != nil && summarizeTrace {
 		view.Trace = trace.Summarize(cs.Trace())
-		r.Router["trace_summary"] = toGeneric(view.Trace)
+		r.Reports.Router["trace_summary"] = toGeneric(view.Trace)
 	}
 	if resultView != viewSummary && (p.fitnessWeights != "" || (cs.Trace() != nil && summarizeTrace)) {
 		logrus.Warnf("--fitness-weights and --summarize-trace are reported in the Result's router section; " +
 			"pass --view summary to also print them as text on stderr")
 	}
 	emitResult(r, view)
+}
+
+// resultPackaging is the packaging the Result's inputs record: the kernel's resolved
+// packaging when any value came from the chip's catalog entry, nil when the scenario stated
+// every value (input.scenario then records each as stated) or no kernel is open.
+func resultPackaging(m *engineModel) *scenario.Packaging {
+	if m == nil {
+		return nil
+	}
+	pk := m.Packaging()
+	if pk.GPUsPerNodeSource == scenario.SourceStated && pk.GPUsPerRack == 0 {
+		return nil
+	}
+	return &pk
 }

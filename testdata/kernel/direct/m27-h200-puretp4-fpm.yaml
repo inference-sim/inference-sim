@@ -10,7 +10,9 @@
 # Used only to validate. Not a registry artifact and not an evaluation corpus.
 kind: Scenario
 name: m27-h200-puretp4-fpm
-engine_version: "0.29.0"
+engine:
+  kind: vllm
+  version: "0.32.0"
 
 model: minimax-m2.7
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

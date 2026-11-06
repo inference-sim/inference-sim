@@ -270,28 +270,15 @@ type ScenarioOverride struct {
 	Source   string `json:"source"`   // what chose it, e.g. "--scheduler" or "--policy-config"
 }
 
-// CatalogProvenance attributes a results file to the model catalog that produced it
-// (#1732, R1/S5). Once the catalog is a versioned directory (#1731 + blis-catalog), a
-// result must be attributable, and an EXPERIMENT (uncommitted edits to a config.json)
-// must be distinguishable from a REPRODUCIBLE run — which is what Dirty answers.
-//
-// Revision is the catalog's git commit, or UnknownCatalogRevision when the catalog is
-// not a git checkout (or git could not be consulted): a non-git catalog degrades to
-// "path recorded, revision unknown", never to a plausible-but-wrong revision. Dirty is
-// meaningful only alongside a known revision — it is false whenever Revision is
-// UnknownCatalogRevision, since there is no committed state to differ from.
+// CatalogProvenance attributes a --metrics-path file to the catalog that produced it (#1732).
+// Path is the catalog directory a path named, or "embedded" for the copy compiled into the
+// pinned blis-substrate release; Revision is the catalog's combined content hash (design §3.3);
+// Dirty is true when an overlay changed the catalog.
 type CatalogProvenance struct {
 	Path     string `json:"path"`
 	Revision string `json:"revision"`
 	Dirty    bool   `json:"dirty"`
 }
-
-// UnknownCatalogRevision is the CatalogProvenance.Revision value recorded when the
-// catalog's git revision could not be determined — an absent directory, a directory
-// outside any git checkout, a repository with no commits, or no usable git binary. It
-// is a recorded sentinel rather than an empty string so a reader can distinguish
-// "asked, and the answer is unknown" from "never populated".
-const UnknownCatalogRevision = "unknown"
 
 // AdapterMetrics is the per-adapter aggregate section
 // (specs/007-lora-control-plane/contracts/metrics.md). TTFT

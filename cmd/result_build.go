@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
-	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
@@ -22,31 +21,25 @@ import (
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
-// resultCite is where every metric definition this document states is implemented.
-const resultCite = "inference-sim sim/metrics_measured.go"
-
-// The window bounds the Result states. With no explicit window the measured window is
-// derived from the measured requests: the first arrival to the last completion.
-const (
-	windowStartFirstArrival = "first_arrival_after_warmup"
-	windowStopLastComplete  = "last_completion"
-	windowStartExplicit     = "profiling_start"
-	windowStopExplicit      = "profiling_end"
-	// A run with no measured completion has no measured window; its rates are zero over the
-	// whole simulated run instead.
-	windowStartRun = "simulation_start"
-	windowStopRun  = "simulation_end"
-)
-
 // resultInputs are the facts about a run that are not in its metrics: what it was given.
 type resultInputs struct {
 	// Scenario and Deployment are the documents the run read, as decoded.
 	Scenario   *scenario.Scenario
 	Deployment *deployment.Deployment
+	// Packaging is the cluster's packaging the kernel resolved (blis-substrate
+	// scenario.Cluster.Packaging), recorded when a value came from the chip's catalog entry
+	// rather than the scenario (SIM-10). Nil when the scenario states every value, which
+	// input.scenario then records as stated.
+	Packaging *scenario.Packaging
 	// Policy is the --policy-config bundle as a generic map, nil without one.
 	Policy map[string]any
-	// Run are the run controls.
-	Run result.Run
+	// Generator is the frame's generator: the workload binding, the offered load and the seed
+	// (result.Generator; the frame's RNG is set by buildFrame).
+	Generator result.Generator
+	// NumRequests is the request cap the generator was given, 0 for none; HorizonUs the
+	// horizon the run stopped at.
+	NumRequests int
+	HorizonUs   int64
 	// Overrides are the settings simulated differently from the scenario.
 	Overrides []sim.ScenarioOverride
 	// GPUs is the number of GPUs the run's instances occupy, for output_tok_s_per_gpu.
@@ -57,8 +50,12 @@ type resultInputs struct {
 	Saturation map[string]string
 	// Artifacts are the bulk outputs the run wrote, by role.
 	Artifacts map[string]result.Artifact
-	// Revisions are the versions the run read.
+	// Engine is the engine the run used (SIM-1); Revisions the versions it was built from.
+	Engine    result.Engine
 	Revisions result.Revisions
+	// Data is the catalog and registry record; Selected the entries lookups returned.
+	Data     result.Data
+	Selected result.SelectedEntries
 	// Name is the run's identity; derived when empty.
 	Name string
 }
@@ -66,7 +63,7 @@ type resultInputs struct {
 // resultMetrics are the run's outputs the document is filled from.
 type resultMetrics struct {
 	Aggregated *sim.Metrics
-	// Ledger is INV-1's ledger, from the cluster's own counters.
+	// Ledger is the fate count (DEV-9), from the cluster's fate ledger.
 	Ledger result.Requests
 	// PD is the disaggregation block, nil for a colocated run.
 	PD *cluster.PDMetrics
@@ -81,20 +78,22 @@ type resultMetrics struct {
 	ClockUs, HorizonUs int64
 }
 
-// buildResult assembles the Result document.
+// buildResult assembles the Result document. The frame is filled by buildFrame once the
+// metrics are known, since frame.metrics lists them.
 func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	m := out.Aggregated
 	sum := m.Summary()
 	r := &result.Result{
-		Kind:          result.Kind,
-		SchemaVersion: result.SchemaVersion,
-		Name:          in.Name,
-		Revisions:     in.Revisions,
-		Requests:      out.Ledger,
-		Engine:        out.Engine,
-		Router:        out.Router,
-		Kernel:        out.Kernel,
-		Artifacts:     in.Artifacts,
+		Kind:            result.Kind,
+		SchemaVersion:   result.SchemaVersion,
+		Name:            in.Name,
+		Engine:          in.Engine,
+		Data:            in.Data,
+		SelectedEntries: in.Selected,
+		Revisions:       in.Revisions,
+		Requests:        out.Ledger,
+		Reports:         result.Reports{Engine: out.Engine, Router: out.Router, Kernel: out.Kernel},
+		Artifacts:       in.Artifacts,
 	}
 	if in.Scenario != nil {
 		r.Input.Scenario = *in.Scenario
@@ -102,8 +101,9 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	if in.Deployment != nil {
 		r.Input.Deployment = *in.Deployment
 	}
+	r.Input.Packaging = in.Packaging
 	r.Input.Policy = in.Policy
-	r.Input.Run = in.Run
+	r.Frame.Generator = in.Generator // buildFrame sets the seed and RNG from the same generator
 	for _, o := range in.Overrides {
 		r.Overrides = append(r.Overrides, result.Override{Setting: o.Setting, Input: o.Scenario, Run: o.Run, Source: o.Source})
 	}
@@ -112,143 +112,129 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	}
 
 	r.Window = windowOf(m, sum, out.ClockUs, out.HorizonUs)
-	r.MetricDefs, r.Metrics = standardMetrics(sum, in.GPUs, r.Window.DurationS)
-	r.Breakdowns = breakdownsOf(m, sum, r.MetricDefs, out.PD)
-	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass)
+	r.Metrics = standardMetrics(sum, m, in.GPUs, r.Window.DurationS)
+	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD)
+	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass, r.Metrics)
 	if len(in.Saturation) > 0 {
-		r.Saturation = map[string]any{"final": stringMapAny(in.Saturation)}
+		r.Reports.Saturation = map[string]any{"final": stringMapAny(in.Saturation)}
 	}
 	return r
 }
 
-// windowOf states the measured window the metrics are over.
+// windowStartRule and windowStopRule are the frame's rules for the window windowOf states.
+type windowRules struct {
+	start result.WindowStart
+	stop  result.WindowStop
+}
+
+// windowOf states the measured window the metrics are over, in simulated microseconds.
 func windowOf(m *sim.Metrics, sum sim.MeasuredSummary, clockUs, horizonUs int64) result.Window {
 	if sum.MeasuredWindowS <= 0 {
 		// No measured request completed, so no window bounds one: the zero rates are stated
 		// over the simulated run, which is what such a run measured. An idle engine's own clock
 		// never advances, so the span is the cluster's clock when it ran longer; a run that saw
 		// nothing at all before its horizon spanned the horizon.
-		end := max(m.SimEndedTime, clockUs)
+		end := max(int64(m.SimEndedTime), clockUs)
 		if end <= 0 && horizonUs > 0 && horizonUs < math.MaxInt64 {
 			end = horizonUs
 		}
-		return result.Window{Start: windowStartRun, Stop: windowStopRun,
-			DurationS: float64(end) / 1e6, Requests: sum.MeasuredCompletedRequests}
+		return result.Window{StartUs: 0, EndUs: end, DurationS: float64(end) / 1e6,
+			Requests: sum.MeasuredCompletedRequests}
 	}
-	w := result.Window{Start: windowStartFirstArrival, Stop: windowStopLastComplete,
-		DurationS: sum.MeasuredWindowS, Requests: sum.MeasuredCompletedRequests}
+	return result.Window{StartUs: sum.WindowStartUs, EndUs: sum.WindowEndUs,
+		DurationS: float64(sum.WindowEndUs-sum.WindowStartUs) / 1e6, Requests: sum.MeasuredCompletedRequests}
+}
+
+// windowRulesOf names the rules that opened and closed the window windowOf states.
+func windowRulesOf(m *sim.Metrics, sum sim.MeasuredSummary) windowRules {
+	if sum.MeasuredWindowS <= 0 {
+		return windowRules{result.StartSimulation, result.StopSimulation}
+	}
+	w := windowRules{result.StartFirstArrivalAfterWarmup, result.StopLastCompletion}
 	if m.MeasuredWindow != nil {
-		w.Start = windowStartExplicit
+		w.start = result.StartProfiling
 		if m.MeasuredWindow.EndUs > 0 {
-			w.Stop = windowStopExplicit
+			w.stop = result.StopProfiling
 		}
 	}
 	return w
 }
 
-// metricDef is a per-request statistic's definition.
-func metricDef(f measurement.Formula, st measurement.Statistic, cite string) measurement.MetricDef {
-	d := measurement.MetricDef{Formula: f, Statistic: st, Population: measurement.PopulationPerRequest,
-		Clock: measurement.ClockSimulated, Unit: f.Unit(), Cite: resultCite + " " + cite}
-	if st.Percentile() {
-		d.PercentileMethod = measurement.PercentileNumpyLinear
-	}
-	return d
-}
-
-// throughputDef is a rate over the window.
-func throughputDef(f measurement.Formula, pop measurement.Population, den measurement.Denominator, cite string) measurement.MetricDef {
-	return measurement.MetricDef{Formula: f, Population: pop, Denominator: den,
-		Clock: measurement.ClockSimulated, Unit: f.Unit(), Cite: resultCite + " " + cite}
-}
-
-// standardMetrics are the standard-named metrics over the measured window. A latency
-// family is reported only when it has a sample, so a run that completed nothing states
-// no latency rather than a zero that reads as instant. The throughputs need a window.
-func standardMetrics(sum sim.MeasuredSummary, gpus int, windowS float64) (map[string]measurement.MetricDef, map[string]float64) {
-	defs := map[string]measurement.MetricDef{}
-	vals := map[string]float64{}
-	put := func(name string, d measurement.MetricDef, v float64) {
-		defs[name], vals[name] = d, v
-	}
+// standardMetrics are the run's figures under their metric-registry identifiers
+// (contracts/metrics, DEV-8), over the measured window. A latency family is reported only when
+// it has a sample, so a run that completed nothing states no latency rather than a zero that
+// reads as instant; the rates need a window. Each figure carries the count of samples behind
+// it.
+//
+// Two series were renamed by the registry (docs/guide/results.md has the table): the
+// per-request (latency - TTFT) / (output tokens - 1), schema 1's itl_*, is tpot_*; and the
+// per-step interval the engine section carried is step_interval_*. Schema 1's itl_* is not
+// the registry's itl, which pools every token gap, and BLIS does not compute that pool yet,
+// so no itl_* figure is written.
+func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus int, windowS float64) map[string]result.Figure {
+	out := map[string]result.Figure{}
+	put := func(id string, v float64, n int) { out[id] = result.Figure{Value: v, Samples: n} }
+	n := sum.MeasuredCompletedRequests
 	if windowS > 0 {
-		put("output_tok_s", throughputDef(measurement.FormulaOutputThroughput, measurement.PopulationPooledTokens,
-			measurement.DenominatorProfilingWindow, "OutputThroughputTokS"), sum.OutputThroughputTokS)
+		put("output_tok_s", sum.OutputThroughputTokS, n)
 		if gpus > 0 {
-			put("output_tok_s_per_gpu", throughputDef(measurement.FormulaOutputThroughput, measurement.PopulationPooledTokens,
-				measurement.DenominatorPerGPU, "OutputThroughputTokS over the GPUs the run's instances occupy"),
-				sum.OutputThroughputTokS/float64(gpus))
+			put("output_tok_s_per_gpu", sum.OutputThroughputTokS/float64(gpus), n)
 		}
-		put("request_throughput", throughputDef(measurement.FormulaRequestThroughput, measurement.PopulationPerRequest,
-			measurement.DenominatorProfilingWindow, "MeasuredCompletedRequests over MeasuredWindowS"),
-			float64(sum.MeasuredCompletedRequests)/windowS)
+		put("request_throughput", float64(n)/windowS, n)
 	}
-	if sum.MeasuredCompletedRequests > 0 {
-		for _, l := range []struct {
-			name string
-			st   measurement.Statistic
-			v    float64
-			cite string
-		}{
-			{"ttft_mean_ms", measurement.StatMean, sum.TTFTMeanMs, "TTFT mean"},
-			{"ttft_p50_ms", "p50", sum.TTFTP50Ms, "TTFTP50Ms"},
-			{"ttft_p90_ms", "p90", sum.TTFTP90Ms, "TTFT p90"},
-			{"ttft_p95_ms", "p95", sum.TTFTP95Ms, "TTFT p95"},
-			{"ttft_p99_ms", "p99", sum.TTFTP99Ms, "TTFT p99"},
-		} {
-			put(l.name, metricDef(measurement.FormulaTTFT, l.st, l.cite), l.v)
-		}
-		for _, l := range []struct {
-			name string
-			st   measurement.Statistic
-			v    float64
-			cite string
-		}{
-			{"e2e_mean_ms", measurement.StatMean, sum.E2EMeanMs, "request latency mean"},
-			{"e2e_p50_ms", "p50", sum.E2EP50Ms, "E2EP50Ms"},
-			{"e2e_p90_ms", "p90", sum.E2EP90Ms, "request latency p90"},
-			{"e2e_p95_ms", "p95", sum.E2EP95Ms, "request latency p95"},
-			{"e2e_p99_ms", "p99", sum.E2EP99Ms, "request latency p99"},
-		} {
-			put(l.name, metricDef(measurement.FormulaE2EL, l.st, l.cite), l.v)
-		}
+	if n > 0 {
+		put("ttft_mean_ms", sum.TTFTMeanMs, n)
+		put("ttft_p50_ms", sum.TTFTP50Ms, n)
+		put("ttft_p90_ms", sum.TTFTP90Ms, n)
+		put("ttft_p95_ms", sum.TTFTP95Ms, n)
+		put("ttft_p99_ms", sum.TTFTP99Ms, n)
+		put("e2e_mean_ms", sum.E2EMeanMs, n)
+		put("e2e_p50_ms", sum.E2EP50Ms, n)
+		put("e2e_p90_ms", sum.E2EP90Ms, n)
+		put("e2e_p95_ms", sum.E2EP95Ms, n)
+		put("e2e_p99_ms", sum.E2EP99Ms, n)
 	}
-	if sum.RequestITLCount > 0 {
-		for _, l := range []struct {
-			name string
-			st   measurement.Statistic
-			v    float64
-			cite string
-		}{
-			{"itl_mean_ms", measurement.StatMean, sum.RequestITLMeanMs, "RequestITLMeanMs"},
-			{"itl_p50_ms", "p50", sum.RequestITLP50Ms, "RequestITLP50Ms"},
-			{"itl_p90_ms", "p90", sum.RequestITLP90Ms, "RequestITLP90Ms"},
-			{"itl_p99_ms", "p99", sum.RequestITLP99Ms, "RequestITLP99Ms"},
-		} {
-			put(l.name, metricDef(measurement.FormulaTPOTExclFirst, l.st, l.cite), l.v)
-		}
+	if k := sum.RequestITLCount; k > 0 {
+		put("tpot_mean_ms", sum.RequestITLMeanMs, k)
+		put("tpot_p50_ms", sum.RequestITLP50Ms, k)
+		put("tpot_p90_ms", sum.RequestITLP90Ms, k)
+		put("tpot_p99_ms", sum.RequestITLP99Ms, k)
 		if sum.RequestITLP50Ms > 0 {
-			put("interactivity_p50", metricDef(measurement.FormulaInteractivity, "p50", "InteractivityP50"), sum.InteractivityP50)
+			put("interactivity_p50", sum.InteractivityP50, k)
 		}
 		if sum.RequestITLP90Ms > 0 {
-			put("interactivity_p90", metricDef(measurement.FormulaInteractivity, "p90", "InteractivityP90"), sum.InteractivityP90)
+			put("interactivity_p90", sum.InteractivityP90, k)
 		}
 	}
 	if sum.PerUserCount > 0 {
-		put("interactivity_mean", metricDef(measurement.FormulaUserTPS, measurement.StatMean, "OutputTokPerUserMean"), sum.OutputTokPerUserMean)
+		put("interactivity_mean", sum.OutputTokPerUserMean, sum.PerUserCount)
 	}
-	return defs, vals
+	if m != nil {
+		// preemptions is a whole-run total over the engines' steps (contracts/metrics): its
+		// samples are the steps the engines took, which the per-step interval series counts.
+		// A run of no steps states none.
+		if steps := len(m.AllITLs); steps > 0 {
+			put("preemptions", float64(m.PreemptionCount), steps)
+		}
+		if steps := sum.StepIntervalCount; steps > 0 {
+			put("step_interval_mean_ms", sum.StepIntervalMeanMs, steps)
+			put("step_interval_p50_ms", sum.StepIntervalP50Ms, steps)
+			put("step_interval_p90_ms", sum.StepIntervalP90Ms, steps)
+			put("step_interval_p95_ms", sum.StepIntervalP95Ms, steps)
+			put("step_interval_p99_ms", sum.StepIntervalP99Ms, steps)
+		}
+	}
+	return out
 }
 
 // splitMetrics are the metrics a split (by model, tenant or adapter) restates over the whole
-// run's window, with the whole's definitions, and only those the whole states. The per-GPU
-// throughput is not split: a key's requests share every GPU.
-func splitMetrics(sum sim.MeasuredSummary, defined map[string]measurement.MetricDef) map[string]float64 {
-	_, vals := standardMetrics(sum, 0, sum.MeasuredWindowS)
+// run's window, with the whole's identifiers, and only those the whole states. The per-GPU
+// throughput and the engine-wide step and preemption figures are not split.
+func splitMetrics(sum sim.MeasuredSummary, defined map[string]result.Figure) map[string]float64 {
 	out := map[string]float64{}
-	for k, v := range vals {
+	for k, f := range standardMetrics(sum, nil, 0, sum.MeasuredWindowS) {
 		if _, ok := defined[k]; ok {
-			out[k] = v
+			out[k] = f.Value
 		}
 	}
 	return out
@@ -256,7 +242,7 @@ func splitMetrics(sum sim.MeasuredSummary, defined map[string]measurement.Metric
 
 // breakdownsOf splits the run along the axes it exercised: per model, tenant and adapter
 // (each the whole's metrics over the requests of that key), P/D, and sessions.
-func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]measurement.MetricDef, pd *cluster.PDMetrics) *result.Breakdowns {
+func breakdownsOf(m *sim.Metrics, sum sim.MeasuredSummary, defs map[string]result.Figure, pd *cluster.PDMetrics) *result.Breakdowns {
 	b := &result.Breakdowns{}
 	split := func(key func(sim.RequestMetrics) string) map[string]map[string]float64 {
 		keys := map[string]bool{}
@@ -366,23 +352,31 @@ func sessionBreakdown(sm *cluster.SessionMetrics) map[string]float64 {
 	return out
 }
 
-// goodputOf is the SLO outcome over the whole run, as emitGoodput computes it (goodput_rps
-// over the run's simulated length), nil without targets.
-func goodputOf(m *sim.Metrics, targets map[string]workload.SLODimTargets, injectedByClass map[string]int64) *result.Goodput {
+// goodputOf is the SLO outcome, nil without targets. goodput_rps and slo_attainment go into
+// figures under their registry identifiers; the targets and each class's counts stay in the
+// goodput section. The values are emitGoodput's, unchanged from schema 1: goodput_rps is over
+// the run's simulated length, not the measured window the registry names, and moving it to
+// the window is a validation change of its own (docs/guide/results.md, "Known differences").
+func goodputOf(m *sim.Metrics, targets map[string]workload.SLODimTargets, injectedByClass map[string]int64,
+	figures map[string]result.Figure) *result.Goodput {
 	if len(targets) == 0 {
 		return nil
 	}
 	var mo sim.MetricsOutput
 	emitGoodput(&mo, m, injectedByClass, float64(m.SimEndedTime)/1e6, targets)
-	g := &result.Goodput{Targets: map[string]schemaworkload.SLODimTargets{}, GoodputRPS: mo.GoodputRPS,
-		SLOAttainment: mo.SLOAttainment, PerClass: map[string]result.ClassGoodput{}}
+	g := &result.Goodput{Targets: map[string]schemaworkload.SLODimTargets{}, PerClass: map[string]result.ClassGoodput{}}
 	for cls, t := range targets {
-		g.Targets[cls] = schemaworkload.SLODimTargets{TTFTMs: t.TTFTMs, ITLMs: t.ITLMs, E2EMs: t.E2EMs}
+		g.Targets[cls] = t
 	}
 	_, per := cluster.SLOAttainmentMultiDim(cluster.BuildLatencyResults(m), injectedByClass, targets)
+	met, targeted := 0, 0
 	for cls, a := range per {
 		g.PerClass[cls] = result.ClassGoodput{Completed: completedInClass(m, cls), Met: a.Good}
+		met += a.Good
+		targeted += int(injectedByClass[cls])
 	}
+	figures["goodput_rps"] = result.Figure{Value: mo.GoodputRPS, Samples: met}
+	figures["slo_attainment"] = result.Figure{Value: mo.SLOAttainment, Samples: targeted}
 	return g
 }
 
@@ -416,13 +410,13 @@ func resultName(r *result.Result) string {
 		base = "blis-run"
 	}
 	load := ""
-	switch l := r.Input.Run.Load; {
+	switch l := r.Frame.Generator.Load; {
 	case l.Concurrency > 0:
 		load = fmt.Sprintf("c%d", l.Concurrency)
 	case l.RequestRate > 0:
 		load = "r" + strings.ReplaceAll(fmt.Sprintf("%g", l.RequestRate), ".", "p")
 	}
-	name := fmt.Sprintf("%s.%s-s%d", base, load, r.Input.Run.Seed)
+	name := fmt.Sprintf("%s.%s-s%d", base, load, r.Frame.Generator.Seed)
 	// Overrides change what ran, so two runs that differ only in them get different names: a
 	// short digest of the override rows (a --num-instances sweep no longer collides).
 	if len(r.Overrides) > 0 {

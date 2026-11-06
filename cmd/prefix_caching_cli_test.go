@@ -102,7 +102,7 @@ func TestINV13_RunReplayParity_PrefixCachingDisabled(t *testing.T) {
 
 	dir := t.TempDir()
 	records := workload.RequestsToTraceRecords(makeSharedPrefixGroupRequests())
-	header := &workload.TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	hdrPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 	if err := workload.ExportTraceV2(header, records, hdrPath, dataPath); err != nil {

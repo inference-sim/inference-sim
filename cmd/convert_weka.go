@@ -8,6 +8,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -130,10 +131,10 @@ func runConvertWeka(inputPath, outPrefix string, opts workload.WekaConvertOption
 		growth = "" // empty header value = per-round-independent inputs
 	}
 	header := &workload.TraceHeader{
-		Version:              3,
+		Version:              workload.TraceVersion,
 		TimeUnit:             "microseconds",
 		Mode:                 workload.TraceModeConverted,
-		SessionContextGrowth: growth,
+		SessionContextGrowth: trace.ContextGrowth(growth),
 	}
 	if err := workload.ExportTraceV2(header, allRecords, outPrefix+".yaml", outPrefix+".csv"); err != nil {
 		return err

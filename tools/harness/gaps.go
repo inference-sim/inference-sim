@@ -375,24 +375,24 @@ func (cv *Coverage) assessSweep(sw Sweep, cfg Config) {
 	}
 }
 
-// missingArtifact names the first catalog or registry file the scenario needs and does not
-// find, at the paths the kernel's own loader reads (blis-latency-kernel's OpenInputs).
+// missingArtifact names the first catalog or registry entry the scenario needs and the data
+// does not have, through the loader's own readers.
 func missingArtifact(model, hardware, fabric string, coefficients []string, r kernelmodel.Repos) (path, owner, cause string) {
-	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
-	if p := filepath.Join(r.Catalog, "models", model, "graph.yaml"); !exists(p) {
-		return model, OwnerCatalog, "model not in blis-catalog"
+	d := r.Data
+	if _, err := d.Model(model); err != nil {
+		return model, OwnerCatalog, "model not in the catalog"
 	}
-	if p := filepath.Join(r.Catalog, "hardware", hardware+".yaml"); !exists(p) {
-		return hardware, OwnerCatalog, "hardware not in blis-catalog"
+	if _, err := d.Chip(hardware); err != nil {
+		return hardware, OwnerCatalog, "hardware not in the catalog"
 	}
 	if fabric != "" {
-		if p := filepath.Join(r.Catalog, "networks", fabric+".yaml"); !exists(p) {
-			return fabric, OwnerCatalog, "fabric not in blis-catalog"
+		if _, err := d.Fabric(fabric); err != nil {
+			return fabric, OwnerCatalog, "fabric not in the catalog"
 		}
 	}
 	for _, name := range coefficients {
-		if p := filepath.Join(r.Registry, "coefficients", name+".yaml"); !exists(p) {
-			return name, OwnerRegistry, "coefficient set not in blis-registry"
+		if _, err := d.CoefficientSet(name); err != nil {
+			return name, OwnerRegistry, "coefficient set not in the registry"
 		}
 	}
 	return "", "", ""

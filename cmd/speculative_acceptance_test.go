@@ -32,41 +32,33 @@ const (
 func acceptanceRepos(t *testing.T, preset string) (registry, catalog string) {
 	t.Helper()
 	root := t.TempDir()
+	// blis-substrate's loader refuses a symbolic link, so each is a real copy of the embedded
+	// data; the registry's acceptance profile set is replaced by the fixture.
 	registry = filepath.Join(root, "registry")
-	mustSymlinkAbs(t, filepath.Join(substratedata.MustRegistry(), "coefficients"), filepath.Join(registry, "coefficients"))
+	if err := os.CopyFS(registry, os.DirFS(substratedata.MustRegistry())); err != nil {
+		t.Fatal(err)
+	}
 	set, err := os.ReadFile(acceptFixtureSet)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(registry, "acceptance")); err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(registry, "acceptance", "inferencex-golden-al.yaml"), set)
 
 	catalog = filepath.Join(root, "catalog")
-	for _, d := range []string{"models", "hardware", "networks", "devices"} {
-		mustSymlinkAbs(t, filepath.Join(substratedata.MustCatalog(), d), filepath.Join(catalog, d))
+	if err := os.CopyFS(catalog, os.DirFS(substratedata.MustCatalog())); err != nil {
+		t.Fatal(err)
 	}
 	chat, err := os.ReadFile(filepath.Join(substratedata.MustCatalog(), "workloads", "chatbot.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(catalog, "workloads", "chatbot.yaml"), chat)
 	if preset != "" {
 		mustWrite(t, filepath.Join(catalog, "workloads", "accept.yaml"), append(chat, []byte("\n"+preset)...))
 	}
 	return registry, catalog
-}
-
-func mustSymlinkAbs(t *testing.T, target, link string) {
-	t.Helper()
-	abs, err := filepath.Abs(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(abs, link); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func mustWrite(t *testing.T, path string, data []byte) {

@@ -16,7 +16,6 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
-	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/check"
@@ -60,8 +59,6 @@ var (
 	prefixHit                 kvPrefixHit            // how the KV cache groups cut a prefix hit, from the kernel's model
 	blockSizeTokens           int64                  // Number of tokens per KV block
 	defaultsFilePath          string                 // Path to default constants: the LoRA cost coefficients
-	catalogPath               string                 // --catalog: catalog clone root (models/, hardware/, networks/, ...). No default; BLIS_CATALOG is the fallback (#1731)
-	resolvedCatalogRoot       string                 // Catalog ROOT this run read (side effect of resolveLatencyConfig); recorded as results-file provenance (#1732)
 	workloadType              string                 // Workload type (chatbot, summarization, contentgen, multidoc, distribution)
 	longPrefillTokenThreshold int64                  // the scenario's engine.long_prefill_token_threshold (colocated run)
 	rate                      float64                // Requests arrival per second
@@ -79,7 +76,6 @@ var (
 	outputTokensMax           int                    // Max Output Token Count
 	kernelScenario            string                 // CLI --scenario: scenario file name (required)
 	kernelScenarioDir         string                 // CLI --scenarios: directory of scenario files (required)
-	kernelRegistry            string                 // CLI --registry: blis-registry clone root (required)
 	kernelDeploymentExperts   int                    // routed expert count from the model graph; 0 for a dense model
 	kernelDeploymentTopK      int                    // routed experts per token from the model graph; 0 for a dense model
 	kernelOpened              *engineModel           // the kernel adoptKernelDeployment opened; nil until it runs
@@ -395,19 +391,15 @@ func adoptKernelDeployment(cmd *cobra.Command) {
 //   - Refuses data parallelism on a dense model and expert parallelism on a dense model, as
 //     the placement and vLLM do
 //
-// Side effects: model (lowercased), resolvedCatalogRoot.
+// Side effects: model (lowercased).
 func resolveLatencyConfig(cmd *cobra.Command) latencyResolution {
 	model = strings.ToLower(model)
-	catalogRoot, err := resolveCatalogRoot()
-	if err != nil {
-		logrus.Fatalf("%v", err)
-	}
-	resolvedCatalogRoot = catalogRoot
 	m := kernelOpened
 	if m == nil {
 		// adoptKernelDeployment has not run (a caller that resolves the latency model
 		// alone): open the scenario's first pool exactly as adoption would.
-		m, err = openModel(catalogRoot)
+		var err error
+		m, err = openModel()
 		if err != nil {
 			logrus.Fatalf("%v", err)
 		}
@@ -506,7 +498,7 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	cmd.Flags().Int64Var(&simulationHorizon, "horizon", math.MaxInt64, "Total simulation horizon (in ticks)")
 	cmd.Flags().StringVar(&logLevel, "log", "warn", "Log level for diagnostic messages (trace, debug, info, warn, error, fatal, panic). Simulation results always print to stdout regardless of this setting.")
 	cmd.Flags().StringVar(&defaultsFilePath, "defaults-filepath", defaultDefaultsPath, "Path to default constants: the LoRA cost coefficients (the copy compiled into the binary is used when this is unset and no defaults.yaml is in the working directory)")
-	registerCatalogFlag(cmd)
+	registerDataFlags(cmd)
 
 	// Engine settings are the scenario's (#2021 B6): block size, sequence and token caps,
 	// max_model_len, long_prefill_token_threshold, prefix caching, cache dtype, speculation; the
@@ -519,7 +511,6 @@ func registerSimConfigFlags(cmd *cobra.Command) {
 	// priced by blis-latency-kernel with the coefficient sets it names.
 	cmd.Flags().StringVar(&kernelScenario, "scenario", "", "Scenario FILE NAME within --scenarios, e.g. gpt-oss-120b-h200-fp4-vllm-tp4.yaml (REQUIRED): the blis-schemas Scenario and Deployment that state the model, hardware, fabric, each pool's parallelism and engine settings, and the coefficient sets that price it")
 	cmd.Flags().StringVar(&kernelScenarioDir, "scenarios", "", "Directory holding scenario YAML files (REQUIRED)")
-	cmd.Flags().StringVar(&kernelRegistry, "registry", "", "blis-registry clone root, holding the coefficient sets a scenario names (REQUIRED)")
 
 	// Cluster config
 	cmd.Flags().IntVar(&numInstances, "num-instances", 1, "Number of instances in the cluster")
@@ -989,6 +980,15 @@ var runCmd = &cobra.Command{
 						"chip %q has %g GiB, from which the kernel sizes every instance's KV; state %g",
 						np.Name, np.GPUMemoryGiB, gpu, chip, chip)
 				}
+				// A node pool's gpus_per_node is the node the kernel places and prices ranks
+				// on: the cluster's packaging, resolved from the scenario and the chip's
+				// catalog entry (blis-substrate scenario.Cluster.Packaging). A pool stating
+				// another node size would host ranks on nodes the kernel never priced.
+				if gpn := kernelOpened.Packaging().GPUsPerNode; np.GPUsPerNode != gpn {
+					logrus.Fatalf("policy bundle node pool %q states gpus_per_node %d, but scenario %q resolves "+
+						"to %d GPUs per node (%s), on which the kernel places and prices every rank; state %d",
+						np.Name, np.GPUsPerNode, kernelScenario, gpn, kernelOpened.Packaging(), gpn)
+				}
 				bundleNodePools = append(bundleNodePools, cluster.NodePoolConfig{
 					Name:         np.Name,
 					GPUType:      np.GPUType,
@@ -1035,7 +1035,7 @@ var runCmd = &cobra.Command{
 		}
 
 		// Each P/D role's engine is its own pool's, from its own kernel.
-		kernelPD := openKernelPools(resolvedCatalogRoot)
+		kernelPD := openKernelPools()
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
 		}
@@ -1249,7 +1249,7 @@ var runCmd = &cobra.Command{
 			}
 			records := workload.RequestsToTraceRecords(traceArrivals)
 			header := &workload.TraceHeader{
-				Version:           3,
+				Version:           workload.TraceVersion,
 				TimeUnit:          "microseconds",
 				Mode:              "generated",
 				WorkloadSeed:      &spec.Seed,
@@ -1278,15 +1278,14 @@ var runCmd = &cobra.Command{
 		if maxRequests > 0 {
 			runNumRequests = int(maxRequests)
 		}
-		run := result.Run{
+		run := runControls{
 			Load:        runLoadOf(spec, arrivalTimes(cs.AggregatedMetrics())),
 			NumRequests: runNumRequests,
 			// --seed seeds the engines and the router; a workload spec run without --seed keeps
 			// the spec's own seed for its requests, which the spec file's sha256 (overrides,
 			// workload-spec) pins and the workload_seed override row states (#1871 S8).
-			Seed:     seed,
-			HorizonS: horizonSeconds(simulationHorizon),
-			Workload: runWorkloadBinding(),
+			Seed:    seed,
+			Binding: runWorkloadBinding(),
 		}
 		var artifacts []artifactFile
 		if traceOutput != "" {

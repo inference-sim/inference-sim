@@ -60,7 +60,7 @@ func TestComposeSpecs_TwoSpecs_MergesClients(t *testing.T) {
 		AggregateRate: 10.0,
 		Clients: []ClientSpec{
 			{ID: "a", RateFraction: 1.0, Arrival: ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}}},
 		},
 	}
@@ -69,7 +69,7 @@ func TestComposeSpecs_TwoSpecs_MergesClients(t *testing.T) {
 		AggregateRate: 5.0,
 		Clients: []ClientSpec{
 			{ID: "b", RateFraction: 1.0, Arrival: ArrivalSpec{Process: "constant"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 20, "min": 1, "max": 400}},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 20, "min": 1, "max": 400}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}}},
 		},
 	}

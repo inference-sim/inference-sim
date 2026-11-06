@@ -20,7 +20,7 @@ go build -o blis main.go
 
 ## Environment Setup
 
-BLIS reads model architecture configs from a local catalog checkout and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set `HF_TOKEN` only when downloading a new model's `config.json` by hand to add a catalog entry, e.g. for a gated model such as [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf):
+BLIS reads model architecture configs from the catalog it carries and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set `HF_TOKEN` only when downloading a new model's `config.json` by hand to add a catalog entry, e.g. for a gated model such as [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf):
 
 ```bash
 export HF_TOKEN=your_token_here
@@ -29,22 +29,33 @@ export HF_TOKEN=your_token_here
 Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 !!! note "Air-gapped / offline environments"
-    Nothing to do — BLIS never reaches the network to run a simulation. Every model's `config.json` comes from your local catalog checkout, and a model with no catalog entry is refused rather than fetched.
+    Nothing to do — BLIS never reaches the network to run a simulation. Every model's architecture comes from the catalog in use (the embedded copy, or the directory `--catalog` / `BLIS_CATALOG` names), and a model with no catalog entry is refused rather than fetched.
 
-    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then commit it at `<catalog>/models/<model>/config.json` — where `<catalog>` is whatever directory you point `--catalog` / `BLIS_CATALOG` at.
+    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then commit it at `<catalog>/models/<model>/config.json` in a catalog directory of your own, and point `--catalog` / `BLIS_CATALOG` at that directory.
 
-## Locate the Model Catalog
+## The Model Catalog and Registry
 
-`blis run` and `blis replay` read the catalog and the registry from directories with the
-layout of blis-substrate's `catalog/` and `registry/`: `--catalog` (or `BLIS_CATALOG`) and
-`--registry`. Check out blis-substrate at the commit this build pins (see
-[Data compatibility](#catalog-compatibility) below) and point BLIS at its directories:
+`blis run`, `blis replay`, `blis convert preset` and `blis catalog resolve` read the catalog
+and the registry embedded in the blis-substrate module this build pins. No flag and no
+environment variable is needed.
+
+`--catalog <dir>` (or `BLIS_CATALOG`) names a directory with the layout of blis-substrate's
+`catalog/` that replaces the embedded catalog whole. `--registry <dir>` (or `BLIS_REGISTRY`)
+does the same for the registry. The flag wins over the environment variable, and the choice is
+announced on stderr. `--catalog-overlay <dir>` and `--registry-overlay <dir>` (repeatable) add
+or replace entries by identity on top of the catalog or registry in use; at this pin they are
+refused until the engine reads overlays. BLIS never fetches or writes a catalog file (NS-6).
+The Result records the data the run read under `data.catalog` and `data.registry`.
+
+To read a checkout of blis-substrate instead of the embedded copy, check it out at the commit
+this build pins (see [Data compatibility](#catalog-compatibility) below) and point BLIS at its
+directories:
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
 
@@ -59,8 +70,8 @@ it is stale.
 <!-- BEGIN GENERATED from stack.json: versions -->
 | Component | Version | Commit |
 |---|---|---|
-| `github.com/inference-sim/blis-substrate` | `v0.0.0-20261105035832-817e83e0018b` | `817e83e0018b` |
-| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261105040818-a8bf6ee4fca6` | `a8bf6ee4fca6` |
+| `github.com/inference-sim/blis-substrate` | `v0.0.0-20261105193227-4a3becf2d09a` | `4a3becf2d09a` |
+| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261105200233-44fb7c506b6c` | `44fb7c506b6c` |
 | `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.2.0.20261105040605-fd1830412b30` | `fd1830412b30` |
 | vllm (engine) | `0.32.0` | `5df63a7203cd` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
@@ -69,9 +80,9 @@ it is stale.
 <!-- END GENERATED -->
 
 Every loader parses its files strictly, so data from another substrate version can be refused
-at load. The test suite reads the catalog and registry of the substrate module `go.mod`
-selects, so the checkout above is the data the build is tested with. A directory of your own
-works as long as the substrate's validators accept it.
+at load. The embedded catalog and registry are those of the substrate module `go.mod` selects,
+and the test suite reads them, so they and the checkout above are the data the build is tested
+with. A directory of your own works as long as the substrate's validators accept it.
 
 ## Scenarios
 
@@ -92,9 +103,7 @@ for details.
 
 ```bash
 ./blis run --scenarios examplescenarios \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-substrate/registry --catalog $PWD/blis-substrate/catalog \
-  --num-requests 10
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --num-requests 10
 ```
 
 `blis` carries the repository's `defaults.yaml` (the LoRA cost constants) compiled in, so it runs

@@ -196,7 +196,7 @@ Two things to preserve if you touch it. Both metric-map reads must be two-value:
 
 **Statement:** The same resolved input at the same revisions yields a byte-identical `Result` document (stdout of `blis run` and `blis replay`, #1871) outside its `runtime` block. The resolved input is the document's `input` (scenario, deployment, run controls, `--policy-config` bundle); the revisions are its `revisions` (the BLIS build, blis-schemas, blis-latency-kernel, the llm-d router, the engine model, and the catalog's and registry's git revisions). `runtime` holds wall-clock time, the start time and host facts, and nothing else. Two runs on inputs at different revisions (a catalog edited without committing reads `-dirty`) are different inputs: their `revisions` differ, and nothing else may.
 
-**Verification:** Run the same input twice; compare the two `Result` documents with `runtime` removed (`cmd/result_output_test.go` `TestResult_DeterministicOutsideRuntime`; the shared helper `withoutRuntime` in `cmd/result_testhelpers_test.go` is what every same-input comparison in `cmd/` uses). `TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical` pins the revision clause: a clean and a dirty catalog differ in `revisions.catalog` only. Wall-clock timing and every other diagnostic go to stderr.
+**Verification:** Run the same input twice; compare the two `Result` documents with `runtime` removed (`cmd/result_output_test.go` `TestResult_DeterministicOutsideRuntime`; the shared helper `withoutRuntime` in `cmd/result_testhelpers_test.go` is what every same-input comparison in `cmd/` uses). `TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical` pins the data clause: a catalog edited in place changes its content hash in `data.catalog`, and the Result is otherwise byte-identical outside the data record and `runtime`. Wall-clock timing and every other diagnostic go to stderr.
 
 **Common violation sources:**
 - Go map iteration feeding output ordering (R2)
@@ -300,10 +300,8 @@ the catalog or the registry. This is design §3.3 at the CLI. Three clauses:
    Deployment file) on both `blis run` and `blis replay`; omitting it is refused. No flag
    restates the model, the hardware or the tensor-parallel width.
 
-**Status at this commit:** clauses 2 and 3 hold. Clause 1 holds for the path form; the embedded
-default, the optional `--registry`, the overlay flags and the Result's data record arrive with
-the move onto blis-substrate's loader (inference-sim#2077). Until then a run without
-`--catalog` / `BLIS_CATALOG`, or without `--registry`, is refused naming both forms.
+**Status at this commit:** clauses 1, 2 and 3 hold, except that the v0.32.0 engine refuses a
+run with an overlay (`--catalog-overlay` or `--registry-overlay`) until it reads overlays.
 
 **Why this tier:** like INV-9 and INV-A2 this constrains *what the code may do* rather than
 describing simulation state. A run that writes a catalog entry can leave that run's output

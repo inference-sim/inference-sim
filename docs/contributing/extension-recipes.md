@@ -48,22 +48,20 @@ To add a new field to TraceV2 CSV output (e.g., a per-round value a converter re
 6. **Add behavioral tests** covering round-trip, conditional logic, and simulation isolation
 
 **Column position guidelines:**
-- Observability metadata: place near related fields (e.g., `vllm_priority` after `slo_class`)
 - Timing data: group with other timestamps
 - Optional columns: prefer conditional inclusion over always-writing zero values
 
 Examples:
-- See PR #1220 (`VLLMPriority`) — optional column, simulation-isolated, conditional on SLOClass presence
-- See `FinishReason`/`ErrorMessage` fields — always-present optional strings (empty when not set)
-- See `ServerInputTokens` field — observability metadata that differs from `InputTokens`
+- See `Adapter` — an optional trailing column, written only when some record names an adapter
+- See `ThinkTimeUs` — an optional presence-signalled column (empty cell = not recorded)
 
 ## Extending Latency Pricing
 
 Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from `blis-latency-kernel` (adapter blis-vllm `compat/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
 
 - **A new pricing term, engine feature or model shape** → change `blis-latency-kernel`, release it, and bump the pinned module version in `go.mod`.
-- **New or refitted coefficients** → publish them in `blis-registry` and name the coefficient sets in the scenario's `coefficients:` list.
-- **A new model, chip, fabric or storage device** → add it to `blis-catalog`.
+- **New or refitted coefficients** → publish them in blis-substrate's `registry/` and name the coefficient sets in the scenario's `coefficients:` list.
+- **A new model, chip, fabric or storage device** → add it to blis-substrate's `catalog/`.
 - **A new scenario or engine-setting field** → change the format in `blis-schemas` first.
 
 On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm `compat/kernelmodel` and the scenario-to-`SimConfig` wiring (blis-vllm `compat/build`, called from `cmd/engine_build.go`). See [Latency models](../guide/latency-models.md).

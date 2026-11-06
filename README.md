@@ -28,8 +28,8 @@ A BLIS run draws on six repositories. Each owns one kind of thing.
 | **inference-sim** (this one) | *simulates* | The end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the embedded llm-d router (admission, flow control, routing), metrics and reports. It holds no vLLM code. |
 | [`blis-vllm`](https://github.com/inference-sim/blis-vllm) | *runs the engine* | The vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors, translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. The only latency backend. |
-| [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets — declared facts, nothing fitted. |
-| [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | Coefficient sets the kernel prices with, each with its provenance and scope. |
+| [`blis-substrate` `catalog/`](https://github.com/inference-sim/blis-substrate/tree/main/catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets — declared facts, nothing fitted. |
+| [`blis-substrate` `registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry) | *holds the fitted numbers* | Coefficient sets the kernel prices with, each with its provenance and scope. |
 | [`blis-schemas`](https://github.com/inference-sim/blis-schemas) | *defines the formats* | The source of truth for every shared format: scenario, deployment, engine and catalog files. |
 
 The key relationships:
@@ -66,33 +66,40 @@ cd inference-sim
 go build -o blis main.go
 ```
 
-The catalog and registry are blis-substrate's, at the commit this build pins
-([Data compatibility](docs/getting-started/installation.md#catalog-compatibility)):
+```bash
+./blis run --scenarios examplescenarios \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
+  --rate 10 --num-requests 100
+```
+
+The run reads the catalog and registry embedded in the blis-substrate module this build pins
+([Data compatibility](docs/getting-started/installation.md#catalog-compatibility)). No flag or
+environment variable is needed for them. To read a catalog of your own instead, check out
+blis-substrate (or keep a directory with the layout of its `catalog/`) and name it with
+`--catalog` or `BLIS_CATALOG`:
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout 817e83e0018b98e8042d2e76531fa95b60807068
-export BLIS_CATALOG=$PWD/blis-substrate/catalog   # or pass --catalog on every command
+git -C blis-substrate checkout 4a3becf2d09aeced794e96bb26babfaab36cc8e9
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
 
-```bash
-./blis run --scenarios examplescenarios \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-substrate/registry \
-  --rate 10 --num-requests 100
-```
+Every `blis run` and `blis replay` needs two inputs:
 
-Every `blis run` and `blis replay` needs four inputs:
-
-- the **catalog**, via `--catalog <clone root>` or `BLIS_CATALOG` (no default; the flag wins);
-- the **registry**, via `--registry <clone root>`;
 - a **scenario directory**, via `--scenarios <dir>` — any directory of scenario YAMLs. This
   repository ships ready-to-run ones in [`examplescenarios/`](examplescenarios/);
 - a **scenario**, via `--scenario <file name>` within that directory.
 
-The clones are pinned to the releases BLIS is tested against; see
+Two more inputs have a default:
+
+- the **catalog**: the embedded copy, or a directory named by `--catalog <dir>` or
+  `BLIS_CATALOG` that replaces it whole (the flag wins);
+- the **registry**: the embedded copy, or a directory named by `--registry <dir>` or
+  `BLIS_REGISTRY` that replaces it whole (the flag wins).
+
+The Result records which data the run read under `data`. See
 [Catalog compatibility](docs/getting-started/installation.md#catalog-compatibility).
 
 **vLLM versions.** A scenario names its engine as `engine: {kind: vllm, version: "0.32.0"}`, or
@@ -137,10 +144,8 @@ sessions.
 
 ```bash
 ./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-substrate/registry \
   --workload chatbot --rate 20 --num-requests 500
 ./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-substrate/registry \
   --workload-spec examples/servegen-language.yaml
 ```
 
@@ -156,7 +161,7 @@ Kernel-backed scenarios expose host and declared-rack identity to llm-d topology
 
 ```bash
 ./blis run --scenarios examples/llm-d/scenarios \
-  --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml --registry $PWD/blis-substrate/registry \
+  --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
   --num-instances 8 --rate 20 --num-requests 80
 ```
 
@@ -175,7 +180,6 @@ SLO classes reach the router as `InferenceObjective` names. SLO goodput is repor
 
 ```bash
 ./blis run --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-substrate/registry \
   --num-instances 4 --rate 200 --num-requests 1000
 ```
 
@@ -188,7 +192,6 @@ KV handoff over the scenario's fabric.
 
 ```bash
 ./blis run --scenarios examplescenarios --scenario glm-5-h200-3p1d-ib.yaml \
-  --registry $PWD/blis-substrate/registry \
   --num-instances 4 --prefill-instances 3 --decode-instances 1 \
   --rate 10 --num-requests 200
 ```
@@ -213,15 +216,14 @@ Horizontal autoscaling over node pools with provisioning delays, configured in a
 
 ### Trace replay
 
-Replay any TraceV2 — exported by `blis run --trace-output`, or converted with
-`blis convert weka|otel|inference-perf|servegen` — through the same kernel and deployment
-path. A run's exported trace replayed with identical flags (including `--horizon`) gives
+Replay any trace (trace format version 4) — exported by `blis run --trace-output`, or
+converted with `blis convert weka|otel` — through the same kernel and deployment path. A
+version 3 trace from v0.15.0 is converted with `blis convert trace`. A run's exported trace replayed with identical flags (including `--horizon`) gives
 byte-identical stdout.
 
 ```bash
 ./blis replay --trace-header t.yaml --trace-data d.csv \
-  --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
-  --registry $PWD/blis-substrate/registry
+  --scenarios examplescenarios --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml
 ```
 
 → [Trace replay](docs/guide/replay.md)

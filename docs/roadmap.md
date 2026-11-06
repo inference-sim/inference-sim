@@ -11,8 +11,8 @@ load-bearing parts (*selective fidelity*), and tracks platform drift.
 **Ecosystem split.** Responsibility is factored across repos so each evolves on its own cadence:
 
 - **inference-sim**: the DES engine (workloads, scheduling, KV, batching, placement).
-- **blis-catalog**: declared facts, i.e. hardware datasheets, model spec (possibly derived), fabrics.
-- **blis-registry**: learned latency coefficients, each carrying its provenance and scope.
+- **blis-substrate `catalog/`**: declared facts, i.e. hardware datasheets, model spec (possibly derived), fabrics.
+- **blis-substrate `registry/`**: learned latency coefficients, each carrying its provenance and scope.
 - **blis-schemas**: the shared file formats and their validators.
 - **blis-latency-kernel**: step-time, memory, and transfer pricing physics.
 - **llm-d-router**: the real EPP routing physics, embedded via a DES-compatible fork.
@@ -27,9 +27,9 @@ matrix of what BLIS supports versus llm-d.
 
 ## 2. Day-0 model support
 
-Land a new model's declared facts in **blis-catalog** so it runs immediately, with its latencies as
+Land a new model's declared facts in blis-substrate's **catalog** so it runs immediately, with its latencies as
 estimates until validated. Then make it *scored* (accuracy-validated) through a fast
-coefficient-onboarding path into **blis-registry**, aided by architecture-family priors.
+coefficient-onboarding path into blis-substrate's **registry**, aided by architecture-family priors.
 
 ## 3. Multi-node accuracy
 

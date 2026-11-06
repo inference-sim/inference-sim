@@ -1,15 +1,18 @@
 # A disaggregated deployment with data parallelism, for the P/D + DP-as-placement tests: one
 # prefill and one decode pool of minimax-m2.5 (a routed MoE, so dp > 1 is placement), each
-# TP4 x DP2 with expert parallelism over two four-GPU GB200 trays. Each simulated instance is
-# one data-parallel rank, so one logical prefill and one logical decode instance run as two
+# TP4 x DP2 with expert parallelism over four-GPU GB200 trays. Each simulated instance is one
+# data-parallel rank, so one logical prefill and one logical decode instance run as two
 # replicas each, one rank per tray.
 #
-# gpus_per_rack 12 places a rack boundary between the decode pool's two trays: trays 0-2 share
-# an NVLink domain and tray 3 sits behind the InfiniBand fabric. A handoff to decode rank 0
-# therefore moves at the in-rack rate and one to decode rank 1 at the fabric's, so the handoff
-# price depends on which ranks a request crosses -- the property the per-pair pricing law needs
-# to be non-vacuous. Authored here (every vendored kernel scenario is colocated); engine
-# settings follow the kernel's minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2 scenario.
+# The cluster is 19 trays, so it spans two GB200 NVL72 racks. The packaging is the catalog's
+# (hardware/gb200-nvl72.yaml: 4 GPUs per tray, 72 per NVLink rack), so the scenario states
+# neither field. Pools fill the cluster in order: prefill takes trays 0-16 and decode trays
+# 17-18. Tray 17 is the last of rack 0 and tray 18 the first of rack 1, so a handoff to decode
+# rank 0 moves at the in-rack NVLink rate and one to decode rank 1 over the InfiniBand fabric.
+# The handoff price therefore depends on which ranks a request crosses -- the property the
+# per-pair pricing law needs to be non-vacuous. An earlier version made the same point with a
+# 12-GPU rack on four trays, which contradicts the product's 72-GPU NVLink domain and is
+# refused. Engine settings follow the kernel's minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2 scenario.
 kind: Scenario
 name: minimax-m2.5-gb200-1p1d-dp2
 engine_version: "0.32.0"
@@ -20,16 +23,14 @@ coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-ov
 cluster:
   hardware: gb200-nvl72
   fabric: ib-400g
-  nodes: 4
-  gpus_per_node: 4
-  gpus_per_rack: 12
+  nodes: 19
 ---
 kind: Deployment
 name: minimax-m2.5-gb200-1p1d-dp2
 
 pools:
   - role: prefill
-    nodes: 2
+    nodes: 17
     parallel:
       tp: 4
       pp: 1

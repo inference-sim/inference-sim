@@ -88,17 +88,21 @@ func deviceModelDevices() map[string]build.KVOffloadDevice {
 	}
 }
 
-// writeCatalogStorageDevices builds a catalog root holding devices/storage.yaml with the
-// given body and returns the root. Used by the device-table tests here and by the
-// retargeted YAML-parse tests in kv_offload_test.go / kv_offload_device_test.go.
+// writeCatalogStorageDevices writes a whole catalog (a copy of the embedded one) whose
+// devices/storage.yaml is body, and returns its root: a catalog named by --catalog replaces the
+// embedded copy whole (design §3.3), so a test of the device table writes a complete one.
 func writeCatalogStorageDevices(t *testing.T, body string) string {
 	t.Helper()
-	root := t.TempDir()
-	dir := filepath.Join(root, catalogDevicesSubdir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", dir, err)
+	root := filepath.Join(t.TempDir(), "catalog")
+	if err := os.CopyFS(root, os.DirFS(testCatalogDir())); err != nil {
+		t.Fatalf("copy the catalog: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, catalogStorageDevicesFile), []byte(body), 0o644); err != nil {
+	path := filepath.Join(root, catalogDevicesSubdir, catalogStorageDevicesFile)
+	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Chmod(path, 0o644)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("write storage.yaml: %v", err)
 	}
 	return root
@@ -122,7 +126,15 @@ func kvOffloadBlockFromDeployment(o *deployment.Offload) (*build.KVOffloadBlock,
 const simpleConnector = build.SimpleConnector
 
 // resolveKVOffloadDevices resolves a block's device table the way a run does: the engine's
-// lazy lookup with this CLI's --catalog / BLIS_CATALOG resolver (engine_build.go).
+// lookup in the run's data (runData, from --catalog / BLIS_CATALOG). A block that names no device
+// class reads no data.
 func resolveKVOffloadDevices(block *build.KVOffloadBlock) (map[string]build.KVOffloadDevice, error) {
-	return build.ResolveKVOffloadDevices(block, resolveCatalogRoot)
+	if !build.BlockNamesDeviceClass(block) {
+		return build.ResolveKVOffloadDevices(block, nil)
+	}
+	d, err := runData()
+	if err != nil {
+		return nil, err
+	}
+	return build.ResolveKVOffloadDevices(block, d)
 }

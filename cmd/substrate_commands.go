@@ -4,17 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	blisschemas "github.com/inference-sim/blis-substrate/contracts"
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/load"
 )
 
 // The commands the applications read substrate data through (design §5, accuracy-dashboard
@@ -92,27 +90,29 @@ var (
 var catalogResolveCmd = &cobra.Command{
 	Use:   "resolve",
 	Short: "Map a model or chip name to its catalog identity, or report that none exists",
-	Long: "Resolve --model or --chip against the catalog --catalog or BLIS_CATALOG names. A model " +
+	Long: "Resolve --model or --chip against the catalog in use: the one embedded in the blis-substrate " +
+		"release this build pins, or the directory --catalog or BLIS_CATALOG names. A model " +
 		"resolves when the catalog has an entry of that name, or exactly one entry whose " +
 		"model.yaml source repository is that name (compared without regard to letter case); a " +
 		"chip resolves when hardware/<name>.yaml exists. The output is {\"query\": ..., " +
-		"\"identity\": <catalog name> | null, \"reason\": ...}. A name two entries claim is an " +
-		"error, never a choice.",
+		"\"identity\": <catalog name> | null, \"reason\": ...}; a resolved chip adds " +
+		"\"packaging\": {\"gpus_per_node\", \"gpus_per_rack\"}, each the value its entry fixes or null " +
+		"where the scenario states it. A name two entries claim is an error, never a choice.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		if (resolveModel == "") == (resolveChip == "") {
 			return fmt.Errorf("catalog resolve: give exactly one of --model and --chip")
 		}
-		root, err := resolveCatalogRoot()
+		data, err := catalogData()
 		if err != nil {
 			return err
 		}
 		var r catalogResolution
 		if resolveModel != "" {
-			r, err = resolveCatalogModel(root, resolveModel)
+			r, err = resolveCatalogModel(data, resolveModel)
 		} else {
-			r, err = resolveCatalogChip(root, resolveChip)
+			r = resolveCatalogChip(data, resolveChip)
 		}
 		if err != nil {
 			return err
@@ -134,37 +134,48 @@ type catalogResolution struct {
 	Query    string  `json:"query"`
 	Identity *string `json:"identity"`
 	Reason   string  `json:"reason"`
+	// Packaging is a resolved chip's packaging as its catalog entry states it: the GPUs per
+	// node and per rack the product fixes, each null where the entry leaves it to the
+	// scenario. Absent for a model, or a chip that does not resolve. A generator writes
+	// neither field for a value stated here, and the scenario's own for a null one
+	// (blis-substrate scenario.Cluster.Packaging, design SUB-3).
+	Packaging *chipPackaging `json:"packaging,omitempty"`
 }
 
-// catalogName is the form of a catalog entry name: lowercase, digits, dots and hyphens. A
-// query of another form is not looked up as a path, so no query reads outside the catalog.
-var catalogName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*$`)
+// chipPackaging is what a chip's catalog entry states about its packaging.
+type chipPackaging struct {
+	GPUsPerNode *int `json:"gpus_per_node"`
+	GPUsPerRack *int `json:"gpus_per_rack"`
+}
 
-func resolveCatalogModel(root, query string) (catalogResolution, error) {
-	models := filepath.Join(root, catalogModelsSubdir)
-	if catalogName.MatchString(query) {
-		path := filepath.Join(models, query, "model.yaml")
-		if _, err := os.Stat(path); err == nil {
-			id, err := blisschemas.LoadModelIdentity(path)
-			if err != nil {
-				return catalogResolution{}, err
-			}
-			if id.Name != query {
-				return catalogResolution{}, fmt.Errorf("%s names %q, not its directory %q", path, id.Name, query)
-			}
-			return catalogResolution{Query: query, Identity: &query, Reason: "a catalog entry has this name"}, nil
-		}
+func packagingOf(c *hardware.Chip) *chipPackaging {
+	p := &chipPackaging{}
+	if c.GPUsPerNode > 0 {
+		n := c.GPUsPerNode
+		p.GPUsPerNode = &n
 	}
-	paths, err := filepath.Glob(filepath.Join(models, "*", "model.yaml"))
-	if err != nil {
-		return catalogResolution{}, err
+	if c.GPUsPerRack > 0 {
+		n := c.GPUsPerRack
+		p.GPUsPerRack = &n
 	}
-	if len(paths) == 0 {
-		return catalogResolution{}, fmt.Errorf("catalog %q has no models/*/model.yaml; is it a catalog directory?", root)
+	return p
+}
+
+// catalogData opens the catalog a command names, with the embedded registry: a catalog
+// command reads no coefficient, but the loader checks the two together.
+func catalogData() (*load.Data, error) {
+	o := dataOptions()
+	o.Registry, o.RegistryOverlays = "", nil
+	return openEngineData(o)
+}
+
+func resolveCatalogModel(data *load.Data, query string) (catalogResolution, error) {
+	if _, err := data.Model(query); err == nil {
+		return catalogResolution{Query: query, Identity: &query, Reason: "a catalog entry has this name"}, nil
 	}
 	var hits []string
-	for _, path := range paths {
-		id, err := blisschemas.LoadModelIdentity(path)
+	for _, name := range data.Models() {
+		id, err := data.ModelIdentity(name)
 		if err != nil {
 			return catalogResolution{}, err
 		}
@@ -185,17 +196,12 @@ func resolveCatalogModel(root, query string) (catalogResolution, error) {
 		"name the entry instead", query, len(hits), strings.Join(hits, ", "))
 }
 
-func resolveCatalogChip(root, query string) (catalogResolution, error) {
-	if catalogName.MatchString(query) {
-		path := filepath.Join(root, catalogHardwareSubdir, query+catalogYAMLExt)
-		if _, err := os.Stat(path); err == nil {
-			if _, err := blisschemas.LoadChip(path); err != nil {
-				return catalogResolution{}, err
-			}
-			return catalogResolution{Query: query, Identity: &query, Reason: "the catalog has hardware/" + query + catalogYAMLExt}, nil
-		}
+func resolveCatalogChip(data *load.Data, query string) catalogResolution {
+	if chip, err := data.Chip(query); err == nil {
+		return catalogResolution{Query: query, Identity: &query, Reason: "the catalog has hardware/" + query + ".yaml",
+			Packaging: packagingOf(chip)}
 	}
-	return catalogResolution{Query: query, Reason: "the catalog has no hardware entry of this name"}, nil
+	return catalogResolution{Query: query, Reason: "the catalog has no hardware entry of this name"}
 }
 
 func writeJSON(w io.Writer, v any) error {

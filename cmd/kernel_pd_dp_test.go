@@ -28,15 +28,15 @@ const pdDPScenario = "minimax-m2.5-gb200-1p1d-dp2.yaml"
 // decode rank would break the law.
 func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, numInstances, blockSizeTokens}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, numInstances = saved[4].(int), saved[5].(int), saved[6].(int)
 		blockSizeTokens = saved[7].(int64)
 	}()
-	repos := kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry}
+	repos := reposOf(pdScenarios, catalog, registry)
 	m, err := kernelmodel.Open(pdDPScenario, repos)
 	if err != nil {
 		t.Fatal(err)
@@ -48,10 +48,10 @@ func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 	if st.DataParallel != 2 {
 		t.Fatalf("fixture lost its point: dp %d", st.DataParallel)
 	}
-	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = pdDPScenario, pdScenarios, registry, m
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = pdDPScenario, pdScenarios, registry, m
 	blockSizeTokens = int64(st.BlockSize)
 	prefillInstances, decodeInstances, numInstances = 1, 1, 2 // logical, as the CLI states them
-	pools := openKernelPools(catalog)
+	pools := openKernelPools()
 	if pools == nil {
 		t.Fatal("no pools opened for a disaggregated run")
 	}

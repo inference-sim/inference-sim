@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 
 	blisvllm "github.com/inference-sim/blis-vllm"
 	"github.com/inference-sim/blis-vllm/compat/build"
@@ -37,23 +39,29 @@ import (
 // Single construction site (R4), shared by run and replay for INV-13 parity.
 func resolveKVOffloadConfig(cmd *cobra.Command) kvOffloadConfig {
 	cfg, err := build.ResolveKVOffloadConfig(kernelScenario, scenarioOffload, kvOffloadConfigPath,
-		blockSizeTokens, resolveCatalogRoot)
+		blockSizeTokens, mustRunData())
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
 	return cfg
 }
 
-// loadCatalogStorageDevices reads the catalog's storage-device table through the engine's own
-// reader, so the catalog-load gate checks the file the way a run reads it (C6).
-func loadCatalogStorageDevices(catalog string) (map[string]build.KVOffloadDevice, error) {
-	return build.LoadCatalogStorageDevices(catalog)
+// loadCatalogStorageDevices is the run's storage-device table, read by the engine from the
+// catalog in use (build.StorageDevices).
+// openEngineData opens the catalog and registry the options name, once per distinct options:
+// kernelmodel.OpenData caches one load.Data for each, so the simulator and the engine, which
+// opens its data with the same paths, read one load.Data and one selected-entry report. It is
+// the build site's, as every use of blis-vllm is.
+func openEngineData(o load.Options) (*load.Data, error) { return kernelmodel.OpenData(o) }
+
+func loadCatalogStorageDevices(data *load.Data) (map[string]build.KVOffloadDevice, error) {
+	return build.StorageDevices(data)
 }
 
 // catalogStorageDevicesPath, catalogDevicesSubdir and catalogStorageDevicesFile locate the
-// storage-device table inside a catalog clone root, for the catalog-load gate's diagnostics.
+// storage-device table inside a catalog directory, for the catalog-load gate's diagnostics.
 func catalogStorageDevicesPath(catalog string) string {
-	return build.CatalogStorageDevicesPath(catalog)
+	return filepath.Join(catalog, build.CatalogDevicesSubdir, build.CatalogStorageDevicesFile)
 }
 
 const (
@@ -110,7 +118,7 @@ const (
 func resolveAcceptance(cmd *cobra.Command, k int, method string) (build.Acceptance, bool) {
 	fl := cmd.Flags()
 	a, speculating, err := build.ResolveAcceptance(build.AcceptanceInputs{
-		Scenario: kernelScenario, Shape: scenarioShape, Registry: kernelRegistry, Hardware: gpu,
+		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
 		Flags: build.AcceptanceFlags{
 			Rate: speculativeAcceptance, Length: speculativeAcceptanceLength,
@@ -178,8 +186,8 @@ func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, tota
 // openKernelPools opens the prefill and decode pools of the run's scenario (build.OpenPools):
 // nil when no kernel is open or the run is not disaggregated, fatal when the pools cannot run.
 // Its startup warnings are logged first, a refused run's included.
-func openKernelPools(catalogRoot string) *kernelPools {
-	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Catalog: catalogRoot, Registry: kernelRegistry}
+func openKernelPools() *kernelPools {
+	repos := kernelmodel.Repos{Scenarios: kernelScenarioDir, Data: mustRunData()}
 	bp, warnings, err := build.OpenPools(kernelScenario, repos, kernelOpened != nil, runTopology())
 	for _, w := range warnings {
 		logrus.Warnf("%s", w)
@@ -205,7 +213,7 @@ func (p *kernelPools) poolOfInstance() func(sim.InstanceConfig) int {
 		return func(sim.InstanceConfig) int { return 0 }
 	}
 	indices, err := build.PoolIndices(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir,
-		Catalog: resolvedCatalogRoot, Registry: kernelRegistry})
+		Data: mustRunData()})
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -437,8 +445,8 @@ func (p *kernelPools) applyOffload(cfg kvOffloadConfig, prefill, decode *poolOve
 // routing overrides applied just before the first pool opens (as before the move).
 func adoptInputs(cmd *cobra.Command) build.AdoptInputs {
 	return build.AdoptInputs{
-		Scenario: kernelScenario, ScenariosDir: kernelScenarioDir, Registry: kernelRegistry,
-		Catalog:    resolveCatalogRoot,
+		Scenario: kernelScenario, ScenariosDir: kernelScenarioDir,
+		Data:       mustRunData(),
 		PDTopology: prefillInstances != 0 || decodeInstances != 0,
 		BeforeOpen: func(kernelmodel.Shape) error { applyRoutingOverrides(cmd); return nil },
 	}
@@ -452,8 +460,12 @@ func openFirstPool(in build.AdoptInputs, a *build.Adopted) error { return build.
 
 // openModel opens the scenario's first pool for a caller that resolves the latency model
 // without adopting the deployment (build.OpenModel).
-func openModel(catalogRoot string) (*kernelmodel.Model, error) {
-	return build.OpenModel(kernelScenario, kernelScenarioDir, catalogRoot, kernelRegistry)
+func openModel() (*kernelmodel.Model, error) {
+	data, err := runData()
+	if err != nil {
+		return nil, err
+	}
+	return build.OpenModel(kernelScenario, kernelScenarioDir, data)
 }
 
 // expertModelConfig is the engine's model configuration as the scenario's graph states it: its
@@ -827,11 +839,23 @@ func EngineReleases() []stack.Upstream {
 	return []stack.Upstream{{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit}}
 }
 
-// contractRoots are the roots the registered factory reads: the catalog and registry clone
-// roots, and the scenario file's path, which it opens itself.
-func contractRoots(catalog, registry, scenarioPath string) map[string]string {
-	return map[string]string{coreengine.RootCatalog: catalog, coreengine.RootRegistry: registry,
-		coreengine.RootScenario: scenarioPath}
+// contractRoots are the roots the registered factory reads: the catalog and registry
+// directories (empty for the embedded copy) and the scenario file's path, which it opens
+// itself. The factory opens its data through kernelmodel.OpenData with the same paths, which
+// returns the Data the simulator opened, so one Data serves both and its selected-entry report
+// covers the engine's lookups.
+//
+// The factory's roots name no overlay (blis-vllm vllmengine reads RootCatalog and RootRegistry
+// only), so with an overlay the engine would read other data than the simulator. That run is
+// refused, naming the flag, until the engine takes overlay roots.
+func contractRoots(o load.Options, scenarioPath string) (map[string]string, error) {
+	if len(o.CatalogOverlays) > 0 || len(o.RegistryOverlays) > 0 {
+		return nil, fmt.Errorf("--catalog-overlay and --registry-overlay are not supported by the engine "+
+			"this build runs (%s): its factory reads the catalog and registry directories only, so it would "+
+			"price with data other than the run's", modulePathEngine)
+	}
+	return map[string]string{coreengine.RootCatalog: o.Catalog, coreengine.RootRegistry: o.Registry,
+		coreengine.RootScenario: scenarioPath}, nil
 }
 
 // Moved from sim/cluster/resolve.go at 739a519b, when the engine's configuration left the host

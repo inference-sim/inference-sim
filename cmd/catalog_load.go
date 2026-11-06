@@ -349,8 +349,15 @@ func loadCatalogWorkloadEntries(root string) (int, []string) {
 			loaded++
 			continue
 		}
-		if _, err := readCatalogPresetWorkload(name, root); err != nil {
-			problems = append(problems, err.Error())
+		// A preset decodes through the contracts' strict loader (the same decoding blis-substrate's
+		// loader applies), then meets the bounds a run's sampler needs (presetBoundsError).
+		shape, err := blisschemas.LoadWorkload(path)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("workload preset %q at %s is not a valid preset definition: %v", name, path, err))
+			continue
+		}
+		if err := presetBoundsError(name, presetFromShape(shape)); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
 			continue
 		}
 		loaded++
@@ -388,7 +395,7 @@ func loadCatalogDeviceEntries(root string) (int, []string) {
 	if yamlErr := checkCatalogAuthoredYAML(path, data); yamlErr != nil {
 		return 0, []string{yamlErr.Error()}
 	}
-	devices, err := loadCatalogStorageDevices(root)
+	devices, err := blisschemas.ParseStorageDevices(path, data)
 	if err != nil {
 		return 0, []string{err.Error()}
 	}

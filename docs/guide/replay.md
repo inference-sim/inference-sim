@@ -9,7 +9,7 @@ deployment path as `blis run`.
 ```bash
 ./blis replay --trace-header trace.yaml --trace-data trace.csv \
   --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry
+  --scenarios testdata/kernel/aisimulate
 ```
 
 !!! note "What a header mode means"
@@ -22,9 +22,35 @@ deployment path as `blis run`.
     `mode: real` was written by `blis observe`, which v0.16.0 removed
     ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)), and is refused.
 
+## The trace format
+
+A trace is in trace format version 4, the format blis-substrate's `contracts/spec/trace`
+defines (`trace_version: 4`). The data CSV's columns are read by name: `request_id`,
+`client_id`, `tenant_id`, `slo_class`, `session_id`, `round_index`, `prefix_group`,
+`prefix_length`, `streaming`, `input_tokens`, `output_tokens`, `text_tokens`, `image_tokens`,
+`audio_tokens`, `video_tokens`, `reason_ratio`, `model`, `deadline_us`, `arrival_time_us`,
+`first_chunk_time_us`, `last_chunk_time_us` and `status`, then `slo_target_us`, `adapter`,
+`think_time_us` and `input_tokens_reset` when some row carries one. A request is injected at
+its `arrival_time_us` with a prompt of `prefix_length` plus `input_tokens` tokens.
+
+Version 3, which v0.15.0 wrote, is refused. Convert a version 3 (or 2) trace with
+
+```bash
+./blis convert trace --header old.yaml --data old.csv --trace-output new
+```
+
+Version 4 is version 3 without what only `blis observe` wrote or read: the header keys
+`created_at`, `warm_up_requests`, `workload_spec`, `server`, `network` and
+`observed_kv_metrics`, and the columns `vllm_priority`, `x_request_id`, `server_input_tokens`,
+`send_time_us`, `num_chunks`, `error_message` and `finish_reason`. A `mode: real` header
+becomes `mode: converted`. The command names each dropped field that carried a value, and
+warns for the two that v0.15.0's replay read: `server_input_tokens`, the prompt length of a
+request with no prefix group, and `send_time_us`, the injection time where it differed from
+`arrival_time_us`. A trace `blis run` wrote carries neither difference, so it replays as it did.
+
 ## `blis replay`
 
-Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of generating synthetic requests, replay loads request timing and token counts from the trace. It takes the same deployment inputs as `blis run` — `--scenario`, `--scenarios`, `--registry` and the catalog (`--catalog` or `BLIS_CATALOG`) — and builds the deployment and its kernels through the same code path.
+Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of generating synthetic requests, replay loads request timing and token counts from the trace. It takes the same deployment inputs as `blis run` — `--scenario` and `--scenarios`, and the same data flags (`--catalog` or `BLIS_CATALOG`, `--registry` or `BLIS_REGISTRY`, which replace the embedded catalog and registry) — and builds the deployment and its kernels through the same code path.
 
 ### Replay-Specific Flags
 
@@ -35,7 +61,7 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 | `--results-path` | `string` | `""` | Deprecated (use `--output`): file to write a per-request JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) |
 | `--scenario` | `string` | `""` | Scenario file name within `--scenarios` (required) |
 | `--scenarios` | `string` | `""` | Directory of scenario YAMLs (required) |
-| `--registry` | `string` | `""` | blis-registry clone root (required) |
+| `--registry` | `string` | `""` | A directory with the layout of blis-substrate's `registry/` that replaces the embedded registry; or `BLIS_REGISTRY`. Without either, the embedded registry. |
 | `--trace-output` | `string` | `""` | Export replay results as TraceV2 files (`<prefix>.yaml` + `<prefix>.csv`); header `mode: "replayed"` |
 | `--timeout` | `int` | `300` | Per-request deadline in seconds, overriding every round's trace deadline ([#2064](https://github.com/inference-sim/inference-sim/issues/2064)). Negative disables the deadline; 0 is rejected. **Applied only when explicitly set** — unset, each round keeps its own recorded `deadline_us` (round 0 and every follow-up alike), or no deadline when `deadline_us` is 0. Symmetric with `blis run --timeout`. |
 
@@ -72,13 +98,13 @@ routes with the router the scenario states, or the router's default configuratio
     ```bash
     # 9223372036854775807 is 2^63-1 — `blis run`'s own --horizon default, i.e. unlimited.
     ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-      --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+      --scenarios testdata/kernel/aisimulate \
       --rate 10 --num-requests 40 --seed 42 \
       --horizon 9223372036854775807 --trace-output traces/run1
 
     ./blis replay --trace-header traces/run1.yaml --trace-data traces/run1.csv \
       --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-      --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+      --scenarios testdata/kernel/aisimulate \
       --seed 42 --horizon 9223372036854775807
     ```
 
@@ -156,7 +182,7 @@ blis convert otel --input otel_json --trace-output corpus \
 # Replay a fixed pool of 8 concurrent sessions, 200 total (corpus duplicated to fill).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --concurrent-sessions 8 --total-sessions 200
 ```
 
@@ -210,7 +236,7 @@ blis convert weka --input traces.jsonl --trace-output corpus \
 # Replay closed-loop (or as a concurrent pool, exactly as for OTel above).
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --session-mode closed-loop
 ```
 
@@ -264,7 +290,7 @@ blis replay --agentic-scenario inferencex-agentx-mvp \
   --corpus traces.jsonl --corpus-sha256 <hex> \
   --concurrency 64 --seed 42 --benchmark-duration 900s --grace-period 30s \
   --max-context-length max_model_len \
-  --scenario <scenario.yaml> --scenarios <dir> --registry <blis-registry> \
+  --scenario <scenario.yaml> --scenarios <dir> \
   --metrics-path out.json
 ```
 
@@ -346,7 +372,7 @@ concurrency > 1:
 blis convert weka --input traces.jsonl --trace-output corpus --context-growth accumulate --drop-subagents
 blis replay --trace-header corpus.yaml --trace-data corpus.csv \
   --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --session-mode fixed-accumulate
 ```
 

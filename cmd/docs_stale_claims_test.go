@@ -219,15 +219,14 @@ func TestModelsDocScopeClaimIsBounded(t *testing.T) {
 }
 
 // TestResolveLatencyConfigSideEffects: resolveLatencyConfig's doc comment names the
-// package-level vars it mutates, and a caller relies on them afterwards -- resolvedCatalogRoot
-// is read back at the EmitOutput sites as catalog provenance (#1732). Checked as behavior (the
-// var really is set to the catalog the run read) and as documentation (the comment names it).
+// package-level vars it mutates, and a caller relies on them afterwards. Checked as behavior
+// and as documentation (the comment names them).
 func TestResolveLatencyConfigSideEffects(t *testing.T) {
 	catalogDir := setupKernelTestFixtures(t)
 	orig := captureCmdLevelVars()
-	savedResolved := resolvedCatalogRoot
-	t.Cleanup(func() { orig.restore(); resolvedCatalogRoot = savedResolved })
-	catalogPath, resolvedCatalogRoot = catalogDir, ""
+	savedData := openedData
+	t.Cleanup(func() { orig.restore(); openedData = savedData })
+	catalogPath, openedData = catalogDir, nil
 
 	cmd := &cobra.Command{}
 	adoptKernelDeployment(cmd)
@@ -235,9 +234,8 @@ func TestResolveLatencyConfigSideEffects(t *testing.T) {
 	if lr.KernelModel == nil {
 		t.Fatal("non-vacuity: resolveLatencyConfig returned no kernel latency model")
 	}
-	if resolvedCatalogRoot != catalogDir {
-		t.Errorf("resolvedCatalogRoot = %q after resolveLatencyConfig, want the catalog it read, %q",
-			resolvedCatalogRoot, catalogDir)
+	if openedData == nil || openedData.Catalog.Path != catalogDir {
+		t.Errorf("the run's data after resolveLatencyConfig is not the catalog it named, %q", catalogDir)
 	}
 	if model == "" || model != strings.ToLower(model) {
 		t.Errorf("model %q must be the scenario's model, normalized to lower case", model)
@@ -253,8 +251,7 @@ func TestResolveLatencyConfigSideEffects(t *testing.T) {
 		t.Fatal("root.go declares no resolveLatencyConfig")
 	}
 	doc := text[strings.LastIndex(text[:end], "\n\n"):end]
-	if !strings.Contains(doc, "Side effects:") || !strings.Contains(doc, "resolvedCatalogRoot") {
-		t.Errorf("resolveLatencyConfig's doc comment must name its side effects, resolvedCatalogRoot "+
-			"among them:\n%s", doc)
+	if !strings.Contains(doc, "Side effects:") || !strings.Contains(doc, "model") {
+		t.Errorf("resolveLatencyConfig's doc comment must name its side effects, model among them:\n%s", doc)
 	}
 }

@@ -42,9 +42,7 @@ import (
 	"math"
 	"os"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
-	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/tools/harness"
 	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
@@ -54,8 +52,8 @@ func main() {
 		corpora.MeasurementPath("aisimulate_e2e.json"), "")
 	scenarios := flag.String("scenarios",
 		kernelfixtures.AISimulate(), "")
-	catalog := flag.String("catalog", substratedata.MustCatalog(), "")
-	registry := flag.String("registry", substratedata.MustRegistry(), "")
+	catalog := flag.String("catalog", "", "catalog directory (empty: the embedded copy)")
+	registry := flag.String("registry", "", "registry directory (empty: the embedded copy)")
 	framework := flag.String("framework", "vllm", "")
 	settings := flag.String("engine-settings",
 		corpora.MeasurementPath("inferencex_engine_settings.json"),
@@ -84,10 +82,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	repos, err := harness.OpenRepos(*scenarios, *catalog, *registry)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	base := harness.Config{
-		Repos: kernelmodel.Repos{
-			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
-		},
+		Repos: repos, Catalog: *catalog, Registry: *registry,
 		Blis: *blis, Seed: 42, EngineSettings: eset,
 	}
 

@@ -41,22 +41,15 @@ import (
 
 const kernelLegEnv = "BLIS_KERNEL_LEG"
 
-// kernelRepos is the three artifact roots a kernel scenario resolves against: the pinned
-// kernel module's scenario fixtures and the vendored catalog and registry. A missing root
-// fails, naming the command that provides it -- never a skip, which would read as a pass.
+// kernelRepos is the three artifact roots a kernel scenario resolves against: the cost model's
+// generated fixtures (testdata/kernel/aisimulate) and the catalog and registry of the pinned
+// blis-substrate.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
-	r := defaultKernelRepos()
-	r.Scenarios = testScenariosDir(t)
-	if err := kernelmodel.RequireRepos(r); err != nil {
-		t.Fatal(err)
-	}
-	return r.Scenarios, r.Catalog, r.Registry
+	return testScenariosDir(t), testCatalogDir(), testRegistryDir()
 }
 
-// testScenariosDir is this repository's testdata/scenarios, the scenarios the tests run. The
-// latency kernel's own fixtures (blis-latency-kernel testdata/aisimulate) state vLLM 0.29.0,
-// which this build refuses (LIF-6); the ones the tests read are copied there at 0.32.0.
+// testScenariosDir is testScenarios as an absolute path.
 func testScenariosDir(t *testing.T) string {
 	t.Helper()
 	dir, err := filepath.Abs(testScenarios)
@@ -66,9 +59,10 @@ func testScenariosDir(t *testing.T) string {
 	return dir
 }
 
-// testScenarios is testScenariosDir relative to this package's directory, for a subprocess leg
-// that has no *testing.T.
-const testScenarios = "../testdata/scenarios"
+// testScenarios is the cost model's generated fixtures, relative to this package's directory,
+// for a subprocess leg that has no *testing.T. The fixtures name vLLM 0.32.0 and state only
+// what their corpus states (X19).
+const testScenarios = "../testdata/kernel/aisimulate"
 
 func runKernelLeg(t *testing.T, leg string, extra ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -217,13 +211,13 @@ func TestRunCmd_KernelBackend_RecordsCatalogProvenance(t *testing.T) {
 // aggregate differ -- the case a mix-up between them would get wrong.
 func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath,
 		catalogPath, totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen,
 		noEnablePrefixCaching, numSpeculativeTokens, speculativeMethod, model, gpu,
 		tensorParallelism, dataParallelism, enableExpertParallel, kernelOpened,
 		kernelDeploymentExperts, kernelDeploymentTopK}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		catalogPath, totalKVBlocks, blockSizeTokens = saved[3].(string), saved[4].(int64), saved[5].(int64)
 		maxNumSeqs, maxNumBatchedTokens, maxModelLen = saved[6].(int64), saved[7].(int64), saved[8].(int64)
 		noEnablePrefixCaching, numSpeculativeTokens = saved[9].(bool), saved[10].(int)
@@ -251,7 +245,7 @@ func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 			// The oracle is the scenario opened independently, not the model adoption kept:
 			// were adoption to open the wrong pool, the two would disagree.
 			independent, err := kernelmodel.Open(scenario,
-				kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+				reposOf(scenarios, catalog, registry))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -585,7 +579,7 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 		kvCPUBlocks, blockSizeTokens = saved[1].(int64), saved[2].(int64)
 	}()
 	m, err := kernelmodel.Open("gpt-oss-120b-h200-fp4-vllm-tp4.yaml",
-		kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+		reposOf(scenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -643,21 +637,21 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 // both pools' overrides hold strictly fewer blocks with the reservation than without.
 func TestPoolOverrides_TheLoRAReservationShrinksBothPools(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, loraReservedBytesForKV, numInstances}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, loraReservedBytesForKV = saved[4].(int), saved[5].(int), saved[6].(int64)
 		numInstances = saved[7].(int)
 	}()
-	kernelScenario, kernelScenarioDir, kernelRegistry = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
-	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	kernelScenario, kernelScenarioDir, registryPath = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
+	m, err := kernelmodel.Open(kernelScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
 	kernelOpened, prefillInstances, decodeInstances, numInstances = m, 3, 1, 4
-	pools := openKernelPools(catalog)
+	pools := openKernelPools()
 
 	loraReservedBytesForKV = 0
 	p0, d0 := pools.overrides()
@@ -680,7 +674,7 @@ func TestApplyKernelLoRAReservation_ShrinksThePoolByTheKernelsAnswer(t *testing.
 		totalKVBlocks, loraReservedBytesForKV, kernelScenario = saved[1].(int64), saved[2].(int64), saved[3].(string)
 	}()
 	kernelScenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
-	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(kernelScenario, reposOf(scenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -926,7 +920,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	dir := writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
 		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
-	repos := kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry}
+	repos := reposOf(dir, catalog, registry)
 	pools := &kernelPools{connector: "MultiConnector"} // a tier under P/D runs through a MultiConnector
 	for _, c := range []struct {
 		role deployment.Role
@@ -995,18 +989,18 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	orig := captureCmdLevelVars()
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, catalogPath, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, catalogPath, kernelOpened,
 		sequenceState, prefixHit, swaBoundedReplay.v, prefixCacheRecords}
 	t.Cleanup(func() {
 		orig.restore()
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		catalogPath = saved[3].(string)
 		kernelOpened, _ = saved[4].(*kernelmodel.Model)
 		sequenceState, prefixHit = saved[5].(kvSequenceState), saved[6].(kvPrefixHit)
 		swaBoundedReplay.v, _ = saved[7].(*bool)
 		prefixCacheRecords, _ = saved[8].(map[string]sim.PrefixCacheRecord)
 	})
-	m, err := kernelmodel.Open(dsparkScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(dsparkScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}

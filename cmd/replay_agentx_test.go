@@ -18,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
@@ -340,13 +341,13 @@ func TestReplayAgentX_ResultMeasuresTheProfilingWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := parseResult(t, string(stdout))
-	if r.Window.Start != windowStartExplicit {
-		t.Errorf("window.start = %q, want the explicit profiling window %q", r.Window.Start, windowStartExplicit)
+	if got := r.Frame.Phases.Measured.Start; got != result.StartProfiling {
+		t.Errorf("frame.phases.measured.start = %q, want the explicit profiling window %q", got, result.StartProfiling)
 	}
 	if want := f["measured_window_s"].(float64); want <= 0 || r.Window.DurationS != want {
 		t.Errorf("window.duration_s = %v, want the file's measured_window_s %v", r.Window.DurationS, want)
 	}
-	if r.Engine["cluster"].(map[string]any)["agentic"] == nil {
+	if r.Reports.Engine["cluster"].(map[string]any)["agentic"] == nil {
 		t.Error("the agentic replay's counts are not in engine.cluster.agentic")
 	}
 }

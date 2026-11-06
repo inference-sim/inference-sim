@@ -4,9 +4,8 @@ go 1.27.2
 
 require (
 	github.com/go-logr/logr v1.4.4
-	github.com/google/uuid v1.6.0
-	github.com/inference-sim/blis-substrate v0.0.0-20261105035832-817e83e0018b
-	github.com/inference-sim/blis-vllm v0.32.1-0.20261105040818-a8bf6ee4fca6
+	github.com/inference-sim/blis-substrate v0.0.0-20261105193227-4a3becf2d09a
+	github.com/inference-sim/blis-vllm v0.32.1-0.20261105200233-44fb7c506b6c
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
@@ -60,6 +59,7 @@ require (
 	github.com/go-zeromq/zmq4 v0.17.0 // indirect
 	github.com/google/cel-go v0.29.2 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

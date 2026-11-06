@@ -91,17 +91,16 @@ func TestReplayCmd_MoEDP_OneGroupPerInstance(t *testing.T) {
 	dir := t.TempDir()
 	header := filepath.Join(dir, "trace.yaml")
 	data := filepath.Join(dir, "trace.csv")
-	if err := os.WriteFile(header, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0o644); err != nil {
+	if err := os.WriteFile(header, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	csv := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length," +
 		"streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio," +
-		"model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us," +
-		"last_chunk_time_us,num_chunks,status,error_message,finish_reason\n"
+		"model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n"
 	const rows = 6
 	for i := 0; i < rows; i++ {
 		arrival := i * 50000
-		csv += fmt.Sprintf("%d,c1,t1,standard,,0,,0,false,64,16,64,0,0,0,0.0,,0,0,%d,%d,0,0,0,ok,,\n", i, arrival, arrival)
+		csv += fmt.Sprintf("%d,c1,t1,standard,,0,,0,false,64,16,64,0,0,0,0.0,,0,%d,0,0,ok\n", i, arrival)
 	}
 	if err := os.WriteFile(data, []byte(csv), 0o644); err != nil {
 		t.Fatal(err)

@@ -16,13 +16,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
 
 // Main runs a package's tests only when every artifact root resolves.
 func Main(m *testing.M) {
-	if err := kernelmodel.RequireRepos(corpora.DefaultRepos()); err != nil {
+	if _, err := kernelmodel.OpenData(load.Options{}); err != nil {
 		fmt.Fprintf(os.Stderr, "kernel artifact roots are not available:\n%v\n", err)
 		os.Exit(1)
 	}

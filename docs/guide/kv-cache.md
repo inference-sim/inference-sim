@@ -6,7 +6,7 @@ The examples use the canonical scenario from [Getting Started](../getting-starte
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --rate 50 --num-requests 200
 ```
 
@@ -32,7 +32,7 @@ configuration:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
-  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --scenarios examples/llm-d/scenarios \
   --num-instances 4 \
   --prefix-tokens 512 --rate 100 --num-requests 500
 ```
@@ -89,7 +89,7 @@ The legacy single CPU tier is enabled with `--kv-cpu-blocks`:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --kv-cpu-blocks 50000 \
   --kv-offload-threshold 0.9 \
   --rate 100 --num-requests 500
@@ -117,7 +117,7 @@ output is byte-identical to a build without it.
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+  --scenarios testdata/kernel/aisimulate \
   --kv-offload-config offload.yaml
 ```
 
@@ -150,7 +150,7 @@ fails **loudly** at startup — never silently ignored: `store_threshold >= 2` i
 (no faithful BLIS mapping yet).
 
 Every tier must name a `device_class` from the catalog's storage-device table
-(`<catalog>/devices/storage.yaml`, located by `--catalog` / `BLIS_CATALOG`); the kernel prices
+(`<catalog>/devices/storage.yaml` in the catalog in use: the embedded copy, or the directory `--catalog` / `BLIS_CATALOG` names); the kernel prices
 each tier transfer from that device (its `TierTime`). An explicit `read_bandwidth`,
 `write_bandwidth` or `base_latency` on a tier is refused. A catalog device's rates are O_DIRECT
 rates, so a tier with `direct_io: false` -- vLLM's buffered fallback on filesystems that reject
@@ -250,7 +250,7 @@ Preemption rates spike non-linearly once the working set exceeds the KV budget. 
 for rate in 5 10 20 40 80; do
   echo "=== rate=$rate ==="
   ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-    --scenarios <dir of scenario files> --registry $PWD/blis-registry \
+    --scenarios testdata/kernel/aisimulate \
     --rate $rate --num-requests 200 2>/dev/null \
     | grep -E "preemption_count|completed_requests"
 done

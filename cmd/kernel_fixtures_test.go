@@ -28,17 +28,17 @@ const kernelTestScenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 func setupKernelTestFixtures(t *testing.T) (catalogDir string) {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
-	savedScenario, savedDir, savedRegistry, savedOpened := kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened
+	savedScenario, savedDir, savedRegistry, savedOpened := kernelScenario, kernelScenarioDir, registryPath, kernelOpened
 	savedExperts, savedTopK := kernelDeploymentExperts, kernelDeploymentTopK
 	savedDP, savedEP, savedSpec, savedSpecMethod := dataParallelism, enableExpertParallel, numSpeculativeTokens, speculativeMethod
 	savedPrefix := noEnablePrefixCaching
 	t.Cleanup(func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = savedScenario, savedDir, savedRegistry, savedOpened
+		kernelScenario, kernelScenarioDir, registryPath, kernelOpened = savedScenario, savedDir, savedRegistry, savedOpened
 		kernelDeploymentExperts, kernelDeploymentTopK = savedExperts, savedTopK
 		dataParallelism, enableExpertParallel, numSpeculativeTokens, speculativeMethod = savedDP, savedEP, savedSpec, savedSpecMethod
 		noEnablePrefixCaching = savedPrefix
 	})
-	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = kernelTestScenario, scenarios, registry, (*kernelmodel.Model)(nil)
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = kernelTestScenario, scenarios, registry, (*kernelmodel.Model)(nil)
 	return catalog
 }
 
@@ -92,7 +92,7 @@ type kernelDeployment struct {
 func newKernelDeployment(t *testing.T, seed int64, kvOpts []cengine.KVCacheOption, batchOpts ...cengine.BatchOption) kernelDeployment {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
-	m, err := kernelmodel.Open(kernelTestScenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(kernelTestScenario, reposOf(scenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}

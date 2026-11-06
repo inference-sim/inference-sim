@@ -1,7 +1,643 @@
 {
   "kind": "Result",
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "gpt-oss-120b-h100-fp4-vllm-tp2.r30-s5-oddf182e8",
+  "engine": {
+    "kind": "vllm",
+    "version": "0.32.0"
+  },
+  "data": {
+    "catalog": {
+      "source": "path",
+      "hash": "c24d2e23ab6d286d1ab9c08a9621c053841af412cceb26000aebfe3430c7563e",
+      "combined_hash": "c24d2e23ab6d286d1ab9c08a9621c053841af412cceb26000aebfe3430c7563e"
+    },
+    "registry": {
+      "source": "path",
+      "hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d",
+      "combined_hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d"
+    },
+    "released_data": false,
+    "build": "unreleased"
+  },
+  "selected_entries": {
+    "coefficients": [
+      {
+        "set": "cost-model-attention",
+        "name": "attention_decode_floor",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_decode_floor_mla",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_decode_floor_swa",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_decode_rate",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_decode_rate_mla",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_decode_rate_swa",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_prefill_floor",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-attention",
+        "name": "attention_prefill_work_scale",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-attention.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_floor_all_gather_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_floor_all_reduce_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_floor_alltoall_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_floor_reduce_scatter_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_peak_rate_all_gather_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_peak_rate_all_reduce_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_peak_rate_alltoall_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_peak_rate_reduce_scatter_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_transition_rate_all_gather_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_transition_rate_all_reduce_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_transition_rate_alltoall_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-collectives",
+        "name": "collective_transition_rate_reduce_scatter_fp16_2rank_h100",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-collectives.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_admission_per_request",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_admission_per_token",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_completion",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_launch_eager_per_layer",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_launch_per_kernel",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_output_token",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-host-overheads",
+        "name": "host_replay_graph_per_step",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-host-overheads.yaml"
+      },
+      {
+        "set": "cost-model-memory",
+        "name": "activation_buffer_count_moe_2rank",
+        "method": "vendor_spec",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-memory.yaml"
+      },
+      {
+        "set": "cost-model-memory",
+        "name": "activation_scratch_floor_bytes",
+        "method": "vendor_spec",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-memory.yaml"
+      },
+      {
+        "set": "cost-model-memory",
+        "name": "cudagraph_capture_bytes_piecewise",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "a100-80",
+            "a100-sxm",
+            "b200",
+            "b300",
+            "gb200-nvl72",
+            "gb300",
+            "h100",
+            "h200",
+            "l40s"
+          ]
+        },
+        "file": "coefficients/cost-model-memory.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "engine_workspace_bytes",
+        "method": "vendor_spec",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "gemm_eps_max_bf16",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "gemm_eps_max_fp8",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "gemm_eps_max_w4a16_mxfp4_grouped",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "gemm_m_half_bf16",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "gemm_m_half_fp8",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "gemm_m_half_w4a16_mxfp4_grouped",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "hbm_derate",
+        "method": "vendor_spec",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "host_gather_rate_uva",
+        "method": "assumed",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "host_link_bandwidth",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "moe_routing_imbalance_median",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-primitives",
+        "name": "nccl_communicator_bytes_2rank",
+        "method": "vendor_spec",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-primitives.yaml"
+      },
+      {
+        "set": "cost-model-recurrent",
+        "name": "recurrent_decode_floor_gdn",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-recurrent.yaml"
+      },
+      {
+        "set": "cost-model-recurrent",
+        "name": "recurrent_decode_floor_kda",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-recurrent.yaml"
+      },
+      {
+        "set": "cost-model-recurrent",
+        "name": "recurrent_decode_floor_mamba2",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-recurrent.yaml"
+      },
+      {
+        "set": "cost-model-recurrent",
+        "name": "recurrent_decode_rate_gdn",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-recurrent.yaml"
+      },
+      {
+        "set": "cost-model-recurrent",
+        "name": "recurrent_decode_rate_kda",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-recurrent.yaml"
+      },
+      {
+        "set": "cost-model-recurrent",
+        "name": "recurrent_decode_rate_mamba2",
+        "method": "measured",
+        "scope": {
+          "hardware": [
+            "h100"
+          ]
+        },
+        "file": "coefficients/cost-model-recurrent.yaml"
+      }
+    ],
+    "unread_files": [
+      "acceptance/inferencex-golden-al.yaml",
+      "coefficients/cost-model-collectives-inferencex.yaml",
+      "coefficients/cost-model-fabric.yaml",
+      "routing/servingstudio-dsv41-flash.yaml"
+    ]
+  },
   "input": {
     "scenario": {
       "kind": "Scenario",
@@ -47,798 +683,699 @@
           }
         }
       ]
-    },
-    "run": {
+    }
+  },
+  "frame": {
+    "kind": "terminating",
+    "generator": {
       "load": {
         "request_rate": 30
       },
-      "num_requests": 120,
-      "seed": 5
-    }
+      "seed": 5,
+      "rng": "sha256-seeded math/rand/v2 PCG-DXSM, v1"
+    },
+    "initial_state": {
+      "caches": "empty"
+    },
+    "phases": {
+      "warmup": {
+        "rule": "none"
+      },
+      "measured": {
+        "start": "first_arrival_after_warmup",
+        "stop": "last_completion"
+      },
+      "drain": {
+        "rule": "until_complete"
+      }
+    },
+    "stop": {
+      "requests": 120
+    },
+    "acceptance": [
+      {
+        "condition": "unfinished_fraction_at_most",
+        "threshold": 1,
+        "observed": 0,
+        "met": true
+      }
+    ],
+    "metrics": [
+      "e2e_mean_ms",
+      "e2e_p50_ms",
+      "e2e_p90_ms",
+      "e2e_p95_ms",
+      "e2e_p99_ms",
+      "interactivity_mean",
+      "interactivity_p50",
+      "interactivity_p90",
+      "output_tok_s",
+      "output_tok_s_per_gpu",
+      "preemptions",
+      "request_throughput",
+      "step_interval_mean_ms",
+      "step_interval_p50_ms",
+      "step_interval_p90_ms",
+      "step_interval_p95_ms",
+      "step_interval_p99_ms",
+      "tpot_mean_ms",
+      "tpot_p50_ms",
+      "tpot_p90_ms",
+      "tpot_p99_ms",
+      "ttft_mean_ms",
+      "ttft_p50_ms",
+      "ttft_p90_ms",
+      "ttft_p95_ms",
+      "ttft_p99_ms"
+    ]
   },
   "revisions": {
-    "blis": "(devel)",
-    "blis_schemas": "v0.0.0-20261105035832-817e83e0018b",
-    "blis_latency_kernel": "v0.0.0-20261105035832-817e83e0018b",
-    "llm_d_router": "v1.0.0-blis.2.0.20261105040605-fd1830412b30",
-    "engine": {
-      "kind": "vllm",
-      "upstream_version": "0.32.0",
-      "release": "v0.32.1-0.20261105040818-a8bf6ee4fca6"
-    },
-    "catalog": {
-      "revision": "unknown"
-    },
-    "registry": {
-      "revision": "unknown"
-    }
-  },
-  "metric_defs": {
-    "e2e_mean_ms": {
-      "formula": "e2el",
-      "statistic": "mean",
-      "population": "per_request",
-      "clock": "simulated",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go request latency mean"
-    },
-    "e2e_p50_ms": {
-      "formula": "e2el",
-      "statistic": "p50",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go E2EP50Ms"
-    },
-    "e2e_p90_ms": {
-      "formula": "e2el",
-      "statistic": "p90",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go request latency p90"
-    },
-    "e2e_p95_ms": {
-      "formula": "e2el",
-      "statistic": "p95",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go request latency p95"
-    },
-    "e2e_p99_ms": {
-      "formula": "e2el",
-      "statistic": "p99",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go request latency p99"
-    },
-    "interactivity_mean": {
-      "formula": "user_tps",
-      "statistic": "mean",
-      "population": "per_request",
-      "clock": "simulated",
-      "unit": "tokens_per_s",
-      "cite": "inference-sim sim/metrics_measured.go OutputTokPerUserMean"
-    },
-    "interactivity_p50": {
-      "formula": "interactivity",
-      "statistic": "p50",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "tokens_per_s",
-      "cite": "inference-sim sim/metrics_measured.go InteractivityP50"
-    },
-    "interactivity_p90": {
-      "formula": "interactivity",
-      "statistic": "p90",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "tokens_per_s",
-      "cite": "inference-sim sim/metrics_measured.go InteractivityP90"
-    },
-    "itl_mean_ms": {
-      "formula": "tpot_excl_first",
-      "statistic": "mean",
-      "population": "per_request",
-      "clock": "simulated",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go RequestITLMeanMs"
-    },
-    "itl_p50_ms": {
-      "formula": "tpot_excl_first",
-      "statistic": "p50",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go RequestITLP50Ms"
-    },
-    "itl_p90_ms": {
-      "formula": "tpot_excl_first",
-      "statistic": "p90",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go RequestITLP90Ms"
-    },
-    "itl_p99_ms": {
-      "formula": "tpot_excl_first",
-      "statistic": "p99",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go RequestITLP99Ms"
-    },
-    "output_tok_s": {
-      "formula": "output_throughput",
-      "population": "pooled_tokens",
-      "denominator": "profiling_window",
-      "clock": "simulated",
-      "unit": "tokens_per_s",
-      "cite": "inference-sim sim/metrics_measured.go OutputThroughputTokS"
-    },
-    "output_tok_s_per_gpu": {
-      "formula": "output_throughput",
-      "population": "pooled_tokens",
-      "denominator": "per_gpu",
-      "clock": "simulated",
-      "unit": "tokens_per_s",
-      "cite": "inference-sim sim/metrics_measured.go OutputThroughputTokS over the GPUs the run's instances occupy"
-    },
-    "request_throughput": {
-      "formula": "request_throughput",
-      "population": "per_request",
-      "denominator": "profiling_window",
-      "clock": "simulated",
-      "unit": "requests_per_s",
-      "cite": "inference-sim sim/metrics_measured.go MeasuredCompletedRequests over MeasuredWindowS"
-    },
-    "ttft_mean_ms": {
-      "formula": "ttft",
-      "statistic": "mean",
-      "population": "per_request",
-      "clock": "simulated",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go TTFT mean"
-    },
-    "ttft_p50_ms": {
-      "formula": "ttft",
-      "statistic": "p50",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go TTFTP50Ms"
-    },
-    "ttft_p90_ms": {
-      "formula": "ttft",
-      "statistic": "p90",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go TTFT p90"
-    },
-    "ttft_p95_ms": {
-      "formula": "ttft",
-      "statistic": "p95",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go TTFT p95"
-    },
-    "ttft_p99_ms": {
-      "formula": "ttft",
-      "statistic": "p99",
-      "population": "per_request",
-      "clock": "simulated",
-      "percentile_method": "numpy_linear",
-      "unit": "ms",
-      "cite": "inference-sim sim/metrics_measured.go TTFT p99"
-    }
+    "simulator": "(devel)",
+    "substrate": "v0.0.0-20261105193227-4a3becf2d09a",
+    "router": "v1.0.0-blis.2.0.20261105040605-fd1830412b30",
+    "engine_module": "v0.32.1-0.20261105200233-44fb7c506b6c"
   },
   "window": {
-    "start": "first_arrival_after_warmup",
-    "stop": "last_completion",
+    "start_us": 33333,
+    "end_us": 10050822,
     "duration_s": 10.017489,
     "requests": 120
   },
   "metrics": {
-    "e2e_mean_ms": 4408.168941666667,
-    "e2e_p50_ms": 4667.361,
-    "e2e_p90_ms": 6726.5845,
-    "e2e_p95_ms": 7114.4758,
-    "e2e_p99_ms": 7607.53371,
-    "interactivity_mean": 116.61142018428755,
-    "interactivity_p50": 110.05173691587107,
-    "interactivity_p90": 100.49389216687902,
-    "itl_mean_ms": 8.786062165508836,
-    "itl_p50_ms": 9.08663532284319,
-    "itl_p90_ms": 9.950853513956961,
-    "itl_p99_ms": 10.50552593495935,
-    "output_tok_s": 5948.895975827875,
-    "output_tok_s_per_gpu": 743.6119969784844,
-    "request_throughput": 11.979049839735287,
-    "ttft_mean_ms": 84.21044166666667,
-    "ttft_p50_ms": 84.29899999999999,
-    "ttft_p90_ms": 96.8879,
-    "ttft_p95_ms": 102.28320000000001,
-    "ttft_p99_ms": 106.10955
+    "e2e_mean_ms": {
+      "value": 4408.168941666667,
+      "samples": 120
+    },
+    "e2e_p50_ms": {
+      "value": 4667.361,
+      "samples": 120
+    },
+    "e2e_p90_ms": {
+      "value": 6726.5845,
+      "samples": 120
+    },
+    "e2e_p95_ms": {
+      "value": 7114.4758,
+      "samples": 120
+    },
+    "e2e_p99_ms": {
+      "value": 7607.53371,
+      "samples": 120
+    },
+    "interactivity_mean": {
+      "value": 116.61142018428755,
+      "samples": 120
+    },
+    "interactivity_p50": {
+      "value": 110.05173691587107,
+      "samples": 120
+    },
+    "interactivity_p90": {
+      "value": 100.49389216687902,
+      "samples": 120
+    },
+    "output_tok_s": {
+      "value": 5948.895975827875,
+      "samples": 120
+    },
+    "output_tok_s_per_gpu": {
+      "value": 743.6119969784844,
+      "samples": 120
+    },
+    "preemptions": {
+      "value": 0,
+      "samples": 59473
+    },
+    "request_throughput": {
+      "value": 11.979049839735287,
+      "samples": 120
+    },
+    "step_interval_mean_ms": {
+      "value": 8.724547609839759,
+      "samples": 59473
+    },
+    "step_interval_p50_ms": {
+      "value": 8.81,
+      "samples": 59473
+    },
+    "step_interval_p90_ms": {
+      "value": 10.138,
+      "samples": 59473
+    },
+    "step_interval_p95_ms": {
+      "value": 10.337,
+      "samples": 59473
+    },
+    "step_interval_p99_ms": {
+      "value": 28.251,
+      "samples": 59473
+    },
+    "tpot_mean_ms": {
+      "value": 8.786062165508836,
+      "samples": 120
+    },
+    "tpot_p50_ms": {
+      "value": 9.08663532284319,
+      "samples": 120
+    },
+    "tpot_p90_ms": {
+      "value": 9.950853513956961,
+      "samples": 120
+    },
+    "tpot_p99_ms": {
+      "value": 10.50552593495935,
+      "samples": 120
+    },
+    "ttft_mean_ms": {
+      "value": 84.21044166666667,
+      "samples": 120
+    },
+    "ttft_p50_ms": {
+      "value": 84.29899999999999,
+      "samples": 120
+    },
+    "ttft_p90_ms": {
+      "value": 96.8879,
+      "samples": 120
+    },
+    "ttft_p95_ms": {
+      "value": 102.28320000000001,
+      "samples": 120
+    },
+    "ttft_p99_ms": {
+      "value": 106.10955,
+      "samples": 120
+    }
   },
   "requests": {
     "generated": 120,
-    "rejected": 0,
-    "injected": 120,
     "completed": 120,
-    "still_queued": 0,
-    "still_running": 0,
-    "dropped_unservable": 0,
     "timed_out": 0,
-    "routing_rejections": 0,
-    "gateway_queue_depth": 0,
-    "gateway_queue_rejected": 0,
-    "gateway_evicted": 0,
-    "gateway_expired": 0,
-    "encode_routing_rejections": 0,
+    "in_flight_at_horizon": 0,
+    "queued_at_horizon": 0,
+    "not_started": 0,
     "length_capped": 0
   },
-  "engine": {
-    "cluster": {
-      "cache_hit_rate": 0,
-      "cache_hit_rate_whole_run": 0,
-      "cpu_tier_hit_rate": 0,
-      "engine_admissions": 120,
-      "gateway_queue_delay_mean_ms": 0,
-      "gateway_queue_delay_p90_ms": 0,
-      "in_flight_requests_max": 100,
-      "in_flight_requests_mean": 52.5379751352859,
-      "kv_allocation_failures": 0,
-      "kv_capacity_tokens_per_replica": 4665488,
-      "kv_thrashing_rate": 0,
-      "measured_cancelled_requests": 0,
-      "measured_context_overflow_requests": 0,
-      "measured_failed_requests": 0,
-      "preemption_rate": 0,
-      "preemptions": 0,
-      "scheduling_delay_p99_ms": 72.08935000000001,
-      "simulated_duration_s": 10.001265,
-      "step_interval_mean_ms": 8.724547609839759,
-      "step_interval_p50_ms": 8.81,
-      "step_interval_p90_ms": 10.138,
-      "step_interval_p95_ms": 10.337,
-      "step_interval_p99_ms": 28.251,
-      "step_interval_percentile_method": "numpy_linear",
-      "total_input_tokens": 61806,
-      "total_output_tokens": 59593,
-      "whole_run": {
-        "e2e_mean_ms": 4408.945941666667,
-        "e2e_p90_ms": 6727.3615,
-        "e2e_p95_ms": 7115.2528,
-        "e2e_p99_ms": 7608.31071,
-        "responses_per_sec": 11.998482192002712,
+  "reports": {
+    "engine": {
+      "cluster": {
+        "cache_hit_rate": 0,
+        "cache_hit_rate_whole_run": 0,
+        "cpu_tier_hit_rate": 0,
+        "engine_admissions": 120,
+        "gateway_queue_delay_mean_ms": 0,
+        "gateway_queue_delay_p90_ms": 0,
+        "in_flight_requests_max": 100,
+        "in_flight_requests_mean": 52.5379751352859,
+        "kv_allocation_failures": 0,
+        "kv_capacity_tokens_per_replica": 4665488,
+        "kv_thrashing_rate": 0,
+        "measured_cancelled_requests": 0,
+        "measured_context_overflow_requests": 0,
+        "measured_failed_requests": 0,
+        "preemption_rate": 0,
+        "preemptions": 0,
+        "scheduling_delay_p99_ms": 72.08935000000001,
+        "simulated_duration_s": 10.001265,
         "step_interval_mean_ms": 8.724547609839759,
+        "step_interval_p50_ms": 8.81,
         "step_interval_p90_ms": 10.138,
         "step_interval_p95_ms": 10.337,
         "step_interval_p99_ms": 28.251,
-        "tokens_per_sec": 5958.546243900147,
-        "ttft_mean_ms": 84.21044166666667,
-        "ttft_p90_ms": 96.8879,
-        "ttft_p95_ms": 102.28320000000001,
-        "ttft_p99_ms": 106.10955
+        "step_interval_percentile_method": "numpy_linear",
+        "total_input_tokens": 61806,
+        "total_output_tokens": 59593,
+        "whole_run": {
+          "e2e_mean_ms": 4408.945941666667,
+          "e2e_p90_ms": 6727.3615,
+          "e2e_p95_ms": 7115.2528,
+          "e2e_p99_ms": 7608.31071,
+          "responses_per_sec": 11.998482192002712,
+          "step_interval_mean_ms": 8.724547609839759,
+          "step_interval_p90_ms": 10.138,
+          "step_interval_p95_ms": 10.337,
+          "step_interval_p99_ms": 28.251,
+          "tokens_per_sec": 5958.546243900147,
+          "ttft_mean_ms": 84.21044166666667,
+          "ttft_p90_ms": 96.8879,
+          "ttft_p95_ms": 102.28320000000001,
+          "ttft_p99_ms": 106.10955
+        }
+      },
+      "colocated": {
+        "prefix_cache": {
+          "layout": {},
+          "model_runner": "v2"
+        }
+      },
+      "instances": {
+        "instance_0": {
+          "completed_requests": 28,
+          "dropped_unservable": 0,
+          "e2e_mean_ms": 4536.470607142857,
+          "e2e_p90_ms": 6585.6826,
+          "e2e_p95_ms": 6802.887,
+          "e2e_p99_ms": 7080.47817,
+          "injected_requests": 28,
+          "instance_id": "instance_0",
+          "itl_mean_ms": 8.674339226057906,
+          "itl_p90_ms": 10.14,
+          "itl_p95_ms": 10.532,
+          "itl_p99_ms": 24.453,
+          "length_capped_requests": 0,
+          "preemption_count": 0,
+          "responses_per_sec": 3.1015596857499728,
+          "scheduling_delay_p99_ms": 61.905860000000004,
+          "still_queued": 0,
+          "still_running": 0,
+          "timed_out_requests": 0,
+          "tokens_per_sec": 1594.6447584305931,
+          "total_input_tokens": 13940,
+          "total_output_tokens": 14396,
+          "ttft_mean_ms": 84.51839285714286,
+          "ttft_p90_ms": 92.18599999999999,
+          "ttft_p95_ms": 92.86135,
+          "ttft_p99_ms": 95.81596,
+          "vllm_estimated_duration_s": 9.027716
+        },
+        "instance_1": {
+          "completed_requests": 31,
+          "dropped_unservable": 0,
+          "e2e_mean_ms": 4574.878225806451,
+          "e2e_p90_ms": 6939.437,
+          "e2e_p95_ms": 7129.336,
+          "e2e_p99_ms": 7469.511,
+          "injected_requests": 31,
+          "instance_id": "instance_1",
+          "itl_mean_ms": 9.07217297543814,
+          "itl_p90_ms": 10.335,
+          "itl_p95_ms": 10.338,
+          "itl_p99_ms": 28.674,
+          "length_capped_requests": 0,
+          "preemption_count": 0,
+          "responses_per_sec": 3.3379555044070703,
+          "scheduling_delay_p99_ms": 62.389399999999995,
+          "still_queued": 0,
+          "still_running": 0,
+          "timed_out_requests": 0,
+          "tokens_per_sec": 1656.0566341219594,
+          "total_input_tokens": 14736,
+          "total_output_tokens": 15380,
+          "ttft_mean_ms": 82.205,
+          "ttft_p90_ms": 93.05,
+          "ttft_p95_ms": 98.1905,
+          "ttft_p99_ms": 103.79669999999999,
+          "vllm_estimated_duration_s": 9.287122
+        },
+        "instance_2": {
+          "completed_requests": 30,
+          "dropped_unservable": 0,
+          "e2e_mean_ms": 4208.163666666667,
+          "e2e_p90_ms": 6771.313,
+          "e2e_p95_ms": 7419.565499999999,
+          "e2e_p99_ms": 7732.82625,
+          "injected_requests": 30,
+          "instance_id": "instance_2",
+          "itl_mean_ms": 8.324008547583793,
+          "itl_p90_ms": 9.727,
+          "itl_p95_ms": 9.934,
+          "itl_p99_ms": 24.225810000000017,
+          "length_capped_requests": 0,
+          "preemption_count": 0,
+          "responses_per_sec": 2.999620548000678,
+          "scheduling_delay_p99_ms": 69.73139,
+          "still_queued": 0,
+          "still_running": 0,
+          "timed_out_requests": 0,
+          "tokens_per_sec": 1488.6116906211364,
+          "total_input_tokens": 16124,
+          "total_output_tokens": 14888,
+          "ttft_mean_ms": 84.78269999999999,
+          "ttft_p90_ms": 95.3626,
+          "ttft_p95_ms": 101.59304999999998,
+          "ttft_p99_ms": 116.05134000000001,
+          "vllm_estimated_duration_s": 10.001265
+        },
+        "instance_3": {
+          "completed_requests": 31,
+          "dropped_unservable": 0,
+          "e2e_mean_ms": 4322.135516129033,
+          "e2e_p90_ms": 5988.175,
+          "e2e_p95_ms": 6264.849499999999,
+          "e2e_p99_ms": 6836.814899999999,
+          "injected_requests": 31,
+          "instance_id": "instance_3",
+          "itl_mean_ms": 8.814284601959995,
+          "itl_p90_ms": 10.132,
+          "itl_p95_ms": 10.336,
+          "itl_p99_ms": 30.57,
+          "length_capped_requests": 0,
+          "preemption_count": 0,
+          "responses_per_sec": 3.326545749232534,
+          "scheduling_delay_p99_ms": 72.38029999999999,
+          "still_queued": 0,
+          "still_running": 0,
+          "timed_out_requests": 0,
+          "tokens_per_sec": 1602.0000480739516,
+          "total_input_tokens": 17006,
+          "total_output_tokens": 14929,
+          "ttft_mean_ms": 85.38393548387097,
+          "ttft_p90_ms": 102.28,
+          "ttft_p95_ms": 102.7615,
+          "ttft_p99_ms": 104.2934,
+          "vllm_estimated_duration_s": 9.318976
+        }
       }
     },
-    "colocated": {
-      "prefix_cache": {
-        "layout": {},
-        "model_runner": "v2"
-      }
-    },
-    "frame": {
-      "acceptance": {
-        "conditions": [
-          "simulated time advanced: at least one request arrived, or a horizon bounds the run"
+    "router": {
+      "hol_blocking_events": 0,
+      "priority_inversions": 0,
+      "requirements": {
+        "Disaggregates": false,
+        "Extractors": [
+          {
+            "DefaultEngine": "vllm",
+            "EngineLabelKey": "llm-d.ai/engine-type",
+            "Engines": null,
+            "Implicit": true,
+            "Name": "core-metrics-extractor"
+          }
         ],
-        "unfinished_at_stop": 0
-      },
-      "generator": {
-        "kind": "distribution",
-        "random": "sha256-seeded math/rand/v2 PCG-DXSM, v1",
-        "seed": 5
-      },
-      "initial_state": {
-        "caches": "empty"
-      },
-      "metrics": [
-        "e2e_mean_ms",
-        "e2e_p50_ms",
-        "e2e_p90_ms",
-        "e2e_p95_ms",
-        "e2e_p99_ms",
-        "interactivity_mean",
-        "interactivity_p50",
-        "interactivity_p90",
-        "itl_mean_ms",
-        "itl_p50_ms",
-        "itl_p90_ms",
-        "itl_p99_ms",
-        "output_tok_s",
-        "output_tok_s_per_gpu",
-        "request_throughput",
-        "ttft_mean_ms",
-        "ttft_p50_ms",
-        "ttft_p90_ms",
-        "ttft_p95_ms",
-        "ttft_p99_ms"
-      ],
-      "phases": {
-        "drain": "every request runs to its end: the run stops when no event remains",
-        "measured_start": "first_arrival_after_warmup",
-        "measured_stop": "last_completion",
-        "warmup": "none"
-      },
-      "stop_rule": {
-        "num_requests": 120,
-        "rule": "request_count"
+        "InertFlags": null,
+        "MetricFlags": null,
+        "MetricsSources": null,
+        "PrefixIndexes": null,
+        "Topology": {
+          "Extractors": null,
+          "Requested": false
+        }
       }
     },
-    "instances": {
-      "instance_0": {
-        "completed_requests": 28,
-        "dropped_unservable": 0,
-        "e2e_mean_ms": 4536.470607142857,
-        "e2e_p90_ms": 6585.6826,
-        "e2e_p95_ms": 6802.887,
-        "e2e_p99_ms": 7080.47817,
-        "injected_requests": 28,
-        "instance_id": "instance_0",
-        "itl_mean_ms": 8.674339226057906,
-        "itl_p90_ms": 10.14,
-        "itl_p95_ms": 10.532,
-        "itl_p99_ms": 24.453,
-        "length_capped_requests": 0,
-        "preemption_count": 0,
-        "responses_per_sec": 3.1015596857499728,
-        "scheduling_delay_p99_ms": 61.905860000000004,
-        "still_queued": 0,
-        "still_running": 0,
-        "timed_out_requests": 0,
-        "tokens_per_sec": 1594.6447584305931,
-        "total_input_tokens": 13940,
-        "total_output_tokens": 14396,
-        "ttft_mean_ms": 84.51839285714286,
-        "ttft_p90_ms": 92.18599999999999,
-        "ttft_p95_ms": 92.86135,
-        "ttft_p99_ms": 95.81596,
-        "vllm_estimated_duration_s": 9.027716
-      },
-      "instance_1": {
-        "completed_requests": 31,
-        "dropped_unservable": 0,
-        "e2e_mean_ms": 4574.878225806451,
-        "e2e_p90_ms": 6939.437,
-        "e2e_p95_ms": 7129.336,
-        "e2e_p99_ms": 7469.511,
-        "injected_requests": 31,
-        "instance_id": "instance_1",
-        "itl_mean_ms": 9.07217297543814,
-        "itl_p90_ms": 10.335,
-        "itl_p95_ms": 10.338,
-        "itl_p99_ms": 28.674,
-        "length_capped_requests": 0,
-        "preemption_count": 0,
-        "responses_per_sec": 3.3379555044070703,
-        "scheduling_delay_p99_ms": 62.389399999999995,
-        "still_queued": 0,
-        "still_running": 0,
-        "timed_out_requests": 0,
-        "tokens_per_sec": 1656.0566341219594,
-        "total_input_tokens": 14736,
-        "total_output_tokens": 15380,
-        "ttft_mean_ms": 82.205,
-        "ttft_p90_ms": 93.05,
-        "ttft_p95_ms": 98.1905,
-        "ttft_p99_ms": 103.79669999999999,
-        "vllm_estimated_duration_s": 9.287122
-      },
-      "instance_2": {
-        "completed_requests": 30,
-        "dropped_unservable": 0,
-        "e2e_mean_ms": 4208.163666666667,
-        "e2e_p90_ms": 6771.313,
-        "e2e_p95_ms": 7419.565499999999,
-        "e2e_p99_ms": 7732.82625,
-        "injected_requests": 30,
-        "instance_id": "instance_2",
-        "itl_mean_ms": 8.324008547583793,
-        "itl_p90_ms": 9.727,
-        "itl_p95_ms": 9.934,
-        "itl_p99_ms": 24.225810000000017,
-        "length_capped_requests": 0,
-        "preemption_count": 0,
-        "responses_per_sec": 2.999620548000678,
-        "scheduling_delay_p99_ms": 69.73139,
-        "still_queued": 0,
-        "still_running": 0,
-        "timed_out_requests": 0,
-        "tokens_per_sec": 1488.6116906211364,
-        "total_input_tokens": 16124,
-        "total_output_tokens": 14888,
-        "ttft_mean_ms": 84.78269999999999,
-        "ttft_p90_ms": 95.3626,
-        "ttft_p95_ms": 101.59304999999998,
-        "ttft_p99_ms": 116.05134000000001,
-        "vllm_estimated_duration_s": 10.001265
-      },
-      "instance_3": {
-        "completed_requests": 31,
-        "dropped_unservable": 0,
-        "e2e_mean_ms": 4322.135516129033,
-        "e2e_p90_ms": 5988.175,
-        "e2e_p95_ms": 6264.849499999999,
-        "e2e_p99_ms": 6836.814899999999,
-        "injected_requests": 31,
-        "instance_id": "instance_3",
-        "itl_mean_ms": 8.814284601959995,
-        "itl_p90_ms": 10.132,
-        "itl_p95_ms": 10.336,
-        "itl_p99_ms": 30.57,
-        "length_capped_requests": 0,
-        "preemption_count": 0,
-        "responses_per_sec": 3.326545749232534,
-        "scheduling_delay_p99_ms": 72.38029999999999,
-        "still_queued": 0,
-        "still_running": 0,
-        "timed_out_requests": 0,
-        "tokens_per_sec": 1602.0000480739516,
-        "total_input_tokens": 17006,
-        "total_output_tokens": 14929,
-        "ttft_mean_ms": 85.38393548387097,
-        "ttft_p90_ms": 102.28,
-        "ttft_p95_ms": 102.7615,
-        "ttft_p99_ms": 104.2934,
-        "vllm_estimated_duration_s": 9.318976
+    "kernel": {
+      "colocated": {
+        "assumptions": [
+          {
+            "Method": "assumed",
+            "Name": "max_cudagraph_capture_size",
+            "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
+            "Set": "blis-latency-kernel"
+          },
+          {
+            "Method": "assumed",
+            "Name": "engine_version",
+            "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
+            "Set": "blis-latency-kernel"
+          }
+        ],
+        "evidence_source": "kernel",
+        "evidenced": 119,
+        "fallback_or_assumed": [
+          {
+            "Method": "assumed",
+            "Name": "attention_decode_floor_mla",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-attention"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_all_gather_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_all_gather_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_all_reduce_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_all_reduce_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_alltoall_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_alltoall_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_reduce_scatter_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_floor_reduce_scatter_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_all_gather_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_all_gather_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_all_reduce_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_all_reduce_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_alltoall_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_alltoall_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_reduce_scatter_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_peak_rate_reduce_scatter_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_all_gather_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_all_gather_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_all_reduce_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_all_reduce_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_alltoall_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_alltoall_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_reduce_scatter_fp16_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "collective_transition_rate_reduce_scatter_int8_16rank_h100",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-collectives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "cudagraph_capture_bytes_full",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-memory"
+          },
+          {
+            "Method": "assumed",
+            "Name": "cudagraph_capture_bytes_full_and_piecewise",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-memory"
+          },
+          {
+            "Method": "assumed",
+            "Name": "cudagraph_capture_bytes_full_decode_only",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-memory"
+          },
+          {
+            "Method": "assumed",
+            "Name": "cudagraph_capture_bytes_piecewise",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-memory"
+          },
+          {
+            "Method": "assumed",
+            "Name": "gemm_eps_max_w8a16_mxfp8",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-primitives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "gemm_m_half_w8a16_mxfp8",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-primitives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_admission_per_request",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_admission_per_token",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_completion",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_gather_rate_uva",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-primitives"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_launch_eager_per_layer",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_launch_per_kernel",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_output_token",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          },
+          {
+            "Method": "assumed",
+            "Name": "host_replay_graph_per_step",
+            "Scope": "hardware: h100",
+            "Set": "cost-model-host-overheads"
+          }
+        ],
+        "method_counts": {
+          "assumed": 41,
+          "measured": 105,
+          "not_charged": 1,
+          "vendor_spec": 14
+        },
+        "routing": {
+          "reason": "no expert parallelism",
+          "source_layer": "default"
+        },
+        "skipped_rule_findings": [
+          {
+            "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.32.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
+            "rule": "quantization-known",
+            "severity": "warning"
+          }
+        ],
+        "skipped_rules": [
+          "all2all-backend-known",
+          "allreduce-backend-known",
+          "cache-record-dtypes-known",
+          "connector-known",
+          "cp-kv-cache-interleave-fits-block",
+          "cudagraph-capture-sizes",
+          "custom-allreduce-reachable",
+          "data-parallel-load-balancing",
+          "dbo-thresholds-at-least-microbatches",
+          "dbo-thresholds-stated-when-enabled",
+          "dcp-comm-backend-known",
+          "dcp-divides-tp",
+          "engram-config-valid",
+          "engram-excludes-dbo",
+          "engram-residency-default",
+          "enum-values-known",
+          "eviction-policy-known",
+          "expert-divisibility-under-eplb",
+          "expert-imbalance-without-eplb",
+          "long-prefill-threshold-within-max-model-len",
+          "mamba-cache-mode-matches-model",
+          "max-model-len-within-context-window",
+          "mla-prefill-backend-known",
+          "model-sequence-parallel-collectives",
+          "moe-ep-backend-binds-passthrough",
+          "moonep-requirements",
+          "offload-spec-known",
+          "quantization-known",
+          "sequence-parallel-architecture-known",
+          "sequence-parallel-moe-implied"
+        ],
+        "total": 161
       }
-    }
-  },
-  "router": {
-    "hol_blocking_events": 0,
-    "priority_inversions": 0,
-    "requirements": {
-      "Disaggregates": false,
-      "Extractors": [
-        {
-          "DefaultEngine": "vllm",
-          "EngineLabelKey": "llm-d.ai/engine-type",
-          "Engines": null,
-          "Implicit": true,
-          "Name": "core-metrics-extractor"
-        }
-      ],
-      "InertFlags": null,
-      "MetricFlags": null,
-      "MetricsSources": null,
-      "PrefixIndexes": null,
-      "Topology": {
-        "Extractors": null,
-        "Requested": false
-      }
-    }
-  },
-  "kernel": {
-    "colocated": {
-      "assumptions": [
-        {
-          "Method": "assumed",
-          "Name": "max_cudagraph_capture_size",
-          "Scope": "512: vLLM v0.31.0's default, min(max_num_seqs x decode_query_len x 2, 512) (VllmConfig._set_cudagraph_sizes, vllm/config/vllm.py:2442-2460), as the deployment states neither max_cudagraph_capture_size nor cudagraph_capture_sizes; a step above it runs with no graph",
-          "Set": "blis-latency-kernel"
-        },
-        {
-          "Method": "assumed",
-          "Name": "engine_version",
-          "Scope": "0.31.0: the scenario declares vLLM 0.32.0 and its rules pack is that release's, but the engine behaviour this kernel encodes -- backend selection, defaults, refusals -- is v0.31.0's (README, Sources of truth)",
-          "Set": "blis-latency-kernel"
-        }
-      ],
-      "evidence_source": "kernel",
-      "evidenced": 119,
-      "fallback_or_assumed": [
-        {
-          "Method": "assumed",
-          "Name": "attention_decode_floor_mla",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-attention"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_all_gather_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_all_gather_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_all_reduce_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_all_reduce_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_alltoall_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_alltoall_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_reduce_scatter_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_floor_reduce_scatter_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_all_gather_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_all_gather_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_all_reduce_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_all_reduce_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_alltoall_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_alltoall_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_reduce_scatter_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_peak_rate_reduce_scatter_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_all_gather_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_all_gather_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_all_reduce_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_all_reduce_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_alltoall_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_alltoall_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_reduce_scatter_fp16_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "collective_transition_rate_reduce_scatter_int8_16rank_h100",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-collectives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "cudagraph_capture_bytes_full",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-memory"
-        },
-        {
-          "Method": "assumed",
-          "Name": "cudagraph_capture_bytes_full_and_piecewise",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-memory"
-        },
-        {
-          "Method": "assumed",
-          "Name": "cudagraph_capture_bytes_full_decode_only",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-memory"
-        },
-        {
-          "Method": "assumed",
-          "Name": "cudagraph_capture_bytes_piecewise",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-memory"
-        },
-        {
-          "Method": "assumed",
-          "Name": "gemm_eps_max_w8a16_mxfp8",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-primitives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "gemm_m_half_w8a16_mxfp8",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-primitives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_admission_per_request",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_admission_per_token",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_completion",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_gather_rate_uva",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-primitives"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_launch_eager_per_layer",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_launch_per_kernel",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_output_token",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        },
-        {
-          "Method": "assumed",
-          "Name": "host_replay_graph_per_step",
-          "Scope": "hardware: h100",
-          "Set": "cost-model-host-overheads"
-        }
-      ],
-      "method_counts": {
-        "assumed": 41,
-        "measured": 105,
-        "not_charged": 1,
-        "vendor_spec": 14
-      },
-      "routing": {
-        "reason": "no expert parallelism",
-        "source_layer": "default"
-      },
-      "skipped_rule_findings": [
-        {
-          "message": "pools[0].engine.quantization: \"nvfp4\" is not an in-tree method of engine 0.32.0; if it is an out-of-tree method this is expected, otherwise check the spelling. In-tree methods are [auto_awq auto_gptq awq awq_marlin compressed-tensors deepseek_v4_fp8 experts_int8 fbgemm_fp8 fp8 fp8_per_block fp8_per_channel fp8_per_tensor fp_quant gpt_oss_mxfp4 gptq gptq_marlin humming inc int8_per_channel_weight_only modelopt modelopt_fp4 modelopt_mixed modelopt_mxfp8 moe_wna16 mxfp4 mxfp8 nvfp4_per_token online quark torchao]",
-          "rule": "quantization-known",
-          "severity": "warning"
-        }
-      ],
-      "skipped_rules": [
-        "all2all-backend-known",
-        "allreduce-backend-known",
-        "cache-record-dtypes-known",
-        "connector-known",
-        "cp-kv-cache-interleave-fits-block",
-        "cudagraph-capture-sizes",
-        "custom-allreduce-reachable",
-        "data-parallel-load-balancing",
-        "dbo-thresholds-at-least-microbatches",
-        "dbo-thresholds-stated-when-enabled",
-        "dcp-comm-backend-known",
-        "dcp-divides-tp",
-        "engram-config-valid",
-        "engram-excludes-dbo",
-        "engram-residency-default",
-        "enum-values-known",
-        "eviction-policy-known",
-        "expert-divisibility-under-eplb",
-        "expert-imbalance-without-eplb",
-        "long-prefill-threshold-within-max-model-len",
-        "mamba-cache-mode-matches-model",
-        "max-model-len-within-context-window",
-        "mla-prefill-backend-known",
-        "model-sequence-parallel-collectives",
-        "moe-ep-backend-binds-passthrough",
-        "moonep-requirements",
-        "offload-spec-known",
-        "quantization-known",
-        "sequence-parallel-architecture-known",
-        "sequence-parallel-moe-implied"
-      ],
-      "total": 161
     }
   },
   "overrides": [

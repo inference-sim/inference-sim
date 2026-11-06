@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -64,14 +65,17 @@ func TestMetricsPath_DSparkRequestITLIsTheStepIntervalOverTheAcceptedLength(t *t
 			t.Errorf("--metrics-path file lacks contract key %q", key)
 		}
 	}
-	if got, want := metric(t, stdout, "itl_p90_ms"), file["request_itl_p90_ms"].(float64); got != want {
-		t.Errorf("the Result's itl_p90_ms = %v, want the per-token request_itl_p90_ms %v", got, want)
+	if got, want := metric(t, stdout, "tpot_p90_ms"), file["request_itl_p90_ms"].(float64); got != want {
+		t.Errorf("the Result's tpot_p90_ms = %v, want the per-token request_itl_p90_ms %v", got, want)
 	}
 	if got, want := resultNum(t, stdout, "engine.cluster.step_interval_p90_ms"), file["step_interval_p90_ms"].(float64); got != want {
 		t.Errorf("the Result's engine step_interval_p90_ms = %v, want the file's %v", got, want)
 	}
-	if def := parseResult(t, stdout).MetricDefs["itl_p90_ms"]; def.Formula != "tpot_excl_first" {
-		t.Errorf("itl_p90_ms is defined as %q, want tpot_excl_first (per token)", def.Formula)
+	if def, ok := metrics.Lookup("tpot_p90_ms"); !ok || def.Formula != metrics.FormulaTPOT {
+		t.Errorf("tpot_p90_ms is defined as %+v, want the registry's per-request tpot", def)
+	}
+	if _, ok := parseResult(t, stdout).Metrics["itl_p90_ms"]; ok {
+		t.Error("the Result reports itl_p90_ms: the registry's itl pools every token gap, which BLIS does not compute")
 	}
 	if got := file["measured_completed_requests"].(float64); got != 40 {
 		t.Fatalf("%v of 40 requests completed in the measured window; the comparison would be vacuous", got)
@@ -170,7 +174,7 @@ func TestKernelProvenance_IsEmptyNotAbsentWithoutAKernel(t *testing.T) {
 // by vLLM v0.31.0's default (a replay window), and off by the flag (the window group instead).
 func TestMetricsPath_PrefixCacheIsTheModelsResolution(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	m, err := kernelmodel.Open(dsparkScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(dsparkScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
