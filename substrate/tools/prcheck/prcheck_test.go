@@ -582,7 +582,7 @@ func TestLicenceFiles(t *testing.T) {
 // every other finding fails; an expired or malformed file defers nothing.
 func TestApplyDeferral(t *testing.T) {
 	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const file = "issue: inference-sim/blis-substrate#12\nexpires: 2026-12-05\nreason: a person signs before merge\n"
+	const file = "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: a person signs before merge\n"
 	findings := []string{
 		"abc123abc123: the commit is not signed (X20)",
 		"abc123abc123: no Signed-off-by line; the person who takes responsibility for the commit adds the DCO sign-off (X20)",
@@ -623,11 +623,23 @@ func TestApplyDeferral(t *testing.T) {
 	if len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "expired on 2026-12-05") {
 		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
 	}
-	fail, _ = ApplyDeferral([]byte("issue: nonsense\nexpires: 2026-12-05\nreason: x\n"), day("2026-11-05"), findings)
+	long := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-06\nreason: x\n"
+	if fail, deferred = ApplyDeferral([]byte(long), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "more than 30 days after added") {
+		t.Fatalf("31 days: fail=%v deferred=%v", fail, deferred)
+	}
+	far := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2099-01-01\nreason: x\n"
+	if fail, deferred = ApplyDeferral([]byte(far), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 {
+		t.Fatalf("2099: fail=%v deferred=%v", fail, deferred)
+	}
+	future := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-06\nexpires: 2026-12-05\nreason: x\n"
+	if fail, deferred = ApplyDeferral([]byte(future), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "in the future") {
+		t.Fatalf("added in the future: fail=%v deferred=%v", fail, deferred)
+	}
+	fail, _ = ApplyDeferral([]byte("issue: nonsense\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: x\n"), day("2026-11-05"), findings)
 	if len(fail) != 4 || !strings.Contains(fail[3], "owning issue") {
 		t.Fatalf("bad issue: %v", fail)
 	}
-	fail, _ = ApplyDeferral([]byte("issue: inference-sim/blis-substrate#12\nexpires: 2026-12-05\nreason: x\nextra: y\n"), day("2026-11-05"), findings)
+	fail, _ = ApplyDeferral([]byte("issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: x\nextra: y\n"), day("2026-11-05"), findings)
 	if len(fail) != 4 || !strings.Contains(fail[3], "x20-deferral.yaml") {
 		t.Fatalf("unknown key: %v", fail)
 	}

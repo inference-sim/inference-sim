@@ -19,7 +19,8 @@ import (
 // repository reads from the substrate commit its shared workflow calls:
 //
 //	issue: inference-sim/blis-substrate#12   # the issue that owns the work
-//	expires: 2026-12-05                       # at most 30 days after the file was added
+//	added: 2026-11-05                         # the day the file was added; not in the future
+//	expires: 2026-12-05                       # at most 30 days after added (plan §3.3)
 //	reason: one line
 //
 // After the date the findings fail again, and so does the check itself, until the file is
@@ -28,9 +29,13 @@ import (
 // Deferral is the deferral file.
 type Deferral struct {
 	Issue   string `yaml:"issue"`
+	Added   string `yaml:"added"`
 	Expires string `yaml:"expires"`
 	Reason  string `yaml:"reason"`
 }
+
+// maxDeferral is the longest a deferral may last, counted from the day it was added.
+const maxDeferral = 30 * 24 * time.Hour
 
 // deferrable reports whether a commit-policy finding is one the deferral covers.
 func deferrable(finding string) bool {
@@ -58,11 +63,22 @@ func ApplyDeferral(src []byte, today time.Time, findings []string) (fail, deferr
 	if strings.TrimSpace(d.Reason) == "" {
 		bad = append(bad, "x20-deferral.yaml: needs a reason")
 	}
+	added, aerr := time.Parse("2006-01-02", d.Added)
+	if aerr != nil {
+		bad = append(bad, fmt.Sprintf("x20-deferral.yaml: added %q is not a date YYYY-MM-DD", d.Added))
+	} else if added.After(today) {
+		bad = append(bad, fmt.Sprintf("x20-deferral.yaml: added %s is in the future", d.Added))
+	}
 	exp, err := time.Parse("2006-01-02", d.Expires)
 	if err != nil {
 		bad = append(bad, fmt.Sprintf("x20-deferral.yaml: expires %q is not a date YYYY-MM-DD", d.Expires))
-	} else if !today.Before(exp) {
-		bad = append(bad, fmt.Sprintf("x20-deferral.yaml: expired on %s; sign and sign off the commits, or renew it with a reason (X20)", d.Expires))
+	} else {
+		if aerr == nil && exp.Sub(added) > maxDeferral {
+			bad = append(bad, fmt.Sprintf("x20-deferral.yaml: expires %s is more than 30 days after added %s (plan §3.3)", d.Expires, d.Added))
+		}
+		if !today.Before(exp) {
+			bad = append(bad, fmt.Sprintf("x20-deferral.yaml: expired on %s; sign and sign off the commits, or renew it with a reason (X20)", d.Expires))
+		}
 	}
 	if len(bad) > 0 {
 		return append(append([]string{}, findings...), bad...), nil
