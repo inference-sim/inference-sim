@@ -51,6 +51,7 @@ __pycache__/*
 data/
 *.txt
 !testdata/bytegate/cases.txt
+!.github/docs-requirements.txt
 
 # binaries
 #
