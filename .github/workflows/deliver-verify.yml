@@ -136,7 +136,7 @@ jobs:
     steps:
       - name: Check that a review-triggered run came from a collaborator
         id: check
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const reviewEvent = context.eventName === 'pull_request_review'
@@ -413,7 +413,7 @@ jobs:
       # .archon-version always come from trusted code" TRUE for every trigger — including the review
       # events, whose implicit ref is the PR MERGE tree. The author gate below runs its script from
       # this trusted root, and it runs BEFORE the CI dispatch and the agent.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -493,7 +493,7 @@ jobs:
       # its `go` build/test tool from both the implementation map and the advertised schema, and
       # the worktree is removed in an always-run cleanup. Go is still installed here, but only to
       # build archon.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           go-version: '1.26'   # archon's own requirement; matches archon.yml
@@ -881,7 +881,7 @@ jobs:
       # marker reader below still runs and reports MISSING, which is what the gate consumes.
       - name: Review the PR
         if: steps.paused.outputs.paused == 'false' && steps.mergehint.outputs.state != 'conflicting'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           CLAUDE_CODE_DISABLE_THINKING: "1"

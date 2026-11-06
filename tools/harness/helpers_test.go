@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,7 +45,9 @@ func testBlis(t testing.TB) string {
 			blisErr = err
 			return
 		}
-		dir := filepath.Join(cache, "inference-sim", "harness-test")
+		// Keyed by checkout: two checkouts testing at once must not replace each other's binary.
+		sum := sha256.Sum256([]byte(root))
+		dir := filepath.Join(cache, "inference-sim", "harness-test", hex.EncodeToString(sum[:6]))
 		if blisErr = os.MkdirAll(dir, 0o755); blisErr != nil {
 			return
 		}

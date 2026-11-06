@@ -141,7 +141,7 @@ jobs:
       # ref could carry a `.gate-trusted` symlink whose target actions/checkout would then prepare),
       # so the trusted checkout goes first and at root, and the delivery branch is checked out only
       # AFTER the gate passes.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -240,7 +240,7 @@ jobs:
       # ONLY AFTER the gate passes: check out the DELIVERY BRANCH the agent edits and pushes (this
       # phase is dispatched with `--ref deliver/issue-N`, so the implicit ref is that branch). It
       # overwrites the trusted checkout above at the workspace root.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           fetch-depth: 0
@@ -280,7 +280,7 @@ jobs:
 
       - name: Correct the findings
         if: steps.paused.outputs.paused == 'false'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           CLAUDE_CODE_DISABLE_THINKING: "1"

@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Check invoker permissions
         id: check
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             try {
@@ -100,7 +100,7 @@ jobs:
       - name: Resolve the target sub-issue
         id: parse
         if: steps.check.outputs.allowed == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const here = context.issue.number;
@@ -252,7 +252,7 @@ jobs:
       # ref is pinned anyway so the gate cannot be sourced from any other ref (defense in depth, and
       # provable by a test) and never runs issue/PR content. This job does no other checkout, so the
       # workspace ROOT is clean to use.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.check.outputs.allowed == 'true'
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -339,7 +339,7 @@ jobs:
             echo "paused=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           fetch-depth: 0
@@ -506,7 +506,7 @@ jobs:
 
       - name: Implement the sub-issue
         if: steps.paused.outputs.paused == 'false'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           CLAUDE_CODE_DISABLE_THINKING: "1"
@@ -687,7 +687,7 @@ jobs:
       - name: Locate the PR
         id: pr
         if: always() && steps.paused.outputs.paused == 'false'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const { data: prs } = await github.rest.pulls.list({
@@ -731,7 +731,7 @@ jobs:
       # going quiet.
       - name: Record the approver on the PR
         if: always() && steps.paused.outputs.paused == 'false' && steps.pr.outputs.number != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           PR: ${{ steps.pr.outputs.number }}
         with:
@@ -868,7 +868,7 @@ jobs:
         if: >-
           success() && steps.paused.outputs.paused == 'false' &&
           (steps.work.outputs.changed == 'false' || steps.pr.outputs.number == '')
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -929,7 +929,7 @@ jobs:
       # job (deliver-stall-sweep.yml), not this reporter's.
       - name: Report a failed implement
         if: always() && !success() && steps.paused.outputs.paused != 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
