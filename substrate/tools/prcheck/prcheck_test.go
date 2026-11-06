@@ -348,6 +348,9 @@ func TestShortHashPhrasingIndependent(t *testing.T) {
 		"blob url":         "https://github.com/o/r/blob/6d79cc8a1/x.go#L3",
 		"tree url":         "https://github.com/o/r/tree/6d79cc8a1b",
 		"commit url, end":  "(https://github.com/o/r/commit/6d79cc8)",
+		"url all letters":  "https://github.com/o/r/commit/deadbee",
+		"url all digits":   "https://github.com/o/r/commit/1234567",
+		"url upper case":   "https://github.com/o/r/commit/DEADBEE1",
 	} {
 		has(t, check(body), "is a short hash")
 		_ = name

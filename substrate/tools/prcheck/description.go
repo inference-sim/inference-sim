@@ -108,10 +108,10 @@ func CheckDescription(in DescriptionInput) []string {
 // not a commit, except the revision in a GitHub commit, blob or tree URL, which is one.
 func shortHashes(line string) []string {
 	var out []string
+	// In a commit, blob or tree URL the revision position is unambiguous, so every
+	// abbreviated revision there is refused, including one of only digits or only letters.
 	for _, m := range urlRevision.FindAllStringSubmatch(line, -1) {
-		if tok := strings.ToLower(m[1]); strings.ContainsAny(tok, "0123456789") && strings.ContainsAny(tok, "abcdef") {
-			out = append(out, tok)
-		}
+		out = append(out, strings.ToLower(m[1]))
 	}
 	masked := []byte(line)
 	for _, loc := range notCommit.FindAllStringIndex(line, -1) {
