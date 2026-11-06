@@ -578,3 +578,43 @@ func TestApplyDeferral(t *testing.T) {
 		t.Fatalf("unknown key: %v", fail)
 	}
 }
+
+// ClosedBy reads every form GitHub acts on and none it does not.
+func TestClosedByForms(t *testing.T) {
+	const repo = "o/r"
+	for _, c := range []struct {
+		name, body string
+		want       []Issue
+	}{
+		{"plain", "Closes #1\n", []Issue{{repo, 1}}},
+		{"colon", "Closes: #2\n", []Issue{{repo, 2}}},
+		{"bullet", "- Closes #3\n* Fixes #4\n+ Resolves #5\n", []Issue{{repo, 3}, {repo, 4}, {repo, 5}}},
+		{"quote", "> Closes #6\n", []Issue{{repo, 6}}},
+		{"every keyword", "close #1\ncloses #2\nclosed #3\nfix #4\nfixes #5\nfixed #6\nresolve #7\nresolves #8\nresolved #9\n",
+			[]Issue{{repo, 1}, {repo, 2}, {repo, 3}, {repo, 4}, {repo, 5}, {repo, 6}, {repo, 7}, {repo, 8}, {repo, 9}}},
+		{"list", "Closes #1, #2, #3\n", []Issue{{repo, 1}, {repo, 2}, {repo, 3}}},
+		{"list with and", "Closes #1 and #2\n", []Issue{{repo, 1}, {repo, 2}}},
+		{"parenthetical", "Closes #7 (the rest is in #9)\n", []Issue{{repo, 7}}},
+		{"cross repository", "Closes a/b#8\n", []Issue{{"a/b", 8}}},
+		{"mixed list", "Fixes #1, a/b#2\n", []Issue{{repo, 1}, {"a/b", 2}}},
+		{"comment", "<!-- Closes #7 -->\nCloses #1\n", []Issue{{repo, 1}}},
+		{"unterminated comment", "Closes #1\n<!-- Closes #7\nCloses #8\n", []Issue{{repo, 1}}},
+		{"fenced block", "```\nCloses #7\n```\nCloses #1\n", []Issue{{repo, 1}}},
+		{"tilde fence", "~~~\nCloses #7\n~~~\n", nil},
+		{"unterminated fence", "Closes #1\n```\nCloses #7\n", []Issue{{repo, 1}}},
+		{"prose is not a closing line", "This closes #7 eventually.\nsee Closes #8 in the text\n", nil},
+		{"no number", "Closes the loop\n", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := ClosedBy(repo, c.body)
+			if len(got) != len(c.want) {
+				t.Fatalf("got %+v, want %+v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("got %+v, want %+v", got, c.want)
+				}
+			}
+		})
+	}
+}
