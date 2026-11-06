@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/pflag"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 )
 
 // #1871 review B1: every flag that can change what a run simulates is recorded in the Result,
@@ -268,6 +270,48 @@ func TestResultFlags_ReportOnlyFlagsAreRecordedAndExemptFlagsChangeNothing(t *te
 		}
 		if a, c := withoutRuntime(t, tc.base), withoutRuntime(t, out); a != c {
 			t.Errorf("exempt %v changed the Result: %s", tc.flags, firstDiff(a, c))
+		}
+	}
+}
+
+// SIM-10 (#2054): every flag of run and replay is recorded in input.options or listed in
+// optionsExcluded with its reason, and a recorded file flag is pinned by sha256, never its path.
+func TestResultFlags_EveryFlagIsAnInputOptionOrExcluded(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		fs   *pflag.FlagSet
+	}{{"run", runCmd.Flags()}, {"replay", replayCmd.Flags()}} {
+		n := 0
+		c.fs.VisitAll(func(f *pflag.Flag) {
+			if why, ok := optionsExcluded[f.Name]; ok {
+				if strings.TrimSpace(why) == "" {
+					t.Errorf("%s: --%s is excluded with no reason", c.name, f.Name)
+				}
+				return
+			}
+			if optionFileFlags[f.Name] {
+				return // needs a file; TestResultFlags_AFileFlagIsPinnedBySHA256 covers the digest
+			}
+			n++
+			fs := pflag.NewFlagSet(c.name, pflag.ContinueOnError)
+			fs.AddFlag(cloneFlag(t, f))
+			v := otherValue(t, f)
+			if err := fs.Set(f.Name, v); err != nil {
+				t.Errorf("%s: --%s=%s: %v", c.name, f.Name, v, err)
+				return
+			}
+			got, err := inputOptions(c.name, fs)
+			if err != nil || len(got) != 1 || got[0].Name != f.Name || got[0].Source != result.OptionCommandLine || got[0].Value == "" {
+				t.Errorf("%s: setting --%s=%s records %+v (%v), want one option naming it", c.name, f.Name, v, got, err)
+			}
+		})
+		if n < 20 {
+			t.Fatalf("non-vacuity: %s records only %d options", c.name, n)
+		}
+	}
+	for name := range optionsExcluded {
+		if runCmd.Flags().Lookup(name) == nil && replayCmd.Flags().Lookup(name) == nil && name != "help" {
+			t.Errorf("--%s is excluded but no command has it (stale entry)", name)
 		}
 	}
 }

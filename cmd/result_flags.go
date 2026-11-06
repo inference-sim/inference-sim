@@ -23,6 +23,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+
 	sim "github.com/inference-sim/inference-sim/sim"
 )
 
@@ -35,6 +37,7 @@ var resultFlagsExempt = map[string]map[string]string{
 		"output":            "output path only",
 		"view":              "stderr rendering only",
 		"log":               "stderr verbosity only",
+		"from-result":       "the reproduction source; recorded as rerun_of",
 		"metrics-path":      "output path only (the file is an artifact)",
 		"trace-output":      "output path only (the files are artifacts)",
 		"saturation-report": "output path only",
@@ -63,6 +66,7 @@ var resultFlagsExempt = map[string]map[string]string{
 		"output":             "output path only",
 		"view":               "stderr rendering only",
 		"log":                "stderr verbosity only",
+		"from-result":        "the reproduction source; recorded as rerun_of",
 		"metrics-path":       "output path only (the file is an artifact)",
 		"results-path":       "output path only (the file is an artifact)",
 		"trace-output":       "output path only",
@@ -115,6 +119,11 @@ func snapshotResultFlags(command string, cmd *cobra.Command) {
 		logrus.Fatalf("%v", err)
 	}
 	resultFlagOverrides = o
+	opts, err := inputOptions(command, cmd.Flags())
+	if err != nil {
+		logrus.Fatalf("%v", err)
+	}
+	resultInputOptions = opts
 }
 
 // flagOverrides is one override per flag the user set to a value other than its default, that is
@@ -150,6 +159,65 @@ func flagOverrides(command string, fs *pflag.FlagSet) ([]sim.ScenarioOverride, e
 		return nil, fmt.Errorf("recording the run's inputs: %s", strings.Join(errs, "; "))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Setting < out[j].Setting })
+	return out, nil
+}
+
+// resultInputOptions are the options the command line gave, recorded in input.options.
+var resultInputOptions []result.Option
+
+// optionsExcluded are the flags input.options does not record, each with why: they only
+// choose where output goes without adding a reference to the Result, or what the Result records elsewhere in full (the scenario and the
+// deployment in input, the policy bundle in input.policy, the catalog and registry in data).
+// --trace-output is recorded: it adds an artifacts reference.
+// --from-result needs the flags the Result records here, the embedded scenario, deployment
+// and policy, and the data and file flags the caller supplies again.
+var optionsExcluded = map[string]string{
+	"help": "no effect", "format": "output encoding only", "output": "output path only",
+	"view": "stderr rendering only", "log": "stderr verbosity only",
+	"metrics-path": "output path only", "results-path": "output path only",
+	"saturation-report": "output path only; the report is not referenced by the Result",
+	"counterfactual-k":  "adds in-memory decision-trace rows; no Result byte reads them",
+	"lazy-generation":   "generates the same requests (INV-6 eager == lazy)",
+	"corpus-cache":      "a parse cache; output is identical with or without it",
+	"from-result":       "the reproduction source; recorded as rerun_of",
+	"scenario":          "input.scenario and input.deployment", "scenarios": "input.scenario and input.deployment",
+	"policy-config": "input.policy",
+	"catalog":       "data.catalog", "registry": "data.registry",
+	"catalog-overlay": "data.catalog.overlays", "registry-overlay": "data.registry.overlays",
+}
+
+// optionFileFlags are the flags whose value is a file the run reads: an option records the
+// file's sha256 and never its path (a fact of the host), and --from-result takes the file again
+// from the command line and checks it against the digest.
+var optionFileFlags = map[string]bool{
+	"workload-spec": true, "lora-config": true, "kv-offload-config": true, "defaults-filepath": true,
+	"saturation-config": true, "trace-header": true, "trace-data": true, "corpus": true,
+}
+
+// inputOptions is one option per flag the command line set that is not excluded, sorted by name
+// (SIM-10: every option that changes a byte of the Result is recorded in its inputs).
+func inputOptions(command string, fs *pflag.FlagSet) ([]result.Option, error) {
+	var out []result.Option
+	var errs []string
+	fs.Visit(func(f *pflag.Flag) {
+		if _, ok := optionsExcluded[f.Name]; ok {
+			return
+		}
+		v := f.Value.String()
+		if optionFileFlags[f.Name] && v != "" {
+			d, err := fileDigest(v)
+			if err != nil {
+				errs = append(errs, fmt.Sprintf("--%s %s: %v", f.Name, v, err))
+				return
+			}
+			v = "sha256:" + d
+		}
+		out = append(out, result.Option{Name: f.Name, Value: v, Source: result.OptionCommandLine})
+	})
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("recording the run's inputs: %s", strings.Join(errs, "; "))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 

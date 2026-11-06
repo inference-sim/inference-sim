@@ -338,6 +338,7 @@ func withoutFlagRecord(t *testing.T, stdout string) string {
 	t.Helper()
 	r := parseResult(t, stdout)
 	r.Runtime, r.Name = nil, "x"
+	r.Input.Options = nil // the command line, recorded beside the overrides
 	kept := r.Overrides[:0]
 	for _, o := range r.Overrides {
 		if !strings.HasPrefix(o.Source, "--") || o.Setting == "scheduler" || strings.HasPrefix(o.Setting, "scheduler ") ||

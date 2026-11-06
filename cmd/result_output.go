@@ -41,6 +41,7 @@ func registerResultFlags(cmd *cobra.Command) {
 		"Encoding of the Result document on stdout and in --output: json or yaml")
 	cmd.Flags().StringVar(&resultOutput, "output", "",
 		"File to write the Result document to: the same bytes stdout carries")
+	registerFromResultFlag(cmd)
 	cmd.Flags().StringVar(&resultView, "view", "",
 		"Also render the Result for a reader, to stderr: summary (the text sections run and replay printed before the Result document)")
 }

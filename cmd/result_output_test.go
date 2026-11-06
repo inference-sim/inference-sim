@@ -757,3 +757,179 @@ func TestResult_RequestRowsAreOnePerGeneratedRequest(t *testing.T) {
 		t.Errorf("rows' mean ttft %v over %d completed, the metric %v over %d", sum/float64(n), n, want, r.Requests.Completed)
 	}
 }
+
+// SIM-10, DEV-7 (#2054): a Result reproduced from its own embedded input is byte-identical to
+// the original outside runtime, except the two documented members, rerun_of and
+// revision_changes. Checked on a run and on the replay of its trace, on a real simulation.
+func TestResult_FromResultReproducesTheDocument(t *testing.T) {
+	dir := t.TempDir()
+	prefix := filepath.Join(dir, "trace")
+	origRun, stderr, err := runKernelCLI(t, resultRunArgs("--trace-output", prefix)...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	origRunFile := filepath.Join(dir, "run.json")
+	if err := os.WriteFile(origRunFile, []byte(origRun), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	origRep, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	origRepFile := filepath.Join(dir, "replay.json")
+	if err := os.WriteFile(origRepFile, []byte(origRep), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		command, orig, file string
+		extra               []string
+	}{
+		{"run", origRun, origRunFile, nil},
+		{"replay", origRep, origRepFile, []string{"--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}},
+	} {
+		t.Run(tc.command, func(t *testing.T) {
+			again, stderr, err := runKernelCLI(t, append([]string{tc.command, "--from-result", tc.file}, tc.extra...)...)
+			if err != nil {
+				t.Fatalf("%s --from-result: %v\n%s", tc.command, err, lastLines(stderr, 8))
+			}
+			want, got := parseResult(t, tc.orig), parseResult(t, again)
+			if got.RerunOf == nil || got.RerunOf.Name != want.Name || len(got.RerunOf.SHA256) != 64 {
+				t.Fatalf("rerun_of = %+v, want the original %q by digest", got.RerunOf, want.Name)
+			}
+			if len(got.RevisionChanges) != 0 {
+				t.Errorf("revision_changes = %+v, want none (same build and data)", got.RevisionChanges)
+			}
+			got.RerunOf, got.RevisionChanges, got.Runtime, want.Runtime = nil, nil, nil, nil
+			a, _ := result.Marshal(want, result.FormatJSON)
+			b, _ := result.Marshal(got, result.FormatJSON)
+			if string(a) != string(b) {
+				t.Errorf("SIM-10: the reproduced Result differs from the original\n%s", firstDiff(string(a), string(b)))
+			}
+			if len(want.RequestRows) == 0 || len(want.Input.Options) == 0 {
+				t.Errorf("non-vacuity: the original records %d rows and %d options", len(want.RequestRows), len(want.Input.Options))
+			}
+		})
+	}
+}
+
+// A reproduction refuses a file option that is not the file the Result was produced with, and
+// a Result of the other command.
+func TestResult_FromResultRefusesAChangedFileAndTheOtherCommand(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "spec.yaml")
+	body := "version: \"2\"\nseed: 3\ncategory: language\naggregate_rate: 5\nnum_requests: 10\nclients:\n  - id: c\n    rate_fraction: 1\n    arrival: {process: poisson}\n    input_distribution: {type: constant, params: {value: 64}}\n    output_distribution: {type: constant, params: {value: 8}}\n"
+	if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--workload-spec", spec)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	file := filepath.Join(dir, "r.json")
+	if err := os.WriteFile(file, []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file); err == nil || !strings.Contains(stderr, "pass the file again") {
+		t.Errorf("a missing file option was not refused: %v\n%s", err, lastLines(stderr, 3))
+	}
+	other := filepath.Join(dir, "other.yaml")
+	if err := os.WriteFile(other, []byte(strings.Replace(body, "seed: 3", "seed: 4", 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file, "--workload-spec", other); err == nil || !strings.Contains(stderr, "is not the file the Result was produced with") {
+		t.Errorf("a changed file was not refused: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if _, stderr, err := runKernelCLI(t, "run", "--from-result", file, "--workload-spec", spec); err != nil {
+		t.Errorf("the same file was refused: %v\n%s", err, lastLines(stderr, 3))
+	}
+	if _, stderr, err := runKernelCLI(t, "replay", "--from-result", file, "--workload-spec", spec); err == nil || !strings.Contains(stderr, "came from `blis run`") {
+		t.Errorf("a run Result was accepted by replay: %v\n%s", err, lastLines(stderr, 3))
+	}
+}
+
+// A reproduction on a different build lists each component whose revision changed (#2054): the
+// original is edited to claim another simulator and registry, and the reproduction names both.
+func TestResult_FromResultListsTheRevisionsThatChanged(t *testing.T) {
+	dir := t.TempDir()
+	out, stderr, err := runKernelCLI(t, resultRunArgs()...)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	r := parseResult(t, out)
+	current := r.Revisions.Simulator
+	r.Revisions.Simulator = "v0.0.1-older"
+	r.Data.Registry.Hash, r.Data.Registry.CombinedHash = strings.Repeat("a", 64), strings.Repeat("a", 64)
+	data, err := result.Marshal(r, result.FormatJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "old.json")
+	if err := os.WriteFile(file, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	again, stderr, err := runKernelCLI(t, "run", "--from-result", file)
+	if err != nil {
+		t.Fatalf("--from-result: %v\n%s", err, lastLines(stderr, 5))
+	}
+	got := map[string]result.RevisionChange{}
+	for _, c := range parseResult(t, again).RevisionChanges {
+		got[c.Component] = c
+	}
+	if c := got["simulator"]; c.From != "v0.0.1-older" || c.To != current {
+		t.Errorf("simulator change = %+v, want v0.0.1-older -> %s", c, current)
+	}
+	if c := got["registry"]; c.From != strings.Repeat("a", 64) || c.To == "" || c.To == c.From {
+		t.Errorf("registry change = %+v", c)
+	}
+	if len(got) != 2 {
+		t.Errorf("revision_changes = %+v, want exactly simulator and registry", got)
+	}
+}
+
+// DEV-7 (#2054): the reproduction also holds for a disaggregated deployment, and for a
+// data-parallel one at width 2.
+func TestResult_FromResultReproducesDisaggregatedAndDataParallelRuns(t *testing.T) {
+	for _, tc := range []struct {
+		name, dir, scenario string
+		extra               []string
+		pools               int
+	}{
+		{"p/d", pdScenarios, "glm-5-h200-3p1d-ib.yaml",
+			[]string{"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1"}, 2},
+		{"dp2", "", dpScenario, []string{"--num-instances", "2"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			args := append([]string{"run", "--scenario", tc.scenario, "--seed", "5", "--num-requests", "20", "--rate", "2"}, tc.extra...)
+			if tc.dir != "" {
+				args = append(args, "--scenarios", tc.dir)
+			}
+			orig, stderr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+			}
+			file := filepath.Join(t.TempDir(), "r.json")
+			if err := os.WriteFile(file, []byte(orig), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			again := []string{"run", "--from-result", file}
+			if tc.dir != "" {
+				again = append(again, "--scenarios", tc.dir)
+			}
+			out, stderr, err := runKernelCLI(t, again...)
+			if err != nil {
+				t.Fatalf("--from-result: %v\n%s", err, lastLines(stderr, 8))
+			}
+			want, got := parseResult(t, orig), parseResult(t, out)
+			if want.Requests.Completed == 0 || len(want.Input.Deployment.Pools) != tc.pools || got.RerunOf == nil {
+				t.Fatalf("non-vacuity: completed %d, pools %d, rerun_of %v", want.Requests.Completed, len(want.Input.Deployment.Pools), got.RerunOf)
+			}
+			got.RerunOf, got.RevisionChanges, got.Runtime, want.Runtime = nil, nil, nil, nil
+			a, _ := result.Marshal(want, result.FormatJSON)
+			b, _ := result.Marshal(got, result.FormatJSON)
+			if string(a) != string(b) {
+				t.Errorf("the reproduced Result differs\n%s", firstDiff(string(a), string(b)))
+			}
+		})
+	}
+}

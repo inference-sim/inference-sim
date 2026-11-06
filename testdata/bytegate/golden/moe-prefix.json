@@ -683,7 +683,34 @@
           }
         }
       ]
-    }
+    },
+    "options": [
+      {
+        "name": "num-instances",
+        "value": "2",
+        "source": "command_line"
+      },
+      {
+        "name": "num-requests",
+        "value": "80",
+        "source": "command_line"
+      },
+      {
+        "name": "prefix-tokens",
+        "value": "2048",
+        "source": "command_line"
+      },
+      {
+        "name": "rate",
+        "value": "20",
+        "source": "command_line"
+      },
+      {
+        "name": "seed",
+        "value": "13",
+        "source": "command_line"
+      }
+    ]
   },
   "frame": {
     "kind": "terminating",

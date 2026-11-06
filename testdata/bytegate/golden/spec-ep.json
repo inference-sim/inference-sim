@@ -671,7 +671,24 @@
           }
         }
       ]
-    }
+    },
+    "options": [
+      {
+        "name": "num-requests",
+        "value": "30",
+        "source": "command_line"
+      },
+      {
+        "name": "rate",
+        "value": "4",
+        "source": "command_line"
+      },
+      {
+        "name": "seed",
+        "value": "2",
+        "source": "command_line"
+      }
+    ]
   },
   "frame": {
     "kind": "terminating",

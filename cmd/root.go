@@ -666,6 +666,7 @@ var runCmd = &cobra.Command{
 		logrus.SetLevel(level)
 		validateRouterFlags()
 		checkResultFlags()
+		defer applyFromResult("run", cmd)()
 		snapshotResultFlags("run", cmd)
 
 		// The deployment comes from the scenario, so that resolution runs BEFORE the

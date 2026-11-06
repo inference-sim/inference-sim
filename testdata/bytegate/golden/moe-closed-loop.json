@@ -683,7 +683,29 @@
           }
         }
       ]
-    }
+    },
+    "options": [
+      {
+        "name": "concurrency",
+        "value": "16",
+        "source": "command_line"
+      },
+      {
+        "name": "num-instances",
+        "value": "2",
+        "source": "command_line"
+      },
+      {
+        "name": "num-requests",
+        "value": "64",
+        "source": "command_line"
+      },
+      {
+        "name": "seed",
+        "value": "11",
+        "source": "command_line"
+      }
+    ]
   },
   "frame": {
     "kind": "terminating",

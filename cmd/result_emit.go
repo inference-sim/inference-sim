@@ -150,6 +150,7 @@ func emitRunResult(p postRun) {
 		Deployment:     docs.Deployment,
 		Packaging:      resultPackaging(kernelOpened),
 		Policy:         policy,
+		Options:        resultInputOptions,
 		Generator:      result.Generator{Workload: p.run.Binding, Load: p.run.Load, Seed: p.frame.Seed},
 		NumRequests:    p.run.NumRequests,
 		Overrides:      runOverrides(p.extraOverrides...),
@@ -192,6 +193,7 @@ func emitRunResult(p postRun) {
 	// last so it covers every lookup the run made (VAL-6).
 	buildFrame(p.frame, r, windowRulesOf(aggregated, sum), p.numRequestsCap, cs.Horizon())
 	r.SelectedEntries = data.Report().Result()
+	markRerun(r)
 	r.Runtime = resultRuntime(p.started)
 
 	view := &summaryView{

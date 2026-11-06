@@ -688,7 +688,39 @@
       "router": {
         "endpoint_picker_config": "router/pd-always.yaml"
       }
-    }
+    },
+    "options": [
+      {
+        "name": "decode-instances",
+        "value": "1",
+        "source": "command_line"
+      },
+      {
+        "name": "num-instances",
+        "value": "4",
+        "source": "command_line"
+      },
+      {
+        "name": "num-requests",
+        "value": "30",
+        "source": "command_line"
+      },
+      {
+        "name": "prefill-instances",
+        "value": "3",
+        "source": "command_line"
+      },
+      {
+        "name": "rate",
+        "value": "4",
+        "source": "command_line"
+      },
+      {
+        "name": "seed",
+        "value": "2",
+        "source": "command_line"
+      }
+    ]
   },
   "frame": {
     "kind": "terminating",
