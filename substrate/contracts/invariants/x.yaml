@@ -1670,10 +1670,12 @@
   section: §4.1
   statement: >-
     Every verdict (a CI result, an agent's review, or a person's answer to a review question) names
-    the git tree hash of the exact tree it judged. CI verdicts are on the merge-queue tree; an agent's
-    or person's verdict is on the head tree, and is requested again when merging changes a path it
-    covers. Every job that scores, fits or checks data states the minimum number of items it must
-    process, and fails below it. No step in a required job ignores an exit code.
+    the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull
+    request, and is run again when merging changes a path it covers; an agent's or person's verdict
+    is on the head tree, and is requested again when merging changes a path it covers. BLIS
+    repositories do not use a merge queue. Every job that scores, fits or checks data states the
+    minimum number of items it must process, and fails below it. No step in a required job ignores
+    an exit code.
   scope:
   - accuracy-dashboard
   - blis-config-search
