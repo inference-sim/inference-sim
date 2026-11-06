@@ -47,12 +47,18 @@ the router's outbound HTTP (engine metrics, prompt rendering).
 | `IdleSkippable()` | Whether the host may skip background ticks over an idle period. |
 | `SetEndpoint`, `RemoveEndpoint` | The endpoints and their readiness. |
 | `Route(ctx, req, done)` | One routing decision. `done` receives a `Flight` and a `Decision`, or a `Rejection`, exactly once. |
-| `WantsKVEvents`, `IngestKVEvents`, `ClearKVEvents` | Engines' KV events, in vLLM's vocabulary (`BlockStored`, `BlockRemoved`). |
+| `WantsKVEvents`, `IngestKVEvents`, `ClearKVEvents` | Engines' KV events, in vLLM's vocabulary (`BlockStored`, `BlockRemoved`, `AllBlocksCleared`). |
 | `Stop()` | Ends every loop and goroutine the router started. |
 
 `KVIndexInspector` is an optional capability, found by type assertion, for a router that can
 report its KV-event index per endpoint and tier (`KVBlocks`). It serves conformance and
 fidelity tests; a host does not depend on it in production.
+
+`BlockStored` also carries, all optional and absent at their zero value, the adapter (`LoRAID`,
+`LoRAName`), what else entered each block's hash (`ExtraKeys`, `CacheSalt`) and the KV-cache
+group (`GroupIdx`, `SpecKind`, `SlidingWindow`); `BlockRemoved` carries `GroupIdx`. Each field's
+comment names the engine that emits it. `AllBlocksCleared{Tier}` drops one tier's blocks, or every
+tier's when `Tier` is empty.
 
 A `Flight` is a dispatched request. The host hands it the response headers
 (`ResponseHeaders`, which returns the headers after the router's handling) and the body

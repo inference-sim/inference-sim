@@ -500,7 +500,9 @@ func RejectKinds() []RejectKind {
 	return []RejectKind{NoEndpoints, TTLExpired, Saturated, ContextCancelled, Admission, Unavailable, Unclassified}
 }
 
-// KVBatch is one batch of KV events an engine published, in vLLM's vocabulary.
+// KVBatch is one batch of KV events an engine published, in vLLM's vocabulary. The optional
+// fields below are the ones vLLM and SGLang add to the same events; each is absent at its
+// zero value, so a batch built before they existed means what it always meant.
 type KVBatch struct {
 	// Timestamp is when the engine published the batch, on the runtime clock. A router
 	// that keeps vLLM's float-seconds form converts it as float64(Timestamp.UnixNano())/1e9.
@@ -508,8 +510,28 @@ type KVBatch struct {
 	Events    []KVEvent
 }
 
-// KVEvent is BlockStored or BlockRemoved.
+// KVEvent is BlockStored, BlockRemoved or AllBlocksCleared. AllBlocksCleared joined the
+// first two additively; a router built before it fails the batch that carries one with an
+// unknown-event error, and no engine built before it produces one.
 type KVEvent interface{ isKVEvent() }
+
+// KVCacheSpecKind is the kind of KV-cache group that stored blocks, in vLLM's words
+// (vllm/v1/kv_cache_interface.py, KVCacheSpecKind). "" means the engine did not say.
+type KVCacheSpecKind string
+
+// The kinds vLLM emits. A router must treat a value not listed here as unknown.
+const (
+	SpecFullAttention    KVCacheSpecKind = "full_attention"
+	SpecMLAAttention     KVCacheSpecKind = "mla_attention"
+	SpecSlidingWindow    KVCacheSpecKind = "sliding_window"
+	SpecSlidingWindowMLA KVCacheSpecKind = "sliding_window_mla"
+	SpecMamba            KVCacheSpecKind = "mamba"
+	SpecChunkedLocal     KVCacheSpecKind = "chunked_local_attention"
+	SpecSinkFull         KVCacheSpecKind = "sink_full_attention"
+	SpecEncoderOnly      KVCacheSpecKind = "encoder_only_attention"
+	SpecCross            KVCacheSpecKind = "cross_attention"
+	SpecUnknown          KVCacheSpecKind = "unknown"
+)
 
 // BlockStored is a run of blocks entering an engine's cache, each the parent of the next.
 type BlockStored struct {
@@ -523,13 +545,57 @@ type BlockStored struct {
 	BlockSize int
 	// Tier is the cache tier ("" for GPU, "cpu", ...).
 	Tier string
+
+	// LoRAID is the adapter's numeric id; nil when the blocks belong to no adapter or the
+	// engine did not say. Emitted by vLLM (lora_id, deprecated there in favour of LoRAName)
+	// and by SGLang (lora_id).
+	LoRAID *int
+	// LoRAName is the adapter's public name, which a router uses as the request's model
+	// name; "" for none. Emitted by vLLM and by SGLang (lora_name).
+	LoRAName string
+	// ExtraKeys are what the engine folded into each block's hash besides its tokens, one
+	// entry per block in Hashes, or nil for none: the adapter name (when LoRAName is set),
+	// multimodal identifiers, the cache salt, prompt-embedding digests. An entry is nil
+	// for a block with none; otherwise each element is a string or a 2-element []any of
+	// (string, int), published untagged as vLLM publishes them. Emitted by vLLM
+	// (extra_keys).
+	ExtraKeys [][]any
+	// CacheSalt is the salt of the request that stored the blocks; "" for none. Emitted by
+	// SGLang (cache_salt), which hashes the salt into every block it stores. vLLM carries
+	// its salt inside ExtraKeys instead, and an engine sets one of the two.
+	CacheSalt string
+	// GroupIdx is the KV-cache group that stored the blocks (a hybrid-memory model has
+	// several); nil for an engine with one group or one that did not say. Emitted by vLLM
+	// (group_idx).
+	GroupIdx *int
+	// SpecKind is the kind of that group; "" when not said. Emitted by vLLM
+	// (kv_cache_spec_kind).
+	SpecKind KVCacheSpecKind
+	// SlidingWindow is the group's window in tokens when SpecKind is a sliding-window kind;
+	// nil otherwise. Emitted by vLLM (kv_cache_spec_sliding_window).
+	SlidingWindow *int
 }
 
 // BlockRemoved is blocks leaving one tier of an engine's cache.
 type BlockRemoved struct {
 	Hashes []uint64
 	Tier   string
+	// GroupIdx is the KV-cache group that removed the blocks; nil when not said. Emitted
+	// by vLLM (group_idx).
+	GroupIdx *int
 }
 
-func (BlockStored) isKVEvent()  {}
-func (BlockRemoved) isKVEvent() {}
+// AllBlocksCleared is an engine dropping its cache, in the order of the events around it:
+// every block stored before it is gone, every block stored after it is new. Tier names the
+// one tier cleared ("" for every tier, which is all that vLLM and SGLang emit today: both
+// publish AllBlocksCleared with no fields). A router that cannot clear one tier clears all
+// of the endpoint's tiers; it must not leave a cleared tier's blocks indexed. The host
+// emits it for an engine that emits it; ClearKVEvents is the host's own call, made when an
+// engine's cache is gone without the engine saying so.
+type AllBlocksCleared struct {
+	Tier string
+}
+
+func (BlockStored) isKVEvent()      {}
+func (BlockRemoved) isKVEvent()     {}
+func (AllBlocksCleared) isKVEvent() {}
