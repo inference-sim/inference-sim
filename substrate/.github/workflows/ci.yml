@@ -87,6 +87,30 @@ jobs:
       # 100 MB (SUB-13).
       - run: go test -count=1 .
 
+  # golangci-lint over the Go packages (contracts, kernel, validate, tools, load, ledger and the
+  # root), with the default linters and .golangci.yml (X17). It lints changed code only: the
+  # existing code has findings that are listed in .golangci.yml, and a new one fails here. The
+  # binary is built with contracts/toolchain, since a prebuilt one is built with an older Go
+  # and refuses a newer module.
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/go-toolchain
+      - name: Build golangci-lint v2.14.0
+        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+      - name: Lint what the change touches
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # With no usable base (a manual run, a new branch), lint what the last commit changed.
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$(git merge-base "$BASE" HEAD)" ./...
+
   contracts:
     name: contracts and validators
     needs: changes
@@ -158,6 +182,21 @@ jobs:
         run: |
           python3 kernel/scripts/test_extract_inferencex_engine_settings.py
           python3 kernel/scripts/test_gen_aisimulate_scenarios.py
+
+  # The mutation check (X13) for the cost model's guarded properties: kernel/mutation_test.go
+  # breaks each in turn, in the source, with go test -overlay, and requires the test that guards
+  # it to fail. A property with a surviving mutant is a property no test pins. It is also the
+  # known-bad input of this check (X18). The sweep covers the listed properties, not every
+  # changed function; widening it is a row in that file.
+  mutants:
+    name: mutation check
+    needs: changes
+    if: needs.changes.outputs.kernel == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      - run: go test -count=1 -v -run '^TestGuardedPropertiesKillTheirMutants$' ./kernel/
 
   # Every catalog entry validates, and every model graph is what the deriver produces from
   # its vendor configuration. The validator is this repository's own, so the catalog and the
@@ -277,7 +316,7 @@ jobs:
   required:
     name: required
     if: always()
-    needs: [changes, go, contracts, kernel, catalog, ledger, registry, docs]
+    needs: [changes, go, lint, contracts, kernel, mutants, catalog, ledger, registry, docs]
     runs-on: ubuntu-latest
     steps:
       - env:

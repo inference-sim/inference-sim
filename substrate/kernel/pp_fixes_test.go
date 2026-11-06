@@ -1,14 +1,17 @@
 package latencykernel
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
 
 // A piecewise-captured stage replays its own layers' segments: one per layer plus one per
@@ -51,11 +54,14 @@ func TestAPiecewiseStageReplaysItsOwnSegments(t *testing.T) {
 func TestTheBindingStageIsOneWorkersPool(t *testing.T) {
 	const gb = 1e9
 	k := &Kernel{chip: hardware.Chip{MemoryGiB: 80}, graph: &model.Graph{}, blockSize: 16,
+		engine: enginesettings.Settings{GPUMemoryUtilization: 0.92},
 		stages: []pipelineStage{
 			{memory: stageMemory{weights: 60 * gb, kvPerToken: 1000}},
 			{memory: stageMemory{weights: 40 * gb, kvPerToken: 3000}},
 		}}
-	k.bindStage()
+	if err := k.bindStage(); err != nil {
+		t.Fatal(err)
+	}
 	k.fixed = k.computeFixedBytes(k.graph)
 	if k.ppKVStage != 1 || k.FixedBytes().Weights != 40*gb || k.SequenceVariableBytes(16) != 16*3000 {
 		t.Errorf("binding stage %d with %d weight bytes and %d KV bytes a block; vLLM's smallest pool is "+
@@ -68,7 +74,9 @@ func TestTheBindingStageIsOneWorkersPool(t *testing.T) {
 	// stage 0 leaves 3.0 GB for 3,000 B tokens (1.0M) and stage 1 39.0 GB for 3,100 B (12.6M).
 	k.stages[0].memory = stageMemory{weights: 76 * gb, kvPerToken: 3000}
 	k.stages[1].memory = stageMemory{weights: 40 * gb, kvPerToken: 3100}
-	k.bindStage()
+	if err := k.bindStage(); err != nil {
+		t.Fatal(err)
+	}
 	if k.ppKVStage != 0 {
 		t.Errorf("binding stage %d; stage 0's pool is the smaller, 1.0M tokens against 12.6M", k.ppKVStage)
 	}
@@ -120,12 +128,52 @@ func TestTheBindingStageIsReadAtTheDeploymentsUtilization(t *testing.T) {
 	for _, c := range []struct {
 		util float64
 		want int
-	}{{0, 0}, {0.92, 0}, {0.99, 1}} {
+	}{{0.92, 0}, {0.99, 1}} {
 		k.stages = stages()
 		k.engine.GPUMemoryUtilization = c.util
-		k.bindStage()
+		if err := k.bindStage(); err != nil {
+			t.Fatal(err)
+		}
 		if k.ppKVStage != c.want {
 			t.Errorf("gpu_memory_utilization %v: binding stage %d, want %d", c.util, k.ppKVStage, c.want)
+		}
+	}
+}
+
+// SIM-9, the refusal and its closest neighbour. The cost model resolves no default (SUB-6): a
+// pipeline plan whose gpu_memory_utilization is zero is refused, naming the field and saying
+// the engine resolves it; the same plan at 0.92 and at the smallest positive value is priced.
+// This is the refusal's pair: the kernel never supplies vLLM's 0.92 (it would also have been
+// wrong for SGLang's mem_fraction_static and TensorRT-LLM's free_gpu_memory_fraction).
+func TestAZeroMemoryUtilizationIsRefusedNotDefaulted(t *testing.T) {
+	const gb = 1e9
+	k := &Kernel{chip: hardware.Chip{MemoryGiB: 80}, graph: &model.Graph{}, blockSize: 16,
+		layout: resolve.Layout{PP: 2}}
+	stages := []pipelineStage{
+		{memory: stageMemory{weights: 60 * gb, kvPerToken: 1000}},
+		{memory: stageMemory{weights: 20 * gb, kvPerToken: 3000}},
+	}
+	for _, util := range []float64{0, -0.1} {
+		k.stages, k.engine.GPUMemoryUtilization = stages, util
+		err := k.bindStage()
+		if err == nil {
+			t.Fatalf("gpu_memory_utilization %v: priced; want a refusal", util)
+		}
+		for _, want := range []string{"gpu_memory_utilization", "SUB-6", "engine"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("gpu_memory_utilization %v: refusal %q does not name %q", util, err, want)
+			}
+		}
+		for _, a := range k.assumptions {
+			if a.Name == "pipeline_binding_utilization" {
+				t.Errorf("an assumption records a utilization the kernel defaulted: %+v", a)
+			}
+		}
+	}
+	for _, util := range []float64{0.92, 0.01} {
+		k.stages, k.engine.GPUMemoryUtilization = stages, util
+		if err := k.bindStage(); err != nil {
+			t.Errorf("gpu_memory_utilization %v: %v", util, err)
 		}
 	}
 }

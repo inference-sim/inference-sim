@@ -38,7 +38,9 @@ gpu_memory_utilization, block_size, enable_prefix_caching and the speculative co
 are then written as stated. gpu_memory_utilization not stated is vLLM v0.31.0's default,
 0.92 (vllm/config/cache.py:103); prefix caching and speculation not stated are left out, so
 v0.31.0's defaults apply (caching on, no drafting). A stated drafter the catalog graph does
-not describe is not written (see UNPRICED_SPECULATORS), and the file's header says so.
+not describe is not written at all (see UNPRICED_SPECULATORS): a file without its
+speculative block would load as a target-only deployment and be priced as one, so the
+generator skips the scenario and reports it (blis-latency-kernel#74).
 The rest are NOT vLLM's defaults, and the written header says how each differs: block_size
 16 is only the nominal default, which a backend may raise (vllm/platforms/interface.py),
 and a DSA sparse-MLA model is stated at 64, the size vLLM picks for it and a multiple of the
@@ -110,7 +112,9 @@ GPU_MEMORY_UTILIZATION_DEFAULT = 0.92
 
 # Stated drafters the catalog graph does not describe: the kernel refuses a deployment that
 # drafts with a method other than its graph's speculator (liftDraft, draft.go). MiniMax-M3's
-# graph states its own MTP head; EAGLE3 runs a separate draft checkpoint.
+# graph states its own MTP head; EAGLE3 runs a separate draft checkpoint. A scenario with one
+# of these is not emitted: dropping the block would leave a loadable non-speculative file for
+# a measured speculative run. Remove an entry when its drafter graph lands in the catalog.
 UNPRICED_SPECULATORS = {("minimax-m3", "eagle3")}
 
 # A KV cache dtype is not stated by the corpus. fp8 KV is the default for the fp8 and fp4
@@ -176,8 +180,21 @@ def context_length(workloads: set[str]) -> int:
     return window
 
 
+def unpriced_speculator(dep: dict) -> str | None:
+    """The reason the kernel cannot price dep's stated speculator, or None if it can."""
+    stated = dep.get("stated_config", {})
+    spec = stated.get("speculative_method")
+    if (dep["model"], spec) not in UNPRICED_SPECULATORS:
+        return None
+    return (f"{dep['model']} drafts with {spec} x{stated.get('num_speculative_tokens')}, which "
+            f"the catalog graph does not describe, so the kernel cannot price the deployment")
+
+
 def emit(dep: dict, workloads: set[str], labels: set[str],
-         catalog: Path = DEFAULT_CATALOG) -> str:
+         catalog: Path = DEFAULT_CATALOG) -> str | None:
+    """The scenario file for dep, or None when it cannot be written truthfully."""
+    if unpriced_speculator(dep) is not None:
+        return None
     par = dep["parallelism"]
     tp, ep, dp = par["tp_size"], par["moe_ep_size"], par["attention_dp_size"]
     # A dense model records moe_ep_size as null: it has no expert group, which is a different
@@ -196,7 +213,6 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
     block_size = stated.get("block_size", block_size)
     gmu = stated.get("gpu_memory_utilization", GPU_MEMORY_UTILIZATION_DEFAULT)
     spec = stated.get("speculative_method")
-    unpriced_spec = (dep["model"], spec) in UNPRICED_SPECULATORS
 
     lines = [
         f"# {dep['model']} on {dep['gpu']}, {dep['precision']} under {dep['framework']},",
@@ -217,11 +233,7 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
     ]
     if "enable_prefix_caching" in stated:
         lines.append("# enable_prefix_caching: stated by the run.")
-    if spec and unpriced_spec:
-        lines += [f"# speculative: the run drafts with {spec} x"
-                  f"{stated['num_speculative_tokens']}, NOT written: the catalog graph",
-                  "# describes no such drafter, so the kernel would refuse the file."]
-    elif spec:
+    if spec:
         lines.append("# speculative: stated by the run.")
     lines += [
         "#",
@@ -308,7 +320,7 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
     if "enable_prefix_caching" in stated:
         pc = str(stated["enable_prefix_caching"]).lower()
         lines.append(f"      enable_prefix_caching: {pc}")
-    if spec and not unpriced_spec:
+    if spec:
         lines += [
             "      speculative:",
             f"        method: {stated['speculative_method']}",
@@ -363,9 +375,16 @@ def main() -> int:
 
     os.makedirs(args.out, exist_ok=True)
     stale = []
+    skipped = []
     for name, dep in sorted(deps.items()):
         text = emit(dep, workloads[name], labels[name], args.catalog)
         path = os.path.join(args.out, name)
+        if text is None:
+            # Nothing is written; a file left from before is stale.
+            skipped.append(f"{name}: {unpriced_speculator(dep)}")
+            if args.check and os.path.exists(path):
+                stale.append(f"{name} (present, but the scenario is not emitted)")
+            continue
         if args.check:
             try:
                 with open(path) as fh:
@@ -379,15 +398,19 @@ def main() -> int:
             with open(path, "w") as fh:
                 fh.write(text)
 
+    for line in skipped:
+        print(f"skipped {line}", file=sys.stderr)
+    if skipped:
+        print(f"{len(skipped)} scenario(s) not emitted: unpriced speculator", file=sys.stderr)
     if args.check:
         if stale:
             print(f"{len(stale)} scenario(s) stale or missing:", file=sys.stderr)
             for n in stale:
                 print(f"  {n}", file=sys.stderr)
             return 1
-        print(f"checked {len(deps)} scenario(s): all current")
+        print(f"checked {len(deps) - len(skipped)} scenario(s): all current")
         return 0
-    print(f"wrote {len(deps)} scenario(s) to {args.out}")
+    print(f"wrote {len(deps) - len(skipped)} scenario(s) to {args.out}")
     return 0
 
 

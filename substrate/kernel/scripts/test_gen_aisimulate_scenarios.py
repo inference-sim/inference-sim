@@ -7,8 +7,11 @@ so deployments that differed only in it were given byte-identical predictions.
 Run: python3 scripts/test_gen_aisimulate_scenarios.py
 """
 
+import json
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -89,6 +92,38 @@ def main() -> int:
         ck("an h200 row with no node size is refused", False, "emit returned")
     except SystemExit as e:
         ck("an h200 row with no node size is refused, not given 8", "gpus_per_node" in str(e))
+
+    # #74: a speculator the kernel does not price is never written as a target-only file.
+    eagle = sweep(model="minimax-m3", stated={"speculative_method": "eagle3",
+                                              "num_speculative_tokens": 3})
+    ck("an unpriced speculator (minimax-m3 eagle3) emits no scenario",
+       emit(eagle, {"1024:1024"}, {"1k1k"}) is None)
+    priced = sweep(model="minimax-m3", stated={"speculative_method": "mtp",
+                                               "num_speculative_tokens": 3})
+    ck("a speculator the graph describes still emits, with its block",
+       "method: mtp" in (emit(priced, {"1024:1024"}, {"1k1k"}) or ""))
+    eagle["scenario"] = "minimax-m3-h200-fp8-vllm-tp4-eagle3.yaml"
+    priced["scenario"] = "minimax-m3-h200-fp8-vllm-tp4-mtp.yaml"
+    script = Path(__file__).resolve().parent / "gen_aisimulate_scenarios.py"
+    with tempfile.TemporaryDirectory() as d:
+        corpus = Path(d) / "corpus.json"
+        for s_ in (eagle, priced):
+            s_.update(workload="1024:1024", label="1k1k")
+        corpus.write_text(json.dumps({"sweeps": [eagle, priced]}))
+        out = Path(d) / "out"
+        r = subprocess.run([sys.executable, "-I", str(script), str(corpus), "-o", str(out)],
+                           capture_output=True, text=True)
+        files = sorted(p.name for p in out.glob("*.yaml"))
+        ck("the generator writes only the priced scenario", files == [priced["scenario"]],
+           str(files))
+        ck("the generator reports the skipped scenario, by name and reason",
+           r.returncode == 0 and eagle["scenario"] in r.stderr and "eagle3" in r.stderr
+           and "1 scenario(s) not emitted" in r.stderr, r.stderr.strip())
+        (out / eagle["scenario"]).write_text("stale\n")
+        r = subprocess.run([sys.executable, "-I", str(script), str(corpus), "-o", str(out),
+                            "--check"], capture_output=True, text=True)
+        ck("--check fails on a leftover file for an unemitted scenario",
+           r.returncode == 1 and eagle["scenario"] in r.stderr, r.stderr.strip())
 
     print()
     if FAILURES:
