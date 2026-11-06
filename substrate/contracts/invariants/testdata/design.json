@@ -317,7 +317,7 @@
  {
   "ID": "RTR-3",
   "Title": "",
-  "Statement": "pkg/embed.New passes the router conformance suite and changes only compatibly within an upstream major version."
+  "Statement": "pkg/embed.New passes the router conformance suite and changes only compatibly within an upstream major version, except through a contract-change review set (§12.8), which runs the API diff in accept-break mode and releases every implementer together (SUB-1)."
  },
  {
   "ID": "RTR-4",
