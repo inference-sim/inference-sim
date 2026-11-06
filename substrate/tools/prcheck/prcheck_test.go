@@ -1006,15 +1006,23 @@ func TestCheckQueueGates(t *testing.T) {
 			return strings.TrimSpace(string(out))
 		}
 		g("init", "-q", "-b", "main")
-		os.MkdirAll(filepath.Join(repo, "registry/scripts"), 0o755)
-		os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("1\n"), 0o644)
+		if err := os.MkdirAll(filepath.Join(repo, "registry/scripts"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("1\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		g("add", "-A")
 		g("commit", "-q", "-m", "one")
 		old := g("rev-parse", "HEAD")
-		os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("2\n"), 0o644)
+		if err := os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("2\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		g("commit", "-q", "-am", "two")
 		newBase := g("rev-parse", "HEAD")
-		os.WriteFile(filepath.Join(repo, "README"), []byte("x\n"), 0o644)
+		if err := os.WriteFile(filepath.Join(repo, "README"), []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		g("add", "-A")
 		g("commit", "-q", "-m", "three")
 		head := g("rev-parse", "HEAD")
@@ -1041,21 +1049,35 @@ func TestGateChangedReadsThePathsFromTheWorkflow(t *testing.T) {
 	}
 	g("init", "-q", "-b", "main")
 	wf := filepath.Join(repo, "w.yml")
-	os.WriteFile(wf, []byte("name: w\non:\n  pull_request:\n    paths:\n      - registry/**\n  merge_group:\njobs:\n  w:\n    runs-on: x\n"), 0o644)
-	os.WriteFile(filepath.Join(repo, "a"), []byte("1\n"), 0o644)
+	if err := os.WriteFile(wf, []byte("name: w\non:\n  pull_request:\n    paths:\n      - registry/**\n  merge_group:\njobs:\n  w:\n    runs-on: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "a"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g("add", "-A")
 	g("commit", "-q", "-m", "base")
 	base := g("rev-parse", "HEAD")
-	os.WriteFile(filepath.Join(repo, "a"), []byte("2\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(repo, "a"), []byte("2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g("commit", "-q", "-am", "docs only")
 	head := g("rev-parse", "HEAD")
-	os.MkdirAll(filepath.Join(repo, "registry"), 0o755)
-	os.WriteFile(filepath.Join(repo, "registry/x"), []byte("1\n"), 0o644)
+	if err := os.MkdirAll(filepath.Join(repo, "registry"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "registry/x"), []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g("add", "-A")
 	g("commit", "-q", "-m", "registry")
 	head2 := g("rev-parse", "HEAD")
 	cwd, _ := os.Getwd()
-	defer os.Chdir(cwd)
+	defer func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Error(err)
+		}
+	}()
 	if err := os.Chdir(repo); err != nil {
 		t.Fatal(err)
 	}
