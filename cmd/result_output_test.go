@@ -933,3 +933,36 @@ func TestResult_FromResultReproducesDisaggregatedAndDataParallelRuns(t *testing.
 		})
 	}
 }
+
+// The CONTRIBUTING walkthrough's test: a row's slo_class is its client's class (it is the
+// walkthrough's own example, so the tutorial's code stays run by the suite).
+func TestResult_RowSLOClassIsItsClientsClass(t *testing.T) {
+	spec := filepath.Join(t.TempDir(), "spec.yaml")
+	body := `version: "2"
+seed: 5
+category: language
+aggregate_rate: 10
+num_requests: 20
+clients:
+  - {id: a, slo_class: critical, rate_fraction: 0.5, arrival: {process: poisson},
+     input_distribution: {type: constant, params: {value: 64}},
+     output_distribution: {type: constant, params: {value: 8}}}
+  - {id: b, slo_class: batch, rate_fraction: 0.5, arrival: {process: poisson},
+     input_distribution: {type: constant, params: {value: 64}},
+     output_distribution: {type: constant, params: {value: 8}}}
+`
+	if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--workload-spec", spec)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	seen := map[string]int{}
+	for _, row := range parseResult(t, out).RequestRows {
+		seen[row.SLOClass]++
+	}
+	if seen["critical"] == 0 || seen["batch"] == 0 || len(seen) != 2 {
+		t.Errorf("rows by slo_class: %v, want both classes and no other", seen)
+	}
+}
