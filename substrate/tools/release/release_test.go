@@ -546,3 +546,43 @@ func TestPreviousTagSeesTheBareAndEarlierUpstreamTags(t *testing.T) {
 		t.Errorf("previous of a bare tag on a new router upstream = %q", got)
 	}
 }
+
+// Retry identity (LIF-1): a head Stage merged is the same release when it is planned again,
+// whether the run stopped after Stage (branch, no tag) or after Tag (tag on the staged tip).
+// The version does not advance; a different head gets the next one.
+func TestPlanKeepsTheTagOfAStagedOrReleasedHead(t *testing.T) {
+	e := env(t, nil)
+	sub, l, steps := stagedSet(t, e)
+	head := l.Repos[0].Head
+	replan := func(h string) Step {
+		t.Helper()
+		return planOne(t, e, "blis-substrate", sub.dir, h, "bump: patch", 1)
+	}
+	if steps[0].Tag != "v0.11.1" {
+		t.Fatalf("first plan gave %s", steps[0].Tag)
+	}
+	t.Run("after Stage", func(t *testing.T) {
+		st := replan(head)
+		if st.Tag != "v0.11.1" || !st.Staged || len(st.Refusals) != 0 {
+			t.Errorf("tag %s staged %v refusals %v; want the staged v0.11.1, unrefused", st.Tag, st.Staged, st.Refusals)
+		}
+	})
+	if err := Tag(e, l, steps, false); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("after Tag", func(t *testing.T) {
+		st := replan(head)
+		if st.Tag != "v0.11.1" {
+			t.Errorf("tag %s advanced; want v0.11.1", st.Tag)
+		}
+		has(t, st.Refusals, "already released at v0.11.1")
+	})
+	t.Run("a different head", func(t *testing.T) {
+		sub.git("checkout", "-q", "main")
+		h2 := sub.branch("c", "b.go", "package b\n", "Another change")
+		st := replan(h2)
+		if st.Tag != "v0.11.2" || st.Staged || len(st.Refusals) != 0 {
+			t.Errorf("tag %s staged %v refusals %v; want v0.11.2", st.Tag, st.Staged, st.Refusals)
+		}
+	})
+}

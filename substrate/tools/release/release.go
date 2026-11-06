@@ -42,6 +42,9 @@ type Step struct {
 	Pins     map[string]string // module path -> the tag this repository must pin, written once
 	Notes    string
 	Refusals []string
+	// Staged is true when a release/<Tag> branch already holds this head's merge (an
+	// interrupted release); Tag is then that branch's tag, not a new one.
+	Staged bool
 }
 
 // Plan works out each repository's release from a review set, bottom-up, without changing
@@ -64,6 +67,16 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 		if err != nil {
 			return nil, err
 		}
+		// Retry identity: a head that Stage merged is already staged (branch release/<tag>) or
+		// released (that tag on the staged tip). The plan then keeps that tag and does not
+		// advance to the next version.
+		prior, tagged, err := stagedAs(dir, r.Head)
+		if err != nil {
+			return nil, err
+		}
+		if prior != "" {
+			existing = without(existing, prior)
+		}
 		st.Prev = previousTag(existing, info.Kind, r.Upstream)
 		// A head that already carries a release tag was released; planning it again would give
 		// the same commit a second release tag.
@@ -74,8 +87,13 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 				}
 			}
 		}
-		switch info.Kind {
-		case KindEngine, KindRouter:
+		switch {
+		case prior != "":
+			st.Tag, st.Staged = prior, !tagged
+			if tagged {
+				st.Refusals = append(st.Refusals, fmt.Sprintf("the head %s is already released at %s (its staged tip carries the tag); a commit is released once (LIF-1)", short(r.Head), prior))
+			}
+		case info.Kind == KindEngine || info.Kind == KindRouter:
 			_, n := highestN(existing, r.Upstream)
 			st.Tag = engineTagFor(r.Upstream, n+1)
 			st.Refusals = append(st.Refusals, CheckEngineTag(st.Tag, existing)...)
@@ -83,6 +101,8 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 			if st.Tag, err = NextSemver(existing, r.Bump); err != nil {
 				return nil, err
 			}
+		}
+		if info.Kind != KindEngine && info.Kind != KindRouter {
 			if st.Prev != "" && breaksCompatibility(st.Prev, st.Tag) {
 				found, err := deprecationsAt(dir, r.Head)
 				if err != nil {
@@ -197,6 +217,71 @@ func simSubstrate(lock *StackLock, dirs map[string]string, tags map[string]strin
 		return ""
 	}
 	return requirement(mf, sub, "")
+}
+
+// without returns tags minus one.
+func without(tags []string, drop string) []string {
+	var out []string
+	for _, t := range tags {
+		if t != drop {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// stagedAs finds the release tag Stage gave a head. Stage leaves a merge commit whose second
+// parent is the head, and, when pins are written, one pin commit on top of it; the branch
+// release/<tag> or the tag points at that tip. It returns the tag and whether the tag
+// itself exists ("" when the head was never staged). A tag wins over a branch.
+func stagedAs(dir, head string) (tag string, tagged bool, err error) {
+	out, err := gitIn(dir, "for-each-ref", "--format=%(refname)", "refs/tags", "refs/heads/release")
+	if err != nil {
+		return "", false, err
+	}
+	refs := strings.Fields(out)
+	sort.Strings(refs)
+	for _, ref := range refs {
+		isTag := strings.HasPrefix(ref, "refs/tags/")
+		t := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/tags/"), "refs/heads/release/")
+		if !isTag && ref == t {
+			continue
+		}
+		if !plainTag.MatchString(t) && !engineTag.MatchString(t) {
+			continue
+		}
+		ok, err := mergesHead(dir, ref+"^{commit}", head)
+		if err != nil {
+			return "", false, err
+		}
+		if !ok {
+			continue
+		}
+		if isTag {
+			return t, true, nil
+		}
+		tag = t
+	}
+	return tag, false, nil
+}
+
+// mergesHead reports whether the commit is Stage's merge of head, or the pin commit on it.
+func mergesHead(dir, rev, head string) (bool, error) {
+	for i := 0; i < 2; i++ {
+		out, err := gitIn(dir, "rev-list", "--parents", "-n1", rev)
+		if err != nil {
+			return false, err
+		}
+		f := strings.Fields(out)
+		if len(f) >= 3 && f[2] == head {
+			return true, nil
+		}
+		if len(f) != 2 {
+			return false, nil
+		}
+		rev = f[1]
+	}
+	return false, nil
 }
 
 func tagList(dir string) ([]string, error) {
