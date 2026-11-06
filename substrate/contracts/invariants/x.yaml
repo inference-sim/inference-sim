@@ -56,7 +56,7 @@
       port's values are compared field by field
     runs: pull_request
     status: ci
-    test: 'ci.yml job packs-against-vllm: rules/v0_32 -run MatchSource'
+    test: 'ci.yml job packs-against-vllm: go test -run MatchSource'
   - repo: blis-sglang
     check: >-
       Defaults match: the upstream's own configuration code resolves each oracle scenario, and the
@@ -89,7 +89,7 @@
       A set of malformed router flags, configuration files and manifests is refused, each with llm-d's
       own error message
     runs: pull_request
-    status: ci
+    status: new
     test: 'pkg/embed: TestNewRefusals'
   - repo: llm-d-router
     check: >-
@@ -291,7 +291,7 @@
       through the fork's runtime interface; every change to an upstream file is of an allowed kind
       (RTR-2), and every hosting hazard is converted or reviewed (RTR-6)
     runs: pull_request
-    status: ci
+    status: new
     test: 'hosting-lint.yml job hosting: go run ./hack/hosting-lint'
   - repo: llm-d-router
     check: >-
@@ -866,8 +866,8 @@
     check: >-
       Selected-version lint (LIF-2), in every repository: no replace outside inference-sim
     runs: pull_request
-    status: new
-    test: tools/modlint
+    status: ci
+    test: 'tools/modlint: TestEachRuleHasAKnownBadInput'
     known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: >-
@@ -898,8 +898,8 @@
   - repo: blis-substrate
     check: No other module requiring github.com/llm-d/llm-d-router
     runs: pull_request
-    status: new
-    test: tools/modlint
+    status: ci
+    test: 'tools/modlint: TestEachRuleHasAKnownBadInput'
     known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: No other module requiring github.com/llm-d/llm-d-router
@@ -1012,7 +1012,7 @@
     check: >-
       A check that every committed config.json has an allow-listed licence in its model.yaml
     runs: pull_request
-    status: new
+    status: ci
     test: 'validate/cmd/validate-catalog: TestRunLicenceCheck'
     known_bad: 'validate/cmd/validate-catalog: TestRunLicenceCheck'
   review: null
@@ -1219,20 +1219,20 @@
   - repo: blis-substrate
     check: The parity test in blis-substrate
     runs: pull_request
-    status: new
+    status: ci
     test: 'tools/pyrules: TestEveryRestatementAgreesWithGo'
     known_bad: 'tools/pyrules: TestGoRefusesEveryParityExample'
   - repo: blis-substrate
     check: A lint that flags schema-like rule code in Python scripts
     runs: pull_request
-    status: new
+    status: ci
     test: tools/pyrules/pyrules.py
     known_bad: 'tools/pyrules: TestPythonRuleLintFindsARestatedVocabulary'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: X16
   section: §4.1
   statement: >-
@@ -1503,7 +1503,7 @@
       A commit-policy check, required on every pull request in every repository, over the commits
       the pull request adds
     runs: pull_request
-    status: ci
+    status: new
     test: .github/workflows/ci-signed-commits.yaml
   - repo: inference-sim
     check: >-
@@ -1524,7 +1524,7 @@
     runs: pull_request
     status: new
   review: null
-  status: partial
+  status: new
   target:
     status: ci
     milestone: 1

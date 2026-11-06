@@ -108,7 +108,7 @@ func TestCitedRefusesUnknownIdentifiers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, stderr)
 	}
-	for _, want := range []string{"X14\tnew", "SUB-6\tnew", "LIF-2\tnew", "T-A1\ttrigger outcome"} {
+	for _, want := range []string{"X14\tnew", "SUB-6\tnew", "LIF-2\tpartial", "T-A1\ttrigger outcome"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

@@ -67,12 +67,13 @@
   - repo: blis-substrate
     check: A ledger check that refuses latest, main and unknown as revisions
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ledger: TestUnpinnedRevisionsRefused'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: D4
   section: §10.4
   statement: >-
@@ -91,13 +92,15 @@
   - repo: blis-substrate
     check: A check against the ledger at the pull request's merge base
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ledger: TestCheckAgainstBase'
   - repo: blis-substrate
     check: >-
       A check that no committed file lists roles, other than the three published lists that the release
       job writes and the legacy labels in legacy-map.yaml
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ledger: TestNoCommittedRoles'
   - repo: blis-substrate
     check: >-
       A check that the committed unit list equals the ingest tool's output for the pinned source
@@ -108,7 +111,8 @@
       A check that every unit at the merge base keeps its unit_id and role key, or is covered by an
       alias table or by a new partition version a person approved
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ledger: TestCheckAgainstBase'
   - repo: blis-substrate
     check: >-
       A check that each alias table equals the one generated from the merge-base and candidate ingest
@@ -116,7 +120,7 @@
     runs: pull_request
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 1
@@ -195,7 +199,8 @@
   - repo: blis-substrate
     check: A workflow lint that those jobs check out only main
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ledger: TestLintWorkflows'
   - repo: accuracy-dashboard
     check: A workflow lint that those jobs check out only main
     runs: pull_request
@@ -216,7 +221,7 @@
     when: a seed is created or rotated
     trigger:
       manual: true
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 1

@@ -222,7 +222,8 @@
   - repo: blis-substrate
     check: The graph deriver --check runs on every pull request
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ci.yml job catalog: derive_graph.py --check'
   - repo: blis-substrate
     check: >-
       Every registry writer --check runs on every pull request, on redistributable fixtures
@@ -248,16 +249,18 @@
       A test that loads the embedded copy and an exported checkout of the same commit, and gets identical
       data and an identical hash
     runs: pull_request
-    status: new
+    status: ci
+    test: 'load: TestEmbeddedAndExportedCheckoutAreTheSame'
   - repo: blis-substrate
     check: A test comparing the two pattern lists
     runs: pull_request
-    status: new
+    status: ci
+    test: TestEmbedPatternsEqualLoaderPatterns
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: SUB-10
   section: §5
   statement: >-
@@ -351,16 +354,18 @@
   - repo: blis-substrate
     check: A check that fails on any nested go.mod
     runs: pull_request
-    status: new
+    status: ci
+    test: TestNoNestedModule
   - repo: blis-substrate
     check: A check of that uncompressed total
     runs: pull_request
-    status: new
+    status: ci
+    test: TestModuleZipIsUnder100MB
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 1
+    milestone: null
 - id: SUB-14
   section: §5
   statement: >-
@@ -528,7 +533,8 @@
   - repo: blis-substrate
     check: A generator test in blis-substrate that the published schemas match the Go types
     runs: pull_request
-    status: new
+    status: ci
+    test: 'tools/schemagen: TestPublishedSchemasMatchTheTypes'
   - repo: blis-config-search
     check: Schema validation in the applications' CI
     runs: pull_request
@@ -548,7 +554,7 @@
     runs: pull_request
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 1

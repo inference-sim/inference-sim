@@ -16,14 +16,14 @@
   - repo: llm-d-router
     check: Commit checks
     runs: pull_request
-    status: ci
+    status: new
     test: .github/workflows/ci-signed-commits.yaml
   - repo: llm-d-router
     check: Repository settings checked nightly
     runs: settings
     status: new
   review: null
-  status: partial
+  status: new
   target:
     status: ci
     milestone: 1
@@ -92,14 +92,14 @@
   - repo: llm-d-router
     check: Conformance suite and API diff
     runs: pull_request
-    status: ci
+    status: new
     test: 'pkg/embed: TestConformance; hack/embed-apidiff.sh'
   - repo: llm-d-router
     check: The conformance suite and API diff are required checks on llm-d-r
     runs: pull_request
     status: new
   review: null
-  status: partial
+  status: new
   target:
     status: ci
     milestone: 1
@@ -169,7 +169,7 @@
       written after initialisation, and fails on any use not in hack/hosting-lint/baseline.txt, or
       on more uses than the baseline records
     runs: pull_request
-    status: ci
+    status: new
     test: go run ./hack/hosting-lint
   - repo: llm-d-router
     check: Hack/hosting-lint is a required check on llm-d-r
@@ -186,7 +186,7 @@
       - llm-d-router
       paths:
       - hack/hosting-lint/baseline.txt
-  status: partial
+  status: new
   target:
     status: ci
     milestone: 3

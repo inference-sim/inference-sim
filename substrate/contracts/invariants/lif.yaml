@@ -105,8 +105,8 @@
       Selected-version lint (go list -m all), which for the router reads the replace target that go
       list -m -json reports, not the placeholder version on the require line
     runs: pull_request
-    status: new
-    test: tools/modlint
+    status: ci
+    test: 'tools/modlint: TestEachRuleHasAKnownBadInput'
     known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: >-
@@ -136,8 +136,8 @@
     check: >-
       A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
     runs: pull_request
-    status: new
-    test: tools/modlint
+    status: ci
+    test: 'tools/modlint: TestEachRuleHasAKnownBadInput'
     known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: >-
@@ -162,8 +162,8 @@
   - repo: blis-substrate
     check: A CI step that fails if go version differs from it
     runs: pull_request
-    status: new
-    test: .github/actions/go-toolchain; tools/modlint
+    status: ci
+    test: 'tools/modlint: TestEachRuleHasAKnownBadInput'
     known_bad: 'tools/modlint: TestEachRuleHasAKnownBadInput'
   - repo: blis-vllm
     check: A CI step that fails if go version differs from it
@@ -188,7 +188,7 @@
     runs: release
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 1
@@ -352,10 +352,10 @@
   - repo: llm-d-router
     check: Every tag of the router fork has the form v<upstream>-blis.N
     runs: pull_request
-    status: ci
+    status: new
     test: release tags v1.0.0-blis.1, v1.0.0-blis.2
   review: null
-  status: partial
+  status: new
   target:
     status: ci
     milestone: 4
