@@ -265,6 +265,21 @@ func TestDeferralBounds(t *testing.T) {
 	if fail, def := ApplyDeferral(f, today, []string{other, foreign}); len(def) != 0 || len(fail) != 2 {
 		t.Errorf("unlisted module: fail=%v deferred=%v", fail, def)
 	}
+	// The router fork is pinned by a replace to a commit while drafts are open. That is covered
+	// only when the file lists llm-d-router and the version is a pseudo-version.
+	rep := func(v string) string {
+		return `go.mod:132: replace target version "` + v + `" is not a -blis.N tag (X11, LIF-5)`
+	}
+	const pv = "v1.0.1-0.20261105040605-fd1830412b30"
+	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[llm-d-router]"), today, []string{rep(pv)}); len(def) != 1 || len(fail) != 0 {
+		t.Errorf("router fork pinned by commit, listed: fail=%v deferred=%v", fail, def)
+	}
+	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[blis-substrate]"), today, []string{rep(pv)}); len(def) != 0 || len(fail) != 1 {
+		t.Errorf("router fork pinned by commit, not listed: fail=%v deferred=%v", fail, def)
+	}
+	if fail, def := ApplyDeferral(file("2026-11-05", "2026-12-05", "[llm-d-router]"), today, []string{rep("v1.0.1")}); len(def) != 0 || len(fail) != 1 {
+		t.Errorf("router fork at a plain tag is not a pin: fail=%v deferred=%v", fail, def)
+	}
 	if fail, _ := ApplyDeferral(file("2026-11-05", "2026-12-05", "[]"), today, []string{pin("blis-substrate")}); len(fail) != 2 || !strings.Contains(fail[1], "modules") {
 		t.Errorf("empty modules: %v", fail)
 	}

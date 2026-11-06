@@ -43,6 +43,16 @@ var deferrableModules = map[string]bool{"blis-substrate": true, "blis-vllm": tru
 
 // deferrable reports whether a finding is a listed BLIS module pinned by commit.
 func deferrable(finding string, modules []string) bool {
+	// The router fork is pinned by a replace to a commit while drafts are open, and is covered
+	// when the deferral lists llm-d-router.
+	if strings.Contains(finding, "replace target version") && strings.HasSuffix(finding, "is not a -blis.N tag (X11, LIF-5)") {
+		for _, m := range modules {
+			if m == "llm-d-router" && isPseudoQuoted(finding) {
+				return true
+			}
+		}
+		return false
+	}
 	if !strings.Contains(finding, " resolves to ") || !strings.HasSuffix(finding, "which is not a release tag (X11, LIF-2)") {
 		return false
 	}
@@ -107,4 +117,15 @@ func ApplyDeferral(src []byte, today time.Time, findings []string) (fail, deferr
 		}
 	}
 	return fail, deferred
+}
+
+// isPseudoQuoted reports whether the version a replace finding quotes is a pseudo-version.
+func isPseudoQuoted(finding string) bool {
+	i := strings.Index(finding, `version "`)
+	if i < 0 {
+		return false
+	}
+	rest := finding[i+len(`version "`):]
+	j := strings.Index(rest, `"`)
+	return j > 0 && isPseudo(rest[:j])
 }
