@@ -1534,10 +1534,12 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 4
   note: >-
     the router fork has a signature and DCO check, but it is not required and did not run on its pull
-    requests #3 and #4; no repository checks Assisted-by or Co-authored-by lines
+    requests #3 and #4; no repository checks Assisted-by or Co-authored-by lines; the check runs in
+    every repository from M1, and signing and sign-off wait for the closing step after M4 (the
+    release plan, "Deferring signing and sign-off")
 - id: X21
   section: §4.1
   statement: >-
