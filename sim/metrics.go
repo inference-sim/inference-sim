@@ -3,13 +3,8 @@
 package sim
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
 	"slices"
 	"sort"
-
-	"github.com/sirupsen/logrus"
 )
 
 // Metrics aggregates statistics about the simulation
@@ -418,161 +413,10 @@ func buildAdapterMetrics(m *Metrics, vllmRuntime float64) map[string]AdapterMetr
 	return adapters
 }
 
-// EmitOption customizes the --metrics-path file (WriteMetricsFile, EmitOutput's file half). It
-// exists for metadata that belongs in the results file and not in the printed JSON, so it
-// cannot be supplied by mutating the MetricsOutput before the call (the
-// build-then-mutate-then-emit pattern goodput and saturation use). Variadic so all existing
-// call sites are untouched (R4).
-type EmitOption func(*emitOptions)
-
-// emitOptions is the resolved option set for one EmitOutput call.
-type emitOptions struct {
-	catalog    *CatalogProvenance
-	overrides  []ScenarioOverride
-	provenance map[string]KernelPoolProvenance
-	versions   *BuildVersions
-	agentic    any
-	pd         *PDOutput
-	acceptance *AcceptanceRecord
-	prefix     map[string]PrefixCacheRecord
-	series     *ServerSeriesOutput
-}
-
-// WithAgentic records an agentic replay's summary block in the --metrics-path file only
-// (stdout is unchanged, INV-6). Nil leaves the block absent.
-func WithAgentic(summary any) EmitOption {
-	return func(o *emitOptions) { o.agentic = summary }
-}
-
-// WithKernelProvenance records each pool's kernel evidence (#1942) in the --metrics-path
-// file only, keyed by pool role. A nil map leaves the block absent; an empty one writes {}.
-func WithKernelProvenance(p map[string]KernelPoolProvenance) EmitOption {
-	return func(o *emitOptions) { o.provenance = p }
-}
-
-// WithBuildVersions records the build's module versions in the --metrics-path file. (blis run
-// and blis replay state them in the Result document's revisions.)
-func WithBuildVersions(v *BuildVersions) EmitOption {
-	return func(o *emitOptions) { o.versions = v }
-}
-
-// WithCatalogProvenance records which model catalog produced the result (#1732, R1/S5)
-// in the --metrics-path file only. A nil provenance is a no-op (the block stays absent),
-// so a caller that could not resolve a catalog passes nil rather than a half-filled
-// block. Supplying the option with no output file path is likewise a no-op: the
-// provenance (a path, a fact of the host) is file-only metadata and never enters the
-// printed JSON.
-func WithCatalogProvenance(p *CatalogProvenance) EmitOption {
-	return func(o *emitOptions) { o.catalog = p }
-}
-
-// WithScenarioOverrides records the settings the run simulated differently from its
-// scenario in the --metrics-path file only, for the same reason as WithCatalogProvenance:
-// what a result describes belongs in the results file, and stdout is the byte-identical
-// channel INV-6 protects. An empty list leaves the block absent.
-func WithScenarioOverrides(o []ScenarioOverride) EmitOption {
-	return func(opts *emitOptions) { opts.overrides = o }
-}
-
-// WithPD records the P/D block in the --metrics-path file only (stdout carries the "PD
-// Metrics" section). Nil leaves the block absent.
-func WithPD(pd *PDOutput) EmitOption {
-	return func(opts *emitOptions) { opts.pd = pd }
-}
-
-// WithAcceptance records a speculating run's resolved acceptance (#1939) in the
-// --metrics-path file only, as WithCatalogProvenance records the catalog. Nil leaves the block
-// absent.
-func WithAcceptance(a *AcceptanceRecord) EmitOption {
-	return func(opts *emitOptions) { opts.acceptance = a }
-}
-
-// WithPrefixCache records each pool's prefix-hit resolution (model runner, SWA bounded
-// replay, the group layout) in the --metrics-path file only. Nil leaves the block absent.
-func WithPrefixCache(p map[string]PrefixCacheRecord) EmitOption {
-	return func(opts *emitOptions) { opts.prefix = p }
-}
-
-// WithServerSeries records the per-engine server time series in the --metrics-path file
-// only. Nil leaves the block absent.
-func WithServerSeries(s *ServerSeriesOutput) EmitOption {
-	return func(opts *emitOptions) { opts.series = s }
-}
-
-// EmitOutput writes a populated MetricsOutput to stdout (always) and an
-// optional file (when outputFilePath != ""). The file variant additionally
-// embeds per-request rows sorted by ArrivedAt for downstream tooling. Callers
-// that want goodput fields populated should call BuildOutput, mutate the
-// returned struct, then call this method (#1413).
-//
-// opts carry file-only additions (see EmitOption); they are applied after the stdout
-// marshal so they cannot perturb stdout (INV-6).
-func (m *Metrics) EmitOutput(output MetricsOutput, outputFilePath string, opts ...EmitOption) error {
-	// Always emit the metrics section so callers can reliably parse output,
-	// even when CompletedRequests == 0 (e.g., all requests dropped as unservable).
-	fmt.Println("=== Simulation Metrics ===")
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return fmt.Errorf("error marshalling metrics: %w", err)
-	}
-	fmt.Println(string(data))
-
-	if outputFilePath != "" {
-		return m.WriteMetricsFile(output, outputFilePath, opts...)
-	}
-	return nil
-}
-
-// WriteMetricsFile writes the --metrics-path file: output with the file-only blocks opts
-// carry, the measured-window aggregates and the per-request rows. It is EmitOutput's file
-// half, for a caller whose stdout carries something else (blis run and blis replay emit the
-// Result document, #1871). output is a value copy, so the caller's struct is unchanged.
-func (m *Metrics) WriteMetricsFile(output MetricsOutput, outputFilePath string, opts ...EmitOption) error {
-	var resolvedOpts emitOptions
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&resolvedOpts)
-		}
-	}
-	// Catalog provenance (#1732) and the other file-only blocks: `output` is a value copy,
-	// so these assignments cannot reach the caller's struct.
-	output.Catalog = resolvedOpts.catalog
-	output.Overrides = resolvedOpts.overrides
-	output.Acceptance = resolvedOpts.acceptance
-	output.PrefixCache = resolvedOpts.prefix
-	output.Agentic = resolvedOpts.agentic
-	output.PD = resolvedOpts.pd
-	output.ServerSeries = resolvedOpts.series
-	if resolvedOpts.provenance != nil {
-		output.KernelProvenance = &resolvedOpts.provenance
-	}
-	output.BuildVersions = resolvedOpts.versions
-
-	// Measured-window aggregates (#1938). The latency families (ttft_*, e2e_*) take their
-	// measured-window values here, so the file states one definition per key. The legacy
-	// per-step itl_* keys and the run-wide counts (completed_requests, INV-1) are kept as
-	// they are; step_interval_* restates itl_* over the measured window.
-	measured, lat := m.buildMeasured()
-	output.MeasuredMetrics = &measured
-	output.applyMeasured(lat)
-
-	output.Requests = m.RequestRows()
-
-	data, err := json.MarshalIndent(output, "", "  ")
-	if err != nil {
-		return fmt.Errorf("error marshalling metrics to JSON: %w", err)
-	}
-	if err := os.WriteFile(outputFilePath, data, 0644); err != nil {
-		return fmt.Errorf("error writing JSON file: %w", err)
-	}
-	logrus.Infof("Metrics written to: %s", outputFilePath)
-	return nil
-}
-
 // RequestRows returns one row per registered request (not only completed ones, so an
 // incomplete request appears with zero-valued latencies), with its latencies in
-// milliseconds and its completion index, sorted by arrival. They are the --metrics-path
-// file's requests array.
+// milliseconds and its completion index, sorted by arrival. requestRows (cmd/result_rows.go)
+// builds the Result's request_rows from the completion index and the cache record they carry.
 func (m *Metrics) RequestRows() []RequestMetrics {
 	rows := make([]RequestMetrics, 0, len(m.Requests))
 	for _, id := range sortedRequestIDs(m.Requests) {
@@ -586,18 +430,6 @@ func (m *Metrics) RequestRows() []RequestMetrics {
 	m.assignCompletionIndices(rows)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ArrivedAt < rows[j].ArrivedAt })
 	return rows
-}
-
-// SaveResults computes aggregate metrics and emits them to stdout and an optional
-// file. This is a thin wrapper around BuildOutput + EmitOutput; see those methods
-// for the extension hook used by goodput (#1413) and saturation (#1517) wiring.
-// The horizon and totalBlocks parameters are retained for backwards compatibility
-// with existing callers but are unused — they were never read by SaveResults.
-func (m *Metrics) SaveResults(instanceID string, horizon int64, totalBlocks int64, outputFilePath string) error {
-	_ = horizon
-	_ = totalBlocks
-	output := m.BuildOutput(instanceID)
-	return m.EmitOutput(output, outputFilePath)
 }
 
 // sortedRequestIDs returns request IDs from the Requests map in sorted order.

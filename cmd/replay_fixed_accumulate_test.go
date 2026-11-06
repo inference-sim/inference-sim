@@ -80,7 +80,6 @@ func runFixedAccumulateReplayWithOutput(t *testing.T, headerPath, dataPath strin
 	maxNumBatchedTokens = 4096
 	numInstances = 1
 	seed = seedVal
-	resultsPath = ""
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9

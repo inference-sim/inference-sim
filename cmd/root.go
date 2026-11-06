@@ -172,9 +172,7 @@ var (
 	goodputSLOE2E  string
 
 	// output file paths
-	metricsPath           string  // File to write MetricsOutput JSON for blis run (--metrics-path)
 	serverSeriesIntervalS float64 // --server-series-interval-s: bin width of the file-only server_series block; 0 = off
-	resultsPath           string  // File to write []SimResult JSON for blis replay (--results-path)
 	// saturationReport (--saturation-report): per-event verdict trace file (#1516).
 	// Declared in saturation.go alongside --detectors / --saturation-config.
 
@@ -1296,8 +1294,8 @@ var runCmd = &cobra.Command{
 		}
 
 		// The Result document (#1871): stdout is exactly one blis-schemas Result, and
-		// --output the same bytes. The run's figures, the deprecated --metrics-path file and
-		// --view summary all come from the one path replay shares (INV-13).
+		// --output the same bytes. The run's figures and --view summary come from the one path
+		// replay shares (INV-13).
 		// With no cap the run generated what arrived before its horizon. blis-schemas requires a
 		// positive bound, so an uncapped run in which nothing arrived records 1, the smallest
 		// bound (docs/guide/results.md states it).
@@ -1325,7 +1323,7 @@ var runCmd = &cobra.Command{
 		}
 		emitRunResult(postRun{
 			cs: cs, gateway: gw, run: run, goodputTargets: goodputTargets, satTracer: satTracer, extraOverrides: extra,
-			metricsPath: metricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
+			artifacts:      artifacts,
 			fitnessWeights: fitnessWeights, started: startTime,
 			frame: runFrameGenerator(spec), numRequestsCap: int(max(maxRequests, 0)),
 		})
@@ -1587,7 +1585,6 @@ func init() {
 
 	// Run-specific export
 	runCmd.Flags().StringVar(&traceOutput, "trace-output", "", "Export workload as TraceV2 files (<prefix>.yaml + <prefix>.csv)")
-	runCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy MetricsOutput JSON (aggregate P50/P95/P99 TTFT, E2E, throughput stats, per-request rows). Kept for one release.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(runCmd)

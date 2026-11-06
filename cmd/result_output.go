@@ -61,17 +61,6 @@ func checkResultFlags() {
 	}
 }
 
-// warnDeprecatedFile logs that a results file is deprecated in favor of --output (#1871).
-// The file keeps its content for one release.
-func warnDeprecatedFile(flag, path string) {
-	if path == "" {
-		return
-	}
-	logrus.Warnf("%s is deprecated and will be removed in the next release: its file keeps its "+
-		"content for this release, and the Result document on stdout (or --output) carries the same "+
-		"figures under blis-schemas' names", flag)
-}
-
 // emitResult validates r, writes it to stdout and to --output in the selected format, and,
 // with --view summary, renders the text summary to stderr. A document the validator refuses
 // is fatal: it names every problem.

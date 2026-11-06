@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,8 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
-
-	sim "github.com/inference-sim/inference-sim/sim"
 )
 
 // End-to-end data-record tests at the CLI seam (design §3.3, X8): `blis run` and `blis replay`
@@ -64,20 +61,6 @@ func editCatalogEntry(t *testing.T, catalogRoot string) {
 	}
 }
 
-// readMetricsFile parses a --metrics-path results file.
-func readMetricsFile(t *testing.T, path string) sim.MetricsOutput {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read metrics file %s: %v", path, err)
-	}
-	var out sim.MetricsOutput
-	if err := json.Unmarshal(data, &out); err != nil {
-		t.Fatalf("parse metrics file %s: %v\n%s", path, err, data)
-	}
-	return out
-}
-
 // captureRunStdout redirects os.Stdout across fn and returns what was written. logrus
 // diagnostics go to stderr and are deliberately not captured (INV-6 governs stdout).
 func captureRunStdout(t *testing.T, fn func()) []byte {
@@ -124,17 +107,15 @@ func setProvenanceRunVars(catalogDir, defaultsPath string) {
 	maxModelLen = 0
 	traceLevel = "none"
 	counterfactualK = 0
-	resultsPath = ""
 	workloadSpecPath = ""
 	lazyGeneration = false
 	requestTimeoutSecs = 300
 }
 
-// runWithProvenance drives `blis run --metrics-path` in-process over a tiny distribution
-// workload, optionally exporting a trace, and returns stdout plus the parsed results file.
-func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix string) ([]byte, sim.MetricsOutput) {
+// runWithProvenance drives `blis run` in-process over a tiny distribution workload, optionally
+// exporting a trace, and returns stdout.
+func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix string) []byte {
 	t.Helper()
-	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
 	orig := captureCmdLevelVars()
 	origData := openedData
@@ -145,7 +126,6 @@ func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix strin
 
 	setProvenanceRunVars(catalogDir, defaultsPath)
 	openedData = nil
-	metricsPath = metricsFile
 	traceOutput = tracePrefix
 	workloadType = "distribution"
 	rate = 1.0
@@ -159,7 +139,6 @@ func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix strin
 	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
 	testCmd.Flags().StringVar(&traceOutput, "trace-output", "", "")
-	testCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	args := []string{
 		"--defaults-filepath", defaultsPath,
@@ -169,7 +148,6 @@ func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix strin
 		"--rate", "1.0",
 		"--workload", "distribution",
 		"--horizon", strconv.FormatInt(provenanceHorizonUs, 10),
-		"--metrics-path", metricsFile,
 	}
 	if tracePrefix != "" {
 		args = append(args, "--trace-output", tracePrefix)
@@ -179,25 +157,24 @@ func runWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix strin
 	}
 
 	stdout := captureRunStdout(t, func() { runCmd.Run(testCmd, nil) })
-	return stdout, readMetricsFile(t, metricsFile)
+	return stdout
 }
 
-// replayWithProvenance drives `blis replay --metrics-path` in-process over a trace
-// exported by runWithProvenance, returning stdout plus the parsed results file.
-func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix string) ([]byte, sim.MetricsOutput) {
+// replayWithProvenance drives `blis replay` in-process over a trace exported by
+// runWithProvenance, returning stdout.
+func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix string) []byte {
 	t.Helper()
-	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
 	orig := captureCmdLevelVars()
 	origTraceHeader, origTraceData := traceHeaderPath, traceDataPath
 	origSessionMode, origThinkMs, origThinkDist := replaySessionMode, replayThinkTimeMs, replayThinkTimeDist
-	origReplayTraceOut, origReplayMetrics := replayTraceOutput, replayMetricsPath
+	origReplayTraceOut := replayTraceOutput
 	origData := openedData
 	defer func() {
 		orig.restore()
 		traceHeaderPath, traceDataPath = origTraceHeader, origTraceData
 		replaySessionMode, replayThinkTimeMs, replayThinkTimeDist = origSessionMode, origThinkMs, origThinkDist
-		replayTraceOutput, replayMetricsPath = origReplayTraceOut, origReplayMetrics
+		replayTraceOutput = origReplayTraceOut
 		openedData = origData
 	}()
 
@@ -211,13 +188,11 @@ func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix st
 	replayThinkTimeMs = 0
 	replayThinkTimeDist = ""
 	replayTraceOutput = ""
-	replayMetricsPath = metricsFile
 
 	testCmd := &cobra.Command{}
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-	testCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "")
 	if err := testCmd.ParseFlags([]string{
 		"--defaults-filepath", defaultsPath,
 		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
@@ -225,30 +200,21 @@ func replayWithProvenance(t *testing.T, catalogDir, defaultsPath, tracePrefix st
 		"--horizon", strconv.FormatInt(provenanceHorizonUs, 10),
 		"--trace-header", headerFile,
 		"--trace-data", dataFile,
-		"--metrics-path", metricsFile,
 	}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
 
 	stdout := captureRunStdout(t, func() { replayCmd.Run(testCmd, nil) })
-	return stdout, readMetricsFile(t, metricsFile)
+	return stdout
 }
 
-// assertProvenance checks that a run recorded its catalog the same way in the Result's data
-// record and in the --metrics-path file's catalog block: a path source, the directory, and the
-// combined content hash. It returns the hash.
-func assertProvenance(t *testing.T, label string, stdout []byte, out sim.MetricsOutput, wantPath string) string {
+// assertProvenance checks that a run recorded its catalog in the Result's data record: a path
+// source and the combined content hash. It returns the hash.
+func assertProvenance(t *testing.T, label string, stdout []byte) string {
 	t.Helper()
 	d := parseResult(t, string(stdout)).Data.Catalog
 	if d.Source != result.SourcePath || d.Hash == "" || d.CombinedHash != d.Hash {
 		t.Errorf("%s: data.catalog = %+v, want a path source with its hash", label, d)
-	}
-	if out.Catalog == nil {
-		t.Fatalf("%s: results file records no catalog block", label)
-	}
-	if out.Catalog.Path != wantPath || out.Catalog.Revision != d.CombinedHash || out.Catalog.Dirty {
-		t.Errorf("%s: results file catalog = %+v, want path %q, revision %q (the Result's hash), dirty false",
-			label, *out.Catalog, wantPath, d.CombinedHash)
 	}
 	return d.CombinedHash
 }
@@ -261,8 +227,8 @@ func assertProvenance(t *testing.T, label string, stdout []byte, out sim.Metrics
 func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testing.T) {
 	catalogRoot, defaultsPath := setupCatalogFixtures(t)
 
-	beforeStdout, beforeFile := runWithProvenance(t, catalogRoot, defaultsPath, "")
-	before := assertProvenance(t, "run", beforeStdout, beforeFile, catalogRoot)
+	beforeStdout := runWithProvenance(t, catalogRoot, defaultsPath, "")
+	before := assertProvenance(t, "run", beforeStdout)
 
 	// One process opens each catalog path once (kernelmodel.OpenData caches by path), as a CLI
 	// invocation does, so the edited catalog is a second directory with the same content.
@@ -271,8 +237,8 @@ func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testi
 		t.Fatalf("copy the catalog: %v", err)
 	}
 	editCatalogEntry(t, edited)
-	afterStdout, afterFile := runWithProvenance(t, edited, defaultsPath, "")
-	after := assertProvenance(t, "run after the edit", afterStdout, afterFile, edited)
+	afterStdout := runWithProvenance(t, edited, defaultsPath, "")
+	after := assertProvenance(t, "run after the edit", afterStdout)
 	if before == after {
 		t.Errorf("the catalog's bytes changed but its content hash did not: %s", before)
 	}
@@ -283,7 +249,7 @@ func TestCatalogProvenance_RunCLI_RecordsCatalogAndKeepsStdoutIdentical(t *testi
 	if bytes.Contains(beforeStdout, []byte(catalogRoot)) || bytes.Contains(afterStdout, []byte(edited)) {
 		t.Errorf("the Result names the catalog's location, a fact of the host:\n%s", beforeStdout)
 	}
-	if beforeFile.CompletedRequests == 0 {
+	if parseResult(t, string(beforeStdout)).Requests.Completed == 0 {
 		t.Fatalf("non-vacuity: the run completed no requests, so stdout parity is trivial")
 	}
 }
@@ -296,22 +262,21 @@ func TestCatalogProvenance_ReplayCLI_RecordsCatalog(t *testing.T) {
 	catalogRoot, defaultsPath := setupCatalogFixtures(t)
 	tracePrefix := filepath.Join(t.TempDir(), "trace")
 
-	runStdout, runFile := runWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
-	want := assertProvenance(t, "exporting run", runStdout, runFile, catalogRoot)
-	stdout, file := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
-	if got := assertProvenance(t, "replay", stdout, file, catalogRoot); got != want {
+	runStdout := runWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
+	want := assertProvenance(t, "exporting run", runStdout)
+	stdout := replayWithProvenance(t, catalogRoot, defaultsPath, tracePrefix)
+	if got := assertProvenance(t, "replay", stdout); got != want {
 		t.Errorf("the replay records catalog hash %s, the run %s: the same data", got, want)
 	}
 	if bytes.Contains(stdout, []byte(catalogRoot)) {
 		t.Errorf("the replay's Result names the catalog's location, a fact of the host:\n%s", stdout)
 	}
-	if file.CompletedRequests == 0 {
+	if parseResult(t, string(stdout)).Requests.Completed == 0 {
 		t.Fatalf("non-vacuity: the replay completed no requests")
 	}
 }
 
-// TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere pins that a run WITHOUT
-// --metrics-path writes no results file and that its Result never names the catalog's
+// TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere pins that a run's Result never names the catalog's
 // location: the catalog is recorded by its content hash (data.catalog), never by the path it
 // was found at, a fact of the host.
 //
@@ -328,7 +293,6 @@ func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
 
 	setProvenanceRunVars(catalogRoot, defaultsPath)
 	openedData = nil
-	metricsPath = ""
 	traceOutput = ""
 	workloadType = "distribution"
 	rate = 1.0
@@ -341,7 +305,6 @@ func TestCatalogProvenance_StdoutOnlyRun_NoProvenanceAnywhere(t *testing.T) {
 	testCmd.Flags().IntVar(&numRequests, "num-requests", 0, "")
 	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
 	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
-	testCmd.Flags().StringVar(&metricsPath, "metrics-path", "", "")
 	testCmd.Flags().IntVar(&requestTimeoutSecs, "timeout", 300, "")
 	if err := testCmd.ParseFlags([]string{
 		"--defaults-filepath", defaultsPath,
