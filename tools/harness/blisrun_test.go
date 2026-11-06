@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,7 +13,6 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // The variant scenario a point runs carries the point's resolved run settings and nothing
@@ -126,21 +126,21 @@ func TestScenarioVariantStatesTheRouterBlock(t *testing.T) {
 // places dp replicas from the scenario) and no engine setting (the scenario states them).
 func TestTheCommandLineIsAUsersBlisReplay(t *testing.T) {
 	cfg := Config{Repos: testRepos(), Catalog: "/c", Registry: "/r", Seed: 7}
-	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", "/d/m.json", 40, 4)
+	args := blisArgs(cfg, "s.yaml", "/d", "/d/t.yaml", "/d/t.csv", 40, 4)
 	if args[0] != "replay" {
 		t.Fatalf("first argument %q, want replay", args[0])
 	}
 	line := strings.Join(args, " ")
 	for _, want := range []string{"--scenario s.yaml", "--scenarios /d", "--trace-header /d/t.yaml",
 		"--trace-data /d/t.csv", "--session-mode closed-loop", "--concurrent-sessions 4",
-		"--total-sessions 40", "--metrics-path /d/m.json", "--seed 7",
+		"--total-sessions 40", "--format json", "--seed 7",
 		"--catalog /c", "--registry /r"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q lacks %q", line, want)
 		}
 	}
 	for _, banned := range []string{"--dp", "--num-instances", "--max-num-running-reqs", "--max-num-scheduled-tokens",
-		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon", "--epp-"} {
+		"--total-kv-blocks", "--shuffle-corpus", "--think-time", "--horizon", "--epp-", "--metrics-path", "--results-path"} {
 		if strings.Contains(line, banned) {
 			t.Errorf("%q passes %s; the scenario and the trace are the only sources of the point", line, banned)
 		}
@@ -172,33 +172,37 @@ func TestAMissingBlisBinaryIsRefused(t *testing.T) {
 }
 
 // summarize computes the client's two means over exactly the point's requests: TTFT over all of
-// them, TPOT from each request's own inter-token mean (never e2e, which carries the completion
-// overhead after the last token), and it refuses a run that is missing a request, ran an extra
-// one, or ran a request at lengths other than the fixture's.
+// them, TPOT from each request's own time per output token (never e2e, which carries the
+// completion overhead after the last token), and it refuses a run that is missing a request, ran
+// an extra one, or ran a request at lengths other than the fixture's.
 func TestSummarizeIsTheClientsMetricOverTheMainPhase(t *testing.T) {
 	pl := PointLengths{ISL: 4, OSL: 4, Concurrency: 1, InputLens: []int{4, 3}, OutputLens: []int{4, 1}}
-	reqs := []sim.RequestMetrics{
-		// Listed out of order; e2e deliberately inconsistent with ITL so a TPOT taken from
-		// e2e would differ.
-		{ID: "request_1", CompletionIndex: 2, NumPrefillTokens: 3, NumDecodeTokens: 1, TTFT: 30, E2E: 30},
-		{ID: "request_0", CompletionIndex: 1, NumPrefillTokens: 4, NumDecodeTokens: 4, TTFT: 10, ITL: 2, E2E: 99},
+	i64 := func(v int64) *int64 { return &v }
+	f64 := func(v float64) *float64 { return &v }
+	done := func(id string, in, out int, ttft int64, tpot *float64, e2e int64) result.RequestRow {
+		return result.RequestRow{ID: id, Fate: result.FateCompleted, PromptTokens: in, OutputTokens: out,
+			TTFTUs: i64(ttft), TPOTUs: tpot, E2EUs: i64(e2e)}
 	}
-	obs, err := summarize(reqs, pl, nil)
+	rows := []result.RequestRow{
+		// Listed out of order; e2e deliberately inconsistent with the time per token so a TPOT
+		// taken from e2e would differ.
+		done("request_1", 3, 1, 30000, nil, 30000),
+		done("request_0", 4, 4, 10000, f64(2000), 99000),
+	}
+	obs, err := summarize(rows, pl, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// ms in the file, us out. TTFT over both requests; TPOT over the one with output > 1.
+	// TTFT over both requests; TPOT over the one with output > 1.
 	if obs.Completed != 2 || obs.MeanTTFTUs != 20000 || obs.TPOTRequests != 1 || obs.MeanTPOTUs != 2000 {
 		t.Errorf("got %+v; want 2 completed, TTFT 20000 us, TPOT 2000 us over 1 request", obs)
 	}
 
-	for name, bad := range map[string][]sim.RequestMetrics{
-		"a missing request": reqs[1:],
-		"an unknown request": append([]sim.RequestMetrics{{ID: "request_7", CompletionIndex: 3,
-			NumPrefillTokens: 4, NumDecodeTokens: 4}}, reqs...),
-		"a request at other lengths": {reqs[0], {ID: "request_0", CompletionIndex: 1, NumPrefillTokens: 5,
-			NumDecodeTokens: 4}},
-		"an uncompleted request": {reqs[0], {ID: "request_0", NumPrefillTokens: 4, NumDecodeTokens: 4}},
+	for name, bad := range map[string][]result.RequestRow{
+		"a missing request":          rows[1:],
+		"an unknown request":         append([]result.RequestRow{done("request_7", 4, 4, 1, f64(1), 1)}, rows...),
+		"a request at other lengths": {rows[0], done("request_0", 5, 4, 1, f64(1), 1)},
+		"an uncompleted request":     {rows[0], {ID: "request_0", Fate: result.FateQueuedAtHorizon, PromptTokens: 4}},
 	} {
 		if _, err := summarize(bad, pl, nil); err == nil {
 			t.Errorf("summarize accepted %s", name)
