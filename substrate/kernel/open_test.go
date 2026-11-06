@@ -104,3 +104,38 @@ func TestRecordSelectedReachesTheReport(t *testing.T) {
 		t.Errorf("report: %+v", rep.Selected)
 	}
 }
+
+// A scenario names its engine by kind and version, but a release number alone does not say
+// whose rules answer it. Repos.RulesKind says which kind the supplied rules are for, empty
+// meaning vllm, and Open refuses an engine block of another kind.
+func TestOpenRefusesAnEngineKindTheRulesAreNotFor(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	with := func(kind string) string {
+		return strings.Replace(openScenario, `engine_version: "0.32.0"`,
+			"engine: {kind: "+kind+", version: \"0.32.0\"}", 1)
+	}
+	for _, c := range []struct {
+		name, scenario, rulesKind string
+		ok                        bool
+	}{
+		{"same version, different kind", with("sglang"), "vllm", false},
+		{"matching kind", with("sglang"), "sglang", true},
+		{"empty rules kind, kind vllm", with("vllm"), "", true},
+		{"empty rules kind, kind sglang", with("sglang"), "", false},
+		{"legacy scenario, no engine block", openScenario, "", true},
+		{"legacy scenario, any rules kind", openScenario, "sglang", true},
+	} {
+		r, name := openRepos(t, d, c.scenario)
+		r.RulesKind = c.rulesKind
+		_, err := OpenInputs(name, r, 0)
+		switch {
+		case c.ok && err != nil:
+			t.Errorf("%s: %v", c.name, err)
+		case !c.ok && (err == nil || !strings.Contains(err.Error(), "engine is kind")):
+			t.Errorf("%s: err = %v, want the engine-kind refusal", c.name, err)
+		}
+	}
+}

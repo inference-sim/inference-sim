@@ -43,7 +43,9 @@ registry files nothing loaded.
 ```
 
 `Repos` also carries the engine's part: `Rules`, the engine rules for the release a scenario
-declares, and `EngineSettings`, which decodes a pool's engine block. For vLLM both come from
+declares, and `EngineSettings`, which decodes a pool's engine block. `RulesKind` names the
+engine kind those rules are for; `Open` refuses a scenario whose `engine` block names another
+kind, and an empty `RulesKind` means `vllm`. For vLLM all of these come from
 blis-vllm, which is why the examples on these pages live there.
 [Scenarios and their inputs](inputs.md) describes the scenario files.
 

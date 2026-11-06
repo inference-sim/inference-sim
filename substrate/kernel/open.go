@@ -35,6 +35,14 @@ type Repos struct {
 	// for vLLM, the packs of github.com/inference-sim/blis-vllm/rules (its Lookup, wrapped
 	// as RulesFrom does). Required: the kernel no longer looks rules up itself.
 	Rules func(version string) rules.EngineRules
+	// RulesKind is the engine kind the supplied Rules are for, as a scenario's engine block
+	// names it (engine: {kind, version}). Open refuses a scenario whose engine block names
+	// another kind, because a release number alone does not say whose rules answer it:
+	// {kind: sglang, version: X} would otherwise pair with the vLLM rules for X. Empty means
+	// "vllm", the only engine kind a Repos could carry before this field existed, so every
+	// existing caller, none of which sets it, keeps working unchanged. A scenario with no
+	// engine block (the legacy engine_version form) names no kind and is not checked.
+	RulesKind string
 	// RulesVersions lists the releases Rules answers for, for the error a scenario naming
 	// another one gets. Optional.
 	RulesVersions func() []string
@@ -43,6 +51,9 @@ type Repos struct {
 	// blis-latency-kernel/vllmsettings.OfPool). Required, as Rules is.
 	EngineSettings func(dep *deployment.Deployment, pool int) (enginesettings.Settings, error)
 }
+
+// legacyRulesKind is the engine kind Repos.RulesKind means when it is empty.
+const legacyRulesKind = "vllm"
 
 // RulesFrom adapts a lookup returning a concrete rules type, such as blis-vllm/rules'
 // Lookup returning *rules.Pack, to Repos.Rules. It keeps a nil result nil: a nil *Pack in a
@@ -207,6 +218,17 @@ func OpenInputs(scenario string, r Repos, poolIndex int) (Inputs, error) {
 		return Inputs{}, fmt.Errorf("%s: no engine rules source: Repos.Rules is unset, and the "+
 			"kernel looks no rules up itself. Pass the engine model's rules for the scenario's "+
 			"engine_version (for vLLM, github.com/inference-sim/blis-vllm/rules)", scenario)
+	}
+	if sc.Engine != nil {
+		have := r.RulesKind
+		if have == "" {
+			have = legacyRulesKind
+		}
+		if sc.Engine.Kind != have {
+			return Inputs{}, fmt.Errorf("%s: the scenario's engine is kind %q, but Repos.Rules are "+
+				"for kind %q (version %q); rules of one engine do not describe another's release",
+				scenario, sc.Engine.Kind, have, sc.Engine.Version)
+		}
 	}
 	er := r.Rules(sc.EngineRelease())
 	if isNil(er) {
