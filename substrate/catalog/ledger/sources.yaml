@@ -1,0 +1,119 @@
+# The ledger's data sources (design §10.1), each pinned to an exact revision (D3), with its
+# licence as the source's own files state it (X12, D6). Each quotation names the file at a
+# commit or dataset revision, its SHA-256 and its lines. sign_off is filled by a ledger owner
+# who has read the evidence; an agent never fills it. A source is redistributable only when
+# its licence is on the allow-list (contracts/vocab/licence.go), it states no restriction, and
+# a ledger owner has signed it off.
+kind: LedgerSources
+sources:
+  - id: inferencex
+    title: SemiAnalysis InferenceX end-to-end serving benchmarks, weekly database dump
+    revision:
+      kind: release_assets
+      url: https://github.com/SemiAnalysisAI/InferenceX-app/releases/tag/db-dump/2026-09-28
+      ref: db-dump/2026-09-28
+      commit: 62b23b23cfda3841fd358c316d95f839d56e121b
+      # The SHA-256 of each part, as the release's SHA256SUMS states them
+      # (SHA256SUMS: 458f8273c09aa72f7b35af9f5e71aafe8daf9654755f2c0bb7c8383a7d0c8616).
+      assets:
+        - {name: inferencex-2026-09-28.dump.zst.part00, sha256: 391a8eb04272f582a619d56b3e7d54f37bbc518b1588271ac79c48b9167a5218}
+        - {name: inferencex-2026-09-28.dump.zst.part01, sha256: e19591b304b0a4ed7dc2a2e50ff2de669f7ef406433f2d6a25076d33e48dc56e}
+        - {name: inferencex-2026-09-28.dump.zst.part02, sha256: 69bbf33c3e69883daacfff91185e7ab1948ae493a124d6d11ad4cb80a1f6bc50}
+        - {name: inferencex-2026-09-28.dump.zst.part03, sha256: 0fc485570acfbf6d33d8ce116723e14d8a333c0a86749e9ba97a88ec6fd0dd68}
+        - {name: inferencex-2026-09-28.dump.zst.part04, sha256: 1d011f90d6c7350bd0efcce0a621bc78933ed4383275149f69eb852331002942}
+        - {name: inferencex-2026-09-28.dump.zst.part05, sha256: 241dedad17e03857ea17319d43a27c02631fbeecb8a95fbdebca3d3710d9356e}
+        - {name: inferencex-2026-09-28.dump.zst.part06, sha256: 36e8ab27a6789a4cfdfc1d4d7e8e36d812316820b45ed6241c9b11c6bb39144a}
+        - {name: inferencex-2026-09-28.dump.zst.part07, sha256: d5fafc5847800c11e4483768fcc01cca8a7f5551e09fe1a2e0f0ab2aa114fb08}
+        - {name: inferencex-2026-09-28.dump.zst.part08, sha256: a13173e2c159af0b8caed5f369f2a66b1ffe4695da87d51d810087c66c930c80}
+        - {name: inferencex-2026-09-28.dump.zst.part09, sha256: 1baf3b1a0b91191524ebc18ca27a0167f9f1d6d69eba154267300cab961c842b}
+        - {name: inferencex-2026-09-28.dump.zst.part10, sha256: 9204d96b8c33fbf4f2b0ef2feb474ea89d74866027273579875318d4e213fd56}
+        - {name: inferencex-2026-09-28.dump.zst.part11, sha256: 98de047e9bc7cdb89d5ab800a614f0b4b8720b640518b61db30facf47d572a54}
+        - {name: inferencex-2026-09-28.dump.zst.part12, sha256: 3d87bab8fdbf6df8bef808c5595c3e74abacac644947d362612b5784e24fc651}
+        - {name: inferencex-2026-09-28.dump.zst.part13, sha256: ed3dbe7969ae4b4744f65d478ef282a6c7f10af0c47828bf5ae5e644638972c5}
+        - {name: inferencex-2026-09-28.dump.zst.part14, sha256: 5295bb87107352b98307e7a4055274a1efcaaada1f39643d66d646a2b8003e65}
+        - {name: inferencex-2026-09-28.dump.zst.part15, sha256: d206b2d3c9678e985e6fc1a3f80067eedc421accce72937da753e2e54e833883}
+        - {name: inferencex-2026-09-28.dump.zst.part16, sha256: c560093df925f66245bbb22c2e6833782f9c7083ccb7bfd2150da50791158882}
+    units: units/inferencex.jsonl.gz
+    licence:
+      # The benchmarks are run by SemiAnalysisAI/InferenceX, whose licence file is Apache-2.0.
+      # The dump is published by SemiAnalysisAI/InferenceX-app, whose licence file is GPL-3.0.
+      # Neither file speaks of the benchmark results themselves, and no other terms for the
+      # data were found. The unit list commits identifying fields and hashes, not measured
+      # values. Whether the results are redistributable is the ledger owner's sign-off.
+      spdx: Apache-2.0
+      evidence:
+        - url: https://github.com/SemiAnalysisAI/InferenceX/blob/522f0e9f1f3fad73d4c918e33262af5e2f4b71f3/LICENSE
+          sha256: de5f554688f5c9d4339131b598759fa3151d41adf5dec3104dccaa0ebbbe0602
+          lines: "189-191"
+          quote: >-
+            Copyright 2025 SemiAnalysis LLC, Advanced Micro Devices, NVIDIA CORPORATION /
+            Licensed under the Apache License, Version 2.0 (the "License");
+        - url: https://github.com/SemiAnalysisAI/InferenceX-app/blob/62b23b23cfda3841fd358c316d95f839d56e121b/LICENSE
+          sha256: 3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986
+          lines: "1-2"
+          quote: "GNU GENERAL PUBLIC LICENSE / Version 3, 29 June 2007"
+      note: >-
+        The code that runs the benchmarks is Apache-2.0 and the repository that publishes the
+        dump is GPL-3.0; neither licence file states terms for the benchmark results.
+      sign_off: {by: "", on: ""}
+
+  - id: aisimulate
+    title: NVIDIA AISimulate operator sweeps (ai-dynamo/aisimulate, aisimulate_core/systems/data)
+    revision:
+      kind: git_commit
+      url: https://github.com/ai-dynamo/aisimulate/tree/2f0f4cd8606d580567b253d02f3d699fe36db865
+      ref: 2f0f4cd8606d580567b253d02f3d699fe36db865
+    status: >-
+      No unit list yet. The sweeps are reachable from CI (registry's rederive.yml checks them out
+      at this commit, 1,471 files and 115 MB under systems/data/), but the ingest tool for
+      AISimulate is not written; the registry's fitting scripts read the sweeps directly until it
+      is.
+    licence:
+      spdx: Apache-2.0
+      evidence:
+        - url: https://github.com/ai-dynamo/aisimulate/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/LICENSE
+          sha256: 705c9170b57de145adccf1ec113a553ba08d7effab219aad84953c508f5ffe92
+          lines: "10-11"
+          quote: >-
+            Except for the third-party material identified in that notice file, this codebase is
+            licensed under the Apache License 2.0 as described below.
+      note: >-
+        Lines 3-8 of the same file except one vendored config.json, which is MIT. GitHub reports
+        the repository's licence as NOASSERTION because of that preamble.
+      sign_off: {by: "", on: ""}
+
+  - id: aisimulate-fpm
+    title: NVIDIA forward-pass dataset on Hugging Face (nvidia/aisimulate-fpm-dataset)
+    revision:
+      kind: hf_dataset_revision
+      url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/tree/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a
+      ref: dbfcdd9eb62ea733efbc3f0cbd78277f2960061a
+    status: >-
+      No unit list yet. The dataset is public and reachable from CI at this revision, but the
+      ingest tool for forward-pass cells is not written. Its own README restricts redistribution
+      (below), so its records are not committed in any case.
+    licence:
+      spdx: Apache-2.0
+      evidence:
+        - url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/blob/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a/LICENSE
+          sha256: 705c9170b57de145adccf1ec113a553ba08d7effab219aad84953c508f5ffe92
+          lines: "10-11"
+          quote: >-
+            Except for the third-party material identified in that notice file, this codebase is
+            licensed under the Apache License 2.0 as described below.
+        - url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/blob/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a/README.md
+          sha256: 4249776faf17fe716780fc846197e516b1ba27591f9151a41240351d390c4b12
+          lines: "17"
+          quote: "license: apache-2.0"
+      restrictions:
+        - url: https://huggingface.co/datasets/nvidia/aisimulate-fpm-dataset/blob/dbfcdd9eb62ea733efbc3f0cbd78277f2960061a/README.md
+          sha256: 4249776faf17fe716780fc846197e516b1ba27591f9151a41240351d390c4b12
+          lines: "209-210"
+          quote: >-
+            The repository must remain private. Retained provenance contains internal paths and
+            network metadata, and the source has no approved redistribution license.
+      note: >-
+        The LICENSE file is the AISimulate code licence, word for word (same SHA-256). The README
+        says the dataset has no approved redistribution licence, although the dataset is public at
+        this revision.
+      sign_off: {by: "", on: ""}

@@ -1,0 +1,91 @@
+name: shared nightly checks
+
+# The nightly checks every BLIS repository runs (design §13.4). Called by commit from a
+# scheduled workflow:
+#
+#   on:
+#     schedule: [{cron: "17 5 * * *"}]
+#   jobs:
+#     nightly:
+#       uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@<40-hex commit>
+#       with:
+#         substrate-ref: <the same commit>
+#
+#   cited-issues  X28: every issue cited as the reason for a refusal or a gap is open
+#   quarantine    X25: no quarantined test has expired
+#   tags          LIF-1: every tag resolves to the commit .github/tags.lock records
+#   issue-names   X12: no private name appears in an issue's title, body or comments
+
+on:
+  workflow_call:
+    inputs:
+      substrate-ref:
+        type: string
+        required: true
+    secrets:
+      INTERNAL_NAME_PATTERNS:
+        required: false
+
+permissions:
+  contents: read
+  issues: read
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  nightly:
+    name: nightly checks
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          path: repo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: inference-sim/blis-substrate
+          ref: ${{ inputs.substrate-ref }}
+          path: substrate
+      - uses: ./substrate/.github/actions/go-toolchain
+        with:
+          module-dir: substrate
+      - working-directory: substrate
+        run: go build -o "$RUNNER_TEMP/prcheck" ./tools/prcheck
+      - name: Cited issues are open (X28)
+        working-directory: repo
+        run: '"$RUNNER_TEMP/prcheck" issues -repo "${{ github.repository }}" -resolve'
+      - name: Quarantine list (X25)
+        working-directory: repo
+        run: '"$RUNNER_TEMP/prcheck" quarantine'
+      - name: Every tag resolves to its recorded commit (LIF-1)
+        working-directory: repo
+        run: '"$RUNNER_TEMP/prcheck" tags -lock .github/tags.lock'
+      - name: No private name in issue text (X12)
+        env:
+          PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
+          IS_FORK: ${{ github.event.repository.fork || 'false' }}
+        run: |
+          set -uo pipefail
+          RE=$(printf '%s\n' "${PATTERNS:-}" | awk '!/^[[:space:]]*(#|$)/' | paste -sd'|' -)
+          if [ -z "$RE" ]; then
+            echo "the INTERNAL_NAME_PATTERNS secret is empty or missing, so the issue-text scan cannot run (X12, X16)" >&2
+            exit 1
+          fi
+          export RE
+          # Every issue and pull request, open or closed, with its comments. A match prints the
+          # location (kind, number, field), never the matched text.
+          gh api graphql --paginate -f query='
+            query($endCursor: String) {
+              repository(owner: "${{ github.repository_owner }}", name: "${{ github.event.repository.name }}") {
+                issues(first: 50, after: $endCursor) { nodes { number title body comments(first: 100) { nodes { body } } }
+                  pageInfo { hasNextPage endCursor } } } }' \
+            --jq '.data.repository.issues.nodes[] | [(.number|tostring), .title, .body, (.comments.nodes[].body)] | @json' > "$RUNNER_TEMP/issues.jsonl"
+          perl -MJSON::PP -ne 'BEGIN { $re = qr/$ENV{RE}/i }
+            my $r = decode_json($_); my @f = ("title", "body"); my $n = shift @$r;
+            for my $i (0 .. $#$r) { if (defined $r->[$i] && $r->[$i] =~ $re) { print "issue #$n field $i\n"; $hit = 1 } }
+            END { exit($hit ? 1 : 0) }' "$RUNNER_TEMP/issues.jsonl" || { echo "private names found in the issues above" >&2; exit 1; }
+          echo "issue-names: clean"

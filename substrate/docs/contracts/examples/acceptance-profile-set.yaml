@@ -1,0 +1,50 @@
+kind: AcceptanceProfileSet
+name: inferencex-golden-al
+caveats:
+  - Coding only. Every curve is SPEED-Bench Qualitative coding; other categories have none.
+  - Measured on B300. Reuse on another part is recorded by the resolver.
+  - DeepSeek-V4.1-Flash with DSpark at K 6-8 was refused by the image, so it has no value.
+profiles:
+  - model: deepseek-v4.1-flash
+    speculative_method: dspark
+    num_spec_tokens: 5
+    thinking: "off"
+    category: coding
+    acceptance_length: 4.07
+    method: measured
+    provenance: &dsv41
+      source: https://github.com/SemiAnalysisAI/InferenceX/blob/main/inferencex-e2e/infx/golden_al_distribution/dsv41flash_dspark.yaml
+      run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/34493175056
+      benchmark: SPEED-Bench Qualitative
+      prompts: 80
+      hardware: b300
+      engine_image: vllm/vllm-openai:deepseekv41-flash-0909
+      tp: 4
+      sampling: {temperature: 1.0, max_tokens: 4096}
+      settings:
+        draft_sample_method: probabilistic
+        rejection_sample_method: block
+  - model: deepseek-v4.1-flash
+    speculative_method: dspark
+    num_spec_tokens: 5
+    thinking: "on"
+    category: coding
+    acceptance_length: 3.51
+    method: measured
+    provenance: *dsv41
+  - model: glm-5.3
+    speculative_method: mtp
+    num_spec_tokens: 3
+    thinking: "on"
+    category: coding
+    acceptance_length: 2.99
+    method: copied
+    copied_from: glm-5.2-fp8/mtp/k3/thinking-on/coding
+    rationale: >
+      Provisional. GLM-5.3 shares GLM-5.2's base and layer topology, so GLM-5.2's curve is
+      the closest measured reference; replace it with a run on GLM-5.3.
+    provenance:
+      source: https://github.com/SemiAnalysisAI/InferenceX/blob/main/inferencex-e2e/infx/golden_al_distribution/glm5.3_mtp.yaml
+      run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/28058352479
+      hardware: b300
+      sampling: {temperature: 1.0, top_p: 0.95, max_tokens: 4096}

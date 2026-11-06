@@ -1,0 +1,747 @@
+[
+ {
+  "ID": "X1",
+  "Title": "Users configure BLIS with the upstream's own configuration.",
+  "Statement": "What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors. BLIS adds only what the real system learns from its environment: hardware, cluster topology and workload. Engine repositories resolve defaults exactly as the upstream does. The router needs no port of its defaults: the fork runs llm-d's own flag parsing, configuration loader and Kubernetes decoding unchanged, so a value the real router rejects is rejected with the router's own message. An unknown or unsupported field is refused by its upstream name, never ignored. The one exception is the router's flags that only change how a deployed router is served or observed (transport, TLS, leader election, ports, telemetry). Those are accepted, have no effect, and are named in a warning."
+ },
+ {
+  "ID": "X2",
+  "Title": "The substrate knows no engine.",
+  "Statement": "Outside its tests, blis-substrate contains no engine name, no engine version and no engine's policy. Engine behaviour reaches it only as a resolved PoolPlan, StepShape or Transfer."
+ },
+ {
+  "ID": "X3",
+  "Title": "Engine behaviour lives only in its engine repository.",
+  "Statement": "Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang. Each engine repository models one upstream release at a time (LIF-5)."
+ },
+ {
+  "ID": "X4",
+  "Title": "The router is llm-d's own router code, unchanged.",
+  "Statement": "The fork changes only how the router is hosted: how it reads time, starts work, draws random numbers and makes calls. It changes no routing decision. Engine-specific router behaviour comes from llm-d's own code for that engine."
+ },
+ {
+  "ID": "X5",
+  "Title": "Fidelity is proven by comparing against the upstream's own code.",
+  "Statement": "Each engine repository runs the upstream's own Python code on the same inputs and compares its decisions with the Go port's, step by step. Only the environment is replaced (GPU, clock, transport, environment settings, the hardware platform and outside services), and every replacement is listed in a manifest (§7)."
+ },
+ {
+  "ID": "X6",
+  "Title": "Same inputs, same output.",
+  "Statement": "For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms. The data source (embedded or path) is recorded in the Result, but is left out of the output the byte gate compares. Simulated time is passed in as a number, and no code reads the system clock. Randomness comes from named substreams seeded from the scenario (DEV-6)."
+ },
+ {
+  "ID": "X7",
+  "Title": "One owner for each fact; dependencies point one way.",
+  "Statement": "Contracts live in blis-substrate/contracts. A repository never imports one above it in Figure 1. A generated file is written only by its generator. Every copy of a fact is generated from its owner or checked against it. The dashboard's scoring harness is the one thing a lower repository uses from a repository above it: it runs the harness as a pinned, released tool, never imports its code. A lower repository's candidate job may also build inference-sim through stack CI to run that harness (§13.5)."
+ },
+ {
+  "ID": "X8",
+  "Title": "Every number is reproducible, and no data point both fits and judges.",
+  "Statement": "Every number records the exact versions and data it came from, and can be regenerated from them. A published number, meaning one on the dashboard or in a committed report, is computed from released data only (§3.3). No data point used to fit or choose a value is used to evaluate it (§10)."
+ },
+ {
+  "ID": "X9",
+  "Title": "The upstream feature surface is fully accounted for.",
+  "Statement": "For every pinned upstream release, each feature the upstream offers has exactly one status in a generated list. Features include connectors, KV tiers, KV-cache managers, speculative methods, scheduler policies, configuration fields, metrics and event types. The statuses are: modelled, with evidence; refused by name, with an issue; or out of scope, for one of three listed reasons (§7.5). Modelled is the goal; the other two are exceptions, each with evidence."
+ },
+ {
+  "ID": "X10",
+  "Title": "",
+  "Statement": "Repositories are released bottom-up. A change spanning repositories is one review set. Each repository's part is tagged before the repository above it pins that tag."
+ },
+ {
+  "ID": "X11",
+  "Title": "",
+  "Statement": "Pins are exact release tags. The only committed replace directive is the one in inference-sim's go.mod that substitutes the router fork for upstream llm-d. It exists because the fork keeps upstream's module path (github.com/llm-d/llm-d-router), so Go cannot fetch the fork by its own path; a replace is Go's only way to substitute it. It names the fork's exact -blis.N tag, never a branch or a local path, so it pins as exactly as a require does, and go.sum records its hash. It may appear only in inference-sim, because Go ignores replace directives in every module but the one being built. No other module requires the fork; engines and other repositories use only the router contract in contracts/embed. The only committed exclude directives are those in inference-sim that skip a plain tag made before the rule of §14.1, and no repository commits a go.work file."
+ },
+ {
+  "ID": "X12",
+  "Title": "",
+  "Statement": "Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list. Each such model records the licence identifier in its model.yaml; a model whose licence is not on the allow-list commits only the file's hash and revision, and the deriver fetches it in a nightly job that holds the access token; pull-request jobs check only the committed hash and revision and the graph's derived_from hash, so no pull-request job needs a secret. Each derived value cites its source by URL and commit or hash. No private names appear in files, commits, pull-request text or issue text, and reports and documents name internal data neutrally, as internal experiments."
+ },
+ {
+  "ID": "X13",
+  "Title": "",
+  "Statement": "Every behaviour change has a test that fails without it. A validation change (§8.9) to a published number carries success criteria fixed in advance, plus held-out evidence. A verification change that moves published numbers, such as a fidelity fix, carries the price-change report and the scoring harness's figures on published units, and is never rejected for exposing an error elsewhere (VAL-11). A refactor shows identical output on the byte gate and on the dashboard's corpus: the recorded configuration of every ledger unit the dashboard can simulate, re-run through the scoring harness, with no measured value read. That corpus covers shapes the byte gate does not. Each nightly run of the whole corpus records which functions each point reaches. A pull request then runs every point that reaches a function it changes, in parallel; with no such record for its base, it runs the whole corpus. The whole corpus also runs before every release. A pull request that is both a refactor and a behaviour change is split."
+ },
+ {
+  "ID": "X14",
+  "Title": "",
+  "Statement": "A pull request's description is accurate: the commit hashes it lists are the branch heads, it merges cleanly, and every invariant it cites exists."
+ },
+ {
+  "ID": "X15",
+  "Title": "",
+  "Statement": "Each validation rule exists once, in Go, in blis-substrate. Python tools validate data by calling the substrate's validate command. A Python check that restates a Go rule must pass a test that runs both on the same set of failing examples."
+ },
+ {
+  "ID": "X16",
+  "Title": "",
+  "Statement": "A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine list of X25. A gate's workflow triggers are among the paths it declares, so removing a trigger needs review. A gate whose last real run is more than seven days old is shown as failing."
+ },
+ {
+  "ID": "X17",
+  "Title": "",
+  "Statement": "Every repository's protected branch requires its named checks, including formatting and lint. No change merges without a successful run of them, on the tree being merged (X22)."
+ },
+ {
+  "ID": "X18",
+  "Title": "",
+  "Statement": "Every check in the invariant registry names a known-bad input that must make it fail. A check that cannot fail is not a check."
+ },
+ {
+  "ID": "X19",
+  "Title": "",
+  "Statement": "Scripts and generators, in every language, never write an engine default. They leave an unstated setting unstated, or read the default with inference-sim fields. A rendered scenario or report shows each resolved value with its source: stated by the user, recorded by the measured run (including a value it logs as resolved), the engine's default, or, for a workload-dependent value, a cited measurement (D8)."
+ },
+ {
+  "ID": "X20",
+  "Title": "",
+  "Statement": "Every commit written for BLIS is signed. Every commit that contains work by a person or an agent carries a DCO Signed-off-by line from the person who takes responsibility for it; an agent never signs off, since only a person can certify the DCO. A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies to every commit not reachable from the upstream tag being merged; upstream history is kept as upstream wrote it."
+ },
+ {
+  "ID": "X21",
+  "Title": "",
+  "Statement": "Everything a build or a release runs is pinned and traceable. GitHub Actions are pinned by commit, not by tag. Python environments used by oracles and fitting scripts are locked with hashes. Each inference-sim release publishes build provenance and a software bill of materials. Each repository keeps the licence and notice files its code requires, including blis-vllm's NOTICE for code derived from vLLM; by policy blis-sglang keeps one too for code derived from SGLang. Each derived file keeps upstream's licence header (vLLM's SPDX line, SGLang's Apache notice) and states that it was changed, as Apache-2.0 section 4(b) requires."
+ },
+ {
+  "ID": "X22",
+  "Title": "",
+  "Statement": "Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull request, and is run again when merging changes a path it covers; an agent's or person's verdict is on the head tree, and is requested again when merging changes a path it covers. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states the minimum number of items it must process, and fails below it. No step in a required job ignores an exit code."
+ },
+ {
+  "ID": "X23",
+  "Title": "",
+  "Statement": "A version is written in one place. stack.json, each repository's go.mod, contracts/toolchain, and each application's or harness pin file are the only files that state a version; every other file that mentions one (Dockerfiles, workflow files, documentation) is generated from them."
+ },
+ {
+  "ID": "X24",
+  "Title": "",
+  "Statement": "Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason. An issue closes only through a commit or pull request that names it, or as not planned, by a reviewer with write access, with a reason."
+ },
+ {
+  "ID": "X25",
+  "Title": "",
+  "Statement": "Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment. A test failing on the main branch blocks every merge but its fix, unless it is quarantined with an owning issue and an expiry date."
+ },
+ {
+  "ID": "X26",
+  "Title": "",
+  "Statement": "In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree."
+ },
+ {
+  "ID": "X27",
+  "Title": "",
+  "Statement": "An open bug labelled as breaking an invariant blocks a release of the repository where the bug lives, and of each repository that ships that code, unless the release fixes only that bug or a security issue, or a release owner records a waiver in the release notes."
+ },
+ {
+  "ID": "X28",
+  "Title": "",
+  "Statement": "An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open. It closes only in the change that removes or updates every citation of it."
+ },
+ {
+  "ID": "SUB-1",
+  "Title": "",
+  "Statement": "Packages under contracts/ import only the Go standard library, the YAML parser and each other. Between contract-change review sets they change only compatibly: an interface never gains a method, optional abilities are separate interfaces, and new fields keep their zero-value meaning. An incompatible change is allowed only as a contract-change review set (§12.8), which releases every implementer against it together. From v1 on such a set raises the substrate's MAJOR version. While the substrate is at v0 it raises MINOR, because Go treats every v0 version as one major. contracts/harness and contracts/conformance may also use golang.org/x/tools, at the version blis-substrate's go.mod requires, for their analysis checks."
+ },
+ {
+  "ID": "SUB-2",
+  "Title": "",
+  "Statement": "Every new or changed data field ships with its validator, a failing example for each way it can be wrong, and regenerated reference documentation."
+ },
+ {
+  "ID": "SUB-3",
+  "Title": "",
+  "Statement": "The catalog holds declared facts only: figures read from a published source, each with a citation a reader can follow. Each model's graph is generated from its vendor config.json and the safetensors headers of its checkpoint, and never edited by hand. No runtime code reads config.json. No model value is hard-coded in the cost model or an engine, and no setting asks the user to copy a value from a checkpoint. A scenario's cluster names catalog entries for its chip, fabric and storage devices, and states what the user provisions: the node count, and the GPUs per node, GPUs per rack and host memory per node where the chip's entry leaves them open. Where the entry states them, as GB200 NVL72's does, the scenario may omit them or restate them unchanged, and any other value is refused. On a chip whose entry has no rack tier, the scenario may not state a rack size. On a chip that has one, the cluster's fabric is the network between racks. A different packaging of the same chip is a catalog entry of its own. One function in contracts/spec resolves a cluster's packaging from the scenario and the catalog, and every reader calls it (X15)."
+ },
+ {
+  "ID": "SUB-4",
+  "Title": "",
+  "Statement": "Every coefficient is generated by its family's writer script, never edited by hand. It records its value, units, scope, method, sources and data units (§9)."
+ },
+ {
+  "ID": "SUB-5",
+  "Title": "",
+  "Statement": "Coefficients obey physics: no compute rate above the chip's dense datasheet peak for that data type; no memory bandwidth above the datasheet peak for a working set larger than the chip's L2 cache; at a fixed algorithm, topology tier and bytes per rank, a collective never gets faster as the group grows."
+ },
+ {
+  "ID": "SUB-6",
+  "Title": "",
+  "Statement": "The cost model resolves nothing. Every default, backend choice, padding and capture decision arrives in the plan or the step shape."
+ },
+ {
+  "ID": "SUB-7",
+  "Title": "",
+  "Statement": "The cost model has a price for every primitive it can be asked about. When no fitted coefficient exists it uses the next source in a fixed order, and records which one it used (§9)."
+ },
+ {
+  "ID": "SUB-8",
+  "Title": "",
+  "Statement": "A change to the substrate never breaks the data it releases: validators, deriver and writers all pass on the tree being released."
+ },
+ {
+  "ID": "SUB-9",
+  "Title": "",
+  "Statement": "Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between catalog and registry), and the same content hash. The embedded patterns equal the loader's patterns."
+ },
+ {
+  "ID": "SUB-10",
+  "Title": "",
+  "Statement": "contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all. Every engine and the cost model either runs each one or refuses it with the upstream's reason. No size or price may be non-finite or zero where a positive value is required."
+ },
+ {
+  "ID": "SUB-11",
+  "Title": "",
+  "Statement": "Every field of PoolPlan, StepShape and Transfer, and every coefficient family, changes some price when it is changed, or is listed as not yet priced with an issue. A setting that the engine resolves but the cost model never reads is a gap, and it is visible."
+ },
+ {
+  "ID": "SUB-12",
+  "Title": "",
+  "Statement": "Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases. Every declared field is either used or refused, never dropped."
+ },
+ {
+  "ID": "SUB-13",
+  "Title": "",
+  "Statement": "blis-substrate is one Go module: no go.mod exists below the repository root, and the files in the module zip that Go fetches total under 100 MB uncompressed (Go's limit is 500 MB)."
+ },
+ {
+  "ID": "SUB-14",
+  "Title": "",
+  "Statement": "The memory breakdown closes. Every figure an engine's upstream reports about memory at start-up (weights, memory outside PyTorch's allocator, peak activations, the CUDA-graph pool, and the memory left for KV) has one matching term, within a stated tolerance. Buffers and workspaces the engine chooses are PoolPlan fields, sized by the engine as its upstream sizes them. Memory the engine does not choose, such as the CUDA context and communication libraries, is a measured coefficient per chip and library version. Anything left over is a named term on a list that may only shrink, never folded into another term. Each term states its basis: per rank, per node or for the group (SUB-16). Host memory closes the same way: the weights an engine keeps in host memory, its host KV tier and its pinned buffers are PoolPlan figures. Each states whether the engines on a node share it; a shared figure counts once per node. For each node, the sum fits the catalog's host memory."
+ },
+ {
+  "ID": "SUB-15",
+  "Title": "",
+  "Statement": "A model graph holds only what the checkpoint states: the tensors, their shapes and stored data types, scale tensors, and the layer structure. Every graph field can be computed from config.json and the safetensors header of every checkpoint shard (the header only, no tensor data). How an engine shards, fuses, pads or repacks a tensor, which page size it uses, and which nodes it emits under a layout are lowering, and belong to the engine (X3). The engine reports the resident weights that result in its PoolPlan."
+ },
+ {
+  "ID": "SUB-16",
+  "Title": "",
+  "Statement": "Quantities carry units as types. Bytes, seconds, tokens, FLOPs, bytes per second and dimensionless ratios are distinct Go types in contracts/, and so are per-rank, per-node and per-group amounts, so adding a byte count to a token count, or a per-rank amount to a per-group one, does not compile. A registry entry's unit equals the unit the formula reading it requires, checked when the registry loads. An efficiency lies in (0, 1]. A quantised format is one type (payload bits, scale bits, block shape) with one function for its stored bytes."
+ },
+ {
+  "ID": "SUB-17",
+  "Title": "",
+  "Statement": "A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier. A collective's step time is set by the cost model. A collective that leaves its NVLink domain also reports the demand it places on each link during the step; that demand is reserved, and transfers share what remains."
+ },
+ {
+  "ID": "SUB-18",
+  "Title": "",
+  "Statement": "Provenance is recorded per field, not per file. A catalog field holds a datasheet figure, a published figure, or a measurement of one named device, and says which. A fitted or assumed value is a coefficient, and belongs in the registry."
+ },
+ {
+  "ID": "SUB-19",
+  "Title": "",
+  "Statement": "Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes. Each substrate release publishes them as JSON Schema, generated from the Go types. blis-config-search and accuracy-dashboard validate every document they read or write with inference-sim schema validate, which runs the Go validators (X15), and define none of their own. The published JSON Schema serves editors and structural checks. The per-point record is defined there too, although the dashboard writes it, because config search and the substrate's gates read it."
+ },
+ {
+  "ID": "SUB-20",
+  "Title": "",
+  "Statement": "No price, size or engine decision depends on a free-text label. Every property a consumer branches on, such as which attention node in the model graph reads a cache the plan sizes or whether an expert group is shared or routed, is a typed field with a closed set of values, derived from the checkpoint and checked at load. Names and roles kept for people to read change no output."
+ },
+ {
+  "ID": "VLM-1",
+  "Title": "",
+  "Statement": "Decisions match vLLM at the pinned commit, step by step, on every oracle scenario."
+ },
+ {
+  "ID": "VLM-2",
+  "Title": "",
+  "Statement": "Every Go file states where it came from: derived from a vLLM path at a release and commit, moved from another repository, or original. At a tag v<release>-blis.N, every ported file names that vLLM release, and no file names another."
+ },
+ {
+  "ID": "VLM-3",
+  "Title": "",
+  "Statement": "fields.json classifies every configuration field and every environment variable the release reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled, proven inert (with a passing proof), or not modelled (with an issue). No other status is allowed, except one a release plan allows for a stated time (glossary: Inert, unproven). A field is modelled when the port reads it and setting it changes a decision in a recorded trace, or a field of the emitted plan or step shape that the cost model prices (SUB-11). Its evidence is an oracle scenario that sets it and whose trace the port reproduces, or a test that sets it and finds the emitted plan or step shape equal to the upstream's own resolution. A field that reaches only a plan or step-shape field on SUB-11's not-yet-priced list is not modelled, and cites that list's issue. A field the port reads but carries to no decision, plan or step shape is proven inert or not modelled. A field marked modelled records the value classes its evidence covers: for a boolean or enumerated field, the values its evidence sets; for an ordered numeric field, the range its evidence sets, split at every threshold the upstream compares the field with, generated from the upstream's comparisons. The probe values of a proven-inert field follow the same classes. A field that can name code outside the pinned release, such as a class or module path, is marked so. Each field also states its estimation rule (§11.2), or that it has none."
+ },
+ {
+  "ID": "VLM-4",
+  "Title": "",
+  "Statement": "surface.json lists every connector, offload tier, KV-cache spec type and its manager, speculative method, scheduler policy, metric family and KV-event type the pinned release registers, each with a status (X9)."
+ },
+ {
+  "ID": "VLM-5",
+  "Title": "",
+  "Statement": "No clock reads and no goroutines. Waiting is reported to the simulator as a time value."
+ },
+ {
+  "ID": "VLM-6",
+  "Title": "",
+  "Statement": "A value of an enumerated setting, such as a connector, backend or policy name, runs only through the surface item that models it. Two values share code only where the upstream's own registration maps them to the same class, cited. Every value is either refused by name or produces its own trace."
+ },
+ {
+  "ID": "VLM-7",
+  "Title": "",
+  "Statement": "Every KV-cache spec type and group role the pinned release registers in KVCacheSpecRegistry has a status in surface.json that X9 allows. For a modelled one, the manager the registry maps it to is ported, with oracle scenarios that allocate, evict and free its blocks and, where the manager supports prefix caching, share a prefix between requests. A model whose layers need a refused spec type is refused before the run starts, with a message naming the spec type. The grouping of layers into KV-cache groups at start-up, and the coordinators that run one manager per group, are ported once and serve every manager."
+ },
+ {
+  "ID": "SGL-1",
+  "Title": "",
+  "Statement": "The oracle drives SGLang's own Python classes at the pinned tag, in a locked environment, with the Python tree core of the radix cache selected."
+ },
+ {
+  "ID": "SGL-2",
+  "Title": "",
+  "Statement": "Every Go file states its provenance, as for VLM-2."
+ },
+ {
+  "ID": "SGL-3",
+  "Title": "",
+  "Statement": "fields.json covers SGLang's ServerArgs and its SGLANG_* environment variables, under the rules of VLM-3. Defaults are resolved as SGLang's own resolution hooks resolve them."
+ },
+ {
+  "ID": "SGL-4",
+  "Title": "",
+  "Statement": "surface.json lists every transfer backend, HiCache storage backend, tree cache, tree core, allocator and memory-pool type, speculative algorithm, scheduling policy, metric family and KV-event type the pinned release can select, each with a status (X9)."
+ },
+ {
+  "ID": "SGL-5",
+  "Title": "",
+  "Statement": "KV events are emitted exactly as SGLang emits them: one BlockStored per page, merged in SGLang's event queue with the queue's last event when it has the same medium, LoRA adapter, block size, cache salt and session, and its parent hash continues that event's chain (mem_cache/events.py:140-170). Consecutive BlockRemoved events of the same medium are merged too. Both tree cores, Python and Rust, merge the same way (§6.4)."
+ },
+ {
+  "ID": "SGL-6",
+  "Title": "",
+  "Statement": "Every tree cache, tree core, allocator and memory-pool type the pinned release can select has a status in surface.json that X9 allows. A modelled type has its Go counterpart, with oracle scenarios that insert, match, lock against eviction, evict and free through it. A configuration that selects a refused type is refused before the run starts, with a message naming the type."
+ },
+ {
+  "ID": "RTR-1",
+  "Title": "",
+  "Statement": "Upstream releases are merged into llm-d-r, never rebased. Fork pull requests land as merge commits. Commits written for BLIS follow X20; upstream history is merged as upstream wrote it."
+ },
+ {
+  "ID": "RTR-2",
+  "Title": "",
+  "Statement": "Every change the fork makes to an upstream file is one of eleven kinds, and nothing else: clock read or deadline: time.Now, time.Since, time.After or a context deadline becomes the runtime's clock (rt.Now, rt.Clock()); timer or periodic work: a goroutine looping on a ticker becomes rt.Every(ctx, name, interval, fn); goroutine or blocking wait: go f() becomes rt.Go(f); a blocking select becomes rt.Park(condition); random draw: a draw from a global or unseeded source becomes a draw from a named stream, rt.Rand(\"<name>\"); iteration order: when hosted, a map or sync.Map listing that reaches a decision is sorted, or sorted and then shuffled from a named stream; when not hosted, upstream's order is kept; network call: when hosted, an outbound HTTP call goes through hosting.Transport, which the host serves; work ordering: work the upstream runs in parallel or in the background runs, when hosted, one item at a time in a fixed order; when not hosted, upstream's concurrency is kept; per-simulation state: state the upstream shares across the whole process, such as the picker's tie-break counter or random source, is kept per runtime when hosted (rt.Local), so two simulations in one process do not share it; hosted substitute: when hosted, a component is replaced by one with the same contract that the host can drive, such as a time-to-live cache on the runtime's clock, or a path BLIS does not host is refused by name; test adaptation: an upstream test is changed only to follow a signature another allowed kind changed; startup assembly: the runner is split so a host can build the router without servers, Kubernetes reconcilers or leader election. No change alters a routing, admission, flow-control or scoring decision: no condition, weight, threshold, default or plugin choice."
+ },
+ {
+  "ID": "RTR-3",
+  "Title": "",
+  "Statement": "pkg/embed.New passes the router conformance suite and changes only compatibly within an upstream major version, except through a contract-change review set (§12.8), which runs the API diff in accept-break mode and releases every implementer together (SUB-1). Once the fork imports contracts/embed from blis-substrate, the diff covers that package."
+ },
+ {
+  "ID": "RTR-4",
+  "Title": "",
+  "Statement": "A plugin type runs in BLIS only after an audit. The audit converts every baselined use inside that plugin (RTR-6). The fork's audited list and BLIS's allow-list change in the same review set."
+ },
+ {
+  "ID": "RTR-5",
+  "Title": "",
+  "Statement": "The llm-d P/D sidecar is hosted under the same runtime interface, so P/D leg handling is llm-d's code rather than a re-implementation in inference-sim."
+ },
+ {
+  "ID": "RTR-6",
+  "Title": "",
+  "Statement": "Every direct clock read, timer, goroutine, random draw, map-order dependence, network call and process-wide mutable state on a router path goes through the runtime interface, or is listed in the reviewed baseline. A use is on the baseline for one of three reasons, recorded with it: it cannot affect a decision (a log, a metric, or a walk whose order does not matter); it lies inside a plugin type BLIS refuses; or it lies on a path that pkg/embed.New never builds, such as the router's servers. A use of the second kind is converted when its plugin is audited and allowed (RTR-4). The baseline grows only by review, and shrinks when a use is converted or upstream removes it."
+ },
+ {
+  "ID": "RTR-7",
+  "Title": "",
+  "Statement": "Under the simulated runtime, at most one router goroutine runs at a time, and a goroutine gives way only in rt.Park. No lock is held across a call that can reach rt.Park. Channel and wait-group waits on decision paths are converted to rt.Park, as the \"goroutine or blocking wait\" kind of RTR-2. Decisions do not depend on the order in which goroutines runnable at one instant resume."
+ },
+ {
+  "ID": "SIM-1",
+  "Title": "",
+  "Statement": "The engine is chosen by the scenario's engine: {kind, version}. Any number of kinds may be registered, each at one upstream release; a scenario naming another release is refused (LIF-6). A scenario that still uses the field engine_version, from before engine: {kind, version} existed, is refused with a message that names the replacement."
+ },
+ {
+  "ID": "SIM-2",
+  "Title": "",
+  "Statement": "No silent degradation: unsupported or ambiguous input is refused with a message; library code returns errors and never exits the process."
+ },
+ {
+  "ID": "SIM-3",
+  "Title": "",
+  "Statement": "Every release publishes stack.json: the exact tag of every BLIS module and every upstream release it was built and tested with, the Go toolchain version, and the llm-d guides commit."
+ },
+ {
+  "ID": "SIM-4",
+  "Title": "",
+  "Statement": "The byte gate (a fixed scenario set whose output must not change in a refactor) runs inside this repository."
+ },
+ {
+  "ID": "SIM-5",
+  "Title": "",
+  "Statement": "Each release reports how much of the llm-d stack's published configurations it can run, per engine (X9)."
+ },
+ {
+  "ID": "SIM-6",
+  "Title": "",
+  "Statement": "A run that names no catalog or registry uses the embedded copy. A run that names a path uses that directory instead of the embedded copy, plus any overlays the overlay flags name. A path flag never overlays."
+ },
+ {
+  "ID": "SIM-7",
+  "Title": "",
+  "Statement": "Every run makes progress. Each request ends in one of the fates of §8.7 (DEV-9). An engine pauses only when it has a scheduled wake-up or nothing to do. It never has more steps in flight than PoolPlan.InFlight, which is its upstream's depth (in vLLM, max_concurrent_batches, config/vllm.py:577-587; in SGLang, one batch ahead under the overlap scheduler), and never processes a step's output before that step ends. A request that can never fit in the engine's KV cache is refused at admission by the engine, with the upstream's reason, and inference-sim records the refusal; it is never retried forever."
+ },
+ {
+  "ID": "SIM-8",
+  "Title": "",
+  "Statement": "Requests and sessions follow one written state machine, whose end states are the fates of §8.7 (DEV-9). Intermediate P/D states, such as waiting for decode KV or transferring, are states of the machine, each with edges to eviction and to an end state. Code that ends a request sets its fate before notifying anyone. Every round a session planned has exactly one fate. A request identifier is never reused within a run."
+ },
+ {
+  "ID": "SIM-9",
+  "Title": "",
+  "Statement": "Each refusal has two tests: the smallest configuration that triggers it, and the closest one that does not. The message names the field and the value that caused it. A feature or plugin is refused only under the settings that actually reach the code BLIS does not model."
+ },
+ {
+  "ID": "SIM-10",
+  "Title": "",
+  "Statement": "Any option that changes a byte of the Result is recorded in the Result's inputs. A cache key includes every input the cached value depends on."
+ },
+ {
+  "ID": "SIM-11",
+  "Title": "",
+  "Statement": "Every field the simulator itself reads (scenario keys outside the engine and router blocks, trace headers, replay descriptors) is consumed, refused or inert, and says which. Engine and router blocks are classified only by their owners (X1). A consumed field changes some byte of the Result when it changes. One validator exists per kind of value (X15), and every input that carries that kind calls it, so a value refused on the command line is refused in a trace header too."
+ },
+ {
+  "ID": "SIM-12",
+  "Title": "",
+  "Statement": "Each request's tokens are counted once, in a token record the engine emits: prompt tokens, tokens served from the local and external caches, tokens computed, and tokens emitted. Session growth, trace export, latency metrics and the Result read that record; none recomputes it. Counts per rank and per group are distinct types (SUB-16)."
+ },
+ {
+  "ID": "SIM-13",
+  "Title": "",
+  "Statement": "The traffic that overlapping transfers and step collectives place on a link never exceeds its capacity. inference-sim shares each link among them, as the one piece of resource arithmetic it owns (X3)."
+ },
+ {
+  "ID": "SIM-14",
+  "Title": "",
+  "Statement": "Every cluster control loop that runs beside the router, such as an autoscaler or the placement of LoRA adapters, is a component (§8.1): it acts only on published values (DEV-1, DEV-4). Each is listed in inference-sim's generated list of control loops, with the upstream controller it models, if any. A Result that used one names it and states its validation status and the evidence for it (§8.9)."
+ },
+ {
+  "ID": "CFG-1",
+  "Title": "",
+  "Statement": "One pin file names the simulator release, and every report states it. A committed report uses that release's embedded data; exploratory runs with other data are labelled experimental and are never committed as reports."
+ },
+ {
+  "ID": "CFG-2",
+  "Title": "",
+  "Statement": "Everything after the specification is deterministic and produced by a bot. Comparisons between arms follow DEV-11."
+ },
+ {
+  "ID": "CFG-3",
+  "Title": "",
+  "Statement": "Settings are the named engine's own settings, read from the simulator. No list of settings is copied by hand."
+ },
+ {
+  "ID": "CFG-4",
+  "Title": "",
+  "Statement": "A specification ranks and checks configurations on any metric of the metric registry, at any scope (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99 time to first token over instances, and output tokens per second per accelerator for one pool. Every metric it uses has one definition from the registry, shared by the search, the ranking and the report (DEV-8), and every figure states its metric, scope and aggregate. A run that is overloaded or incomplete is never ranked (DEV-10)."
+ },
+ {
+  "ID": "CFG-5",
+  "Title": "",
+  "Statement": "A search varies only settings that the engine's field list marks as modelled at the pinned release. A ranking states the least trusted coefficient method and, from the dashboard's published summary at the release its pin file names, the grades of the dashboard points in the lanes it relies on, and a recommendation in a lane with no G1 or G2 points is labelled an extrapolation, with that lane's measured error. A speculative-decoding arm states its acceptance in its scenario (D8). The value comes from the substrate's profiles, read through inference-sim acceptance, which runs D8's lookup, or from another cited measurement. The report names the source and each key field in which it differs from the arm."
+ },
+ {
+  "ID": "FID-1",
+  "Title": "",
+  "Statement": "The manifest lists every replacement. Any write the harness makes outside a listed site fails CI, and a changed list carries a new version. The configuration the oracle resolves equals, outside the fields the manifest lists, what the upstream's CUDA platform would resolve for the chip the scenario names. Restoring a CUDA value that depends on choosing a CUDA attention backend is a transcription (FID-8), checked against recorded CUDA start-up logs. Every read of the current platform reachable from ported code is listed in the manifest."
+ },
+ {
+  "ID": "FID-2",
+  "Title": "",
+  "Statement": "The oracle runs in a locked Python environment at the pinned upstream commit, and every recorded trace records that commit, the lock file's hash, the scenario's hash, the seed and the manifest version."
+ },
+ {
+  "ID": "FID-3",
+  "Title": "",
+  "Statement": "A recorded trace's decisions change only in a commit carrying a golden-reviewed: line that names the trace and gives the reason. Tools refuse to rewrite traces unless an explicit update flag is set."
+ },
+ {
+  "ID": "FID-4",
+  "Title": "",
+  "Statement": "Every ported function is exercised by at least one recorded scenario."
+ },
+ {
+  "ID": "FID-5",
+  "Title": "",
+  "Statement": "A framework (connector base, offload tiering, HiCache) is marked modelled in the surface list only when its contract has traces of its own, independent of any single connector built on it."
+ },
+ {
+  "ID": "FID-6",
+  "Title": "",
+  "Statement": "A property asserted about an engine port, such as a monotonicity law, is first run against the upstream oracle. It is adopted only if the upstream satisfies it on the oracle scenarios. A law about the cost model names the upstream behaviour it rests on."
+ },
+ {
+  "ID": "FID-7",
+  "Title": "",
+  "Statement": "For every catalog model and each supported layout, the resident weights an engine reports in its PoolPlan (per-rank shape, stored data type and sharding, after the engine's weight post-processing) equal what the pinned upstream allocates. The graph's tensors equal the checkpoint's safetensors headers."
+ },
+ {
+  "ID": "FID-8",
+  "Title": "",
+  "Statement": "The harness may not contain a copy of an upstream decision function. A harness file with a Derived from header, or a function named like an upstream function, is refused unless the manifest declares it as a transcription."
+ },
+ {
+  "ID": "FID-9",
+  "Title": "",
+  "Statement": "The engine is tested as the simulator drives it, not only on its own. Each recorded trace also records the timed inputs the engine received: arrivals, completions, transfer ends and aborts. Replaying those inputs through inference-sim's driver into engine.Engine reproduces the trace's decisions step by step."
+ },
+ {
+  "ID": "FID-10",
+  "Title": "",
+  "Statement": "Every compared field and metric series takes its neutral value and at least one other value somewhere in the scenario set, so a comparison of it can fail. The comparison is two-sided: a field or series that appears on only one side is a mismatch."
+ },
+ {
+  "ID": "FID-11",
+  "Title": "",
+  "Statement": "The work a step shape asks the cost model to price equals what the pinned upstream launches for the same step, for each layer: the rows of every matrix multiply, each operation's FLOPs and bytes, the token count of every draft pass, and the context entries each context-dependent operation reads, bounded by its window where it has one. Rows and token counts match exactly; FLOPs and bytes match within a stated tolerance. FID-7 compares what is resident; this compares what runs."
+ },
+ {
+  "ID": "DEV-1",
+  "Title": "",
+  "Statement": "Components interact only through timestamped messages. No component reads another component's state."
+ },
+ {
+  "ID": "DEV-2",
+  "Title": "",
+  "Statement": "Each instant is processed in the three phases of §8.2, and messages are ordered by (time, class, sender, sender's send count). No global counter enters the order. Each class's position has a stated reason."
+ },
+ {
+  "ID": "DEV-3",
+  "Title": "",
+  "Statement": "Each engine declares, for each kind of external input, the step boundary at which it takes effect, whether it arrives during a step or at the instant one ends, and whether the upstream's order there is fixed or a race between threads. A declared race is a listed divergence, with the order BLIS uses."
+ },
+ {
+  "ID": "DEV-4",
+  "Title": "",
+  "Statement": "No component observes a message before its timestamp. A published value carries its time and a publication sequence number, every cache of it is keyed on both, and the delay between publication and observation follows the deployment's declared scrape and delivery settings."
+ },
+ {
+  "ID": "DEV-5",
+  "Title": "",
+  "Statement": "Only finitely many events happen in any finite stretch of simulated time. Every zero-time cycle between components has a declared bound. An engine step that changes no state is an error unless the engine scheduled it as a wake-up or declared it as an upstream idle step. Events per request, and wall time per event, stay bounded as runs grow."
+ },
+ {
+  "ID": "DEV-6",
+  "Title": "",
+  "Statement": "Every random draw comes from a substream named by component, purpose and entity, seeded from the SHA-256 of the scenario seed and the name, by a generator named in the frame. A request gets the same random inputs whatever happened to earlier requests, in every configuration."
+ },
+ {
+  "ID": "DEV-7",
+  "Title": "",
+  "Statement": "Every run records its experimental frame (§8.6). Run, export and replay under the same configuration give an identical Result. A converted or composed workload keeps, phase by phase, the offered load, the variability of gaps between arrivals, the joint length distribution and the session structure. A run that fails its frame's acceptance conditions produces no figure."
+ },
+ {
+  "ID": "DEV-8",
+  "Title": "",
+  "Statement": "Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate."
+ },
+ {
+  "ID": "DEV-9",
+  "Title": "",
+  "Statement": "Each request's fate is written once, at one site, and every latency sample is derived from it. The number of requests the generator created equals the number of fates written. A latency statistic states how it treats requests unfinished at the horizon."
+ },
+ {
+  "ID": "DEV-10",
+  "Title": "",
+  "Statement": "A steady-state run is classified as settled, overloaded or incomplete by one detector, and only a settled run gives a latency figure for steady state. The detector states its false-alarm rate and its power for each window length."
+ },
+ {
+  "ID": "DEV-11",
+  "Title": "",
+  "Statement": "A figure that compares configurations, or that is published as a property of BLIS, carries an interval from replications or batch means and states which uncertainty that interval covers, or states that the run has no random input and which uncertainty it therefore leaves out. Comparisons are paired under common random numbers, have three outcomes, and control the chance of a false winner across all comparisons made."
+ },
+ {
+  "ID": "DEV-12",
+  "Title": "",
+  "Statement": "Each change is a verification change or a validation change by what it does (§8.9), and is judged as such. A change that is both is split."
+ },
+ {
+  "ID": "DEV-13",
+  "Title": "",
+  "Statement": "A request's sampled output length is written by the workload generator and read only by the trace writer, by replay, and by the engine's stop check, where it acts as an end-of-sequence token at that position. The request's maximum token count stays what the client stated. Every other part of BLIS, including the engine's own scheduler, the router, admission and flow control, sees only what its counterpart in the real system sees: the maximum token count and the tokens emitted so far. The oracle delivers the length the same way, as a forced end-of-sequence in the sampler that the manifest lists."
+ },
+ {
+  "ID": "VAL-1",
+  "Title": "",
+  "Statement": "Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason."
+ },
+ {
+  "ID": "VAL-2",
+  "Title": "",
+  "Statement": "For every primitive family and every catalog chip, some rank has a value. A missing measured value never causes a refusal."
+ },
+ {
+  "ID": "VAL-3",
+  "Title": "",
+  "Statement": "Each price records, among the coefficients it used, the least trusted effective rank, and names its method and any flag. An extrapolated lookup counts as transferred, and an unidentified entry as assumed (VAL-10)."
+ },
+ {
+  "ID": "VAL-4",
+  "Title": "",
+  "Statement": "Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it. Where several entries of one rank match a lookup at different scopes, one written order of precedence over every scope dimension (chip, model, layout widths, node) picks one, whatever order the entries were loaded in. Two matching entries that the precedence does not order are refused at load, and a price's provenance names every matching entry it displaced. A more trusted entry is removed only with a supersedes: record citing a defect issue, which a person must approve."
+ },
+ {
+  "ID": "VAL-5",
+  "Title": "",
+  "Statement": "The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10)."
+ },
+ {
+  "ID": "VAL-6",
+  "Title": "",
+  "Statement": "A change to a measured or calibrated value passes the landing gate. The fit and held-out split and the success criteria are committed first. Held-out error and distribution distance must not get worse on any lane, and must improve on the target lane. For each lane the gate computes, on that lane's held units, the paired bootstrap interval of the candidate's error minus the base's error. A lane fails only when that whole interval lies above zero, with the Holm correction for the number of lanes compared. The target lane passes only when its whole interval lies below zero. Every changed measured or calibrated entry is selected by a lookup in at least one operator-level or whole-run gate run. An entry no gate run selects, such as a coefficient for a chip with no held data, is reported as unjudged and lands only with a person's approval. Figures come from a script. A whole-run lane that gets worse does not by itself fail a change whose operator-level held-out check passed: the gate records the regression as a defect in another term (VAL-11), and the change needs a person's approval."
+ },
+ {
+  "ID": "VAL-7",
+  "Title": "",
+  "Statement": "A coefficient scoped to a single model marks a cost that the cost model's general forms do not yet explain. It names the missing form. The number of such coefficients only goes down."
+ },
+ {
+  "ID": "VAL-8",
+  "Title": "",
+  "Statement": "A lookup matches a coefficient only for the exact kernel implementation that runs. A value taken from a different implementation is a transferred entry (D5). Every registry entry is selected by a lookup on the conformance scenarios, or its kernel hash appears in the kernel_impls.json of an engine release that some supported inference-sim release pins."
+ },
+ {
+  "ID": "VAL-9",
+  "Title": "",
+  "Statement": "A coefficient states what its measurement includes: device time only or host issue time as well, captured or eager execution, and which harness collected it. The formula that reads it states the same, and the two must agree. A formula that needs both device and host time reads two coefficients, never one that mixes them."
+ },
+ {
+  "ID": "VAL-10",
+  "Title": "",
+  "Statement": "A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and kernel. A price that reads an entry outside that range records the lookup as extrapolated, which ranks it with transferred for VAL-3 (§9.3). An entry whose interval is unbounded, or wider than half its value, is flagged unidentified: its data do not determine it, and it ranks with assumed for VAL-3, while keeping its method and its citations (D1)."
+ },
+ {
+  "ID": "VAL-11",
+  "Title": "",
+  "Statement": "An operator-level check judges a pricing form; an end-to-end check judges how forms combine. A form that passes its operator-level held-out check but makes end-to-end error worse shows that another term is wrong. The disagreement is recorded as one defect, in the other term. The end-to-end figure is not used to reject the form that passed, or to keep a known error. No coefficient or form is kept because it cancels another error."
+ },
+ {
+  "ID": "D1",
+  "Title": "",
+  "Statement": "Every value computed from ledger units cites them, whatever its method. A fitted coefficient cites only units whose role is fit. assumed means no data unit influenced the value."
+ },
+ {
+  "ID": "D2",
+  "Title": "",
+  "Statement": "No unit is read under two roles across all consumers."
+ },
+ {
+  "ID": "D3",
+  "Title": "",
+  "Statement": "Every source revision is pinned by commit, hash or run id. \"latest\", \"main\" and \"unknown\" are refused."
+ },
+ {
+  "ID": "D4",
+  "Title": "",
+  "Statement": "Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides. For a unit in the legacy table, the rule chooses only within its legacy label: FIT gives fit or select, HELD gives held or anchor. A legacy unit whose records carry both labels, and a new unit whose role key holds legacy units of both labels, are on the FIT side; a new unit whose role key holds legacy units of one label takes that label. Roles are append-only, and the ledger stores no role except in the three published lists. A change that alters a source's identifying fields, or how the ingest tool computes them or role keys, ships an alias table, and aliased units keep their roles."
+ },
+ {
+  "ID": "D5",
+  "Title": "",
+  "Statement": "A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash). Otherwise it is a transferred value with a stated rule."
+ },
+ {
+  "ID": "D6",
+  "Title": "",
+  "Statement": "Only redistributable artefacts are committed. CI gates run on redistributable fixtures, and a nightly job checks the fixtures agree with the full data."
+ },
+ {
+  "ID": "D7",
+  "Title": "",
+  "Statement": "The role seed is 256 random bits and a CI secret until its partition version is retired. Only the fit, anchor and report lists are published, by the release job. Results on select, validate and held units come only from the select job, the error job and the gate job, as aggregates over at least 10 units. No job that holds the seed runs code from a pull request. A candidate job runs with no CI environment and a read-only token, and its only output is a predictions file with a fixed schema and size limit, which the seed-holding job reads with a strict loader (SUB-12) as untrusted input. A seed-holding job is started only by a workflow on its own repository's default branch, never by a token a pull request controls."
+ },
+ {
+  "ID": "D8",
+  "Title": "",
+  "Statement": "A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored. A quantity that depends on the request stream but that BLIS does not simulate, such as speculative acceptance or expert routing balance, is a property of the workload. It is keyed by workload identity and never stored as a coefficient scoped only to a chip or model. Its value is taken from the command line if stated there, else from the scenario, else derived from the trace, else taken from the substrate's profile for that workload identity, and the Result's inputs record which supplied it (SIM-10). Speculative acceptance is keyed by the target model, the drafter, the speculative method, the number of speculative tokens K, and the workload's category and thinking mode. The drafter is the model's own in-graph speculator, such as its MTP layers, or a separate drafter checkpoint with its own catalog entry. A value stated on the command line, in the scenario or by the workload is used as stated. A profile lookup, in the substrate's profiles or in a profile set the scenario names, may borrow when no measured profile has the run's exact key. It takes the closest measured one, in this order. First, the same target and drafter at another K. Between measured values of K it interpolates linearly. Above the largest it takes the largest's value. Below the smallest it takes that profile's stated per-position rates for the first K positions. A profile that states none gives 1 + K(AL − 1)/K₀, where K₀ is its K. That figure cannot exceed what the profile's own rates would give, so it does not overstate drafting's gain. The lookup never extrapolates. Second, another drafter of the same target, preferring the same method and then the lowest value at the run's K, found by the first step's rules, so that drafting's gain is not overstated. Third, the same method on another target whose graph records the same architecture. Every step keeps the category and thinking mode, apart from a fallback category the user requested. Two profiles that share a key but record different sampling or rejection settings are not interchangeable, and an exact key found in two profile sets is ambiguous; the lookup refuses both. Any remaining tie breaks in an order the substrate's acceptance reference states, so the choice is deterministic. With no profile on any step, the run is refused. The Result records the profile used, the step, and each key field that differed. A scenario or command-line option limits the lookup to exact matches."
+ },
+ {
+  "ID": "COV-1",
+  "Title": "",
+  "Statement": "One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark. Every anchor unit is either graded G1 to G4 or listed as G5 with a reason, and the counts sum to the total."
+ },
+ {
+  "ID": "COV-2",
+  "Title": "",
+  "Statement": "Only ledger anchor units are scored, using the simulator release's embedded data and the anchor list embedded in its substrate release (inference-sim ledger)."
+ },
+ {
+  "ID": "COV-3",
+  "Title": "",
+  "Statement": "The dashboard copies recorded configuration verbatim, and reads field status and estimation rules only from the engine's fields.json."
+ },
+ {
+  "ID": "COV-4",
+  "Title": "",
+  "Statement": "Every point has one grade, computed from data, with every substitution named."
+ },
+ {
+  "ID": "COV-5",
+  "Title": "",
+  "Statement": "G5 is used only for the reasons in §11.4. Any other reason fails CI."
+ },
+ {
+  "ID": "COV-6",
+  "Title": "",
+  "Statement": "Every point in a release's scores is scored by that one inference-sim release. Each point shows its recorded engine build, and is graded G3 or G4 when that build is not the engine release inference-sim runs."
+ },
+ {
+  "ID": "COV-7",
+  "Title": "",
+  "Statement": "Coverage (graded anchor units over all anchor units, by engine, engine release, chip and grade, with the share in each grade) is published beside accuracy, with the number of source records the ledger left out (§10.2), and the backlog is published every night."
+ },
+ {
+  "ID": "COV-8",
+  "Title": "",
+  "Statement": "A failed or partial night publishes nothing; published snapshots never change."
+ },
+ {
+  "ID": "COV-9",
+  "Title": "",
+  "Statement": "Each simulator release is scored exactly once. The nightly run scores, in the order they were tagged, every release that has no scores. Every provenance field is recomputed at every publish."
+ },
+ {
+  "ID": "COV-10",
+  "Title": "",
+  "Statement": "The dashboard copies the run's whole experimental frame (§8.6), not only its engine block: client concurrency, warm-up, drain, duration and the measured-window rule. The requests are the ones the run sent (COV-12), so BLIS's own substreams (DEV-6) draw only what the run's requests do not fix, such as a router's tie-breaks, and replications (DEV-11) cover those draws. A frame field the run did not record makes the point G5 with the reason value_not_recorded (§11.4); no default is substituted. The achieved concurrency in the simulation matches the measured one within a stated tolerance. Each lane is scored on its percentiles and a distribution distance, not only on its mean. A simulated figure compared with a measurement carries its replication interval, or states that the run has no random input (§8.4); its uncertainty is then the measurement's own noise (below) and the model's (§8.8). Where InferenceX has several units whose identifying fields differ only in measured date or benchmark run, and whose recorded image digests agree, or one such unit holding several measurements (§10.2), their spread is reported as the measurement's own noise, and no point's error is counted for a difference smaller than that noise. Units whose image digests differ or are unrecorded are not pooled for noise, because their builds may differ. A unit holding several measurements is scored against their mean."
+ },
+ {
+  "ID": "COV-11",
+  "Title": "",
+  "Statement": "The headline accuracy covers every graded point, G1 to G4. Beside it, the dashboard publishes the share of points in each grade and each grade's own accuracy. Every published figure shows its point count, and a figure over fewer points than the minimum stated in the dashboard's summary schema is shown as \"too few points\"."
+ },
+ {
+  "ID": "COV-12",
+  "Title": "",
+  "Statement": "The scored simulation receives the requests the measured run sent: the same requests, in the same order, with the same prompt lengths, output lengths and shared prefixes. Their arrival times follow the simulated completions by the client's own rules (§8.5). Where the client draws its requests from a seeded generator, the dashboard recomputes them with the client's own algorithm and seed, at the client release the run records; where the run records none, at the release its image ships, and the point names it. Prompt lengths are counted after the client's tokenisation and verified against the run's tokenizer at a pinned revision. An output length is the length the client forced or, where it forced none, the length the run's response records (DEV-13); where neither is recorded, the length is drawn from the frame's input model, and the point names it. The simulator runs the client's warm-up, so the measured phase starts from the engine state the warm-up left, such as cached prefixes. Every difference between the run's client and the simulated one, including an unrecorded client release or an unverified length, is named on the point and makes it G2."
+ },
+ {
+  "ID": "LIF-1",
+  "Title": "",
+  "Statement": "A tag names one commit forever. Tags are never moved or deleted; a mistake gets a new tag."
+ },
+ {
+  "ID": "LIF-2",
+  "Title": "",
+  "Statement": "In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11). inference-sim's own substrate requirement equals the version its build selects, so no engine or router release can change the simulator's data. One Go toolchain version is named in contracts/toolchain, at the substrate version inference-sim selects. No module BLIS writes declares a go version above it. Every CI job sets GOTOOLCHAIN=local and installs exactly that version, so no build downloads a toolchain. The router fork's go line follows upstream llm-d; when upstream raises it, the release bot raises the toolchain file first, in the same review set. Documented version strings are generated (X23)."
+ },
+ {
+  "ID": "LIF-3",
+  "Title": "",
+  "Statement": "Only the release bot cuts releases, and only from a commit where every ci invariant passed. If the bot is unavailable, two release owners may follow the documented manual procedure (§13.6); a manual tag is signed with a release owner's key and recorded in the release notes."
+ },
+ {
+  "ID": "LIF-4",
+  "Title": "",
+  "Statement": "Release notes are generated (§13.3)."
+ },
+ {
+  "ID": "LIF-5",
+  "Title": "",
+  "Statement": "An engine module, or the router fork, models one upstream release. Its tags are v<upstream>-blis.N, v<upstream>-post.K.blis.N for a post release, or v<upstream>-rev.W.blis.N for a four-part version, with N from 1. No new plain upstream tag is made; older tags stay (LIF-1). In an engine module, the Upstream record names that release and commit, every ported file names that same release, and no code for another release remains. Release candidates are not modelled. The package that runs the modelled release depends on no package that exists only for another release."
+ },
+ {
+  "ID": "LIF-6",
+  "Title": "",
+  "Statement": "Each inference-sim release runs exactly one upstream release of each engine and of llm-d, and lists them in stack.json. A scenario whose engine.version names a different upstream release is refused, with a message naming the release it asked for, the one this build runs, and the newest inference-sim release that runs the one it asked for, or says that none does. The llm-d release is not stated by scenarios; it is the one stack.json lists."
+ },
+ {
+  "ID": "LIF-7",
+  "Title": "",
+  "Statement": "A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0. In an engine module, which has no such releases of its own, deprecated code is removed when main moves to a new upstream release. Removal takes with it every code path, flag, field, test and document that existed only for that feature. Each deprecation is recorded where the feature is defined (a command's or flag's deprecation notice, or a // Deprecated: comment) with the release that deprecated it. Nothing in this design depends on a deprecated feature, and no repository keeps code that none of the binaries BLIS ships can reach."
+ }
+]

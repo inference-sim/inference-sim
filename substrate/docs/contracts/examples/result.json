@@ -1,0 +1,131 @@
+{
+  "kind": "Result",
+  "schema_version": 2,
+  "name": "llama-3.1-8b-h100-tp2-dp4.c64-s1",
+  "engine": { "kind": "vllm", "version": "0.32.0" },
+  "data": {
+    "catalog": {
+      "source": "embedded",
+      "hash": "3f2a9c0d81b7e6f5a4c3b2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1",
+      "combined_hash": "3f2a9c0d81b7e6f5a4c3b2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1"
+    },
+    "registry": {
+      "source": "path",
+      "hash": "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d",
+      "overlays": [ { "hash": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9" } ],
+      "combined_hash": "7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c"
+    },
+    "released_data": false,
+    "build": "unreleased"
+  },
+  "selected_entries": {
+    "coefficients": [
+      { "set": "cost-model-primitives", "name": "gemm_eps_max_bf16", "method": "measured", "scope": { "hardware": ["h100"] }, "file": "coefficients/cost-model-primitives.yaml" }
+    ],
+    "unread_files": ["coefficients/cost-model-recurrent.yaml"]
+  },
+  "input": {
+    "scenario": {
+      "kind": "Scenario",
+      "name": "llama-3.1-8b-on-h100",
+      "model": "llama-3.1-8b-instruct",
+      "coefficients": ["cost-model-primitives", "cost-model-collectives", "cost-model-host-overheads", "cost-model-attention", "cost-model-recurrent"],
+      "engine": { "kind": "vllm", "version": "0.32.0" },
+      "workload": { "shape": "chatbot" },
+      "cluster": { "hardware": "h100", "nodes": 1, "gpus_per_node": 8 }
+    },
+    "deployment": {
+      "kind": "Deployment",
+      "name": "tp2-dp4",
+      "pools": [
+        {
+          "role": "colocated",
+          "nodes": 1,
+          "parallel": { "tp": 2, "pp": 1, "dp": 4 },
+          "engine": { "block_size": 16, "max_num_seqs": 256, "max_num_batched_tokens": 8192, "gpu_memory_utilization": 0.9 }
+        }
+      ]
+    },
+    "options": [
+      { "name": "concurrency", "value": "64", "source": "command_line" },
+      { "name": "num-requests", "value": "6", "source": "command_line" },
+      { "name": "registry-overlay", "value": "candidate", "source": "command_line" },
+      { "name": "seed", "value": "1", "source": "default" }
+    ],
+    "workload_properties": [
+      { "name": "expert_routing", "source": "default" }
+    ]
+  },
+  "frame": {
+    "kind": "terminating",
+    "generator": {
+      "workload": { "shape": "chatbot" },
+      "load": { "concurrency": 64 },
+      "seed": 1,
+      "rng": "pcg64-sha256/1"
+    },
+    "initial_state": { "caches": "empty" },
+    "phases": {
+      "warmup": { "rule": "requests", "requests": 1 },
+      "measured": { "start": "first_arrival_after_warmup", "stop": "last_completion" },
+      "drain": { "rule": "until_complete" }
+    },
+    "stop": { "requests": 6, "horizon_s": 600 },
+    "acceptance": [
+      { "condition": "unfinished_fraction_at_most", "threshold": 0.2, "observed": 0, "met": true }
+    ],
+    "metrics": ["e2e_mean_ms", "itl_p99_ms", "output_tok_s", "request_throughput", "tpot_mean_ms", "ttft_mean_ms", "ttft_p99_ms"]
+  },
+  "revisions": {
+    "simulator": "v0.16.0-0.20261104120000-0123456789ab",
+    "substrate": "v0.11.0-0.20261104110000-ba9876543210",
+    "router": "v1.0.0-blis.2",
+    "engine_module": "v0.32.0-blis.2"
+  },
+  "window": { "start_us": 210000, "end_us": 3210000, "duration_s": 3, "requests": 4 },
+  "metrics": {
+    "e2e_mean_ms": { "value": 2904.7, "samples": 4 },
+    "itl_p99_ms": { "value": 28.5, "samples": 1020 },
+    "output_tok_s": { "value": 342.0, "samples": 1026 },
+    "request_throughput": { "value": 1.3333333333333333, "samples": 4 },
+    "tpot_mean_ms": { "value": 21.4, "samples": 4 },
+    "ttft_mean_ms": { "value": 182.0, "samples": 4 },
+    "ttft_p99_ms": { "value": 431.5, "samples": 4 }
+  },
+  "requests": {
+    "generated": 6,
+    "completed": 5,
+    "dropped": { "routing_rejected": 1 },
+    "timed_out": 0,
+    "in_flight_at_horizon": 0,
+    "queued_at_horizon": 0,
+    "not_started": 0,
+    "length_capped": 1
+  },
+  "request_rows": [
+    { "id": "request_0", "fate": "completed", "arrival_us": 0, "ttft_us": 210000, "tpot_us": 20500.0, "e2e_us": 5452000, "completion_index": 1, "prompt_tokens": 512, "computed_tokens": 512, "output_tokens": 257, "phase": "warmup", "instance": "colocated-0" },
+    { "id": "request_1", "fate": "completed", "arrival_us": 210000, "ttft_us": 150000, "tpot_us": 21000.0, "e2e_us": 2856000, "completion_index": 2, "prompt_tokens": 512, "cached_local_tokens": 256, "computed_tokens": 256, "output_tokens": 129, "instance": "colocated-1" },
+    { "id": "request_2", "fate": "completed", "arrival_us": 260000, "ttft_us": 160000, "tpot_us": 21500.0, "e2e_us": 2912000, "completion_index": 3, "prompt_tokens": 400, "computed_tokens": 400, "output_tokens": 129, "instance": "colocated-2" },
+    { "id": "request_3", "fate": "completed", "arrival_us": 300000, "ttft_us": 190000, "tpot_us": 21800.0, "e2e_us": 2980400, "completion_index": 4, "prompt_tokens": 640, "computed_tokens": 640, "output_tokens": 129, "length_capped": true, "instance": "colocated-3" },
+    { "id": "request_4", "fate": "completed", "arrival_us": 350000, "ttft_us": 228000, "tpot_us": 22800.0, "e2e_us": 2870400, "completion_index": 5, "prompt_tokens": 512, "computed_tokens": 512, "output_tokens": 116, "instance": "colocated-0" },
+    { "id": "request_5", "fate": "dropped", "drop_reason": "routing_rejected", "arrival_us": 360000, "prompt_tokens": 512, "output_tokens": 0 }
+  ],
+  "goodput": {
+    "targets": { "interactive": { "ttft_ms": 500, "itl_ms": 50 } },
+    "per_class": { "interactive": { "completed": 5, "met": 4 } }
+  },
+  "breakdowns": {
+    "pd": { "kv_transfer_mean_ms": 7.2 },
+    "per_model": { "llama-3.1-8b-instruct": { "ttft_p99_ms": 431.5, "e2e_mean_ms": 2904.7 } }
+  },
+  "reports": {
+    "engine": { "cluster": { "kv_capacity_tokens_per_replica": 412160 } }
+  },
+  "overrides": [
+    { "setting": "scheduler", "input": "fcfs", "run": "priority", "source": "--scheduler" }
+  ],
+  "artifacts": {
+    "trace": { "ref": "llama-3.1-8b-h100-tp2-dp4.c64-s1.trace.csv", "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a", "rows": 6 }
+  },
+  "runtime": { "wall_clock_s": 18.4, "started_utc": "2026-10-28T15:02:11Z", "host": { "os": "linux", "arch": "amd64" } }
+}

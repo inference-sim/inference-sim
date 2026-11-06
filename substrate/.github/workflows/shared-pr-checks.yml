@@ -1,0 +1,193 @@
+name: shared pull-request checks
+
+# The checks every BLIS repository runs on every pull request (design §13.2). A repository
+# calls this workflow by commit, which X21 requires:
+#
+#   jobs:
+#     blis:
+#       uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@<40-hex commit>
+#       with:
+#         repo: blis-vllm
+#         substrate-ref: <the same commit>
+#       secrets: inherit
+#
+# Each job checks out the caller's pull request, and blis-substrate at substrate-ref, and runs
+# blis-substrate's tools from that checkout, so a caller is judged by the code at the commit
+# it pins and by the invariant registry of that commit.
+#
+#   description     X14: listed hashes are branch heads, it merges cleanly, cited invariants exist
+#   review          design §13.2: each review question whose paths the pull request changes,
+#                   added to the description as a required checklist item
+#   commit-policy   X20: signed commits, a person's DCO sign-off, Assisted-by, no tool co-author
+#   workflow-lint   X21, X22, X16: actions pinned by commit, --require-hashes, no ignored exit
+#                   codes, no skipped tests, gate trigger paths as declared
+#   versions        X23: version literals outside the sources of versions
+#   doc-references  X26: paths, line ranges and repeated table rows in documentation
+#   cited-issues    X28: no change closes an issue the merge tree still cites
+#   quarantine      X25: every quarantined test has an issue and an unexpired date
+#   licence-files   X21: LICENSE, and an engine repository's NOTICE naming its upstream
+#   generated       design §13.1: AGENTS.md and the pull-request template match the registry
+#
+# Every job fails rather than passes when it cannot run (X16).
+
+on:
+  workflow_call:
+    inputs:
+      repo:
+        description: The calling repository's BLIS name, such as blis-vllm.
+        type: string
+        required: true
+      substrate-ref:
+        description: The blis-substrate commit this workflow is called at.
+        type: string
+        required: true
+
+# On a pull request from the same repository, the checks run the pull request's own code with
+# pull-requests: write: blis.yml passes the pull request's head commit as substrate-ref, so a
+# pull request is judged by its own changed checks. That is by design. A pull request from a
+# fork gets a read-only token whatever is declared here.
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  checks:
+    name: blis checks
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+      HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.HEAD }}
+          fetch-depth: 0
+          path: repo
+      - name: Check out blis-substrate at the called commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: inference-sim/blis-substrate
+          ref: ${{ inputs.substrate-ref }}
+          path: substrate
+      - uses: ./substrate/.github/actions/go-toolchain
+        with:
+          module-dir: substrate
+      - name: Build the checks
+        working-directory: substrate
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/bin/" ./tools/prcheck ./tools/invariants ./tools/modlint
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Fetch the pull request body
+        if: env.PR != ''
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/pulls/$PR" --jq .body > "$RUNNER_TEMP/body.md"
+          gh api "repos/${{ github.repository }}/pulls/$PR/commits" --paginate \
+            --jq '.[] | "\(.sha) \(if .commit.verification.verified then "G" else "N" end)"' > "$RUNNER_TEMP/signatures"
+          test -s "$RUNNER_TEMP/signatures"
+      - name: Description (X14)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          invariants cited -body "$RUNNER_TEMP/body.md"
+          prcheck description -body "$RUNNER_TEMP/body.md" -repo "${{ github.repository }}" -base "$BASE" -head "$HEAD"
+      - name: Review questions (design §13.2)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed"
+          invariants questions -repo "${{ inputs.repo }}" -changed "$RUNNER_TEMP/changed" > "$RUNNER_TEMP/questions.md"
+          prcheck questions -body "$RUNNER_TEMP/body.md" -questions "$RUNNER_TEMP/questions.md" \
+            -out "$RUNNER_TEMP/new-body.md" -unanswered "$RUNNER_TEMP/unanswered"
+          if ! cmp -s "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/new-body.md"; then
+            gh api -X PATCH "repos/${{ github.repository }}/pulls/$PR" -F "body=@$RUNNER_TEMP/new-body.md" > /dev/null
+          fi
+          if [ -s "$RUNNER_TEMP/unanswered" ]; then
+            echo "review questions not yet answered by a reviewer:"
+            cat "$RUNNER_TEMP/unanswered"
+            exit 1
+          fi
+      # The answers as they stand when this job ran. The merge check compares the body at
+      # merge time with the record in force when the latest approving review was submitted, so
+      # an approval covers the text that was recorded then and a later edit voids it (X22).
+      - name: Record the review answers (X22)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed"
+          prcheck answers-record -body "$RUNNER_TEMP/body.md" -changed "$RUNNER_TEMP/changed" \
+            -repo-name "${{ inputs.repo }}" -head "$HEAD" > "$RUNNER_TEMP/answers-record"
+          gh api "repos/${{ github.repository }}/check-runs" -X POST \
+            -f name="review answers" -f head_sha="$HEAD" -f status=completed -f conclusion=neutral \
+            -f completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -f "output[title]=Review answers recorded" -F "output[summary]=@$RUNNER_TEMP/answers-record" > /dev/null
+      - name: Commit policy (X20)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        # X20's deferral file is read from the called substrate commit, so one file serves
+        # every repository (plan §3.3, "Deferring signing and sign-off"); the check fails
+        # once it expires.
+        run: prcheck commits -base "$BASE" -head "$HEAD" -signatures "$RUNNER_TEMP/signatures" -deferral "$GITHUB_WORKSPACE/substrate/.github/x20-deferral.yaml"
+      - name: Workflow lint (X21, X22, X16)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck workflows
+      - name: Version literals (X23)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck versions
+      - name: Documentation references (X26)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck docrefs
+      - name: Cited issues (X28)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          if [ -n "$PR" ]; then
+            prcheck issues -repo "${{ github.repository }}" -closes "$RUNNER_TEMP/body.md"
+          else
+            prcheck issues -repo "${{ github.repository }}"
+          fi
+      - name: Licence and notice files (X21)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck licence-files -repo-name "${{ inputs.repo }}"
+      - name: Quarantine list (X25)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: prcheck quarantine
+      - name: Generated copies of the registry (design §13.1)
+        if: ${{ !cancelled() }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.repo }}" = "blis-substrate" ]; then
+            invariants render -check
+          else
+            invariants check-copy -repo "${{ inputs.repo }}" -agents AGENTS.md -template .github/pull_request_template.md
+          fi
+      - name: Selected-version lint (X11, LIF-2)
+        if: ${{ !cancelled() && (hashFiles('repo/go.mod') != '') }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          # modlint reads the module graph and the substrate's contracts/toolchain from the
+          # module cache, so the modules must be downloaded first.
+          go mod download
+          # A BLIS module pinned by commit is deferred while the substrate's deferral file
+          # holds (plan §3.1: drafts depend on commits; tags follow review).
+          modlint -deferral "$GITHUB_WORKSPACE/substrate/.github/modlint-deferral.yaml"

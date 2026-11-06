@@ -1,0 +1,9 @@
+name: deepseek-v4-pro
+source:
+  provider: huggingface
+  repo: deepseek-ai/DeepSeek-V4-Pro
+  revision: b5968e9190ef611bbf34a7229255be88a0e937c1
+  retrieved: 2026-10-02
+licence:
+  id: MIT
+  evidence: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/README.md

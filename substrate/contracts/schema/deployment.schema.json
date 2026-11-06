@@ -1,0 +1,194 @@
+{
+  "$defs": {
+    "deployment.Deployment": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "Deployment"
+        },
+        "name": {
+          "type": "string"
+        },
+        "offload": {
+          "$ref": "#/$defs/deployment.Offload"
+        },
+        "pd_transfer": {
+          "$ref": "#/$defs/deployment.PDTransfer"
+        },
+        "pools": {
+          "items": {
+            "$ref": "#/$defs/deployment.Pool"
+          },
+          "type": "array"
+        },
+        "router": {
+          "$ref": "#/$defs/deployment.Router"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "pools"
+      ],
+      "type": "object"
+    },
+    "deployment.Offload": {
+      "additionalProperties": false,
+      "properties": {
+        "connector": {
+          "type": "string"
+        },
+        "connector_options": {
+          "description": "The pool's engine settings, in the engine's own names; validated by the engine, not by this schema.",
+          "type": "object"
+        },
+        "eviction_policy": {
+          "type": "string"
+        },
+        "prefetch_depth": {
+          "type": "integer"
+        },
+        "spec": {
+          "type": "string"
+        },
+        "tiers": {
+          "items": {
+            "$ref": "#/$defs/deployment.Tier"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tiers"
+      ],
+      "type": "object"
+    },
+    "deployment.PDTransfer": {
+      "additionalProperties": false,
+      "properties": {
+        "connector": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.Parallelism": {
+      "additionalProperties": false,
+      "properties": {
+        "data_parallel_load_balancing": {
+          "enum": [
+            "",
+            "internal",
+            "hybrid",
+            "external"
+          ],
+          "type": "string"
+        },
+        "dcp": {
+          "type": "integer"
+        },
+        "dp": {
+          "type": "integer"
+        },
+        "dp_local": {
+          "type": "integer"
+        },
+        "enable_expert_parallel": {
+          "type": "boolean"
+        },
+        "pcp": {
+          "type": "integer"
+        },
+        "pp": {
+          "type": "integer"
+        },
+        "tp": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dp",
+        "pp",
+        "tp"
+      ],
+      "type": "object"
+    },
+    "deployment.Pool": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "description": "The pool's engine settings, in the engine's own names; validated by the engine, not by this schema.",
+          "type": "object"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "nodes": {
+          "type": "integer"
+        },
+        "parallel": {
+          "$ref": "#/$defs/deployment.Parallelism"
+        },
+        "role": {
+          "enum": [
+            "colocated",
+            "prefill",
+            "decode"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "nodes",
+        "parallel",
+        "role"
+      ],
+      "type": "object"
+    },
+    "deployment.Router": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint_picker_config": {
+          "type": "string"
+        },
+        "epp_flags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "manifests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "deployment.Tier": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "type": "integer"
+        },
+        "tier": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "tier"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://inference-sim.github.io/blis-substrate/schema/deployment.schema.json",
+  "$ref": "#/$defs/deployment.Deployment",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A BLIS deployment: the pools, offload and transfer configuration applied to a scenario. Generated from the Go types by tools/schemagen; the Go validators are the definition.",
+  "title": "deployment"
+}

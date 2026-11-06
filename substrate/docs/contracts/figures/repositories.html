@@ -1,0 +1,55 @@
+<figure class="diagram" markdown="0">
+<svg viewBox="0 0 800 345" role="img" aria-labelledby="fig-repos-title fig-repos-desc">
+<title id="fig-repos-title">The BLIS repositories and the contracts</title>
+<desc id="fig-repos-desc">blis-substrate is one Go module with five directories. kernel/ and validate/ import the contracts/ packages; kernel/ reads catalog/ and registry/, and validate/ checks them. blis-vllm, blis-sglang and the llm-d router fork import only the contracts/ packages. inference-sim imports the whole substrate module, each engine and the router fork.</desc>
+<defs>
+<marker id="repos-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead" d="M0,1 L9,5 L0,9 z"/></marker>
+<marker id="repos-ah-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-accent" d="M0,1 L9,5 L0,9 z"/></marker>
+</defs>
+<rect class="box-plain dashed" x="10" y="10" width="535" height="290" rx="8"/>
+<text class="small" x="24" y="30">blis-substrate · one Go module</text>
+<rect class="box-accent" x="185" y="40" width="170" height="60" rx="5"/>
+<text class="title accent-text mono" x="199" y="64">contracts/</text>
+<text class="small" x="199" y="83">types, validators, interfaces</text>
+<rect class="box" x="185" y="125" width="170" height="52" rx="5"/>
+<text class="title mono" x="199" y="147">catalog/</text>
+<text class="small" x="199" y="165">declared facts · YAML</text>
+<rect class="box" x="185" y="200" width="170" height="52" rx="5"/>
+<text class="title mono" x="199" y="222">registry/</text>
+<text class="small" x="199" y="240">coefficients · YAML</text>
+<rect class="box" x="20" y="160" width="140" height="55" rx="5"/>
+<text class="title mono" x="34" y="183">kernel/</text>
+<text class="small" x="34" y="201">the cost model</text>
+<rect class="box" x="385" y="160" width="145" height="55" rx="5"/>
+<text class="title mono" x="399" y="183">validate/</text>
+<text class="small" x="399" y="201">data validators</text>
+<path class="edge" d="M90,160 L185,82" marker-end="url(#repos-ah)"/>
+<path class="edge" d="M457,160 L357,82" marker-end="url(#repos-ah)"/>
+<path class="edge dotted" d="M160,172 L183,158" marker-end="url(#repos-ah)"/>
+<path class="edge dotted" d="M160,204 L183,222" marker-end="url(#repos-ah)"/>
+<path class="edge dashed" d="M385,172 L357,158" marker-end="url(#repos-ah)"/>
+<path class="edge dashed" d="M385,204 L357,222" marker-end="url(#repos-ah)"/>
+<rect class="box" x="600" y="20" width="190" height="50" rx="5"/>
+<text class="title" x="614" y="41">blis-vllm</text>
+<text class="small" x="614" y="58">implements Engine</text>
+<rect class="box" x="600" y="85" width="190" height="50" rx="5"/>
+<text class="title" x="614" y="106">blis-sglang</text>
+<text class="small" x="614" y="123">implements Engine</text>
+<rect class="box" x="600" y="150" width="190" height="50" rx="5"/>
+<text class="title" x="614" y="171">llm-d router fork</text>
+<text class="small" x="614" y="188">implements the router contract</text>
+<path class="edge-accent" d="M600,45 L357,52" marker-end="url(#repos-ah-accent)"/>
+<path class="edge-accent" d="M600,110 L357,70" marker-end="url(#repos-ah-accent)"/>
+<path class="edge-accent" d="M600,175 L357,90" marker-end="url(#repos-ah-accent)"/>
+<text class="small accent-text" x="470" y="40">contracts/ only</text>
+<rect class="box" x="600" y="245" width="190" height="55" rx="5"/>
+<text class="title" x="614" y="268">inference-sim</text>
+<text class="small" x="614" y="286">the simulator</text>
+<path class="edge" d="M600,272 L547,272" marker-end="url(#repos-ah)"/>
+<text class="small" x="573" y="320" text-anchor="middle">the whole module</text>
+<path class="edge" d="M695,245 L695,202" marker-end="url(#repos-ah)"/>
+<text class="small" x="702" y="228">engines, router</text>
+<text class="small" x="10" y="338">Solid: Go import, pointing at what is imported. Dotted: files the cost model reads. Dashed: files the validators check.</text>
+</svg>
+<figcaption>Who imports what. The engine repositories and the router fork import only the packages under <code>contracts/</code>, so a coefficient or pricing change needs no engine or router release. inference-sim imports the whole substrate module, each engine and the router fork. The packages under <code>contracts/</code> import only the Go standard library, the YAML parser and each other.</figcaption>
+</figure>

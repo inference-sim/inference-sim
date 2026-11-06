@@ -1,0 +1,267 @@
+site_name: blis-substrate
+site_description: >-
+  The engine-independent foundation of BLIS: the contracts every BLIS repository implements
+  or calls, the catalog of published hardware and model facts, the registry of fitted
+  coefficients, and the cost model that prices each engine step.
+site_url: https://inference-sim.github.io/blis-substrate/
+repo_url: https://github.com/inference-sim/blis-substrate
+repo_name: inference-sim/blis-substrate
+edit_uri: edit/main/docs/
+copyright: Apache 2.0 · part of <a href="https://github.com/inference-sim">BLIS</a>
+
+# Included into pages by the snippets extension, not rendered on their own.
+exclude_docs: |
+  contracts/examples/
+  contracts/figures/
+  contracts/generated/
+  contracts/invariants/
+  kernel/figures/
+  kernel/generated/
+  includes/
+  hooks/
+  overrides/
+  requirements.txt
+
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+    absolute_links: warn
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.tooltips
+    - content.action.edit
+    - toc.follow
+
+# The catalog's reference pages and the registry's set pages are generated from the
+# committed data at build time; each hook's module docstring says how.
+hooks:
+  - docs/hooks/catalog_pages.py
+  - docs/hooks/registry.py
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.snippets:
+      # Paths in a snippet are relative to the repository root, so a page can include a
+      # committed example, a catalog file or a Go example by its real path.
+      base_path: ["."]
+      check_paths: true
+      dedent_subsections: true
+      auto_append: ["docs/includes/abbreviations.md"]
+
+plugins:
+  - search
+  # Every version's pages name the latest release's copy as canonical, so search engines
+  # index one version rather than all of them.
+  - mike:
+      canonical_version: latest
+
+extra:
+  version:
+    provider: mike
+    default: latest
+    alias: true
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/inference-sim/blis-substrate
+
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js
+
+nav:
+- Home: index.md
+- Contracts:
+  - Home: contracts/index.md
+  - Concepts:
+    - contracts/concepts/index.md
+    - The BLIS repositories: contracts/concepts/repositories.md
+    - Documents: contracts/concepts/documents.md
+    - Validation: contracts/concepts/validation.md
+    - Contracts: contracts/concepts/contracts.md
+  - Guides:
+    - contracts/guides/index.md
+    - Validate the catalog and the registry: contracts/guides/checkouts.md
+    - Write a scenario and a deployment: contracts/guides/authoring.md
+    - Validate documents from Go: contracts/guides/go.md
+  - Reference:
+    - contracts/reference/index.md
+    - Scenario: contracts/reference/scenario.md
+    - Deployment: contracts/reference/deployment.md
+    - Workload: contracts/reference/workload.md
+    - Trace: contracts/reference/trace.md
+    - Model graph: contracts/reference/model.md
+    - Hardware: contracts/reference/hardware.md
+    - Coefficient set: contracts/reference/coefficients.md
+    - Acceptance profiles: contracts/reference/acceptance.md
+    - Routing profiles: contracts/reference/routing.md
+    - Connector registry: contracts/reference/connectors.md
+    - Evaluation run: contracts/reference/evaluation.md
+    - Measured run: contracts/reference/measurement.md
+    - Result: contracts/reference/result.md
+    - Metric registry: contracts/reference/metrics.md
+    - Point record: contracts/reference/point-record.md
+    - JSON Schemas: contracts/reference/schemas.md
+    - Field list: contracts/reference/fields.md
+    - Kernel interface: contracts/reference/kernel.md
+    - Engine interface: contracts/reference/engine.md
+    - Router contract: contracts/reference/embed.md
+    - Vocabularies: contracts/reference/vocabularies.md
+    - Engine rules: contracts/reference/rules.md
+    - Command line: contracts/reference/cli.md
+  - Design notes:
+    - contracts/design/index.md
+    - Why a model is a graph: contracts/design/model-graph.md
+    - Where the kernel stops: contracts/design/kernel-boundary.md
+    - Parallel layouts: contracts/design/layouts.md
+  - Contributing:
+    - contracts/contributing/index.md
+- Catalog:
+  - Home: catalog/index.md
+  - Using:
+    - catalog/using/index.md
+    - Point BLIS at the catalog: catalog/using/point-blis.md
+    - Releases and pinning: catalog/using/releases.md
+    - Experiment with a candidate catalog: catalog/using/candidate.md
+  - Contributing:
+    - catalog/contributing/index.md
+    - Add a model: catalog/contributing/add-model.md
+    - Add a chip, fabric or storage tier: catalog/contributing/add-hardware.md
+    - Add a workload: catalog/contributing/add-workload.md
+    - Checks and CI: catalog/contributing/checks.md
+  - Concepts:
+    - catalog/concepts/index.md
+    - The catalog in BLIS: catalog/concepts/repositories.md
+    - Declared, learned, chosen: catalog/concepts/declared-facts.md
+    - Model graphs: catalog/concepts/model-graphs.md
+    - Glossary: catalog/concepts/glossary.md
+  - Reference:
+    - catalog/reference/index.md
+    - File formats: catalog/reference/formats.md
+    - Models: catalog/reference/models/index.md
+    - Chips: catalog/reference/hardware.md
+    - Fabrics: catalog/reference/networks.md
+    - Workloads: catalog/reference/workloads.md
+    - Storage tiers: catalog/reference/storage.md
+- Registry:
+  - Home: registry/index.md
+  - Using:
+    - registry/using/index.md
+    - Releases and pinning: registry/using/releases.md
+  - Contributing: registry/contributing/index.md
+  - Concepts:
+    - registry/concepts/index.md
+    - Coefficients: registry/concepts/coefficients.md
+    - Where the numbers come from: registry/concepts/evidence.md
+  - Reference:
+    - registry/reference/index.md
+    - Coefficient sets:
+      - cost-model-primitives: registry/reference/sets/cost-model-primitives.md
+      - cost-model-collectives: registry/reference/sets/cost-model-collectives.md
+      - cost-model-collectives-inferencex: registry/reference/sets/cost-model-collectives-inferencex.md
+      - cost-model-fabric: registry/reference/sets/cost-model-fabric.md
+      - cost-model-attention: registry/reference/sets/cost-model-attention.md
+      - cost-model-recurrent: registry/reference/sets/cost-model-recurrent.md
+      - cost-model-host-overheads: registry/reference/sets/cost-model-host-overheads.md
+      - cost-model-memory: registry/reference/sets/cost-model-memory.md
+    - Acceptance profiles: registry/reference/acceptance.md
+    - File format: registry/reference/format.md
+    - Validation: registry/reference/validation.md
+  - Methodology:
+    - registry/research/index.md
+    - Methodology: registry/methodology.md
+    - Fitting principles: registry/fitting-principles.md
+    - Reproducing the coefficients: registry/reproducing-coefficients.md
+    - Choosing the overlap band: registry/band-selection.md
+- Cost model:
+  - Home: kernel/index.md
+  - Concepts:
+    - kernel/concepts/index.md
+    - The kernel in BLIS: kernel/concepts/repositories.md
+    - Pricing a step: kernel/concepts/step.md
+    - Memory: kernel/concepts/memory.md
+    - Parallelism: kernel/concepts/parallelism.md
+    - Refuse, assume, override: kernel/concepts/resolution.md
+  - Guides:
+    - kernel/guides/index.md
+    - Price a batch from Go: kernel/guides/go.md
+    - Use the kernel from a simulator: kernel/guides/simulator.md
+    - Scenarios and their inputs: kernel/guides/inputs.md
+  - Reference:
+    - kernel/reference/index.md
+    - API: kernel/reference/api.md
+    - Provenance, Evidence, Resolved: kernel/reference/provenance.md
+    - What New refuses: kernel/reference/refusals.md
+    - Known divergences: kernel/reference/divergences.md
+    - Commands: kernel/reference/commands.md
+    - Sources of truth: kernel/reference/sources.md
+  - Research:
+    - kernel/research/index.md
+    - Accuracy: kernel/research/accuracy.md
+    - How the laws are tested: kernel/research/testing.md
+  - Contributing: kernel/contributing/index.md
+- Contributing:
+  - Changes across repositories: contributing/changes.md
+  - Documentation and releases: contributing/documentation.md
+  - Releasing: contracts/contributing/releasing.md

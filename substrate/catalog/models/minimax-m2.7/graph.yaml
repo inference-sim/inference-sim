@@ -1,0 +1,75 @@
+kind: ModelGraph
+name: minimax-m2.7
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 697c30492781d55ac516011f937b5cdec045710b5b0c9ca39a6ea277785df9aa
+  deriver_version: 1
+global:
+  hidden_size: 3072
+  vocab_size: 200064
+  tie_word_embeddings: false
+  weight_dtype: fp8
+layer_kinds:
+- id: attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 3072
+  - op: Attention
+    kind: gqa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 3072
+    k: 6144
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GroupedGEMM
+    role: experts
+    n: 1536
+    k: 3072
+    experts: 256
+    top_k: 8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - attn_moe
+  repeat: 62
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 200064
+  k: 3072

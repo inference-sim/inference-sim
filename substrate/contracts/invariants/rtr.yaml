@@ -1,0 +1,222 @@
+# The RTR invariants: the llm-d router fork (BLIS target design §5).
+#
+# One record per invariant, in the format of design §13.1. This file is the source of truth:
+# the design's appendix, each repository's AGENTS.md section, the pull-request checklist and
+# the release plan's status table are generated from it (go run ./tools/invariants render).
+# Edit a record here, never a rendered copy. contracts/invariants/doc.go describes every field.
+
+- id: RTR-1
+  section: §5
+  statement: >-
+    Upstream releases are merged into llm-d-r, never rebased. Fork pull requests land as merge commits.
+    Commits written for BLIS follow X20; upstream history is merged as upstream wrote it.
+  scope:
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: Commit checks
+    runs: pull_request
+    status: new
+    test: .github/workflows/ci-signed-commits.yaml
+  - repo: llm-d-router
+    check: Repository settings checked nightly
+    runs: settings
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: signing is checked but not required; merge-not-rebase is not checked
+- id: RTR-2
+  section: §5
+  statement: >-
+    Every change the fork makes to an upstream file is one of eleven kinds, and nothing else: clock
+    read or deadline: time.Now, time.Since, time.After or a context deadline becomes the runtime's
+    clock (rt.Now, rt.Clock()); timer or periodic work: a goroutine looping on a ticker becomes rt.Every(ctx,
+    name, interval, fn); goroutine or blocking wait: go f() becomes rt.Go(f); a blocking select becomes
+    rt.Park(condition); random draw: a draw from a global or unseeded source becomes a draw from a
+    named stream, rt.Rand("<name>"); iteration order: when hosted, a map or sync.Map listing that
+    reaches a decision is sorted, or sorted and then shuffled from a named stream; when not hosted,
+    upstream's order is kept; network call: when hosted, an outbound HTTP call goes through hosting.Transport,
+    which the host serves; work ordering: work the upstream runs in parallel or in the background
+    runs, when hosted, one item at a time in a fixed order; when not hosted, upstream's concurrency
+    is kept; per-simulation state: state the upstream shares across the whole process, such as the
+    picker's tie-break counter or random source, is kept per runtime when hosted (rt.Local), so two
+    simulations in one process do not share it; hosted substitute: when hosted, a component is replaced
+    by one with the same contract that the host can drive, such as a time-to-live cache on the runtime's
+    clock, or a path BLIS does not host is refused by name; test adaptation: an upstream test is changed
+    only to follow a signature another allowed kind changed; startup assembly: the runner is split
+    so a host can build the router without servers, Kubernetes reconcilers or leader election. No
+    change alters a routing, admission, flow-control or scoring decision: no condition, weight, threshold,
+    default or plugin choice.
+  scope:
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: >-
+      A classifier in hack/hosting-lint that reads the diff against the upstream tag the fork is based
+      on and matches each changed hunk to a kind's required form
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: >-
+      A hunk that matches none fails CI. The differential test of X4 checks that decisions are unchanged,
+      which catches a hunk the classifier misreads
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Does this startup-assembly change only alter how the router is built or hosted, never which
+      plugins run or what they decide?
+    reviewer: router fork expertise
+    when: a hunk is classified as startup assembly
+    trigger:
+      manual: true
+  status: new
+  target:
+    status: ci
+    milestone: 3
+  note: >-
+    the fork changes 36 upstream Go files (273 lines added, 143 removed) at v1.0.0-blis.2; most changes
+    are of a listed kind, four hunks are not (prerequest_test.go, handlers/request.go, producer.go,
+    handlers/response.go); today a 450-line budget is checked instead
+- id: RTR-3
+  section: §5
+  statement: >-
+    pkg/embed.New passes the router conformance suite and changes only compatibly within an upstream
+    major version, except through a contract-change review set (§12.8), which runs the API diff in
+    accept-break mode and releases every implementer together (SUB-1). Once the fork imports
+    contracts/embed from blis-substrate, the diff covers that package.
+  scope:
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: Conformance suite and API diff
+    runs: pull_request
+    status: new
+    test: 'pkg/embed: TestConformance; hack/embed-apidiff.sh'
+  - repo: llm-d-router
+    check: The conformance suite and API diff are required checks on llm-d-r
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 1
+  note: the conformance suite exists but is not required
+- id: RTR-4
+  section: §5
+  statement: >-
+    A plugin type runs in BLIS only after an audit. The audit converts every baselined use inside
+    that plugin (RTR-6). The fork's audited list and BLIS's allow-list change in the same review set.
+  scope:
+  - inference-sim
+  - llm-d-router
+  checks:
+  - repo: inference-sim
+    check: >-
+      TestSupportedTypesAreHostedByTheFork in inference-sim, against the fork's audited list
+    runs: pull_request
+    status: ci
+    test: 'sim/llmd: TestSupportedTypesAreHostedByTheFork'
+  - repo: llm-d-router
+    check: The plugin audit check is required on llm-d-r
+    runs: pull_request
+    status: new
+  review: null
+  status: partial
+  target:
+    status: ci
+    milestone: 1
+  note: the check exists but is not required
+- id: RTR-5
+  section: §5
+  statement: >-
+    The llm-d P/D sidecar is hosted under the same runtime interface, so P/D leg handling is llm-d's
+    code rather than a re-implementation in inference-sim.
+  scope:
+  - inference-sim
+  checks:
+  - repo: inference-sim
+    check: >-
+      A test in inference-sim that P/D runs go through the hosted sidecar's code, and that the simulator
+      holds no P/D leg logic of its own
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 4
+  note: inference-sim models the legs itself (sim/cluster/gateway.go:381)
+- id: RTR-6
+  section: §5
+  statement: >-
+    Every direct clock read, timer, goroutine, random draw, map-order dependence, network call and
+    process-wide mutable state on a router path goes through the runtime interface, or is listed in
+    the reviewed baseline. A use is on the baseline for one of three reasons, recorded with it: it
+    cannot affect a decision (a log, a metric, or a walk whose order does not matter); it lies inside
+    a plugin type BLIS refuses; or it lies on a path that pkg/embed.New never builds, such as the
+    router's servers. A use of the second kind is converted when its plugin is audited and allowed
+    (RTR-4). The baseline grows only by review, and shrinks when a use is converted or upstream removes
+    it.
+  scope:
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: >-
+      Hack/hosting-lint, which type-checks the router packages, including package-level variables
+      written after initialisation, and fails on any use not in hack/hosting-lint/baseline.txt, or
+      on more uses than the baseline records
+    runs: pull_request
+    status: new
+    test: go run ./hack/hosting-lint
+  - repo: llm-d-router
+    check: Hack/hosting-lint is a required check on llm-d-r
+    runs: pull_request
+    status: new
+  review:
+  - question: >-
+      Does this baselined use stay off every decision path, lie only inside a refused plugin, or lie
+      only on a path the embedding never builds?
+    reviewer: router fork expertise
+    when: an entry is added to the baseline
+    trigger:
+      repos:
+      - llm-d-router
+      paths:
+      - hack/hosting-lint/baseline.txt
+  status: new
+  target:
+    status: ci
+    milestone: 3
+  note: >-
+    hack/hosting-lint runs with a reviewed baseline of 382 entries (392 uses); it is not a required
+    check
+- id: RTR-7
+  section: §5
+  statement: >-
+    Under the simulated runtime, at most one router goroutine runs at a time, and a goroutine gives
+    way only in rt.Park. No lock is held across a call that can reach rt.Park. Channel and wait-group
+    waits on decision paths are converted to rt.Park, as the "goroutine or blocking wait" kind of
+    RTR-2. Decisions do not depend on the order in which goroutines runnable at one instant resume.
+  scope:
+  - llm-d-router
+  checks:
+  - repo: llm-d-router
+    check: >-
+      Hack/hosting-lint, which fails on a lock acquired in a function that can reach rt.Park before
+      its unlock, and on an unconverted channel or wait-group wait on a decision path
+    runs: pull_request
+    status: new
+  - repo: llm-d-router
+    check: A seeded test that permutes resumption order and compares decisions
+    runs: pull_request
+    status: new
+  review: null
+  status: new
+  target:
+    status: ci
+    milestone: 3

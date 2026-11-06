@@ -1,0 +1,144 @@
+name: docs
+
+# Publishes the documentation to the gh-pages branch with mike. ci.yml builds it on every
+# pull request that could change it. Each published version is a directory on that branch:
+#
+#   dev      the main branch, redeployed on every push to it
+#   X.Y      a release line, redeployed when a release vX.Y.Z is published; the newest
+#            release line also carries the alias `latest`, which the site root serves
+#
+# A pre-release (vX.Y.Z-rc.1, or one marked pre-release on GitHub) is not published, so
+# `latest` only ever names a stable release. Until the first release is published, the site
+# root serves `dev`. A version can also be deployed by hand from the Actions tab, to
+# backfill a release line or to republish one.
+#
+# A release created with the default GITHUB_TOKEN triggers no workflow. Release automation
+# added later must publish with another token, or dispatch this workflow itself.
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release line to deploy, as MAJOR.MINOR (for example 0.2)'
+        required: true
+      latest:
+        description: 'Also point the latest alias, and the site root, at it'
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Deployments of one kind run one at a time. Pushes to main and releases use separate
+    # groups, because GitHub cancels a pending run when another joins its group, and a
+    # merge must not cancel a release waiting behind it. The two groups can still race for
+    # gh-pages, which the deploy step handles by retrying.
+    concurrency:
+      group: docs-deploy-${{ github.event_name == 'push' && 'dev' || 'release' }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # mike needs the gh-pages branch
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+      - run: pip install --require-hashes -r docs/requirements.txt
+      - name: Configure git
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Choose the version to deploy
+        id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_LATEST: ${{ inputs.latest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$EVENT" in
+            push)
+              echo "version=dev" >> "$GITHUB_OUTPUT"
+              echo "latest=false" >> "$GITHUB_OUTPUT"
+              ;;
+            release)
+              if [[ "$PRERELEASE" == "true" || ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                echo "The release is a pre-release or its tag is not vMAJOR.MINOR.PATCH; not publishing it."
+                exit 0
+              fi
+              v="${TAG#v}"; line="${v%.*}"
+              # A patch to an older release line must not take `latest` from a newer one.
+              # The newest published stable release, which includes this one.
+              newest=$(gh release list --exclude-drafts --exclude-pre-releases --limit 1000 \
+                         --json tagName --jq '.[].tagName' \
+                       | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+              newest="${newest#v}"; newest="${newest%.*}"
+              echo "version=$line" >> "$GITHUB_OUTPUT"
+              if [[ "$line" == "$newest" ]]; then
+                echo "latest=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "latest=false" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            workflow_dispatch)
+              if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                echo "The version input must be MAJOR.MINOR, such as 0.2."
+                exit 1
+              fi
+              echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+              echo "latest=$INPUT_LATEST" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: Build (strict)
+        if: steps.version.outputs.skip != 'true'
+        env:
+          DOCS_SOURCE_REF: ${{ github.sha }}
+          DOCS_RELEASE: ${{ github.event.release.tag_name || 'main' }}
+          SUBSTRATE_RELEASE: ${{ github.event.release.tag_name || '' }}
+        run: mkdocs build --strict
+
+      - name: Deploy
+        if: steps.version.outputs.skip != 'true'
+        env:
+          DOCS_SOURCE_REF: ${{ github.sha }}
+          DOCS_RELEASE: ${{ github.event.release.tag_name || 'main' }}
+          SUBSTRATE_RELEASE: ${{ github.event.release.tag_name || '' }}
+          VERSION: ${{ steps.version.outputs.version }}
+          LATEST: ${{ steps.version.outputs.latest }}
+        run: |
+          deploy() {
+            if [[ "$LATEST" == "true" ]]; then
+              mike deploy --push --update-aliases "$VERSION" latest &&
+                mike set-default --push latest
+            else
+              mike deploy --push "$VERSION" &&
+                # Before any release, nothing is `latest`; serve dev from the site root.
+                if ! mike list --json | grep -q '"latest"'; then
+                  mike set-default --push "$VERSION"
+                fi
+            fi
+          }
+          # Another deployment may push to gh-pages between this job's fetch and its push.
+          # Start each attempt from the remote branch, as mike requires.
+          for attempt in 1 2 3; do
+            if git fetch origin gh-pages 2>/dev/null; then
+              git branch -f gh-pages origin/gh-pages
+            fi
+            if deploy; then exit 0; fi
+            echo "Deploy attempt $attempt failed; retrying."
+            sleep $((attempt * 10))
+          done
+          exit 1

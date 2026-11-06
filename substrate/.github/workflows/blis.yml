@@ -1,0 +1,56 @@
+name: blis
+
+# This repository's use of its own shared workflows. Every other BLIS repository calls them
+# by commit (inference-sim/blis-substrate/.github/workflows/<file>@<commit>, X21); here they
+# are called by path, so a pull request that changes a shared check is judged by the changed
+# check, and substrate-ref is the pull request's own commit.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  merge_group:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on the pull request and, with its pull-request-only steps skipped, on the merge-queue
+  # tree, so the check run "pr / blis checks" exists on the tree the merge check judges (X22).
+  pr:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    uses: ./.github/workflows/shared-pr-checks.yml
+    # A same-repository pull request runs its own substrate-ref code with pull-requests:
+    # write, by design: a pull request is judged by its own changed checks. A fork's pull
+    # request is given a read-only token.
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    with:
+      repo: blis-substrate
+      substrate-ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+
+  merge:
+    if: github.event_name == 'merge_group'
+    uses: ./.github/workflows/shared-merge-check.yml
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    with:
+      substrate-ref: ${{ github.event.merge_group.head_sha }}
+      required: "required,pr / blis checks,scan"
+
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/shared-nightly.yml
+    permissions:
+      contents: read
+      issues: read
+    with:
+      substrate-ref: ${{ github.sha }}
+    secrets:
+      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

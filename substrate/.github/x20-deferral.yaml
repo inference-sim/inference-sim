@@ -1,0 +1,10 @@
+# The X20 deferral (release plan §3.3, "Deferring signing and sign-off"). While it holds, the
+# commit-policy check reports an unsigned commit and a missing Signed-off-by line as deferred
+# and does not fail on them. Every other X20 finding still fails. Signing and sign-off need a
+# person, so this release defers them; the owning issue tracks the work.
+issue: inference-sim/blis-substrate#12
+added: 2026-11-05
+expires: 2026-12-05
+reason: >-
+  the M1 commits were written with an agent's help and a person signs and signs off the
+  commits they take responsibility for before merge

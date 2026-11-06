@@ -1,0 +1,17 @@
+# golangci-lint configuration (X17: formatting and lint are required checks). The linter set is
+# golangci-lint's default (errcheck, govet, ineffassign, staticcheck, unused). The version is
+# pinned in .github/workflows/ci.yml.
+#
+# The first run over the existing code reported 41 findings (28 errcheck, 11 staticcheck, 2
+# unused), almost all in code this change does not touch. They are not edited here and not
+# excluded: the CI job lints changed code only (--new-from-rev at the merge base), so a new
+# finding fails and the baseline stays visible. The plan to widen: each owner of a directory
+# clears its findings, and when `golangci-lint run ./...` is clean the job drops
+# --new-from-rev and lints everything. The baseline at d7ccfae, by directory:
+#   contracts/ 17 (tests 9: embedtest, docs_test, example_test, registry_test,
+#     validate_property_test, enginetest_test; non-test 8: load.go, check/node.go,
+#     invariants/doc.go and registry.go, deployment/validate.go, workload/replay.go,
+#     embedtest.go)
+#   tools/ 19 (invariants, prcheck, pyrules, release)
+#   validate/ 2, kernel/ 2 (sparse_mla.go:224, kernel.go:604 collectiveTime unused), data.go 1
+version: "2"

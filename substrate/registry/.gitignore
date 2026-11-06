@@ -1,0 +1,26 @@
+# The payload is YAML (coefficient sets), so this file deliberately ignores NOTHING by
+# extension. Before adding a pattern, check that it cannot match:
+#   coefficients/*.yaml
+#
+# Directory patterns are ANCHORED with a leading slash so they match only at the repo
+# root. An unanchored `scratch/` would also match `coefficients/scratch/` and silently
+# swallow a set — the same silent-drop failure blis-catalog's .gitignore guards against.
+
+# OS and editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*~
+/.idea/
+/.vscode/
+
+# Scratch clones, as a safety net
+/scratch/
+/local/
+
+# Python tooling caches
+__pycache__/
+*.pyc
+/.venv/
+/.pytest_cache/
+
