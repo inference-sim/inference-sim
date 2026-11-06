@@ -27,7 +27,7 @@
 //	review     null, or a list of review questions, each with question, reviewer, when (the
 //	           design's words) and trigger. A trigger names the repositories and the path
 //	           globs whose change adds the question to a pull request, with optional
-//	           exclude globs; or it is {manual: true}, which a code owner adds by label
+//	           exclude globs; or it is {manual: true}, which a reviewer adds by label
 //	           (design §13.2).
 //	status     ci (every check is ci), partial (some are), new (none is), or review (the
 //	           invariant has no mechanical check, only a review question).

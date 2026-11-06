@@ -114,7 +114,7 @@ jobs:
             gh api -X PATCH "repos/${{ github.repository }}/pulls/$PR" -F "body=@$RUNNER_TEMP/new-body.md" > /dev/null
           fi
           if [ -s "$RUNNER_TEMP/unanswered" ]; then
-            echo "review questions not yet answered by a code owner:"
+            echo "review questions not yet answered by a reviewer:"
             cat "$RUNNER_TEMP/unanswered"
             exit 1
           fi

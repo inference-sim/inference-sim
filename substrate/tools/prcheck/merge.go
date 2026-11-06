@@ -138,7 +138,7 @@ func CheckMerge(in MergeInput) []string {
 		answered[v.Name] = true
 		// An answer is the head tree's. Edited after the approving review, it was never
 		// approved: the reviewer is the control on whether an answer is right (the project
-		// has no code-owner lookup), so the review must come after the answer.
+		// has no lookup of who approved), so the review must come after the answer.
 		if at, err := time.Parse(time.RFC3339, v.At); err == nil && !approved.IsZero() && at.After(approved) {
 			bad = append(bad, fmt.Sprintf("answer %q was written or edited at %s, after the latest approving review at %s; request the review again (X22)", v.Name, v.At, approved.Format(time.RFC3339)))
 		}

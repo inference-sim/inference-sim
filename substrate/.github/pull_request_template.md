@@ -43,7 +43,7 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 ## Review questions
 
 <!-- CI adds a required checklist item here for each review question whose paths this pull
-request changes (design §13.2). A code owner answers each one: tick it, and write "yes" or
+request changes (design §13.2). A reviewer with write access answers each one: tick it, and write "yes" or
 "no" with a one-line reason. -->
 
 ## Checklist
