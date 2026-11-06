@@ -144,6 +144,10 @@ func (m *Metrics) recordPrefixLookup(req *Request, l PrefixLookup) {
 	if l.QueryTokens == 0 {
 		return
 	}
+	if rm, ok := m.Requests[req.ID]; ok {
+		rm.CachedLocalTokens, rm.CachedExternalTokens = int(l.HitTokens), int(l.CPUHitTokens)
+		m.Requests[req.ID] = rm
+	}
 	m.PrefixCacheQueryTokens += l.QueryTokens
 	m.PrefixCacheHitTokens += l.HitTokens
 	m.CPUTierHitTokens += l.CPUHitTokens
