@@ -20,6 +20,9 @@ jobs:
   pr:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/shared-pr-checks.yml
+    # A same-repository pull request runs its own substrate-ref code with pull-requests:
+    # write, by design: a pull request is judged by its own changed checks. A fork's pull
+    # request is given a read-only token.
     permissions:
       contents: read
       pull-requests: write
