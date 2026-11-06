@@ -6,13 +6,13 @@ Invariants are properties that must hold at all times during and after simulatio
 
 **The resolution rule (#1721):** *if an invariant ID appears in code, it must be resolvable from this registry.* An ID a reader cannot look up is worse than no ID — `INV-A` was cited 11 times and printed `"INV-A violation on node %s"` at runtime while being documented nowhere. The registry therefore lists **every** `INV-*` ID cited in `sim/` or `cmd/`.
 
-Nothing enforces that automatically yet, so re-check it when adding an ID:
+`TestInvariantRegistry_ResolvesEveryCitedID` (`sim/inv_registry_complete_test.go`) enforces it: it fails, naming the ID and where it is cited, when `sim/` or `cmd/` cites an ID this registry does not resolve. To list the IDs by hand:
 
 ```bash
 git grep -ho 'INV-[A-Za-z0-9-]*' -- 'sim/**' 'cmd/**' | sort -u
 ```
 
-Every result must appear in the index below. (`INV-6-safe` in `sim/workload/fixed_accumulate_test.go` is a known false positive — it is the adjective "INV-6-safe", not an ID.) A test that fails when a cited ID is undocumented is tracked in #1735.
+Every result must appear in the index below. (`INV-6-safe` in `sim/workload/fixed_accumulate_test.go` is a known false positive — it is the adjective "INV-6-safe", not an ID.) The test names that false positive in a constant, so another such adjective is a decision, not a silent regex change.
 
 Resolvable does not mean restated in full. Where a design plan is already authoritative for a feature-local invariant (the LoRA control plane), this registry carries a **pointer line** and the plan keeps the prose. Full entries live here for everything else.
 
