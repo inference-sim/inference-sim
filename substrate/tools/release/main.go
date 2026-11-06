@@ -3,23 +3,32 @@
 //
 //	go run ./tools/release -lock stack.lock -dir blis-substrate=../blis-substrate \
 //	    -dir blis-vllm=../blis-vllm -results results.json [-bugs bugs.json] [-base main]
-//	    [-apply | -tag] [-sign]
+//	    [-apply | -tag] [-layer <repo>] [-sign]
 //
 // Without -apply or -tag it is a dry run: it prints, for each repository bottom-up (X10), the
 // tag it would make, the pins it would write, the refusals that stop it, and the release
-// notes (LIF-4), and changes nothing. With -apply, and only when nothing is refused, it
-// stages each repository's final release commit on the branch release/<tag>: the head merged
-// into the base and the pins in one commit, with no tag. With -tag, it tags the tip of each
-// staged branch, and only where -results records every ci check at that tip's own SHA
-// (LIF-3) and where the tip no longer holds the pin-by-commit deferral file and passes the
-// selected-module lint (-modlint, no deferral: the whole module graph, not only the direct
-// requirements, so a transitive BLIS pseudo-version or a BLIS replace is refused);
-// -sign signs the pin commits and tags. It never pushes.
+// notes (LIF-4), and changes nothing. A repository whose tag is already on its staged tip is
+// printed as done and skipped.
 //
-// The release job does not exist yet. The loop stages every layer locally; pushing each
-// layer's branch, running CI on it, running the next layer's checks against the new tags and
-// pushing the tags are manual steps for the release owners until that job exists (design
-// §13.6). The push needs a bypass of the branch and tag protection for the bot or the owners.
+// A set is released one layer at a time, and every run re-plans the whole lock. -layer names
+// the repository; without it, the first one in lock order that is not yet tagged. With
+// -apply, and only when nothing is refused, it stages that layer's final release commit on
+// the branch release/<tag>: the head merged into the base and the pins in one commit, with no
+// tag. Every layer below must already be tagged and its tag published on its origin (git
+// ls-remote), because the pins are those real tags. With -tag it tags that layer's staged
+// tip, and only where -results records every ci check at the tip's own SHA (LIF-3) and
+// where the tip no longer holds the pin-by-commit deferral file and passes the selected-module
+// lint (-modlint, no deferral: the whole module graph, not only the direct requirements, so a
+// transitive BLIS pseudo-version or a BLIS replace is refused). -sign signs the pin commits
+// and tags. It never pushes. A run interrupted at any point is resumed by running the same
+// command again: the version numbers do not advance, a staged branch is continued, and a
+// tagged layer is skipped.
+//
+// The release job does not exist yet (it arrives in M2). After each command the tool prints
+// what to do by hand: push the branch, run the layer's checks on it and record the results,
+// run -tag, push the tag, run the layer's checks against the tag, then run -apply for the
+// next layer. The push needs a bypass of the branch and tag protection for the bot or the
+// owners.
 //
 // It refuses a tag when:
 //   - a ci check of an invariant the repository owns has no passing result at the head
@@ -79,6 +88,7 @@ func run(args []string, w io.Writer) (int, error) {
 	apply := fs.Bool("apply", false, "stage the release commit on release/<tag> in the local checkouts: merge and pin, no tag (never pushes)")
 	tag := fs.Bool("tag", false, "tag the staged release/<tag> tips, only where -results records every ci check at the tip's own SHA")
 	modlint := fs.String("modlint", "", "the tools/modlint binary, built from the substrate version being released; -tag runs it, with no deferral, on each staged tip")
+	layer := fs.String("layer", "", "the repository -apply or -tag works on; default: the first layer in lock order that is not yet tagged")
 	sign := fs.Bool("sign", false, "sign the pin commits and tags")
 	dirs := dirFlag{}
 	fs.Var(dirs, "dir", "<repo>=<local checkout>, once per repository in the set")
@@ -120,45 +130,77 @@ func run(args []string, w io.Writer) (int, error) {
 	if *modlint != "" {
 		env.Lint = func(dir string) ([]string, error) { return runModlint(*modlint, dir) }
 	}
+	env.TagPublished = func(repo, tag string) bool { return tagPublished(dirs[repo], tag) }
 	steps, err := Plan(env, lock, dirs, *base)
 	if err != nil {
 		return 2, err
 	}
 	refused := false
 	for _, st := range steps {
-		fmt.Fprintf(w, "== %s: %s (previous %s)\n", st.Repo, st.Tag, orNone(st.Prev))
-		fmt.Fprintf(w, "pins: %s\n", orNone(pinSummary(st.Pins)))
+		state := ""
+		switch {
+		case st.Done:
+			state = " [done: already tagged]"
+		case st.Staged:
+			state = " [staged]"
+		}
+		_, _ = fmt.Fprintf(w, "== %s: %s (previous %s)%s\n", st.Repo, st.Tag, orNone(st.Prev), state)
+		_, _ = fmt.Fprintf(w, "pins: %s\n", orNone(pinSummary(st.Pins)))
 		for _, r := range st.Refusals {
-			fmt.Fprintf(w, "REFUSED: %s\n", r)
+			_, _ = fmt.Fprintf(w, "REFUSED: %s\n", r)
 			refused = true
 		}
-		fmt.Fprintf(w, "--- notes\n%s--- end notes\n", st.Notes)
+		_, _ = fmt.Fprintf(w, "--- notes\n%s--- end notes\n", st.Notes)
 	}
 	if refused {
 		return 1, nil
 	}
 	switch {
 	case *apply && *tag:
-		return 2, fmt.Errorf("-apply and -tag are separate steps: stage, run CI on the staged commits, then tag")
+		return 2, fmt.Errorf("-apply and -tag are separate steps: stage a layer, run its CI, then tag it")
 	case *apply:
-		if err := Stage(steps, *sign); err != nil {
-			return 2, err
-		}
-		for _, st := range steps {
-			tip, _ := gitIn(st.Dir, "rev-parse", "refs/heads/"+Branch(st))
-			_, _ = fmt.Fprintf(w, "staged %s %s at %s; no tag yet\n", st.Repo, Branch(st), tip)
-		}
-		_, _ = fmt.Fprintln(w, "staged in the local checkouts; nothing tagged, nothing pushed")
-		return 0, nil
-	case *tag:
-		if err := Tag(env, lock, steps, *sign); err != nil {
+		if err := Stage(env, steps, *layer, *sign); err != nil {
 			return 1, err
 		}
-		_, _ = fmt.Fprintln(w, "tagged the checked tips in the local checkouts; nothing pushed")
+		i, _ := pickLayer(steps, *layer)
+		st := steps[i]
+		tip, _ := gitIn(st.Dir, "rev-parse", "refs/heads/"+Branch(st))
+		_, _ = fmt.Fprintf(w, "staged %s %s at %s; no tag yet, nothing pushed\n", st.Repo, Branch(st), tip)
+		_, _ = fmt.Fprintf(w, "next: push %s, run %s's checks on it and record the results for %s, then run -tag -layer %s\n", Branch(st), st.Repo, short(tip), st.Repo)
+		return 0, nil
+	case *tag:
+		if err := Tag(env, lock, steps, *layer, *sign); err != nil {
+			return 1, err
+		}
+		i, _ := pickLayer(steps, *layer)
+		st := steps[i]
+		_, _ = fmt.Fprintf(w, "tagged %s %s; nothing pushed\n", st.Repo, st.Tag)
+		if next := nextLayer(steps, i); next != "" {
+			_, _ = fmt.Fprintf(w, "next: push %s, run %s's checks against it, then run -apply -layer %s\n", st.Tag, st.Repo, next)
+		} else {
+			_, _ = fmt.Fprintf(w, "next: push %s and run %s's checks against it; the set is complete\n", st.Tag, st.Repo)
+		}
 		return 0, nil
 	}
 	_, _ = fmt.Fprintln(w, "dry run: nothing changed")
 	return 0, nil
+}
+
+// nextLayer names the repository after step i that is not yet tagged, or "".
+func nextLayer(steps []Step, i int) string {
+	for _, st := range steps[i+1:] {
+		if !st.Done {
+			return st.Repo
+		}
+	}
+	return ""
+}
+
+// tagPublished reports whether the tag is on the origin of the checkout.
+func tagPublished(dir, tag string) bool {
+	cmd := exec.Command("git", "ls-remote", "--exit-code", "--tags", "origin", tag)
+	cmd.Dir = dir
+	return cmd.Run() == nil
 }
 
 // runModlint runs the modlint binary on a checkout, without -deferral. Exit 0 is clean, 1
