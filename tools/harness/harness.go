@@ -28,7 +28,7 @@
 // Every point is simulated by the `blis` binary (Config.Blis), invoked as `blis replay` on a
 // trace of the point's requests and a scenario carrying its settings, exactly as a user would
 // replay a trace (#1902). This package only states the point and reads back the
-// --metrics-path file; see Run.
+// Result's rows; see Run.
 //
 // # What it deliberately does not do
 //
@@ -48,10 +48,10 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim"
 )
 
 // Corpus is the evaluation set as blis-latency-kernel's extractor writes it.
@@ -173,7 +173,7 @@ type Observation struct {
 	Completed int
 	// TPOTRequests is how many of them entered the TPOT mean (output length above one).
 	TPOTRequests int
-	// Preemptions is the run's preemption_count, as `blis replay` reports it.
+	// Preemptions is the run's preemptions figure, as the Result reports it.
 	Preemptions int64
 
 	// Settings is the configuration this point ran with and where each field came from, so
@@ -336,15 +336,15 @@ func Run(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
 	if primed {
-		if err := checkPrimed(out.Requests, len(pl.InputLens)); err != nil {
+		if err := checkPrimed(out.RequestRows, len(pl.InputLens)); err != nil {
 			return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 		}
 	}
-	obs, err := summarize(out.Requests, pl, ignore)
+	obs, err := summarize(out.RequestRows, pl, ignore)
 	if err != nil {
 		return Observation{}, fmt.Errorf("%s c=%d: %w", sw.Scenario, concurrency, err)
 	}
-	obs.Preemptions = out.PreemptionCount
+	obs.Preemptions = int64(out.Metrics["preemptions"].Value)
 	obs.Settings = admit
 	obs.Primed = primed
 	return obs, nil
@@ -389,12 +389,15 @@ func RunCold(sw Sweep, concurrency int, cfg Config) (Observation, error) {
 //   - a first main request that did not start with the main phase;
 //   - a holder round (which keeps a copy's pool slot) that arrived before the last main
 //     request completed, so that something besides the main phase was in the engine.
-func checkPrimed(reqs []sim.RequestMetrics, n int) error {
-	const usPerS, usPerMs = 1e6, 1e3
+func checkPrimed(rows []result.RequestRow, n int) error {
 	var lastMainEnd, firstHolder float64
 	firstHolder = math.Inf(1)
-	for _, r := range reqs {
-		start, end := r.ArrivedAt*usPerS, r.ArrivedAt*usPerS+r.E2E*usPerMs
+	for _, r := range rows {
+		start := float64(r.ArrivalUs)
+		var end float64
+		if r.E2EUs != nil {
+			end = start + float64(*r.E2EUs)
+		}
 		i, err := requestIndex(r.ID)
 		switch {
 		case err != nil: // a holder round: "session_warmup-<j>_round_1_<k>"
@@ -474,24 +477,21 @@ func LoadDrawFixtures() ([]*BenchmarkWorkloads, error) {
 // tokenization and output processing. Its e2e_ms is FirstTokenTime + every inter-token
 // interval + PostDecodeFixedOverhead -- the fixed completion work AFTER the last token, which
 // the client's latency does not include. So the client's (latency - ttft) is BLIS's sum of
-// inter-token intervals, and BLIS's per-request itl_ms is exactly that sum over
+// inter-token intervals, and BLIS's per-request time per output token (the row's tpot_us) is exactly that sum over
 // (output_len - 1) for a request that completed normally (sim/simulator.go
 // recordRequestCompletion). TPOT is therefore read from itl_ms, not derived from e2e_ms,
 // which would add PostDecodeFixedOverhead / (output_len - 1) to every request.
 //
 // Both means are over requests, not pooled over tokens, as the client's are.
 //
-// `blis replay` reports per-request latencies in milliseconds; they are converted back to
-// microseconds (the simulator's tick) here. The round trip is exact to within one float64 ulp,
-// far below anything the score prints.
-func summarize(reqs []sim.RequestMetrics, pl PointLengths, ignore func(id string) bool) (Observation, error) {
+// The Result's rows state each latency in microseconds, the simulator's tick: no conversion.
+func summarize(rows []result.RequestRow, pl PointLengths, ignore func(id string) bool) (Observation, error) {
 	n := len(pl.InputLens)
 	seen := make([]bool, n)
-	const usPerMs = 1e3
 	var ttftSum, tpotSum, firstTTFT float64
 	var tpotN, completed int
-	for _, r := range reqs {
-		if r.CompletionIndex == 0 || (ignore != nil && ignore(r.ID)) {
+	for _, r := range rows {
+		if r.Fate != result.FateCompleted || (ignore != nil && ignore(r.ID)) {
 			continue
 		}
 		i, err := requestIndex(r.ID)
@@ -502,18 +502,24 @@ func summarize(reqs []sim.RequestMetrics, pl PointLengths, ignore func(id string
 		seen[i] = true
 		// The trace states each request's lengths; a mismatch would mean the simulation ran
 		// a different workload from the fixture.
-		if r.NumPrefillTokens != pl.InputLens[i] || r.NumDecodeTokens != pl.OutputLens[i] {
+		if r.PromptTokens != pl.InputLens[i] || r.OutputTokens != pl.OutputLens[i] {
 			return Observation{}, fmt.Errorf("request %d ran %d input and %d output tokens; the "+
-				"benchmark's targets are %d and %d", i, r.NumPrefillTokens, r.NumDecodeTokens,
+				"benchmark's targets are %d and %d", i, r.PromptTokens, r.OutputTokens,
 				pl.InputLens[i], pl.OutputLens[i])
 		}
-		completed++
-		ttftSum += r.TTFT * usPerMs
-		if i == 0 {
-			firstTTFT = r.TTFT * usPerMs
+		if r.TTFTUs == nil {
+			return Observation{}, fmt.Errorf("completed request %d has no ttft_us", i)
 		}
-		if r.NumDecodeTokens > 1 {
-			tpotSum += r.ITL * usPerMs
+		completed++
+		ttftSum += float64(*r.TTFTUs)
+		if i == 0 {
+			firstTTFT = float64(*r.TTFTUs)
+		}
+		if r.OutputTokens > 1 {
+			if r.TPOTUs == nil {
+				return Observation{}, fmt.Errorf("completed request %d has no tpot_us", i)
+			}
+			tpotSum += *r.TPOTUs
 			tpotN++
 		}
 	}

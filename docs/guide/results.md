@@ -41,7 +41,7 @@ jq '.metrics.ttft_p99_ms.value' result.json
 | `reports.kernel` | The cost model's coefficient provenance per pool role. |
 | `reports.saturation` | The detectors' final labels under `final`, when `--detectors` ran. |
 | `overrides` | Every setting the run simulated differently from its scenario, and what chose it: a `--scheduler` or `--preemption-policy` against the scenario's stated policy, and every other command-line flag that changes what is simulated and was given a value other than its default (`--timeout`, `--num-instances`, `--prefix-tokens`, the token-length flags, the router timing flags, the speculative-decoding flags, ...), as `setting` (the flag), `run` (its value; a file flag by `sha256:<digest>`) and `source`. A workload spec run without `--seed` adds `workload_seed` (the spec's own request seed). Flags that select or tune a reported section without changing what is simulated (`--detectors`, `--saturation-config`, `--saturation-final-window`, `--server-series-interval-s`, `--fitness-weights`, `--trace-level`, `--summarize-trace`) are recorded the same way, because they change bytes of the document (SIM-10, #2062). Flags that change no byte of it (`--output`, `--format`, `--view`, `--log`, output paths, `--counterfactual-k`, `--lazy-generation`) are not recorded; `cmd/result_flags.go` lists each with the reason, and a test fails for a new flag listed in neither place. The run's `name` carries a digest of the overrides, so two runs that differ only in a flag get different names. |
-| `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run), `metrics_file` (`--metrics-path`), `sim_results` (`replay --results-path`). |
+| `artifacts` | Files the run wrote, by sha256 and by path relative to `--output`'s directory (as given, with no `--output`): `trace_header`/`trace_data` (`--trace-output` on run). |
 | `runtime` | Wall-clock seconds, start time and host. The only block that depends on the host or the clock. |
 
 ### Standard metrics
@@ -140,7 +140,7 @@ document, or is listed here as dropped with the reason.
 | `kv_allocation_failures` | `reports.engine.cluster.kv_allocation_failures` |
 | `preemption_count` | `reports.engine.cluster.preemptions` |
 | `cache_hit_rate` | `reports.engine.cluster.cache_hit_rate` (window); `reports.engine.cluster.cache_hit_rate_whole_run` |
-| `requests` | `artifacts.metrics_file` (the deprecated file's per-request rows, by digest) |
+| `requests` | `request_rows` (one row per generated request) |
 | `saturation` | `reports.saturation.final` |
 | `goodput_rps`, `slo_attainment` | `metrics.goodput_rps`, `metrics.slo_attainment` |
 | `per_class` | `goodput.per_class` (`completed`, `met`); the per-class latency summaries are `--view summary`'s Per-SLO section |
@@ -181,58 +181,23 @@ no span to report over and is refused.
 The text sections below (anomaly counters, KV cache, per-SLO, per-model, per-tenant,
 sessions, P/D, fitness, trace summary) are what `--view summary` renders to stderr.
 
-## Deprecated results files
+## Removed results files
 
-`--metrics-path` (run and replay) and `replay --results-path` keep the content documented below
-for one release and log a deprecation pointing at `--output`; the Result references each by
-digest under `artifacts`. They are then removed.
+`--metrics-path` and `--results-path` were removed in v0.16.0 (#2071): the Result document on
+standard output, or in the `--output` file, carries every figure those files held. The
+aggregates are the Result's `metrics` and the engine's report (see [Where each `MetricsOutput`
+field went](#where-each-metricsoutput-field-went)); the per-request rows are `request_rows`
+(see [Per-Request Rows](#per-request-rows)). Read the Result instead of a file:
 
-### `--metrics-path` file (deprecated)
+```bash
+./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
+  --scenarios testdata/kernel/aisimulate \
+  --rate 100 --num-requests 500 --output result.json
+```
 
-The `--metrics-path` file contains:
+### Measured-Window Aggregates
 
-| Field | Unit | Description |
-|-------|------|-------------|
-| `instance_id` | string | Instance identifier (`"cluster"` for aggregate output) |
-| `completed_requests` | count | Requests that finished before horizon |
-| `still_queued` | count | Requests in the wait queue at horizon end |
-| `still_running` | count | Requests in the running batch at horizon end |
-| `injected_requests` | count | Total requests that entered the simulator |
-| `total_input_tokens` | count | Sum of input tokens across all completed requests |
-| `total_output_tokens` | count | Sum of output tokens across all completed requests |
-| `vllm_estimated_duration_s` | s | Estimated vLLM wall-clock duration for the workload |
-| `responses_per_sec` | req/s | Throughput (completed requests / effective duration) |
-| `tokens_per_sec` | tok/s | Output token throughput |
-| `e2e_mean_ms` | ms | Mean End-to-End latency |
-| `e2e_p90_ms` | ms | 90th percentile E2E |
-| `e2e_p95_ms` | ms | 95th percentile E2E |
-| `e2e_p99_ms` | ms | 99th percentile E2E — tail latency |
-| `ttft_mean_ms` | ms | Mean Time To First Token — average responsiveness |
-| `ttft_p90_ms` | ms | 90th percentile TTFT |
-| `ttft_p95_ms` | ms | 95th percentile TTFT |
-| `ttft_p99_ms` | ms | 99th percentile TTFT — tail latency |
-| `itl_mean_ms` | ms | Mean Inter-Token Latency — streaming smoothness |
-| `itl_p90_ms` | ms | 90th percentile ITL |
-| `itl_p95_ms` | ms | 95th percentile ITL |
-| `itl_p99_ms` | ms | 99th percentile ITL |
-| `scheduling_delay_p99_ms` | ms | 99th percentile scheduling delay — queue wait time |
-| `kv_allocation_failures` | count | KV cache allocation failures (omitted when zero) |
-| `preemption_count` | count | Total preemption events (integer; see also KV Cache Metrics for the rate) |
-| `dropped_unservable` | count | Requests rejected as unservable: empty prompts at the gateway or invalid output budgets, context lengths, or KV requirements at enqueue |
-| `length_capped_requests` | count | Requests force-completed at `MaxModelLen` |
-| `timed_out_requests` | count | Requests that exceeded their deadline |
-| `saturation` | object | Post-hoc saturation detection result (omitted when `--post-hoc-detector none`; see [Saturation Detection](#saturation-detection)) |
-| `catalog` | object | Model-catalog provenance: path, git revision, dirty flag (see [Catalog Provenance](#catalog-provenance)); the Result records the catalog by content hash under `data.catalog` |
-| `overrides` | array | Settings the run simulated differently from its scenario, each `{setting, scenario, run, source}`; absent when the run follows its scenario (see [Scenario Overrides](#scenario-overrides)); the Result carries the same list under `overrides` |
-| `cache_hit_rate` | fraction | GPU prefix-cache hit rate: prompt hit tokens over prompt query tokens summed across instances, as vLLM counts them (#1904); the measured window's in the file — **file only**; the Result carries the whole run's as `engine.cluster.cache_hit_rate_whole_run` |
-| measured-window keys | — | `ttft_p50_ms`, `request_itl_*`, `interactivity_*`, `step_interval_*`, `output_throughput_tok_s`, … — **file only**; see [Measured-Window Aggregates](#measured-window-aggregates-metrics-path-file) |
-| `kernel_provenance` | object | Per-pool coefficient evidence, assumptions and skipped release rules — **file only**; see [Kernel Provenance](#kernel-provenance) |
-| `blis_version`, `kernel_version`, `schemas_version` | string | Build pins from the binary's build information (`"unknown"` when absent) — **file only** |
-| `requests` | array | Per-request detail records (omitted when empty; see [Per-Request Fields](#per-request-fields)) |
-
-### Measured-Window Aggregates (`--metrics-path` file)
-
-The results file carries aiperf 0.12.0's request metrics (#1938) over the **measured window**:
+The Result carries aiperf 0.12.0's request metrics (#1938) over the **measured window**:
 requests whose `phase` is not `warmup` that completed (before the window's end, when one is
 set). With no phase set, that is every completed request. One value per request;
 percentiles are numpy-linear (`percentile_method: "numpy_linear"`).
@@ -252,12 +217,10 @@ percentiles are numpy-linear (`percentile_method: "numpy_linear"`).
 | `in_flight_requests_{mean,max}` | engine-side in-flight requests (dispatched, not completed), time-weighted over the window |
 | `kv_capacity_tokens_per_replica` | GPU KV pool of the smallest instance, tokens |
 
-In the file, `ttft_*`, `e2e_*` and `cache_hit_rate` take these measured-window values; the
-top-level whole-run keys keep the whole-run figures (TTFT there also counts requests that emitted a first token but did
-not complete).
-The legacy `itl_*` keys are **unchanged** for backward compatibility — they
-remain per verification step under speculative decoding — and `completed_requests` stays the
-run-wide INV-1 count. Invariants: INV-M1 … INV-M4.
+In the Result, `ttft_*`, `e2e_*` and the engine report's `cache_hit_rate` take these
+measured-window values; `cache_hit_rate_whole_run` keeps the whole-run figure. The per-step
+series is the engine report's `step_interval_*`, and `requests.completed` is the run-wide INV-1
+count. Invariants: INV-M1 … INV-M4.
 
 **Comparing a hit rate with aiperf 0.12.0.** Compare aiperf's `server_metrics_export.json`
 `vllm:prefix_cache_hits` / `vllm:prefix_cache_queries` "profiling" totals with the Result's
@@ -271,11 +234,12 @@ are cold, so that figure runs several points below the profiling window's own.
 
 ### Kernel Provenance
 
-`kernel_provenance` is keyed by pool role (`colocated`, or `prefill` and `decode`), #1942:
+The Result's `reports.kernel` is keyed by pool role (`colocated`, or `prefill` and `decode`), #1942:
 
 ```json
 {
-  "kernel_provenance": {
+  "reports": {
+    "kernel": {
     "colocated": {
       "method_counts": {"measured": 92, "vendor_spec": 15, "assumed": 47, "not_charged": 1},
       "evidenced": 107, "total": 155, "evidence_source": "kernel",
@@ -283,6 +247,7 @@ are cold, so that figure runs several points below the profiling window's own.
       "assumptions": [{"Name": "max_model_len", "Set": "blis-latency-kernel", "Method": "assumed", "Scope": "1048576: ..."}],
       "skipped_rules": ["all2all-backend-known", "quantization-known", "..."],
       "skipped_rule_findings": []
+    }
     }
   }
 }
@@ -294,7 +259,7 @@ registry entries copied from another scope or assumed, `assumptions` the values 
 supplied itself. `skipped_rules` are the scenario's release rules that neither the kernel nor
 BLIS enforces, and `skipped_rule_findings` what those rules report when the pack is run
 report-only. `evidence_source` is `kernel` when the counts are the kernel's `Evidence()`. A run
-no kernel priced writes `"kernel_provenance": {}`.
+no kernel priced states an empty map.
 
 ### Scheduling Delay
 
@@ -312,12 +277,12 @@ setting the scenario states. Today those are the two settings vLLM's
 `--scheduler priority-fcfs` with `--preemption-policy priority`). An explicit `--scheduler` or
 `--preemption-policy`, or a `--policy-config` bundle's `scheduler` or `preemption.policy`, that
 differs from the scenario is kept, since exploring a policy against a fixed deployment is the
-point, and the results file says so:
+point, and the Result says so:
 
 ```json
 {
   "overrides": [
-    {"setting": "scheduler", "scenario": "priority-fcfs", "run": "sjf", "source": "--scheduler"}
+    {"setting": "scheduler", "input": "priority-fcfs", "run": "sjf", "source": "--scheduler"}
   ]
 }
 ```
@@ -326,37 +291,14 @@ In a prefill/decode deployment each pool runs its own engine's policy, so a run-
 is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill pool)"` or
 `"preemption_policy (decode pool)"`.
 
-A warning on stderr says the same. The Result carries the same list under `overrides`.
+A warning on stderr says the same.
 
 ### Catalog Provenance
 
-The `catalog` field records **which model catalog produced the result** (#1732), so a results
-file is attributable. It is written by both `blis run --metrics-path` and
-`blis replay --metrics-path`, and carries the same source and hash as the Result's
-`data.catalog`:
-
-```json
-{
-  "catalog": {
-    "path": "embedded",
-    "revision": "<the catalog's combined content hash>",
-    "dirty": false
-  }
-}
-```
-
-- `path` — `embedded` when the run read the catalog embedded in the pinned blis-substrate
-  module, or the directory `--catalog` / `BLIS_CATALOG` named.
-- `revision` — the catalog's combined content hash. A git revision is not recorded: the
-  content hash identifies the data whatever directory holds it.
-- `dirty` — `true` when a `--catalog-overlay` changed the catalog, so the data is not the
-  source's own.
-
-!!! note "In the Result"
-    The Result records the catalog and registry under `data`: each one's source (`embedded`
-    or `path`), content hash and overlays (SIM-6, X8). The data is an input of the run, so two
-    runs on different data are different inputs (INV-6). It never records the path, a fact of
-    the host.
+The Result records **which model catalog produced it** (#1732) under `data.catalog`: its
+source (`embedded` or `path`), content hash and overlays (SIM-6, X8). The data is an input of
+the run, so two runs on different data are different inputs (INV-6). The Result never records
+the path, a fact of the host.
 
 ### Saturation Detection
 
@@ -376,28 +318,28 @@ tune them with `--saturation-config`, and write the per-event verdict trace with
 Detector mechanics and tuning knobs:
 [Saturation analyzer](../contributing/saturation-analyzer-extension.md).
 
-### Per-Request Fields
+### Per-Request Rows
 
-When the `requests` array is non-empty, each entry contains:
+`request_rows` holds one row per generated request (DEV-9), in creation order. A latency is
+stated only where the request produced the sample: no token, no `ttft_us`; fewer than two
+output tokens, no `tpot_us`; not completed, no `e2e_us`.
 
 | Field | Unit | Description |
 |-------|------|-------------|
-| `requestID` | string | Unique request identifier |
-| `arrived_at` | s | Arrival timestamp in simulation seconds (`ArrivalTime / 1,000,000`) |
-| `num_prefill_tokens` | count | Input (prompt) token count |
-| `num_decode_tokens` | count | Output token count |
-| `ttft_ms` | ms | Time To First Token for this request |
-| `itl_ms` | ms | Mean Inter-Token Latency for this request |
-| `e2e_ms` | ms | End-to-End latency for this request |
-| `scheduling_delay_ms` | ms | Time spent in the wait queue before first scheduling |
-| `slo_class` | string | SLO class (`critical`, `standard`, `batch`, etc.) — omitted if empty |
-| `tenant_id` | string | Tenant label — omitted if empty |
-| `handled_by` | string | Instance ID that processed the request — omitted if empty |
-| `model` | string | Model tag — omitted if empty |
-| `length_capped` | bool | `true` if request was force-completed at `MaxModelLen` — omitted when `false` |
-| `gateway_queue_delay_ms` | ms | Time from the router enqueuing the request in flow control to its dispatch — omitted when flow control (`featureGates: [flowControl]`) is off |
-| `session_id` | string | Multi-turn session link — omitted for single-turn requests |
-| `round_index` | int | Round within session (`0` = first turn); always present, defaults to `0` for non-session requests |
+| `id` | string | Request identifier, unique within the run (SIM-8) |
+| `fate` | string | `completed`, `dropped`, `timed_out`, `in_flight_at_horizon`, `queued_at_horizon` or `not_started` |
+| `drop_reason` | string | Why the request was dropped; present exactly when `fate` is `dropped` |
+| `arrival_us` | µs | Arrival on the simulated clock |
+| `ttft_us`, `tpot_us`, `e2e_us` | µs | Time to first token; time per output token, `(e2e - ttft) / (output tokens - 1)`; request latency |
+| `scheduling_delay_us` | µs | Arrival at an engine to the first scheduled step |
+| `gateway_queue_delay_us` | µs | Time in the router's flow-control queue — omitted without flow control |
+| `completion_index` | count | 1-based position in the run's completion order, for a completed request |
+| `prompt_tokens`, `output_tokens` | count | Tokens in the prompt, and tokens the engine emitted |
+| `cached_local_tokens`, `cached_external_tokens` | count | Prompt tokens the device prefix cache, and the KV offload tier, supplied at first admission |
+| `length_capped` | bool | The request completed at a length limit — omitted when `false` |
+| `phase`, `instance`, `model`, `adapter`, `slo_class`, `tenant_id` | string | Benchmark phase, serving instance, and workload tags — omitted when empty |
+| `session_id`, `round_index` | string, int | Session link and round within it (`0` = first turn) |
+| `agentic` | object | The request's place in an agentic replay — omitted for any other workload |
 
 ## Anomaly Counters
 
@@ -422,7 +364,7 @@ Each counter is one INV-1 bucket; see [Admission Control](admission.md) for how 
 map onto them.
 
 !!! note "Where the counters are in the Result"
-    Every INV-1 counter is in the Result's `requests` ledger; **Shed (tier)** is `router.shed_by_class`, and **Priority Inversions** and **HOL Blocking Events** are `router.priority_inversions` and `router.hol_blocking_events`. `blis run` and `blis replay` render this section from one shared path, so both print the same counters. Of these, the deprecated `--metrics-path` file carries only `dropped_unservable`, `timed_out_requests` and `length_capped_requests` (see [`--metrics-path` file](#-metrics-path-file-deprecated)).
+    Every INV-1 counter is in the Result's `requests` ledger; **Shed (tier)** is `router.shed_by_class`, and **Priority Inversions** and **HOL Blocking Events** are `router.priority_inversions` and `router.hol_blocking_events`. `blis run` and `blis replay` render this section from one shared path, so both print the same counters.
 
 ## KV Cache Metrics
 
@@ -559,15 +501,15 @@ theoretical model, use `rho_eff = lambda × step_total`, not `lambda × E2E_tota
 
 ## Per-Request Results
 
-For detailed analysis, save per-request data:
+For detailed analysis, read the Result's `request_rows` ([Per-Request Rows](#per-request-rows)):
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
   --scenarios testdata/kernel/aisimulate \
-  --rate 100 --num-requests 500 --metrics-path metrics.json
+  --rate 100 --num-requests 500 --output result.json
 ```
 
-Each request record includes TTFT, E2E, scheduling delay, and completion status.
+Each row includes TTFT, E2E, scheduling delay, and its fate.
 
 ## Further Reading
 

@@ -1,8 +1,7 @@
 package cmd
 
 // The single post-run path both blis run and blis replay take (#1871, INV-13): every figure
-// of the Result document, the deprecated --metrics-path file, and the --view summary come
-// from one call, so the two commands cannot drift into reporting different things.
+// of the Result document, and the --view summary come from one call, so the two commands cannot drift into reporting different things.
 
 import (
 	"fmt"
@@ -50,12 +49,6 @@ type postRun struct {
 	goodputTargets map[string]workload.SLODimTargets
 	// satTracer is the saturation tracer, nil when no detector was selected.
 	satTracer *saturationTracer
-	// metricsPath is the deprecated --metrics-path file, "" for none.
-	metricsPath string
-	// metricsFlag names the flag metricsPath came from, for the deprecation log.
-	metricsFlag string
-	// extraFileOptions are the command's own file-only blocks (replay's agentic summary).
-	extraFileOptions []sim.EmitOption
 	// agentic is an agentic replay's own counts (workload.AgentXSummary), nil otherwise.
 	agentic any
 	// artifacts are the bulk files the command wrote before emitting, by role.
@@ -74,8 +67,7 @@ type postRun struct {
 	numRequestsCap int
 }
 
-// emitRunResult builds, validates and prints the Result document, writes the deprecated
-// --metrics-path file, and renders --view summary.
+// emitRunResult builds, validates and prints the Result document, and renders --view summary.
 func emitRunResult(p postRun) {
 	cs := p.cs
 	aggregated := cs.AggregatedMetrics()
@@ -83,7 +75,6 @@ func emitRunResult(p postRun) {
 	// Saturation: the detectors stream over the completed requests and write their report
 	// (--saturation-report) as before; the final label goes into the document.
 	var satFinal map[string]string
-	var satAny any
 	if p.satTracer != nil {
 		final, err := p.satTracer.run(aggregated.CompletedRequestMetrics())
 		if err != nil {
@@ -94,7 +85,6 @@ func emitRunResult(p postRun) {
 			for k, v := range final {
 				satFinal[k] = v.String()
 			}
-			satAny = final
 		}
 	}
 
@@ -109,22 +99,7 @@ func emitRunResult(p postRun) {
 	raw.GatewayEvicted = cs.GatewayEvicted()
 	raw.GatewayExpired = cs.GatewayExpired()
 
-	// The deprecated --metrics-path file keeps its content for one release (#1871): the
-	// whole-run MetricsOutput with goodput and saturation, and the file-only blocks.
 	series := cs.ServerSeries()
-	if p.metricsPath != "" {
-		warnDeprecatedFile(p.metricsFlag, p.metricsPath)
-		legacy := aggregated.BuildOutput("cluster")
-		emitGoodput(&legacy, aggregated, cs.InjectedByClass(), float64(aggregated.SimEndedTime)/1e6, p.goodputTargets)
-		if satAny != nil {
-			legacy.Saturation = satAny
-		}
-		extra := append([]sim.EmitOption{sim.WithPD(pdMetrics.Output()), sim.WithServerSeries(series)}, p.extraFileOptions...)
-		if err := aggregated.WriteMetricsFile(legacy, p.metricsPath,
-			append(resultsFileEmitOptions(p.metricsPath), extra...)...); err != nil {
-			logrus.Fatalf("--metrics-path: %v", err)
-		}
-	}
 
 	docs, err := resultScenarioDocs()
 	if err != nil {
@@ -136,11 +111,7 @@ func emitRunResult(p postRun) {
 	}
 	sum := aggregated.Summary()
 	routerReq := p.gateway.Requirements()
-	files := p.artifacts
-	if p.metricsPath != "" {
-		files = append(files, artifactFile{role: "metrics_file", path: p.metricsPath, rows: len(aggregated.Requests)})
-	}
-	artifacts, err := resultArtifacts(files)
+	artifacts, err := resultArtifacts(p.artifacts)
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
@@ -150,6 +121,7 @@ func emitRunResult(p postRun) {
 		Deployment:     docs.Deployment,
 		Packaging:      resultPackaging(kernelOpened),
 		Policy:         policy,
+		Options:        resultInputOptions,
 		Generator:      result.Generator{Workload: p.run.Binding, Load: p.run.Load, Seed: p.frame.Seed},
 		NumRequests:    p.run.NumRequests,
 		Overrides:      runOverrides(p.extraOverrides...),
@@ -169,6 +141,7 @@ func emitRunResult(p postRun) {
 		Router:          routerSection(routerReq, raw.ShedByTier, raw),
 		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),
 		InjectedByClass: cs.InjectedByClass(),
+		Rows:            requestRows(cs, aggregated),
 		ClockUs:         cs.Clock(),
 		HorizonUs:       cs.Horizon(),
 	}
@@ -191,6 +164,7 @@ func emitRunResult(p postRun) {
 	// last so it covers every lookup the run made (VAL-6).
 	buildFrame(p.frame, r, windowRulesOf(aggregated, sum), p.numRequestsCap, cs.Horizon())
 	r.SelectedEntries = data.Report().Result()
+	markRerun(r)
 	r.Runtime = resultRuntime(p.started)
 
 	view := &summaryView{

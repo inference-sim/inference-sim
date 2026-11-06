@@ -26,6 +26,8 @@ type resultInputs struct {
 	// Scenario and Deployment are the documents the run read, as decoded.
 	Scenario   *scenario.Scenario
 	Deployment *deployment.Deployment
+	// Options are the command-line options that set the run, sorted by name (SIM-10).
+	Options []result.Option
 	// Packaging is the cluster's packaging the kernel resolved (blis-substrate
 	// scenario.Cluster.Packaging), recorded when a value came from the chip's catalog entry
 	// rather than the scenario (SIM-10). Nil when the scenario states every value, which
@@ -76,6 +78,8 @@ type resultMetrics struct {
 	InjectedByClass map[string]int64
 	// ClockUs is the cluster's clock when the run ended, and HorizonUs the horizon it ran to.
 	ClockUs, HorizonUs int64
+	// Rows are the per-request rows (DEV-9).
+	Rows []result.RequestRow
 }
 
 // buildResult assembles the Result document. The frame is filled by buildFrame once the
@@ -92,6 +96,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 		SelectedEntries: in.Selected,
 		Revisions:       in.Revisions,
 		Requests:        out.Ledger,
+		RequestRows:     out.Rows,
 		Reports:         result.Reports{Engine: out.Engine, Router: out.Router, Kernel: out.Kernel},
 		Artifacts:       in.Artifacts,
 	}
@@ -103,6 +108,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	}
 	r.Input.Packaging = in.Packaging
 	r.Input.Policy = in.Policy
+	r.Input.Options = in.Options
 	r.Frame.Generator = in.Generator // buildFrame sets the seed and RNG from the same generator
 	for _, o := range in.Overrides {
 		r.Overrides = append(r.Overrides, result.Override{Setting: o.Setting, Input: o.Scenario, Run: o.Run, Source: o.Source})

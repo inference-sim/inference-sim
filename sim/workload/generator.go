@@ -471,7 +471,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	// The prefix tokens are each group's own stream, so they equal those GenerateRequests drew.
 	prefixes := generatePrefixTokens(allClients, spec.Seed)
 
-	concurrencySeeds, concurrencyBlueprints, totalConcurrencyUsers, err :=
+	concurrencySeeds, concurrencyBlueprints, _, err :=
 		generateConcurrencySeedsAndBlueprints(allClients, prefixes, spec.Seed, horizon, maxRequests, int64(len(round0Only)))
 	if err != nil {
 		return nil, err
@@ -492,7 +492,7 @@ func GenerateWorkload(spec *WorkloadSpec, horizon int64, maxRequests int64) (*Ge
 	}
 
 	// Compute follow-up budget for concurrency sessions (shared with lazy).
-	followUpBudget := concurrencyFollowUpBudget(maxRequests, int64(len(allReqs)), totalConcurrencyUsers)
+	followUpBudget := concurrencyFollowUpBudget(maxRequests, int64(len(allReqs)), len(sessions))
 
 	return &GeneratedWorkload{Requests: allReqs, Sessions: sessions, FollowUpBudget: followUpBudget}, nil
 }
@@ -626,10 +626,12 @@ func generateConcurrencySeedsAndBlueprints(
 
 // concurrencyFollowUpBudget computes the follow-up budget for concurrency
 // sessions, shared by eager and lazy so the formula cannot drift.
-// -1 = no cap (unbounded maxRequests, or no concurrency users). >=0 = exact cap.
+// -1 = no cap (unbounded maxRequests, or no sessions). >=0 = exact cap.
 // totalRequests is the emitted request count (open-loop kept + concurrency seeds).
-func concurrencyFollowUpBudget(maxRequests, totalRequests int64, totalUsers int) int64 {
-	if maxRequests > 0 && totalUsers > 0 {
+// numSessions counts every session blueprint, open-loop multi-turn ones included: their
+// follow-up rounds count against num_requests like a concurrency user's (#1905).
+func concurrencyFollowUpBudget(maxRequests, totalRequests int64, numSessions int) int64 {
+	if maxRequests > 0 && numSessions > 0 {
 		budget := maxRequests - totalRequests
 		if budget < 0 {
 			budget = 0

@@ -3,15 +3,28 @@ package sim
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// saveOutput builds m's MetricsOutput for instanceID and, when path is not empty, writes it there
+// as JSON: the figures the removed --metrics-path file carried, which these tests pin through
+// MetricsOutput's JSON form. horizon and totalBlocks were unused by the writer and are ignored.
+func saveOutput(m *Metrics, instanceID string, _ int64, _ int64, path string) error {
+	out := m.BuildOutput(instanceID)
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	if path == "" {
+		return nil
+	}
+	return os.WriteFile(path, data, 0o644)
+}
 
 // TestSaveResults_InstanceID_InJSON verifies BC-8: JSON output includes instance_id field.
 //
@@ -43,7 +56,7 @@ func TestSaveResults_InstanceID_InJSON(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "test-instance"
-	if err := m.SaveResults("test-instance", 1000000, 1000, outputPath); err != nil {
+	if err := saveOutput(m, "test-instance", 1000000, 1000, outputPath); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -93,7 +106,7 @@ func TestSaveResults_InstanceID_Empty(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with empty instanceID
-	if err := m.SaveResults("", 1000000, 1000, outputPath); err != nil {
+	if err := saveOutput(m, "", 1000000, 1000, outputPath); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -143,7 +156,7 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 	outputPath := filepath.Join(tmpDir, "test_output.json")
 
 	// WHEN SaveResults is called with instanceID "default"
-	if err := m.SaveResults("default", 1000000, 1000, outputPath); err != nil {
+	if err := saveOutput(m, "default", 1000000, 1000, outputPath); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -163,52 +176,27 @@ func TestSaveResults_InstanceID_Default(t *testing.T) {
 	}
 }
 
-func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
+func TestRequestRows_IncludeIncompleteRequests(t *testing.T) {
 	// GIVEN metrics where 2 of 3 requests completed prefill
 	m := NewMetrics()
-	// All 3 registered
 	m.Requests["r1"] = RequestMetrics{ID: "r1", ArrivedAt: 1.0, NumPrefillTokens: 10, NumDecodeTokens: 5}
 	m.Requests["r2"] = RequestMetrics{ID: "r2", ArrivedAt: 2.0, NumPrefillTokens: 20, NumDecodeTokens: 10}
 	m.Requests["r3"] = RequestMetrics{ID: "r3", ArrivedAt: 3.0, NumPrefillTokens: 30, NumDecodeTokens: 0} // incomplete
-
-	// Only r1 and r2 completed prefill
 	m.RequestTTFTs["r1"] = 100.0
 	m.RequestTTFTs["r2"] = 200.0
 	m.RequestE2Es["r1"] = 500.0
 	m.RequestE2Es["r2"] = 1000.0
 	m.RequestITLs["r1"] = 50.0
 	m.RequestITLs["r2"] = 100.0
-	m.RequestSchedulingDelays["r1"] = 10
-	m.RequestSchedulingDelays["r2"] = 20
 
-	m.CompletedRequests = 2
-	m.TotalOutputTokens = 15
-	m.SimEndedTime = 1_000_000
-	m.AllITLs = []int64{50, 100} // required to avoid CalculatePercentile empty-input panic (Phase 5, 5c)
+	// WHEN the rows are read
+	rows := m.RequestRows()
 
-	// WHEN SaveResults writes to a temp file
-	tmpDir := t.TempDir()
-	outPath := filepath.Join(tmpDir, "results.json")
-	if err := m.SaveResults("test-instance", 10_000_000, 100, outPath); err != nil {
-		t.Fatalf("SaveResults returned error: %v", err)
+	// THEN all 3 are present, and the incomplete one has zero-valued metrics
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3 (all registered, including incomplete)", len(rows))
 	}
-
-	// THEN the output file contains all 3 requests
-	data, err := os.ReadFile(outPath)
-	if err != nil {
-		t.Fatalf("failed to read output: %v", err)
-	}
-	var output MetricsOutput
-	if err := json.Unmarshal(data, &output); err != nil {
-		t.Fatalf("failed to parse output: %v", err)
-	}
-
-	if len(output.Requests) != 3 {
-		t.Errorf("output.Requests count = %d, want 3 (all registered, including incomplete)", len(output.Requests))
-	}
-
-	// Verify incomplete request r3 has zero-valued metrics
-	for _, req := range output.Requests {
+	for _, req := range rows {
 		if req.ID == "r3" {
 			if req.TTFT != 0 || req.E2E != 0 || req.ITL != 0 {
 				t.Errorf("incomplete request r3 should have zero metrics, got TTFT=%f E2E=%f ITL=%f",
@@ -217,7 +205,7 @@ func TestSaveResults_IncludesIncompleteRequests(t *testing.T) {
 			return
 		}
 	}
-	t.Error("incomplete request r3 not found in output")
+	t.Error("incomplete request r3 not found")
 }
 
 func TestSaveResults_NoWallClockFields(t *testing.T) {
@@ -236,7 +224,7 @@ func TestSaveResults_NoWallClockFields(t *testing.T) {
 	outPath := filepath.Join(tmpDir, "results.json")
 
 	// WHEN SaveResults writes output
-	if err := m.SaveResults("test", 1_000_000, 1000, outPath); err != nil {
+	if err := saveOutput(m, "test", 1_000_000, 1000, outPath); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -273,7 +261,7 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 	outPath := filepath.Join(tmpDir, "results.json")
 
 	// WHEN SaveResults writes output
-	if err := m.SaveResults("test", 5_000_000, 1000, outPath); err != nil {
+	if err := saveOutput(m, "test", 5_000_000, 1000, outPath); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -303,11 +291,8 @@ func TestSaveResults_ConservationFields(t *testing.T) {
 
 // TestSaveResults_PerRequestITL_InMilliseconds verifies BC-14:
 // per-request itl_ms and scheduling_delay_ms are in milliseconds.
-func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
+func TestRequestRows_LatenciesAreInMilliseconds(t *testing.T) {
 	m := NewMetrics()
-	m.CompletedRequests = 1
-	m.SimEndedTime = 1e6 // 1 second in ticks (prevents division by zero in ResponsesPerSec)
-	m.TotalOutputTokens = 10
 	m.Requests["r1"] = NewRequestMetrics(
 		&Request{ID: "r1", InputTokens: make([]TokenID, 5), OutputTokens: make([]TokenID, 10)},
 		0,
@@ -316,25 +301,13 @@ func TestSaveResults_PerRequestITL_InMilliseconds(t *testing.T) {
 	m.RequestE2Es["r1"] = 50000.0          // 50000 ticks = 50 ms
 	m.RequestITLs["r1"] = 5000.0           // 5000 ticks = should be 5 ms
 	m.RequestSchedulingDelays["r1"] = 2000 // 2000 ticks = should be 2 ms
-	m.AllITLs = []int64{5000}
 
-	outputPath := filepath.Join(t.TempDir(), "results.json")
-	if err := m.SaveResults("test", 1e15, 100, outputPath); err != nil {
-		t.Fatalf("SaveResults returned error: %v", err)
-	}
-
-	data, err := os.ReadFile(outputPath)
-	require.NoError(t, err)
-	var output MetricsOutput
-	require.NoError(t, json.Unmarshal(data, &output))
-
-	// THEN per-request ITL and scheduling delay should be in ms (divided by 1e3)
-	require.Len(t, output.Requests, 1)
-	assert.InDelta(t, 5.0, output.Requests[0].ITL, 0.001, "ITL should be in ms")
-	assert.InDelta(t, 2.0, output.Requests[0].SchedulingDelay, 0.001, "SchedulingDelay should be in ms")
-	// TTFT and E2E should also be in ms (pre-existing behavior)
-	assert.InDelta(t, 10.0, output.Requests[0].TTFT, 0.001, "TTFT should be in ms")
-	assert.InDelta(t, 50.0, output.Requests[0].E2E, 0.001, "E2E should be in ms")
+	rows := m.RequestRows()
+	require.Len(t, rows, 1)
+	assert.InDelta(t, 5.0, rows[0].ITL, 0.001, "ITL should be in ms")
+	assert.InDelta(t, 2.0, rows[0].SchedulingDelay, 0.001, "SchedulingDelay should be in ms")
+	assert.InDelta(t, 10.0, rows[0].TTFT, 0.001, "TTFT should be in ms")
+	assert.InDelta(t, 50.0, rows[0].E2E, 0.001, "E2E should be in ms")
 }
 
 // TestSaveResults_ZeroRuntime_NoInfinity verifies BC-2:
@@ -353,7 +326,7 @@ func TestSaveResults_ZeroRuntime_NoInfinity(t *testing.T) {
 	m.RequestSchedulingDelays["r1"] = 100
 	m.Requests["r1"] = NewRequestMetrics(&Request{ID: "r1", InputTokens: make([]TokenID, 10), OutputTokens: make([]TokenID, 5)}, 0)
 
-	err := m.SaveResults("test", 1000000, 100, "")
+	err := saveOutput(m, "test", 1000000, 100, "")
 	if err != nil {
 		t.Fatalf("SaveResults returned error for zero runtime: %v", err)
 	}
@@ -369,7 +342,7 @@ func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 
 	// WHEN saving results to a temp file
 	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
-	if err := m.SaveResults("test", 10_000_000, 100, tmpFile); err != nil {
+	if err := saveOutput(m, "test", 10_000_000, 100, tmpFile); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 
@@ -401,36 +374,12 @@ func TestSaveResults_DroppedUnservable_InJSON(t *testing.T) {
 // GIVEN metrics with zero completions (all requests dropped as unservable)
 // WHEN SaveResults is called
 // THEN stdout contains "=== Simulation Metrics ===" and a valid JSON block
-func TestSaveResults_AlwaysEmitsHeader_ZeroCompletions(t *testing.T) {
+func TestBuildOutput_ZeroCompletionsStillStatesTheCounts(t *testing.T) {
 	m := NewMetrics()
 	m.DroppedUnservable = 100
 	m.SimEndedTime = 1_000_000
 
-	// Capture stdout
-	origStdout := os.Stdout
-	r, w, err := os.Pipe()
-	require.NoError(t, err)
-	os.Stdout = w
-
-	saveErr := m.SaveResults("test", 10_000_000, 100, "")
-
-	require.NoError(t, w.Close())
-	os.Stdout = origStdout
-
-	var buf []byte
-	buf, err = io.ReadAll(r)
-	require.NoError(t, err)
-	stdout := string(buf)
-
-	require.NoError(t, saveErr)
-	assert.Contains(t, stdout, "=== Simulation Metrics ===")
-
-	// Extract and parse the JSON block after the header
-	parts := strings.SplitN(stdout, "=== Simulation Metrics ===\n", 2)
-	require.Len(t, parts, 2, "expected header + JSON")
-
-	var out MetricsOutput
-	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(parts[1])), &out))
+	out := m.BuildOutput("test")
 	assert.Equal(t, 0, out.CompletedRequests)
 	assert.Equal(t, 100, out.DroppedUnservable)
 	assert.Equal(t, 100, out.InjectedRequests)
@@ -444,7 +393,7 @@ func TestSaveResults_LengthCappedRequests_InJSON(t *testing.T) {
 	m.SimEndedTime = 1_000_000
 
 	tmpFile := filepath.Join(t.TempDir(), "test_output.json")
-	if err := m.SaveResults("test", 10_000_000, 100, tmpFile); err != nil {
+	if err := saveOutput(m, "test", 10_000_000, 100, tmpFile); err != nil {
 		t.Fatalf("SaveResults returned error: %v", err)
 	}
 

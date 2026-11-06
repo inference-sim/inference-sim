@@ -106,14 +106,14 @@ Examples:
 
 ## Adding New Per-Request Metric Fields
 
-To add a new field to per-request JSON output (appears in `--metrics-path` output):
+To add a new field to the per-request rows of the Result (`request_rows`):
 
 1. **Add field to `Request`** in blis-vllm `compat/engine/request.go` (runtime state, zero-value safe; `sim.Request` is an alias of it). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
-2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)
-3. **Update `NewRequestMetrics()` constructor** in `sim/metrics_utils.go` to propagate the new field from `Request` to `RequestMetrics`
-4. **Set the field** at the appropriate point (e.g., dispatch in `sim/cluster/gateway.go` for cluster-level, or completion for computed metrics)
+2. **Record it**: a tag known when the request is created goes in `RequestFact` (`sim/cluster/fates.go`, set by `noteFacts`); a value the engine produces goes in `RequestMetrics` (`sim/metrics_utils.go`, propagated by `NewRequestMetrics()` or set where the engine records it).
+3. **State it in the row**: `requestRows` (`cmd/result_rows.go`) copies it onto the `result.RequestRow`. A member the row does not have is a blis-substrate change (`contracts/spec/result`), released and repinned in `go.mod`.
+4. **Document it** in the Per-Request Rows table of `docs/guide/results.md`.
 5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
 
 Examples:
-- See `HandledBy` (#181) — derived from the instance a request was dispatched to, zero-value outside the cluster pipeline (suppressed from JSON via `omitempty`)
-- See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection
+- See `Instance` (the engine instance that served the request) — taken from `RequestMetrics.HandledBy`, empty outside the cluster pipeline (omitted from the row)
+- See `SLOClass`/`TenantID` — set during workload generation, noted in `RequestFact` when the request is created

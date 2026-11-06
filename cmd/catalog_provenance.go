@@ -3,53 +3,8 @@ package cmd
 import (
 	"runtime/debug"
 
-	"github.com/inference-sim/blis-substrate/load"
-
 	sim "github.com/inference-sim/inference-sim/sim"
 )
-
-// Catalog provenance in the deprecated --metrics-path file (#1732): which catalog produced the
-// file. Since design §3.3 the catalog is blis-substrate's, read through its loader, so the file
-// records the catalog's source (the embedded copy, or the directory a path named) and its
-// content hash, the same values the Result's data.catalog records. A git revision of the
-// directory is no longer recorded: the content hash identifies the data whatever holds it.
-
-// catalogFileProvenance is the --metrics-path file's catalog block: Path is the directory read,
-// or "embedded"; Revision is the catalog's combined content hash; Dirty is true when an overlay
-// changed the catalog, so the data is not the source's own.
-func catalogFileProvenance(d *load.Data) *sim.CatalogProvenance {
-	if d == nil {
-		return nil
-	}
-	p := &sim.CatalogProvenance{Path: string(load.SourceEmbedded), Revision: d.Catalog.CombinedHash,
-		Dirty: len(d.Catalog.Overlays) > 0}
-	if d.Catalog.Source == load.SourcePath {
-		p.Path = d.Catalog.Path
-	}
-	return p
-}
-
-// resultsFileEmitOptions builds the sim.EmitOption values that add the --metrics-path file's
-// own blocks: catalog provenance, and the settings the run took from somewhere other than its
-// scenario (scenarioOverrides). `blis run` and `blis replay` write the file from one shared
-// site (emitRunResult) with it, so neither command can drift into recording provenance the
-// other omits (INV-13, R23).
-//
-// It returns no options when outputFilePath is empty.
-func resultsFileEmitOptions(outputFilePath string) []sim.EmitOption {
-	if outputFilePath == "" {
-		return nil
-	}
-	opts := []sim.EmitOption{
-		sim.WithCatalogProvenance(catalogFileProvenance(openedData)),
-		sim.WithScenarioOverrides(scenarioOverrides),
-		sim.WithKernelProvenance(kernelProvenance(kernelOpened, kernelPDOpened)),
-		sim.WithBuildVersions(buildVersions()),
-		sim.WithAcceptance(acceptanceRecord),
-		sim.WithPrefixCache(prefixCacheRecords),
-	}
-	return opts
-}
 
 // kernelProvenance is each opened pool's kernel evidence (#1942), keyed by pool role: the
 // colocated pool, or the prefill and decode pools of a disaggregated run; empty when no

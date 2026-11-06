@@ -89,13 +89,12 @@ func dsparkVariant(t *testing.T, k int, scenarioExtra string) string {
 }
 
 // runAccept runs blis against the given scenario directory, registry and catalog, returning
-// the results file's acceptance block (nil when absent), stdout and stderr.
+// the Result's acceptance block (nil when absent), stdout and stderr.
 func runAccept(t *testing.T, scenarios, registry, catalog string, args ...string) (*sim.AcceptanceRecord, string, string, error) {
 	t.Helper()
-	metrics := filepath.Join(t.TempDir(), "metrics.json")
 	full := append(args, "--scenario", acceptScenarioFile, "--scenarios", scenarios,
 		"--registry", registry, "--catalog", catalog, "--defaults-filepath", "../defaults.yaml",
-		"--metrics-path", metrics, "--seed", "3", "--log", "info")
+		"--seed", "3", "--log", "info")
 	c := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
 	c.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(full, "\x1f"))
 	var out, errBuf bytes.Buffer
@@ -104,15 +103,21 @@ func runAccept(t *testing.T, scenarios, registry, catalog string, args ...string
 	if err != nil {
 		return nil, out.String(), errBuf.String(), err
 	}
-	data, rerr := os.ReadFile(metrics)
-	if rerr != nil {
-		t.Fatalf("reading the results file: %v", rerr)
-	}
 	var file struct {
-		Acceptance *sim.AcceptanceRecord `json:"acceptance"`
+		Acceptance *sim.AcceptanceRecord
 	}
-	if jerr := json.Unmarshal(data, &file); jerr != nil {
-		t.Fatal(jerr)
+	eng, _ := resultDoc(t, out.String())["reports"].(map[string]any)["engine"].(map[string]any)
+	cluster, _ := eng["cluster"].(map[string]any)
+	if raw, ok := cluster["acceptance"]; ok {
+		enc, merr := json.Marshal(raw)
+		if merr != nil {
+			t.Fatal(merr)
+		}
+		var rec sim.AcceptanceRecord
+		if jerr := json.Unmarshal(enc, &rec); jerr != nil {
+			t.Fatal(jerr)
+		}
+		file.Acceptance = &rec
 	}
 	return file.Acceptance, out.String(), errBuf.String(), nil
 }

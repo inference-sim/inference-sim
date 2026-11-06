@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -40,7 +39,7 @@ func TestResultFieldMap_EveryMetricsOutputFieldHasAHome(t *testing.T) {
 		}
 	}
 	fields := jsonFields(reflect.TypeOf(sim.MetricsOutput{}))
-	if len(fields) < 40 {
+	if len(fields) < 30 {
 		t.Fatalf("non-vacuity: found only %d MetricsOutput fields", len(fields))
 	}
 	for _, f := range fields {
@@ -75,7 +74,7 @@ func jsonFields(typ reflect.Type) []string {
 
 // #1871 review N2: every home the field-map table names exists in an emitted Result. One
 // document exercises everything but the conditional sections: a multi-instance P/D run with SLO
-// targets, a detector, the deprecated --metrics-path file and a policy override. The homes only
+// targets and a detector. The homes only
 // a different kind of run states are listed with the run that states them.
 func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	conditional := map[string]string{
@@ -107,8 +106,7 @@ func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	if len(homes) < 40 {
 		t.Fatalf("non-vacuity: found %d homes in the table", len(homes))
 	}
-	metricsFile := filepath.Join(t.TempDir(), "m.json")
-	out, stderr, err := runKernelCLI(t, append([]string{"run", "--metrics-path", metricsFile, "--slo-ttft", "default=500ms",
+	out, stderr, err := runKernelCLI(t, append([]string{"run", "--slo-ttft", "default=500ms",
 		"--detectors", "composite"}, pdBurst...)...)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))

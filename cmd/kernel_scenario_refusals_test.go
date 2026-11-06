@@ -203,12 +203,11 @@ func TestAdoptKernelDeployment_TakesTheScenariosSchedulingPolicy(t *testing.T) {
 	}
 }
 
-// A run that departs from its scenario says so in the results file, not only in a log line:
+// A run that departs from its scenario says so in the Result, not only in a log line:
 // an explicit --scheduler, or a policy bundle's scheduler, that differs from the scenario's
-// engine.scheduling_policy is recorded under "overrides" in the --metrics-path file, with the
-// two values and what chose the run's. A run that follows its scenario records nothing, and the
-// block never reaches stdout (INV-6).
-func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
+// engine.scheduling_policy is recorded under "overrides" in the Result, with the two values and
+// what chose the run's. A run that follows its scenario records nothing.
+func TestRunCmd_ASchedulerOverrideIsRecordedInTheResult(t *testing.T) {
 	fcfs := writeColocatedVariant(t, "      max_model_len: 32768\n",
 		"      max_model_len: 32768\n      scheduling_policy: fcfs\n")
 	bundle := filepath.Join(t.TempDir(), "policy.yaml")
@@ -218,24 +217,19 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 	type override struct{ Setting, Scenario, Run, Source string }
 	overridesOf := func(t *testing.T, extra ...string) ([]override, string) {
 		t.Helper()
-		path := filepath.Join(t.TempDir(), "metrics.json")
 		args := append([]string{"run", "--scenarios", fcfs, "--scenario", "variant.yaml",
-			"--num-requests", "4", "--rate", "2", "--metrics-path", path}, extra...)
+			"--num-requests", "4", "--rate", "2"}, extra...)
 		stdout, stderr, err := runKernelCLI(t, args...)
 		if err != nil {
 			t.Fatalf("%v: %v\n%s", extra, err, lastLines(stderr, 3))
 		}
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
+		var got []override
+		for _, o := range parseResult(t, stdout).Overrides {
+			if strings.HasPrefix(o.Setting, "scheduler") || strings.HasPrefix(o.Setting, "preemption_policy") {
+				got = append(got, override{o.Setting, o.Input, o.Run, o.Source})
+			}
 		}
-		var file struct {
-			Overrides []override `json:"overrides"`
-		}
-		if err := json.Unmarshal(raw, &file); err != nil {
-			t.Fatal(err)
-		}
-		return file.Overrides, stdout
+		return got, stdout
 	}
 
 	for _, tt := range []struct {
@@ -251,21 +245,9 @@ func TestRunCmd_ASchedulerOverrideIsRecordedInTheResultsFile(t *testing.T) {
 			[]override{{"scheduler", "fcfs", "sjf", "--policy-config"}}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, stdout := overridesOf(t, tt.extra...)
+			got, _ := overridesOf(t, tt.extra...)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("results file overrides %+v, want %+v", got, tt.want)
-			}
-			// The Result records the same policy overrides: an input the run simulated differently
-			// is part of what the document says it predicts (blis-schemas#41 section A). Its other
-			// rows are the command-line flags the harness passed (#1871 B1).
-			var inDoc []override
-			for _, o := range parseResult(t, stdout).Overrides {
-				if strings.HasPrefix(o.Setting, "scheduler") || strings.HasPrefix(o.Setting, "preemption_policy") {
-					inDoc = append(inDoc, override{o.Setting, o.Input, o.Run, o.Source})
-				}
-			}
-			if !reflect.DeepEqual(inDoc, tt.want) {
-				t.Errorf("Result overrides %+v, want %+v", inDoc, tt.want)
+				t.Errorf("Result overrides %+v, want %+v", got, tt.want)
 			}
 		})
 	}
@@ -391,37 +373,40 @@ func TestRunCmd_A032ScenarioReportsItsPrefixCacheHitRate(t *testing.T) {
 	}
 }
 
-// --server-series-interval-s writes a 0.32.0 run's server_series block: the engine bins its own
+// --server-series-interval-s adds a 0.32.0 run's server_series block to the engine report: the engine bins its own
 // vllm:* series, and it counts prefix-cache hits on a workload of shared prefixes.
 func TestRunCmd_A032ScenarioWritesItsServerSeries(t *testing.T) {
 	dir := writeColocatedVariant(t)
-	path := filepath.Join(t.TempDir(), "metrics.json")
-	_, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "variant.yaml",
 		"--workload-spec", "../examples/prefix-affinity-demo.yaml", "--seed", "1", "--num-requests", "60",
-		"--server-series-interval-s", "1", "--metrics-path", path)
+		"--server-series-interval-s", "1")
 	if err != nil {
 		t.Fatalf("%v\nstderr:\n%s", err, lastLines(stderr, 5))
 	}
-	raw, err := os.ReadFile(path)
+	eng, _ := resultDoc(t, stdout)["reports"].(map[string]any)["engine"].(map[string]any)
+	cluster, _ := eng["cluster"].(map[string]any)
+	raw, ok := cluster["server_series"]
+	if !ok {
+		t.Fatal("the engine report carries no server_series")
+	}
+	enc, err := json.Marshal(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var out struct {
-		ServerSeries *struct {
-			Engines []struct {
-				Bins         int       `json:"bins"`
-				PromptTokens []float64 `json:"prompt_tokens"`
-				Hits         []float64 `json:"prefix_cache_hits"`
-			} `json:"engines"`
-		} `json:"server_series"`
+		Engines []struct {
+			Bins         int       `json:"bins"`
+			PromptTokens []float64 `json:"prompt_tokens"`
+			Hits         []float64 `json:"prefix_cache_hits"`
+		} `json:"engines"`
 	}
-	if err := json.Unmarshal(raw, &out); err != nil {
+	if err := json.Unmarshal(enc, &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.ServerSeries == nil || len(out.ServerSeries.Engines) != 1 {
-		t.Fatalf("want one engine's server_series, got %+v", out.ServerSeries)
+	if len(out.Engines) != 1 {
+		t.Fatalf("want one engine's server_series, got %d", len(out.Engines))
 	}
-	e := out.ServerSeries.Engines[0]
+	e := out.Engines[0]
 	var prompt, hits float64
 	for i := range e.PromptTokens {
 		prompt += e.PromptTokens[i]

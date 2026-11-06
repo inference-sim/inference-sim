@@ -25,6 +25,34 @@ func (c *ClusterSimulator) createRequest(req *sim.Request) {
 		return
 	}
 	c.noteFateErr(c.fates.Create(req.ID))
+	c.noteFacts(req)
+}
+
+// RequestFact is what a request's Result row states that no metric keeps: the request as the
+// workload produced it.
+type RequestFact struct {
+	ArrivalUs    int64
+	PromptTokens int
+	Model        string
+	Adapter      string
+	SLOClass     string
+	TenantID     string
+	SessionID    string
+	RoundIndex   int
+	Phase        sim.Phase
+	Agentic      *sim.AgenticTag
+}
+
+// RequestFacts returns the facts of every created request, by ID.
+func (c *ClusterSimulator) RequestFacts() map[string]RequestFact { return c.requestFacts }
+
+func (c *ClusterSimulator) noteFacts(req *sim.Request) {
+	if c.requestFacts == nil {
+		c.requestFacts = make(map[string]RequestFact)
+	}
+	c.requestFacts[req.ID] = RequestFact{ArrivalUs: req.ArrivalTime, PromptTokens: int(req.InputLen()),
+		Model: req.Model, Adapter: req.Adapter, SLOClass: req.SLOClass, TenantID: req.TenantID,
+		SessionID: req.SessionID, RoundIndex: req.RoundIndex, Phase: req.Phase, Agentic: req.Agentic}
 }
 
 // arriveRequest records that req reached the gateway.
@@ -34,6 +62,7 @@ func (c *ClusterSimulator) arriveRequest(req *sim.Request) {
 	}
 	if c.arrivalGate != nil {
 		c.noteFateErr(c.fates.Create(req.ID))
+		c.noteFacts(req)
 	}
 	c.noteFateErr(c.fates.Arrive(req.ID))
 	c.liveRequests[req.ID] = req

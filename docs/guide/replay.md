@@ -58,7 +58,6 @@ Replays a TraceV2 file through the BLIS discrete-event simulator. Instead of gen
 |------|------|---------|-------------|
 | `--trace-header` | `string` | `""` | Path to TraceV2 header YAML (required) |
 | `--trace-data` | `string` | `""` | Path to TraceV2 data CSV (required) |
-| `--results-path` | `string` | `""` | Deprecated (use `--output`): file to write a per-request JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us) |
 | `--scenario` | `string` | `""` | Scenario file name within `--scenarios` (required) |
 | `--scenarios` | `string` | `""` | Directory of scenario YAMLs (required) |
 | `--registry` | `string` | `""` | A directory with the layout of blis-substrate's `registry/` that replaces the embedded registry; or `BLIS_REGISTRY`. Without either, the embedded registry. |
@@ -87,11 +86,9 @@ routes with the router the scenario states, or the router's default configuratio
 !!! note "Replay with the same scenario and flags as the run"
     The deployment is not round-tripped through the trace header: replay rebuilds it from
     `--scenario` (and the kernel's KV budget) exactly as `blis run` does. A trace exported by
-    `blis run` and replayed with the **same scenario and identical flags, including
-    `--horizon`**, produces equal `metrics`, `requests` and `breakdowns` (INV-13). Pass `--horizon` on both legs:
-    `blis run` defaults it to unlimited while `blis replay` auto-computes 2x the max arrival
-    time (see the table below), so a default-horizon replay may truncate a run that was still
-    draining. An MoE scenario with `dp > 1` replays the same way — one replica per
+    `blis run` and replayed with the **same scenario and identical flags**, produces equal `metrics`, `requests` and `breakdowns` (INV-13). Both
+    legs default the horizon to unlimited, so a default replay drains as the run did; if you
+    pass `--horizon` to the run, pass the same to the replay. An MoE scenario with `dp > 1` replays the same way — one replica per
     data-parallel rank on both legs. The autoscaler and node pools are rejected by
     `blis replay`.
 
@@ -115,8 +112,8 @@ routes with the router the scenario states, or the router's default configuratio
 | **Request source** | Generated from workload spec or CLI distributions | Loaded from TraceV2 CSV |
 | **Arrival times** | Synthesized by arrival process (Poisson, etc.) | Exact timestamps from trace |
 | **Token counts** | Sampled from distributions | Recorded values |
-| **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
-| **Output format** | One `Result` document on stdout ([Metrics & Results](results.md)) | The same `Result` document; `--results-path` (deprecated) additionally writes a per-request JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) |
+| **Horizon** | From `--horizon` flag or spec | Unlimited, as in `blis run` (set with `--horizon`) |
+| **Output format** | One `Result` document on stdout ([Metrics & Results](results.md)) | The same `Result` document with a `request_rows` row per replayed request; `--results-path` was removed |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
 | **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
 
@@ -291,7 +288,7 @@ blis replay --agentic-scenario inferencex-agentx-mvp \
   --concurrency 64 --seed 42 --benchmark-duration 900s --grace-period 30s \
   --max-context-length max_model_len \
   --scenario <scenario.yaml> --scenarios <dir> \
-  --metrics-path out.json
+  --output out.json
 ```
 
 `examples/agentx-dsv41-flash-h100-2x-tp8-dspark5.yaml` is a two-replica DeepSeek-V4.1-Flash

@@ -1,13 +1,9 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
-	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -26,7 +22,6 @@ var (
 	traceHeaderPath     string
 	traceDataPath       string
 	replayTraceOutput   string // File prefix for TraceV2 re-export (<prefix>.yaml + <prefix>.csv)
-	replayMetricsPath   string // File to write aggregate MetricsOutput JSON (incl. cache_hit_rate, #1583); symmetric with `blis run --metrics-path`
 	replaySessionMode   string
 	replayThinkTimeMs   int
 	replayThinkTimeDist string // distribution spec for think time (e.g. "lognormal:mu=2.0,sigma=0.6,min=3s,max=30s")
@@ -44,8 +39,7 @@ var replayCmd = &cobra.Command{
 exact request sequence captured in the trace. Unlike 'blis run', it does not generate
 requests from distributions — the request sequence is fully determined by the trace.
 
---results-path (deprecated) writes per-request SimResult JSON (request_id, ttft_us,
-e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us).
+The Result document on standard output carries the per-request rows (request_rows).
 
 The trace is in trace format version 4. A version 3 trace is refused; convert it with
 'blis convert trace'.
@@ -69,6 +63,7 @@ Example:
 		logrus.SetLevel(level)
 		validateRouterFlags()
 		checkResultFlags()
+		defer applyFromResult("replay", cmd)()
 		snapshotResultFlags("replay", cmd)
 
 		// Validate required inputs (BC-6, BC-8). An agentic replay (#1937) reads its
@@ -206,9 +201,6 @@ Example:
 		// below via workload.ReExportClosedLoopRecords). Per-request results still exclude
 		// clone/follow-up sessions (non-numeric ids), so the pool --results-path warning
 		// below stays.
-		if replayConcurrentSessions > 0 && resultsPath != "" {
-			logrus.Warnf("--results-path with --concurrent-sessions (pool mode): per-request results cover only the original corpus sessions' round-0; duplicated (clone) sessions and follow-up rounds are excluded (non-numeric request ids).")
-		}
 		if replayThinkTimeMs > 0 && replaySessionMode != "closed-loop" {
 			logrus.Fatalf("--think-time-ms requires --session-mode closed-loop")
 		}
@@ -354,12 +346,11 @@ Example:
 		}
 
 		// Compute horizon (BC-3)
-		replayHorizon := computeReplayHorizon(requests)
+		// #1615 (INV-13): with no --horizon the replay runs until the requests drain, as a run
+		// with no horizon does; the former twice-the-last-arrival default truncated the tail.
+		replayHorizon := int64(math.MaxInt64)
 		if cmd.Flags().Changed("horizon") {
 			replayHorizon = simulationHorizon
-		}
-		if (replayConcurrentSessions > 0 || agx != nil) && !cmd.Flags().Changed("horizon") {
-			replayHorizon = math.MaxInt64 // self-draining pool / agentic replay sets its own end
 		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
@@ -619,23 +610,6 @@ Example:
 		}
 		goodputTargets := mergeGoodputTargets(cliTTFT, cliITL, cliE2E, traceData.Header.GoodputSLOTargets, nil)
 
-		// --results-path (deprecated, #1871) is written before the re-export below, so a
-		// failure there cannot discard the per-request rows of a long replay (#1630).
-		simResultRows := 0
-		if resultsPath != "" {
-			warnDeprecatedFile("--results-path", resultsPath)
-			simResults := extractSimResults(cs.AggregatedMetrics())
-			simResultRows = len(simResults)
-			data, err := json.MarshalIndent(simResults, "", "  ")
-			if err != nil {
-				logrus.Fatalf("Failed to marshal SimResults: %v", err)
-			}
-			if err := os.WriteFile(resultsPath, data, 0644); err != nil {
-				logrus.Fatalf("Failed to write SimResults to %s: %v", resultsPath, err)
-			}
-			logrus.Infof("SimResults written to %s (%d entries)", resultsPath, len(simResults))
-		}
-
 		// Warn if --fitness-weights is set (not supported in replay mode per R1)
 		if fitnessWeights != "" {
 			logrus.Warnf("--fitness-weights has no effect in replay mode (fitness evaluation not supported for replay)")
@@ -644,17 +618,12 @@ Example:
 		// The Result document (#1871), through the path run shares (INV-13). It is emitted
 		// before the --trace-output re-export below, so a re-export failure cannot discard it
 		// (#1630); the re-exported trace is therefore not among its artifacts.
-		var artifacts []artifactFile
-		if resultsPath != "" {
-			artifacts = append(artifacts, artifactFile{role: "sim_results", path: resultsPath, rows: simResultRows})
-		}
-		// An agentic replay sets the measured window on the aggregate (emitOptions) before the
-		// document is computed from it, so the Result and the file measure the same window.
-		agentic := agx.emitOptions(cs.AggregatedMetrics())
+		// An agentic replay sets the measured window on the aggregate before the
+		// document is computed from it.
+		agx.setMeasuredWindow(cs.AggregatedMetrics())
 		emitRunResult(postRun{
 			cs: cs, gateway: gw, run: replayRunControls(agx, traceData, requests, cs.Horizon()), goodputTargets: goodputTargets,
-			satTracer: satTracer, metricsPath: replayMetricsPath, metricsFlag: "--metrics-path", artifacts: artifacts,
-			extraFileOptions: agentic, agentic: agx.resultSummary(), started: startTime,
+			satTracer: satTracer, agentic: agx.resultSummary(), started: startTime,
 			frame: replayFrameGenerator(agx),
 			// A replay stops when its requests are exhausted or its horizon is reached: the
 			// frame's stop rule states the count it replays (the trace's records, or the
@@ -718,9 +687,7 @@ func init() {
 	registerSimConfigFlags(replayCmd)
 	replayCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "Path to TraceV2 header YAML file (required)")
 	replayCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "Path to TraceV2 data CSV file (required)")
-	replayCmd.Flags().StringVar(&resultsPath, "results-path", "", "DEPRECATED (use --output): file to write []SimResult JSON (request_id, ttft_us, e2e_us, input_tokens, output_tokens, slo_class, model, itl_mean_us). Kept for one release.")
 	replayCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "Export replay results as TraceV2 files (<prefix>.yaml + <prefix>.csv); header mode is \"replayed\". Under --session-mode fixed-accumulate the export records reconstructed ABSOLUTE per-round inputs (no session_context_growth header) — re-replay it with --session-mode fixed, not fixed-accumulate.")
-	replayCmd.Flags().StringVar(&replayMetricsPath, "metrics-path", "", "DEPRECATED (use --output): file to write the legacy aggregate MetricsOutput JSON (incl. cache_hit_rate, #1583). Symmetric with 'blis run --metrics-path'. Kept for one release.")
 
 	// Saturation trace flags (#1516): --detectors + --saturation-config + --saturation-report.
 	registerDetectorFlags(replayCmd)
@@ -814,22 +781,6 @@ func computeHorizonFromMaxArrival(maxArrival int64) int64 {
 	}
 }
 
-// computeReplayHorizon returns the simulation horizon for a trace replay.
-// - Empty slice → math.MaxInt64 (no requests, horizon doesn't matter)
-// - Otherwise → delegated to computeHorizonFromMaxArrival
-func computeReplayHorizon(requests []*sim.Request) int64 {
-	if len(requests) == 0 {
-		return math.MaxInt64
-	}
-	var maxArrival int64
-	for _, req := range requests {
-		if req.ArrivalTime > maxArrival {
-			maxArrival = req.ArrivalTime
-		}
-	}
-	return computeHorizonFromMaxArrival(maxArrival)
-}
-
 // replayFrameGenerator is what a replay tells the experimental frame about its requests: the
 // trace (by its data file's sha256) and session mode, or the agentic scenario with its seed
 // and warm-up rule.
@@ -870,62 +821,4 @@ func replayRunControls(agx *agentXRun, trace *workload.TraceV2, requests []*sim.
 	// its last arrival), or the end an agentic replay moved it to, so a rerun from the document
 	// stops where this one did (#1871 B2).
 	return runControls{Seed: seed, NumRequests: numRequests, Load: load, Binding: binding}
-}
-
-// extractSimResults converts Metrics to the --results-path rows.
-// Only requests with both TTFT and E2E recorded (i.e., fully completed) are included.
-// Non-numeric IDs (session follow-ups, format "request_<parent>_followup_<n>") are excluded.
-// Results are sorted by RequestID for deterministic output (R2, INV-6).
-// Returns an initialized empty slice (not nil) so JSON marshaling produces [] not null.
-// Exclusions are logged at Debug level for observability (R1: no silent data loss).
-func extractSimResults(m *sim.Metrics) []workload.SimResult {
-	results := make([]workload.SimResult, 0, len(m.RequestTTFTs))
-	var noE2ECount, noReqCount, nonNumericCount int
-	for reqID, ttftUs := range m.RequestTTFTs {
-		e2eUs, hasE2E := m.RequestE2Es[reqID]
-		if !hasE2E {
-			noE2ECount++ // timed out after prefill
-			continue
-		}
-		rm, hasReq := m.Requests[reqID]
-		if !hasReq {
-			noReqCount++ // metrics inconsistency (defensive)
-			continue
-		}
-		// Parse integer RequestID from "request_N" format (BC-7: skip non-numeric IDs)
-		numStr := strings.TrimPrefix(reqID, "request_")
-		id, err := strconv.Atoi(numStr)
-		if err != nil {
-			nonNumericCount++ // session follow-ups or other non-numeric IDs
-			continue
-		}
-		results = append(results, workload.SimResult{
-			RequestID:    id,
-			TTFT:         ttftUs,
-			E2E:          e2eUs,
-			InputTokens:  rm.NumPrefillTokens,
-			OutputTokens: rm.NumDecodeTokens,
-			SLOClass:     rm.SLOClass,
-			Model:        rm.Model,
-			ITLMeanUs:    m.RequestITLs[reqID], // already in ticks (µs), same as TTFT/E2E; 0 if not computed
-		})
-	}
-	// Log all exclusions at Debug level for observability (R1: no silent data loss)
-	if noE2ECount > 0 {
-		logrus.Debugf("extractSimResults: excluded %d request(s) with TTFT but no E2E (timed out after prefill)", noE2ECount)
-	}
-	if noReqCount > 0 {
-		logrus.Debugf("extractSimResults: excluded %d request(s) in TTFTs but missing from Requests (metrics inconsistency)", noReqCount)
-	}
-	if nonNumericCount > 0 {
-		logrus.Debugf("extractSimResults: excluded %d non-numeric-ID request(s) (session follow-ups)", nonNumericCount)
-	}
-	if len(m.RequestITLs) == 0 {
-		logrus.Debugf("extractSimResults: RequestITLs is empty (no completed requests); ITLMeanUs will be 0 for all entries")
-	}
-	// Sort by RequestID for deterministic JSON output (R2, INV-6)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].RequestID < results[j].RequestID
-	})
-	return results
 }

@@ -11,7 +11,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -224,7 +223,8 @@ func runArgs(base []string, extra ...string) []string {
 	return append(append([]string{"run"}, base...), extra...)
 }
 
-// capRequest is one per-request row of a --metrics-path file.
+// capRequest is one per-request row of the Result, with its times in milliseconds and seconds
+// as the matrix compares them. A row that did not complete has e2e 0.
 type capRequest struct {
 	SLOClass  string  `json:"slo_class"`
 	TenantID  string  `json:"tenant_id"`
@@ -237,18 +237,26 @@ type capRequest struct {
 	E2E       float64 `json:"e2e_ms"`
 }
 
-// capRunRows is capRun with a --metrics-path file, returning its per-request rows too.
+// capRunRows is capRun, returning the Result's per-request rows too.
 func capRunRows(t *testing.T, args ...string) (capOut, []capRequest) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "metrics.json")
-	o := capRun(t, append(slices.Clone(args), "--metrics-path", path)...)
-	var file struct {
-		Requests []capRequest `json:"requests"`
+	stdout, stderr, err := runKernelCLI(t, args...)
+	if err != nil {
+		t.Fatalf("blis %s: %v\n%s", strings.Join(args, " "), err, lastLines(stderr, 5))
 	}
-	if err := json.Unmarshal([]byte(readFile(t, path)), &file); err != nil {
-		t.Fatal(err)
+	var rows []capRequest
+	for _, r := range parseResult(t, stdout).RequestRows {
+		c := capRequest{SLOClass: r.SLOClass, TenantID: r.TenantID, SessionID: r.SessionID, Round: r.RoundIndex,
+			ArrivedAt: float64(r.ArrivalUs) / 1e6, Prompt: r.PromptTokens, HandledBy: r.Instance}
+		if r.TTFTUs != nil {
+			c.TTFT = float64(*r.TTFTUs) / 1e3
+		}
+		if r.E2EUs != nil {
+			c.E2E = float64(*r.E2EUs) / 1e3
+		}
+		rows = append(rows, c)
 	}
-	return o, file.Requests
+	return parseCapOut(t, stdout), rows
 }
 
 // meanTTFTBy is the mean TTFT of completed requests, by key, with the count of each.

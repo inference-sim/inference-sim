@@ -70,7 +70,6 @@ func runReplayInSubprocess(t *testing.T, extraHeaderLine string) {
 		os.Exit(2) // distinct from logrus.Fatalf exit code (1)
 	}
 	replaySessionMode = "fixed"
-	resultsPath = ""
 	replayTraceOutput = ""
 	policyConfigPath = ""
 	replayCmd.Run(testCmd, nil) // must Fatalf before here for the spanning case
