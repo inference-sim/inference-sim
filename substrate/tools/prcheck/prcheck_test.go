@@ -323,6 +323,52 @@ func TestDocReferences(t *testing.T) {
 	none(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{"docs/a.md: x (X26)": true}, "X26"))
 }
 
+// X14: an abbreviated hash is refused in any phrasing, and ordinary hex-looking text is not.
+func TestShortHashPhrasingIndependent(t *testing.T) {
+	check := func(body string) []string {
+		return CheckDescription(DescriptionInput{Body: body, Repo: "o/r", Head: strings.Repeat("1", 40),
+			Base: strings.Repeat("2", 40), Merges: true})
+	}
+	for name, body := range map[string]string{
+		"after commit":     "Built at commit 6d79cc8.",
+		"after rev":        "Rebased onto 6d79cc8 today.",
+		"in parentheses":   "Fixed (6d79cc8).",
+		"in backticks":     "See `6d79cc8` for the change.",
+		"after a colon":    "Tip: 6d79cc8a1",
+		"after sha":        "sha 6d79cc8",
+		"line start":       "6d79cc8 is the tip",
+		"line end":         "the tip is 6d79cc8",
+		"long abbreviated": "tip 6d79cc8a1b2c3d4e5f60718293a4b5c6d7e8f90",
+		"beside a PR ref":  "o/r#4 merged as 6d79cc8",
+		"in a link text":   "[6d79cc8](https://example.com/x)",
+		"after a url":      "https://example.com/p 6d79cc8",
+		"all digits+a":     "tip 1234567a",
+	} {
+		has(t, check(body), "is a short hash")
+		_ = name
+	}
+	for _, body := range []string{
+		"defaced the decade facade; accede",
+		"deadbeef is hex but no digit", // letters only: a word
+		"On 20261105 we shipped",       // digits only: a date
+		"Closes #1234567 and o/r#7654321",
+		"go get example.com/m@v0.0.0-20261105123456-6d79cc8a1b2c",
+		"example.com/m v1.2.3-pre.0.20261105123456-6d79cc8a1b2c",
+		"digest sha256:6d79cc8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071829",
+		"see https://github.com/o/r/commit/6d79cc8 and https://x.io/6d79cc8a",
+		"path internal/6d79cc8/file and file.6d79cc8.go",
+		"full " + strings.Repeat("a", 40) + " is a different check",
+		"too short 6d79cc",
+		"in a longer run 6d79cc8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2",
+		"part of a word x6d79cc8y and g6d79cc8",
+		"<!-- at commit 6d79cc8 -->",
+	} {
+		if bad := check(body); strings.Contains(strings.Join(bad, "\n"), "short hash") {
+			t.Errorf("%q: wrongly flagged: %v", body, bad)
+		}
+	}
+}
+
 // X25.
 func TestQuarantine(t *testing.T) {
 	day := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)

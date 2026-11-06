@@ -16,8 +16,11 @@ import (
 // be checked and is refused, so a reader can always check what the description claims.
 
 var (
-	fullHash  = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
-	shortHash = regexp.MustCompile("(?:commit|at|head)\\s+`?([0-9a-f]{7,39})`?\\b")
+	fullHash = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
+	hexRun   = regexp.MustCompile(`[0-9A-Za-z_]+`)
+	// notCommit are the spans in which a hex token is not an abbreviated commit: a URL, a
+	// sha256 digest, and a Go pseudo-version (v0.0.0-<14 digits>-<12 hex>).
+	notCommit = regexp.MustCompile(`(?i)https?://\S+|sha256:[0-9a-f]+|v\d+\.\d+\.\d+-(?:[0-9a-z.]+\.)?\d{14}-[0-9a-f]{12}`)
 	prURL     = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
 	prRef     = regexp.MustCompile(`\b([\w.-]+/[\w.-]+)#(\d+)\b`)
 )
@@ -42,8 +45,8 @@ func CheckDescription(in DescriptionInput) []string {
 	}
 	for i, line := range strings.Split(stripComments(in.Body), "\n") {
 		ln := i + 1
-		for _, m := range shortHash.FindAllStringSubmatch(line, -1) {
-			bad = append(bad, fmt.Sprintf("line %d: %s is a short hash; list full 40-character hashes so they can be checked (X14)", ln, m[1]))
+		for _, h := range shortHashes(line) {
+			bad = append(bad, fmt.Sprintf("line %d: %s is a short hash; list full 40-character hashes so they can be checked (X14)", ln, h))
 		}
 		hashes := fullHash.FindAllString(line, -1)
 		if len(hashes) == 0 {
@@ -90,6 +93,54 @@ func CheckDescription(in DescriptionInput) []string {
 		}
 	}
 	return bad
+}
+
+// shortHashes returns the abbreviated commit-like tokens of a line, whatever the words
+// around them: a maximal run of 7 to 39 lowercase hex characters holding at least one digit
+// (so decade, facade and defaced are words) and at least one letter a-f (so a date or an
+// issue number is a number). A run is maximal, so it is never part of a longer hex string,
+// and 40 or more hex characters is a full hash or a longer digest. A token inside a URL, a
+// sha256 digest or a pseudo-version, or next to a path separator or a file extension, is
+// not a commit.
+func shortHashes(line string) []string {
+	masked := []byte(line)
+	for _, loc := range notCommit.FindAllStringIndex(line, -1) {
+		for i := loc[0]; i < loc[1]; i++ {
+			masked[i] = ' '
+		}
+	}
+	text := string(masked)
+	var out []string
+	for _, loc := range hexRun.FindAllStringIndex(text, -1) {
+		tok := text[loc[0]:loc[1]]
+		if len(tok) < 7 || len(tok) > 39 || !isHex(tok) {
+			continue
+		}
+		if !strings.ContainsAny(tok, "0123456789") || !strings.ContainsAny(tok, "abcdef") {
+			continue
+		}
+		if loc[0] > 0 && (text[loc[0]-1] == '/' || (text[loc[0]-1] == '.' && loc[0] > 1 && isWordByte(text[loc[0]-2]))) {
+			continue
+		}
+		if n := loc[1]; n < len(text) && (text[n] == '/' || (text[n] == '.' && n+1 < len(text) && isWordByte(text[n+1]))) {
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out
+}
+
+func isHex(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
 var htmlComment = regexp.MustCompile(`(?s)<!--.*?-->`)
