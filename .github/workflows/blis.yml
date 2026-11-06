@@ -27,6 +27,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      checks: write
     with:
       repo: inference-sim
       substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
@@ -50,3 +51,5 @@ jobs:
       issues: read
     with:
       substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
+    secrets:
+      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
