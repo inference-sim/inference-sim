@@ -1,6 +1,7 @@
 package resolve
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -57,5 +58,36 @@ func TestSelectedListsOnlyWhatLookupsReturned(t *testing.T) {
 	got := c.Selected()
 	if len(got) != 2 || got[0].Entry.Name != "b" || got[1].Entry.Name != "c" || got[0].Set != "s" {
 		t.Errorf("selected %+v, want b and c from set s", got)
+	}
+}
+
+// Two admitted entries of one name and scope that differ in method can only be ordered by
+// method rank (M2). Until then the lookup is refused, naming both methods, rather than
+// left to set order.
+func TestTwoMethodsAtOneScopeAreRefusedNotOrderedBySetOrder(t *testing.T) {
+	scope := coefficient.Scope{Fabric: []string{"ethernet-100gbe"}}
+	mk := func(name string, m vocab.Method, v float64) *coefficient.Set {
+		return &coefficient.Set{Kind: "CoefficientSet", Name: name, Coefficients: []coefficient.Entry{
+			{Name: "fabric_bandwidth_efficiency", Value: v, Method: m, Scope: scope}}}
+	}
+	for _, order := range [][]*coefficient.Set{
+		{mk("base", vocab.MethodAssumed, 0.8), mk("over", vocab.MethodLiterature, 0.9)},
+		{mk("over", vocab.MethodLiterature, 0.9), mk("base", vocab.MethodAssumed, 0.8)},
+	} {
+		_, err := Load(order, Scope{Hardware: "h100", Fabric: "ethernet-100gbe"})
+		if err == nil || !strings.Contains(err.Error(), `"assumed"`) || !strings.Contains(err.Error(), `"literature"`) {
+			t.Errorf("order %s,%s: err = %v, want a refusal naming both methods",
+				order[0].Name, order[1].Name, err)
+		}
+	}
+	// The same method at the same scope in two sets is still decided by set order (the
+	// later wins), as before.
+	c, err := Load([]*coefficient.Set{mk("a", vocab.MethodAssumed, 0.8), mk("b", vocab.MethodAssumed, 0.9)},
+		Scope{Hardware: "h100", Fabric: "ethernet-100gbe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := c.Value("fabric_bandwidth_efficiency"); v != 0.9 {
+		t.Errorf("later same-method entry did not win: %v", v)
 	}
 }

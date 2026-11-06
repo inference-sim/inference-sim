@@ -112,3 +112,21 @@ func TestScopeKeyDistinguishesDimensions(t *testing.T) {
 		t.Errorf("scopes on different dimensions collide: %q", a.Key())
 	}
 }
+
+// An entry's identity is its name, scope and method (design §3.3): the same name and scope
+// under another method is a different coefficient, and only all three matching is refused.
+func TestOneNameAndScopeAtTwoMethodsIsNotADuplicate(t *testing.T) {
+	assumed := entry("fabric_bandwidth_efficiency", []string{"h200"}, 0.8)
+	assumed.Method = vocab.MethodAssumed
+	assumed.Rationale = "a judgement"
+	assumed.Sources = nil
+	measured := entry("fabric_bandwidth_efficiency", []string{"h200"}, 0.9)
+	if hasDuplicate(set(assumed, measured)) {
+		t.Error("one name and scope under two methods was refused as a duplicate")
+	}
+	again := measured
+	again.Value = 0.7
+	if !hasDuplicate(set(assumed, measured, again)) {
+		t.Error("one name, scope and method twice was not refused")
+	}
+}

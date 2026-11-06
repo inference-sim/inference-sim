@@ -24,16 +24,25 @@ import (
 // two, except FlashInfer's SM120 backend, which requires SM120 and has no part in the catalog
 // (supports_compute_capability in vllm/v1/attention/backends/mla/flashattn_mla_sparse.py,
 // flashmla_sparse.py, flashinfer_mla_sparse.py, flashinfer_mla_sparse_sm90.py). The catalog
-// records no compute capability, so data-center Blackwell is recognised, as elsewhere in
-// this kernel, by native NVFP4 support, the pre-Hopper parts by name (preHopperParts), and
-// every other part is treated as Hopper. A DSA model on a pre-Hopper part is refused: no
+// states each part's compute capability, so a part below 9.0 is recognised by that
+// capability and not by its name; data-center Blackwell is recognised, as elsewhere in this
+// kernel, by native NVFP4 support. A part whose capability is missing or unparseable is
+// refused on this path, naming the part. A DSA model on a pre-Hopper part is refused: no
 // sparse-MLA backend runs there.
 
-// preHopperParts are the catalog's parts below compute capability 9.0, by catalog name:
-// A100 (SM80) and L40S (SM89). The catalog records no compute capability, and none of its
-// fields separates an fp8-capable Ada part from Hopper, so they are named. A part not named
-// here is treated as Hopper or newer.
-var preHopperParts = map[string]bool{"a100-80": true, "a100-sxm": true, "l40s": true}
+// preHopper reports whether the chip's compute capability is below 9.0, which no sparse-MLA
+// backend runs on. The capability is the kernel's family (the major version of the chip's
+// stated ComputeCapability); a chip that states none, or states it malformed, is refused,
+// because guessing a generation from a name or from peaks would price a part this path
+// cannot place.
+func (k *Kernel) preHopper() (bool, error) {
+	if k.family <= 0 {
+		return false, fmt.Errorf("chip %q states no usable ComputeCapability (%q), which the "+
+			"DSA sparse-MLA backend choice needs to place the part below or at SM90",
+			k.chip.Name, k.chip.ComputeCapability)
+	}
+	return k.family < 9, nil
+}
 
 // dsaHeadDim is the head width that marks a DSA sparse-MLA layer: kv_lora_rank 512 plus
 // qk_rope_head_dim 64.
@@ -104,25 +113,22 @@ func v4BlockSize(architecture string, hopper func() bool) int {
 
 // hopper reports whether the chip is the SM90 family, which decides the kernels vLLM
 // selects for several formats and layouts. The catalog states the compute capability; for a
-// chip that does not, it is inferred -- data-center Blackwell by native NVFP4, the
-// pre-Hopper parts by name, everything else as Hopper -- and that inference is recorded the
-// first time it decides anything.
+// chip that does not, it is inferred -- data-center Blackwell by native NVFP4, everything
+// else as Hopper -- and that inference is recorded the first time it decides anything.
 func (k *Kernel) hopper() bool {
 	if k.family > 0 {
 		return k.family == 9
 	}
-	h := k.chip.NVFP4Peak <= 0 && !preHopperParts[k.chip.Name]
+	h := k.chip.NVFP4Peak <= 0
 	if !k.familyAssumed {
 		k.familyAssumed = true
 		guess := "sm100"
 		if h {
 			guess = "sm90"
-		} else if preHopperParts[k.chip.Name] {
-			guess = "pre-sm90"
 		}
 		k.assume("compute_capability", guess,
 			"the catalog states no compute capability for "+k.chip.Name+", so its generation "+
-				"is inferred from its native-format peaks and name, which decide kernel "+
+				"is inferred from its native-format peaks, which decide kernel "+
 				"selection")
 	}
 	return h
@@ -141,7 +147,7 @@ type sparseMLABackendRequest struct {
 	cache        string // the stated cache dtype; "" is "auto"
 	headsPerRank int    // query heads per tensor-parallel rank
 	sm100        bool
-	preHopper    bool // a part below compute capability 9.0 (see preHopperParts)
+	preHopper    bool // a part below compute capability 9.0 (see Kernel.preHopper)
 	tp, dcp, pcp int
 	dcpComm      string // the resolved DCP combine backend
 }
