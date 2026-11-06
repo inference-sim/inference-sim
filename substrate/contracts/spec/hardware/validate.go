@@ -65,6 +65,14 @@ func (c *Chip) Validate() *validate.Problems {
 	if c.SMCount <= 0 {
 		p.Field("SMCount", "must be positive; every chip must declare its SM count")
 	}
+	// Packaging counts are zero when unstated; a negative one is a mistake that the scenario
+	// packaging would otherwise read as unset.
+	if c.GPUsPerNode < 0 {
+		p.Field("GPUsPerNode", "%d is negative; leave it out when the chip has no node size", c.GPUsPerNode)
+	}
+	if c.GPUsPerRack < 0 {
+		p.Field("GPUsPerRack", "%d is negative; leave it out when the chip has no rack size", c.GPUsPerRack)
+	}
 	if c.GPUsPerRack > 0 && c.GPUsPerNode > 0 && c.GPUsPerRack%c.GPUsPerNode != 0 {
 		p.Field("GPUsPerRack", "%d is not a multiple of GPUsPerNode %d",
 			c.GPUsPerRack, c.GPUsPerNode)

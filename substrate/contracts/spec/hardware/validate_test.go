@@ -69,6 +69,8 @@ func TestChipRejects(t *testing.T) {
 		{"negative fp8 peak", func(c *Chip) { c.FP8Peak = -1 }},
 		{"fp8 not above bf16", func(c *Chip) { c.FP8Peak = 500 }},
 		{"rack not a multiple of node", func(c *Chip) { c.GPUsPerRack = 70 }},
+		{"negative GPUsPerNode", func(c *Chip) { c.GPUsPerNode = -8 }},
+		{"negative GPUsPerRack", func(c *Chip) { c.GPUsPerRack = -72 }},
 		{"intra-rack bandwidth with no rack", func(c *Chip) { c.IntraRackBwGBps = 900 }},
 		// SMCount is required and positive: a missing (zero) count is an omission, not a
 		// legitimate value, so it is rejected alongside a negative one.
