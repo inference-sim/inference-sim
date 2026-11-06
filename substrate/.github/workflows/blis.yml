@@ -17,8 +17,10 @@ permissions:
   contents: read
 
 jobs:
+  # Runs on the pull request and, with its pull-request-only steps skipped, on the merge-queue
+  # tree, so the check run "pr / blis checks" exists on the tree the merge check judges (X22).
   pr:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     uses: ./.github/workflows/shared-pr-checks.yml
     # A same-repository pull request runs its own substrate-ref code with pull-requests:
     # write, by design: a pull request is judged by its own changed checks. A fork's pull
@@ -28,7 +30,7 @@ jobs:
       pull-requests: write
     with:
       repo: blis-substrate
-      substrate-ref: ${{ github.event.pull_request.head.sha }}
+      substrate-ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
 
   merge:
     if: github.event_name == 'merge_group'
@@ -39,7 +41,7 @@ jobs:
       checks: read
     with:
       substrate-ref: ${{ github.event.merge_group.head_sha }}
-      required: "required,blis checks / blis checks"
+      required: "required,pr / blis checks"
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
