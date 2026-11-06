@@ -61,7 +61,13 @@ var (
 	runVerifyName  = regexp.MustCompile(`ledger candidate`)
 	runVerifyState = regexp.MustCompile(`success`)
 	runVerifyRepo  = regexp.MustCompile(`head_repository`)
-	prControlled   = regexp.MustCompile(`github\.event\.(pull_request|workflow_run)\.(head|head_sha|head_branch|head_repository)|github\.head_ref`)
+	// runsAggregate matches a job that reduces predictions. It must pass -candidate the head_sha
+	// the runs API reports for the run it downloaded, so the loader can refuse an artifact that
+	// names another commit.
+	runsAggregate = regexp.MustCompile(`ledger aggregate\b`)
+	passesHeadSHA = regexp.MustCompile(`-candidate\s+"?\$`)
+	readsHeadSHA  = regexp.MustCompile(`actions/runs/\$RUN_ID"?\s[^\n]*\.head_sha|\.head_sha[^\n]*actions/runs/\$RUN_ID`)
+	prControlled  = regexp.MustCompile(`github\.event\.(pull_request|workflow_run)\.(head|head_sha|head_branch|head_repository)|github\.head_ref`)
 )
 
 // LintWorkflows is D7's workflow lint. For every workflow under dir it checks:
@@ -77,6 +83,9 @@ var (
 //     request run can upload an artifact of that name.
 //   - A seed-holding job that takes inputs.run_id checks, before downloading, that the run is a
 //     successful run of "ledger candidate" whose head repository is this one.
+//   - A seed-holding job that runs `ledger aggregate` passes -candidate the head_sha of the run
+//     it downloaded, read through actions/runs/$RUN_ID, which the strict loader compares with
+//     the artifact's candidate (X22).
 //   - No other job reads the seed secret.
 //   - A candidate job (job id "candidate" or "candidate-…") reads no secret, runs in no
 //     environment and declares read-only permissions.
@@ -145,6 +154,9 @@ func lintWorkflow(path string) (int, error) {
 			if takesRunID.MatchString(text) && (!runVerifyAPI.MatchString(text) || !runVerifyName.MatchString(text) ||
 				!runVerifyState.MatchString(text) || !runVerifyRepo.MatchString(text)) {
 				errs = append(errs, fmt.Errorf("%s: downloads the run in inputs.run_id without checking, through actions/runs/$RUN_ID, that it is a successful ledger candidate run of this repository (D7)", at))
+			}
+			if runsAggregate.MatchString(text) && (!passesHeadSHA.MatchString(text) || !readsHeadSHA.MatchString(text)) {
+				errs = append(errs, fmt.Errorf("%s: reduces predictions without passing -candidate the head_sha that actions/runs/$RUN_ID reports for the run it downloaded, so an artifact could name another commit (X22, D7)", at))
 			}
 			checkouts := 0
 			for i, s := range j.Steps {

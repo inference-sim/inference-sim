@@ -29,7 +29,9 @@ jobs:
       - uses: ./.github/actions/go-toolchain
       - env:
           LEDGER_SEED: ${{ secrets.LEDGER_SEED }}
-        run: go run ./ledger/cmd/ledger aggregate
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+          go run ./ledger/cmd/ledger aggregate -candidate "$sha"
 `
 
 const goodCandidateWorkflow = `name: ledger candidate
@@ -93,7 +95,9 @@ jobs:
         run: |
           run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq '[.name, .conclusion, (.head_repository.id | tostring)] | join("|")')
           [ "$run" = "ledger candidate|success|$REPO_ID" ]
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
           gh run download "$RUN_ID"
+          go run ./ledger/cmd/ledger aggregate -candidate "$sha"
 `
 
 func lint(t *testing.T, files map[string]string) error {
@@ -145,6 +149,14 @@ func TestLintWorkflows(t *testing.T) {
 `, "", 1)}
 	bad["run id checked for name only"] = map[string]string{"a.yml": strings.Replace(goodRunIDWorkflow,
 		`[.name, .conclusion, (.head_repository.id | tostring)] | join("|")`, `.name`, 1)}
+	bad["predictions read without the run's commit"] = map[string]string{"a.yml": strings.Replace(goodRunIDWorkflow,
+		`          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+`, "", 1)}
+	bad["predictions read without -candidate"] = map[string]string{"a.yml": strings.Replace(goodRunIDWorkflow,
+		` -candidate "$sha"`, "", 1)}
+	bad["aggregate without the run's commit"] = map[string]string{"a.yml": strings.Replace(goodSeedWorkflow,
+		`          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+`, "", 1)}
 	for name, files := range bad {
 		if err := lint(t, files); err == nil {
 			t.Errorf("%s: accepted", name)

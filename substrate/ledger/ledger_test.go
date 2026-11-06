@@ -440,7 +440,7 @@ func TestDecodeReadsStrict(t *testing.T) {
 func TestPredictionsAndReports(t *testing.T) {
 	want := map[string]bool{"s/" + hexID(1): true, "s/" + hexID(2): true}
 	good := `{"kind":"Predictions","candidate":"` + strings.Repeat("a", 40) + `","predictions":[{"source":"s","unit_id":"` + hexID(1) + `","values":{"ttft_ms":1.5}},{"source":"s","unit_id":"` + hexID(2) + `","reason":"refused"}]}`
-	if _, err := ReadPredictions(strings.NewReader(good), want); err != nil {
+	if _, err := ReadPredictions(strings.NewReader(good), want, strings.Repeat("a", 40)); err != nil {
 		t.Fatalf("good predictions refused: %v", err)
 	}
 	for name, body := range map[string]string{
@@ -454,9 +454,17 @@ func TestPredictionsAndReports(t *testing.T) {
 		"none at all":   `{"kind":"Predictions","candidate":"` + strings.Repeat("a", 40) + `","predictions":[]}`,
 		"too large":     good + strings.Repeat(" ", MaxPredictionsBytes),
 	} {
-		if _, err := ReadPredictions(strings.NewReader(body), want); err == nil {
+		if _, err := ReadPredictions(strings.NewReader(body), want, strings.Repeat("a", 40)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+
+	// X22/D7: the artifact's candidate must be the commit of the run it came from.
+	if _, err := ReadPredictions(strings.NewReader(good), want, strings.Repeat("b", 40)); err == nil {
+		t.Error("predictions for another commit accepted")
+	}
+	if _, err := ReadPredictions(strings.NewReader(good), want, ""); err == nil {
+		t.Error("no expected commit accepted")
 	}
 
 	ids := []string{hexID(1), hexID(2)}

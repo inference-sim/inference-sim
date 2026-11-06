@@ -109,6 +109,10 @@ jobs:
           set -euo pipefail
           case "$RUN_ID" in ''|*[!0-9]*) echo "run_id must be a run id, got '$RUN_ID'" >&2; exit 1 ;; esac
           mkdir -p "$RUNNER_TEMP/in"
+          # The commit the run was made for, from the Actions API and not from the artifact. The
+          # strict loader refuses predictions whose candidate field is any other commit (X22).
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+          echo "CANDIDATE_SHA=$sha" >> "$GITHUB_ENV"
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name predictions --dir "$RUNNER_TEMP/in"
       - name: Units and measured values, computed here from main
         run: |
@@ -122,7 +126,7 @@ jobs:
           LEDGER_SEED: ${{ secrets.LEDGER_SEED }}
         run: |
           go run ./ledger/cmd/ledger aggregate -job select -role select \
-            -predictions "$RUNNER_TEMP/in/predictions.json" -units "$RUNNER_TEMP/units.json" \
+            -predictions "$RUNNER_TEMP/in/predictions.json" -candidate "$CANDIDATE_SHA" -units "$RUNNER_TEMP/units.json" \
             -measured "$RUNNER_TEMP/measured.json" -out "$RUNNER_TEMP/report.json" catalog/ledger
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -163,6 +167,10 @@ jobs:
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/in"
+          # The commit the run was made for, from the Actions API and not from the artifact. The
+          # strict loader refuses predictions whose candidate field is any other commit (X22).
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+          echo "CANDIDATE_SHA=$sha" >> "$GITHUB_ENV"
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name predictions --dir "$RUNNER_TEMP/in"
       - name: Units and measured values, computed here from main
         run: |
@@ -176,7 +184,7 @@ jobs:
           LEDGER_SEED: ${{ secrets.LEDGER_SEED }}
         run: |
           go run ./ledger/cmd/ledger aggregate -job error -role validate \
-            -predictions "$RUNNER_TEMP/in/predictions.json" -units "$RUNNER_TEMP/units.json" \
+            -predictions "$RUNNER_TEMP/in/predictions.json" -candidate "$CANDIDATE_SHA" -units "$RUNNER_TEMP/units.json" \
             -measured "$RUNNER_TEMP/measured.json" -out "$RUNNER_TEMP/report.json" catalog/ledger
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -219,6 +227,10 @@ jobs:
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/in"
+          # The commit the run was made for, from the Actions API and not from the artifact. The
+          # strict loader refuses predictions whose candidate field is any other commit (X22).
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .head_sha)
+          echo "CANDIDATE_SHA=$sha" >> "$GITHUB_ENV"
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name predictions --dir "$RUNNER_TEMP/in"
       - name: Units and measured values, computed here from main
         run: |
@@ -232,7 +244,7 @@ jobs:
           LEDGER_SEED: ${{ secrets.LEDGER_SEED }}
         run: |
           go run ./ledger/cmd/ledger aggregate -job gate -role held \
-            -predictions "$RUNNER_TEMP/in/predictions.json" -units "$RUNNER_TEMP/units.json" \
+            -predictions "$RUNNER_TEMP/in/predictions.json" -candidate "$CANDIDATE_SHA" -units "$RUNNER_TEMP/units.json" \
             -measured "$RUNNER_TEMP/measured.json" -out "$RUNNER_TEMP/report.json" catalog/ledger
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

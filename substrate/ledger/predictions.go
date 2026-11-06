@@ -43,10 +43,14 @@ var metricName = regexpMust(`^[a-z][a-z0-9_]{0,63}$`)
 
 // ReadPredictions reads a predictions file strictly: at most MaxPredictionsBytes, no unknown
 // field, no trailing data, each unit once, each value finite, each name a short identifier,
-// every prediction for a unit in want (the units the job handed the candidate) and every unit
+// the candidate commit equal to wantCandidate, the head of the run the file came from, which
+// the caller learns from Actions and not from the file (X22), every prediction for a unit in want (the units the job handed the candidate) and every unit
 // of want predicted: coverage is complete and fixed by the job, never chosen by the file
 // (D7). It never trusts the file to say which units are which role.
-func ReadPredictions(r io.Reader, want map[string]bool) (*Predictions, error) {
+func ReadPredictions(r io.Reader, want map[string]bool, wantCandidate string) (*Predictions, error) {
+	if !gitCommit.MatchString(wantCandidate) {
+		return nil, fmt.Errorf("predictions: expected candidate %q is not a full commit", wantCandidate)
+	}
 	raw, err := io.ReadAll(io.LimitReader(r, MaxPredictionsBytes+1))
 	if err != nil {
 		return nil, err
@@ -68,6 +72,9 @@ func ReadPredictions(r io.Reader, want map[string]bool) (*Predictions, error) {
 	}
 	if !gitCommit.MatchString(p.Candidate) {
 		return nil, fmt.Errorf("predictions: candidate %q is not a full commit", p.Candidate)
+	}
+	if p.Candidate != wantCandidate {
+		return nil, fmt.Errorf("predictions: candidate %s is not the commit %s of the run they came from (X22)", p.Candidate, wantCandidate)
 	}
 	seen := map[string]bool{}
 	for i, x := range p.Predictions {
