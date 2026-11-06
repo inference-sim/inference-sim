@@ -135,8 +135,19 @@ func Lint(in Input) ([]string, error) {
 				add("%s is replaced by %s %s; a BLIS module resolves to its own release tag (X11)", m.Path, m.Replace.Path, m.Replace.Version)
 				continue
 			}
-			if !semver.IsValid(v) || isPseudo(v) {
+			switch {
+			case !semver.IsValid(v) || isPseudo(v):
 				add("%s resolves to %s, which is not a release tag (X11, LIF-2)", m.Path, v)
+			case engineModules[m.Path] || m.Path == forkRouter:
+				// Engines and the router fork never tag a plain v<upstream> (design §14.1).
+				if !blisTag.MatchString(v) {
+					add("%s resolves to %s; it must be a -blis.N tag (X11, LIF-5, design §14.1)", m.Path, v)
+				}
+			default:
+				// The substrate and the simulator tag plain vX.Y.Z.
+				if semver.Prerelease(v) != "" || semver.Build(v) != "" {
+					add("%s resolves to %s; it must be a plain vX.Y.Z tag (X11, LIF-2)", m.Path, v)
+				}
 			}
 		}
 	}

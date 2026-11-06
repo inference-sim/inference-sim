@@ -87,6 +87,14 @@ func TestEachRuleHasAKnownBadInput(t *testing.T) {
 		{"a BLIS module at a pseudo-version", func(in *Input) {
 			in.Modules[1].Version = "v0.32.1-0.20261101000000-abcdefabcdef"
 		}, "is not a release tag"},
+		{"an engine at a plain upstream tag", func(in *Input) { in.Modules[1].Version = "v0.32.0" }, "must be a -blis.N tag"},
+		{"an engine at a release candidate", func(in *Input) { in.Modules[1].Version = "v0.32.0-rc.1" }, "must be a -blis.N tag"},
+		{"the substrate at a release candidate", func(in *Input) { in.Modules[2].Version = "v0.12.0-rc.1" }, "must be a plain vX.Y.Z tag"},
+		{"the substrate at a -blis.N tag", func(in *Input) { in.Modules[2].Version = "v0.12.0-blis.1" }, "must be a plain vX.Y.Z tag"},
+		{"the substrate with build metadata", func(in *Input) { in.Modules[2].Version = "v0.12.0+meta" }, "must be a plain vX.Y.Z tag"},
+		{"the router fork at a plain tag", func(in *Input) {
+			in.Modules = append(in.Modules, Module{Path: "github.com/inference-sim/llm-d-router", Version: "v1.0.0"})
+		}, "must be a -blis.N tag"},
 		{"the router selected without its replace", func(in *Input) { in.Modules[3].Replace = nil }, "without the router fork's replace"},
 		{"a module above the toolchain", func(in *Input) { in.Modules[2].GoVersion = "1.28" }, "above contracts/toolchain"},
 		{"a go command other than the toolchain", func(in *Input) { in.GoVersion = "go1.27.3" }, "go version reports go1.27.3"},
