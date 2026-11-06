@@ -139,7 +139,8 @@ What is not in place yet:
   change they have checked is pre-registered, and records the evaluation count on the pull
   request (design §10.2).
 - The consumers' records of units read. The nightly join (D2) fails until at least one
-  consumer uploads an artifact named `unit-reads-<consumer>` in the format of `ledger.Reads`.
+  consumer uploads an artifact named `unit-reads-<consumer>` in the format of `ledger.Reads`. The join reads only artifacts uploaded by a run on main of
+  this repository; an artifact from a pull request run or a fork is ignored.
 
 ## Other sources
 

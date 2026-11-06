@@ -102,6 +102,8 @@ jobs:
       - name: Fetch the candidate's predictions (untrusted)
         env:
           GH_TOKEN: ${{ github.token }}
+          # The id comes from the workflow_run event, which names a run of the workflow this
+          # job is triggered by, so it needs no check of the kind the dispatched jobs make.
           RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
@@ -147,9 +149,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.run_id }}
+          REPO_ID: ${{ github.repository_id }}
         run: |
           set -euo pipefail
           case "$RUN_ID" in ''|*[!0-9]*) echo "run_id must be a run id, got '$RUN_ID'" >&2; exit 1 ;; esac
+          # A ledger owner types the id, so the run is checked before its artifact is read: it
+          # must be a successful run of the ledger candidate workflow of this repository, not a
+          # run of another workflow or of a fork.
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" \
+            --jq '[.name, .conclusion, (.head_repository.id | tostring)] | join("|")')
+          if [ "$run" != "ledger candidate|success|$REPO_ID" ]; then
+            echo "run $RUN_ID is not a successful ledger candidate run of this repository" >&2
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/in"
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name predictions --dir "$RUNNER_TEMP/in"
       - name: Units and measured values, computed here from main
@@ -193,9 +205,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.run_id }}
+          REPO_ID: ${{ github.repository_id }}
         run: |
           set -euo pipefail
           case "$RUN_ID" in ''|*[!0-9]*) echo "run_id must be a run id, got '$RUN_ID'" >&2; exit 1 ;; esac
+          # A ledger owner types the id, so the run is checked before its artifact is read: it
+          # must be a successful run of the ledger candidate workflow of this repository, not a
+          # run of another workflow or of a fork.
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" \
+            --jq '[.name, .conclusion, (.head_repository.id | tostring)] | join("|")')
+          if [ "$run" != "ledger candidate|success|$REPO_ID" ]; then
+            echo "run $RUN_ID is not a successful ledger candidate run of this repository" >&2
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/in"
           gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name predictions --dir "$RUNNER_TEMP/in"
       - name: Units and measured values, computed here from main
@@ -245,12 +267,16 @@ jobs:
       - name: Collect every consumer's record of units read (D2)
         env:
           GH_TOKEN: ${{ github.token }}
+          REPO_ID: ${{ github.repository_id }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/reads"
-          # Every consumer uploads its record as an artifact named unit-reads-<consumer>.
+          # Every consumer uploads its record as an artifact named unit-reads-<consumer>. Only
+          # an artifact that a run on main of this repository uploaded is read: a pull request
+          # run, or a run of a fork, can upload an artifact of that name too, and a record from
+          # one of those would enter a join that holds the seed.
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.name | startswith("unit-reads-")) | select(.expired | not) | .id' |
+            --jq '.artifacts[] | select(.name | startswith("unit-reads-")) | select(.expired | not) | select(.workflow_run.head_branch == "main" and (.workflow_run.head_repository_id | tostring) == env.REPO_ID) | .id' |
           while read -r id; do
             gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$RUNNER_TEMP/a.zip"
             unzip -o -q "$RUNNER_TEMP/a.zip" -d "$RUNNER_TEMP/reads/$id"
@@ -266,4 +292,11 @@ jobs:
             echo "no consumer has uploaded a record of units read; the join has nothing to check" >&2
             exit 1
           fi
-          go run ./ledger/cmd/ledger join -assign catalog/ledger "${files[@]}"
+          # The join's own message names a file or an artifact when a record does not decode,
+          # and which record failed is not for the log of a job that holds the seed. Only the
+          # outcomes it counts are shown.
+          if ! go run ./ledger/cmd/ledger join -assign catalog/ledger "${files[@]}" 2>"$RUNNER_TEMP/join.err"; then
+            sed -n -E '/units read under two roles|records hold no read/p' "$RUNNER_TEMP/join.err" >&2
+            echo "the join failed; the detail of a record it could not read is withheld" >&2
+            exit 1
+          fi
