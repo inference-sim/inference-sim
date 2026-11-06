@@ -62,7 +62,7 @@ func parseCapOut(t *testing.T, stdout string) capOut {
 		"still_queued": q.StillQueued, "still_running": q.StillRunning, "dropped_unservable": q.DroppedUnservable,
 		"timed_out": q.TimedOut, "routing_rejections": q.RoutingRejections, "gateway_queue_depth": q.GatewayQueueDepth,
 		"gateway_queue_rejected": q.GatewayQueueRejected, "gateway_evicted": q.GatewayEvicted,
-		"gateway_expired": q.GatewayExpired, "encode_routing_rejections": q.EncodeRoutingRejections,
+		"gateway_expired": q.GatewayExpired,
 	} {
 		o.ledger[k] = v
 	}
@@ -120,14 +120,14 @@ func sortedKeysOf2(m map[string]float64) []string {
 	return keys
 }
 
-// arrivals is every request the run accounted for: the sum of INV-1's eleven terminal
+// arrivals is every request the run accounted for: the sum of INV-1's ten terminal
 // buckets plus the admission rejections, read bucket by bucket, so it is independent of the
 // ledger's own generated count and compares with the fixture's.
 func (o capOut) arrivals() int {
 	n := o.ledger["rejected"]
 	for _, k := range []string{"completed", "still_queued", "still_running", "dropped_unservable", "timed_out",
 		"routing_rejections", "gateway_queue_depth", "gateway_queue_rejected", "gateway_evicted",
-		"gateway_expired", "encode_routing_rejections"} {
+		"gateway_expired"} {
 		n += o.ledger[k]
 	}
 	return n

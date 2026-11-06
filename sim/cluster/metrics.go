@@ -111,16 +111,15 @@ type RawMetrics struct {
 	// before any drop/route decision. Used as the goodput denominator (issue #1409, BC-6).
 	// Empty SLOClass requests appear under the "" key.
 	InjectedByClass map[string]int64
-	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_rejected + gw_evicted + gw_expired + encode_routing_rejections (the eleven-term form, docs/contributing/standards/invariants.md)
-	GatewayQueueDepth       int // Requests still in gateway queue at horizon (issue #882)
-	GatewayQueueRejected    int // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
-	GatewayEvicted          int // Requests evicted in-flight from instances (#1228)
-	GatewayExpired          int // Requests expired from gateway queue via TTL (#1193)
-	RoutingRejections       int // I13: routing rejections (no routable instances)
-	EncodeRoutingRejections int // GAP-4 (#1264): encode pool routing rejections (no routable encode instances)
-	DroppedUnservable       int
-	LengthCappedRequests    int
-	TimedOutRequests        int
+	// INV-1 extended: injected == completed + running + queued + routing_rejections + dropped + timed_out + gw_depth + gw_rejected + gw_evicted + gw_expired (the ten-term form, docs/contributing/standards/invariants.md)
+	GatewayQueueDepth    int // Requests still in gateway queue at horizon (issue #882)
+	GatewayQueueRejected int // Requests rejected from gateway queue — incoming could not displace any entry (#1190)
+	GatewayEvicted       int // Requests evicted in-flight from instances (#1228)
+	GatewayExpired       int // Requests expired from gateway queue via TTL (#1193)
+	RoutingRejections    int // I13: routing rejections (no routable instances)
+	DroppedUnservable    int
+	LengthCappedRequests int
+	TimedOutRequests     int
 
 	// KV cache metrics (PR12)
 	CacheHitRate    float64
@@ -137,14 +136,13 @@ type RawMetrics struct {
 // when "fcfs" or "" (no priority ordering), inversions are
 // suppressed (always 0) since requests are served in arrival order and
 // E2E differences reflect workload variance, not scheduling unfairness.
-func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int, encodeRoutingRejections int, injectedByClass map[string]int64) *RawMetrics {
+func CollectRawMetrics(aggregated *sim.Metrics, perInstance []*sim.Metrics, rejectedRequests int, scheduler string, routingRejections int, injectedByClass map[string]int64) *RawMetrics {
 	raw := &RawMetrics{
-		RejectedRequests:        rejectedRequests,
-		RoutingRejections:       routingRejections,
-		EncodeRoutingRejections: encodeRoutingRejections,
-		DroppedUnservable:       aggregated.DroppedUnservable,
-		LengthCappedRequests:    aggregated.LengthCappedRequests,
-		TimedOutRequests:        aggregated.TimedOutRequests,
+		RejectedRequests:     rejectedRequests,
+		RoutingRejections:    routingRejections,
+		DroppedUnservable:    aggregated.DroppedUnservable,
+		LengthCappedRequests: aggregated.LengthCappedRequests,
+		TimedOutRequests:     aggregated.TimedOutRequests,
 	}
 
 	// Defensive copy of per-class injection counter for goodput denominator (BC-6).

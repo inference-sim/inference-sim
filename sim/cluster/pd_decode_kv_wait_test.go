@@ -174,3 +174,73 @@ func TestPDDecodeKVWait_StartsEveryHandoffTheEngineAdmits(t *testing.T) {
 		}
 	}
 }
+
+// pdEvictAt is a test event that asks the gateway host to evict a request.
+type pdEvictAt struct {
+	time int64
+	req  *sim.Request
+	took *bool
+}
+
+func (e *pdEvictAt) Timestamp() int64 { return e.time }
+func (e *pdEvictAt) Priority() int    { return 5 }
+func (e *pdEvictAt) Execute(cs *ClusterSimulator) {
+	*e.took = cs.Evict(e.req)
+}
+
+// A handoff waiting for decode KV is a state of the request machine with an eviction edge
+// (SIM-8, #2005): the gateway evicts it at once, not after the older decode work frees capacity.
+// "long" holds the decode pool; "waiter" has finished its prefill and waits. Evicting the waiter
+// takes, ends it once as gateway-evicted, frees its prefill KV, leaves no waiter or transfer
+// behind, and the run neither admits nor completes it later.
+func TestPDDecodeKVWait_EvictionEdge(t *testing.T) {
+	config := holdConfig(true, 1000)
+	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = 40 })
+	long := holdTestRequest("long", 1, 0, 160, 400)
+	waiter := holdTestRequest("waiter", 2, 1000, 496, 4)
+	gw := &fakeGateway{disaggregate: true}
+	cs := newTestCluster(config, NewSliceRequestSource([]*sim.Request{long, waiter}), nil)
+	cs.SetGateway(gw)
+	var took bool
+	waiting := -1
+	cs.scheduleTestEvent(&pdEvictAt{time: 300_000, req: waiter, took: &took})
+	cs.scheduleTestEvent(&pdProbeAt{time: 299_999, f: func(cs *ClusterSimulator) { waiting = len(cs.remotePulls) }})
+	mustRun(t, cs)
+	if waiting != 1 {
+		t.Fatalf("fixture: %d handoffs waiting for decode KV at 299999 µs, want 1", waiting)
+	}
+	if !took {
+		t.Fatal("Evict returned false for a request waiting for decode KV")
+	}
+	if gw.done["waiter"] != DoneEvicted || gw.done["long"] != DoneCompleted {
+		t.Errorf("outcomes waiter=%v long=%v, want evicted and completed", gw.done["waiter"], gw.done["long"])
+	}
+	if cs.GatewayEvicted() != 1 || cs.droppedAtDecodeKV != 0 {
+		t.Errorf("gateway evicted %d, dropped at decode KV %d; want 1 and 0", cs.GatewayEvicted(), cs.droppedAtDecodeKV)
+	}
+	w := parentsByID(cs)["waiter"]
+	if w.TransferStartTime != 0 || w.DecodeSubReq != nil || w.DecodeWaiting != nil || len(cs.remotePulls) != 0 {
+		t.Errorf("waiter left state behind: transfer start %d, decode %v, waiting %v, pulls %d",
+			w.TransferStartTime, w.DecodeSubReq, w.DecodeWaiting, len(cs.remotePulls))
+	}
+	if cs.PrefillKVHeld() != 0 || usedBlocks(cs.Instances()[0]) != 0 || usedBlocks(cs.Instances()[1]) != 0 {
+		t.Errorf("KV leaked: held %d, prefill used %d, decode used %d", cs.PrefillKVHeld(),
+			usedBlocks(cs.Instances()[0]), usedBlocks(cs.Instances()[1]))
+	}
+	if cs.transfersInitiated != cs.transfersCompleted {
+		t.Errorf("INV-PD-3: %d initiated, %d completed", cs.transfersInitiated, cs.transfersCompleted)
+	}
+	if l := newClusterLedger(cs); l.accounted() != 2 || l.completedRequests != 1 {
+		t.Errorf("INV-1: %s", l)
+	}
+}
+
+// pdProbeAt runs f at a tick.
+type pdProbeAt struct {
+	time int64
+	f    func(*ClusterSimulator)
+}
+
+func (e *pdProbeAt) Timestamp() int64             { return e.time }
+func (e *pdProbeAt) Priority() int                { return 5 }
+func (e *pdProbeAt) Execute(cs *ClusterSimulator) { e.f(cs) }

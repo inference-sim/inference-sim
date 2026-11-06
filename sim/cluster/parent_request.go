@@ -12,7 +12,12 @@ type ParentRequest struct {
 	PrefillSubReq   *sim.Request // Pointer to the prefill sub-request, set when the parent is created; its DepartureTime is when the KV the handoff moves exists.
 	DecodeSubReqID  string
 	DecodeSubReq    *sim.Request // Pointer to the decode sub-request. Set by KVTransferStartedEvent on successful ReserveTransferredKV (issue #1343); KVTransferCompletedEvent promotes it from StateWaitingForRemoteKVs to StateQueued and enqueues it on the decode instance. Nil after a late-drop (decode pod unroutable at transfer complete) when reserved KV is released.
-	NumKVBlocks     int64        // the prompt's KV blocks (ceil(inputLen / blockSize))
+	// DecodeWaiting is the decode sub-request the decode engine holds among its waiting handoffs,
+	// before its pull starts (cs.remotePulls). It is the request machine's waiting-for-decode-KV
+	// state (SIM-8): DecodeSubReq stays nil until the pull starts, and the gateway can evict the
+	// parent from here (evictParent).
+	DecodeWaiting *sim.Request
+	NumKVBlocks   int64 // the prompt's KV blocks (ceil(inputLen / blockSize))
 	// PulledKVBlocks are the blocks the decode side's NIXL pull moves: the prompt's blocks less
 	// those the decode instance's prefix cache already held when it reserved them
 	// (InstanceSimulator.ReserveTransferredKV). Set at transfer start; the handoff is priced

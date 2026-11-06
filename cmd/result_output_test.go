@@ -214,7 +214,7 @@ func TestResult_ITLIsPerTokenAndTheStepIntervalIsTheEngines(t *testing.T) {
 // BC-R6: the ledger carries every INV-1 term plus rejected and generated, and generated is the
 // cluster's own arrival count: under a bounded flow-control queue some arrivals are rejected,
 // and the clauses still hold against a count the buckets do not define.
-func TestResult_RequestsLedgerIsTheElevenTermFormPlusRejectedAndGenerated(t *testing.T) {
+func TestResult_RequestsLedgerIsTheTenTermFormPlusRejectedAndGenerated(t *testing.T) {
 	// TestINV13_RunReplayParity_LLMDRouterInputs's router: flow control bounded at 8 requests.
 	dir := colocatedRouterVariant(t, "router:\n  epp_flags: [--pool-name=vllm, --refresh-metrics-interval=20ms]\n"+
 		"  endpoint_picker_config: epp-config.yaml\n  manifests: [pool.yaml]\n", "      app: vllm\n",
@@ -237,11 +237,11 @@ func TestResult_RequestsLedgerIsTheElevenTermFormPlusRejectedAndGenerated(t *tes
 	if q.Terminal() != q.Injected || q.Generated != q.Injected+q.Rejected {
 		t.Errorf("INV-1 does not close: %+v", q)
 	}
-	// Every key of the eleven-term form and the pipeline clause is in the document.
+	// Every key of the ten-term form and the pipeline clause is in the document.
 	doc := resultDoc(t, stdout)
 	for _, k := range []string{"generated", "rejected", "injected", "completed", "still_queued", "still_running",
 		"dropped_unservable", "timed_out", "routing_rejections", "gateway_queue_depth", "gateway_queue_rejected",
-		"gateway_evicted", "gateway_expired", "encode_routing_rejections", "length_capped"} {
+		"gateway_evicted", "gateway_expired", "length_capped"} {
 		if _, ok := resultValue(doc, "requests."+k); !ok {
 			t.Errorf("requests has no %s", k)
 		}

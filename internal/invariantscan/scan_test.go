@@ -237,16 +237,16 @@ func TestBucketAccessorsReturnCopies(t *testing.T) {
 }
 
 // TestBucketListsCoverTheEquation pins the bucket lists against INV-1's stated term
-// count: eleven terminal buckets, of which six are cluster-only, plus
+// count: ten terminal buckets, of which five are cluster-only, plus
 // RejectedRequests which belongs to the full-pipeline clause.
 func TestBucketListsCoverTheEquation(t *testing.T) {
 	if got := len(InstanceBuckets()); got != 5 {
 		t.Errorf("InstanceBuckets has %d entries, want 5 (INV-1's single-instance specialisation)", got)
 	}
-	if got := len(ClusterOnlyBuckets()); got != 7 {
-		t.Errorf("ClusterOnlyBuckets has %d entries, want 7 (six cluster-only buckets plus RejectedRequests)", got)
+	if got := len(ClusterOnlyBuckets()); got != 6 {
+		t.Errorf("ClusterOnlyBuckets has %d entries, want 6 (five cluster-only buckets plus RejectedRequests)", got)
 	}
-	if got := len(InstanceBuckets()) + len(ClusterOnlyBuckets()) - 1; got != 11 {
-		t.Errorf("bucket lists cover %d of INV-1's eleven terms", got)
+	if got := len(InstanceBuckets()) + len(ClusterOnlyBuckets()) - 1; got != 10 {
+		t.Errorf("bucket lists cover %d of INV-1's ten terms", got)
 	}
 }

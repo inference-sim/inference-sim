@@ -87,7 +87,7 @@ func emitRunResult(p postRun) {
 	}
 
 	raw := cluster.CollectRawMetrics(aggregated, cs.PerInstanceMetrics(), cs.RejectedRequests(), scheduler,
-		cs.RoutingRejections(), cs.EncodeRoutingRejections(), cs.InjectedByClass())
+		cs.RoutingRejections(), cs.InjectedByClass())
 	pdMetrics := cs.PDMetrics()
 	// INV-13 SYNC POINT (metrics): run and replay share this block.
 	raw.PD = pdMetrics

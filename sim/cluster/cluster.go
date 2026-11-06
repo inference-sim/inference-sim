@@ -131,8 +131,6 @@ type ClusterSimulator struct {
 	// their pull, by decode sub-request ID (startPull).
 	remotePulls map[string]*ParentRequest
 
-	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
-
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
 
@@ -570,7 +568,10 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		if cs.sessionCallback == nil {
 			return nil
 		}
-		for _, next := range cs.sessionCallback(req, tick) {
+		// The next round follows the response the client has received in full: a completed
+		// request's last chunk reaches it after the post-decode overhead, the same instant the
+		// P/D path releases from (parent.CompletionTime), so think time counts from there (#1913).
+		for _, next := range cs.sessionCallback(req, doneTime(inst, req, tick)) {
 			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 		return nil // don't inject locally — route through cluster pipeline
@@ -962,7 +963,7 @@ func (c *ClusterSimulator) Run() error {
 		// (e.g. one timeout + one request still held in the gateway) would be mislabeled.
 		// `total` spans the full canonical ledger: every arrival is either admission-
 		// rejected or injected, and every injected request ends in one of INV-1's ten
-		// non-completion terminal buckets (the eleven-term form minus `completed`; see
+		// non-completion terminal buckets (the ten-term form minus `completed`; see
 		// sim/cluster/metrics.go and docs/contributing/standards/invariants.md). Keep this
 		// in sync with that ledger — a missing term silently makes the absolute claim
 		// over-fire (#2064 review). gatewayTimedOut is already folded into TimedOutRequests
@@ -974,7 +975,6 @@ func (c *ClusterSimulator) Run() error {
 			c.aggregatedMetrics.StillQueued +
 			c.aggregatedMetrics.StillRunning +
 			c.routingRejections +
-			c.encodeRoutingRejections +
 			c.gatewayRejected +
 			c.gatewayExpired +
 			c.gatewayEvicted +
@@ -1509,7 +1509,7 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 
 // Arrivals returns the number of requests that arrived at the cluster, each counted once
 // (a drain redirect is not a new arrival). Every arrival is either rejected at admission
-// (RejectedRequests) or injected, and every injected request ends in one of INV-1's eleven
+// (RejectedRequests) or injected, and every injected request ends in one of INV-1's ten
 // terminal buckets. Panics if called before Run() completes.
 func (c *ClusterSimulator) Arrivals() int {
 	if !c.hasRun {
@@ -1529,13 +1529,6 @@ func (c *ClusterSimulator) RejectedRequests() int {
 // routable instances were available (I13). Distinct from admission rejections.
 func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
-}
-
-// EncodeRoutingRejections returns the count of requests rejected at the encode
-// routing stage because the encode pool has zero routable instances (GAP-4,
-// issue #1264). Always zero when --encode-instances 0.
-func (c *ClusterSimulator) EncodeRoutingRejections() int {
-	return c.encodeRoutingRejections
 }
 
 // ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
@@ -1755,7 +1748,6 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.TotalInputTokens += m.TotalInputTokens
 		merged.EngineAccepted += m.EngineAccepted
 		merged.TotalOutputTokens += m.TotalOutputTokens
-		merged.TTFTSum += m.TTFTSum
 		merged.ITLSum += m.ITLSum
 		if m.SimEndedTime > merged.SimEndedTime {
 			merged.SimEndedTime = m.SimEndedTime
@@ -1845,9 +1837,6 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 						if math.IsInf(newTTFT, 0) {
 							continue
 						}
-						// I1: Keep TTFTSum consistent with per-request TTFT adjustments.
-						// Convert the TTFT delta (microseconds) to int64 ticks for TTFTSum.
-						merged.TTFTSum += int64(newTTFT - ttft)
 						merged.RequestTTFTs[reqID] = newTTFT
 					}
 				}
@@ -2025,12 +2014,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// structurally identical to the non-PD TTFT (scheduling_delay + first-token step).
 		//
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
-		// prefillTTFT is retained as the TTFTSum baseline: on the normal path pre-projection
-		// TTFTSum holds exactly prefillTTFT for this parent (a normal decode sub-request never
-		// sets FirstTokenTime, so it contributes 0). A preempted-and-re-prefilled decode
-		// sub-request is the exception — it re-stamps FirstTokenTime and adds a decode term to
-		// TTFTSum that this projection does not roll back; that pre-existing PD TTFTSum residual
-		// is tracked in #1628 and is out of scope for the #1511 no-token fix here.
+		// Every TTFT sample is the fate-derived RequestTTFTs entry (DEV-9): there is no
+		// separate aggregate to keep in step, so a decode sub-request that was preempted and
+		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (#1628).
 		// decodeDelay/hasDecodeDelay were read
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.
@@ -2062,40 +2048,21 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					// silently reporting a negative value.
 					logrus.Errorf("[cluster] projectPDMetrics: negative TTFT for %s (decodeDelay=%d firstDecodeStep=%.0f); using prefill TTFT",
 						pid, decodeDelay, firstDecodeStep)
-					m.RequestTTFTs[pid] = prefillTTFT // delta 0 vs baseline: TTFTSum untouched
+					m.RequestTTFTs[pid] = prefillTTFT
 				} else {
 					m.RequestTTFTs[pid] = newTTFT
-					// BC-3: Keep TTFTSum consistent with the TTFT adjustment. The baseline
-					// prefillTTFT is replaced by newTTFT for this parent.
-					m.TTFTSum += int64(newTTFT - prefillTTFT)
 				}
 			} else if hasPrefillTTFT {
 				// Defensive fallback: served a token but the decode scheduling delay is
-				// unavailable; use the prefill-only TTFT. TTFTSum unchanged (projected
-				// value equals the baseline).
+				// unavailable; use the prefill-only TTFT.
 				m.RequestTTFTs[pid] = prefillTTFT
 				logrus.Warnf("[cluster] projectPDMetrics: parent %s served a token but is missing its decode scheduling delay; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: served parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
-		} else if completed && hasPrefillTTFT {
-			// Terminal-but-no-token parent (decode-side drop / timeout-while-queued /
-			// preempted-then-timed-out, #1511): it has no surviving first token, so it
-			// contributes NO parent TTFT. The prefill sub-request's TTFT key was deleted
-			// above, but its value is still summed into the aggregate TTFTSum; roll the
-			// PREFILL term back so the reported mean TTFT (TTFTSum / n) does not count a
-			// request that produced no token.
-			//
-			// Scope: this rolls back the prefill term only, which is exactly what the three
-			// no-token outcomes this fix restores require. A decode sub-request that emitted a
-			// token, was preempted (re-stamping FirstTokenTime and adding a decode term to
-			// TTFTSum, simulator.go), then timed out while re-queued also leaves that decode
-			// term in TTFTSum, which neither this rollback nor the unconditional
-			// delete(RequestTTFTs, dec) removes — a pre-existing PD TTFTSum residual tracked in
-			// #1628, not introduced here. So TTFTSum == Σ RequestTTFTs holds for the no-token
-			// terminal outcomes but is NOT a general PD law (see #1628).
-			m.TTFTSum -= int64(prefillTTFT)
 		}
+		// A terminal parent with no token contributes no TTFT sample: its prefill entry was
+		// deleted above, and nothing else holds its value (#1511).
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).

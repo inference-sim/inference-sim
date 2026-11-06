@@ -208,21 +208,20 @@ func resultLedger(cs *cluster.ClusterSimulator) result.Requests {
 	rejected := cs.RejectedRequests()
 	arrivals := cs.Arrivals()
 	return result.Requests{
-		Generated:               arrivals,
-		Rejected:                rejected,
-		Injected:                arrivals - rejected,
-		Completed:               m.CompletedRequests,
-		StillQueued:             m.StillQueued,
-		StillRunning:            m.StillRunning,
-		DroppedUnservable:       m.DroppedUnservable,
-		TimedOut:                m.TimedOutRequests,
-		RoutingRejections:       cs.RoutingRejections(),
-		GatewayQueueDepth:       cs.GatewayQueueDepth(),
-		GatewayQueueRejected:    cs.GatewayQueueRejected(),
-		GatewayEvicted:          cs.GatewayEvicted(),
-		GatewayExpired:          cs.GatewayExpired(),
-		EncodeRoutingRejections: cs.EncodeRoutingRejections(),
-		LengthCapped:            m.LengthCappedRequests,
+		Generated:            arrivals,
+		Rejected:             rejected,
+		Injected:             arrivals - rejected,
+		Completed:            m.CompletedRequests,
+		StillQueued:          m.StillQueued,
+		StillRunning:         m.StillRunning,
+		DroppedUnservable:    m.DroppedUnservable,
+		TimedOut:             m.TimedOutRequests,
+		RoutingRejections:    cs.RoutingRejections(),
+		GatewayQueueDepth:    cs.GatewayQueueDepth(),
+		GatewayQueueRejected: cs.GatewayQueueRejected(),
+		GatewayEvicted:       cs.GatewayEvicted(),
+		GatewayExpired:       cs.GatewayExpired(),
+		LengthCapped:         m.LengthCappedRequests,
 	}
 }
 

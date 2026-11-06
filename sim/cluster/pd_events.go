@@ -146,6 +146,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		cs.remotePulls = make(map[string]*ParentRequest)
 	}
 	cs.remotePulls[decodeSubReq.ID] = e.parentReq
+	e.parentReq.DecodeWaiting = decodeSubReq
 	decodeInst.AddRemote(decodeSubReq, e.time)
 }
 
@@ -158,6 +159,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64)
 		panic(fmt.Sprintf("startPull: %s is not a handoff waiting for its pull", req.ID))
 	}
 	delete(cs.remotePulls, req.ID)
+	parent.DecodeWaiting = nil
 	if inst := cs.instanceByID(parent.DecodeInstanceID); inst != nil && !inst.IsRoutable() {
 		// A decode instance that went unroutable (drained) while the handoff waited drops its
 		// waiters rather than starting their pulls: its engine had the request, so the prefill

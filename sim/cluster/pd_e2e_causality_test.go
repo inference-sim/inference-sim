@@ -660,7 +660,6 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 			// TTFT + scheduling delay; TTFTSum holds exactly that prefill TTFT for this
 			// parent (the decode sub-request contributes 0, simulator.go).
 			m.RequestTTFTs[pfx] = prefillTTFT
-			m.TTFTSum = int64(prefillTTFT)
 			m.RequestSchedulingDelays[pfx] = 100
 			if tc.setDecodeMaps {
 				m.RequestSchedulingDelays[dec] = 151
@@ -699,16 +698,6 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 				}
 			}
 
-			// BC-3: TTFTSum must equal Σ RequestTTFTs after projection (the deleted
-			// prefill TTFT is rolled out of TTFTSum for the no-token cases).
-			var sumTTFT float64
-			for _, v := range m.RequestTTFTs {
-				sumTTFT += v
-			}
-			if math.Abs(float64(m.TTFTSum)-sumTTFT) > 1.0 {
-				t.Errorf("BC-3: TTFTSum (%d) != Σ RequestTTFTs (%.1f) after projecting %s", m.TTFTSum, sumTTFT, pid)
-			}
-
 			// INV-PD-6 first clause: no sub-request suffix keys survive.
 			for _, subKey := range []string{pfx, dec} {
 				if _, ok := m.RequestTTFTs[subKey]; ok {
@@ -722,15 +711,11 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 	}
 }
 
-// TestPDParentMetrics_TTFTSumConsistentAcrossDrop proves the aggregate TTFTSum stays
-// consistent with the per-request RequestTTFTs map (BC-3) when a run mixes a served
-// parent with a no-token drop (issue #1511). Before the fix the dropped parent kept a
-// phantom prefill-only TTFT and TTFTSum double-counted it; after the fix the reported
-// mean TTFT (TTFTSum / n) reflects only the served parent.
-func TestPDParentMetrics_TTFTSumConsistentAcrossDrop(t *testing.T) {
+// TestPDParentMetrics_TTFTSamplesAcrossDrop: a run mixing a served parent with a no-token
+// drop reports one TTFT sample, the served parent's (issue #1511). Every TTFT statistic is
+// derived from these samples (DEV-9), so there is no aggregate to drift from them (#1628).
+func TestPDParentMetrics_TTFTSamplesAcrossDrop(t *testing.T) {
 	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
-	const servedPrefillTTFT, dropPrefillTTFT = 2500.0, 1800.0
-
 	served := &ParentRequest{
 		ID: "served", PrefillSubReqID: "served_prefill", DecodeSubReqID: "served_decode",
 		OriginalRequest: origReq, ArrivalTime: 0, CompletionTime: 5000,
@@ -743,44 +728,22 @@ func TestPDParentMetrics_TTFTSumConsistentAcrossDrop(t *testing.T) {
 		TransferStartTime: 100, CompletionTime: 100, TransferCompleteTime: 0,
 		DecodeInstanceID: "inst-0", DecodeSubReq: nil,
 	}
-
 	m := sim.NewMetrics()
-	// Pre-projection: both prefills recorded a TTFT; TTFTSum is their sum.
-	m.RequestTTFTs[served.PrefillSubReqID] = servedPrefillTTFT
-	m.RequestTTFTs[dropped.PrefillSubReqID] = dropPrefillTTFT
-	m.TTFTSum = int64(servedPrefillTTFT + dropPrefillTTFT)
+	m.RequestTTFTs[served.PrefillSubReqID] = 2500
+	m.RequestTTFTs[dropped.PrefillSubReqID] = 1800
+	// The served parent's decode sub-request was preempted and prefilled again, which stamped
+	// a decode TTFT of its own (#1628); the projection must leave no sample under that key.
+	m.RequestTTFTs[served.DecodeSubReqID] = 777
 	m.RequestSchedulingDelays[served.DecodeSubReqID] = 151
 	m.RequestE2Es[served.DecodeSubReqID] = 301
 
 	cs := &ClusterSimulator{
 		aggregatedMetrics: m,
-		parentRequests: map[string]*ParentRequest{
-			served.ID: served, dropped.ID: dropped,
-		},
+		parentRequests:    map[string]*ParentRequest{served.ID: served, dropped.ID: dropped},
 	}
 	cs.projectPDMetrics()
 
-	// Only the served parent has a projected TTFT (= decodeDelay 151 + ITL[0] 300).
-	if _, ok := m.RequestTTFTs["dropped"]; ok {
-		t.Error("dropped parent must not have a projected TTFT (issue #1511)")
-	}
-	wantTTFT, ok := m.RequestTTFTs["served"]
-	if !ok {
-		t.Fatal("served parent lost its TTFT entry")
-	}
-	if math.Abs(wantTTFT-451.0) > 1e-9 {
-		t.Errorf("served TTFT = %.1f, want 451 (decodeDelay 151 + firstDecodeStep 300)", wantTTFT)
-	}
-
-	// BC-3: TTFTSum == Σ RequestTTFTs == the single served value.
-	var sumTTFT float64
-	for _, v := range m.RequestTTFTs {
-		sumTTFT += v
-	}
-	if math.Abs(float64(m.TTFTSum)-sumTTFT) > 1.0 {
-		t.Errorf("BC-3: TTFTSum (%d) != Σ RequestTTFTs (%.1f)", m.TTFTSum, sumTTFT)
-	}
-	if math.Abs(float64(m.TTFTSum)-wantTTFT) > 1.0 {
-		t.Errorf("mean TTFT law: TTFTSum (%d) must equal the single served TTFT (%.1f)", m.TTFTSum, wantTTFT)
+	if len(m.RequestTTFTs) != 1 || math.Abs(m.RequestTTFTs["served"]-451.0) > 1e-9 {
+		t.Errorf("TTFT samples = %v, want only served = 451 (decodeDelay 151 + firstDecodeStep 300)", m.RequestTTFTs)
 	}
 }
