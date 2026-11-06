@@ -1416,11 +1416,15 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 				heads = max(heads, l.AttnQHeads)
 			}
 		}
+		preHopper, err := k.preHopper()
+		if err != nil {
+			return err
+		}
 		backend, dsaLayout, err := sparseMLABackend(sparseMLABackendRequest{
 			cache:        k.engine.CacheDType,
 			headsPerRank: heads / max(k.layout.TP, 1),
 			sm100:        k.chip.NVFP4Peak > 0,
-			preHopper:    preHopperParts[k.chip.Name],
+			preHopper:    preHopper,
 			tp:           k.layout.TP,
 			dcp:          k.layout.DCP,
 			pcp:          k.layout.PCP,
@@ -1735,11 +1739,22 @@ func lcm(a, b int) int {
 	return a / x * b
 }
 
+// a100Parts are the catalog's A100 parts, by catalog key. vLLM v0.31.0's batch defaults
+// exclude an A100 by its device name (EngineArgs.get_batch_defaults, vllm/engine/arg_utils.py:
+// 2858-2887: the 70 GiB tier applies to a device not named A100), an identity the compute
+// capability does not carry -- SM80 is every A100, and SM89 parts such as the L40S are not
+// A100s but are not SM80 either -- so the parts are named exactly rather than matched by a
+// substring of the name.
+var a100Parts = map[string]bool{"a100-80": true, "a100-sxm": true}
+
+// isA100 reports whether the chip is one of the catalog's A100 parts.
+func isA100(chip hardware.Chip) bool { return a100Parts[chip.Name] }
+
 // defaultMaxNumSeqs is vLLM v0.31.0's default sequence cap for a part in the
 // OpenAI-API-server context (EngineArgs.get_batch_defaults, vllm/engine/arg_utils.py:
 // 2858-2887): 1,024 on a part with at least 70 GiB that is not an A100, 256 otherwise.
 func defaultMaxNumSeqs(chip hardware.Chip) int {
-	if chip.MemoryGiB >= 70 && !strings.Contains(strings.ToLower(chip.Name), "a100") {
+	if chip.MemoryGiB >= 70 && !isA100(chip) {
 		return 1024
 	}
 	return 256
@@ -1774,7 +1789,7 @@ func defaultMaxNumBatchedTokens(chip hardware.Chip) int {
 	switch {
 	case chip.MemoryGiB >= 160:
 		return 16384
-	case chip.MemoryGiB >= 70 && !strings.Contains(strings.ToLower(chip.Name), "a100"):
+	case chip.MemoryGiB >= 70 && !isA100(chip):
 		return 8192
 	}
 	return 2048
