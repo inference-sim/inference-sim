@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 	"golang.org/x/mod/semver"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
@@ -64,6 +65,15 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 			return nil, err
 		}
 		st.Prev = previousTag(existing, info.Kind, r.Upstream)
+		// A head that already carries a release tag was released; planning it again would give
+		// the same commit a second release tag.
+		if at, err := gitIn(dir, "tag", "--points-at", r.Head); err == nil {
+			for _, t := range strings.Fields(at) {
+				if plainTag.MatchString(t) || engineTag.MatchString(t) {
+					st.Refusals = append(st.Refusals, fmt.Sprintf("the head %s already carries the release tag %s; a commit is released once (LIF-1)", short(r.Head), t))
+				}
+			}
+		}
 		switch info.Kind {
 		case KindEngine, KindRouter:
 			_, n := highestN(existing, r.Upstream)
@@ -106,6 +116,14 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 					if Repos[lower].Module == req.Mod.Path {
 						st.Pins[req.Mod.Path] = tag
 					}
+				}
+			}
+			// Every BLIS module a release requires is at a release tag. A pin the bot writes
+			// replaces a requirement in the set; any other requirement at a pseudo-version
+			// would ship in a permanent tag (X11, LIF-2).
+			for _, req := range mf.Require {
+				if _, pinned := st.Pins[req.Mod.Path]; !pinned && strings.HasPrefix(req.Mod.Path, "github.com/inference-sim/") && module.IsPseudoVersion(req.Mod.Version) {
+					st.Refusals = append(st.Refusals, fmt.Sprintf("go.mod requires %s at the pseudo-version %s; a release requires BLIS modules at release tags (X11, LIF-2)", req.Mod.Path, req.Mod.Version))
 				}
 			}
 			for _, rep := range mf.Replace {
@@ -193,7 +211,7 @@ func highestN(tags []string, upstream string) (string, int) {
 	best, high := "", 0
 	for _, t := range tags {
 		if u, n, ok := upstreamOf(t); ok && u == upstream {
-			if n > high {
+			if best == "" || n > high {
 				best, high = t, n
 			}
 		}
@@ -201,10 +219,29 @@ func highestN(tags []string, upstream string) (string, int) {
 	return best, high
 }
 
+// latestEngineTag is the newest engine or router tag of any upstream release: the highest
+// upstream by semver, then the highest N. It is the "previous release" of a first release on
+// a new upstream release.
+func latestEngineTag(tags []string) string {
+	best, bestUp, bestN := "", "", -1
+	for _, t := range tags {
+		u, n, ok := upstreamOf(t)
+		if !ok {
+			continue
+		}
+		if c := semver.Compare(u, bestUp); best == "" || c > 0 || (c == 0 && n > bestN) {
+			best, bestUp, bestN = t, u, n
+		}
+	}
+	return best
+}
+
 func previousTag(tags []string, kind Kind, upstream string) string {
 	if kind == KindEngine || kind == KindRouter {
-		t, _ := highestN(tags, upstream)
-		return t
+		if t, _ := highestN(tags, upstream); t != "" {
+			return t
+		}
+		return latestEngineTag(tags)
 	}
 	var rel []string
 	for _, t := range tags {
@@ -247,12 +284,20 @@ func deprecationsAt(dir, commit string) ([]Deprecation, error) {
 	return all, nil
 }
 
-// Apply carries out a planned release in the local checkouts: it merges each head into the
-// base branch with a merge commit, writes the pins the plan names in one commit, and makes a
-// signed, annotated tag whose message is the release notes. It refuses to start if any step
-// has a refusal. It never pushes: pushing the branch and the tag is the release job's step
-// after this one, and in a dry run nothing is changed at all.
-func Apply(steps []Step, sign bool) error {
+// Branch is the branch Stage builds a repository's release commit on: the base branch plus
+// the head's merge and the pin commit, with no tag (LIF-3).
+func Branch(st Step) string { return "release/" + st.Tag }
+
+// Stage builds each repository's final release commit, in the local checkouts, and tags
+// nothing. It merges the head into the base with a merge commit and writes the pins the plan
+// names in one commit, both on the branch Branch names; the base branch does not move. The
+// commit it leaves is not the head Plan checked, so it has no recorded results yet. Tag, a
+// later step, tags the branch tip only after every required result is recorded for that
+// exact commit (LIF-3: a tag only on a commit where every ci invariant passed). Stage
+// refuses to start if any step has a refusal. It never pushes. The loop stages every layer
+// locally; the push of each layer's branch, the CI run on it and the next layer's checks
+// against the new tags are a manual step until the release job exists (design §13.6).
+func Stage(steps []Step, sign bool) error {
 	for _, st := range steps {
 		if len(st.Refusals) > 0 {
 			return fmt.Errorf("%s: %d refusal(s); nothing was changed", st.Repo, len(st.Refusals))
@@ -260,7 +305,7 @@ func Apply(steps []Step, sign bool) error {
 	}
 	ident := []string{"-c", "user.name=" + bot.Name, "-c", "user.email=" + bot.Email}
 	for _, st := range steps {
-		if _, err := gitIn(st.Dir, "checkout", "-q", st.Base); err != nil {
+		if _, err := gitIn(st.Dir, "checkout", "-q", "-B", Branch(st), st.Base); err != nil {
 			return err
 		}
 		if _, err := gitIn(st.Dir, append(ident, "merge", "--no-ff", "-q", "-m", fmt.Sprintf("Merge %s for %s", short(st.Head), st.Tag), st.Head)...); err != nil {
@@ -281,9 +326,39 @@ func Apply(steps []Step, sign bool) error {
 				return fmt.Errorf("%s: pin commit: %w", st.Repo, err)
 			}
 		}
-		args := append(ident, "tag", "-a", st.Tag, "-F", "-")
+	}
+	return nil
+}
+
+// Tag makes the annotated tag, whose message is the release notes, on the tip of each step's
+// staged branch, and on nothing else. Before it tags a step it checks that the tip still
+// contains the planned head and that the environment records a passing result for every ci
+// check at the tip's own SHA (LIF-3, design §13.3). A tip that moved since it was checked
+// has no results and is refused. Nothing is tagged unless every step passes.
+func Tag(env Env, lock *StackLock, steps []Step, sign bool) error {
+	tips := make([]string, len(steps))
+	for i, st := range steps {
+		tip, err := gitIn(st.Dir, "rev-parse", "--verify", "refs/heads/"+Branch(st)+"^{commit}")
+		if err != nil {
+			return fmt.Errorf("%s: no staged release branch %s: %w", st.Repo, Branch(st), err)
+		}
+		if _, err := gitIn(st.Dir, "merge-base", "--is-ancestor", st.Head, tip); err != nil {
+			return fmt.Errorf("%s: staged tip %s does not contain the planned head %s", st.Repo, short(tip), short(st.Head))
+		}
+		passed, err := env.Passed(st.Repo, tip)
+		if err != nil {
+			return err
+		}
+		if bad := CheckInvariants(env.Registry, st.Repo, passed, lock.Milestone, lock.MilestoneRelease); len(bad) > 0 {
+			return fmt.Errorf("%s: staged tip %s is not checked: %s", st.Repo, short(tip), strings.Join(bad, "; "))
+		}
+		tips[i] = tip
+	}
+	ident := []string{"-c", "user.name=" + bot.Name, "-c", "user.email=" + bot.Email}
+	for i, st := range steps {
+		args := append(ident, "tag", "-a", st.Tag, "-F", "-", tips[i])
 		if sign {
-			args = append(ident, "tag", "-s", st.Tag, "-F", "-")
+			args = append(ident, "tag", "-s", st.Tag, "-F", "-", tips[i])
 		}
 		cmd := exec.Command("git", args...)
 		cmd.Dir = st.Dir

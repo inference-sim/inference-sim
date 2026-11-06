@@ -100,7 +100,7 @@ func TestLicenceAllowList(t *testing.T) {
 	want := []string{"Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0",
 		"LicenseRef-deepseek", "LicenseRef-glm-5.3", "LicenseRef-kimi-k3", "LicenseRef-llama2",
 		"LicenseRef-llama3.1", "LicenseRef-llama4", "LicenseRef-minimax-community",
-		"LicenseRef-minimax-m2.7", "LicenseRef-modified-mit", "LicenseRef-muse-model-license",
+		"LicenseRef-modified-mit", "LicenseRef-muse-model-license",
 		"LicenseRef-muse-spark-open", "LicenseRef-openmdw-1.1", "MIT"}
 	got := RedistributableLicences()
 	if len(got) != len(want) {

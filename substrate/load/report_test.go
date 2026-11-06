@@ -2,6 +2,7 @@ package load
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -59,5 +60,23 @@ func TestProvenanceConvertsToTheResult(t *testing.T) {
 	}
 	if result.Source(SourceEmbedded) != result.SourceEmbedded || result.Source(SourcePath) != result.SourcePath {
 		t.Fatal("load.Source and result.Source name the sources differently")
+	}
+}
+
+// TestReportOrderSatisfiesTheResultValidator records one entry from each of two sets where
+// one name is a prefix of the other. Their files sort one way ("-" is 0x2d, "." is 0x2e) and
+// the sets the other; the Result validator requires the set order, so Report must use it.
+func TestReportOrderSatisfiesTheResultValidator(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.RecordCoefficient("cost-model-collectives", "a", coefficient.Scope{}, "measured")
+	d.RecordCoefficient("cost-model-collectives-inferencex", "a", coefficient.Scope{}, "measured")
+	res := result.Result{SelectedEntries: d.Report().Result()}
+	for _, p := range res.Validate().All() {
+		if strings.Contains(p.Message, "sorted by set") {
+			t.Fatalf("Report order is refused by the Result validator: %s", p.Message)
+		}
 	}
 }

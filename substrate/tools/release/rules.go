@@ -40,7 +40,7 @@ var Repos = map[string]struct {
 }
 
 var (
-	engineTag = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)-((?:post|rev)\.[1-9][0-9]*\.)?blis\.([1-9][0-9]*)$`)
+	engineTag = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)-((?:post|rev)\.[1-9][0-9]*\.)?blis(?:\.([1-9][0-9]*))?$`)
 	plainTag  = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 )
 
@@ -51,6 +51,7 @@ func upstreamOf(tag string) (string, int, bool) {
 	if m == nil {
 		return "", 0, false
 	}
+	// The router fork's bare v1.0.0-blis has no number; it sorts below -blis.1 and counts as 0.
 	n, _ := strconv.Atoi(m[3])
 	up := m[1]
 	if m[2] != "" {

@@ -32,10 +32,22 @@ A change that spans repositories is one review set, described by a `stack.lock` 
 is in `tools/release/stack.go`). Stack CI builds the heads together through a `go.work` it
 generates and never commits (X11). Once the set is approved, the bot releases it bottom-up
 (X10): blis-substrate, then the engine repositories and the router fork, then inference-sim, then
-the applications. For each repository it merges the head into the base branch, writes the pins
-to the tags just made below it in one commit, and makes a signed, annotated tag whose message is
-the generated release notes (LIF-4). The release job then pushes the branch and the tag, runs the
-next layer's checks against the new tags, and only then releases the next repository.
+the applications. For each repository the bot stages the final release commit on a branch
+`release/<tag>`: it merges the head into the base branch and writes the pins to the tags just
+made below it in one commit. It tags nothing at that point. The commit it stages is not the head
+that was checked, so a person or the release job pushes the branch, CI runs on that exact commit,
+and its results are recorded under that commit's SHA. Only then does the bot make the signed,
+annotated tag, whose message is the generated release notes (LIF-4), on that same commit, and
+only if the recorded results cover every ci check (LIF-3). A tip that moved after the check has
+no results and is refused. A head that already carries a release tag is refused, and so is a
+`go.mod` that requires a BLIS module at a pseudo-version.
+
+The release job does not exist yet. Until it does, the loop stages every layer in the local
+checkouts without pushing, and the per-layer steps (push the branch, wait for its CI, run the
+next layer's checks against the new tags, push the tag) are done by hand by the two release
+owners. The push to `main` needs a bypass for the release bot or the release owners, because the
+branch requires a pull request and an approving review; the tag push needs the same, because tags
+are protected (LIF-1).
 
 A dry run prints each tag, pin, refusal and the notes, and changes nothing:
 
@@ -44,8 +56,9 @@ go run ./tools/release -lock stack.lock -results results.json \
     -dir blis-substrate=../blis-substrate -dir blis-vllm=../blis-vllm -dir inference-sim=../inference-sim
 ```
 
-`-apply` makes the merges, pin commits and tags in the local checkouts; `-sign` signs them. The
-command never pushes.
+`-apply` stages the release commits on `release/<tag>` in the local checkouts and tags nothing.
+After CI has run on the staged commits, `-tag` with a `results.json` that records them tags those
+exact commits. `-sign` signs the pin commits and tags. The command never pushes.
 
 ## The manual procedure
 

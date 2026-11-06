@@ -81,13 +81,13 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X10** (new; target ci by M1) Repositories are released bottom-up.
   - `new`, release: Release bot (§13.6) (`tools/release`)
 - **X11** (partial; target ci by M1) Pins are exact release tags.
-  - `new`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint`)
-  - `new`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint`)
+  - `ci`, pull_request: Selected-version lint (LIF-2), in every repository: no replace outside inference-sim (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: No other module requiring github.com/llm-d/llm-d-router (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: No committed go.work (`TestNoNestedModule`)
 - **X12** (partial; target ci by M1) Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list.
   - `new`, pull_request: Name scan in every repository, which also reads the text of every open issue each night
   - `ci`, pull_request: Provenance schema rules (`go run ./validate/cmd/validate-catalog catalog`)
-  - `new`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml (`validate/cmd/validate-catalog: TestRunLicenceCheck`)
+  - `ci`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml (`validate/cmd/validate-catalog: TestRunLicenceCheck`)
 - **X13** (partial; target ci by M1) Every behaviour change has a test that fails without it.
   - `new`, pull_request: The corpus comparison, run by the scoring harness at the pinned digest from each repository's CI, for pull requests declared as refactors
   - `new`, pull_request: Landing gate (VAL-6)
@@ -96,9 +96,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: The full sweep runs nightly and on release tags
 - **X14** (new; target ci by M1) A pull request's description is accurate: the commit hashes it lists are the branch heads, it merges cleanly, and every invariant it cites exists.
   - `new`, pull_request: The description check, a shared workflow run in every repository (`shared-pr-checks.yml: prcheck description, invariants cited`)
-- **X15** (new; target ci by M1) Each validation rule exists once, in Go, in blis-substrate.
-  - `new`, pull_request: The parity test in blis-substrate (`tools/pyrules: TestEveryRestatementAgreesWithGo`)
-  - `new`, pull_request: A lint that flags schema-like rule code in Python scripts (`tools/pyrules/pyrules.py`)
+- **X15** (ci; target reached) Each validation rule exists once, in Go, in blis-substrate.
+  - `ci`, pull_request: The parity test in blis-substrate (`tools/pyrules: TestEveryRestatementAgreesWithGo`)
+  - `ci`, pull_request: A lint that flags schema-like rule code in Python scripts (`tools/pyrules/pyrules.py`)
 - **X16** (new; target ci by M1) A skipped test in a required or gate job is a failure, not a pass, unless it is on the quarantine list of X25.
   - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
   - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)
@@ -110,7 +110,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
-- **X20** (partial; target ci by M1) Every commit written for BLIS is signed.
+- **X20** (new; target ci by M1) Every commit written for BLIS is signed.
   - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds (`shared-pr-checks.yml: prcheck commits`)
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
@@ -161,11 +161,11 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Completeness test over every primitive and every catalog chip
 - **SUB-8** (partial; target ci by M1) A change to the substrate never breaks the data it releases: validators, deriver and writers all pass on the tree being released.
   - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
-  - `new`, pull_request: The graph deriver --check runs on every pull request
+  - `ci`, pull_request: The graph deriver --check runs on every pull request (`ci.yml job catalog: derive_graph.py --check`)
   - `new`, pull_request: Every registry writer --check runs on every pull request, on redistributable fixtures
-- **SUB-9** (new; target ci by M1) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between catalog and registry), and the same content hash.
-  - `new`, pull_request: A test that loads the embedded copy and an exported checkout of the same commit, and gets identical data and an identical hash
-  - `new`, pull_request: A test comparing the two pattern lists
+- **SUB-9** (ci; target reached) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between catalog and registry), and the same content hash.
+  - `ci`, pull_request: A test that loads the embedded copy and an exported checkout of the same commit, and gets identical data and an identical hash (`load: TestEmbeddedAndExportedCheckoutAreTheSame`)
+  - `ci`, pull_request: A test comparing the two pattern lists (`TestEmbedPatternsEqualLoaderPatterns`)
 - **SUB-10** (new; target ci by M2) contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all.
   - `new`, pull_request: The conformance suite, run in blis-substrate, blis-vllm and blis-sglang
 - **SUB-11** (new; target ci by M2) Every field of PoolPlan, StepShape and Transfer, and every coefficient family, changes some price when it is changed, or is listed as not yet priced with an issue.
@@ -175,9 +175,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: Each loader refuses unknown keys (`contracts: TestLoadRejectsUnknownFields`)
   - `new`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader
   - `new`, pull_request: A test that every declared field is read
-- **SUB-13** (new; target ci by M1) blis-substrate is one Go module: no go.mod exists below the repository root, and the files in the module zip that Go fetches total under 100 MB uncompressed (Go's limit is 500 MB).
-  - `new`, pull_request: A check that fails on any nested go.mod
-  - `new`, pull_request: A check of that uncompressed total
+- **SUB-13** (ci; target reached) blis-substrate is one Go module: no go.mod exists below the repository root, and the files in the module zip that Go fetches total under 100 MB uncompressed (Go's limit is 500 MB).
+  - `ci`, pull_request: A check that fails on any nested go.mod (`TestNoNestedModule`)
+  - `ci`, pull_request: A check of that uncompressed total (`TestModuleZipIsUnder100MB`)
 - **SUB-14** (new; target ci by M2) The memory breakdown closes.
   - `new`, pull_request: In blis-substrate's error job, a comparison of the total with recorded GPU start-up logs, which are ledger units with role validate
 - **SUB-15** (new; target ci by M4) A model graph holds only what the checkpoint states: the tensors, their shapes and stored data types, scale tensors, and the layer structure.
@@ -191,8 +191,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A property test over random placements, in blis-substrate
 - **SUB-18** (new; target ci by M2) Provenance is recorded per field, not per file.
   - `new`, pull_request: Validator rules on catalog provenance fields
-- **SUB-19** (new; target ci by M1) Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes.
-  - `new`, pull_request: A generator test in blis-substrate that the published schemas match the Go types
+- **SUB-19** (partial; target ci by M1) Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes.
+  - `ci`, pull_request: A generator test in blis-substrate that the published schemas match the Go types (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
 - **SUB-20** (new; target ci by M2) No price, size or engine decision depends on a free-text label.
   - `new`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests
   - `new`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price
@@ -237,22 +237,22 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The fitting scripts, which write the units they read
 - **D2** (new; target ci by M1) No unit is read under two roles across all consumers.
   - `new`, nightly: A nightly join over every consumer's record of the units it read, run inside the nightly run of blis-substrate's gate job
-- **D3** (new; target ci by M1) Every source revision is pinned by commit, hash or run id.
-  - `new`, pull_request: A ledger check that refuses latest, main and unknown as revisions
-- **D4** (new; target ci by M1) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
-  - `new`, pull_request: A check against the ledger at the pull request's merge base
-  - `new`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml
+- **D3** (ci; target reached) Every source revision is pinned by commit, hash or run id.
+  - `ci`, pull_request: A ledger check that refuses latest, main and unknown as revisions (`ledger: TestUnpinnedRevisionsRefused`)
+- **D4** (partial; target ci by M1) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
+  - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
+  - `ci`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
-  - `new`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table or by a new partition version a person approved
+  - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table or by a new partition version a person approved (`ledger: TestCheckAgainstBase`)
   - `new`, pull_request: A check that each alias table equals the one generated from the merge-base and candidate ingest tools on the same source revision
 - **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
   - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
 - **D6** (new; target ci by M4) Only redistributable artefacts are committed.
   - `new`, pull_request: A check that every committed data file is listed in the ledger as redistributable
   - `new`, nightly: A nightly job comparing fixtures with the full data
-- **D7** (new; target ci by M1) The role seed is 256 random bits and a CI secret until its partition version is retired.
+- **D7** (partial; target ci by M1) The role seed is 256 random bits and a CI secret until its partition version is retired.
   - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
-  - `new`, pull_request: A workflow lint that those jobs check out only main
+  - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
   - `new`, pull_request: Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
 - **D8** (new; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
   - `new`, pull_request: A validator rule refusing such families in the registry without a workload key
@@ -262,17 +262,17 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
   - `new`, settings: Protected tags
   - `new`, nightly: A nightly check that every tag resolves to its recorded commit (`shared-nightly.yml: prcheck tags`)
-- **LIF-2** (new; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
-  - `new`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint`)
-  - `new`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint`)
-  - `new`, pull_request: A CI step that fails if go version differs from it (`.github/actions/go-toolchain; tools/modlint`)
+- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
+  - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
+  - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
   - `new`, settings: Repository settings that let only the release bot and release owners create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
   - `new`, nightly: A nightly check that every tag made by a person is signed and listed in its release notes
 - **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
   - `new`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
-- **LIF-5** (partial; target ci by M4) An engine module, or the router fork, models one upstream release.
+- **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
   - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
   - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)

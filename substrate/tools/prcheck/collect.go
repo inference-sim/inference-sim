@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
 
 // Collecting the merge check's input from the GitHub API.
@@ -20,9 +22,19 @@ type apiCheckRun struct {
 }
 
 type apiReview struct {
-	User     struct{ Login string } `json:"user"`
-	State    string                 `json:"state"`
-	CommitID string                 `json:"commit_id"`
+	User        struct{ Login string } `json:"user"`
+	State       string                 `json:"state"`
+	CommitID    string                 `json:"commit_id"`
+	SubmittedAt string                 `json:"submitted_at"`
+}
+
+// answerSource is where the review-question answers come from: the pull-request body, the
+// time it was last edited, and the questions the registry asks of the repository.
+type answerSource struct {
+	Body      string
+	EditedAt  string
+	Repo      string // the repository's short name, as the registry knows it
+	Questions []invariants.Question
 }
 
 type apiThread struct {
@@ -40,7 +52,7 @@ type apiThread struct {
 // its tree. Only successful check runs and approving or change-requesting reviews are
 // verdicts; a dismissed or commented review judges nothing.
 func BuildMergeInput(mergeSHA, headSHA string, required []string, runs []apiCheckRun, reviews []apiReview,
-	threads []apiThread, changedByMerge, prPaths []string, treeOf func(string) (string, error)) (MergeInput, error) {
+	threads []apiThread, changedByMerge, prPaths []string, ans answerSource, treeOf func(string) (string, error)) (MergeInput, error) {
 	mt, err := treeOf(mergeSHA)
 	if err != nil {
 		return MergeInput{}, err
@@ -68,7 +80,33 @@ func BuildMergeInput(mergeSHA, headSHA string, required []string, runs []apiChec
 		if err != nil {
 			return MergeInput{}, err
 		}
-		in.Verdicts = append(in.Verdicts, Verdict{Kind: "review", Name: r.User.Login, Body: "Tree: " + t, Paths: prPaths})
+		v := Verdict{Kind: "review", Name: r.User.Login, Body: "Tree: " + t, Paths: prPaths}
+		if r.State == "APPROVED" {
+			v.At = r.SubmittedAt
+		}
+		in.Verdicts = append(in.Verdicts, v)
+	}
+	// Answers: each question the changed paths trigger needs a ticked, yes-or-no answer in the
+	// body. The answer is a verdict on the head tree, covering the paths that trigger it.
+	_, section, _ := splitSection(ans.Body, questionsHeading)
+	given := map[string]item{}
+	for _, it := range parseItems(section) {
+		given[it.id] = it
+	}
+	for _, q := range ans.Questions {
+		var hit []string
+		for _, p := range prPaths {
+			if q.Trigger.Matches(ans.Repo, p) {
+				hit = append(hit, p)
+			}
+		}
+		if len(hit) == 0 {
+			continue
+		}
+		in.Questions = append(in.Questions, q.ID+": "+q.Question)
+		if it, ok := given[q.ID]; ok && it.ticked && answerRe.MatchString(it.answer) {
+			in.Verdicts = append(in.Verdicts, Verdict{Kind: "answer", Name: q.ID, Body: "Tree: " + ht, Paths: q.Trigger.Paths, At: ans.EditedAt})
+		}
 	}
 	for _, th := range threads {
 		var t Thread
@@ -100,7 +138,7 @@ func ghJSON(v any, args ...string) error {
 	return json.Unmarshal(out, v)
 }
 
-const threadsQuery = `query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100){nodes{isResolved path comments(first:50){nodes{body url}}}}}}}`
+const threadsQuery = `query($owner:String!,$name:String!,$pr:Int!){repository(owner:$owner,name:$name){pullRequest(number:$pr){body lastEditedAt createdAt reviewThreads(first:100){nodes{isResolved path comments(first:50){nodes{body url}}}}}}}`
 
 // collectMerge gathers the input for the merge check of one pull request in the merge queue.
 func collectMerge(repo string, pr int, mergeSHA, headSHA, baseSHA string, required []string) (MergeInput, error) {
@@ -119,6 +157,9 @@ func collectMerge(repo string, pr int, mergeSHA, headSHA, baseSHA string, requir
 		Data struct {
 			Repository struct {
 				PullRequest struct {
+					Body          string                      `json:"body"`
+					LastEditedAt  string                      `json:"lastEditedAt"`
+					CreatedAt     string                      `json:"createdAt"`
 					ReviewThreads struct{ Nodes []apiThread } `json:"reviewThreads"`
 				} `json:"pullRequest"`
 			} `json:"repository"`
@@ -135,6 +176,16 @@ func collectMerge(repo string, pr int, mergeSHA, headSHA, baseSHA string, requir
 	if err != nil {
 		return MergeInput{}, err
 	}
+	reg, err := invariants.Embedded()
+	if err != nil {
+		return MergeInput{}, err
+	}
+	pr0 := g.Data.Repository.PullRequest
+	edited := pr0.LastEditedAt
+	if edited == "" {
+		edited = pr0.CreatedAt
+	}
+	ans := answerSource{Body: pr0.Body, EditedAt: edited, Repo: name, Questions: reg.Questions(name)}
 	return BuildMergeInput(mergeSHA, headSHA, required, runs.CheckRuns, reviews,
-		g.Data.Repository.PullRequest.ReviewThreads.Nodes, strings.Fields(changed), strings.Fields(prPaths), gitTree)
+		pr0.ReviewThreads.Nodes, strings.Fields(changed), strings.Fields(prPaths), ans, gitTree)
 }

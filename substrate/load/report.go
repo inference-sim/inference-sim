@@ -47,8 +47,9 @@ type Selected struct {
 
 // Report is the selected-entry report.
 type Report struct {
-	// Selected is every entry a lookup returned, sorted by kind, file, entry, scope and
-	// method.
+	// Selected is every entry a lookup returned, sorted by kind, set, entry, method and
+	// scope: the order the Result's validator requires (the file order differs when one set's
+	// name is a prefix of another's).
 	Selected []Selected
 	// Unloaded is every registry data file no reader loaded, sorted by path.
 	Unloaded []string
@@ -93,7 +94,7 @@ func (d *Data) record(s Selected) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.loaded[s.File] = true
-	d.selected[string(s.Kind)+"\x00"+s.File+"\x00"+s.Entry+"\x00"+s.Scope.Key()+"\x00"+s.Method] = s
+	d.selected[string(s.Kind)+"\x00"+s.Set+"\x00"+s.Entry+"\x00"+s.Method+"\x00"+s.Scope.Key()] = s
 }
 
 // Report returns the selected-entry report as it stands.

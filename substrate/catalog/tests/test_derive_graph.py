@@ -6022,7 +6022,8 @@ def _pin_one(tmp_path):
 
 
 def _check(tree, *extra):
-    return subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", *extra],
+    # Only the model this test pinned: the catalog's own pinned models have no fetched file here.
+    return subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", "--model", "qwen3-14b", *extra],
                           capture_output=True, text=True)
 
 

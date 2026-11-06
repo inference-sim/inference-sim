@@ -79,6 +79,18 @@ jobs:
           test -n "$pr"
           head=$(gh api "repos/${{ github.repository }}/pulls/$pr" --jq .head.sha)
           gh api "repos/${{ github.repository }}/pulls/$pr" --jq .body > "$RUNNER_TEMP/body.md"
+          # The required checks start with this job, on the same merge-queue commit. Read the
+          # check runs only when every required one has completed, or after 20 minutes.
+          IFS=, read -ra want <<< "${{ inputs.required }}"
+          for _ in $(seq 1 120); do
+            done_all=1
+            runs=$(gh api "repos/${{ github.repository }}/commits/$MERGE/check-runs?per_page=100" --jq '.check_runs[] | [.name, .status] | @tsv')
+            for n in "${want[@]}"; do
+              printf '%s\n' "$runs" | grep -qxF "$(printf '%s\tcompleted' "$n")" || done_all=0
+            done
+            [ "$done_all" = 1 ] && break
+            sleep 10
+          done
           "$RUNNER_TEMP/prcheck" merge-collect -repo "${{ github.repository }}" -pr "$pr" \
             -merge "$MERGE" -head "$head" -base "$BASE" -required "${{ inputs.required }}" > "$RUNNER_TEMP/merge.json"
           "$RUNNER_TEMP/prcheck" merge -input "$RUNNER_TEMP/merge.json"

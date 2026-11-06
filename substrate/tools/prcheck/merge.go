@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
@@ -34,6 +35,9 @@ type Verdict struct {
 	Name  string   // the check's name, the reviewer, or the question's invariant
 	Body  string   // where the "Tree:" line is
 	Paths []string // the paths or globs it covers; empty means every path
+	// At is when the verdict was given (RFC 3339): for an approving review, its submission;
+	// for an answer, the last edit of the pull-request body that holds it. Empty when unknown.
+	At string
 }
 
 // Thread is one review thread.
@@ -49,6 +53,10 @@ type MergeInput struct {
 	Required            []string // names of required checks
 	Verdicts            []Verdict
 	Threads             []Thread
+	// Questions lists the review questions the pull request's changed paths trigger, as
+	// "<invariant>: <question>". Each needs an answer verdict: an answer removed from the
+	// body, or never given, leaves its question without one (X22).
+	Questions []string
 	// ChangedByMerge lists the paths whose content differs between the head tree and the
 	// merge tree.
 	ChangedByMerge []string
@@ -102,6 +110,35 @@ func CheckMerge(in MergeInput) []string {
 	for _, r := range in.Required {
 		if !seen[r] {
 			bad = append(bad, fmt.Sprintf("required check %q has no successful run on the tree being merged, %s (X17, X22)", r, in.MergeTree))
+		}
+	}
+	answered := map[string]bool{}
+	var approved time.Time
+	for _, v := range in.Verdicts {
+		at, err := time.Parse(time.RFC3339, v.At)
+		if err != nil {
+			continue
+		}
+		if v.Kind == "review" && at.After(approved) {
+			approved = at
+		}
+	}
+	for _, v := range in.Verdicts {
+		if v.Kind != "answer" {
+			continue
+		}
+		answered[v.Name] = true
+		// An answer is the head tree's. Edited after the approving review, it was never
+		// approved: the reviewer is the control on whether an answer is right (the project
+		// has no code-owner lookup), so the review must come after the answer.
+		if at, err := time.Parse(time.RFC3339, v.At); err == nil && !approved.IsZero() && at.After(approved) {
+			bad = append(bad, fmt.Sprintf("answer %q was written or edited at %s, after the latest approving review at %s; request the review again (X22)", v.Name, v.At, approved.Format(time.RFC3339)))
+		}
+	}
+	for _, q := range in.Questions {
+		id, _, _ := strings.Cut(q, ": ")
+		if !answered[id] {
+			bad = append(bad, fmt.Sprintf("review question %q has no answer in the pull-request body; it was never answered or the answer was removed (X22)", q))
 		}
 	}
 	for _, t := range in.Threads {

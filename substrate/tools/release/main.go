@@ -3,16 +3,20 @@
 //
 //	go run ./tools/release -lock stack.lock -dir blis-substrate=../blis-substrate \
 //	    -dir blis-vllm=../blis-vllm -results results.json [-bugs bugs.json] [-base main]
-//	    [-apply] [-sign]
+//	    [-apply | -tag] [-sign]
 //
-// Without -apply it is a dry run: it prints, for each repository bottom-up (X10), the tag it
-// would make, the pins it would write, the refusals that stop it, and the release notes
-// (LIF-4), and changes nothing. With -apply, and only when nothing is refused, it merges
-// each head into the base branch, writes the pins in one commit, and makes the annotated tag
-// whose message is the notes, in the local checkouts; -sign signs the pin commit and the
-// tag with the bot's key. It never pushes. The release job pushes the branch and the tags,
-// one repository at a time, and runs the next layer's checks against the new tags before the
-// next repository is released (design §13.6). That job is not part of this command.
+// Without -apply or -tag it is a dry run: it prints, for each repository bottom-up (X10), the
+// tag it would make, the pins it would write, the refusals that stop it, and the release
+// notes (LIF-4), and changes nothing. With -apply, and only when nothing is refused, it
+// stages each repository's final release commit on the branch release/<tag>: the head merged
+// into the base and the pins in one commit, with no tag. With -tag, it tags the tip of each
+// staged branch, and only where -results records every ci check at that tip's own SHA
+// (LIF-3); -sign signs the pin commits and tags. It never pushes.
+//
+// The release job does not exist yet. The loop stages every layer locally; pushing each
+// layer's branch, running CI on it, running the next layer's checks against the new tags and
+// pushing the tags are manual steps for the release owners until that job exists (design
+// §13.6). The push needs a bypass of the branch and tag protection for the bot or the owners.
 //
 // It refuses a tag when:
 //   - a ci check of an invariant the repository owns has no passing result at the head
@@ -66,7 +70,8 @@ func run(args []string, w io.Writer) (int, error) {
 	results := fs.String("results", "", "JSON of each repository's check results at each commit")
 	bugsPath := fs.String("bugs", "", "JSON of open invariant bugs per repository")
 	base := fs.String("base", "main", "the branch each head merges into")
-	apply := fs.Bool("apply", false, "merge, pin and tag in the local checkouts (never pushes)")
+	apply := fs.Bool("apply", false, "stage the release commit on release/<tag> in the local checkouts: merge and pin, no tag (never pushes)")
+	tag := fs.Bool("tag", false, "tag the staged release/<tag> tips, only where -results records every ci check at the tip's own SHA")
 	sign := fs.Bool("sign", false, "sign the pin commits and tags")
 	dirs := dirFlag{}
 	fs.Var(dirs, "dir", "<repo>=<local checkout>, once per repository in the set")
@@ -122,14 +127,27 @@ func run(args []string, w io.Writer) (int, error) {
 	if refused {
 		return 1, nil
 	}
-	if !*apply {
-		fmt.Fprintln(w, "dry run: nothing changed")
+	switch {
+	case *apply && *tag:
+		return 2, fmt.Errorf("-apply and -tag are separate steps: stage, run CI on the staged commits, then tag")
+	case *apply:
+		if err := Stage(steps, *sign); err != nil {
+			return 2, err
+		}
+		for _, st := range steps {
+			tip, _ := gitIn(st.Dir, "rev-parse", "refs/heads/"+Branch(st))
+			fmt.Fprintf(w, "staged %s %s at %s; no tag yet\n", st.Repo, Branch(st), tip)
+		}
+		fmt.Fprintln(w, "staged in the local checkouts; nothing tagged, nothing pushed")
+		return 0, nil
+	case *tag:
+		if err := Tag(env, lock, steps, *sign); err != nil {
+			return 1, err
+		}
+		fmt.Fprintln(w, "tagged the checked tips in the local checkouts; nothing pushed")
 		return 0, nil
 	}
-	if err := Apply(steps, *sign); err != nil {
-		return 2, err
-	}
-	fmt.Fprintln(w, "applied in the local checkouts; nothing pushed")
+	fmt.Fprintln(w, "dry run: nothing changed")
 	return 0, nil
 }
 

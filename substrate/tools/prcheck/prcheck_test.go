@@ -6,9 +6,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
@@ -460,7 +463,7 @@ func TestBuildMergeInput(t *testing.T) {
 	runs := []apiCheckRun{{Name: "blis checks", HeadSHA: "m", Conclusion: "success"}, {Name: "lint", HeadSHA: "m", Conclusion: "failure"}}
 	reviews := []apiReview{{State: "APPROVED", CommitID: "old"}, {State: "COMMENTED", CommitID: "h"}}
 	reviews[0].User.Login = "ada"
-	in, err := BuildMergeInput("m", "h", []string{"blis checks", "lint"}, runs, reviews, nil, nil, []string{"a.go"}, treeOf)
+	in, err := BuildMergeInput("m", "h", []string{"blis checks", "lint"}, runs, reviews, nil, nil, []string{"a.go"}, answerSource{}, treeOf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,5 +670,76 @@ func TestClosedByForms(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// X22: review-question answers are verdicts on the head tree. An answer removed from the
+// body, or edited after the approving review, fails the merge check.
+func TestAnswersAreVerdictsBoundToTheHead(t *testing.T) {
+	trees := map[string]string{"m": strings.Repeat("a", 40), "h": strings.Repeat("b", 40)}
+	treeOf := func(s string) (string, error) { return trees[s], nil }
+	q := invariants.Question{ID: "X2", Review: invariants.Review{Question: "Is it so?", Reviewer: "r",
+		Trigger: invariants.Trigger{Repos: []string{"blis-substrate"}, Paths: []string{"contracts/**"}}}}
+	body := func(answer string) string {
+		return "## Review questions\n\n- [x] **X2** Is it so? Reviewer: r. (changed: `contracts/a.go`) Answer: " + answer + "\n"
+	}
+	review := []apiReview{{State: "APPROVED", CommitID: "h", SubmittedAt: "2026-11-06T10:00:00Z"}}
+	run := func(b, edited string) []string {
+		ans := answerSource{Body: b, EditedAt: edited, Repo: "blis-substrate", Questions: []invariants.Question{q}}
+		in, err := BuildMergeInput("m", "h", nil, nil, review, nil, nil, []string{"contracts/a.go"}, ans, treeOf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return CheckMerge(in)
+	}
+	none(t, run(body("yes, it is"), "2026-11-06T09:00:00Z"))
+	has(t, run(body("yes, it is"), "2026-11-06T11:00:00Z"), "after the latest approving review")
+	has(t, run("## Summary\n\nx\n", "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
+	has(t, run(body(""), "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
+	// A question no changed path triggers needs no answer.
+	ans := answerSource{Body: "", Repo: "blis-substrate", Questions: []invariants.Question{q}}
+	in, _ := BuildMergeInput("m", "h", nil, nil, nil, nil, nil, []string{"docs/a.md"}, ans, treeOf)
+	none(t, CheckMerge(in))
+}
+
+// The names the merge check and the nightly audit compare are check-run names. A reusable
+// workflow's job is named "<caller job> / <job name>" and never carries the workflow's name,
+// so "blis / pr / blis checks" matches no run (X17, X22). The merge check's required list is
+// the list the audit reads, plus nothing the merge queue cannot produce.
+func TestRequiredCheckNamesAreCheckRunNames(t *testing.T) {
+	raw, err := os.ReadFile("../../.github/required-checks.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lists map[string][]string
+	if err := yaml.Unmarshal(raw, &lists); err != nil {
+		t.Fatal(err)
+	}
+	for repo, names := range lists {
+		for _, n := range names {
+			if strings.HasPrefix(n, "blis / ") {
+				t.Errorf("%s: %q is prefixed with the workflow name; a check run is named %q", repo, n, strings.TrimPrefix(n, "blis / "))
+			}
+		}
+	}
+	wf, err := os.ReadFile("../../.github/workflows/blis.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`required: "([^"]+)"`).FindSubmatch(wf)
+	if m == nil {
+		t.Fatal("blis.yml names no required checks for the merge check")
+	}
+	have := map[string]bool{}
+	for _, n := range lists["blis-substrate"] {
+		have[n] = true
+	}
+	for _, n := range strings.Split(string(m[1]), ",") {
+		if !have[n] {
+			t.Errorf("the merge check requires %q, which required-checks.yaml does not list for blis-substrate", n)
+		}
+	}
+	if !strings.Contains(string(wf), "github.event_name == 'merge_group'") || !strings.Contains(string(wf), "  pr:\n") {
+		t.Error("the job that makes the check run \"pr / blis checks\" does not run on the merge-queue tree")
 	}
 }

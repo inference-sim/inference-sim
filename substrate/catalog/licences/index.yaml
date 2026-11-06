@@ -167,13 +167,6 @@ models:
         sha256: 278b29a14cf6b0cc60519617909af61fa4a6aca4ee928d6178cb9799785c5cc0
     notice: "MiniMax AI model is licensed under the MiniMax Model License, Copyright © MiniMax. All Rights Reserved."
     note: "The card names modified-mit; the repository's licence file is LICENSE-MODEL, the MINIMAX MODEL LICENSE."
-  - model: minimax-m2.7
-    licence: LicenseRef-minimax-m2.7
-    texts:
-      - file: LicenseRef-minimax-m2.7.txt
-        source: https://huggingface.co/MiniMaxAI/MiniMax-M2.7/raw/d494266a4affc0d2995ba1fa35c8481cbd84294b/LICENSE
-        sha256: 6373a886779a26e56af8070699ebaa8f90104cadcc7bbf6897037f72017bedfe
-    note: "Non-commercial licence: commercial use needs MiniMax's prior written authorisation. Committing config.json to a public research repository is non-commercial distribution."
   - model: minimax-m3
     licence: LicenseRef-minimax-community
     texts:
