@@ -11,6 +11,7 @@ const simGoMod = `module github.com/inference-sim/inference-sim
 go 1.27.2
 
 require (
+	github.com/inference-sim/blis-substrate v0.11.0
 	github.com/inference-sim/blis-vllm v0.32.0-blis.2
 	github.com/llm-d/llm-d-router v0.0.0-00010101000000-000000000000
 )
@@ -80,6 +81,18 @@ func TestEachRuleHasAKnownBadInput(t *testing.T) {
 		{"an exclude of a non-engine module", func(in *Input) {
 			in.GoMod = []byte(strings.Replace(simGoMod, "exclude github.com/inference-sim/blis-vllm v0.32.0", "exclude github.com/inference-sim/blis-substrate v0.10.0", 1))
 		}, "an exclude may name only an engine module"},
+		{"no direct substrate pin", func(in *Input) {
+			in.GoMod = []byte(strings.Replace(simGoMod, "\tgithub.com/inference-sim/blis-substrate v0.11.0\n", "", 1))
+		}, "no direct require of github.com/inference-sim/blis-substrate"},
+		{"a stale direct substrate pin", func(in *Input) {
+			in.Modules[2].Version = "v0.12.0"
+		}, "declared at v0.11.0 but the build selects v0.12.0"},
+		{"a duplicated direct substrate pin", func(in *Input) {
+			in.GoMod = append([]byte(simGoMod), "require github.com/inference-sim/blis-substrate v0.11.0\n"...)
+		}, "requires github.com/inference-sim/blis-substrate 2 times"},
+		{"an indirect-only substrate pin", func(in *Input) {
+			in.GoMod = []byte(strings.Replace(simGoMod, "blis-substrate v0.11.0\n", "blis-substrate v0.11.0 // indirect\n", 1))
+		}, "marked indirect"},
 		{"a committed go.work", func(in *Input) { in.GoWork = []string{"go.work"} }, "go.work is committed"},
 		{"another module requires the router", func(in *Input) {
 			in.Graph = append(in.Graph, [2]string{"github.com/inference-sim/blis-vllm@v0.32.0-blis.2", "github.com/llm-d/llm-d-router@v1.0.0"})
@@ -257,5 +270,22 @@ func TestDeferralBounds(t *testing.T) {
 	}
 	if fail, _ := ApplyDeferral(file("2026-11-05", "2026-12-05", "[inference-sim]"), today, []string{pin("blis-substrate")}); len(fail) != 2 || !strings.Contains(fail[1], "modules") {
 		t.Errorf("unknown module name: %v", fail)
+	}
+}
+
+// A pseudo-version direct pin equal to the selected version raises only the deferrable
+// release-tag finding, and nothing about the pin itself.
+func TestPseudoDirectPinEqualToSelectedOnlyDefers(t *testing.T) {
+	const pv = "v0.0.0-20261105193227-4a3becf2d09a"
+	in := simInput()
+	in.Modules = simModules()
+	in.GoMod = []byte(strings.Replace(simGoMod, "blis-substrate v0.11.0", "blis-substrate "+pv, 1))
+	in.Modules[2].Version = pv
+	bad, err := Lint(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bad) != 1 || !strings.Contains(bad[0], "is not a release tag") {
+		t.Fatalf("want the one release-tag finding, got:\n%s", strings.Join(bad, "\n"))
 	}
 }

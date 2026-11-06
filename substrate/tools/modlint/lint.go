@@ -151,6 +151,9 @@ func Lint(in Input) ([]string, error) {
 			}
 		}
 	}
+	if isSim {
+		lintOwnSubstratePin(mf, in.Modules, add)
+	}
 	if in.GoVersion != "" && in.GoVersion != tc {
 		add("go version reports %s; contracts/toolchain names %s, and every CI job installs exactly it with GOTOOLCHAIN=local (LIF-2)", in.GoVersion, tc)
 	}
@@ -171,4 +174,34 @@ var pseudo = regexp.MustCompile(`-(?:0\.)?[0-9]{14}-[0-9a-f]{12}$|\.0\.[0-9]{14}
 // with no tag.
 func isPseudo(v string) bool {
 	return pseudo.MatchString(strings.TrimSuffix(v, "+incompatible"))
+}
+
+// lintOwnSubstratePin checks LIF-2's "inference-sim's own substrate requirement equals the
+// version its build selects": go.mod holds exactly one direct require of the substrate, and
+// it names the version the build selects. Without it an engine release could raise the
+// selected substrate, and with it the embedded data, while inference-sim still declares
+// the old version or none. A pseudo-version pin that equals the selected one passes here;
+// the release-tag finding for it is the deferrable one.
+func lintOwnSubstratePin(mf *modfile.File, mods []Module, add func(string, ...any)) {
+	var pins []*modfile.Require
+	for _, r := range mf.Require {
+		if r.Mod.Path == substrate {
+			pins = append(pins, r)
+		}
+	}
+	switch {
+	case len(pins) == 0:
+		add("go.mod has no direct require of %s; inference-sim pins the substrate itself, at the version its build selects (LIF-2)", substrate)
+		return
+	case len(pins) > 1:
+		add("go.mod requires %s %d times; inference-sim pins it exactly once (LIF-2)", substrate, len(pins))
+		return
+	case pins[0].Indirect:
+		add("go.mod:%d: the require of %s is marked indirect; inference-sim's own substrate requirement is direct (LIF-2)", pins[0].Syntax.Start.Line, substrate)
+	}
+	for _, m := range mods {
+		if m.Path == substrate && !m.Main && m.Version != pins[0].Mod.Version {
+			add("go.mod:%d: %s is declared at %s but the build selects %s; inference-sim's own requirement equals the selected version (LIF-2)", pins[0].Syntax.Start.Line, substrate, pins[0].Mod.Version, m.Version)
+		}
+	}
 }
