@@ -69,6 +69,7 @@ Example:
 		logrus.SetLevel(level)
 		validateRouterFlags()
 		checkResultFlags()
+		defer applyFromResult("replay", cmd)()
 		snapshotResultFlags("replay", cmd)
 
 		// Validate required inputs (BC-6, BC-8). An agentic replay (#1937) reads its
