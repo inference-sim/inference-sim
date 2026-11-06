@@ -1792,8 +1792,8 @@
   status: partial
   target:
     status: ci
-    milestone: 1
-  note: some jobs fail on zero items; no verdict names its tree
+    milestone: 4
+  note: some jobs fail on zero items; no verdict names its tree; the release plan schedules the check that refuses an answer edited after the latest write-access approval after M4 (Hardening beyond M4), and until then the pull-request check records each answer with the head tree
 - id: X23
   section: §4.1
   statement: >-
@@ -1919,7 +1919,8 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 4
+  note: the release plan schedules the check that refuses a review thread with no outcome after M4 (Hardening beyond M4); until then branch protection requires every conversation to be resolved
 - id: X25
   section: §4.1
   statement: >-
