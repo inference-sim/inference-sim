@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -166,17 +167,27 @@ repos:
 		}
 	}
 
-	// Applying merges, pins once and tags, locally, in order; nothing is pushed (the test
-	// repositories have no remote).
+	// Applying works one layer at a time, locally, in order; nothing is pushed (the test
+	// repositories have no remote). Each layer is planned again from the repositories as
+	// they stand, as each command run does, and a layer's tag is "published" by the test.
 	e := env(t, nil)
-	if err := Stage(steps, false); err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(sim.git("tag", "--list"), "v0.17.0") {
-		t.Fatal("Stage made a tag")
-	}
-	if err := Tag(e, l, steps, false); err != nil {
-		t.Fatal(err)
+	published := map[string]bool{}
+	e.TagPublished = func(_, tag string) bool { return published[tag] }
+	for _, st := range steps {
+		cur, err := Plan(e, l, dirs, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Stage(e, cur, "", false); err != nil {
+			t.Fatalf("stage %s: %v", st.Repo, err)
+		}
+		if strings.Contains(sub.git("tag", "--list")+sim.git("tag", "--list"), "v0.17.0") {
+			t.Fatal("Stage made a tag of the top layer")
+		}
+		if err := Tag(e, l, cur, "", false); err != nil {
+			t.Fatalf("tag %s: %v", st.Repo, err)
+		}
+		published[st.Tag] = true
 	}
 	if got := sim.git("show", "v0.17.0:go.mod"); !strings.Contains(got, "github.com/inference-sim/blis-vllm v0.32.0-blis.3") || !strings.Contains(got, "github.com/inference-sim/blis-substrate v0.12.0") {
 		t.Errorf("inference-sim's tagged go.mod:\n%s", got)
@@ -304,7 +315,7 @@ func TestRefusals(t *testing.T) {
 		}
 	})
 	t.Run("apply refuses when anything is refused", func(t *testing.T) {
-		if err := Stage([]Step{{Repo: "x", Refusals: []string{"no"}}}, false); err == nil {
+		if err := Stage(Env{}, []Step{{Repo: "x", Refusals: []string{"no"}}}, "", false); err == nil {
 			t.Fatal("applied a refused release")
 		}
 	})
@@ -452,7 +463,7 @@ func stagedSet(t *testing.T, e Env) (*repo, *StackLock, []Step) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Stage(steps, false); err != nil {
+	if err := Stage(e, steps, "", false); err != nil {
 		t.Fatal(err)
 	}
 	return sub, l, steps
@@ -470,7 +481,7 @@ func TestTagTargetIsTheCheckedCommit(t *testing.T) {
 	}
 	sub, l, steps := stagedSet(t, e)
 	tip := sub.git("rev-parse", "release/v0.11.1")
-	if err := Tag(e, l, steps, false); err != nil {
+	if err := Tag(e, l, steps, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := sub.git("rev-list", "-n1", "v0.11.1"); got != tip {
@@ -496,7 +507,7 @@ func TestTagRefusesATipThatMovedAfterTheCheck(t *testing.T) {
 	sub.git("checkout", "-q", "release/v0.11.1")
 	sub.write("late.go", "package late\n")
 	sub.commit("A change after the check")
-	if err := Tag(e, l, steps, false); err == nil {
+	if err := Tag(e, l, steps, "", false); err == nil {
 		t.Fatal("tagged a tip with no results")
 	}
 	if strings.Contains(sub.git("tag", "--list"), "v0.11.1") {
@@ -568,7 +579,7 @@ func TestPlanKeepsTheTagOfAStagedOrReleasedHead(t *testing.T) {
 			t.Errorf("tag %s staged %v refusals %v; want the staged v0.11.1, unrefused", st.Tag, st.Staged, st.Refusals)
 		}
 	})
-	if err := Tag(e, l, steps, false); err != nil {
+	if err := Tag(e, l, steps, "", false); err != nil {
 		t.Fatal(err)
 	}
 	t.Run("after Tag", func(t *testing.T) {
@@ -603,7 +614,7 @@ func TestTagRefusesAStagedTipThatFailsTheModuleLint(t *testing.T) {
 		}
 		return []string{"github.com/inference-sim/blis-vllm resolves to v0.32.1-0.20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"}, nil
 	}
-	err := Tag(e, l, steps, false)
+	err := Tag(e, l, steps, "", false)
 	if err == nil || !strings.Contains(err.Error(), "fails the module lint") {
 		t.Fatalf("Tag = %v; want a module lint refusal", err)
 	}
@@ -614,7 +625,7 @@ func TestTagRefusesAStagedTipThatFailsTheModuleLint(t *testing.T) {
 		t.Error("a tag exists after a refusal")
 	}
 	e.Lint = nil
-	if err := Tag(e, l, steps, false); err == nil {
+	if err := Tag(e, l, steps, "", false); err == nil {
 		t.Error("Tag ran without a module lint")
 	}
 }
@@ -636,10 +647,10 @@ func TestTagRefusesAStagedTipThatHoldsTheDeferral(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Stage(steps, false); err != nil {
+	if err := Stage(e, steps, "", false); err != nil {
 		t.Fatal(err)
 	}
-	err = Tag(e, l, steps, false)
+	err = Tag(e, l, steps, "", false)
 	if err == nil || !strings.Contains(err.Error(), "still holds "+DeferralFile) {
 		t.Fatalf("Tag = %v; want a refusal for the deferral file", err)
 	}
@@ -683,11 +694,130 @@ func TestRealModlintRefusesABLISReplaceInAStagedTip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Stage(steps, false); err != nil {
+	if err := Stage(e, steps, "", false); err != nil {
 		t.Fatal(err)
 	}
-	err = Tag(e, l, steps, false)
+	err = Tag(e, l, steps, "", false)
 	if err == nil || !strings.Contains(err.Error(), "is replaced by") {
 		t.Fatalf("Tag = %v; want the replace finding", err)
+	}
+}
+
+// layered builds the three-layer set of TestReviewSetIsPlannedBottomUp.
+func layered(t *testing.T) (*StackLock, map[string]string, map[string]*repo) {
+	t.Helper()
+	sub := newRepo(t, subMod)
+	sub.git("tag", "v0.11.0")
+	subHead := sub.branch("m2/units", "contracts/units.go", "package contracts\n", "Add unit types")
+	vllm := newRepo(t, vllmMod)
+	vllm.git("tag", "v0.32.0-blis.2")
+	vllmHead := vllm.branch("m2/units", "core/a.go", "package core\n", "Use unit types")
+	sim := newRepo(t, simMod)
+	sim.git("tag", "v0.16.0")
+	simHead := sim.branch("m2/units", "sim/a.go", "package sim\n", "Use unit types")
+	l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: inference-sim, branch: m2/units, head: " + simHead + ", bump: minor}\n  - {repo: blis-vllm, branch: m2/units, head: " + vllmHead + ", upstream: v0.32.0}\n  - {repo: blis-substrate, branch: m2/units, head: " + subHead + ", bump: minor}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := map[string]string{"blis-substrate": sub.dir, "blis-vllm": vllm.dir, "inference-sim": sim.dir}
+	return l, dirs, map[string]*repo{"blis-substrate": sub, "blis-vllm": vllm, "inference-sim": sim}
+}
+
+// A release interrupted at any point resumes: the plan reports a tagged layer as done, not
+// as a refusal, keeps every version number, and the commands work on exactly the layers that
+// remain. A layer is staged only once the tags below it are published.
+func TestLayeredReleaseResumesAfterEveryInterruption(t *testing.T) {
+	l, dirs, repos := layered(t)
+	e := env(t, nil)
+	published := map[string]bool{}
+	e.TagPublished = func(_, tag string) bool { return published[tag] }
+	want := map[string]string{"blis-substrate": "v0.12.0", "blis-vllm": "v0.32.0-blis.3", "inference-sim": "v0.17.0"}
+	order := []string{"blis-substrate", "blis-vllm", "inference-sim"}
+	// check re-plans and compares each layer's tag, and its done and staged state.
+	check := func(when string, done, staged []string) []Step {
+		t.Helper()
+		steps, err := Plan(e, l, dirs, "main")
+		if err != nil {
+			t.Fatalf("%s: %v", when, err)
+		}
+		for _, st := range steps {
+			if st.Tag != want[st.Repo] {
+				t.Errorf("%s: %s is planned at %s, want %s; versions must not advance", when, st.Repo, st.Tag, want[st.Repo])
+			}
+			if len(st.Refusals) > 0 {
+				t.Errorf("%s: %s refused: %v", when, st.Repo, st.Refusals)
+			}
+			if st.Done != slices.Contains(done, st.Repo) || st.Staged != slices.Contains(staged, st.Repo) {
+				t.Errorf("%s: %s done %v staged %v; want done %v staged %v", when, st.Repo, st.Done, st.Staged, done, staged)
+			}
+		}
+		return steps
+	}
+	steps := check("fresh", nil, nil)
+	if err := Stage(e, steps, "inference-sim", false); err == nil {
+		t.Error("staged the top layer while the layers below are untagged")
+	}
+	if err := Stage(e, steps, "", false); err != nil {
+		t.Fatal(err)
+	}
+	steps = check("after staging layer 1", nil, []string{"blis-substrate"})
+	if err := Tag(e, l, steps, "blis-vllm", false); err == nil {
+		t.Error("tagged layer 2 before layer 1")
+	}
+	if err := Tag(e, l, steps, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := repos["blis-vllm"].git("tag", "--list"); strings.Contains(got, "blis.3") {
+		t.Error("Tag made a tag outside its layer")
+	}
+	steps = check("after tagging layer 1", []string{"blis-substrate"}, nil)
+	if err := Stage(e, steps, "", false); err == nil || !strings.Contains(err.Error(), "not published") {
+		t.Fatalf("Stage(layer 2) = %v; want a refusal until layer 1's tag is published", err)
+	}
+	published["v0.12.0"] = true
+	if err := Stage(e, steps, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := repos["blis-vllm"].git("show", "release/v0.32.0-blis.3:go.mod"); !strings.Contains(got, "blis-substrate v0.12.0") {
+		t.Errorf("layer 2 is not pinned to layer 1's real tag:\n%s", got)
+	}
+	steps = check("after tagging layer 1 and staging layer 2", []string{"blis-substrate"}, []string{"blis-vllm"})
+	if err := Stage(e, steps, "", false); err != nil {
+		t.Fatalf("staging layer 2 again: %v", err)
+	}
+	tip := repos["blis-vllm"].git("rev-parse", "release/v0.32.0-blis.3")
+	if err := Tag(e, l, steps, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := repos["blis-vllm"].git("rev-list", "-n1", "v0.32.0-blis.3"); got != tip {
+		t.Errorf("restaging moved the tip: tag on %s, tip was %s", got, tip)
+	}
+	published["v0.32.0-blis.3"] = true
+	steps = check("after tagging layer 2", order[:2], nil)
+	if err := Stage(e, steps, "", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := Tag(e, l, steps, "", false); err != nil {
+		t.Fatal(err)
+	}
+	steps, err := Plan(e, l, dirs, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range steps {
+		if !st.Done || st.Tag != want[st.Repo] {
+			t.Errorf("after the last layer: %s done %v tag %s", st.Repo, st.Done, st.Tag)
+		}
+		has(t, st.Refusals, "no layer of the set remains")
+	}
+	if err := Tag(e, l, steps, "", false); err == nil {
+		t.Error("Tag found a layer to do after the last")
+	}
+	// A different head of the lowest repository is a new release and gets the next version.
+	sub := repos["blis-substrate"]
+	h2 := sub.branch("m2/more", "contracts/more.go", "package contracts\n", "More")
+	st := planOne(t, e, "blis-substrate", sub.dir, h2, "bump: minor", 1)
+	if st.Tag != "v0.13.0" || st.Done || st.Staged {
+		t.Errorf("a different head: tag %s done %v staged %v; want a new v0.13.0", st.Tag, st.Done, st.Staged)
 	}
 }

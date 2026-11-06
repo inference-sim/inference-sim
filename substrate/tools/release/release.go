@@ -34,6 +34,9 @@ type Env struct {
 	// BLIS pseudo-version or a BLIS replace is found as a direct one is. Tag refuses to run
 	// without it.
 	Lint func(dir string) ([]string, error)
+	// TagPublished reports whether a release tag of a repository is on its remote. Stage
+	// requires it for every layer below before it pins to that layer's tag.
+	TagPublished func(repo, tag string) bool
 }
 
 // DeferralFile is the pin-by-commit deferral. It is removed in the change that re-pins to
@@ -54,6 +57,10 @@ type Step struct {
 	// Staged is true when a release/<Tag> branch already holds this head's merge (an
 	// interrupted release); Tag is then that branch's tag, not a new one.
 	Staged bool
+	// Done is true when Tag is already made on the staged tip of this head. The step is
+	// reported and skipped; it is never a refusal, or a release interrupted after its first
+	// layer could not resume.
+	Done bool
 }
 
 // Plan works out each repository's release from a review set, bottom-up, without changing
@@ -77,8 +84,9 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 			return nil, err
 		}
 		// Retry identity: a head that Stage merged is already staged (branch release/<tag>) or
-		// released (that tag on the staged tip). The plan then keeps that tag and does not
-		// advance to the next version.
+		// tagged (that tag on the staged tip). The plan then keeps that tag and does not
+		// advance to the next version. A tagged step is done, not refused, so the layers
+		// above it can resume; the refusal below is only for a head with nothing left to do.
 		prior, tagged, err := stagedAs(dir, r.Head)
 		if err != nil {
 			return nil, err
@@ -98,10 +106,7 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 		}
 		switch {
 		case prior != "":
-			st.Tag, st.Staged = prior, !tagged
-			if tagged {
-				st.Refusals = append(st.Refusals, fmt.Sprintf("the head %s is already released at %s (its staged tip carries the tag); a commit is released once (LIF-1)", short(r.Head), prior))
-			}
+			st.Tag, st.Staged, st.Done = prior, !tagged, tagged
 		case info.Kind == KindEngine || info.Kind == KindRouter:
 			_, n := highestN(existing, r.Upstream)
 			st.Tag = engineTagFor(r.Upstream, n+1)
@@ -173,10 +178,64 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 			return nil, err
 		}
 		st.Notes = notes
+		if st.Done {
+			// Its checks were made when it was tagged; a bug opened since must not stop the
+			// layers above it from resuming.
+			st.Refusals = nil
+		}
 		tags[r.Repo] = st.Tag
 		steps = append(steps, st)
 	}
+	remaining := false
+	for _, st := range steps {
+		remaining = remaining || !st.Done
+	}
+	for i := range steps {
+		st := &steps[i]
+		if !st.Done {
+			continue
+		}
+		if !remaining {
+			st.Refusals = append(st.Refusals, fmt.Sprintf("the head %s is already released at %s (its staged tip carries the tag) and no layer of the set remains to do; a commit is released once (LIF-1)", short(st.Head), st.Tag))
+		}
+		for _, lo := range steps {
+			if !lo.Done && Repos[lo.Repo].Layer < Repos[st.Repo].Layer {
+				st.Refusals = append(st.Refusals, fmt.Sprintf("%s is tagged but the layer below it, %s, is not; the release is inconsistent (X10)", st.Tag, lo.Repo))
+			}
+		}
+	}
 	return steps, nil
+}
+
+// pickLayer returns the index of the step the next command works on: the named repository,
+// or, when layer is empty, the first step in lock order that is not yet tagged. A step that
+// is already tagged is refused.
+func pickLayer(steps []Step, layer string) (int, error) {
+	for i, st := range steps {
+		switch {
+		case layer == "" && !st.Done:
+			return i, nil
+		case layer == st.Repo && st.Done:
+			return 0, fmt.Errorf("%s: %s is already tagged for this head; nothing to do for this layer", st.Repo, st.Tag)
+		case layer == st.Repo:
+			return i, nil
+		}
+	}
+	if layer == "" {
+		return 0, fmt.Errorf("every layer of the set is already tagged")
+	}
+	return 0, fmt.Errorf("-layer %s: not a repository of the set", layer)
+}
+
+// lowerLayers returns the steps in layers strictly below step i.
+func lowerLayers(steps []Step, i int) []Step {
+	var out []Step
+	for _, lo := range steps {
+		if Repos[lo.Repo].Layer < Repos[steps[i].Repo].Layer {
+			out = append(out, lo)
+		}
+	}
+	return out
 }
 
 // requirement returns the version a go.mod requires of a module, or the tag this set gives
@@ -382,36 +441,63 @@ func deprecationsAt(dir, commit string) ([]Deprecation, error) {
 // the head's merge and the pin commit, with no tag (LIF-3).
 func Branch(st Step) string { return "release/" + st.Tag }
 
-// Stage builds each repository's final release commit, in the local checkouts, and tags
-// nothing. It merges the head into the base with a merge commit and writes the pins the plan
-// names in one commit, both on the branch Branch names; the base branch does not move. The
-// commit it leaves is not the head Plan checked, so it has no recorded results yet. Tag, a
-// later step, tags the branch tip only after every required result is recorded for that
-// exact commit (LIF-3: a tag only on a commit where every ci invariant passed). Stage
-// refuses to start if any step has a refusal. It never pushes. The loop stages every layer
-// locally; the push of each layer's branch, the CI run on it and the next layer's checks
-// against the new tags are a manual step until the release job exists (design §13.6).
-func Stage(steps []Step, sign bool) error {
+// Stage builds one layer's final release commit, in that repository's local checkout, and
+// tags nothing. layer names the repository; empty means the first layer in lock order that is
+// not yet tagged. It first requires, for every layer below, that its release tag exists and
+// is published (env.TagPublished), because this layer's go.mod is pinned to those real tags.
+// It then merges the head into the base with a merge commit and writes the pins the plan
+// names in one commit, both on the branch Branch names; the base branch does not move. A
+// branch left by an interrupted run is continued, not rebuilt, so the commit that was or will
+// be checked keeps its SHA; a missing pin commit is added to it. The commit is not the head
+// Plan checked, so it has no recorded results yet. Tag, a later step, tags the branch tip
+// only after every required result is recorded for that exact commit (LIF-3). Stage refuses
+// to start if any step has a refusal. It never pushes: pushing the branch, running the layer's
+// checks on it, pushing the tag and running the next layer's checks against it are manual
+// until the release job exists (design §13.6).
+func Stage(env Env, steps []Step, layer string, sign bool) error {
 	for _, st := range steps {
 		if len(st.Refusals) > 0 {
 			return fmt.Errorf("%s: %d refusal(s); nothing was changed", st.Repo, len(st.Refusals))
 		}
 	}
+	i, err := pickLayer(steps, layer)
+	if err != nil {
+		return err
+	}
+	st := steps[i]
+	for _, lo := range lowerLayers(steps, i) {
+		if !lo.Done {
+			return fmt.Errorf("%s: the layer below, %s, is not tagged yet; tag %s first", st.Repo, lo.Repo, lo.Repo)
+		}
+		if env.TagPublished == nil {
+			return fmt.Errorf("%s: cannot tell whether %s is published", st.Repo, lo.Tag)
+		}
+		if !env.TagPublished(lo.Repo, lo.Tag) {
+			return fmt.Errorf("%s: %s of %s is not published; push it and run %s's checks against it first", st.Repo, lo.Tag, lo.Repo, st.Repo)
+		}
+	}
 	ident := []string{"-c", "user.name=" + bot.Name, "-c", "user.email=" + bot.Email}
-	for _, st := range steps {
+	if st.Staged {
+		if _, err := gitIn(st.Dir, "checkout", "-q", Branch(st)); err != nil {
+			return err
+		}
+	} else {
 		if _, err := gitIn(st.Dir, "checkout", "-q", "-B", Branch(st), st.Base); err != nil {
 			return err
 		}
 		if _, err := gitIn(st.Dir, append(ident, "merge", "--no-ff", "-q", "-m", fmt.Sprintf("Merge %s for %s", short(st.Head), st.Tag), st.Head)...); err != nil {
 			return fmt.Errorf("%s: merge: %w", st.Repo, err)
 		}
-		if len(st.Pins) > 0 {
-			if err := writePins(st.Dir, st.Pins); err != nil {
-				return fmt.Errorf("%s: %w", st.Repo, err)
-			}
-			if _, err := gitIn(st.Dir, "add", "go.mod"); err != nil {
-				return err
-			}
+	}
+	if len(st.Pins) > 0 {
+		if err := writePins(st.Dir, st.Pins); err != nil {
+			return fmt.Errorf("%s: %w", st.Repo, err)
+		}
+		if _, err := gitIn(st.Dir, "add", "go.mod"); err != nil {
+			return err
+		}
+		// Nothing to commit when an earlier run already wrote these pins.
+		if _, err := gitIn(st.Dir, "diff", "--cached", "--quiet"); err != nil {
 			args := append(ident, "commit", "-q", "-m", "Pin "+pinSummary(st.Pins)+" for "+st.Tag)
 			if sign {
 				args = append(args, "-S")
@@ -424,45 +510,50 @@ func Stage(steps []Step, sign bool) error {
 	return nil
 }
 
-// Tag makes the annotated tag, whose message is the release notes, on the tip of each step's
-// staged branch, and on nothing else. Before it tags a step it checks that the tip still
-// contains the planned head and that the environment records a passing result for every ci
-// check at the tip's own SHA (LIF-3, design §13.3). A tip that moved since it was checked
-// has no results and is refused. Nothing is tagged unless every step passes.
-func Tag(env Env, lock *StackLock, steps []Step, sign bool) error {
-	tips := make([]string, len(steps))
-	for i, st := range steps {
-		tip, err := gitIn(st.Dir, "rev-parse", "--verify", "refs/heads/"+Branch(st)+"^{commit}")
-		if err != nil {
-			return fmt.Errorf("%s: no staged release branch %s: %w", st.Repo, Branch(st), err)
+// Tag makes the annotated tag, whose message is the release notes, on the tip of one layer's
+// staged branch, and on nothing else. layer names the repository; empty means the first layer
+// in lock order that is not yet tagged. The layers below must already be tagged. Before it
+// tags, it checks that the tip still contains the planned head and that the environment
+// records a passing result for every ci check at the tip's own SHA (LIF-3, design §13.3). A
+// tip that moved since it was checked has no results and is refused.
+func Tag(env Env, lock *StackLock, steps []Step, layer string, sign bool) error {
+	i, err := pickLayer(steps, layer)
+	if err != nil {
+		return err
+	}
+	st := steps[i]
+	for _, lo := range lowerLayers(steps, i) {
+		if !lo.Done {
+			return fmt.Errorf("%s: the layer below, %s, is not tagged yet; tag %s first", st.Repo, lo.Repo, lo.Repo)
 		}
-		if _, err := gitIn(st.Dir, "merge-base", "--is-ancestor", st.Head, tip); err != nil {
-			return fmt.Errorf("%s: staged tip %s does not contain the planned head %s", st.Repo, short(tip), short(st.Head))
-		}
-		passed, err := env.Passed(st.Repo, tip)
-		if err != nil {
-			return err
-		}
-		if bad := CheckInvariants(env.Registry, st.Repo, passed, lock.Milestone, lock.MilestoneRelease); len(bad) > 0 {
-			return fmt.Errorf("%s: staged tip %s is not checked: %s", st.Repo, short(tip), strings.Join(bad, "; "))
-		}
-		if err := checkStagedTip(env, st, tip); err != nil {
-			return err
-		}
-		tips[i] = tip
+	}
+	tip, err := gitIn(st.Dir, "rev-parse", "--verify", "refs/heads/"+Branch(st)+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("%s: no staged release branch %s: %w", st.Repo, Branch(st), err)
+	}
+	if _, err := gitIn(st.Dir, "merge-base", "--is-ancestor", st.Head, tip); err != nil {
+		return fmt.Errorf("%s: staged tip %s does not contain the planned head %s", st.Repo, short(tip), short(st.Head))
+	}
+	passed, err := env.Passed(st.Repo, tip)
+	if err != nil {
+		return err
+	}
+	if bad := CheckInvariants(env.Registry, st.Repo, passed, lock.Milestone, lock.MilestoneRelease); len(bad) > 0 {
+		return fmt.Errorf("%s: staged tip %s is not checked: %s", st.Repo, short(tip), strings.Join(bad, "; "))
+	}
+	if err := checkStagedTip(env, st, tip); err != nil {
+		return err
 	}
 	ident := []string{"-c", "user.name=" + bot.Name, "-c", "user.email=" + bot.Email}
-	for i, st := range steps {
-		args := append(ident, "tag", "-a", st.Tag, "-F", "-", tips[i])
-		if sign {
-			args = append(ident, "tag", "-s", st.Tag, "-F", "-", tips[i])
-		}
-		cmd := exec.Command("git", args...)
-		cmd.Dir = st.Dir
-		cmd.Stdin = strings.NewReader(st.Notes)
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("%s: tag %s: %v: %s", st.Repo, st.Tag, err, out)
-		}
+	args := append(ident, "tag", "-a", st.Tag, "-F", "-", tip)
+	if sign {
+		args = append(ident, "tag", "-s", st.Tag, "-F", "-", tip)
+	}
+	cmd := exec.Command("git", args...)
+	cmd.Dir = st.Dir
+	cmd.Stdin = strings.NewReader(st.Notes)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%s: tag %s: %v: %s", st.Repo, st.Tag, err, out)
 	}
 	return nil
 }

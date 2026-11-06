@@ -328,8 +328,9 @@ jobs:
   # the workflow files, takes the change's file list from git diff base..head (the merge base to
   # the pull request's head), and passes
   # only if every workflow whose paths the change touched has a successful check run on the
-  # pull request's head. In the merge queue those workflows do not run, so the pull request's
-  # head is the commit they are read from.
+  # pull request's head. In the merge queue (none is enabled today) each of those workflows
+  # also runs, on the merge-queue commit, and the aggregator requires a successful run of each
+  # there whatever the change touches (X17, X22).
   required:
     name: required
     if: always()
@@ -342,7 +343,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
       GATE_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-      GATE_REF: ${{ github.event.merge_group.head_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -360,13 +360,13 @@ jobs:
         if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         run: |
           set -euo pipefail
-          runs_sha="$GATE_HEAD"
           if [ "${{ github.event_name }}" = "merge_group" ]; then
-            # The merge-queue ref is gh-readonly-queue/<base>/pr-<n>-<sha>.
-            pr=$(printf '%s' "$GATE_REF" | sed -n 's|.*/pr-\([0-9][0-9]*\)-.*|\1|p')
-            test -n "$pr"
-            runs_sha=$(gh api "repos/${{ github.repository }}/pulls/$pr" --jq .head.sha)
-            git fetch --quiet origin "$runs_sha"
+            # CI must have run on the tree being merged (X17, X22). Each gate workflow also
+            # triggers on merge_group and runs for every queue entry, so its check runs are read
+            # at the merge-queue commit, always: its cheap changes job must have succeeded, and
+            # its heavy job must have succeeded or been skipped because no path changed.
+            go run ./tools/prcheck path-gates -merge-queue -repo "${{ github.repository }}" -base "$GATE_BASE" -head "${{ github.sha }}"
+          else
+            # The files the pull request changes: its head against the merge base with the base.
+            go run ./tools/prcheck path-gates -repo "${{ github.repository }}" -base "$(git merge-base "$GATE_BASE" "$GATE_HEAD")" -head "$GATE_HEAD"
           fi
-          # The files the pull request changes: its head against the merge base with the base.
-          go run ./tools/prcheck path-gates -repo "${{ github.repository }}" -base "$(git merge-base "$GATE_BASE" "$runs_sha")" -head "$runs_sha" -runs-sha "$runs_sha"

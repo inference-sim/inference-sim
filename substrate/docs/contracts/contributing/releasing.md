@@ -33,8 +33,8 @@ is in `tools/release/stack.go`). Stack CI builds the heads together through a `g
 generates and never commits (X11). Once the set is approved, the bot releases it bottom-up
 (X10): blis-substrate, then the engine repositories and the router fork, then inference-sim, then
 the applications. For each repository the bot stages the final release commit on a branch
-`release/<tag>`: it merges the head into the base branch and writes the pins to the tags just
-made below it in one commit. It tags nothing at that point. The commit it stages is not the head
+`release/<tag>`: it merges the head into the base branch and writes the pins to the published
+tags of the layers below it in one commit. It tags nothing at that point. The commit it stages is not the head
 that was checked, so a person or the release job pushes the branch, CI runs on that exact commit,
 and its results are recorded under that commit's SHA. Only then does the bot make the signed,
 annotated tag, whose message is the generated release notes (LIF-4), on that same commit, and
@@ -42,12 +42,28 @@ only if the recorded results cover every ci check (LIF-3). A tip that moved afte
 no results and is refused. A head that already carries a release tag is refused, and so is a
 `go.mod` that requires a BLIS module at a pseudo-version.
 
-The release job does not exist yet. Until it does, the loop stages every layer in the local
-checkouts without pushing, and the per-layer steps (push the branch, wait for its CI, run the
-next layer's checks against the new tags, push the tag) are done by hand by the two release
-owners. The push to `main` needs a bypass for the release bot or the release owners, because the
-branch requires a pull request and an approving review; the tag push needs the same, because tags
-are protected (LIF-1).
+The release job does not exist yet (it arrives in M2). Until it does, the bot works one layer at
+a time and the owners do the pushing and the waiting by hand. Each run re-plans the whole
+`stack.lock` from the repositories as they stand, so it can be repeated after any interruption:
+a head that is already staged keeps its tag and its branch, a head whose tag is already made is
+reported as done and skipped, and the version numbers never advance. It is refused only when the
+whole set is already released.
+
+For each layer, lowest first:
+
+1. `-apply` stages the layer (`-layer <repo>`, by default the first layer not yet tagged). A
+   layer above the first is staged only when the tag of every layer below it exists and is
+   published on that repository's origin, because its `go.mod` is pinned to those real tags.
+2. The owners push `release/<tag>` and run the layer's checks on that exact commit, and record
+   the results under its SHA.
+3. `-tag` makes the annotated tag on that tip, if the recorded results cover every ci check, and
+   tags nothing else.
+4. The owners push the tag and run the layer's checks against it. Then they run `-apply` for the
+   next layer.
+
+The command prints the next step after each run. The push to `main` needs a bypass for the
+release bot or the release owners, because the branch requires a pull request and an approving
+review; the tag push needs the same, because tags are protected (LIF-1).
 
 A dry run prints each tag, pin, refusal and the notes, and changes nothing:
 
@@ -56,9 +72,9 @@ go run ./tools/release -lock stack.lock -results results.json \
     -dir blis-substrate=../blis-substrate -dir blis-vllm=../blis-vllm -dir inference-sim=../inference-sim
 ```
 
-`-apply` stages the release commits on `release/<tag>` in the local checkouts and tags nothing.
-After CI has run on the staged commits, `-tag` with a `results.json` that records them tags those
-exact commits. `-sign` signs the pin commits and tags. The command never pushes.
+`-apply` stages one layer's release commit on `release/<tag>` in the local checkout and tags
+nothing. After CI has run on the staged commit, `-tag` with a `results.json` that records it tags
+that exact commit. `-sign` signs the pin commits and tags. The command never pushes.
 
 ## The manual procedure
 

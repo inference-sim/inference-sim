@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -965,6 +966,124 @@ func TestCheckGates(t *testing.T) {
 	t.Run("an untouched gate that failed does not block", func(t *testing.T) {
 		none(t, CheckGates(gates, []string{"docs/a.md"}, map[string]GateRun{"rederive": {true, "failure"}}))
 	})
+}
+
+// On the merge queue (X17, X22) every gate workflow must have run at the merge-queue commit,
+// whatever the change touches; its heavy jobs may be skipped only when no path changed.
+func TestCheckQueueGates(t *testing.T) {
+	gates := []PathGate{{File: "w/rederive.yml", Paths: []string{"registry/scripts/**"}, Jobs: []string{"rederive changes", "rederive"}}}
+	okRuns := map[string]GateRun{"rederive changes": {true, "success"}, "rederive": {true, "success"}}
+	skipped := map[string]GateRun{"rederive changes": {true, "success"}, "rederive": {true, "skipped"}}
+	none(t, CheckQueueGates(gates, []string{"registry/scripts/a.py"}, okRuns))
+	none(t, CheckQueueGates(gates, []string{"docs/a.md"}, skipped))
+	none(t, CheckQueueGates(gates, []string{"docs/a.md"}, okRuns))
+	t.Run("no run at the queue commit even though no path changed", func(t *testing.T) {
+		has(t, CheckQueueGates(gates, []string{"docs/a.md"}, nil), "no check run")
+	})
+	t.Run("a skipped heavy job where paths changed", func(t *testing.T) {
+		has(t, CheckQueueGates(gates, []string{"registry/scripts/a.py"}, skipped), `"rederive" concluded skipped`)
+	})
+	t.Run("a failed changes job", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive changes": {true, "failure"}, "rederive": {true, "skipped"}}
+		has(t, CheckQueueGates(gates, []string{"docs/a.md"}, runs), "concluded failure")
+	})
+	t.Run("a gate without a changes job", func(t *testing.T) {
+		g := []PathGate{{File: "w/x.yml", Paths: []string{"a/**"}, Jobs: []string{"x"}}}
+		has(t, CheckQueueGates(g, nil, map[string]GateRun{"x": {true, "success"}}), "no job named")
+	})
+	t.Run("a changed base alters the decision", func(t *testing.T) {
+		// The same queue entry judged against two bases: the diff, and with it whether the
+		// heavy job may be skipped, follows the base.
+		repo := t.TempDir()
+		g := func(args ...string) string {
+			t.Helper()
+			cmd := exec.Command("git", append([]string{"-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+			cmd.Dir = repo
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("git %v: %v\n%s", args, err, out)
+			}
+			return strings.TrimSpace(string(out))
+		}
+		g("init", "-q", "-b", "main")
+		os.MkdirAll(filepath.Join(repo, "registry/scripts"), 0o755)
+		os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("1\n"), 0o644)
+		g("add", "-A")
+		g("commit", "-q", "-m", "one")
+		old := g("rev-parse", "HEAD")
+		os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("2\n"), 0o644)
+		g("commit", "-q", "-am", "two")
+		newBase := g("rev-parse", "HEAD")
+		os.WriteFile(filepath.Join(repo, "README"), []byte("x\n"), 0o644)
+		g("add", "-A")
+		g("commit", "-q", "-m", "three")
+		head := g("rev-parse", "HEAD")
+		decide := func(base string) []string {
+			out := g("diff", "--name-only", base, head)
+			return CheckQueueGates(gates, strings.Fields(out), skipped)
+		}
+		none(t, decide(newBase))
+		has(t, decide(old), "concluded skipped")
+	})
+}
+
+func TestGateChangedReadsThePathsFromTheWorkflow(t *testing.T) {
+	repo := t.TempDir()
+	g := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+		cmd.Dir = repo
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	g("init", "-q", "-b", "main")
+	wf := filepath.Join(repo, "w.yml")
+	os.WriteFile(wf, []byte("name: w\non:\n  pull_request:\n    paths:\n      - registry/**\n  merge_group:\njobs:\n  w:\n    runs-on: x\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "a"), []byte("1\n"), 0o644)
+	g("add", "-A")
+	g("commit", "-q", "-m", "base")
+	base := g("rev-parse", "HEAD")
+	os.WriteFile(filepath.Join(repo, "a"), []byte("2\n"), 0o644)
+	g("commit", "-q", "-am", "docs only")
+	head := g("rev-parse", "HEAD")
+	os.MkdirAll(filepath.Join(repo, "registry"), 0o755)
+	os.WriteFile(filepath.Join(repo, "registry/x"), []byte("1\n"), 0o644)
+	g("add", "-A")
+	g("commit", "-q", "-m", "registry")
+	head2 := g("rev-parse", "HEAD")
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	if err := os.Chdir(repo); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ head, want string }{{head, "run=false"}, {head2, "run=true"}} {
+		var out strings.Builder
+		if err := run([]string{"gate-changed", "-workflow", wf, "-base", base, "-head", c.head}, &out); err != nil || strings.TrimSpace(out.String()) != c.want {
+			t.Errorf("gate-changed at %s = %q, %v; want %s", short(c.head), out.String(), err, c.want)
+		}
+	}
+}
+
+func TestGateWorkflowsRunOnTheMergeQueue(t *testing.T) {
+	for _, f := range []string{"rederive.yml", "ledger-candidate.yml"} {
+		src, err := os.ReadFile("../../.github/workflows/" + f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !regexp.MustCompile(`(?m)^  merge_group:`).Match(src) {
+			t.Errorf("%s has no merge_group trigger, so it has no run at the merge-queue commit (X17, X22)", f)
+		}
+		g, ok, err := ParsePathGate(f, src)
+		if err != nil || !ok {
+			t.Fatalf("%s: %v %v", f, ok, err)
+		}
+		if !slices.ContainsFunc(g.Jobs, isChangesJob) || !regexp.MustCompile(`needs: changes`).Match(src) {
+			t.Errorf("%s: its heavy job does not wait on a cheap %q job: %v", f, "changes", g.Jobs)
+		}
+	}
 }
 
 func TestPathPatterns(t *testing.T) {

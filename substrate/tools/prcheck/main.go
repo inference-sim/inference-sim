@@ -47,6 +47,14 @@
 //	    X16, X17: the path-filtered workflows (read from the workflow files) whose paths the
 //	    change touched (git diff --name-only base head) must each have a successful check
 //	    run on -runs-sha (default -head); one the change did not touch counts as passed.
+//	    With -merge-queue, -head is the merge-queue commit and -base the merge group's
+//	    base_sha: every path-filtered workflow must have succeeded on -head whatever the
+//	    change touches (each runs a cheap changes job on every queue entry), and its heavy
+//	    jobs may be skipped only when the change touches none of its paths.
+//	prcheck gate-changed -workflow <file> -base <sha> -head <sha>
+//	    Print "run=true" or "run=false": whether git diff --name-only base head touches the
+//	    workflow's pull_request paths, read from the workflow itself. The changes job of a
+//	    gate workflow runs it on merge_group, where GitHub applies no paths filter.
 //	prcheck knownbad [-repo-name blis-substrate] [-list-only]
 //	    X18: run every known-bad test the registry names for this repository.
 //	prcheck licence-files [-repo-name <name>]
@@ -141,6 +149,8 @@ func run(args []string, w io.Writer) error {
 	deferral := fs.String("deferral", "", "the X20 deferral file (commits only)")
 	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
 	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
+	queue := fs.Bool("merge-queue", false, "path-gates: judge the merge-queue commit -head, where every gate workflow must have run")
+	workflow := fs.String("workflow", "", "gate-changed: the gate workflow file")
 	changed := fs.String("changed", "", "the changed paths, one per line")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -424,6 +434,9 @@ func run(args []string, w io.Writer) error {
 		if sha == "" {
 			sha = *head
 		}
+		if *queue {
+			sha = *head
+		}
 		deadline := time.Now().Add(*wait)
 		var runs map[string]GateRun
 		for {
@@ -431,13 +444,40 @@ func run(args []string, w io.Writer) error {
 				return err
 			}
 			p := Pending(gates, changed, runs)
+			if *queue {
+				p = QueuePending(gates, runs)
+			}
 			if len(p) == 0 || !time.Now().Before(deadline) {
 				break
 			}
 			time.Sleep(15 * time.Second)
 		}
 		_, _ = fmt.Fprintf(w, "path-gates: %d path-filtered workflow(s), %d changed file(s)\n", len(gates), len(changed))
+		if *queue {
+			return report(w, "path-gates", CheckQueueGates(gates, changed, runs))
+		}
 		return report(w, "path-gates", CheckGates(gates, changed, runs))
+	case "gate-changed":
+		if *workflow == "" || *base == "" {
+			return fmt.Errorf("gate-changed needs -workflow, -base and -head")
+		}
+		src, err := os.ReadFile(*workflow)
+		if err != nil {
+			return err
+		}
+		g, ok, err := ParsePathGate(*workflow, src)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("%s: no pull_request paths to compare", *workflow)
+		}
+		out, err := git("diff", "--name-only", *base, *head)
+		if err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(w, "run=%t\n", g.Triggered(strings.Fields(out)))
+		return nil
 	case "answers-record":
 		if *body == "" || *changed == "" {
 			return fmt.Errorf("answers-record needs -body and -changed")
