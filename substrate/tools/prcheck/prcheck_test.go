@@ -593,6 +593,29 @@ func TestApplyDeferral(t *testing.T) {
 	if len(fail) != 3 || len(deferred) != 0 {
 		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
 	}
+	// The last day before the expiry date still defers, at any time of day; the date itself
+	// does not, from its first instant.
+	for _, at := range []string{"2026-12-04T00:00:00Z", "2026-12-04T23:59:59Z"} {
+		now, err := time.Parse(time.RFC3339, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 2 || len(fail) != 1 {
+			t.Fatalf("%s: fail=%v deferred=%v, want 2 deferred", at, fail, deferred)
+		}
+	}
+	if now, _ := time.Parse(time.RFC3339, "2026-12-05T00:00:01Z"); !now.IsZero() {
+		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 0 || len(fail) != 4 {
+			t.Fatalf("2026-12-05T00:00:01Z: fail=%v deferred=%v, want expired", fail, deferred)
+		}
+	}
+	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-04"), findings); len(deferred) != 2 || len(fail) != 1 {
+		t.Fatalf("2026-12-04: fail=%v deferred=%v, want 2 deferred", fail, deferred)
+	}
+	// A deferral file that is missing is no file: nothing is deferred and every finding fails.
+	if fail, deferred = ApplyDeferral([]byte{}, day("2026-11-05"), findings); len(fail) != 3 || len(deferred) != 0 {
+		t.Fatalf("empty file: fail=%v deferred=%v", fail, deferred)
+	}
 	fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), findings)
 	if len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "expired on 2026-12-05") {
 		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)

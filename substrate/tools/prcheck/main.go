@@ -153,6 +153,8 @@ func run(args []string, w io.Writer) error {
 		}
 		fmt.Fprintf(w, "commits: %d checked\n", len(cs))
 		if *deferral != "" {
+			// A missing deferral file means no deferral: src is empty and every finding
+			// fails, so the check fails closed.
 			src, err := os.ReadFile(*deferral)
 			if err != nil && !errors.Is(err, fs2.ErrNotExist) {
 				return err
