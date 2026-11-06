@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -753,5 +754,130 @@ func TestRequiredCheckNamesAreCheckRunNames(t *testing.T) {
 	}
 	if !strings.Contains(string(wf), "github.event_name == 'merge_group'") || !strings.Contains(string(wf), "  pr:\n") {
 		t.Error("the job that makes the check run \"pr / blis checks\" does not run on the merge-queue tree")
+	}
+}
+
+// A required check must be one the merge-queue tree can produce: `scan` has a merge_group
+// trigger, the merge check requires exactly what required-checks.yaml lists for the
+// repository, and the always-run aggregator carries the path-filtered gates (X16, X17).
+func TestRequiredChecksAreProducedAndCollectedOnTheMergeQueue(t *testing.T) {
+	read := func(p string) string {
+		t.Helper()
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	var lists map[string][]string
+	if err := yaml.Unmarshal([]byte(read("../../.github/required-checks.yaml")), &lists); err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`required: "([^"]+)"`).FindStringSubmatch(read("../../.github/workflows/blis.yml"))
+	if m == nil {
+		t.Fatal("blis.yml names no required checks for the merge check")
+	}
+	got := strings.Split(m[1], ",")
+	want := append([]string(nil), lists["blis-substrate"]...)
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("the merge check requires %v; required-checks.yaml lists %v for blis-substrate", got, want)
+	}
+	for _, n := range lists["blis-substrate"] {
+		if n == "scan" && !regexp.MustCompile(`(?m)^  merge_group:`).MatchString(read("../../.github/workflows/private-names.yml")) {
+			t.Error("`scan` is required but private-names.yml has no merge_group trigger, so the merge-queue tree can never have it")
+		}
+	}
+	ci := read("../../.github/workflows/ci.yml")
+	if !strings.Contains(ci, "prcheck path-gates") || !strings.Contains(ci, "name: required\n    if: always()") {
+		t.Error("the always-run `required` job does not run the path-gate aggregator")
+	}
+}
+
+// The aggregator reads the path-filtered workflows from the files. The real ones are found,
+// each with the check-run name its job makes.
+func TestPathGatesAreReadFromTheWorkflowFiles(t *testing.T) {
+	files, err := filepath.Glob("../../.github/workflows/*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates, err := LoadPathGates(os.ReadFile, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byFile := map[string]PathGate{}
+	for _, g := range gates {
+		byFile[filepath.Base(g.File)] = g
+	}
+	for _, f := range []string{"rederive.yml", "ledger-candidate.yml"} {
+		if g, ok := byFile[f]; !ok || len(g.Paths) == 0 || len(g.Jobs) == 0 {
+			t.Errorf("%s is not read as a path-filtered gate: %+v", f, g)
+		}
+	}
+	if len(gates) != 2 {
+		t.Errorf("%d path-filtered workflows; a new one needs a look at the aggregator: %v", len(gates), gates)
+	}
+	// The registry's gate list agrees with the file, and a change under it triggers it.
+	if !byFile["rederive.yml"].Triggered([]string{"registry/scripts/x.py"}) || byFile["rederive.yml"].Triggered([]string{"docs/a.md", "kernel/a.go"}) {
+		t.Error("rederive's trigger does not follow its paths")
+	}
+	if !byFile["ledger-candidate.yml"].Triggered([]string{"kernel/a.go"}) || byFile["ledger-candidate.yml"].Triggered([]string{"docs/a.md"}) {
+		t.Error("ledger-candidate's trigger does not follow its paths")
+	}
+}
+
+func TestCheckGates(t *testing.T) {
+	gates := []PathGate{
+		{File: "w/rederive.yml", Paths: []string{"registry/scripts/**", ".github/workflows/rederive.yml"}, Jobs: []string{"rederive"}},
+		{File: "w/ledger-candidate.yml", Paths: []string{"kernel/**"}, Jobs: []string{"candidate"}},
+	}
+	ok := map[string]GateRun{"rederive": {true, "success"}, "candidate": {true, "success"}}
+	t.Run("untouched gates need no run", func(t *testing.T) {
+		none(t, CheckGates(gates, []string{"docs/a.md"}, nil))
+	})
+	t.Run("touched and passed", func(t *testing.T) {
+		none(t, CheckGates(gates, []string{"registry/scripts/a.py", "kernel/k.go"}, ok))
+	})
+	t.Run("touched and never started", func(t *testing.T) {
+		has(t, CheckGates(gates, []string{"kernel/k.go"}, nil), `no check run "candidate"`)
+	})
+	t.Run("touched and failed", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive": {true, "failure"}}
+		has(t, CheckGates(gates, []string{"registry/scripts/a.py"}, runs), "concluded failure")
+	})
+	t.Run("touched and skipped or cancelled", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive": {true, "skipped"}}
+		has(t, CheckGates(gates, []string{".github/workflows/rederive.yml"}, runs), "concluded skipped")
+	})
+	t.Run("touched and still running", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive": {false, ""}}
+		has(t, CheckGates(gates, []string{"registry/scripts/a.py"}, runs), "has not completed")
+		if p := Pending(gates, []string{"registry/scripts/a.py"}, runs); len(p) != 1 || p[0] != "rederive" {
+			t.Errorf("pending %v", p)
+		}
+	})
+	t.Run("an untouched gate that failed does not block", func(t *testing.T) {
+		none(t, CheckGates(gates, []string{"docs/a.md"}, map[string]GateRun{"rederive": {true, "failure"}}))
+	})
+}
+
+func TestPathPatterns(t *testing.T) {
+	for _, c := range []struct {
+		pat, path string
+		want      bool
+	}{
+		{"registry/**", "registry/a/b.py", true},
+		{"registry/**", "registryx/a.py", false},
+		{"kernel/*.go", "kernel/a.go", true},
+		{"kernel/*.go", "kernel/sub/a.go", false},
+		{"a/**/b", "a/b", true},
+		{"a/**/b", "a/x/y/b", true},
+		{".github/quarantine.yaml", ".github/quarantine.yaml", true},
+		{".github/quarantine.yaml", ".github/quarantineXyaml", false},
+	} {
+		if got := pathPattern(c.pat).MatchString(c.path); got != c.want {
+			t.Errorf("%q against %q = %v, want %v", c.pat, c.path, got, c.want)
+		}
 	}
 }

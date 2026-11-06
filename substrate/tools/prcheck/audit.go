@@ -15,6 +15,10 @@ import (
 //
 //	blis-vllm: [blis checks, ci]
 //
+// A check that a path filter can leave without a run is not listed; its workflow's aggregator
+// job (blis-substrate's `required`, see pathgates.go) is. Every listed name is one the merge
+// queue produces on the tree it merges: blis-substrate's merge check requires exactly its list.
+//
 // Merge is one merged pull request.
 type Merge struct {
 	Repo      string

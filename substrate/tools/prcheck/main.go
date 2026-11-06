@@ -39,6 +39,10 @@
 //	prcheck audit-merges [-required-checks .github/required-checks.yaml] [-hours 24]
 //	    X17: every merge in the last day, in every repository, had a successful run of
 //	    each required check on the tree it merged.
+//	prcheck path-gates -repo <o/n> -base <sha> -head <sha> [-runs-sha <sha>] [-dir .github] [-wait 45m]
+//	    X16, X17: the path-filtered workflows (read from the workflow files) whose paths the
+//	    change touched (git diff --name-only base head) must each have a successful check
+//	    run on -runs-sha (default -head); one the change did not touch counts as passed.
 //	prcheck knownbad [-repo-name blis-substrate] [-list-only]
 //	    X18: run every known-bad test the registry names for this repository.
 //	prcheck licence-files [-repo-name <name>]
@@ -131,6 +135,8 @@ func run(args []string, w io.Writer) error {
 	pyPkg := fs.String("python-package", "", "the directory pytest ran in, for its results")
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
 	deferral := fs.String("deferral", "", "the X20 deferral file (commits only)")
+	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
+	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -391,6 +397,42 @@ func run(args []string, w io.Writer) error {
 		}
 		fmt.Fprintf(w, "audit-merges: %d merge(s) in %d repositories since %s\n", len(merges), len(names), since.UTC().Format(time.RFC3339))
 		return report(w, "audit-merges", AuditMerges(merges, req))
+	case "path-gates":
+		if *repo == "" || *base == "" || *runsSHA == "" && *head == "" {
+			return fmt.Errorf("path-gates needs -repo, -base and -head")
+		}
+		var files []string
+		for _, pat := range []string{"workflows/*.yml", "workflows/*.yaml"} {
+			m, _ := filepath.Glob(filepath.Join(*dir, pat))
+			files = append(files, m...)
+		}
+		gates, err := LoadPathGates(os.ReadFile, files)
+		if err != nil {
+			return err
+		}
+		out, err := git("diff", "--name-only", *base, *head)
+		if err != nil {
+			return err
+		}
+		changed := strings.Fields(out)
+		sha := *runsSHA
+		if sha == "" {
+			sha = *head
+		}
+		deadline := time.Now().Add(*wait)
+		var runs map[string]GateRun
+		for {
+			if runs, err = ghGateRuns(*repo, sha); err != nil {
+				return err
+			}
+			p := Pending(gates, changed, runs)
+			if len(p) == 0 || !time.Now().Before(deadline) {
+				break
+			}
+			time.Sleep(15 * time.Second)
+		}
+		_, _ = fmt.Fprintf(w, "path-gates: %d path-filtered workflow(s), %d changed file(s)\n", len(gates), len(changed))
+		return report(w, "path-gates", CheckGates(gates, changed, runs))
 	case "knownbad":
 		// prcheck knownbad -repo-name blis-substrate [-list-only]
 		reg, err := invariants.Embedded()
