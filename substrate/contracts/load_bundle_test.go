@@ -147,3 +147,15 @@ func TestLoadersRefuseAnAliasBomb(t *testing.T) {
 		t.Fatalf("a real scenario was refused: %v", err)
 	}
 }
+
+// A second YAML document is a change the loader would drop, so it is refused (SUB-12).
+func TestLoadersRefuseTrailingDocuments(t *testing.T) {
+	if _, err := LoadScenario(write(t, "s.yaml", bundleScenario+"---\nbogus: 1\n")); err == nil ||
+		!strings.Contains(err.Error(), "second YAML document") {
+		t.Errorf("LoadScenario with a second document: err = %v, want a refusal", err)
+	}
+	if _, _, err := LoadBundle(write(t, "b.yaml", bundleScenario+"---\n"+bundleDeployment+"---\nbogus: 1\n")); err == nil ||
+		!strings.Contains(err.Error(), "third") {
+		t.Errorf("LoadBundle with a third document: err = %v, want a refusal", err)
+	}
+}

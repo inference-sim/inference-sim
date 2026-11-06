@@ -104,6 +104,10 @@ func LoadBundle(path string) (*scenario.Scenario, *deployment.Deployment, error)
 		}
 		return nil, nil, fmt.Errorf("decoding the deployment in %s: %w", path, err)
 	}
+	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		return nil, nil, fmt.Errorf("%s holds more than a scenario and a deployment: a third "+
+			"YAML document would be ignored", path)
+	}
 
 	if len(dep.Pools) == 0 {
 		return nil, nil, fmt.Errorf(
@@ -479,6 +483,10 @@ func decodeStrictBytes(path string, data []byte, dst any) error {
 	dec.KnownFields(true)
 	if err := dec.Decode(dst); err != nil {
 		return fmt.Errorf("decoding %s: %w", path, err)
+	}
+	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("decoding %s: the file holds a second YAML document, which would be "+
+			"ignored; a file is one document", path)
 	}
 	return nil
 }
