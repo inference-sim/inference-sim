@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -112,5 +113,65 @@ func TestEveryPreviouslyReportedMetricIsDefined(t *testing.T) {
 		if _, ok := Lookup(id); !ok {
 			t.Errorf("%s is not in the registry", id)
 		}
+	}
+}
+
+// Output tokens per second and output tokens per second per GPU share a formula, statistic,
+// population, window and unit; they differ in what the rate divides by. They are not
+// comparable, and the refusal names the denominator (DEV-8).
+func TestPerGPUThroughputIsNotComparableToTheAbsoluteRate(t *testing.T) {
+	abs, _ := Lookup("output_tok_s")
+	per, _ := Lookup("output_tok_s_per_gpu")
+	if _, err := Compare(Figure{abs, 1000}, Figure{per, 125}); err == nil || !strings.Contains(err.Error(), "denominator") {
+		t.Fatalf("got %v, want a refusal naming denominator", err)
+	}
+}
+
+// Every rate states what it divides by, and only a rate does.
+func TestEveryRateStatesItsDenominator(t *testing.T) {
+	for _, d := range All() {
+		perSecond := d.Unit == UnitTokensPerS || d.Unit == UnitRequestsPerS
+		if perSecond != (d.Denominator != "") {
+			t.Errorf("%s: unit %s with denominator %q", d.ID, d.Unit, d.Denominator)
+		}
+	}
+}
+
+// Comparable names the field where two definitions differ for every field sameMeaning
+// reads: the two lists are parallel, and a field in one and not the other would let a
+// difference through unnamed or be named when it decides nothing.
+func TestComparableAgreesWithSameMeaning(t *testing.T) {
+	base, _ := Lookup("output_tok_s")
+	variants := map[string]func(*Definition){
+		"formula":           func(d *Definition) { d.Formula = FormulaTotalThroughput },
+		"statistic":         func(d *Definition) { d.Statistic = StatMean },
+		"population":        func(d *Definition) { d.Population = PopulationTokens },
+		"window":            func(d *Definition) { d.Window = WindowRun },
+		"unit":              func(d *Definition) { d.Unit = UnitCount },
+		"percentile_method": func(d *Definition) { d.PercentileMethod = PercentileNumpyLinear },
+		"unfinished":        func(d *Definition) { d.Unfinished = UnfinishedExcluded },
+		"denominator":       func(d *Definition) { d.Denominator = DenominatorWindowAndGPUs },
+	}
+	for field, change := range variants {
+		o := base
+		change(&o)
+		if base.sameMeaning(o) {
+			t.Errorf("%s: sameMeaning ignores it", field)
+		}
+		if err := Comparable(base, o); err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("%s: Comparable gave %v, want a refusal naming it", field, err)
+		}
+	}
+	// Names and prose decide nothing.
+	o := base
+	o.ID, o.Description, o.Follows = "other", "other", "other"
+	if !base.sameMeaning(o) || Comparable(base, o) != nil {
+		t.Error("ID, Description and Follows must not affect comparability")
+	}
+	// Every field of Definition is either in the variants or one of the three names.
+	skip := map[string]bool{"ID": true, "Description": true, "Follows": true}
+	rt := reflect.TypeOf(Definition{})
+	if got, want := rt.NumField()-len(skip), len(variants); got != want {
+		t.Errorf("Definition has %d meaning fields and the test varies %d: add the new field here, to sameMeaning and to Comparable", got, want)
 	}
 }

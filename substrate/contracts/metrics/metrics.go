@@ -143,6 +143,19 @@ const (
 	UnitCount          Unit = "count"
 )
 
+// Denominator is what a rate divides by, besides the quantity it counts. Two rates with
+// the same formula, population and unit but different denominators are different metrics:
+// 1000 output tokens per second over the window is not 125 per GPU.
+type Denominator string
+
+const (
+	// DenominatorWindow: the length of the measured window.
+	DenominatorWindow Denominator = "window"
+	// DenominatorWindowAndGPUs: the length of the measured window and the number of GPUs
+	// the deployment's pools occupy.
+	DenominatorWindowAndGPUs Denominator = "window_and_gpus"
+)
+
 // Unfinished says how a latency statistic treats requests in flight or queued at the
 // horizon (DEV-9, design §8.7). Their latency is unknown but at least what they have
 // waited.
@@ -177,6 +190,9 @@ type Definition struct {
 	PercentileMethod PercentileMethod `yaml:"percentile_method,omitempty" json:"percentile_method,omitempty"`
 	// Unfinished says how requests unfinished at the horizon are treated.
 	Unfinished Unfinished `yaml:"unfinished" json:"unfinished"`
+	// Denominator is set exactly when the unit is a rate per second: what the rate divides
+	// by.
+	Denominator Denominator `yaml:"denominator,omitempty" json:"denominator,omitempty"`
 	// Description is one sentence for a reader. It decides nothing: comparisons use the
 	// fields above.
 	Description string `yaml:"description" json:"description"`
@@ -190,7 +206,7 @@ type Definition struct {
 func (d Definition) sameMeaning(o Definition) bool {
 	return d.Formula == o.Formula && d.Statistic == o.Statistic && d.Population == o.Population &&
 		d.Window == o.Window && d.Unit == o.Unit && d.PercentileMethod == o.PercentileMethod &&
-		d.Unfinished == o.Unfinished
+		d.Unfinished == o.Unfinished && d.Denominator == o.Denominator
 }
 
 const (
@@ -249,13 +265,20 @@ func build() map[string]Definition {
 		}
 	}
 	rate := func(id string, f Formula, pop Population, u Unit, desc, follows string) {
-		add(Definition{ID: id, Formula: f, Statistic: StatRate, Population: pop, Window: WindowMeasured,
-			Unit: u, Unfinished: UnfinishedNotApplicable, Description: desc, Follows: follows})
+		d := Definition{ID: id, Formula: f, Statistic: StatRate, Population: pop, Window: WindowMeasured,
+			Unit: u, Unfinished: UnfinishedNotApplicable, Description: desc, Follows: follows}
+		if u == UnitTokensPerS || u == UnitRequestsPerS {
+			d.Denominator = DenominatorWindow
+		}
+		add(d)
 	}
 	rate("output_tok_s", FormulaOutputThroughput, PopulationRequests, UnitTokensPerS,
 		"Output tokens of the window's completed requests over the window's length.", aiperfTPS)
 	rate("output_tok_s_per_gpu", FormulaOutputThroughput, PopulationRequests, UnitTokensPerS,
 		"output_tok_s over the GPUs the deployment's pools occupy.", "")
+	g := out["output_tok_s_per_gpu"]
+	g.Denominator = DenominatorWindowAndGPUs
+	out[g.ID] = g
 	rate("total_tok_s", FormulaTotalThroughput, PopulationRequests, UnitTokensPerS,
 		"Prompt and output tokens of the window's completed requests over the window's length.", vllmServe)
 	rate("request_throughput", FormulaRequestThroughput, PopulationRequests, UnitRequestsPerS,
@@ -318,11 +341,13 @@ type Figure struct {
 // error naming the first field that differs otherwise (DEV-8). Two figures whose
 // definitions differ in any field are not comparable, whatever their identifiers say.
 //
-// In M1 this meets DEV-8 for the definition: formula, statistic, population, window, unit,
-// percentile method and the handling of unfinished requests. DEV-8 also names scope and
-// aggregate; a Definition carries neither yet, and they arrive in M2 with the registry's
-// scope (design §8.7), so two figures of one definition taken at different scopes are not
-// told apart until then.
+// Enforced now: formula, statistic, population, window, unit, percentile method, the
+// handling of unfinished requests and, for a rate, its denominator (so a per-GPU rate and
+// an absolute one are told apart). Not enforced: scope and aggregate, which DEV-8 also
+// names. A Definition carries neither yet; they arrive in M2 with the registry's scope
+// (design §8.7), so two figures of one definition taken at different scopes are not told
+// apart until then. The number of GPUs itself is not part of a definition: it is a fact
+// of the deployment, and the denominator only says that the rate is divided by it.
 func Compare(a, b Figure) (float64, error) {
 	if err := Comparable(a.Definition, b.Definition); err != nil {
 		return 0, err
@@ -347,11 +372,12 @@ func Comparable(a, b Definition) error {
 		{"unit", string(a.Unit), string(b.Unit)},
 		{"percentile_method", string(a.PercentileMethod), string(b.PercentileMethod)},
 		{"unfinished", string(a.Unfinished), string(b.Unfinished)},
+		{"denominator", string(a.Denominator), string(b.Denominator)},
 	} {
 		if f.av != f.bv {
 			return fmt.Errorf("metrics %q and %q are not comparable: %s is %q in one and %q in the other",
 				a.ID, b.ID, f.name, f.av, f.bv)
 		}
 	}
-	return nil // unreachable: sameMeaning compares exactly these fields
+	return nil // unreachable: TestComparableAgreesWithSameMeaning holds the two lists to the same fields
 }
