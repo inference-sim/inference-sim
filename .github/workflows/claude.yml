@@ -251,6 +251,12 @@ jobs:
       # mentions @claude in prose admits the job and the action then no-ops. The job still
       # concludes 'success', so report-status must not read the job result alone (see #1675).
       execution_file: ${{ steps.claude.outputs.execution_file }}
+      # The commit and tree the job checked out to judge, recorded before the agent runs.
+      # report-status publishes against these and never looks the PR head up again, so a push
+      # during the run (timeout-minutes: 60) cannot move the verdict onto a commit nobody
+      # examined (#1705, X22).
+      reviewed_sha: ${{ steps.reviewed.outputs.sha }}
+      reviewed_tree: ${{ steps.reviewed.outputs.tree }}
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -265,12 +271,31 @@ jobs:
           # afterwards, so the review itself was never on main — but the noise reads as
           # though it were. Empty string falls back to checkout's default, which the
           # `issues:` trigger needs: a plain issue has no refs/pull/N/head to check out.
+          #
+          # Checked against claude-code-action's source at the pinned commit (#1678),
+          # src/github/operations/branch.ts: for an open PR it runs `git fetch origin
+          # pull/N/head:<headRefName>` (a fork) or `git fetch origin <headRefName>` (same
+          # repository), then `git checkout <headRefName>`. Checking out refs/pull/N/head leaves a
+          # DETACHED HEAD, so no local branch is checked out and git has no
+          # "refusing to fetch into the current branch" case for the fetch to hit. What a source
+          # reading cannot show, and only the first real trigger after merge can, is the run log:
+          # that this checkout reports the PR ref, that the action's fetch and switch finish
+          # without a git error, and that the reviewed SHA equals the PR head.
           ref: >-
             ${{ github.event_name == 'pull_request_review_comment'
                 && format('refs/pull/{0}/head', github.event.pull_request.number)
              || (github.event.issue.pull_request
                 && format('refs/pull/{0}/head', github.event.issue.number))
              || '' }}
+
+      - name: Record the reviewed commit and tree
+        id: reviewed
+        # Right after checkout, before the agent runs: this is the tree the job was given to
+        # judge, and the agent's own commits (the write path may make some) do not move it.
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         id: claude
@@ -338,6 +363,12 @@ jobs:
     outputs:
       # Same early-return semantics as the write path above — see that comment.
       execution_file: ${{ steps.claude.outputs.execution_file }}
+      # The commit and tree the job checked out to judge, recorded before the agent runs.
+      # report-status publishes against these and never looks the PR head up again, so a push
+      # during the run (timeout-minutes: 60) cannot move the verdict onto a commit nobody
+      # examined (#1705, X22).
+      reviewed_sha: ${{ steps.reviewed.outputs.sha }}
+      reviewed_tree: ${{ steps.reviewed.outputs.tree }}
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -351,6 +382,15 @@ jobs:
              || (github.event.issue.pull_request
                 && format('refs/pull/{0}/head', github.event.issue.number))
              || '' }}
+
+      - name: Record the reviewed commit and tree
+        id: reviewed
+        # Right after checkout, before the agent runs: this is the tree the job was given to
+        # judge, and the agent's own commits (the write path may make some) do not move it.
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
 
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         id: claude
@@ -416,35 +456,27 @@ jobs:
       pull-requests: read
 
     steps:
-      - name: Resolve PR head SHA
-        id: pr-info
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        with:
-          script: |
-            try {
-              const { data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number
-              });
-              core.setOutput('pr_head_sha', pr.head.sha);
-            } catch (err) {
-              core.setFailed(`Failed to resolve PR head SHA: ${err.message}`);
-            }
-
       - name: Report commit status
-        if: steps.pr-info.outcome == 'success'
+        # No reviewed commit (the agent job recorded none) publishes NOTHING: a missing status
+        # is visible and honest, a wrong one is neither. When the PR head has moved on since,
+        # the verdict still lands on the commit that was checked out, not on the new head, and
+        # its description names the tree (X22: a verdict names the tree it judged). The action
+        # fetches the PR branch itself after the checkout (#1678), so a push in that window is
+        # not seen here.
+        if: needs.claude.outputs.reviewed_sha != '' || needs.claude-review.outputs.reviewed_sha != ''
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           # Whichever agent job ran. They are mutually exclusive, so at most one is not
           # 'skipped'; if both are (the gate above regressed) this yields 'skipped', which
           # stateMap deliberately does not carry — see the comment on it.
           CLAUDE_RESULT: ${{ needs.claude.result != 'skipped' && needs.claude.result || needs.claude-review.result }}
-          PR_HEAD_SHA: ${{ steps.pr-info.outputs.pr_head_sha }}
+          REVIEWED_SHA: ${{ needs.claude.outputs.reviewed_sha || needs.claude-review.outputs.reviewed_sha }}
+          REVIEWED_TREE: ${{ needs.claude.outputs.reviewed_tree || needs.claude-review.outputs.reviewed_tree }}
         with:
           script: |
             const result = process.env.CLAUDE_RESULT;
-            const sha = process.env.PR_HEAD_SHA;
+            const sha = process.env.REVIEWED_SHA;
+            const tree = process.env.REVIEWED_TREE;
             // No 'skipped' entry: the job condition above excludes skipped runs, so a
             // skipped result reaching here means that gate regressed. Fall through to the
             // warning + 'error' path rather than silently re-publishing a stale 'pending'
@@ -466,6 +498,6 @@ jobs:
               sha: sha,
               state: state || 'error',
               target_url: runUrl,
-              description: `Claude Code: ${result}`,
+              description: `Claude Code: ${result} (tree ${tree.slice(0, 12)})`,
               context: 'Claude Code Action (comment trigger)'
             });
