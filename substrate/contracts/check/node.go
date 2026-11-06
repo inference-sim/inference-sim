@@ -25,12 +25,34 @@ import (
 // them the same way. Unknown keys are refused by the decoder's KnownFields, and by
 // RejectUnknownKeys in custom unmarshallers.
 
+// MaxNodes bounds the nodes a document may expand to, counting each alias as the whole
+// subtree it names. Aliases make a few hundred bytes expand to billions of nodes (eight
+// nested anchors of ten aliases each parse in a fraction of a millisecond and expand to 10^8),
+// and every pass over the document pays for the expansion. The largest document the project
+// reads expands to well under a million nodes, so this is several times that and still
+// refuses a bomb in under a second.
+const MaxNodes = 1 << 22
+
+// MaxDocumentBytes bounds the size of one document a strict loader reads. The largest data
+// file in the catalog is about 7 MB; a file past this is not a configuration document.
+const MaxDocumentBytes = 64 << 20
+
+// CheckSize refuses a document of n bytes that is larger than MaxDocumentBytes.
+func CheckSize(path string, n int) error {
+	if n > MaxDocumentBytes {
+		return fmt.Errorf("%s is %d bytes; a document is limited to %d bytes (MaxDocumentBytes)",
+			path, n, MaxDocumentBytes)
+	}
+	return nil
+}
+
 // CheckNode reports the first construct in n that a strict loader refuses, with its line.
 // target is the type n will be decoded into, or nil when it is not known; the number rules
 // that depend on a field's type are applied where the type is known, and stop at a type
 // with its own UnmarshalYAML, which checks its own node with DecodeNode.
 func CheckNode(n *yaml.Node, target reflect.Type) error {
-	if err := checkShape(n, map[*yaml.Node]bool{}); err != nil {
+	count := 0
+	if err := checkShape(n, map[*yaml.Node]bool{}, &count); err != nil {
 		return err
 	}
 	if target == nil {
@@ -83,9 +105,14 @@ func DecodeNode(n *yaml.Node, dst any) error {
 
 // checkShape refuses recursive aliases and repeated keys anywhere in n.
 // onPath holds the alias targets being expanded, so an alias to an ancestor is found.
-func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool) error {
+// count is the number of nodes visited, aliases expanded; it is held to MaxNodes.
+func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool, count *int) error {
 	if n == nil {
 		return nil
+	}
+	if *count++; *count > MaxNodes {
+		return fmt.Errorf("line %d: the document expands to more than %d nodes once aliases "+
+			"are followed (MaxNodes); an alias that nests aliases grows exponentially", n.Line, MaxNodes)
 	}
 	switch n.Kind {
 	case yaml.AliasNode:
@@ -95,7 +122,7 @@ func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool) error {
 		}
 		onPath[n.Alias] = true
 		defer delete(onPath, n.Alias)
-		return checkShape(n.Alias, onPath)
+		return checkShape(n.Alias, onPath, count)
 	case yaml.MappingNode:
 		seen := map[string]int{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
@@ -109,7 +136,7 @@ func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool) error {
 		}
 	}
 	for _, c := range n.Content {
-		if err := checkShape(c, onPath); err != nil {
+		if err := checkShape(c, onPath, count); err != nil {
 			return err
 		}
 	}

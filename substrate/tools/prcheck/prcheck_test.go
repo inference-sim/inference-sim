@@ -33,7 +33,8 @@ func TestCommitPolicy(t *testing.T) {
 	good := Commit{Hash: strings.Repeat("a", 40), Signed: true, Author: "Ada Person <ada@example.com>",
 		Message: "Add a check\n\nBody.\n\nAssisted-by: Claude Code (Claude Opus 5.5)\nSigned-off-by: Ada Person <ada@example.com>\n"}
 	none(t, CommitPolicy(good))
-	bot := Commit{Hash: "b", Signed: true, Author: "release bot <" + releaseBotEmail + ">", Message: "Release v0.11.1\n"}
+	bot := Commit{Hash: "b", Signed: true, Author: "release bot <" + releaseBotEmail + ">",
+		Committer: "release bot <" + releaseBotEmail + ">", Message: "Release v0.11.1\n"}
 	none(t, CommitPolicy(bot))
 
 	cases := []struct {
@@ -52,8 +53,19 @@ func TestCommitPolicy(t *testing.T) {
 		{"two assisted-by", func(c *Commit) {
 			c.Message = "Add\n\nAssisted-by: Claude Code\nAssisted-by: Copilot\nSigned-off-by: Ada Person <ada@example.com>\n"
 		}, "2 Assisted-by lines"},
+		{"bot author, person committer", func(c *Commit) {
+			c.Author = "release bot <" + releaseBotEmail + ">"
+			c.Committer = "Ada Person <ada@example.com>"
+			c.Message = "Release\n"
+		}, "no Signed-off-by"},
+		{"bot author, no committer", func(c *Commit) {
+			c.Author = "release bot <" + releaseBotEmail + ">"
+			c.Committer = ""
+			c.Message = "Release\n"
+		}, "no Signed-off-by"},
 		{"bot signs off", func(c *Commit) {
 			c.Author = "release bot <" + releaseBotEmail + ">"
+			c.Committer = "release bot <" + releaseBotEmail + ">"
 			c.Message = "Release\n\nSigned-off-by: Ada Person <ada@example.com>\n"
 		}, "the bot never signs off"},
 	}
@@ -100,6 +112,14 @@ func TestWorkflowLint(t *testing.T) {
 		{"action by short hash", "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "actions/checkout@3d3c42e", "not pinned by a full commit hash"},
 		{"docker by tag", "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "docker://alpine:3", "not pinned by sha256 digest"},
 		{"or true", "go test ./...", "go test ./... || true", "ignores an exit code"},
+		{"or colon", "go test ./...", "go test ./... || :", "ignores an exit code"},
+		{"or colon, trailing text", "go test ./...", "go test ./... ||: # best effort", "ignores an exit code"},
+		{"or exit 0", "go test ./...", "go test ./... || exit 0", "ignores an exit code"},
+		{"or subshell exit 0", "go test ./...", "go test ./... || (exit 0)", "ignores an exit code"},
+		{"or return 0", "go test ./...", "go test ./... || return 0", "ignores an exit code"},
+		{"or true with trailing text", "go test ./...", "go test ./... || true; echo done", "ignores an exit code"},
+		{"semicolon true", "go test ./...", "go test ./...; true", "ignores an exit code"},
+		{"semicolon true, trailing text", "go test ./...", "go test ./... ; true # keep going", "ignores an exit code"},
 		{"set +e", "set -euo pipefail", "set +e", "ignores an exit code"},
 		{"continue-on-error", "      - uses: ./.github/actions/go-toolchain\n", "      - uses: ./.github/actions/go-toolchain\n        continue-on-error: true\n", "continue-on-error"},
 		{"pip without hashes", "pip install --require-hashes -r", "pip install -r", "without --require-hashes"},
@@ -119,6 +139,14 @@ func TestWorkflowLint(t *testing.T) {
 			}
 			has(t, got, c.want)
 		})
+	}
+	// Words that only begin like the ignored forms are not findings.
+	for _, ok := range []string{"go test ./... || truefalse-tool", "go test ./... || exit 01", "echo a; trueblue"} {
+		got, err := LintWorkflow("ci.yml", []byte(strings.Replace(goodWorkflow, "go test ./...", ok, 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		none(t, got)
 	}
 	// An exemption names an invariant and a reason.
 	ex := strings.Replace(goodWorkflow, "go test ./...", "go test ./... || true # lint-ok: X22 the step reports, a later step fails", 1)
@@ -565,6 +593,29 @@ func TestApplyDeferral(t *testing.T) {
 	if len(fail) != 3 || len(deferred) != 0 {
 		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
 	}
+	// The last day before the expiry date still defers, at any time of day; the date itself
+	// does not, from its first instant.
+	for _, at := range []string{"2026-12-04T00:00:00Z", "2026-12-04T23:59:59Z"} {
+		now, err := time.Parse(time.RFC3339, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 2 || len(fail) != 1 {
+			t.Fatalf("%s: fail=%v deferred=%v, want 2 deferred", at, fail, deferred)
+		}
+	}
+	if now, _ := time.Parse(time.RFC3339, "2026-12-05T00:00:01Z"); !now.IsZero() {
+		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 0 || len(fail) != 4 {
+			t.Fatalf("2026-12-05T00:00:01Z: fail=%v deferred=%v, want expired", fail, deferred)
+		}
+	}
+	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-04"), findings); len(deferred) != 2 || len(fail) != 1 {
+		t.Fatalf("2026-12-04: fail=%v deferred=%v, want 2 deferred", fail, deferred)
+	}
+	// A deferral file that is missing is no file: nothing is deferred and every finding fails.
+	if fail, deferred = ApplyDeferral([]byte{}, day("2026-11-05"), findings); len(fail) != 3 || len(deferred) != 0 {
+		t.Fatalf("empty file: fail=%v deferred=%v", fail, deferred)
+	}
 	fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), findings)
 	if len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "expired on 2026-12-05") {
 		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
@@ -576,5 +627,45 @@ func TestApplyDeferral(t *testing.T) {
 	fail, _ = ApplyDeferral([]byte("issue: inference-sim/blis-substrate#12\nexpires: 2026-12-05\nreason: x\nextra: y\n"), day("2026-11-05"), findings)
 	if len(fail) != 4 || !strings.Contains(fail[3], "x20-deferral.yaml") {
 		t.Fatalf("unknown key: %v", fail)
+	}
+}
+
+// ClosedBy reads every form GitHub acts on and none it does not.
+func TestClosedByForms(t *testing.T) {
+	const repo = "o/r"
+	for _, c := range []struct {
+		name, body string
+		want       []Issue
+	}{
+		{"plain", "Closes #1\n", []Issue{{repo, 1}}},
+		{"colon", "Closes: #2\n", []Issue{{repo, 2}}},
+		{"bullet", "- Closes #3\n* Fixes #4\n+ Resolves #5\n", []Issue{{repo, 3}, {repo, 4}, {repo, 5}}},
+		{"quote", "> Closes #6\n", []Issue{{repo, 6}}},
+		{"every keyword", "close #1\ncloses #2\nclosed #3\nfix #4\nfixes #5\nfixed #6\nresolve #7\nresolves #8\nresolved #9\n",
+			[]Issue{{repo, 1}, {repo, 2}, {repo, 3}, {repo, 4}, {repo, 5}, {repo, 6}, {repo, 7}, {repo, 8}, {repo, 9}}},
+		{"list", "Closes #1, #2, #3\n", []Issue{{repo, 1}, {repo, 2}, {repo, 3}}},
+		{"list with and", "Closes #1 and #2\n", []Issue{{repo, 1}, {repo, 2}}},
+		{"parenthetical", "Closes #7 (the rest is in #9)\n", []Issue{{repo, 7}}},
+		{"cross repository", "Closes a/b#8\n", []Issue{{"a/b", 8}}},
+		{"mixed list", "Fixes #1, a/b#2\n", []Issue{{repo, 1}, {"a/b", 2}}},
+		{"comment", "<!-- Closes #7 -->\nCloses #1\n", []Issue{{repo, 1}}},
+		{"unterminated comment", "Closes #1\n<!-- Closes #7\nCloses #8\n", []Issue{{repo, 1}}},
+		{"fenced block", "```\nCloses #7\n```\nCloses #1\n", []Issue{{repo, 1}}},
+		{"tilde fence", "~~~\nCloses #7\n~~~\n", nil},
+		{"unterminated fence", "Closes #1\n```\nCloses #7\n", []Issue{{repo, 1}}},
+		{"prose is not a closing line", "This closes #7 eventually.\nsee Closes #8 in the text\n", nil},
+		{"no number", "Closes the loop\n", nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := ClosedBy(repo, c.body)
+			if len(got) != len(c.want) {
+				t.Fatalf("got %+v, want %+v", got, c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("got %+v, want %+v", got, c.want)
+				}
+			}
+		})
 	}
 }

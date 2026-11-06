@@ -56,6 +56,16 @@ func TestBenchmarkClientDefinitions(t *testing.T) {
 	}
 }
 
+// aiperf's inter-token latency is a mean taken per request; the registry pools gaps as
+// `vllm bench serve` does, so the ITL family must not claim to follow aiperf.
+func TestITLDoesNotFollowAiperf(t *testing.T) {
+	for _, d := range All() {
+		if d.Formula == FormulaITL && strings.Contains(d.Follows, "aiperf") {
+			t.Errorf("%s follows %q, but aiperf's ITL is a different population", d.ID, d.Follows)
+		}
+	}
+}
+
 // TestCompareRefusesDifferentDefinitions is DEV-8's test: a comparison of two figures is
 // refused unless their definitions are the same, and the refusal names the field.
 func TestCompareRefusesDifferentDefinitions(t *testing.T) {

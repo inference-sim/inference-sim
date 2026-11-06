@@ -7,14 +7,15 @@ import (
 
 // The review-question automation (design §13.2). invariants questions lists, as Markdown
 // checklist items, the questions whose triggers match the changed paths. MergeQuestions
-// puts them in the pull-request body under "## Review questions", keeps every answer a code
-// owner has already given, and reports the questions still unanswered.
+// puts them in the pull-request body under "## Review questions", keeps every answer already
+// given, and reports the questions still unanswered.
 //
 // An item is "- [ ] **<ID>** <question> ... Answer: <text>". A code owner answers by ticking
 // it and writing yes or no with a reason after "Answer:". An item stays required while it is
 // unticked or its answer does not start with yes or no. Branch protection makes this job
-// required, so the merge waits for every answer; GitHub records who edited the body, and the
-// merge check verifies the editor is a code owner.
+// required, so the merge waits for every answer. The check does not look up who ticked an
+// item or wrote an answer: it requires each question to be ticked and answered, and the
+// approving reviewer is the control on whether the answer is the right one.
 
 const questionsHeading = "## Review questions"
 

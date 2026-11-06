@@ -47,10 +47,21 @@ type wfStep struct {
 }
 
 var (
-	seedRef      = regexp.MustCompile(`secrets\.` + SeedSecret + `\b`)
-	anySecret    = regexp.MustCompile(`secrets\.[A-Za-z_]`)
-	mainOnlyIf   = regexp.MustCompile(`github\.ref\s*==\s*'refs/heads/main'`)
-	prControlled = regexp.MustCompile(`github\.event\.(pull_request|workflow_run)\.(head|head_sha|head_branch|head_repository)|github\.head_ref`)
+	seedRef    = regexp.MustCompile(`secrets\.` + SeedSecret + `\b`)
+	anySecret  = regexp.MustCompile(`secrets\.[A-Za-z_]`)
+	mainOnlyIf = regexp.MustCompile(`github\.ref\s*==\s*'refs/heads/main'`)
+	// listsUnitReads matches a job that lists the artifacts of unit-reads records; such a job
+	// must keep only those a run on main of this repository uploaded.
+	listsUnitReads   = regexp.MustCompile(`unit-reads-`)
+	unitReadsOnMain  = regexp.MustCompile(`workflow_run\.head_branch\s*==\s*"main"`)
+	unitReadsOwnRepo = regexp.MustCompile(`workflow_run\.head_repository_id`)
+	// takesRunID matches a job that downloads the run a person named.
+	takesRunID     = regexp.MustCompile(`inputs\.run_id`)
+	runVerifyAPI   = regexp.MustCompile(`actions/runs/\$RUN_ID`)
+	runVerifyName  = regexp.MustCompile(`ledger candidate`)
+	runVerifyState = regexp.MustCompile(`success`)
+	runVerifyRepo  = regexp.MustCompile(`head_repository`)
+	prControlled   = regexp.MustCompile(`github\.event\.(pull_request|workflow_run)\.(head|head_sha|head_branch|head_repository)|github\.head_ref`)
 )
 
 // LintWorkflows is D7's workflow lint. For every workflow under dir it checks:
@@ -61,6 +72,11 @@ var (
 //     push; every checkout in it checks out ref main of this repository, so a local action it
 //     runs after the first checkout is main's; it uses no expression a pull request controls
 //     (the head ref or sha).
+//   - A seed-holding job that lists unit-reads artifacts keeps only those uploaded by a run on
+//     main of this repository (workflow_run.head_branch and head_repository_id), since a pull
+//     request run can upload an artifact of that name.
+//   - A seed-holding job that takes inputs.run_id checks, before downloading, that the run is a
+//     successful run of "ledger candidate" whose head repository is this one.
 //   - No other job reads the seed secret.
 //   - A candidate job (job id "candidate" or "candidate-…") reads no secret, runs in no
 //     environment and declares read-only permissions.
@@ -122,6 +138,13 @@ func lintWorkflow(path string) (int, error) {
 			}
 			if prControlled.MatchString(text) {
 				errs = append(errs, fmt.Errorf("%s: holds the seed and reads a ref or sha a pull request controls (D7)", at))
+			}
+			if listsUnitReads.MatchString(text) && !(unitReadsOnMain.MatchString(text) && unitReadsOwnRepo.MatchString(text)) {
+				errs = append(errs, fmt.Errorf("%s: lists unit-reads artifacts without keeping only those a run on main of this repository uploaded (workflow_run.head_branch == \"main\" and workflow_run.head_repository_id) (D2)", at))
+			}
+			if takesRunID.MatchString(text) && !(runVerifyAPI.MatchString(text) && runVerifyName.MatchString(text) &&
+				runVerifyState.MatchString(text) && runVerifyRepo.MatchString(text)) {
+				errs = append(errs, fmt.Errorf("%s: downloads the run in inputs.run_id without checking, through actions/runs/$RUN_ID, that it is a successful ledger candidate run of this repository (D7)", at))
 			}
 			checkouts := 0
 			for i, s := range j.Steps {

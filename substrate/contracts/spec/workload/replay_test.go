@@ -294,3 +294,31 @@ func TestReplayRollingAliasWarns(t *testing.T) {
 	}
 	t.Errorf("no rolling-alias warning:\n%s", p.Error())
 }
+
+// max_context_length reads an integer as every other integer field does, through the shared
+// strict decoder: the same spellings are accepted (1_000, 0x10) and a fraction is refused.
+func TestContextLimitReadsIntegersLikeOtherFields(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want ContextLimit
+		ok   bool
+	}{
+		{"16384", 16384, true},
+		{"1_000", 1000, true},
+		{"0x10", 16, true},
+		{"max_model_len", ContextLimitMaxModelLen, true},
+		{"1.5", 0, false},
+		{"1e3", 0, false},
+		{"0", 0, false},
+		{"-3", 0, false},
+		{"[1]", 0, false},
+	} {
+		var r struct {
+			C ContextLimit `yaml:"c"`
+		}
+		err := yaml.Unmarshal([]byte("c: "+c.in+"\n"), &r)
+		if c.ok != (err == nil) || (c.ok && r.C != c.want) {
+			t.Errorf("max_context_length: %s = %v (err %v), want %v (ok %v)", c.in, r.C, err, c.want, c.ok)
+		}
+	}
+}

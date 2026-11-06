@@ -72,6 +72,9 @@ func Unmarshal(data []byte, r *Result) error { return UnmarshalStrict(data, r) }
 // UnmarshalStrict reads any document type from JSON or YAML as Unmarshal reads a Result:
 // strictly, with one decoder deciding both encodings. Other document packages use it.
 func UnmarshalStrict(data []byte, r any) error {
+	if err := validate.CheckSize("the document", len(data)); err != nil {
+		return err
+	}
 	if t := bytes.TrimLeft(data, " \t\r\n"); len(t) > 0 && t[0] == '{' {
 		n, err := jsonToNode(data)
 		if err != nil {
@@ -94,7 +97,13 @@ func UnmarshalStrict(data []byte, r any) error {
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	return dec.Decode(r)
+	if err := dec.Decode(r); err != nil {
+		return err
+	}
+	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		return errors.New("the document is followed by a second YAML document, which would be ignored")
+	}
+	return nil
 }
 
 // writeJSON writes the YAML node n as JSON.

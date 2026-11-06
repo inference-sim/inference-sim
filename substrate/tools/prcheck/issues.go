@@ -110,21 +110,67 @@ func CheckCitedOpen(cites []Citation, state IssueState) []string {
 	return bad
 }
 
-var closesLine = regexp.MustCompile(`(?im)^\s*(?:closes|fixes|resolves)\s+(?:([\w.-]+/[\w.-]+))?#(\d+)\b`)
+// closesLine matches the start of a line that closes issues: an optional list or quote
+// prefix, one of GitHub's closing keywords, an optional colon, and the references after it.
+var closesLine = regexp.MustCompile(`(?i)^\s*(?:(?:[-*+]|>)\s*)*(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+(.*)$`)
+
+// closesRef is one reference, own-repository (#12) or cross-repository (owner/repo#12), at
+// the start of s; a list continues after a comma, "and" or an ampersand.
+var closesRef = regexp.MustCompile(`^(?:([\w.-]+/[\w.-]+))?#(\d+)\b(?:\s*(?:,|&|\band\b)\s*)?`)
 
 // ClosedBy returns the issues a pull-request body closes, with repo the body's repository.
+// Text in an HTML comment, in a fenced code block, or after a comment that is never closed
+// does not count, as GitHub does not act on it.
 func ClosedBy(repo, body string) []Issue {
 	var out []Issue
-	for _, m := range closesLine.FindAllStringSubmatch(stripComments(body), -1) {
-		r := m[1]
-		if r == "" {
-			r = repo
+	for _, line := range strings.Split(visibleText(body), "\n") {
+		m := closesLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
 		}
-		var n int
-		fmt.Sscan(m[2], &n)
-		out = append(out, Issue{r, n})
+		rest := m[1]
+		for {
+			r := closesRef.FindStringSubmatch(rest)
+			if r == nil {
+				break
+			}
+			at := r[1]
+			if at == "" {
+				at = repo
+			}
+			var n int
+			fmt.Sscan(r[2], &n)
+			out = append(out, Issue{at, n})
+			rest = rest[len(r[0]):]
+		}
 	}
 	return out
+}
+
+// visibleText removes the parts of a pull-request body that GitHub renders as nothing or as
+// code: HTML comments (an unterminated one runs to the end) and fenced code blocks (an
+// unterminated one likewise).
+func visibleText(body string) string {
+	body = htmlComment.ReplaceAllString(body, "")
+	if i := strings.Index(body, "<!--"); i >= 0 {
+		body = body[:i]
+	}
+	var out []string
+	var fence string
+	for _, line := range strings.Split(body, "\n") {
+		t := strings.TrimLeft(line, " \t>")
+		switch {
+		case fence != "":
+			if strings.HasPrefix(t, fence) {
+				fence = ""
+			}
+		case strings.HasPrefix(t, "```"), strings.HasPrefix(t, "~~~"):
+			fence = t[:3]
+		default:
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // CheckClosesUncited returns a finding for each issue the pull request closes that the

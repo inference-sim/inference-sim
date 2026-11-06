@@ -70,6 +70,9 @@ func LoadBundle(path string) (*scenario.Scenario, *deployment.Deployment, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 	}
+	if err := validate.CheckSize(path, len(data)); err != nil {
+		return nil, nil, err
+	}
 	// Each of the two documents is held to the strict rules before it is decoded.
 	check := yaml.NewDecoder(bytes.NewReader(data))
 	for i, target := range []reflect.Type{reflect.TypeOf(&scenario.Scenario{}), reflect.TypeOf(&deployment.Deployment{})} {
@@ -100,6 +103,10 @@ func LoadBundle(path string) (*scenario.Scenario, *deployment.Deployment, error)
 				"a kernel prices live in a second YAML document, separated by `---`", path)
 		}
 		return nil, nil, fmt.Errorf("decoding the deployment in %s: %w", path, err)
+	}
+	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		return nil, nil, fmt.Errorf("%s holds more than a scenario and a deployment: a third "+
+			"YAML document would be ignored", path)
 	}
 
 	if len(dep.Pools) == 0 {
@@ -462,6 +469,9 @@ func decodeStrict(path string, dst any) error {
 // convert exactly to its field, a non-finite number, a repeated key and a recursive alias
 // (validate.CheckNode).
 func decodeStrictBytes(path string, data []byte, dst any) error {
+	if err := validate.CheckSize(path, len(data)); err != nil {
+		return err
+	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return fmt.Errorf("decoding %s: %w", path, err)
@@ -473,6 +483,10 @@ func decodeStrictBytes(path string, data []byte, dst any) error {
 	dec.KnownFields(true)
 	if err := dec.Decode(dst); err != nil {
 		return fmt.Errorf("decoding %s: %w", path, err)
+	}
+	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("decoding %s: the file holds a second YAML document, which would be "+
+			"ignored; a file is one document", path)
 	}
 	return nil
 }

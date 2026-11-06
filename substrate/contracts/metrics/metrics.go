@@ -6,11 +6,15 @@
 // search read one meaning for each name.
 //
 // Time to first token, time per output token and inter-token latency follow the
-// benchmark clients BLIS is compared with: vLLM's `vllm bench serve` at v0.32.0
-// (vllm/benchmarks/serve.py:624-634) and aiperf 0.12.0. Time per output token excludes
+// benchmark client BLIS is compared with: vLLM's `vllm bench serve` at v0.32.0
+// (vllm/benchmarks/serve.py:624-634). Time per output token excludes
 // the first token and is a statistic over requests, each request's own (latency - TTFT) /
 // (output tokens - 1). Inter-token latency is pooled over every gap between consecutive
-// output tokens of every request with at least two output tokens (inference-sim #1894).
+// output tokens of every request with at least two output tokens (inference-sim #1894), as
+// `vllm bench serve` pools them. aiperf's inter-token latency is a per-request mean, a
+// different population, so it is not cited for that family. Output tokens per second follows
+// aiperf. interactivity_p50 and interactivity_p90 are defined by BLIS, as 1000 over the
+// time-per-output-token percentile in milliseconds; neither benchmark client reports them.
 //
 // Two figures are comparable only when their definitions are identical. Compare refuses
 // any other pair, and a definition is never inferred from a field's name.
@@ -191,7 +195,6 @@ func (d Definition) sameMeaning(o Definition) bool {
 
 const (
 	vllmServe = "vllm v0.32.0 vllm/benchmarks/serve.py:624-634"
-	aiperfITL = "aiperf 0.12.0 src/aiperf/metrics/types/inter_token_latency_metric.py:48-55"
 	aiperfTPS = "aiperf 0.12.0 src/aiperf/metrics/types/output_token_throughput_metrics.py:40-78"
 )
 
@@ -213,7 +216,7 @@ var latencyFamilies = []latencyFamily{
 	{"tpot", FormulaTPOT, PopulationRequestsTwoTokens,
 		"Time per output token, excluding the first, computed per request", vllmServe},
 	{"itl", FormulaITL, PopulationTokens,
-		"Inter-token latency, pooled over every gap between output tokens", vllmServe + "; " + aiperfITL},
+		"Inter-token latency, pooled over every gap between output tokens", vllmServe},
 	{"e2e", FormulaE2E, PopulationRequests,
 		"Request latency, arrival to last output token", vllmServe},
 	{"step_interval", FormulaStepInterval, PopulationSteps,
@@ -314,6 +317,12 @@ type Figure struct {
 // Compare returns b's value minus a's when the two figures share a definition, and an
 // error naming the first field that differs otherwise (DEV-8). Two figures whose
 // definitions differ in any field are not comparable, whatever their identifiers say.
+//
+// In M1 this meets DEV-8 for the definition: formula, statistic, population, window, unit,
+// percentile method and the handling of unfinished requests. DEV-8 also names scope and
+// aggregate; a Definition carries neither yet, and they arrive in M2 with the registry's
+// scope (design §8.7), so two figures of one definition taken at different scopes are not
+// told apart until then.
 func Compare(a, b Figure) (float64, error) {
 	if err := Comparable(a.Definition, b.Definition); err != nil {
 		return 0, err

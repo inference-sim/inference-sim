@@ -42,6 +42,10 @@ on:
         type: string
         required: true
 
+# On a pull request from the same repository, the checks run the pull request's own code with
+# pull-requests: write: blis.yml passes the pull request's head commit as substrate-ref, so a
+# pull request is judged by its own changed checks. That is by design. A pull request from a
+# fork gets a read-only token whatever is declared here.
 permissions:
   contents: read
   pull-requests: write
