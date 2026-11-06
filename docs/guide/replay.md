@@ -87,11 +87,9 @@ routes with the router the scenario states, or the router's default configuratio
 !!! note "Replay with the same scenario and flags as the run"
     The deployment is not round-tripped through the trace header: replay rebuilds it from
     `--scenario` (and the kernel's KV budget) exactly as `blis run` does. A trace exported by
-    `blis run` and replayed with the **same scenario and identical flags, including
-    `--horizon`**, produces equal `metrics`, `requests` and `breakdowns` (INV-13). Pass `--horizon` on both legs:
-    `blis run` defaults it to unlimited while `blis replay` auto-computes 2x the max arrival
-    time (see the table below), so a default-horizon replay may truncate a run that was still
-    draining. An MoE scenario with `dp > 1` replays the same way — one replica per
+    `blis run` and replayed with the **same scenario and identical flags**, produces equal `metrics`, `requests` and `breakdowns` (INV-13). Both
+    legs default the horizon to unlimited, so a default replay drains as the run did; if you
+    pass `--horizon` to the run, pass the same to the replay. An MoE scenario with `dp > 1` replays the same way — one replica per
     data-parallel rank on both legs. The autoscaler and node pools are rejected by
     `blis replay`.
 
@@ -115,7 +113,7 @@ routes with the router the scenario states, or the router's default configuratio
 | **Request source** | Generated from workload spec or CLI distributions | Loaded from TraceV2 CSV |
 | **Arrival times** | Synthesized by arrival process (Poisson, etc.) | Exact timestamps from trace |
 | **Token counts** | Sampled from distributions | Recorded values |
-| **Horizon** | From `--horizon` flag or spec | Auto-computed as 2x max arrival time (override with `--horizon`) |
+| **Horizon** | From `--horizon` flag or spec | Unlimited, as in `blis run` (set with `--horizon`) |
 | **Output format** | One `Result` document on stdout ([Metrics & Results](results.md)) | The same `Result` document; `--results-path` (deprecated) additionally writes a per-request JSON array (request_id, ttft_us, e2e_us, input_tokens, output_tokens) |
 | **Session support** | Session manager creates follow-ups | Session structure encoded in trace (no manager needed) |
 | **Trace export** | `--trace-output` (header `mode: "generated"`) | `--trace-output` (header `mode: "replayed"`); see restrictions below |
