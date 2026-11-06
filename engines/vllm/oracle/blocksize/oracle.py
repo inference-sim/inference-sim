@@ -91,7 +91,12 @@ CATALOG = os.environ.get("BLIS_ORACLE_CATALOG", "")
 COMPUTE_CAPABILITY = {"h100": (9, 0), "h200": (9, 0), "b200": (10, 0), "b300": (10, 3),
                       "gb200-nvl72": (10, 0), "gb300": (10, 3)}
 KV_DTYPES = ["auto", "fp8"]
-TP_WIDTHS = [1, 2, 4, 8, 16]
+# The tensor-parallel widths each combination is run at. The per-rank head counts shrink with the
+# width (num_heads // tp), and a backend may accept a head count at one width and not at another,
+# so a combination resolves only if the size is the same at all of them. The table is valid only
+# for a width up to the largest of these; core/vllm.MaxBlockSizeTP is that bound, and
+# ResolveBlockSize refuses a wider pool.
+TP_WIDTHS = list(range(1, 17))
 
 
 def load_vllm(vllm_dir):
@@ -208,7 +213,8 @@ def run(vllm_dir):
             status, size = "refused", None
             note = first_err
         elif len(sizes) == 1:
-            status, size, note = "resolved", sizes.pop(), "the same under every setting of " + ", ".join(fact_names)
+            status, size, note = "resolved", sizes.pop(), ("the same under every setting of " + ", ".join(fact_names) +
+                                                     " and at every tensor-parallel width in " + str(TP_WIDTHS) + " (valid up to tp %d only)" % max(TP_WIDTHS))
         else:
             status, size = "refused", None
             differs = []
@@ -243,6 +249,8 @@ def render_table(v, fact_names, rows):
     out.append("# Platform replacements (design FID-1). None decides a block size:")
     for what, why in v.stubs.REPLACEMENTS:
         out.append(f"#   {what}: {why}")
+    out.append("# Tensor parallelism: every combination is run at tp in " + str(TP_WIDTHS) + " and resolves only if the size")
+    out.append("# is the same at all of them. The table is valid for tp up to %d; a wider pool is refused (core/vllm.MaxBlockSizeTP)." % max(TP_WIDTHS))
     out.append("# Not resolved, whatever the GPU and dtype:")
     for m, why in sorted(NOT_RESOLVED.items()):
         out.append(f"#   {m}: {why}")

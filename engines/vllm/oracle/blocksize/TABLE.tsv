@@ -25,6 +25,8 @@
 #   vllm.utils.platform_utils.num_compute_units: a fixed SM count for cutlass_mla.py:73, read only to size that workspace
 #   vllm.utils.flashinfer.can_use_trtllm_attention / supports_trtllm_attention: the fact trtllm_usable replaces them; the capability rules (:663-670) are copied and the artifactory and cubin probes (:620-645) are what the fact stands for
 #   vllm.v1.attention.ops.flashmla._is_flashmla_available: the fact flashmla_built replaces the probe of the compiled extensions; the capability rules in is_flashmla_dense_supported (:51-58) and is_flashmla_sparse_supported (:61-74) run as written
+# Tensor parallelism: every combination is run at tp in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] and resolves only if the size
+# is the same at all of them. The table is valid for tp up to 16; a wider pool is refused (core/vllm.MaxBlockSizeTP).
 # Not resolved, whatever the GPU and dtype:
 #   deepseek-v4-pro: DeepSeek-V4 layers use their own sparse MLA backends and block sizes (vllm/models/deepseek_v4), not the selector alone
 #   glm-5: its sparse MLA layers need the indexer backends' sizes (use_sparse); not modelled here

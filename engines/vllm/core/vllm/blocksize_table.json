@@ -90,7 +90,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
    "model": "deepseek-v3",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -120,7 +120,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "fp8",
    "model": "deepseek-v3",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -150,7 +150,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
    "model": "deepseek-v3",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -180,7 +180,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
    "model": "deepseek-v3",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -212,7 +212,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "auto",
    "model": "gpt-oss-120b",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -244,7 +244,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "fp8",
    "model": "gpt-oss-120b",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -276,7 +276,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
    "model": "gpt-oss-120b",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -308,7 +308,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "fp8",
    "model": "gpt-oss-120b",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -340,7 +340,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
    "model": "gpt-oss-120b",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -372,7 +372,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
    "model": "gpt-oss-120b",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -465,7 +465,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
    "model": "kimi-k2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -495,7 +495,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "fp8",
    "model": "kimi-k2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -525,7 +525,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
    "model": "kimi-k2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -555,7 +555,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
    "model": "kimi-k2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -585,7 +585,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "auto",
    "model": "llama-3.1-70b-instruct",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -616,7 +616,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "fp8",
    "model": "llama-3.1-70b-instruct",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -646,7 +646,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
    "model": "llama-3.1-70b-instruct",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -676,7 +676,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "fp8",
    "model": "llama-3.1-70b-instruct",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -706,7 +706,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
    "model": "llama-3.1-70b-instruct",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -736,7 +736,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
    "model": "llama-3.1-70b-instruct",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -766,7 +766,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -797,7 +797,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -827,7 +827,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -857,7 +857,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -887,7 +887,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -917,7 +917,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.5",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -947,7 +947,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.7",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -978,7 +978,7 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.7",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -1008,7 +1008,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.7",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -1038,7 +1038,7 @@
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.7",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -1068,7 +1068,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
    "model": "minimax-m2.7",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   },
   {
@@ -1098,7 +1098,7 @@
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
    "model": "minimax-m2.7",
-   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
   }
  ],

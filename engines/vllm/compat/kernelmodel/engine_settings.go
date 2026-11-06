@@ -117,9 +117,9 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 // them.
 //
 // A caller configuring a simulator needs the same block size, token budget and sequence cap
-// the kernel resolved against, or the two would describe different deployments: a scheduler
-// admitting 512 sequences while the kernel priced a 256-sequence engine is not a
-// disagreement the numbers would reveal.
+// the kernel resolved against. Otherwise the two would describe different deployments, and the
+// numbers would not reveal it: a scheduler admitting 512 sequences while the kernel priced a
+// 256-sequence engine.
 //
 // An unstated gpu_memory_utilization is the release's default, 0.92, in all three releases
 // (memoryUtilizationDefaults). For vLLM 0.32.0 an unstated max_num_seqs or max_num_batched_tokens is vLLM's own default

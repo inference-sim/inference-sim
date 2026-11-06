@@ -65,6 +65,8 @@ func TestResolveBlockSize(t *testing.T) {
 		{"a model the oracle has never seen", with(func(i *BlockSizeInput) { i.Model = "no-such-model" }), 0, "not a combination the oracle resolves"},
 		{"a KV dtype the oracle has not run", with(func(i *BlockSizeInput) { i.KVCacheDType = "nvfp4" }), 0, "not a combination the oracle resolves"},
 		{"a chip that states no compute capability", with(func(i *BlockSizeInput) { i.Capability = "" }), 0, "ComputeCapability"},
+		{"tensor parallelism wider than the oracle ran", with(func(i *BlockSizeInput) { i.TP = 32 }), 0, "tensor_parallel_size 32"},
+		{"the widest tensor parallelism the oracle ran", with(func(i *BlockSizeInput) { i.TP = MaxBlockSizeTP }), 16, ""},
 		{"a drafter adds layers", with(func(i *BlockSizeInput) { i.Speculative = true }), 0, "drafter"},
 		{"context parallelism", with(func(i *BlockSizeInput) { i.ContextParallel = true }), 0, "context parallelism"},
 		{"use_trtllm_attention stated", with(func(i *BlockSizeInput) { i.UsesTRTLLMAttention = true }), 0, "use_trtllm_attention"},
