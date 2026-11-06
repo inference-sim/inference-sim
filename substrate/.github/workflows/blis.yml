@@ -28,6 +28,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      checks: write
     with:
       repo: blis-substrate
       substrate-ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
@@ -41,7 +42,7 @@ jobs:
       checks: read
     with:
       substrate-ref: ${{ github.event.merge_group.head_sha }}
-      required: "required,pr / blis checks"
+      required: "required,pr / blis checks,scan"
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

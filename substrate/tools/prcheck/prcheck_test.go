@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -696,15 +697,23 @@ func TestAnswersAreVerdictsBoundToTheHead(t *testing.T) {
 		return "## Review questions\n\n- [x] **X2** Is it so? Reviewer: r. (changed: `contracts/a.go`) Answer: " + answer + "\n"
 	}
 	review := []apiReview{{State: "APPROVED", CommitID: "h", SubmittedAt: "2026-11-06T10:00:00Z"}}
-	run := func(b, edited string) []string {
-		ans := answerSource{Body: b, EditedAt: edited, Repo: "blis-substrate", Questions: []invariants.Question{q}}
+	// The record the pull-request check wrote for the text the reviewer saw.
+	recorded := map[string]string{"X2": AnswerDigest("X2", "yes, it is", trees["h"])}
+	runWith := func(b, edited string, rec map[string]string) []string {
+		ans := answerSource{Body: b, EditedAt: edited, Repo: "blis-substrate", Questions: []invariants.Question{q}, Recorded: rec}
 		in, err := BuildMergeInput("m", "h", nil, nil, review, nil, nil, []string{"contracts/a.go"}, ans, treeOf)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return CheckMerge(in)
 	}
+	run := func(b, edited string) []string { return runWith(b, edited, recorded) }
 	none(t, run(body("yes, it is"), "2026-11-06T09:00:00Z"))
+	// The body's text is not the text recorded at the approval: the timestamp cannot be trusted
+	// to show it (the body's edit time moves on any edit), the digest does.
+	has(t, run(body("yes, certainly"), "2026-11-06T09:00:00Z"), "differs from the answer recorded")
+	has(t, runWith(body("yes, it is"), "2026-11-06T09:00:00Z", nil), "has no record from the pull-request check")
+	has(t, runWith(body("yes, it is"), "2026-11-06T09:00:00Z", map[string]string{"X2": AnswerDigest("X2", "yes, it is", trees["m"])}), "differs from the answer recorded")
 	has(t, run(body("yes, it is"), "2026-11-06T11:00:00Z"), "after the latest approving review")
 	has(t, run("## Summary\n\nx\n", "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
 	has(t, run(body(""), "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
@@ -753,5 +762,176 @@ func TestRequiredCheckNamesAreCheckRunNames(t *testing.T) {
 	}
 	if !strings.Contains(string(wf), "github.event_name == 'merge_group'") || !strings.Contains(string(wf), "  pr:\n") {
 		t.Error("the job that makes the check run \"pr / blis checks\" does not run on the merge-queue tree")
+	}
+}
+
+// A required check must be one the merge-queue tree can produce: `scan` has a merge_group
+// trigger, the merge check requires exactly what required-checks.yaml lists for the
+// repository, and the always-run aggregator carries the path-filtered gates (X16, X17).
+func TestRequiredChecksAreProducedAndCollectedOnTheMergeQueue(t *testing.T) {
+	read := func(p string) string {
+		t.Helper()
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	var lists map[string][]string
+	if err := yaml.Unmarshal([]byte(read("../../.github/required-checks.yaml")), &lists); err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`required: "([^"]+)"`).FindStringSubmatch(read("../../.github/workflows/blis.yml"))
+	if m == nil {
+		t.Fatal("blis.yml names no required checks for the merge check")
+	}
+	got := strings.Split(m[1], ",")
+	want := append([]string(nil), lists["blis-substrate"]...)
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("the merge check requires %v; required-checks.yaml lists %v for blis-substrate", got, want)
+	}
+	for _, n := range lists["blis-substrate"] {
+		if n == "scan" && !regexp.MustCompile(`(?m)^  merge_group:`).MatchString(read("../../.github/workflows/private-names.yml")) {
+			t.Error("`scan` is required but private-names.yml has no merge_group trigger, so the merge-queue tree can never have it")
+		}
+	}
+	ci := read("../../.github/workflows/ci.yml")
+	if !strings.Contains(ci, "prcheck path-gates") || !strings.Contains(ci, "name: required\n    if: always()") {
+		t.Error("the always-run `required` job does not run the path-gate aggregator")
+	}
+}
+
+// The aggregator reads the path-filtered workflows from the files. The real ones are found,
+// each with the check-run name its job makes.
+func TestPathGatesAreReadFromTheWorkflowFiles(t *testing.T) {
+	files, err := filepath.Glob("../../.github/workflows/*.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gates, err := LoadPathGates(os.ReadFile, files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byFile := map[string]PathGate{}
+	for _, g := range gates {
+		byFile[filepath.Base(g.File)] = g
+	}
+	for _, f := range []string{"rederive.yml", "ledger-candidate.yml"} {
+		if g, ok := byFile[f]; !ok || len(g.Paths) == 0 || len(g.Jobs) == 0 {
+			t.Errorf("%s is not read as a path-filtered gate: %+v", f, g)
+		}
+	}
+	if len(gates) != 2 {
+		t.Errorf("%d path-filtered workflows; a new one needs a look at the aggregator: %v", len(gates), gates)
+	}
+	// The registry's gate list agrees with the file, and a change under it triggers it.
+	if !byFile["rederive.yml"].Triggered([]string{"registry/scripts/x.py"}) || byFile["rederive.yml"].Triggered([]string{"docs/a.md", "kernel/a.go"}) {
+		t.Error("rederive's trigger does not follow its paths")
+	}
+	if !byFile["ledger-candidate.yml"].Triggered([]string{"kernel/a.go"}) || byFile["ledger-candidate.yml"].Triggered([]string{"docs/a.md"}) {
+		t.Error("ledger-candidate's trigger does not follow its paths")
+	}
+}
+
+func TestCheckGates(t *testing.T) {
+	gates := []PathGate{
+		{File: "w/rederive.yml", Paths: []string{"registry/scripts/**", ".github/workflows/rederive.yml"}, Jobs: []string{"rederive"}},
+		{File: "w/ledger-candidate.yml", Paths: []string{"kernel/**"}, Jobs: []string{"candidate"}},
+	}
+	ok := map[string]GateRun{"rederive": {true, "success"}, "candidate": {true, "success"}}
+	t.Run("untouched gates need no run", func(t *testing.T) {
+		none(t, CheckGates(gates, []string{"docs/a.md"}, nil))
+	})
+	t.Run("touched and passed", func(t *testing.T) {
+		none(t, CheckGates(gates, []string{"registry/scripts/a.py", "kernel/k.go"}, ok))
+	})
+	t.Run("touched and never started", func(t *testing.T) {
+		has(t, CheckGates(gates, []string{"kernel/k.go"}, nil), `no check run "candidate"`)
+	})
+	t.Run("touched and failed", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive": {true, "failure"}}
+		has(t, CheckGates(gates, []string{"registry/scripts/a.py"}, runs), "concluded failure")
+	})
+	t.Run("touched and skipped or cancelled", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive": {true, "skipped"}}
+		has(t, CheckGates(gates, []string{".github/workflows/rederive.yml"}, runs), "concluded skipped")
+	})
+	t.Run("touched and still running", func(t *testing.T) {
+		runs := map[string]GateRun{"rederive": {false, ""}}
+		has(t, CheckGates(gates, []string{"registry/scripts/a.py"}, runs), "has not completed")
+		if p := Pending(gates, []string{"registry/scripts/a.py"}, runs); len(p) != 1 || p[0] != "rederive" {
+			t.Errorf("pending %v", p)
+		}
+	})
+	t.Run("an untouched gate that failed does not block", func(t *testing.T) {
+		none(t, CheckGates(gates, []string{"docs/a.md"}, map[string]GateRun{"rederive": {true, "failure"}}))
+	})
+}
+
+func TestPathPatterns(t *testing.T) {
+	for _, c := range []struct {
+		pat, path string
+		want      bool
+	}{
+		{"registry/**", "registry/a/b.py", true},
+		{"registry/**", "registryx/a.py", false},
+		{"kernel/*.go", "kernel/a.go", true},
+		{"kernel/*.go", "kernel/sub/a.go", false},
+		{"a/**/b", "a/b", true},
+		{"a/**/b", "a/x/y/b", true},
+		{".github/quarantine.yaml", ".github/quarantine.yaml", true},
+		{".github/quarantine.yaml", ".github/quarantineXyaml", false},
+	} {
+		if got := pathPattern(c.pat).MatchString(c.path); got != c.want {
+			t.Errorf("%q against %q = %v, want %v", c.pat, c.path, got, c.want)
+		}
+	}
+}
+
+// The record round-trips through the check run's summary, and the record in force at the review
+// is the last one completed at or before it.
+func TestAnswerRecords(t *testing.T) {
+	tree := strings.Repeat("b", 40)
+	d := map[string]string{"X2": AnswerDigest("X2", "yes, fine", tree), "SUB-1": AnswerDigest("SUB-1", "no, because", tree)}
+	got := ParseAnswerRecord(FormatAnswerRecord(tree, d))
+	if len(got) != 2 || got["X2"] != d["X2"] || got["SUB-1"] != d["SUB-1"] {
+		t.Fatalf("round trip: %v", got)
+	}
+	if AnswerDigest("X2", "yes, fine", tree) == AnswerDigest("X2", "yes, fine ", strings.Repeat("c", 40)) {
+		t.Error("the digest does not depend on the tree")
+	}
+	if AnswerDigest("X2", "yes", tree) == AnswerDigest("X3", "yes", tree) {
+		t.Error("the digest does not depend on the question")
+	}
+	mk := func(at, text string) apiAnswerRecord {
+		r := apiAnswerRecord{CompletedAt: at}
+		r.Output.Summary = FormatAnswerRecord(tree, map[string]string{"X2": AnswerDigest("X2", text, tree)})
+		return r
+	}
+	recs := []apiAnswerRecord{mk("2026-11-06T08:00:00Z", "yes, first"), mk("2026-11-06T09:30:00Z", "yes, second"), mk("2026-11-06T10:30:00Z", "yes, third")}
+	rec, ok := recordAt(recs, "2026-11-06T10:00:00Z")
+	if !ok || rec["X2"] != AnswerDigest("X2", "yes, second", tree) {
+		t.Errorf("record in force at the review: %v %v", rec, ok)
+	}
+	if _, ok := recordAt(recs, "2026-11-06T07:00:00Z"); ok {
+		t.Error("a record written after the review was taken as in force")
+	}
+	if _, ok := recordAt(recs, ""); ok {
+		t.Error("a review with no time found a record")
+	}
+}
+
+// The workflow writes the record the merge check reads.
+func TestThePullRequestCheckWritesTheAnswerRecord(t *testing.T) {
+	raw, err := os.ReadFile("../../.github/workflows/shared-pr-checks.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"prcheck answers-record", `name="` + AnswersCheck + `"`, "checks: write"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("shared-pr-checks.yml does not contain %q", want)
+		}
 	}
 }

@@ -95,6 +95,7 @@ func env(t *testing.T, bugs map[string][]Bug) Env {
 		Registry: reg,
 		Passed:   func(repo, _ string) (map[string]bool, error) { return allPassed(reg, repo), nil },
 		Bugs:     func(repo string) ([]Bug, error) { return bugs[repo], nil },
+		Lint:     func(string) ([]string, error) { return nil, nil },
 	}
 }
 
@@ -544,5 +545,149 @@ func TestPreviousTagSeesTheBareAndEarlierUpstreamTags(t *testing.T) {
 	}
 	if got := previousTag([]string{"v1.0.0-blis"}, KindRouter, "v1.1.0"); got != "v1.0.0-blis" {
 		t.Errorf("previous of a bare tag on a new router upstream = %q", got)
+	}
+}
+
+// Retry identity (LIF-1): a head Stage merged is the same release when it is planned again,
+// whether the run stopped after Stage (branch, no tag) or after Tag (tag on the staged tip).
+// The version does not advance; a different head gets the next one.
+func TestPlanKeepsTheTagOfAStagedOrReleasedHead(t *testing.T) {
+	e := env(t, nil)
+	sub, l, steps := stagedSet(t, e)
+	head := l.Repos[0].Head
+	replan := func(h string) Step {
+		t.Helper()
+		return planOne(t, e, "blis-substrate", sub.dir, h, "bump: patch", 1)
+	}
+	if steps[0].Tag != "v0.11.1" {
+		t.Fatalf("first plan gave %s", steps[0].Tag)
+	}
+	t.Run("after Stage", func(t *testing.T) {
+		st := replan(head)
+		if st.Tag != "v0.11.1" || !st.Staged || len(st.Refusals) != 0 {
+			t.Errorf("tag %s staged %v refusals %v; want the staged v0.11.1, unrefused", st.Tag, st.Staged, st.Refusals)
+		}
+	})
+	if err := Tag(e, l, steps, false); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("after Tag", func(t *testing.T) {
+		st := replan(head)
+		if st.Tag != "v0.11.1" {
+			t.Errorf("tag %s advanced; want v0.11.1", st.Tag)
+		}
+		has(t, st.Refusals, "already released at v0.11.1")
+	})
+	t.Run("a different head", func(t *testing.T) {
+		sub.git("checkout", "-q", "main")
+		h2 := sub.branch("c", "b.go", "package b\n", "Another change")
+		st := replan(h2)
+		if st.Tag != "v0.11.2" || st.Staged || len(st.Refusals) != 0 {
+			t.Errorf("tag %s staged %v refusals %v; want v0.11.2", st.Tag, st.Staged, st.Refusals)
+		}
+	})
+}
+
+// A staged tip is validated on its selected module graph, with no deferral (X11, LIF-2). A
+// finding the direct requirements of the review head cannot show, such as a transitive BLIS
+// pseudo-version, stops Tag, and nothing is tagged.
+func TestTagRefusesAStagedTipThatFailsTheModuleLint(t *testing.T) {
+	e := env(t, nil)
+	sub, l, steps := stagedSet(t, e)
+	var linted string
+	e.Lint = func(dir string) ([]string, error) {
+		raw, err := os.ReadFile(filepath.Join(dir, "README.md"))
+		linted = string(raw)
+		if err != nil {
+			return nil, err
+		}
+		return []string{"github.com/inference-sim/blis-vllm resolves to v0.32.1-0.20261105193227-4a3becf2d09a, which is not a release tag (X11, LIF-2)"}, nil
+	}
+	err := Tag(e, l, steps, false)
+	if err == nil || !strings.Contains(err.Error(), "fails the module lint") {
+		t.Fatalf("Tag = %v; want a module lint refusal", err)
+	}
+	if linted == "" {
+		t.Error("the lint was not run on a checkout of the staged tip")
+	}
+	if strings.Contains(sub.git("tag", "--list"), "v0.11.1") {
+		t.Error("a tag exists after a refusal")
+	}
+	e.Lint = nil
+	if err := Tag(e, l, steps, false); err == nil {
+		t.Error("Tag ran without a module lint")
+	}
+}
+
+// The deferral file is removed in the change that re-pins; a staged tip that still holds it
+// is refused.
+func TestTagRefusesAStagedTipThatHoldsTheDeferral(t *testing.T) {
+	e := env(t, nil)
+	sub := newRepo(t, subMod)
+	sub.git("tag", "v0.11.0")
+	sub.write(DeferralFile, "issue: x/y#1\n")
+	sub.commit("Add the deferral")
+	h := sub.branch("b", "a.go", "package a\n", "Change")
+	l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: " + h + ", bump: patch}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps, err := Plan(e, l, map[string]string{"blis-substrate": sub.dir}, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Stage(steps, false); err != nil {
+		t.Fatal(err)
+	}
+	err = Tag(e, l, steps, false)
+	if err == nil || !strings.Contains(err.Error(), "still holds "+DeferralFile) {
+		t.Fatalf("Tag = %v; want a refusal for the deferral file", err)
+	}
+}
+
+// With the real lint binary: a BLIS replace in a staged tip is found from the module graph.
+func TestRealModlintRefusesABLISReplaceInAStagedTip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds modlint")
+	}
+	bin := filepath.Join(t.TempDir(), "modlint")
+	if out, err := exec.Command("go", "build", "-o", bin, "github.com/inference-sim/blis-substrate/tools/modlint").CombinedOutput(); err != nil {
+		t.Fatalf("build modlint: %v\n%s", err, out)
+	}
+	lower := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":              "module github.com/inference-sim/blis-substrate\n\ngo 1.24\n",
+		"contracts/toolchain": "go1.27.2\n",
+	} {
+		p := filepath.Join(lower, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mod := subMod + "\nrequire github.com/inference-sim/blis-sub v0.32.0-blis.2\n\nreplace github.com/inference-sim/blis-sub => " + lower + "\n"
+	e := env(t, nil)
+	e.Lint = func(dir string) ([]string, error) { return runModlint(bin, dir) }
+	sub := newRepo(t, mod)
+	sub.write("contracts/toolchain", "go1.27.2\n")
+	sub.commit("Add the toolchain file")
+	sub.git("tag", "v0.11.0")
+	h := sub.branch("b", "core/a.go", "package core\n", "Change")
+	l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: " + h + ", bump: patch}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps, err := Plan(e, l, map[string]string{"blis-substrate": sub.dir}, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Stage(steps, false); err != nil {
+		t.Fatal(err)
+	}
+	err = Tag(e, l, steps, false)
+	if err == nil || !strings.Contains(err.Error(), "is replaced by") {
+		t.Fatalf("Tag = %v; want the replace finding", err)
 	}
 }

@@ -110,9 +110,10 @@ type Suite struct {
 
 // Run runs Check and reports each problem as a test error.
 //
-// A part whose configuration the Suite leaves nil (Unavailable, Evict) does not run. Run
-// reports it as a skipped subtest naming the missing field, so a passing run says which
-// parts it did not exercise.
+// A part whose configuration the Suite leaves out (Unavailable, Evict, Unaudited) does not
+// run. Run reports it as a skipped subtest naming the missing field, so a passing run says
+// which parts it did not exercise; Coverage lists them and RequireCoverage fails on the ones a
+// router needs.
 func Run(t *testing.T, s Suite) {
 	t.Helper()
 	problems, skipped := run(s)
@@ -121,6 +122,50 @@ func Run(t *testing.T, s Suite) {
 	}
 	for _, sk := range skipped {
 		t.Run(sk.part, func(t *testing.T) { t.Skip(sk.reason) })
+	}
+}
+
+// Coverage returns the names of the contract parts this Suite leaves unexercised, in the
+// order the parts run: "unavailable" when Unavailable is nil, "evict" when Evict is nil, and
+// "unaudited" when Unaudited is empty. Run reports each as a skipped subtest, which Go counts
+// as a pass; a router whose conformance target needs a part to run asserts it with
+// RequireCoverage. Every other part always runs.
+//
+// "The router passes the suite" (RTR-3) means every part the BLIS router needs is
+// exercised: its Suite names Unavailable, Evict and Unaudited if the router has
+// configurations that make them reachable, and asserts them with RequireCoverage, so a
+// misclassified or dropped configuration fails the test and does not skip it.
+func (s Suite) Coverage() []string {
+	var out []string
+	if s.Unavailable == nil {
+		out = append(out, "unavailable")
+	}
+	if s.Evict == nil {
+		out = append(out, "evict")
+	}
+	if s.Unaudited == "" {
+		out = append(out, "unaudited")
+	}
+	return out
+}
+
+// RequireCoverage fails the test for each named part the Suite leaves unexercised (see
+// Coverage), so a fork target can refuse the skip. Naming a part that does not exist is a
+// failure too, so a misspelt name cannot pass.
+func RequireCoverage(t testing.TB, s Suite, parts ...string) {
+	t.Helper()
+	left := map[string]bool{}
+	for _, p := range s.Coverage() {
+		left[p] = true
+	}
+	known := map[string]bool{"unavailable": true, "evict": true, "unaudited": true}
+	for _, p := range parts {
+		switch {
+		case !known[p]:
+			t.Errorf("RequireCoverage: %q is not a part a Suite can leave unexercised (want unavailable, evict or unaudited)", p)
+		case left[p]:
+			t.Errorf("the conformance suite leaves the %q part unexercised; this target requires it, so supply its configuration", p)
+		}
 	}
 }
 

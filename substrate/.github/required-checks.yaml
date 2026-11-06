@@ -7,9 +7,13 @@
 # pull-request workflow's job as the caller job "pr" names it; "required" is a repository's
 # own gate job, where it has one; "scan" is private-names (X12).
 #
-# rederive is a gate but is not listed: rederive.yml and ledger-candidate.yml are filtered by
-# path, so GitHub has no run to require on a pull request that touches none of their paths, and
-# a required check that never starts blocks the merge. See the release notes of this change.
+# rederive and ledger-candidate are gates filtered by path, so GitHub has no run to require on
+# a pull request that touches none of their paths. They are not listed; ci.yml's `required` job
+# is their aggregator. It reads their path lists from the workflow files, takes the change's
+# files from git diff, and fails unless each workflow whose paths the change touched has a
+# successful check run on the pull request's head. `scan` runs on the merge queue as well as on
+# the pull request (private-names.yml has a merge_group trigger), and the merge check requires
+# it on the merge-queue tree.
 blis-substrate: [required, "pr / blis checks", scan]
 blis-vllm: ["pr / blis checks"]
 blis-sglang: ["pr / blis checks"]

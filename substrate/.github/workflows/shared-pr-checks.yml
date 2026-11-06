@@ -49,6 +49,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  checks: write
 
 env:
   GOTOOLCHAIN: local
@@ -117,6 +118,21 @@ jobs:
             cat "$RUNNER_TEMP/unanswered"
             exit 1
           fi
+      # The answers as they stand when this job ran. The merge check compares the body at
+      # merge time with the record in force when the latest approving review was submitted, so
+      # an approval covers the text that was recorded then and a later edit voids it (X22).
+      - name: Record the review answers (X22)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed"
+          prcheck answers-record -body "$RUNNER_TEMP/body.md" -changed "$RUNNER_TEMP/changed" \
+            -repo-name "${{ inputs.repo }}" -head "$HEAD" > "$RUNNER_TEMP/answers-record"
+          gh api "repos/${{ github.repository }}/check-runs" -X POST \
+            -f name="review answers" -f head_sha="$HEAD" -f status=completed -f conclusion=neutral \
+            -f completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -f "output[title]=Review answers recorded" -F "output[summary]=@$RUNNER_TEMP/answers-record" > /dev/null
       - name: Commit policy (X20)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo

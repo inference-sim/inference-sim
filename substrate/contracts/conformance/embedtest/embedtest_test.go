@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"sync"
@@ -198,4 +199,47 @@ func TestDeadlineRaceHasOneOutcome(t *testing.T) {
 		cancel()
 	}
 	t.Logf("outcomes: %v", wins)
+}
+
+// recorder is a testing.TB that records failures instead of failing the test running it.
+type recorder struct {
+	testing.TB
+	errs []string
+}
+
+func (r *recorder) Helper()                   {}
+func (r *recorder) Errorf(f string, a ...any) { r.errs = append(r.errs, fmt.Sprintf(f, a...)) }
+
+// Coverage names the parts a Suite leaves unexercised, and RequireCoverage turns each one the
+// target needs into a failure: a skipped subtest is a pass in Go, so without it a fork whose
+// configuration for a part was dropped, or misclassified as absent, would still pass.
+func TestCoverageCanBeRequired(t *testing.T) {
+	full := suite(correct)
+	if got := full.Coverage(); len(got) != 0 {
+		t.Fatalf("a full suite leaves %v unexercised", got)
+	}
+	rec := &recorder{TB: t}
+	embedtest.RequireCoverage(rec, full, "unavailable", "evict", "unaudited")
+	if len(rec.errs) != 0 {
+		t.Errorf("a full suite fails RequireCoverage: %v", rec.errs)
+	}
+
+	lacking := suite(correct)
+	lacking.Unavailable = nil
+	lacking.Unaudited = ""
+	if got := strings.Join(lacking.Coverage(), ","); got != "unavailable,unaudited" {
+		t.Errorf("Coverage = %q, want unavailable,unaudited", got)
+	}
+	rec = &recorder{TB: t}
+	embedtest.RequireCoverage(rec, lacking, "unavailable", "evict")
+	if len(rec.errs) != 1 || !strings.Contains(rec.errs[0], `"unavailable" part unexercised`) {
+		t.Errorf("RequireCoverage reported %v; want one failure naming unavailable", rec.errs)
+	}
+	rec = &recorder{TB: t}
+	embedtest.RequireCoverage(rec, lacking, "unaudit")
+	if len(rec.errs) != 1 || !strings.Contains(rec.errs[0], "not a part") {
+		t.Errorf("a misspelt part: %v", rec.errs)
+	}
+	// Run still reports the skip rather than failing: the target decides.
+	embedtest.Run(t, lacking)
 }

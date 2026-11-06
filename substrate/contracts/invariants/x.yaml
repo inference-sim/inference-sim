@@ -313,10 +313,17 @@
     status: new
   - repo: inference-sim
     check: >-
-      BLIS imports only the fork's pkg/embed.New, and only audited plugin types are reachable
+      BLIS imports only the fork's pkg/embed.New from the router
     runs: pull_request
     status: ci
     test: 'sim/llmd: TestRouterImportsOnlyTheEmbedConstructor'
+  - repo: inference-sim
+    check: >-
+      Only audited plugin types are reachable: every type BLIS supports is hosted by the fork's
+      audited list (RTR-4)
+    runs: pull_request
+    status: ci
+    test: 'sim/llmd: TestSupportedTypesAreHostedByTheFork'
   - repo: llm-d-router
     check: >-
       Every branch the fork takes only when hosted is exercised by a test that compares it with the

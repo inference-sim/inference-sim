@@ -491,6 +491,7 @@ func partCheck(e *env) {
 // after Allow was consulted (the router's own stated reasons come first; see Config.Allow).
 func partUnaudited(e *env) {
 	if e.s.Unaudited == "" {
+		e.skipped = "Suite.Unaudited is empty: no unaudited plugin type was supplied, so the refusal of an unaudited type is not checked"
 		return
 	}
 	var asked []string

@@ -11,7 +11,10 @@
 // stages each repository's final release commit on the branch release/<tag>: the head merged
 // into the base and the pins in one commit, with no tag. With -tag, it tags the tip of each
 // staged branch, and only where -results records every ci check at that tip's own SHA
-// (LIF-3); -sign signs the pin commits and tags. It never pushes.
+// (LIF-3) and where the tip no longer holds the pin-by-commit deferral file and passes the
+// selected-module lint (-modlint, no deferral: the whole module graph, not only the direct
+// requirements, so a transitive BLIS pseudo-version or a BLIS replace is refused);
+// -sign signs the pin commits and tags. It never pushes.
 //
 // The release job does not exist yet. The loop stages every layer locally; pushing each
 // layer's branch, running CI on it, running the next layer's checks against the new tags and
@@ -34,11 +37,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
@@ -72,6 +78,7 @@ func run(args []string, w io.Writer) (int, error) {
 	base := fs.String("base", "main", "the branch each head merges into")
 	apply := fs.Bool("apply", false, "stage the release commit on release/<tag> in the local checkouts: merge and pin, no tag (never pushes)")
 	tag := fs.Bool("tag", false, "tag the staged release/<tag> tips, only where -results records every ci check at the tip's own SHA")
+	modlint := fs.String("modlint", "", "the tools/modlint binary, built from the substrate version being released; -tag runs it, with no deferral, on each staged tip")
 	sign := fs.Bool("sign", false, "sign the pin commits and tags")
 	dirs := dirFlag{}
 	fs.Var(dirs, "dir", "<repo>=<local checkout>, once per repository in the set")
@@ -109,6 +116,9 @@ func run(args []string, w io.Writer) (int, error) {
 			return res[repo][commit], nil
 		},
 		Bugs: func(repo string) ([]Bug, error) { return bugs[repo], nil },
+	}
+	if *modlint != "" {
+		env.Lint = func(dir string) ([]string, error) { return runModlint(*modlint, dir) }
 	}
 	steps, err := Plan(env, lock, dirs, *base)
 	if err != nil {
@@ -149,6 +159,23 @@ func run(args []string, w io.Writer) (int, error) {
 	}
 	_, _ = fmt.Fprintln(w, "dry run: nothing changed")
 	return 0, nil
+}
+
+// runModlint runs the modlint binary on a checkout, without -deferral. Exit 0 is clean, 1
+// lists findings on standard output, and anything else means the lint could not run.
+func runModlint(bin, dir string) ([]string, error) {
+	cmd := exec.Command(bin, "-C", dir)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return nil, nil
+	case errors.As(err, &ee) && ee.ExitCode() == 1:
+		return strings.Split(strings.TrimSpace(string(out)), "\n"), nil
+	}
+	return nil, fmt.Errorf("modlint: %v: %s", err, strings.TrimSpace(stderr.String()))
 }
 
 func orNone(s string) string {
