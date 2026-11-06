@@ -2,8 +2,10 @@ package contracts
 
 import (
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
@@ -115,5 +117,33 @@ func TestLoadBundleRefusals(t *testing.T) {
 	}
 	if _, _, err := LoadBundle("/nonexistent/bundle.yaml"); err == nil || !strings.Contains(err.Error(), "opening") {
 		t.Fatalf("missing file: err = %v, want an opening error", err)
+	}
+}
+
+// A few hundred bytes of nested aliases expand to 10^8 nodes; the loaders refuse them at
+// once, and a scenario that uses an alias for a repeated block still loads.
+func TestLoadersRefuseAnAliasBomb(t *testing.T) {
+	var b strings.Builder
+	b.WriteString(bundleScenario)
+	b.WriteString("bomb0: &a0 [x, x, x, x, x, x, x, x, x, x]\n")
+	for d := 1; d <= 8; d++ {
+		b.WriteString("bomb" + strconv.Itoa(d) + ": &a" + strconv.Itoa(d) + " [")
+		for i := 0; i < 10; i++ {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString("*a" + strconv.Itoa(d-1))
+		}
+		b.WriteString("]\n")
+	}
+	start := time.Now()
+	if _, err := LoadScenario(write(t, "bomb.yaml", b.String())); err == nil || !strings.Contains(err.Error(), "MaxNodes") {
+		t.Fatalf("err = %v, want a refusal naming MaxNodes", err)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("the bomb took %v to refuse", d)
+	}
+	if _, err := LoadScenario(write(t, "ok.yaml", bundleScenario)); err != nil {
+		t.Fatalf("a real scenario was refused: %v", err)
 	}
 }

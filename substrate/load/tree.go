@@ -10,6 +10,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 )
 
 // tree is the data files of one catalog, registry or overlay directory: each file's path
@@ -135,6 +137,10 @@ func readTree(label string, fsys fs.FS, r rules) (*tree, error) {
 		b, err := fs.ReadFile(fsys, rel)
 		if err != nil {
 			return err
+		}
+		if err := validate.CheckSize(rel, len(b)); err != nil {
+			problems = append(problems, err.Error())
+			return nil
 		}
 		if i := strings.IndexByte(string(b), '\r'); i >= 0 {
 			line := 1 + strings.Count(string(b[:i]), "\n")
