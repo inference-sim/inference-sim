@@ -234,3 +234,38 @@ func TestARegistryOverlayThatChangesSetLevelFieldsIsRefused(t *testing.T) {
 		t.Errorf("an overlay that changes caveats was not refused: %v", err)
 	}
 }
+
+const fabricMethodOverlay = `kind: CoefficientSet
+name: cost-model-fabric
+coefficients:
+  - fabric_bandwidth_efficiency:
+      value: 0.95
+      units: dimensionless
+      method: literature
+      fitted: false
+      scope: {fabric: [ethernet-100gbe]}
+      rationale: a published figure
+      sources:
+        - {kind: publication, cite: "an overlay's citation", role: primary}
+`
+
+// The same name and scope under a different method is a different coefficient (design
+// §3.3), so an overlay may add it; the same name, scope and method replaces, as above. The
+// cost model refuses a lookup that finds both methods, since ranking them is M2.
+func TestAnOverlayMayAddTheSameNameAndScopeAtAnotherMethod(t *testing.T) {
+	ov := t.TempDir()
+	write(t, filepath.Join(ov, "coefficients", "cost-model-fabric.yaml"), fabricMethodOverlay)
+	base, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := Open(Options{RegistryOverlays: []string{ov}})
+	if err != nil {
+		t.Fatalf("the same name and scope at another method was refused: %v", err)
+	}
+	baseSet, _ := base.CoefficientSet("cost-model-fabric")
+	set, _ := d.CoefficientSet("cost-model-fabric")
+	if len(set.Coefficients) != len(baseSet.Coefficients)+1 {
+		t.Errorf("the overlay should add one entry: %d, base %d", len(set.Coefficients), len(baseSet.Coefficients))
+	}
+}

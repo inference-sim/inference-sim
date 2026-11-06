@@ -54,10 +54,23 @@ type Resolved struct {
 func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 	c := &Coefficients{byName: map[string]Resolved{}, byNameFabric: map[string]Resolved{},
 		selected: map[string]Resolved{}}
+	var ambiguous error
 	put := func(into map[string]Resolved, e coefficient.Entry, set string) {
-		if prev, ok := into[e.Name]; ok && len(prev.Entry.Scope.Model) > 0 &&
-			len(e.Scope.Model) == 0 {
-			return
+		if prev, ok := into[e.Name]; ok {
+			if len(prev.Entry.Scope.Model) > 0 && len(e.Scope.Model) == 0 {
+				return
+			}
+			// Two admitted entries of one name and one scope that differ only in method are
+			// two coefficients (design §3.3) which only method rank can order, and rank
+			// selection is M2. Letting set order pick between them would make the data mean
+			// something its files do not say, so the lookup is refused instead.
+			if ambiguous == nil && prev.Entry.Scope.Key() == e.Scope.Key() &&
+				prev.Entry.Method != e.Method {
+				ambiguous = fmt.Errorf("coefficient %q at scope (%s) is supplied with method %q by set %q "+
+					"and with method %q by set %q; selecting between methods needs rank selection, "+
+					"which is not implemented, so the lookup is refused",
+					e.Name, e.Scope.Describe(), prev.Entry.Method, prev.Set, e.Method, set)
+			}
 		}
 		into[e.Name] = Resolved{Entry: e, Set: set}
 	}
@@ -75,6 +88,9 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 				put(c.byNameFabric, e, s.Name)
 			}
 		}
+	}
+	if ambiguous != nil {
+		return nil, ambiguous
 	}
 	if len(c.byName) == 0 {
 		return nil, fmt.Errorf("no coefficient in %v applies to %s",

@@ -26,7 +26,9 @@ func (s *Set) Validate() *validate.Problems {
 	if len(s.Coefficients) == 0 {
 		p.Field("coefficients", "a set with no entries carries nothing")
 	}
-	// An entry's identity is its name AND its scope, not its name alone.
+	// An entry's identity is its name, its scope AND its method, not its name alone
+	// (design §3.3: one coefficient is identified by its set, its name, its scope and
+	// its method).
 	//
 	// A set covering several parts carries one entry per (name, scope): the GEMM
 	// efficiency asymptote is a different number on H100 than on H200, and both are
@@ -36,13 +38,17 @@ func (s *Set) Validate() *validate.Problems {
 	// leaving a resolver no way to tell that two entries are the same quantity
 	// measured on different hardware.
 	//
-	// Two entries sharing a name AND a scope are still an error: a resolver would
-	// keep whichever came last, so the file would mean something other than it says.
+	// Two entries sharing a name, a scope AND a method are still an error: a resolver
+	// would keep whichever came last, so the file would mean something other than it says.
+	// The same name and scope under different methods is a different coefficient: rank is
+	// a function of method (VAL-4), so a measured and an assumed value of one quantity may
+	// coexist. Until rank selection lands (M2) the cost model's resolver refuses a lookup
+	// that finds both, rather than letting their order decide.
 	//
 	// This is a deliberate, documented LOOSENING of blis-registry's own validator, which
 	// keys duplicate identity on the name ALONE and so rejects one set holding
-	// gemm_eps_max_bf16 at both {hardware: h100} and {hardware: h200}. The (name, scope)
-	// rule is the more expressive one and is authoritative once the registry adopts this
+	// gemm_eps_max_bf16 at both {hardware: h100} and {hardware: h200}. The (name, scope,
+	// method) rule is the more expressive one and is authoritative once the registry adopts this
 	// validator as its single gate (blis-registry#29); until then a set this accepts could
 	// be rejected by the registry's Python gate, so the loosening is a contract change, not
 	// a like-for-like migration.
@@ -52,12 +58,12 @@ func (s *Set) Validate() *validate.Problems {
 		if e.Name == "" {
 			p.Field(at+".name", "required")
 		} else {
-			key := e.Name + "\x00" + e.Scope.Key()
+			key := e.Name + "\x00" + e.Scope.Key() + "\x00" + string(e.Method)
 			if seen[key] {
 				p.Field(at+".name",
-					"duplicate entry name %q at the same scope (%s); two entries "+
-						"with one name and one scope cannot both be resolved",
-					e.Name, e.Scope.Describe())
+					"duplicate entry name %q at the same scope (%s) and method %q; two entries "+
+						"with one name, one scope and one method cannot both be resolved",
+					e.Name, e.Scope.Describe(), e.Method)
 			}
 			seen[key] = true
 		}

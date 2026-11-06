@@ -97,7 +97,11 @@ func CheckOrdered(sets map[string]*coefficient.Set) []Problem {
 					continue
 				}
 				if a.set == b.set && a.e.Scope.Key() == b.e.Scope.Key() {
-					continue // a duplicate within one set, which the set's own Validate reports
+					// One set's own Validate reports the same name, scope and method twice. The
+					// same name and scope under different methods are different coefficients
+					// (design §3.3), ordered by method rank (M2); until then the cost model's
+					// resolver refuses a lookup that finds both.
+					continue
 				}
 				out = append(out, Problem{"coefficients/" + b.set + ".yaml", fmt.Sprintf(
 					"entry %s (%s, %s) and coefficients/%s.yaml's entry %s (%s, %s) can match one "+
