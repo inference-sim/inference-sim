@@ -69,6 +69,15 @@ type Step struct {
 func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step, error) {
 	var steps []Step
 	tags := map[string]string{} // repo -> the tag this set gives it
+	// Design §3.2 bounds an engine or router by inference-sim's go.mod. When inference-sim
+	// is not released in this set, its checkout is read-only input and must be given.
+	simOutside := ""
+	if needsSimCheckout(lock) {
+		var err error
+		if simOutside, err = readSimCheckout(dirs); err != nil {
+			return nil, err
+		}
+	}
 	for _, r := range lock.Repos {
 		dir, ok := dirs[r.Repo]
 		if !ok {
@@ -170,7 +179,7 @@ func Plan(env Env, lock *StackLock, dirs map[string]string, base string) ([]Step
 			// Design §3.2: an engine or router never requires a newer substrate than
 			// inference-sim does.
 			if info.Kind == KindEngine || info.Kind == KindRouter {
-				st.Refusals = append(st.Refusals, CheckSubstrateBound(requirement(mf, Repos["blis-substrate"].Module, tags["blis-substrate"]), simSubstrate(lock, dirs, tags))...)
+				st.Refusals = append(st.Refusals, CheckSubstrateBound(requirement(mf, Repos["blis-substrate"].Module, tags["blis-substrate"]), simSubstrate(lock, dirs, tags, simOutside))...)
 			}
 		}
 		notes, err := Notes(env.Registry, st, dir)
@@ -253,8 +262,9 @@ func requirement(mf *modfile.File, path, setTag string) string {
 }
 
 // simSubstrate returns the substrate version inference-sim will require: the set's
-// substrate tag if inference-sim is in the set, otherwise its current requirement.
-func simSubstrate(lock *StackLock, dirs map[string]string, tags map[string]string) string {
+// substrate tag if inference-sim is in the set, otherwise outside, its current requirement
+// read from the checkout given for it (see readSimCheckout).
+func simSubstrate(lock *StackLock, dirs map[string]string, tags map[string]string, outside string) string {
 	sub := Repos["blis-substrate"].Module
 	for _, r := range lock.Repos {
 		if r.Repo == "inference-sim" {
@@ -272,19 +282,59 @@ func simSubstrate(lock *StackLock, dirs map[string]string, tags map[string]strin
 			return requirement(mf, sub, "")
 		}
 	}
+	return outside
+}
+
+// needsSimCheckout reports whether the set holds an engine or router step and not
+// inference-sim, so the bound of design §3.2 needs inference-sim's checkout as input.
+func needsSimCheckout(lock *StackLock) bool {
+	engine := false
+	for _, r := range lock.Repos {
+		if r.Repo == "inference-sim" {
+			return false
+		}
+		if k := Repos[r.Repo].Kind; k == KindEngine || k == KindRouter {
+			engine = true
+		}
+	}
+	return engine
+}
+
+// readSimCheckout returns the substrate version the inference-sim checkout in dirs
+// requires. The checkout is read-only input: it must be inference-sim's module, and its
+// go.mod must hold exactly one direct requirement of blis-substrate.
+func readSimCheckout(dirs map[string]string) (string, error) {
 	dir, ok := dirs["inference-sim"]
 	if !ok {
-		return ""
+		return "", fmt.Errorf("inference-sim: no local checkout given; the bound of design §3.2 reads inference-sim's go.mod, so pass -dir inference-sim=<checkout> (read-only) for any set with an engine or router, even when inference-sim is not released")
 	}
 	gm, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("inference-sim: -dir %s: %w", dir, err)
 	}
 	mf, err := modfile.Parse("go.mod", gm, nil)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("inference-sim: -dir %s: go.mod: %w", dir, err)
 	}
-	return requirement(mf, sub, "")
+	want := Repos["inference-sim"].Module
+	if mf.Module == nil || mf.Module.Mod.Path != want {
+		got := ""
+		if mf.Module != nil {
+			got = mf.Module.Mod.Path
+		}
+		return "", fmt.Errorf("inference-sim: -dir %s is module %q, not %s", dir, got, want)
+	}
+	sub := Repos["blis-substrate"].Module
+	var found []string
+	for _, r := range mf.Require {
+		if r.Mod.Path == sub && !r.Indirect {
+			found = append(found, r.Mod.Version)
+		}
+	}
+	if len(found) != 1 {
+		return "", fmt.Errorf("inference-sim: -dir %s: go.mod must hold exactly one direct requirement of %s, found %d", dir, sub, len(found))
+	}
+	return found[0], nil
 }
 
 // without returns tags minus one.

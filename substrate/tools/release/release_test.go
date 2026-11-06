@@ -821,3 +821,82 @@ func TestLayeredReleaseResumesAfterEveryInterruption(t *testing.T) {
 		t.Errorf("a different head: tag %s done %v staged %v; want a new v0.13.0", st.Tag, st.Done, st.Staged)
 	}
 }
+
+// The bound of design §3.2 reads inference-sim's go.mod, so any set with an engine needs its
+// checkout, even when inference-sim is not released.
+func TestEngineSetNeedsTheInferenceSimCheckout(t *testing.T) {
+	plan := func(t *testing.T, vllmGomod string, dirs func(vllm, sim string) map[string]string, simGomod string) ([]Step, error) {
+		t.Helper()
+		vllm := newRepo(t, vllmGomod)
+		vllm.git("tag", "v0.32.0-blis.2")
+		h := vllm.branch("b", "core/a.go", "package core\n", "Change")
+		sim := newRepo(t, simGomod)
+		l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-vllm, branch: b, head: " + h + ", upstream: v0.32.0}\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Plan(env(t, nil), l, dirs(vllm.dir, sim.dir), "main")
+	}
+	both := func(v, s string) map[string]string { return map[string]string{"blis-vllm": v, "inference-sim": s} }
+	t.Run("engine only, bound holds", func(t *testing.T) {
+		steps, err := plan(t, vllmMod, both, simMod)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range steps[0].Refusals {
+			if strings.Contains(r, "substrate") {
+				t.Errorf("the bound holds but the release is refused: %s", r)
+			}
+		}
+	})
+	t.Run("engine only, bound broken", func(t *testing.T) {
+		steps, err := plan(t, strings.Replace(vllmMod, "v0.11.0", "v0.12.0", 1), both, simMod)
+		if err != nil {
+			t.Fatal(err)
+		}
+		has(t, steps[0].Refusals, "newer than inference-sim's v0.11.0")
+	})
+	t.Run("engine only, no checkout is refused up front", func(t *testing.T) {
+		_, err := plan(t, vllmMod, func(v, _ string) map[string]string { return map[string]string{"blis-vllm": v} }, simMod)
+		if err == nil || !strings.Contains(err.Error(), "-dir inference-sim=<checkout>") {
+			t.Fatalf("want a refusal naming -dir inference-sim, got %v", err)
+		}
+	})
+	t.Run("substrate and engine", func(t *testing.T) {
+		sub := newRepo(t, subMod)
+		sub.git("tag", "v0.11.0")
+		sh := sub.branch("s", "a.go", "package a\n", "Change")
+		vllm := newRepo(t, vllmMod)
+		vllm.git("tag", "v0.32.0-blis.2")
+		vh := vllm.branch("b", "core/a.go", "package core\n", "Change")
+		sim := newRepo(t, simMod)
+		l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: s, head: " + sh + ", bump: minor}\n  - {repo: blis-vllm, branch: b, head: " + vh + ", upstream: v0.32.0}\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		d := map[string]string{"blis-substrate": sub.dir, "blis-vllm": vllm.dir}
+		if _, err := Plan(env(t, nil), l, d, "main"); err == nil || !strings.Contains(err.Error(), "-dir inference-sim=<checkout>") {
+			t.Fatalf("want a refusal naming -dir inference-sim, got %v", err)
+		}
+		d["inference-sim"] = sim.dir
+		steps, err := Plan(env(t, nil), l, d, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The set moves substrate to v0.12.0, which inference-sim (v0.11.0) does not yet require.
+		has(t, steps[1].Refusals, "newer than inference-sim's v0.11.0")
+	})
+	t.Run("a checkout of the wrong module", func(t *testing.T) {
+		_, err := plan(t, vllmMod, both, vllmMod)
+		if err == nil || !strings.Contains(err.Error(), "not github.com/inference-sim/inference-sim") {
+			t.Fatalf("want a wrong-module refusal, got %v", err)
+		}
+	})
+	t.Run("a checkout without exactly one direct substrate requirement", func(t *testing.T) {
+		none := "module github.com/inference-sim/inference-sim\n\ngo 1.27.2\n"
+		_, err := plan(t, vllmMod, both, none)
+		if err == nil || !strings.Contains(err.Error(), "exactly one direct requirement") {
+			t.Fatalf("want a refusal, got %v", err)
+		}
+	})
+}
