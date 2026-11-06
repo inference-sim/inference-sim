@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -469,7 +468,8 @@ func (c *ContextLimit) UnmarshalYAML(n *yaml.Node) error {
 			*c = ContextLimitMaxModelLen
 			return nil
 		}
-		if v, err := strconv.Atoi(strings.TrimSpace(n.Value)); err == nil && v > 0 {
+		var v int
+		if err := validate.DecodeNode(n, &v); err == nil && v > 0 {
 			*c = ContextLimit(v)
 			return nil
 		}
