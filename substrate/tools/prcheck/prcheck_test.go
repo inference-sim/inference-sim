@@ -100,6 +100,14 @@ func TestWorkflowLint(t *testing.T) {
 		{"action by short hash", "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "actions/checkout@3d3c42e", "not pinned by a full commit hash"},
 		{"docker by tag", "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "docker://alpine:3", "not pinned by sha256 digest"},
 		{"or true", "go test ./...", "go test ./... || true", "ignores an exit code"},
+		{"or colon", "go test ./...", "go test ./... || :", "ignores an exit code"},
+		{"or colon, trailing text", "go test ./...", "go test ./... ||: # best effort", "ignores an exit code"},
+		{"or exit 0", "go test ./...", "go test ./... || exit 0", "ignores an exit code"},
+		{"or subshell exit 0", "go test ./...", "go test ./... || (exit 0)", "ignores an exit code"},
+		{"or return 0", "go test ./...", "go test ./... || return 0", "ignores an exit code"},
+		{"or true with trailing text", "go test ./...", "go test ./... || true; echo done", "ignores an exit code"},
+		{"semicolon true", "go test ./...", "go test ./...; true", "ignores an exit code"},
+		{"semicolon true, trailing text", "go test ./...", "go test ./... ; true # keep going", "ignores an exit code"},
 		{"set +e", "set -euo pipefail", "set +e", "ignores an exit code"},
 		{"continue-on-error", "      - uses: ./.github/actions/go-toolchain\n", "      - uses: ./.github/actions/go-toolchain\n        continue-on-error: true\n", "continue-on-error"},
 		{"pip without hashes", "pip install --require-hashes -r", "pip install -r", "without --require-hashes"},
@@ -119,6 +127,14 @@ func TestWorkflowLint(t *testing.T) {
 			}
 			has(t, got, c.want)
 		})
+	}
+	// Words that only begin like the ignored forms are not findings.
+	for _, ok := range []string{"go test ./... || truefalse-tool", "go test ./... || exit 01", "echo a; trueblue"} {
+		got, err := LintWorkflow("ci.yml", []byte(strings.Replace(goodWorkflow, "go test ./...", ok, 1)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		none(t, got)
 	}
 	// An exemption names an invariant and a reason.
 	ex := strings.Replace(goodWorkflow, "go test ./...", "go test ./... || true # lint-ok: X22 the step reports, a later step fails", 1)

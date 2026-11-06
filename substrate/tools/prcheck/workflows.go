@@ -16,7 +16,7 @@ import (
 //     ./path, needs no pin; a docker:// image must be pinned by sha256 digest);
 //   - X21: a pip install that does not pass --require-hashes;
 //   - X22: a step or job with continue-on-error, and a run script that ignores an exit
-//     code: "|| true", "|| :", "|| exit 0", "set +e", or a run script in a shell other
+//     code: "|| true", "|| :", "|| exit 0", "|| (exit 0)", "|| return 0", "; true", "set +e", or a run script in a shell other
 //     than bash's default -e mode without "set -e";
 //   - X16: go test run with -short or a -skip flag in a job, or a skip marker written into
 //     a required job's environment (SKIP_*, *_SKIP);
@@ -29,7 +29,7 @@ import (
 var (
 	pinned      = regexp.MustCompile(`^[^@\s]+@[0-9a-f]{40}$`)
 	dockerPin   = regexp.MustCompile(`^docker://[^@\s]+@sha256:[0-9a-f]{64}$`)
-	ignoreExit  = regexp.MustCompile(`\|\|\s*(true|:|exit\s+0)\b|^\s*set\s+\+e\b|\|\|\s*echo\b`)
+	ignoreExit  = regexp.MustCompile(`\|\|\s*(true|:|exit\s+0|\(exit\s+0\)|return\s+0)(\s|$|;|\))|;\s*true(\s|$|;|\))|^\s*set\s+\+e\b|\|\|\s*echo\b`)
 	pipInstall  = regexp.MustCompile(`\bpip3?\s+install\b|\bpython3?\s+-m\s+pip\s+install\b|\buv\s+pip\s+install\b`)
 	goTestShort = regexp.MustCompile(`\bgo\s+test\b[^\n]*\s(-short|-test\.short|-skip(=|\s))`)
 	skipEnv     = regexp.MustCompile(`^(SKIP_[A-Z0-9_]+|[A-Z0-9_]+_SKIP)$`)
