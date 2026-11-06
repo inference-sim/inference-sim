@@ -1,6 +1,8 @@
 package embedtest
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -50,5 +52,20 @@ func TestMetricsFollowTheExtractorsSeries(t *testing.T) {
 	e.r = nil
 	if got = e.metrics(false); !strings.Contains(got, "vllm:kv_cache_usage_perc") {
 		t.Errorf("no fallback without a router:\n%s", got)
+	}
+}
+
+// A part whose configuration the Suite leaves nil is reported as skipped, with the field
+// named, and not silently passed.
+func TestNilConfigsAreReportedSkipped(t *testing.T) {
+	_, skipped := run(Suite{New: func(context.Context, embed.Runtime, embed.Config) (embed.Router, error) {
+		return nil, errors.New("not built")
+	}})
+	got := map[string]string{}
+	for _, s := range skipped {
+		got[s.part] = s.reason
+	}
+	if len(skipped) != 2 || !strings.Contains(got["unavailable"], "Suite.Unavailable") || !strings.Contains(got["evict"], "Suite.Evict") {
+		t.Errorf("skipped parts: %+v", skipped)
 	}
 }

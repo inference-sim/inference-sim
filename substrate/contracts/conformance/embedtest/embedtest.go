@@ -109,12 +109,23 @@ type Suite struct {
 }
 
 // Run runs Check and reports each problem as a test error.
+//
+// A part whose configuration the Suite leaves nil (Unavailable, Evict) does not run. Run
+// reports it as a skipped subtest naming the missing field, so a passing run says which
+// parts it did not exercise.
 func Run(t *testing.T, s Suite) {
 	t.Helper()
-	for _, p := range Problems(s) {
+	problems, skipped := run(s)
+	for _, p := range problems {
 		t.Error(p)
 	}
+	for _, sk := range skipped {
+		t.Run(sk.part, func(t *testing.T) { t.Skip(sk.reason) })
+	}
 }
+
+// skip is a part that did not run, and why.
+type skip struct{ part, reason string }
 
 // Check returns the problems Problems finds, joined, or nil when there are none.
 func Check(s Suite) error { return errors.Join(Problems(s)...) }
@@ -122,6 +133,11 @@ func Check(s Suite) error { return errors.Join(Problems(s)...) }
 // Problems runs the scenario and returns every departure from the contract it finds, each
 // prefixed with the part of the scenario that found it.
 func Problems(s Suite) []error {
+	problems, _ := run(s)
+	return problems
+}
+
+func run(s Suite) ([]error, []skip) {
 	if s.Model == "" {
 		s.Model = "test-model"
 	}
@@ -132,6 +148,7 @@ func Problems(s Suite) []error {
 		s.EvictWithin = 10 * time.Second
 	}
 	var problems []error
+	var skipped []skip
 	parts := []struct {
 		name string
 		run  func(*env)
@@ -163,8 +180,11 @@ func Problems(s Suite) []error {
 			p.run(e)
 		}()
 		problems = append(problems, e.problems...)
+		if e.skipped != "" {
+			skipped = append(skipped, skip{p.name, e.skipped})
+		}
 	}
-	return problems
+	return problems, skipped
 }
 
 // env is one part of the scenario: a runtime, a router on it, and the engines.
@@ -181,6 +201,7 @@ type env struct {
 	started  int             // goroutines live before the router existed
 	nextReq  int
 	flights  []*outcome
+	skipped  string // why the part did not run, when it did not
 }
 
 func (e *env) fail(format string, args ...any) {
