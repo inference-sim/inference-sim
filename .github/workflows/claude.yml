@@ -41,7 +41,7 @@ jobs:
     steps:
       - name: Check invoker permissions
         id: check
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             // Before the try, so a bug in these two lines surfaces as a plain failed job
@@ -161,7 +161,7 @@ jobs:
       # not have). This job does no other checkout, so checking the trusted ref out at the workspace
       # ROOT is clean — there is no untrusted tree to nest under (unlike verify/correct, which check
       # the gate out at root BEFORE any event/delivery checkout).
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.check.outputs.allowed == 'true'
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -253,7 +253,7 @@ jobs:
       execution_file: ${{ steps.claude.outputs.execution_file }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           # For issue_comment/pull_request_review_comment, github.ref is the DEFAULT
@@ -272,7 +272,7 @@ jobs:
                 && format('refs/pull/{0}/head', github.event.issue.number))
              || '' }}
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         id: claude
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
@@ -340,7 +340,7 @@ jobs:
       execution_file: ${{ steps.claude.outputs.execution_file }}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
           # Same PR-head ref resolution as the write path — see the comment there for why
@@ -352,7 +352,7 @@ jobs:
                 && format('refs/pull/{0}/head', github.event.issue.number))
              || '' }}
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         id: claude
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
@@ -418,7 +418,7 @@ jobs:
     steps:
       - name: Resolve PR head SHA
         id: pr-info
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
             try {
@@ -434,7 +434,7 @@ jobs:
 
       - name: Report commit status
         if: steps.pr-info.outcome == 'success'
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           # Whichever agent job ran. They are mutually exclusive, so at most one is not
           # 'skipped'; if both are (the gate above regressed) this yields 'skipped', which
