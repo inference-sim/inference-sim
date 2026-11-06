@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
 var (
@@ -119,6 +120,14 @@ func (r *Record) Validate() *validate.Problems {
 		}
 		if !hex64.MatchString(rp.CorpusSHA256) {
 			p.Field("replay.corpus_sha256", "must be 64 lowercase hex characters")
+		}
+		// duration_s is omitempty, so zero reads back as unstated; a stated one is a
+		// finite number of seconds, as the workload's benchmark_duration_s is.
+		if p.FiniteField("replay.duration_s", rp.DurationS) && rp.DurationS < 0 {
+			p.Field("replay.duration_s", "must not be negative")
+		}
+		if t := rp.TrajectoryStart; t != nil {
+			workload.CheckStartWindow(p, "replay.trajectory_start", t.MinRatio, t.MaxRatio)
 		}
 	}
 	f := r.Facets

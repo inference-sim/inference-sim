@@ -541,6 +541,29 @@ func (r *ReplayDefinition) StartWindow() (float64, float64) {
 	return lo, hi
 }
 
+// CheckStartWindow records the problems of a snapshot window stated as optional bounds:
+// each stated bound finite and in [0, 1], and the lower not above the upper, an omitted
+// bound taking the scenario's 0 or 1. Other documents that record a window the replay
+// used (a point record's trajectory_start) call it so one rule holds everywhere. path
+// names the window in the document.
+func CheckStartWindow(p *validate.Problems, path string, minRatio, maxRatio *float64) {
+	for field, v := range map[string]*float64{"min_ratio": minRatio, "max_ratio": maxRatio} {
+		if v != nil && p.FiniteField(path+"."+field, *v) && (*v < 0 || *v > 1) {
+			p.Field(path+"."+field, "must lie in [0, 1], got %v", *v)
+		}
+	}
+	lo, hi := 0.0, 1.0
+	if minRatio != nil {
+		lo = *minRatio
+	}
+	if maxRatio != nil {
+		hi = *maxRatio
+	}
+	if lo > hi {
+		p.Field(path, "min_ratio %v exceeds max_ratio %v", lo, hi)
+	}
+}
+
 // WarmupMode returns the warmup mode, synthesized when unstated.
 func (r *ReplayDefinition) WarmupMode() WarmupMode {
 	if r.Warmup != nil {
@@ -607,14 +630,7 @@ func (r *ReplayDefinition) validateInto(p *validate.Problems) {
 		p.Field("system_idle_gap_cap_s", "the scenario locks it to 10 s, got %v (validator.py:748-785)", *c)
 	}
 	if t := r.TrajectoryStart; t != nil {
-		for field, v := range map[string]*float64{"min_ratio": t.MinRatio, "max_ratio": t.MaxRatio} {
-			if v != nil && p.FiniteField("trajectory_start."+field, *v) && (*v < 0 || *v > 1) {
-				p.Field("trajectory_start."+field, "must lie in [0, 1], got %v", *v)
-			}
-		}
-		if lo, hi := r.StartWindow(); lo > hi {
-			p.Field("trajectory_start", "min_ratio %v exceeds max_ratio %v", lo, hi)
-		}
+		CheckStartWindow(p, "trajectory_start", t.MinRatio, t.MaxRatio)
 	}
 	if w := r.Warmup; w != nil {
 		// Reject a non-finite duration first: NaN/±Inf must not slip past the

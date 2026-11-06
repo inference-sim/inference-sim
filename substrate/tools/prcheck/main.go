@@ -341,7 +341,7 @@ func run(args []string, w io.Writer) error {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		entries, bad := CheckQuarantine(src, time.Now().UTC(), nil)
+		entries, bad := CheckQuarantine(src, time.Now().UTC(), QuarantineHistory(*list, src))
 		skips, ran, err := ParseSkips(raw, *pyPkg)
 		if err != nil {
 			return err
@@ -552,7 +552,7 @@ func run(args []string, w io.Writer) error {
 				return err
 			}
 		}
-		entries, bad := CheckQuarantine(src, day, nil)
+		entries, bad := CheckQuarantine(src, day, QuarantineHistory(*list, src))
 		if *skipPkg != "" && len(bad) == 0 {
 			fmt.Fprintln(w, GoSkipPattern(entries, *skipPkg))
 			return nil

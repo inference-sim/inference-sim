@@ -36,6 +36,27 @@ func valid() *Record {
 	}
 }
 
+func ptr(v float64) *float64 { return &v }
+
+// replay is a well-formed Replay, adjusted by f.
+func replay(f func(*Replay)) *Replay {
+	r := &Replay{Client: "aiperf", ClientVersion: "1", Scenario: "s", Corpus: "c", Concurrency: 1,
+		CorpusSHA256: h64}
+	f(r)
+	return r
+}
+
+func TestAWellFormedReplayPasses(t *testing.T) {
+	r := valid()
+	r.Replay = replay(func(x *Replay) {
+		x.DurationS = 900
+		x.TrajectoryStart = &TrajectoryStart{MinRatio: ptr(0), MaxRatio: ptr(1)}
+	})
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("a well-formed replay was refused:\n%s", p.Error())
+	}
+}
+
 func TestValidRecordPasses(t *testing.T) {
 	if p := valid().Validate(); !p.OK() {
 		t.Fatalf("the fixture must validate:\n%s", p.Error())
@@ -99,6 +120,22 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"replay without corpus digest", func(r *Record) {
 			r.Replay = &Replay{Client: "aiperf", Scenario: "s", Corpus: "c", Concurrency: 1}
 		}, "replay.corpus_sha256", "64 lowercase"},
+		{"replay negative duration", func(r *Record) { r.Replay = replay(func(x *Replay) { x.DurationS = -5 }) },
+			"replay.duration_s", "negative"},
+		{"replay NaN duration", func(r *Record) { r.Replay = replay(func(x *Replay) { x.DurationS = math.NaN() }) },
+			"replay.duration_s", "finite"},
+		{"replay min ratio above one", func(r *Record) {
+			r.Replay = replay(func(x *Replay) { x.TrajectoryStart = &TrajectoryStart{MinRatio: ptr(2.0)} })
+		}, "replay.trajectory_start.min_ratio", "[0, 1]"},
+		{"replay max ratio below zero", func(r *Record) {
+			r.Replay = replay(func(x *Replay) { x.TrajectoryStart = &TrajectoryStart{MaxRatio: ptr(-1.0)} })
+		}, "replay.trajectory_start.max_ratio", "[0, 1]"},
+		{"replay min above max", func(r *Record) {
+			r.Replay = replay(func(x *Replay) { x.TrajectoryStart = &TrajectoryStart{MinRatio: ptr(0.8), MaxRatio: ptr(0.2)} })
+		}, "replay.trajectory_start", "exceeds"},
+		{"replay NaN ratio", func(r *Record) {
+			r.Replay = replay(func(x *Replay) { x.TrajectoryStart = &TrajectoryStart{MinRatio: ptr(math.NaN())} })
+		}, "replay.trajectory_start.min_ratio", "finite"},
 		{"facets without sweep", func(r *Record) { r.Facets.SweepID = "" }, "facets", "sweep_id"},
 		{"two notes on one subject", func(r *Record) {
 			r.Notes = []Note{{Subject: "a", Text: "x"}, {Subject: "a", Text: "y"}}
