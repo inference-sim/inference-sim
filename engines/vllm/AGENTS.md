@@ -61,7 +61,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X1** (partial; target ci by M4) What a user would hand llm-d, vLLM or SGLang is what they hand BLIS, in the upstream's own field names, types, defaults and errors.
   - `new`, pull_request: Every configuration field of the pinned release is classified as modelled, proven inert, or not modelled (VLM-3, SGL-3)
   - `ci`, pull_request: An unknown field, or a not-modelled field set away from its default, is refused with its upstream name (`rules/engineconfig: TestDecodeRefusesAnUnknownKey`)
-  - `ci`, pull_request: Defaults match: the upstream's own configuration code resolves each oracle scenario, and the port's values are compared field by field (`ci.yml job packs-against-vllm: rules/v0_32 -run MatchSource`)
+  - `ci`, pull_request: Defaults match: the upstream's own configuration code resolves each oracle scenario, and the port's values are compared field by field (`ci.yml job packs-against-vllm: go test -run MatchSource`)
   - `new`, pull_request: Every configuration the upstream rejects is rejected. This is tested on a generated set: each field's boundary values, taken from the upstream's own argument and validation metadata, and one case for each branch of the upstream's validation code, with branch coverage required
 - **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
   - `new`, pull_request: No engine module imports another
@@ -102,20 +102,20 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, settings: The protected branch requires the repository's named checks, including formatting and lint (`branch protection on main`)
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
-- **X20** (partial; target ci by M1) Every commit written for BLIS is signed.
+- **X20** (new; target ci by M4) Every commit written for BLIS is signed.
   - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit
   - `new`, pull_request: Pip install --require-hashes in every Python CI job
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
   - `new`, pull_request: The provenance test checks each derived file's licence header
-- **X22** (partial; target ci by M1) Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged.
+- **X22** (partial; target ci by M4) Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged.
   - `new`, pull_request: The shared merge check in blis-substrate/.github/workflows, called by every repository, which compares verdict tree hashes
   - `new`, pull_request: A workflow lint that refuses ignored exit codes
   - `new`, pull_request: Each job's item count
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated
-- **X24** (new; target ci by M1) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
+- **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
   - `new`, pull_request: The shared merge check, which refuses a merge while a review thread has no outcome
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
@@ -192,26 +192,26 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
   - `new`, settings: Protected tags
   - `new`, nightly: A nightly check that every tag resolves to its recorded commit
-- **LIF-2** (new; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
+- **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
   - `new`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line
   - `new`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain
   - `new`, pull_request: A CI step that fails if go version differs from it
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
   - `new`, settings: Repository settings that let only the release bot and release owners create tags
   - `new`, nightly: A nightly check that every tag made by a person is signed and listed in its release notes
-- **LIF-5** (partial; target ci by M4) An engine module, or the router fork, models one upstream release.
+- **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
   - `new`, pull_request: A test that lists the dependencies of the engine's entry package with go list -deps and fails on any package kept for another release
   - `new`, pull_request: In engine modules, the provenance test, which refuses a ported file that names another release
 
 ### Review questions
 
 CI adds each question below to a pull request that changes one of its paths, as a
-required checklist item. A code owner answers it yes or no with a one-line reason; an agent
+required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent
 may propose an answer but never gives one (design §13.7).
 
-- **X5** Does this new replacement stand in only for the GPU, clock, transport, environment settings, the hardware platform or an outside service, and not for a decision? If it reproduces a decision, is it declared as a transcription? Reviewer: engine repository owners. When: the manifest changes. Paths: `oracle/mocks.json`.
-- **X6** Could this floating-point reduction give a different result on another platform? Reviewer: owners of the changed repository. When: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a code owner with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Reviewer: owners of the changed repository. When: a pull request adds a literal list or table, or a constant that cites another repository. Added by a code owner with the label `review:X7`.
-- **X9** Is this "out of scope" reason one of the three allowed, with a citation that supports it, and does the llm-d stack never use the feature on the hardware BLIS targets? Reviewer: engine repository owners. When: an item is marked out of scope. Paths: `surface.json`.
-- **DEV-12** Does this change alter what is modelled? Reviewer: owners of the changed directory. When: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a code owner with the label `review:DEV-12`.
+- **X5** Does this new replacement stand in only for the GPU, clock, transport, environment settings, the hardware platform or an outside service, and not for a decision? If it reproduces a decision, is it declared as a transcription? Reviewer: engine repository expertise. When: the manifest changes. Paths: `oracle/mocks.json`.
+- **X6** Could this floating-point reduction give a different result on another platform? Reviewer: expertise in the changed repository. When: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Reviewer: expertise in the changed repository. When: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
+- **X9** Is this "out of scope" reason one of the three allowed, with a citation that supports it, and does the llm-d stack never use the feature on the hardware BLIS targets? Reviewer: engine repository expertise. When: an item is marked out of scope. Paths: `surface.json`.
+- **DEV-12** Does this change alter what is modelled? Reviewer: expertise in the changed directory. When: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
 <!-- END GENERATED: invariants -->

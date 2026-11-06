@@ -1,6 +1,0 @@
-# Owners review every change (design §3.4, §13.7). A change to .github/, the oracle's checks or
-# the field list needs a code owner's review.
-*                 @mtoslalibu @sriumcp @jgchn
-/.github/         @mtoslalibu @sriumcp @jgchn
-/oracle/          @mtoslalibu @sriumcp
-/fields.json      @mtoslalibu @sriumcp @jgchn

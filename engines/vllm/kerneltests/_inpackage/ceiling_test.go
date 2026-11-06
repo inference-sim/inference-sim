@@ -256,7 +256,16 @@ func TestTheVendoredHostSetResolvesTheSameUnderBothRules(t *testing.T) {
 		if c.chip != "h200" {
 			in.Chip, in.Scenario.Cluster.Hardware = chipInputs(t, c.chip), c.chip
 		}
-		in.Coefficients = append(append([]*coefficient.Set{}, in.Coefficients...), set)
+		// The vendored set stands in for the registry's set of the same name: a coefficient is
+		// its name, scope and method, and two methods for one name and scope are refused until
+		// rank selection exists, so the two sets must not both be supplied.
+		in.Coefficients = []*coefficient.Set{}
+		for _, other := range fixtureInputs(t, v41).Coefficients {
+			if other.Name != set.Name {
+				in.Coefficients = append(in.Coefficients, other)
+			}
+		}
+		in.Coefficients = append(in.Coefficients, set)
 		k := build(t, in)
 		if want := time.Duration(93.8 * float64(time.Microsecond)); k.launchEager != want {
 			t.Errorf("%s: eager launch %v, want the model's %v", c.chip, k.launchEager, want)

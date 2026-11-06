@@ -55,6 +55,7 @@ func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 		return nil
 	}
 	r.Rules = pack
+	r.RulesKind = "vllm"
 	if _, err := OpenPool(dspark, r, 0); err != nil {
 		t.Errorf("DSpark through rules that are not a *rules.Pack: %v", err)
 	}

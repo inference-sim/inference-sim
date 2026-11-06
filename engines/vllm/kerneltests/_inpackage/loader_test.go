@@ -108,6 +108,7 @@ func rulesFor(version string) *pack.Pack {
 func withRules(r Repos) Repos {
 	r.Rules = RulesFrom(vllmrules.Lookup)
 	r.RulesVersions = vllmrules.Versions
+	r.RulesKind = "vllm"
 	r.EngineSettings = vllmsettings.OfPool
 	return r
 }

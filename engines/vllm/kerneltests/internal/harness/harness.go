@@ -49,6 +49,7 @@ func WithVLLMRules(r Repos) Repos {
 	if r.Rules == nil {
 		r.Rules = VLLMRules
 		r.RulesVersions = vllmrules.Versions
+		r.RulesKind = "vllm"
 	}
 	if r.EngineSettings == nil {
 		r.EngineSettings = vllmsettings.OfPool

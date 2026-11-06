@@ -29,6 +29,7 @@ var repos = latencykernel.Repos{
 	Data:           exampleData(), // the pinned blis-substrate's embedded catalog and registry
 	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
 	RulesVersions:  vllmrules.Versions,
+	RulesKind:      "vllm",
 	EngineSettings: vllmsettings.OfPool,
 }
 
