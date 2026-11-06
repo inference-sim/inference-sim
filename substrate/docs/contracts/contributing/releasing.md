@@ -72,6 +72,12 @@ go run ./tools/release -lock stack.lock -results results.json \
     -dir blis-substrate=../blis-substrate -dir blis-vllm=../blis-vllm -dir inference-sim=../inference-sim
 ```
 
+Pass `-dir` once per repository in the set. A set that holds an engine or a router also needs
+`-dir inference-sim=<checkout>`, even when inference-sim is not released: the substrate bound of
+design §3.2 reads inference-sim's `go.mod`, so the checkout is read-only input. The bot refuses
+the plan up front when it is missing, is not inference-sim's module, or does not hold exactly one
+direct `blis-substrate` requirement.
+
 `-apply` stages one layer's release commit on `release/<tag>` in the local checkout and tags
 nothing. After CI has run on the staged commit, `-tag` with a `results.json` that records it tags
 that exact commit. `-sign` signs the pin commits and tags. The command never pushes.

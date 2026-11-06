@@ -91,7 +91,7 @@ func run(args []string, w io.Writer) (int, error) {
 	layer := fs.String("layer", "", "the repository -apply or -tag works on; default: the first layer in lock order that is not yet tagged")
 	sign := fs.Bool("sign", false, "sign the pin commits and tags")
 	dirs := dirFlag{}
-	fs.Var(dirs, "dir", "<repo>=<local checkout>, once per repository in the set")
+	fs.Var(dirs, "dir", "<repo>=<local checkout>, once per repository in the set; a set with an engine or router also needs inference-sim=<checkout>, read-only, even when inference-sim is not released (the bound of design §3.2 reads its go.mod)")
 	if err := fs.Parse(args); err != nil {
 		return 2, err
 	}
