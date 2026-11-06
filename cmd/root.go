@@ -16,6 +16,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
+	tracespec "github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/check"
@@ -1118,6 +1119,16 @@ var runCmd = &cobra.Command{
 		// The TraceV2 export (lines 1582-1601) remains gated on --trace-output, but the
 		// follow-up accumulation happens regardless so saturation analysis sees complete workloads.
 		var followUpRequests []*sim.Request
+		// Each follow-up's think time (arrival minus the clock of the round it follows), kept
+		// so an accumulate session exports with the exact think its replay needs (#1914).
+		thinkUsByReqID := make(map[string]int64)
+		noteThink := func(followUps []*sim.Request, clock int64) {
+			for _, fu := range followUps {
+				if fu.RoundIndex > 0 {
+					thinkUsByReqID[fu.ID] = fu.ArrivalTime - clock
+				}
+			}
+		}
 		var onRequestDone func(*sim.Request, int64) []*sim.Request
 		var unservedHook func(*sim.Request, int64) []*sim.Request
 		if sessionMgr != nil {
@@ -1125,6 +1136,7 @@ var runCmd = &cobra.Command{
 			onRequestDone = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := sessionMgr.OnComplete(req, clock)
 				followUpRequests = append(followUpRequests, followUps...)
+				noteThink(followUps, clock)
 				return followUps
 			}
 			// Route pre-instance drops (gateway client-deadline expiry, admission/routing
@@ -1135,6 +1147,7 @@ var runCmd = &cobra.Command{
 			unservedHook = func(req *sim.Request, clock int64) []*sim.Request {
 				followUps := sessionMgr.OnUnserved(req, clock)
 				followUpRequests = append(followUpRequests, followUps...)
+				noteThink(followUps, clock)
 				return followUps
 			}
 		}
@@ -1248,13 +1261,26 @@ var runCmd = &cobra.Command{
 				logrus.Fatalf("Trace export: arrival hook was not installed but --trace-output=%q is set — install/export branches diverged (issue #1440)", traceOutput)
 			}
 			records := workload.RequestsToTraceRecords(traceArrivals)
+			// #1914 (INV-13): accumulate sessions export as per-round deltas under a header that
+			// says so; absolute rounds would replay without the reuse of the previous round's
+			// context. The re-export is also what fixed-accumulate replay reads.
+			var growth tracespec.ContextGrowth
+			if allSessionsAccumulate(wl) {
+				var rErr error
+				records, rErr = workload.ReExportClosedLoopRecords(traceArrivals, thinkUsByReqID, "accumulate")
+				if rErr != nil {
+					logrus.Fatalf("Trace export of accumulate sessions: %v", rErr)
+				}
+				growth = tracespec.ContextGrowth("accumulate")
+			}
 			header := &workload.TraceHeader{
-				Version:           workload.TraceVersion,
-				TimeUnit:          "microseconds",
-				Mode:              "generated",
-				WorkloadSeed:      &spec.Seed,
-				GoodputSLOTargets: goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay
-				KVOffload:         simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
+				SessionContextGrowth: growth,
+				Version:              workload.TraceVersion,
+				TimeUnit:             "microseconds",
+				Mode:                 "generated",
+				WorkloadSeed:         &spec.Seed,
+				GoodputSLOTargets:    goodputTargets,                   // #1413, BC-7: persist resolved targets for downstream replay
+				KVOffload:            simToHeaderOffload(kvOffloadCfg), // #1587, BC-G6: nil when inert (omitted); round-trips resolved config
 				// #1530: record multi-node placement so replay can refuse a trace whose
 				// step times it cannot reproduce. 0/1 (no span) is omitted, so a run
 				// without multi-node placement writes a byte-identical header (INV-6).
@@ -1612,4 +1638,18 @@ func serverSeriesIntervalUs() int64 {
 		logrus.Fatalf("--server-series-interval-s %g is below one microsecond", serverSeriesIntervalS)
 	}
 	return us
+}
+
+// allSessionsAccumulate reports whether the run has session blueprints and every one grows
+// its context by accumulation, the case whose trace export must carry deltas (#1914).
+func allSessionsAccumulate(wl *workload.GeneratedWorkload) bool {
+	if wl == nil || len(wl.Sessions) == 0 {
+		return false
+	}
+	for _, bp := range wl.Sessions {
+		if bp.ContextGrowth != "accumulate" {
+			return false
+		}
+	}
+	return true
 }

@@ -671,3 +671,54 @@ func TestResult_ReplayWithoutHorizonReproducesTheRun(t *testing.T) {
 		}
 	}
 }
+
+// #1914 (INV-13): a closed-loop accumulate session workload exported by run replays to the
+// same figures, cross-round prefix reuse included; the header says the rounds are deltas.
+func TestResult_AccumulateSessionsRoundTripThroughTheTrace(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "ss.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 7
+category: reasoning
+aggregate_rate: 5.0
+num_requests: 60
+cohorts:
+  - id: agents
+    population: 10
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 256, std_dev: 64, min: 64, max: 1024}}
+    output_distribution: {type: exponential, params: {mean: 64}}
+    reasoning:
+      reason_ratio_distribution: {type: constant, params: {value: 0}}
+      multi_turn: {max_rounds: 4, think_time_us: 500000, context_growth: accumulate, single_session: true}
+    closed_loop: true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(dir, "tr")
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+		"--workload-spec", spec, "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	hdr, err := os.ReadFile(prefix + ".yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(hdr), "session_context_growth: accumulate") {
+		t.Fatalf("the exported header does not say the rounds are accumulate deltas:\n%s", hdr)
+	}
+	repOut, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+		"--session-mode", "closed-loop", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	run, rep := parseResult(t, runOut), parseResult(t, repOut)
+	if run.Requests.Completed < 40 {
+		t.Fatalf("non-vacuity: the run completed %d requests", run.Requests.Completed)
+	}
+	if !jsonEqual(t, run.Requests, rep.Requests) || !jsonEqual(t, run.Metrics, rep.Metrics) {
+		t.Errorf("INV-13: replay differs from run\nrequests %+v\n         %+v\nmetrics %v\n        %v", run.Requests, rep.Requests, run.Metrics, rep.Metrics)
+	}
+}
