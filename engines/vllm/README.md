@@ -61,6 +61,14 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   `python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json`, which
   fails while a name vLLM reads has no entry, an entry names a field vLLM does not have, or a
   dynamic read is unlisted.
+- **A configuration field with no command-line flag is not listed.** The generator takes a field
+  of `EngineArgs` or `AsyncEngineArgs` only if some `add_argument` call names it. Six such fields
+  have none: `model_weights`, `_api_process_count`, `_api_process_rank`, `enable_mm_processor_stats`,
+  `mamba_config` and `tokens_only`. vLLM's own code sets them, or they are reached through another
+  flag. `enable_mm_processor_stats` is an `ObservabilityConfig` flag that its source calls "for
+  internal use only (e.g., benchmarks)" and "not exposed as a CLI argument"
+  (`vllm/config/observability.py:94`), so a deployment cannot set it. If a later release adds a
+  flag for it, the generator lists it and the completeness check demands a status.
 - **The Rust front end is scanned** because `VLLM_USE_RUST_FRONTEND=1` selects it on any platform,
   CUDA included (`vllm/entrypoints/cli/serve.py`, `vllm/envs.py`), and it runs in the serving
   process. Eighteen variables are read there; the ones read nowhere else are `RUST_LOG`,
