@@ -65,7 +65,7 @@ func TestNilConfigsAreReportedSkipped(t *testing.T) {
 	for _, s := range skipped {
 		got[s.part] = s.reason
 	}
-	if len(skipped) != 2 || !strings.Contains(got["unavailable"], "Suite.Unavailable") || !strings.Contains(got["evict"], "Suite.Evict") {
+	if len(skipped) != 3 || !strings.Contains(got["unavailable"], "Suite.Unavailable") || !strings.Contains(got["evict"], "Suite.Evict") || !strings.Contains(got["unaudited"], "Suite.Unaudited") {
 		t.Errorf("skipped parts: %+v", skipped)
 	}
 }
