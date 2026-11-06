@@ -49,7 +49,7 @@ command never pushes.
 
 ## The manual procedure
 
-Two release owners (the `release-owners` group in each repository's CODEOWNERS) run it together.
+Two of the project's release owners run it together.
 One acts; the other checks each step against the bot's dry run before it is taken.
 
 1. Both owners run the bot's dry run on the approved `stack.lock` and compare the output. If the

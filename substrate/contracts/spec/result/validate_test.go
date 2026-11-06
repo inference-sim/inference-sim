@@ -472,3 +472,12 @@ func TestInputPackaging(t *testing.T) {
 		t.Error("a recorded node size other than the scenario's stated one is accepted")
 	}
 }
+
+// A second YAML document would be dropped silently, so it is refused (SUB-12).
+func TestUnmarshalRefusesASecondDocument(t *testing.T) {
+	var r Result
+	err := Unmarshal([]byte("kind: Result\n---\nbogus: 1\n"), &r)
+	if err == nil || !strings.Contains(err.Error(), "second YAML document") {
+		t.Fatalf("err = %v, want a refusal of the second document", err)
+	}
+}
