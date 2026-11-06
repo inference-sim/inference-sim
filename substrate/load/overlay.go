@@ -1,6 +1,8 @@
 package load
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
@@ -12,8 +14,32 @@ import (
 // applyCatalogOverlay applies a catalog overlay's files to files, by the catalog's
 // identities (design §3.3): a model is its whole directory, so an overlay's models/<name>/
 // replaces every data file of that model; any other file replaces the file at its path, or
-// is added.
-func applyCatalogOverlay(files, overlay map[string][]byte) {
+// is added. An overlay path that differs from a base path only in letter case is refused:
+// the two would sit side by side, the base entry would stay in force, and the overlay's hash
+// would still say it applied.
+func applyCatalogOverlay(files, overlay map[string][]byte) error {
+	folded := map[string]string{}
+	for base := range files {
+		folded[strings.ToLower(base)] = base
+	}
+	var clash []string
+	for rel := range overlay {
+		if base, ok := folded[strings.ToLower(rel)]; ok && base != rel {
+			clash = append(clash, fmt.Sprintf("%s and %s differ only in letter case; an overlay replaces a file by its exact path", rel, base))
+		}
+		if dir, ok := modelDir(rel); ok {
+			for base := range files {
+				if bdir, ok := modelDir(base); ok && bdir != dir && strings.EqualFold(bdir, dir) {
+					clash = append(clash, fmt.Sprintf("%s and %s differ only in letter case; an overlay replaces a model by its exact name", dir, bdir))
+					break
+				}
+			}
+		}
+	}
+	if len(clash) > 0 {
+		slices.Sort(clash)
+		return fmt.Errorf("a catalog overlay: %s", strings.Join(slices.Compact(clash), "; "))
+	}
 	for rel := range overlay {
 		if dir, ok := modelDir(rel); ok {
 			for base := range files {
@@ -26,6 +52,7 @@ func applyCatalogOverlay(files, overlay map[string][]byte) {
 	for rel, b := range overlay {
 		files[rel] = b
 	}
+	return nil
 }
 
 // modelDir returns "models/<name>/" for a file in a model directory.

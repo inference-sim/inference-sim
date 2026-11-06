@@ -161,3 +161,46 @@ func TestTheSelectedEntryReport(t *testing.T) {
 		t.Errorf("unloaded: %v", r.Unloaded)
 	}
 }
+
+// An overlay file whose path differs from a base path only in letter case would leave the
+// base entry in force while the hash says the overlay applied: it is refused, naming both.
+func TestAnOverlayPathThatDiffersOnlyInCaseIsRefused(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoDir, "catalog", "hardware", "h100.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ov := t.TempDir()
+	write(t, filepath.Join(ov, "hardware", "H100.yaml"), strings.Replace(string(b), "MemoryGiB: 79.1895752", "MemoryGiB: 200", 1))
+	_, err = Open(Options{CatalogOverlays: []string{ov}})
+	if err == nil || !strings.Contains(err.Error(), "hardware/H100.yaml") || !strings.Contains(err.Error(), "hardware/h100.yaml") ||
+		!strings.Contains(err.Error(), "letter case") {
+		t.Errorf("a case-only collision with a base hardware file was not refused: %v", err)
+	}
+	// A file at the exact path still replaces.
+	ov2 := t.TempDir()
+	write(t, filepath.Join(ov2, "hardware", "h100.yaml"), strings.Replace(string(b), "MemoryGiB: 79.1895752", "MemoryGiB: 200", 1))
+	d, err := Open(Options{CatalogOverlays: []string{ov2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c, err := d.Chip("h100"); err != nil || c.MemoryGiB != 200 {
+		t.Errorf("an exact-path overlay did not replace: %v %v", c, err)
+	}
+	// Networks and workloads are merged by path too.
+	for _, kind := range []string{"networks", "workloads"} {
+		entries, err := os.ReadDir(filepath.Join(repoDir, "catalog", kind))
+		if err != nil || len(entries) == 0 {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		name := entries[0].Name()
+		body, err := os.ReadFile(filepath.Join(repoDir, "catalog", kind, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		o := t.TempDir()
+		write(t, filepath.Join(o, kind, strings.ToUpper(strings.TrimSuffix(name, ".yaml"))+".yaml"), string(body))
+		if _, err := Open(Options{CatalogOverlays: []string{o}}); err == nil || !strings.Contains(err.Error(), "letter case") {
+			t.Errorf("%s: a case-only collision was not refused: %v", kind, err)
+		}
+	}
+}

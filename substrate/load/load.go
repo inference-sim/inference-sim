@@ -120,7 +120,9 @@ func Open(o Options) (*Data, error) {
 			if err != nil {
 				return nil, err
 			}
-			applyCatalogOverlay(files, ov.files)
+			if err := applyCatalogOverlay(files, ov.files); err != nil {
+				return nil, err
+			}
 			d.Catalog.Overlays = append(d.Catalog.Overlays, Overlay{Path: dir, Hash: Hash(ov.files)})
 		}
 		if c, problems = dataset.CheckCatalog(files); len(problems) > 0 {
