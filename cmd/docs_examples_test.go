@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -127,36 +126,31 @@ func collapse(command string) string {
 // hold a command example, skipping the historical-record subtrees.
 func collectDocFiles(t *testing.T) []string {
 	t.Helper()
+	// Only the repository's own files are live documentation: git's list leaves out the ignored
+	// agent-local trees, docs/superpowers among them (#2004).
 	var files []string
-	for _, root := range docExampleRoots {
-		info, err := os.Stat(root)
-		if err != nil {
-			t.Fatalf("stat %s: %v (docExampleRoots is stale)", root, err)
-		}
-		if !info.IsDir() {
-			files = append(files, root)
-			continue
-		}
-		err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
+	for _, rel := range repoFiles(t, "..") {
+		path := "../" + rel
+		for _, root := range docExampleRoots {
+			if path != root && !strings.HasPrefix(path, root+"/") {
+				continue
 			}
-			if d.IsDir() {
-				for _, skip := range docExampleSkipDirs {
-					if filepath.Clean(path) == filepath.Clean(skip) {
-						return fs.SkipDir
-					}
-				}
-				return nil
+			skipped := false
+			for _, skip := range docExampleSkipDirs {
+				skipped = skipped || strings.HasPrefix(path, skip+"/")
 			}
 			switch filepath.Ext(path) {
 			case ".md", ".yaml", ".yml", ".sh":
-				files = append(files, path)
+				if !skipped {
+					files = append(files, path)
+				}
 			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("walk %s: %v", root, err)
+			break
+		}
+	}
+	for _, root := range docExampleRoots {
+		if _, err := os.Stat(root); err != nil {
+			t.Fatalf("stat %s: %v (docExampleRoots is stale)", root, err)
 		}
 	}
 	return files
