@@ -326,7 +326,7 @@ func TestDocReferences(t *testing.T) {
 // X25.
 func TestQuarantine(t *testing.T) {
 	day := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
-	good := "- {test: TestA, package: ./kernel, issue: inference-sim/blis-substrate#9, expires: 2026-11-20, reason: flaky on arm64}\n"
+	good := "- {test: TestA, package: ./kernel, issue: inference-sim/blis-substrate#9, added: 2026-11-01, expires: 2026-11-20, reason: flaky on arm64}\n"
 	list, bad := CheckQuarantine([]byte(good), day, nil)
 	none(t, bad)
 	if p := GoSkipPattern(list, "./kernel"); p != "^TestA$" {
@@ -343,8 +343,59 @@ func TestQuarantine(t *testing.T) {
 			t.Errorf("%s: want %q, got %v", name, c.want, bad)
 		}
 	}
-	_, bad = CheckQuarantine([]byte(good), day, map[string]time.Time{"TestA": day.AddDate(0, -1, -1)})
-	has(t, bad, "more than 30 days")
+	// An added day later than the entry's first appearance in git history is refused.
+	_, bad = CheckQuarantine([]byte(good), day, map[string]time.Time{"TestA": day.AddDate(0, 0, -5)})
+	has(t, bad, "when the entry first appeared")
+	_, bad = CheckQuarantine([]byte(good), day, map[string]time.Time{"TestA": day.AddDate(0, 0, -3)})
+	none(t, bad)
+}
+
+// X25: the cap holds through the same function the subcommands call, with no history
+// supplied: a far expiry, a future added day, and a missing added day are each refused.
+func TestQuarantineCapReachesTheCLI(t *testing.T) {
+	dir := t.TempDir()
+	entry := func(added, expires string) string {
+		a := ""
+		if added != "" {
+			a = "  added: " + added + "\n"
+		}
+		return "- test: TestA\n  package: ./kernel\n  issue: inference-sim/blis-substrate#9\n" + a +
+			"  expires: " + expires + "\n  reason: flaky\n"
+	}
+	for name, c := range map[string]struct{ doc, want string }{
+		"expires 2099":    {entry("2026-11-01", "2099-01-01"), "more than 30 days after it was added"},
+		"added in future": {entry("2026-11-30", "2026-12-10"), "is in the future"},
+		"missing added":   {entry("", "2026-11-20"), "added is required"},
+		"bad added":       {entry("yesterday", "2026-11-20"), "is not a date"},
+	} {
+		file := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".yaml")
+		if err := os.WriteFile(file, []byte(c.doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		var out strings.Builder
+		err := run([]string{"quarantine", "-list", file, "-today", "2026-11-06"}, &out)
+		if !errors.Is(err, errFindings) || !strings.Contains(out.String(), c.want) {
+			t.Errorf("%s: want a finding naming %q, got %v\n%s", name, c.want, err, out.String())
+		}
+		// The skips subcommand reads the same list the same way.
+		res := filepath.Join(dir, "results.json")
+		if err := os.WriteFile(res, []byte(`{"Action":"pass","Package":"p","Test":"T"}`+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out.Reset()
+		err = run([]string{"skips", "-results", res, "-list", file, "-min", "0"}, &out)
+		if name != "added in future" && (!errors.Is(err, errFindings) || !strings.Contains(out.String(), c.want)) {
+			t.Errorf("skips, %s: want a finding naming %q, got %v\n%s", name, c.want, err, out.String())
+		}
+	}
+	ok := filepath.Join(dir, "ok.yaml")
+	if err := os.WriteFile(ok, []byte(entry("2026-11-01", "2026-11-20")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := run([]string{"quarantine", "-list", ok, "-today", "2026-11-06"}, &out); err != nil {
+		t.Errorf("a well-formed entry was refused: %v\n%s", err, out.String())
+	}
 }
 
 // X16, X25: a pytest -v run names each skipped test, so a quarantine entry covers that test
