@@ -459,21 +459,82 @@ func (e *env) isMetricsPath(path string) bool {
 	return false
 }
 
-// metrics is a vLLM engine's metrics, idle or saturated (a long queue and a full cache).
+// vllmSeries are vLLM's series, the fallback when the router's Requirements name none.
+var vllmSeries = map[string]string{
+	"queuedRequestsSpec":  "vllm:num_requests_waiting",
+	"runningRequestsSpec": "vllm:num_requests_running",
+	"kvUsageSpec":         "vllm:kv_cache_usage_perc",
+	"cacheInfoSpec":       "vllm:cache_config_info",
+}
+
+// series returns the series the router's metrics extractor reads, by mapping key: the
+// default engine's mapping of the first extractor that has one with series, else the first
+// such mapping. A router that names none gets vLLM's series.
+func (e *env) series() (map[string]string, bool) {
+	if e.r != nil {
+		var first map[string]string
+		for _, x := range e.r.Requirements().Extractors {
+			for _, m := range x.Engines {
+				if len(m.Series) == 0 {
+					continue
+				}
+				if m.Name == x.DefaultEngine {
+					return m.Series, false
+				}
+				if first == nil {
+					first = m.Series
+				}
+			}
+		}
+		if first != nil {
+			return first, false
+		}
+	}
+	return vllmSeries, true
+}
+
+// metrics is an engine's metrics, idle or saturated (a long queue and a full cache), in the
+// series the router's extractor reads (Requirements().Extractors[].Engines[].Series).
 func (e *env) metrics(busy bool) string {
 	waiting, running, kv := 0, 0, 0.0
 	if busy {
 		waiting, running, kv = 128, 256, 1.0
 	}
+	series, fallback := e.series()
 	var b strings.Builder
-	gauge := func(name string, v any) {
-		fmt.Fprintf(&b, "# TYPE %s gauge\n%s{model_name=%q} %v\n", name, name, e.s.Model, v)
+	// A series is spelled as the configuration spells it, labels included; the model label
+	// is added to them.
+	sample := func(spelled, extra string, v any) {
+		name, labels := spelled, ""
+		if i := strings.IndexByte(spelled, '{'); i >= 0 && strings.HasSuffix(spelled, "}") {
+			name, labels = spelled[:i], strings.TrimSuffix(spelled[i+1:], "}")
+		}
+		if labels != "" && extra != "" {
+			labels += ","
+		}
+		fmt.Fprintf(&b, "# TYPE %s gauge\n%s{%s%s} %v\n", name, name, labels, extra, v)
 	}
-	gauge("vllm:num_requests_waiting", waiting)
-	gauge("vllm:num_requests_running", running)
-	gauge("vllm:kv_cache_usage_perc", kv)
-	fmt.Fprintf(&b, "# TYPE vllm:num_preemptions_total counter\nvllm:num_preemptions_total{model_name=%q} 0\n", e.s.Model)
-	fmt.Fprintf(&b, "# TYPE vllm:cache_config_info gauge\nvllm:cache_config_info{block_size=\"%d\",num_gpu_blocks=\"4096\"} 1\n", e.blocks)
+	model := fmt.Sprintf("model_name=%q", e.s.Model)
+	for _, g := range []struct {
+		key string
+		v   any
+	}{{"queuedRequestsSpec", waiting}, {"runningRequestsSpec", running}, {"kvUsageSpec", kv}} {
+		if name := series[g.key]; name != "" {
+			sample(name, model, g.v)
+		}
+	}
+	if name := series["cacheInfoSpec"]; name != "" {
+		sample(name, fmt.Sprintf("block_size=\"%d\",num_gpu_blocks=\"4096\"", e.blocks), 1)
+	}
+	if name := series["cacheBlockSizeSpec"]; name != "" {
+		sample(name, model, e.blocks)
+	}
+	if name := series["cacheNumBlocksSpec"]; name != "" {
+		sample(name, model, 4096)
+	}
+	if fallback {
+		fmt.Fprintf(&b, "# TYPE vllm:num_preemptions_total counter\nvllm:num_preemptions_total{model_name=%q} 0\n", e.s.Model)
+	}
 	return b.String()
 }
 
