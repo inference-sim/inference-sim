@@ -102,6 +102,12 @@ func TestRejects(t *testing.T) {
 		{"no hardware", func(s *Scenario) { s.Cluster.Hardware = "" }},
 		{"no engine version", func(s *Scenario) { s.EngineVersion = "" }},
 		{"no coefficients", func(s *Scenario) { s.Coefficients = nil }},
+		{"empty coefficient set name", func(s *Scenario) {
+			s.Coefficients = []string{"", "mfu", "mfu2"}
+		}},
+		{"duplicate coefficient set name", func(s *Scenario) {
+			s.Coefficients = []string{"mfu", "mfu"}
+		}},
 		{"zero nodes", func(s *Scenario) { s.Cluster.Nodes = 0 }},
 		{"negative gpus per node", func(s *Scenario) { s.Cluster.GPUsPerNode = -8 }},
 		{"negative gpus per rack", func(s *Scenario) { s.Cluster.GPUsPerRack = -72 }},

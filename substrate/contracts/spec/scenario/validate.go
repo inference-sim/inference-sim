@@ -34,6 +34,18 @@ func (s *Scenario) Validate() *validate.Problems {
 		p.Field("coefficients",
 			"at least one set is required; an estimate with no coefficients is not an estimate")
 	}
+	// A set is applied in order and named once: a blank entry names no registry set, and
+	// a duplicate is a copy-paste that would apply the same set twice.
+	seen := map[string]bool{}
+	for i, name := range s.Coefficients {
+		at := fmt.Sprintf("coefficients[%d]", i)
+		if name == "" {
+			p.Field(at, "names a registry coefficient set and must not be empty")
+		} else if seen[name] {
+			p.Field(at, "duplicate coefficient set %q", name)
+		}
+		seen[name] = true
+	}
 
 	// A workload binding is optional (a capacity-only scenario carries none), but a
 	// binding that is present must be well formed: exactly one of its two arms, and that
