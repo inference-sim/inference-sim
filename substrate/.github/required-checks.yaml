@@ -11,9 +11,12 @@
 # a pull request that touches none of their paths. They are not listed; ci.yml's `required` job
 # is their aggregator. It reads their path lists from the workflow files, takes the change's
 # files from git diff, and fails unless each workflow whose paths the change touched has a
-# successful check run on the pull request's head. `scan` runs on the merge queue as well as on
-# the pull request (private-names.yml has a merge_group trigger), and the merge check requires
-# it on the merge-queue tree.
+# successful check run on the pull request's head. On the merge queue (none is enabled today)
+# both also trigger on merge_group, where GitHub applies no paths filter, and each starts with a
+# cheap `changes` job; the aggregator then requires a successful run of each at the merge-queue
+# commit, always, with the heavy job allowed to be skipped only when no path changed. `scan`
+# runs on the merge queue as well as on the pull request (private-names.yml has a merge_group
+# trigger), and the merge check requires it on the merge-queue tree.
 blis-substrate: [required, "pr / blis checks", scan]
 blis-vllm: ["pr / blis checks"]
 blis-sglang: ["pr / blis checks"]

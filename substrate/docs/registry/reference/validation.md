@@ -9,6 +9,13 @@ one says nothing about the others.
 | Properties | Is every value physically sensible, and is its provenance complete? | CI, every pull request and every push to `main` |
 | Re-derivation | Does every value still come out of its fitter, from its cited data? | The `rederive` workflow: every pull request that changes `registry/coefficients`, `registry/scripts`, `registry/validator` or `.github/quarantine.yaml`, nightly, and by hand; locally, with an AISimulate clone; skipped in CI's `registry` job |
 
+If a merge queue is enabled (none is today), the `rederive` workflow also runs on every queue
+entry, because GitHub applies no path filter to a merge group. Its cheap `rederive changes` job
+runs every time and compares the entry with the workflow's own paths; the roughly 20-minute
+`rederive` job runs only when one of those paths changed. The `required` job of `ci.yml` then
+requires a successful run of the workflow at the merge-queue commit, which is the tree being
+merged. The same holds for the `ledger candidate` workflow.
+
 The documentation build is a fourth, narrower check: it fails if a set has no reference
 page, or if a set holds data the reference tables cannot represent faithfully.
 
