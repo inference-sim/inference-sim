@@ -48,7 +48,7 @@ func TestClusterArrivalEvent_IncrementsInjectedByClass(t *testing.T) {
 // produces a defensive copy of the injection counter.
 func TestRawMetrics_InjectedByClass_DefensiveCopy(t *testing.T) {
 	src := map[string]int64{"critical": 10, "batch": 3}
-	raw := CollectRawMetrics(sim.NewMetrics(), nil, 0, "fcfs", 0, 0, src)
+	raw := CollectRawMetrics(sim.NewMetrics(), nil, 0, "fcfs", 0, src)
 
 	if raw.InjectedByClass["critical"] != 10 || raw.InjectedByClass["batch"] != 3 {
 		t.Errorf("InjectedByClass mismatch: got %v, want critical=10 batch=3", raw.InjectedByClass)
@@ -62,7 +62,7 @@ func TestRawMetrics_InjectedByClass_DefensiveCopy(t *testing.T) {
 // TestRawMetrics_InjectedByClass_NilSourceLeavesFieldEmpty verifies that nil
 // (the test-callsite default) does not allocate an empty map.
 func TestRawMetrics_InjectedByClass_NilSourceLeavesFieldEmpty(t *testing.T) {
-	raw := CollectRawMetrics(sim.NewMetrics(), nil, 0, "fcfs", 0, 0, nil)
+	raw := CollectRawMetrics(sim.NewMetrics(), nil, 0, "fcfs", 0, nil)
 	if raw.InjectedByClass != nil {
 		t.Errorf("InjectedByClass = %v, want nil for nil source", raw.InjectedByClass)
 	}

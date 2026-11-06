@@ -31,20 +31,19 @@ func clusterFigures(t *testing.T, stdout string) map[string]float64 {
 	r := parseResult(t, stdout)
 	q := r.Requests
 	out := map[string]float64{
-		"completed_requests":        float64(q.Completed),
-		"injected_requests":         float64(q.Injected),
-		"still_queued":              float64(q.StillQueued),
-		"still_running":             float64(q.StillRunning),
-		"dropped_unservable":        float64(q.DroppedUnservable),
-		"timed_out_requests":        float64(q.TimedOut),
-		"length_capped_requests":    float64(q.LengthCapped),
-		"rejected_requests":         float64(q.Rejected),
-		"routing_rejections":        float64(q.RoutingRejections),
-		"gateway_queue_depth":       float64(q.GatewayQueueDepth),
-		"gateway_queue_rejected":    float64(q.GatewayQueueRejected),
-		"gateway_evicted":           float64(q.GatewayEvicted),
-		"gateway_expired":           float64(q.GatewayExpired),
-		"encode_routing_rejections": float64(q.EncodeRoutingRejections),
+		"completed_requests":     float64(q.Completed),
+		"injected_requests":      float64(q.Injected),
+		"still_queued":           float64(q.StillQueued),
+		"still_running":          float64(q.StillRunning),
+		"dropped_unservable":     float64(q.DroppedUnservable),
+		"timed_out_requests":     float64(q.TimedOut),
+		"length_capped_requests": float64(q.LengthCapped),
+		"rejected_requests":      float64(q.Rejected),
+		"routing_rejections":     float64(q.RoutingRejections),
+		"gateway_queue_depth":    float64(q.GatewayQueueDepth),
+		"gateway_queue_rejected": float64(q.GatewayQueueRejected),
+		"gateway_evicted":        float64(q.GatewayEvicted),
+		"gateway_expired":        float64(q.GatewayExpired),
 	}
 	// The MetricsOutput name of the engine's preemption count.
 	if c, ok := r.Engine["cluster"].(map[string]any); ok {

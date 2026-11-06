@@ -131,8 +131,6 @@ type ClusterSimulator struct {
 	// their pull, by decode sub-request ID (startPull).
 	remotePulls map[string]*ParentRequest
 
-	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
-
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
 
@@ -962,7 +960,7 @@ func (c *ClusterSimulator) Run() error {
 		// (e.g. one timeout + one request still held in the gateway) would be mislabeled.
 		// `total` spans the full canonical ledger: every arrival is either admission-
 		// rejected or injected, and every injected request ends in one of INV-1's ten
-		// non-completion terminal buckets (the eleven-term form minus `completed`; see
+		// non-completion terminal buckets (the ten-term form minus `completed`; see
 		// sim/cluster/metrics.go and docs/contributing/standards/invariants.md). Keep this
 		// in sync with that ledger — a missing term silently makes the absolute claim
 		// over-fire (#2064 review). gatewayTimedOut is already folded into TimedOutRequests
@@ -974,7 +972,6 @@ func (c *ClusterSimulator) Run() error {
 			c.aggregatedMetrics.StillQueued +
 			c.aggregatedMetrics.StillRunning +
 			c.routingRejections +
-			c.encodeRoutingRejections +
 			c.gatewayRejected +
 			c.gatewayExpired +
 			c.gatewayEvicted +
@@ -1509,7 +1506,7 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 
 // Arrivals returns the number of requests that arrived at the cluster, each counted once
 // (a drain redirect is not a new arrival). Every arrival is either rejected at admission
-// (RejectedRequests) or injected, and every injected request ends in one of INV-1's eleven
+// (RejectedRequests) or injected, and every injected request ends in one of INV-1's ten
 // terminal buckets. Panics if called before Run() completes.
 func (c *ClusterSimulator) Arrivals() int {
 	if !c.hasRun {
@@ -1529,13 +1526,6 @@ func (c *ClusterSimulator) RejectedRequests() int {
 // routable instances were available (I13). Distinct from admission rejections.
 func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
-}
-
-// EncodeRoutingRejections returns the count of requests rejected at the encode
-// routing stage because the encode pool has zero routable instances (GAP-4,
-// issue #1264). Always zero when --encode-instances 0.
-func (c *ClusterSimulator) EncodeRoutingRejections() int {
-	return c.encodeRoutingRejections
 }
 
 // ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
