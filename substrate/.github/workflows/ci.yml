@@ -109,7 +109,15 @@ jobs:
           set -euo pipefail
           # With no usable base (a manual run, a new branch), lint what the last commit changed.
           if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
-          "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$(git merge-base "$BASE" HEAD)" ./...
+          rev="$(git merge-base "$BASE" HEAD)"
+          # The migration pull request is based on a main that holds none of the migrated code,
+          # so "changed since the merge base" would be the whole repository. The baseline is the
+          # commit that introduced this job (the findings the migrated code already had are
+          # listed in .golangci.yml); a later change is judged against its own base, which has
+          # that commit as an ancestor.
+          intro="$(git log --diff-filter=A --format=%H -1 -- .golangci.yml)"
+          if [ -n "$intro" ] && ! git merge-base --is-ancestor "$intro" "$rev"; then rev="$intro"; fi
+          "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$rev" ./...
 
   contracts:
     name: contracts and validators
