@@ -697,15 +697,23 @@ func TestAnswersAreVerdictsBoundToTheHead(t *testing.T) {
 		return "## Review questions\n\n- [x] **X2** Is it so? Reviewer: r. (changed: `contracts/a.go`) Answer: " + answer + "\n"
 	}
 	review := []apiReview{{State: "APPROVED", CommitID: "h", SubmittedAt: "2026-11-06T10:00:00Z"}}
-	run := func(b, edited string) []string {
-		ans := answerSource{Body: b, EditedAt: edited, Repo: "blis-substrate", Questions: []invariants.Question{q}}
+	// The record the pull-request check wrote for the text the reviewer saw.
+	recorded := map[string]string{"X2": AnswerDigest("X2", "yes, it is", trees["h"])}
+	runWith := func(b, edited string, rec map[string]string) []string {
+		ans := answerSource{Body: b, EditedAt: edited, Repo: "blis-substrate", Questions: []invariants.Question{q}, Recorded: rec}
 		in, err := BuildMergeInput("m", "h", nil, nil, review, nil, nil, []string{"contracts/a.go"}, ans, treeOf)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return CheckMerge(in)
 	}
+	run := func(b, edited string) []string { return runWith(b, edited, recorded) }
 	none(t, run(body("yes, it is"), "2026-11-06T09:00:00Z"))
+	// The body's text is not the text recorded at the approval: the timestamp cannot be trusted
+	// to show it (the body's edit time moves on any edit), the digest does.
+	has(t, run(body("yes, certainly"), "2026-11-06T09:00:00Z"), "differs from the answer recorded")
+	has(t, runWith(body("yes, it is"), "2026-11-06T09:00:00Z", nil), "has no record from the pull-request check")
+	has(t, runWith(body("yes, it is"), "2026-11-06T09:00:00Z", map[string]string{"X2": AnswerDigest("X2", "yes, it is", trees["m"])}), "differs from the answer recorded")
 	has(t, run(body("yes, it is"), "2026-11-06T11:00:00Z"), "after the latest approving review")
 	has(t, run("## Summary\n\nx\n", "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
 	has(t, run(body(""), "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
@@ -878,6 +886,52 @@ func TestPathPatterns(t *testing.T) {
 	} {
 		if got := pathPattern(c.pat).MatchString(c.path); got != c.want {
 			t.Errorf("%q against %q = %v, want %v", c.pat, c.path, got, c.want)
+		}
+	}
+}
+
+// The record round-trips through the check run's summary, and the record in force at the review
+// is the last one completed at or before it.
+func TestAnswerRecords(t *testing.T) {
+	tree := strings.Repeat("b", 40)
+	d := map[string]string{"X2": AnswerDigest("X2", "yes, fine", tree), "SUB-1": AnswerDigest("SUB-1", "no, because", tree)}
+	got := ParseAnswerRecord(FormatAnswerRecord(tree, d))
+	if len(got) != 2 || got["X2"] != d["X2"] || got["SUB-1"] != d["SUB-1"] {
+		t.Fatalf("round trip: %v", got)
+	}
+	if AnswerDigest("X2", "yes, fine", tree) == AnswerDigest("X2", "yes, fine ", strings.Repeat("c", 40)) {
+		t.Error("the digest does not depend on the tree")
+	}
+	if AnswerDigest("X2", "yes", tree) == AnswerDigest("X3", "yes", tree) {
+		t.Error("the digest does not depend on the question")
+	}
+	mk := func(at, text string) apiAnswerRecord {
+		r := apiAnswerRecord{CompletedAt: at}
+		r.Output.Summary = FormatAnswerRecord(tree, map[string]string{"X2": AnswerDigest("X2", text, tree)})
+		return r
+	}
+	recs := []apiAnswerRecord{mk("2026-11-06T08:00:00Z", "yes, first"), mk("2026-11-06T09:30:00Z", "yes, second"), mk("2026-11-06T10:30:00Z", "yes, third")}
+	rec, ok := recordAt(recs, "2026-11-06T10:00:00Z")
+	if !ok || rec["X2"] != AnswerDigest("X2", "yes, second", tree) {
+		t.Errorf("record in force at the review: %v %v", rec, ok)
+	}
+	if _, ok := recordAt(recs, "2026-11-06T07:00:00Z"); ok {
+		t.Error("a record written after the review was taken as in force")
+	}
+	if _, ok := recordAt(recs, ""); ok {
+		t.Error("a review with no time found a record")
+	}
+}
+
+// The workflow writes the record the merge check reads.
+func TestThePullRequestCheckWritesTheAnswerRecord(t *testing.T) {
+	raw, err := os.ReadFile("../../.github/workflows/shared-pr-checks.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"prcheck answers-record", `name="` + AnswersCheck + `"`, "checks: write"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("shared-pr-checks.yml does not contain %q", want)
 		}
 	}
 }

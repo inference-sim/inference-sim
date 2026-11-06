@@ -1,10 +1,16 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os/exec"
+	"regexp"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
@@ -35,6 +41,105 @@ type answerSource struct {
 	EditedAt  string
 	Repo      string // the repository's short name, as the registry knows it
 	Questions []invariants.Question
+	// Recorded is what the pull-request check recorded at the latest approving review: each
+	// answered question's digest (AnswerDigest), read from the "review answers" check run on
+	// the reviewed commit that was last written at or before the review. nil when there is none.
+	Recorded map[string]string
+}
+
+// AnswersCheck is the name of the check run the pull-request check writes on the head commit
+// each time it runs: the digest of every answer in the body, with the head tree. The merge
+// check compares the body's answers with the record in force when the latest approving review
+// was submitted, so the approval covers exactly the text that was recorded then, whoever
+// edits the body afterwards (X22). The API keeps no usable history of a body's text, so the
+// record is the history.
+const AnswersCheck = "review answers"
+
+var answerRecordLine = regexp.MustCompile(`(?m)^Answer ([A-Z]+-?\d+): sha256:([0-9a-f]{64})$`)
+
+// AnswerDigest is the SHA-256 of one answer's text bound to the question and the tree it was
+// given for.
+func AnswerDigest(id, answer, tree string) string {
+	sum := sha256.Sum256([]byte("answer\x00" + id + "\x00" + strings.TrimSpace(answer) + "\x00" + tree))
+	return hex.EncodeToString(sum[:])
+}
+
+// answers returns the questions the changed paths trigger and, for each one that has a ticked
+// yes-or-no answer in the body, its digest on the head tree.
+func answers(ans answerSource, prPaths []string, headTree string) (triggered []invariants.Question, digest map[string]string) {
+	_, section, _ := splitSection(ans.Body, questionsHeading)
+	given := map[string]item{}
+	for _, it := range parseItems(section) {
+		given[it.id] = it
+	}
+	digest = map[string]string{}
+	for _, q := range ans.Questions {
+		hit := false
+		for _, p := range prPaths {
+			hit = hit || q.Trigger.Matches(ans.Repo, p)
+		}
+		if !hit {
+			continue
+		}
+		triggered = append(triggered, q)
+		if it, ok := given[q.ID]; ok && it.ticked && answerRe.MatchString(it.answer) {
+			digest[q.ID] = AnswerDigest(q.ID, it.answer, headTree)
+		}
+	}
+	return triggered, digest
+}
+
+// FormatAnswerRecord is the summary of the "review answers" check run.
+func FormatAnswerRecord(headTree string, digest map[string]string) string {
+	ids := make([]string, 0, len(digest))
+	for id := range digest {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var b strings.Builder
+	b.WriteString("Tree: " + headTree + "\n")
+	for _, id := range ids {
+		b.WriteString("Answer " + id + ": sha256:" + digest[id] + "\n")
+	}
+	return b.String()
+}
+
+// ParseAnswerRecord reads the digests out of a record's summary.
+func ParseAnswerRecord(summary string) map[string]string {
+	out := map[string]string{}
+	for _, m := range answerRecordLine.FindAllStringSubmatch(summary, -1) {
+		out[m[1]] = m[2]
+	}
+	return out
+}
+
+type apiAnswerRecord struct {
+	CompletedAt string `json:"completed_at"`
+	Output      struct {
+		Summary string `json:"summary"`
+	} `json:"output"`
+}
+
+// recordAt picks, among the answer records on one commit, the last one completed at or before
+// the review, and returns its digests. ok is false when there is none: nothing says what the
+// body held when the review was given.
+func recordAt(records []apiAnswerRecord, reviewedAt string) (map[string]string, bool) {
+	rv, err := time.Parse(time.RFC3339, reviewedAt)
+	if err != nil {
+		return nil, false
+	}
+	var best time.Time
+	var out map[string]string
+	for _, r := range records {
+		at, err := time.Parse(time.RFC3339, r.CompletedAt)
+		if err != nil || at.After(rv) {
+			continue
+		}
+		if out == nil || at.After(best) {
+			best, out = at, ParseAnswerRecord(r.Output.Summary)
+		}
+	}
+	return out, out != nil
 }
 
 type apiThread struct {
@@ -87,25 +192,14 @@ func BuildMergeInput(mergeSHA, headSHA string, required []string, runs []apiChec
 		in.Verdicts = append(in.Verdicts, v)
 	}
 	// Answers: each question the changed paths trigger needs a ticked, yes-or-no answer in the
-	// body. The answer is a verdict on the head tree, covering the paths that trigger it.
-	_, section, _ := splitSection(ans.Body, questionsHeading)
-	given := map[string]item{}
-	for _, it := range parseItems(section) {
-		given[it.id] = it
-	}
-	for _, q := range ans.Questions {
-		var hit []string
-		for _, p := range prPaths {
-			if q.Trigger.Matches(ans.Repo, p) {
-				hit = append(hit, p)
-			}
-		}
-		if len(hit) == 0 {
-			continue
-		}
+	// body. The answer is a verdict on the head tree, covering the paths that trigger it, and
+	// carries the digest of its text and that tree.
+	triggered, digest := answers(ans, prPaths, ht)
+	in.Recorded = ans.Recorded
+	for _, q := range triggered {
 		in.Questions = append(in.Questions, q.ID+": "+q.Question)
-		if it, ok := given[q.ID]; ok && it.ticked && answerRe.MatchString(it.answer) {
-			in.Verdicts = append(in.Verdicts, Verdict{Kind: "answer", Name: q.ID, Body: "Tree: " + ht, Paths: q.Trigger.Paths, At: ans.EditedAt})
+		if d, ok := digest[q.ID]; ok {
+			in.Verdicts = append(in.Verdicts, Verdict{Kind: "answer", Name: q.ID, Body: "Tree: " + ht, Paths: q.Trigger.Paths, At: ans.EditedAt, Digest: d})
 		}
 	}
 	for _, th := range threads {
@@ -180,12 +274,34 @@ func collectMerge(repo string, pr int, mergeSHA, headSHA, baseSHA string, requir
 	if err != nil {
 		return MergeInput{}, err
 	}
+	// The record in force when the latest approving review was submitted, on the commit it
+	// reviewed.
+	var latest *apiReview
+	for i := range reviews {
+		r := &reviews[i]
+		if r.State != "APPROVED" {
+			continue
+		}
+		if latest == nil || r.SubmittedAt > latest.SubmittedAt {
+			latest = r
+		}
+	}
+	var recorded map[string]string
+	if latest != nil {
+		var recs struct {
+			CheckRuns []apiAnswerRecord `json:"check_runs"`
+		}
+		if err := ghJSON(&recs, "api", fmt.Sprintf("repos/%s/commits/%s/check-runs?check_name=%s&per_page=100", repo, latest.CommitID, url.QueryEscape(AnswersCheck))); err != nil {
+			return MergeInput{}, err
+		}
+		recorded, _ = recordAt(recs.CheckRuns, latest.SubmittedAt)
+	}
 	pr0 := g.Data.Repository.PullRequest
 	edited := pr0.LastEditedAt
 	if edited == "" {
 		edited = pr0.CreatedAt
 	}
-	ans := answerSource{Body: pr0.Body, EditedAt: edited, Repo: name, Questions: reg.Questions(name)}
+	ans := answerSource{Body: pr0.Body, EditedAt: edited, Repo: name, Questions: reg.Questions(name), Recorded: recorded}
 	return BuildMergeInput(mergeSHA, headSHA, required, runs.CheckRuns, reviews,
 		pr0.ReviewThreads.Nodes, strings.Fields(changed), strings.Fields(prPaths), ans, gitTree)
 }

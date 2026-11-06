@@ -31,6 +31,10 @@
 //	prcheck questions -body <file> -questions <file> -out <file> -unanswered <file>
 //	    Design §13.2: put the matching review questions in the body's "## Review
 //	    questions" section, keep given answers, and list those still unanswered.
+//	prcheck answers-record -body <file> -changed <file> -repo-name <name> -head <sha>
+//	    X22: print the summary of the "review answers" check run: the head tree and the
+//	    SHA-256 of each answer the body holds, which the merge check compares with the
+//	    body at merge time.
 //	prcheck tags [-lock .github/tags.lock]
 //	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
@@ -137,6 +141,7 @@ func run(args []string, w io.Writer) error {
 	deferral := fs.String("deferral", "", "the X20 deferral file (commits only)")
 	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
 	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
+	changed := fs.String("changed", "", "the changed paths, one per line")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
@@ -433,6 +438,30 @@ func run(args []string, w io.Writer) error {
 		}
 		_, _ = fmt.Fprintf(w, "path-gates: %d path-filtered workflow(s), %d changed file(s)\n", len(gates), len(changed))
 		return report(w, "path-gates", CheckGates(gates, changed, runs))
+	case "answers-record":
+		if *body == "" || *changed == "" {
+			return fmt.Errorf("answers-record needs -body and -changed")
+		}
+		raw, err := os.ReadFile(*body)
+		if err != nil {
+			return err
+		}
+		ch, err := os.ReadFile(*changed)
+		if err != nil {
+			return err
+		}
+		reg, err := invariants.Embedded()
+		if err != nil {
+			return err
+		}
+		tree, err := gitTree(*head)
+		if err != nil {
+			return err
+		}
+		ans := answerSource{Body: string(raw), Repo: *repoName, Questions: reg.Questions(*repoName)}
+		_, digest := answers(ans, strings.Fields(string(ch)), tree)
+		_, err = io.WriteString(w, FormatAnswerRecord(tree, digest))
+		return err
 	case "knownbad":
 		// prcheck knownbad -repo-name blis-substrate [-list-only]
 		reg, err := invariants.Embedded()

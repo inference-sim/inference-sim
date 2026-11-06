@@ -38,6 +38,9 @@ type Verdict struct {
 	// At is when the verdict was given (RFC 3339): for an approving review, its submission;
 	// for an answer, the last edit of the pull-request body that holds it. Empty when unknown.
 	At string
+	// Digest, on an answer, is AnswerDigest of the answer text in the body now and the head
+	// tree.
+	Digest string
 }
 
 // Thread is one review thread.
@@ -57,6 +60,11 @@ type MergeInput struct {
 	// "<invariant>: <question>". Each needs an answer verdict: an answer removed from the
 	// body, or never given, leaves its question without one (X22).
 	Questions []string
+	// Recorded is what the pull-request check recorded for each answer (AnswerDigest) in force
+	// when the latest approving review was submitted. An approval covers the answer text of
+	// that record and no other: the check does not look up who wrote an answer, so what the
+	// reviewer approved is the text, and the text is bound to the review by its digest.
+	Recorded map[string]string
 	// ChangedByMerge lists the paths whose content differs between the head tree and the
 	// merge tree.
 	ChangedByMerge []string
@@ -133,6 +141,15 @@ func CheckMerge(in MergeInput) []string {
 		// has no code-owner lookup), so the review must come after the answer.
 		if at, err := time.Parse(time.RFC3339, v.At); err == nil && !approved.IsZero() && at.After(approved) {
 			bad = append(bad, fmt.Sprintf("answer %q was written or edited at %s, after the latest approving review at %s; request the review again (X22)", v.Name, v.At, approved.Format(time.RFC3339)))
+		}
+		if !approved.IsZero() {
+			rec, ok := in.Recorded[v.Name]
+			switch {
+			case !ok:
+				bad = append(bad, fmt.Sprintf("answer %q has no record from the pull-request check at the latest approving review (%s); it was not the text the reviewer saw. Request the review again (X22)", v.Name, approved.Format(time.RFC3339)))
+			case rec != v.Digest:
+				bad = append(bad, fmt.Sprintf("answer %q in the body differs from the answer recorded when the latest approving review was given (%s); request the review again (X22)", v.Name, approved.Format(time.RFC3339)))
+			}
 		}
 	}
 	for _, q := range in.Questions {
