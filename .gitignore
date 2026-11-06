@@ -49,6 +49,7 @@ __pycache__/*
 !sim/workload/testdata/agentx/*.json
 data/
 *.txt
+!.github/docs-requirements.txt
 
 # binaries
 #
