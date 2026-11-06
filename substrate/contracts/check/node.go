@@ -182,8 +182,16 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k, v := n.Content[i], n.Content[i+1]
 			if k.Value == "<<" {
-				if err := checkNumbers(v, t, at, depth+1); err != nil {
-					return err
+				// A merge names one mapping or a sequence of them; each member is
+				// read as if its keys were written here.
+				members := []*yaml.Node{v}
+				if m := resolve(v); m != nil && m.Kind == yaml.SequenceNode {
+					members = m.Content
+				}
+				for _, m := range members {
+					if err := checkNumbers(m, t, at, depth+1); err != nil {
+						return err
+					}
 				}
 				continue
 			}
@@ -304,4 +312,12 @@ func name(at string) string {
 		return "the value"
 	}
 	return at
+}
+
+// resolve follows aliases to the node they name.
+func resolve(n *yaml.Node) *yaml.Node {
+	for n != nil && n.Kind == yaml.AliasNode {
+		n = n.Alias
+	}
+	return n
 }
