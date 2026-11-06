@@ -354,12 +354,11 @@ Example:
 		}
 
 		// Compute horizon (BC-3)
-		replayHorizon := computeReplayHorizon(requests)
+		// #1615 (INV-13): with no --horizon the replay runs until the requests drain, as a run
+		// with no horizon does; the former twice-the-last-arrival default truncated the tail.
+		replayHorizon := int64(math.MaxInt64)
 		if cmd.Flags().Changed("horizon") {
 			replayHorizon = simulationHorizon
-		}
-		if (replayConcurrentSessions > 0 || agx != nil) && !cmd.Flags().Changed("horizon") {
-			replayHorizon = math.MaxInt64 // self-draining pool / agentic replay sets its own end
 		}
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
@@ -812,22 +811,6 @@ func computeHorizonFromMaxArrival(maxArrival int64) int64 {
 	default:
 		return maxArrival * 2
 	}
-}
-
-// computeReplayHorizon returns the simulation horizon for a trace replay.
-// - Empty slice → math.MaxInt64 (no requests, horizon doesn't matter)
-// - Otherwise → delegated to computeHorizonFromMaxArrival
-func computeReplayHorizon(requests []*sim.Request) int64 {
-	if len(requests) == 0 {
-		return math.MaxInt64
-	}
-	var maxArrival int64
-	for _, req := range requests {
-		if req.ArrivalTime > maxArrival {
-			maxArrival = req.ArrivalTime
-		}
-	}
-	return computeHorizonFromMaxArrival(maxArrival)
 }
 
 // replayFrameGenerator is what a replay tells the experimental frame about its requests: the

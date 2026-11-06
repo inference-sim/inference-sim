@@ -467,11 +467,9 @@ func TestResult_AnUnwritableOutputLeavesStdoutEmpty(t *testing.T) {
 	}
 }
 
-// #1871 review B2: a replay without --horizon runs to the horizon it derives from the trace
-// (2x the last arrival), and records it, so the document states where the replay stopped.
-// INV-13 is stated for the same run controls: replaying a run with the horizon the run's own
-// document records reproduces it, and a default replay states its own, shorter horizon.
-func TestResult_ADefaultReplayRecordsTheHorizonItRanTo(t *testing.T) {
+// #1615: a replay without --horizon is unbounded, as the run it replays was, so its document
+// states no horizon and equals the run's (INV-13); an explicit horizon is recorded as given.
+func TestResult_ADefaultReplayStatesNoHorizonAndAnExplicitOneIsRecorded(t *testing.T) {
 	prefix := filepath.Join(t.TempDir(), "trace")
 	runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
 		"--num-requests", "30", "--rate", "10", "--trace-output", prefix)
@@ -487,20 +485,11 @@ func TestResult_ADefaultReplayRecordsTheHorizonItRanTo(t *testing.T) {
 		return parseResult(t, out)
 	}
 	def := replay()
-	h := def.Frame.Stop.HorizonS
-	if h == nil || *h <= 0 {
-		t.Fatalf("a default replay records no horizon: %+v", def.Frame.Stop)
+	if h := def.Frame.Stop.HorizonS; h != nil {
+		t.Fatalf("a default replay records the horizon %v, want none", *h)
 	}
-	trace, err := workload.LoadTraceV2(prefix+".yaml", prefix+".csv")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var last int64
-	for _, r := range trace.Records {
-		last = max(last, r.ArrivalTimeUs)
-	}
-	if want := float64(2*last) / 1e6; *h != want {
-		t.Errorf("recorded horizon %v s, want 2x the last arrival, %v s", *h, want)
+	if got := replay("--horizon", "600000000").Frame.Stop.HorizonS; got == nil || *got != 600 {
+		t.Errorf("an explicit horizon is recorded as %v, want 600 s", got)
 	}
 	// The run had no horizon; the replay given the same (unbounded) horizon reproduces it.
 	run := parseResult(t, runOut)
@@ -655,5 +644,30 @@ clients:
 	if r.Requests.Generated <= 6 || rows["num_requests_cap"] != "6" {
 		t.Errorf("generated %d, cap row %q; want follow-ups past the 6 cap, kept as an override",
 			r.Requests.Generated, rows["num_requests_cap"])
+	}
+}
+
+// #1615 (INV-13): a replay given no --horizon completes what the run it replays completed.
+// The old default, twice the last arrival, cut the tail of the run off at a high rate.
+func TestResult_ReplayWithoutHorizonReproducesTheRun(t *testing.T) {
+	for _, rate := range []string{"20", "60"} {
+		prefix := filepath.Join(t.TempDir(), "trace")
+		runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+			"--num-requests", "60", "--rate", rate, "--trace-output", prefix)
+		if err != nil {
+			t.Fatalf("rate %s run: %v\n%s", rate, err, lastLines(stderr, 5))
+		}
+		repOut, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "7",
+			"--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+		if err != nil {
+			t.Fatalf("rate %s replay: %v\n%s", rate, err, lastLines(stderr, 5))
+		}
+		run, rep := parseResult(t, runOut), parseResult(t, repOut)
+		if run.Requests.Completed != 60 {
+			t.Fatalf("non-vacuity: rate %s run completed %d of 60", rate, run.Requests.Completed)
+		}
+		if !jsonEqual(t, run.Requests, rep.Requests) || !jsonEqual(t, run.Metrics, rep.Metrics) {
+			t.Errorf("rate %s: replay differs from run\nrequests %+v\n         %+v", rate, run.Requests, rep.Requests)
+		}
 	}
 }

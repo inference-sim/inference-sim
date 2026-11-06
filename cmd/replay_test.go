@@ -326,49 +326,6 @@ func TestReplayCmd_TraceDataFlag_Registered(t *testing.T) {
 	}
 }
 
-func TestComputeReplayHorizon_TwiceMaxArrival(t *testing.T) {
-	// BC-3: horizon = max(arrivals) * 2
-	requests := []*sim.Request{
-		{ArrivalTime: 1000},
-		{ArrivalTime: 5000},
-		{ArrivalTime: 3000},
-	}
-	horizon := computeReplayHorizon(requests)
-	if horizon != 10000 {
-		t.Errorf("want horizon 10000 (5000*2), got %d", horizon)
-	}
-}
-
-func TestComputeReplayHorizon_EmptyRequests_ReturnsMaxInt64(t *testing.T) {
-	// Edge case: no requests → MaxInt64 fallback
-	horizon := computeReplayHorizon([]*sim.Request{})
-	if horizon != math.MaxInt64 {
-		t.Errorf("want math.MaxInt64 for empty requests, got %d", horizon)
-	}
-}
-
-func TestComputeReplayHorizon_AllArrivalsAtZero_ReturnsFixedBuffer(t *testing.T) {
-	// Edge case: all requests at t=0 (common for synthetic traces)
-	// Must NOT return math.MaxInt64 (would hang simulation)
-	requests := []*sim.Request{{ArrivalTime: 0}, {ArrivalTime: 0}}
-	horizon := computeReplayHorizon(requests)
-	if horizon <= 0 || horizon == math.MaxInt64 {
-		t.Errorf("want a finite positive buffer for all-zero arrivals, got %d", horizon)
-	}
-}
-
-func TestComputeReplayHorizon_LargeArrival_NoOverflow(t *testing.T) {
-	// Overflow guard: maxArrival > MaxInt64/2 must not wrap to negative
-	requests := []*sim.Request{{ArrivalTime: math.MaxInt64/2 + 1}}
-	horizon := computeReplayHorizon(requests)
-	if horizon <= 0 {
-		t.Errorf("want positive horizon for large arrival (no overflow), got %d", horizon)
-	}
-	if horizon != math.MaxInt64 {
-		t.Errorf("want MaxInt64 as overflow fallback, got %d", horizon)
-	}
-}
-
 // TestReplayCmd_TraceOutput_FilesCreated verifies BC-1 and BC-2:
 // --trace-output creates <prefix>.yaml with mode:"replayed" and <prefix>.csv.
 func TestReplayCmd_TraceOutput_FilesCreated(t *testing.T) {
@@ -661,12 +618,6 @@ mode: generated
 		if len(req.OutputTokens) != 5 {
 			t.Errorf("want 5 output tokens, got %d", len(req.OutputTokens))
 		}
-	}
-
-	// Verify horizon computation (BC-3): max arrival = 200000, horizon = 400000
-	horizon := computeReplayHorizon(reqs)
-	if horizon != 400000 {
-		t.Errorf("want horizon 400000 (200000*2), got %d (BC-3)", horizon)
 	}
 
 	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
