@@ -37,6 +37,11 @@ const MaxNodes = 1 << 22
 // file in the catalog is about 7 MB; a file past this is not a configuration document.
 const MaxDocumentBytes = 64 << 20
 
+// MaxDepth bounds how deeply the number rules descend into a document. A document nested
+// deeper than this is refused, not passed unchecked: stopping the descent quietly would
+// leave every number below it unread. No document the project reads nests a tenth as deep.
+const MaxDepth = 256
+
 // CheckSize refuses a document of n bytes that is larger than MaxDocumentBytes.
 func CheckSize(path string, n int) error {
 	if n > MaxDocumentBytes {
@@ -146,10 +151,12 @@ func checkShape(n *yaml.Node, onPath map[*yaml.Node]bool, count *int) error {
 var unmarshaler = reflect.TypeOf((*yaml.Unmarshaler)(nil)).Elem()
 
 // checkNumbers applies the number rules that depend on the field type, descending as the
-// decoder does. Aliases are followed; checkShape has already refused a recursive one.
+// decoder does. Aliases are followed; checkShape has already refused a recursive one, so
+// the descent ends, and a document deeper than MaxDepth is refused.
 func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
-	if depth > 256 {
-		return nil
+	if depth > MaxDepth {
+		return fmt.Errorf("line %d: %s: the document nests deeper than %d levels (MaxDepth); "+
+			"its numbers below this point cannot be checked", lineOf(n), name(at), MaxDepth)
 	}
 	for n != nil && n.Kind == yaml.AliasNode {
 		n = n.Alias
@@ -320,4 +327,11 @@ func resolve(n *yaml.Node) *yaml.Node {
 		n = n.Alias
 	}
 	return n
+}
+
+func lineOf(n *yaml.Node) int {
+	if n == nil {
+		return 0
+	}
+	return n.Line
 }

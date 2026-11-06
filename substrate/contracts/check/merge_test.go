@@ -54,3 +54,28 @@ func TestCleanSequenceMergeIsAccepted(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Past the depth the checker follows, a document is refused with the limit named, not
+// passed unchecked.
+func TestDepthBeyondTheLimitIsRefused(t *testing.T) {
+	type rec struct {
+		Next *rec `yaml:"next"`
+	}
+	deep := strings.Repeat("next: {", MaxDepth+10) + strings.Repeat("}", MaxDepth+10)
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte(deep), &n); err != nil {
+		t.Fatal(err)
+	}
+	err := CheckNode(&n, reflect.TypeOf(&rec{}))
+	if err == nil || !strings.Contains(err.Error(), "MaxDepth") {
+		t.Fatalf("want a refusal naming MaxDepth, got %v", err)
+	}
+	shallow := strings.Repeat("next: {", 20) + strings.Repeat("}", 20)
+	n = yaml.Node{}
+	if err := yaml.Unmarshal([]byte(shallow), &n); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckNode(&n, reflect.TypeOf(&rec{})); err != nil {
+		t.Fatal(err)
+	}
+}
