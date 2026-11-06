@@ -21,8 +21,12 @@ var (
 	// notCommit are the spans in which a hex token is not an abbreviated commit: a URL, a
 	// sha256 digest, and a Go pseudo-version (v0.0.0-<14 digits>-<12 hex>).
 	notCommit = regexp.MustCompile(`(?i)https?://\S+|sha256:[0-9a-f]+|v\d+\.\d+\.\d+-(?:[0-9a-z.]+\.)?\d{14}-[0-9a-f]{12}`)
-	prURL     = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
-	prRef     = regexp.MustCompile(`\b([\w.-]+/[\w.-]+)#(\d+)\b`)
+	// urlRevision is the revision a GitHub commit, blob, tree or commits URL names. A URL is
+	// not otherwise scanned, but an abbreviated revision there is as unverifiable as one in
+	// prose.
+	urlRevision = regexp.MustCompile(`(?i)https?://github\.com/[\w.-]+/[\w.-]+/(?:commit|commits|blob|tree)/([0-9a-f]{7,39})(?:[^0-9a-z]|$)`)
+	prURL       = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
+	prRef       = regexp.MustCompile(`\b([\w.-]+/[\w.-]+)#(\d+)\b`)
 )
 
 // PRHeads answers "what is the head commit of pull request n in repo".
@@ -101,8 +105,14 @@ func CheckDescription(in DescriptionInput) []string {
 // issue number is a number). A run is maximal, so it is never part of a longer hex string,
 // and 40 or more hex characters is a full hash or a longer digest. A token inside a URL, a
 // sha256 digest or a pseudo-version, or next to a path separator or a file extension, is
-// not a commit.
+// not a commit, except the revision in a GitHub commit, blob or tree URL, which is one.
 func shortHashes(line string) []string {
+	var out []string
+	for _, m := range urlRevision.FindAllStringSubmatch(line, -1) {
+		if tok := strings.ToLower(m[1]); strings.ContainsAny(tok, "0123456789") && strings.ContainsAny(tok, "abcdef") {
+			out = append(out, tok)
+		}
+	}
 	masked := []byte(line)
 	for _, loc := range notCommit.FindAllStringIndex(line, -1) {
 		for i := loc[0]; i < loc[1]; i++ {
@@ -110,7 +120,6 @@ func shortHashes(line string) []string {
 		}
 	}
 	text := string(masked)
-	var out []string
 	for _, loc := range hexRun.FindAllStringIndex(text, -1) {
 		tok := text[loc[0]:loc[1]]
 		if len(tok) < 7 || len(tok) > 39 || !isHex(tok) {

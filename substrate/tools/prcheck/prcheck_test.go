@@ -344,6 +344,10 @@ func TestShortHashPhrasingIndependent(t *testing.T) {
 		"in a link text":   "[6d79cc8](https://example.com/x)",
 		"after a url":      "https://example.com/p 6d79cc8",
 		"all digits+a":     "tip 1234567a",
+		"commit url":       "see https://github.com/o/r/commit/6d79cc8 for it",
+		"blob url":         "https://github.com/o/r/blob/6d79cc8a1/x.go#L3",
+		"tree url":         "https://github.com/o/r/tree/6d79cc8a1b",
+		"commit url, end":  "(https://github.com/o/r/commit/6d79cc8)",
 	} {
 		has(t, check(body), "is a short hash")
 		_ = name
@@ -356,7 +360,9 @@ func TestShortHashPhrasingIndependent(t *testing.T) {
 		"go get example.com/m@v0.0.0-20261105123456-6d79cc8a1b2c",
 		"example.com/m v1.2.3-pre.0.20261105123456-6d79cc8a1b2c",
 		"digest sha256:6d79cc8a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071829",
-		"see https://github.com/o/r/commit/6d79cc8 and https://x.io/6d79cc8a",
+		"see https://x.io/6d79cc8a and https://github.com/o/r/pull/12",
+		"a full commit url https://github.com/o/r/commit/" + strings.Repeat("a", 40),
+		"a branch https://github.com/o/r/tree/main and a tag https://github.com/o/r/blob/v1.2.3/x.go",
 		"path internal/6d79cc8/file and file.6d79cc8.go",
 		"full " + strings.Repeat("a", 40) + " is a different check",
 		"too short 6d79cc",
