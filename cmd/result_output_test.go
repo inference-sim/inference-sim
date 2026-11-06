@@ -641,9 +641,10 @@ clients:
 	if !strings.HasPrefix(rows["workload-spec"], "sha256:") {
 		t.Errorf("the spec is not pinned by sha256: %v", rows)
 	}
-	if r.Requests.Generated <= 6 || rows["num_requests_cap"] != "6" {
-		t.Errorf("generated %d, cap row %q; want follow-ups past the 6 cap, kept as an override",
-			r.Requests.Generated, rows["num_requests_cap"])
+	// #1905: follow-up rounds count against the cap, so the run generates exactly the 6 it was
+	// given and needs no override row for exceeding it.
+	if r.Requests.Generated != 6 || rows["num_requests_cap"] != "" {
+		t.Errorf("generated %d, cap row %q; want the cap of 6 held, with no override", r.Requests.Generated, rows["num_requests_cap"])
 	}
 }
 

@@ -972,7 +972,7 @@ func assembleLazySourceFromPreps(
 	// cap Phase 3 imposes, to find the exact set of round-0 emissions that survive the
 	// cap: a session whose round 0 the cap drops must get no blueprint, or the session
 	// manager would generate follow-ups eager never generates (INV-6, INV-13).
-	survivingPerClient, keptOpen, err := enumerateSurvivingSessionsPerClient(preps, prefixes, horizon, maxRequests)
+	survivingPerClient, keptOpen, emittedOpen, err := enumerateSurvivingSessionsPerClient(preps, prefixes, horizon, maxRequests)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1059,7 +1059,7 @@ func assembleLazySourceFromPreps(
 	// Phase 2 dry-run. Push the seeds as individual heap entries (see the shared
 	// helper) so the global merge reproduces eager's stable-sort-by-arrival.
 	sessions, followUpBudget, err := appendConcurrencySeedsToHeap(
-		h, allClients, prefixes, specSeed, horizon, maxRequests, keptOpen, sessions)
+		h, allClients, prefixes, specSeed, horizon, maxRequests, keptOpen, emittedOpen, sessions)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1147,9 +1147,10 @@ func appendConcurrencySeedsToHeap(
 	horizon int64,
 	maxRequests int64,
 	keptOpen int64,
+	emittedOpen int64,
 	sessions []SessionBlueprint,
 ) ([]SessionBlueprint, int64, error) {
-	seeds, blueprints, totalUsers, err :=
+	seeds, blueprints, _, err :=
 		generateConcurrencySeedsAndBlueprints(allClients, prefixes, specSeed, horizon, maxRequests, keptOpen)
 	if err != nil {
 		return nil, 0, err
@@ -1167,7 +1168,7 @@ func appendConcurrencySeedsToHeap(
 	// keptOpen open-loop requests + len(seeds) seeds will be emitted (the
 	// no-displacement invariant guarantees the popped-cap is non-binding
 	// whenever a seed exists), so the emitted total is keptOpen+len(seeds).
-	budget := concurrencyFollowUpBudget(maxRequests, keptOpen+int64(len(seeds)), totalUsers)
+	budget := concurrencyFollowUpBudget(maxRequests, emittedOpen+int64(len(seeds)), len(sessions))
 	return sessions, budget, nil
 }
 
@@ -1188,7 +1189,7 @@ func generateConcurrencyOnlyLazyAtZeroHorizon(spec *WorkloadSpec, horizon int64,
 	h := &heapByArrival{}
 	heap.Init(h)
 	sessions, followUpBudget, err := appendConcurrencySeedsToHeap(
-		h, allClients, prefixes, spec.Seed, horizon, maxRequests, 0, nil)
+		h, allClients, prefixes, spec.Seed, horizon, maxRequests, 0, 0, nil)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -1332,7 +1333,7 @@ func enumerateSurvivingSessionsPerClient(
 	prefixes map[string][]sim.TokenID,
 	horizon int64,
 	maxRequests int64,
-) (map[int][]string, int64, error) {
+) (map[int][]string, int64, int64, error) {
 	// Clone per-client states (fresh generators on the same named streams).
 	// dryRun=true so sampler-error paths don't user-log twice (the Phase 3
 	// pass runs the same samplers and is authoritative for user feedback).
@@ -1343,7 +1344,7 @@ func enumerateSurvivingSessionsPerClient(
 		// threaded so the clone's multi-session per-client cap matches Phase 3.
 		state, err := buildClientStreamState(p, horizon, maxRequests)
 		if err != nil {
-			return nil, 0, fmt.Errorf("client %q: %w", p.client.ID, err)
+			return nil, 0, 0, fmt.Errorf("client %q: %w", p.client.ID, err)
 		}
 		state.dryRun = true
 		cloneStates = append(cloneStates, state)
@@ -1368,7 +1369,7 @@ func enumerateSurvivingSessionsPerClient(
 	// or when the heap is empty.
 	surviving := make(map[int][]string)
 	seen := make(map[int]map[string]bool)
-	var popped int64
+	var popped, suppressed int64
 	for h.Len() > 0 {
 		if maxRequests > 0 && popped >= maxRequests {
 			break
@@ -1385,6 +1386,9 @@ func enumerateSurvivingSessionsPerClient(
 			})
 		}
 		popped++
+		if e.state.isClosedLoop && e.req.RoundIndex != 0 {
+			suppressed++ // popped and counted, never emitted: the session manager serves it
+		}
 		// Only round-0 entries are observed by GenerateWorkload's
 		// blueprint-building loop (it filters round-0 only when keying
 		// the SessionID lookup). Intermediate rounds advance state and
@@ -1404,5 +1408,6 @@ func enumerateSurvivingSessionsPerClient(
 	// popped is the number of open-loop / closed-loop-round-0-and-intermediate
 	// requests emitted under the cap == eager's len(reqs) after truncation.
 	// (Concurrency clients are absent from preps, so they never count here.)
-	return surviving, popped, nil
+	// emitted == eager's len(round0Only): what the cluster is given up front.
+	return surviving, popped, popped - suppressed, nil
 }
