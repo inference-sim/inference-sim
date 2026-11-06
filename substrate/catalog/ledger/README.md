@@ -131,7 +131,20 @@ names no unit (`ledger.CheckReport`). Units on a legacy side, legacy or new, are
 apart and reported as separate figures marked `not_blind`, because the old labels and the
 side rules are public. `ledger lint-workflows` refuses any change to that shape.
 
+What the reports protect and what they do not. A report names no unit and covers at least 10
+units, and the units it covers are fixed by the seed and the measured data, not by the
+candidate: the loader refuses predictions that omit a handed unit, and an absent prediction
+scores as a full error. The figure itself still moves with the predictions, so a pull request
+that resubmits with one unit's prediction corrupted can read the change and learn whether that
+unit is in the role the job reports. The design counts and limits only the held role (gate job,
+pre-registered change, further evaluations counted). The select and error jobs are not
+counted or limited, so for them this differencing is open today.
+
 What is not in place yet:
+
+- A limit on differencing through the select and error jobs. Options for a ledger owner: count
+  and cap evaluations per candidate or per pull request; round each figure to a coarse step;
+  run the select job only for candidates on main.
 
 - The operator-level predictor. The candidate job records every unit as not predicted, so
   the seed-holding jobs report nothing.
