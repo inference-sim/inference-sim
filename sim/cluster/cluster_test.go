@@ -941,7 +941,7 @@ func meanMapValues(m map[string]float64) float64 {
 // across scheduler and cluster-size combinations (promoted from H12 hypothesis experiment):
 // GIVEN each combination with infinite horizon and ample resources
 // WHEN the cluster simulation completes
-// THEN the eleven-term conservation equation holds against an independent count, with
+// THEN the ten-term conservation equation holds against an independent count, with
 // no rejections permitted,
 // AND all requests complete (infinite horizon, no resource pressure).
 func TestClusterSimulator_Conservation_PolicyMatrix(t *testing.T) {

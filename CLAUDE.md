@@ -97,7 +97,7 @@ BLIS follows a layered design-document hierarchy (read the design guidelines fir
 
 Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
 
-- **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (eleven-term cluster form; five-term single-instance form).
+- **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (ten-term cluster form; five-term single-instance form).
 - **INV-6 Determinism** — same resolved input at the same revisions ⇒ byte-identical `Result` (stdout) outside `runtime`; wall-clock timing goes to stderr.
 - **INV-13 Run/Replay parity** — a trace exported by `run` and replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns`; unsupported replay features `logrus.Fatalf` at startup.
 - **NS-6 Catalog is authoritative and read-only** — see *Catalog and deployment rules* above; binds the CLI only.

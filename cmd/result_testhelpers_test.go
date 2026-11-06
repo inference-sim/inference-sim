@@ -34,19 +34,18 @@ func clusterFigures(t *testing.T, stdout string) map[string]float64 {
 	// The schema 1 ledger, from the fates of schema 2 (docs/guide/results.md has the table).
 	// injected is what arrived and was not refused at admission.
 	out := map[string]float64{
-		"completed_requests":        float64(q.Completed),
-		"injected_requests":         float64(q.Generated - q.NotStarted - q.Dropped[result.DropAdmissionRejected]),
-		"timed_out_requests":        float64(q.TimedOut),
-		"length_capped_requests":    float64(q.LengthCapped),
-		"rejected_requests":         drop(result.DropAdmissionRejected),
-		"routing_rejections":        drop(result.DropRoutingRejected),
-		"dropped_unservable":        drop(result.DropUnservable) + drop(result.DropDecodeKV),
-		"gateway_queue_rejected":    drop(result.DropGatewayQueueRejected),
-		"gateway_evicted":           drop(result.DropGatewayEvicted),
-		"gateway_expired":           drop(result.DropGatewayExpired),
-		"encode_routing_rejections": drop(result.DropEncodeRoutingRejected),
-		"in_flight_at_horizon":      float64(q.InFlightAtHorizon),
-		"queued_at_horizon":         float64(q.QueuedAtHorizon),
+		"completed_requests":     float64(q.Completed),
+		"injected_requests":      float64(q.Generated - q.NotStarted - q.Dropped[result.DropAdmissionRejected]),
+		"timed_out_requests":     float64(q.TimedOut),
+		"length_capped_requests": float64(q.LengthCapped),
+		"rejected_requests":      drop(result.DropAdmissionRejected),
+		"routing_rejections":     drop(result.DropRoutingRejected),
+		"dropped_unservable":     drop(result.DropUnservable) + drop(result.DropDecodeKV),
+		"gateway_queue_rejected": drop(result.DropGatewayQueueRejected),
+		"gateway_evicted":        drop(result.DropGatewayEvicted),
+		"gateway_expired":        drop(result.DropGatewayExpired),
+		"in_flight_at_horizon":   float64(q.InFlightAtHorizon),
+		"queued_at_horizon":      float64(q.QueuedAtHorizon),
 	}
 	if c, ok := r.Reports.Engine["cluster"].(map[string]any); ok {
 		// The MetricsOutput name of the engine's preemption count.

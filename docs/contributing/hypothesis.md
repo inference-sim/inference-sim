@@ -658,11 +658,11 @@ func TestClusterConservation_AcrossPolicyCombinations(t *testing.T) {
     for _, cfg := range configs {
         t.Run(cfg.eppConfig+"/"+cfg.scheduler, func(t *testing.T) {
             // Run cluster simulation behind the llm-d router configured by cfg.eppConfig
-            // Assert INV-1 at CLUSTER level, so all 11 terms (see canonical INV-1):
+            // Assert INV-1 at CLUSTER level, so all 10 terms (see canonical INV-1):
             //   injected == completed + still_queued + still_running + dropped_unservable
             //             + timed_out + routing_rejections + gateway_queue_depth
             //             + gateway_queue_rejected + gateway_evicted
-            //             + gateway_expired + encode_routing_rejections
+            //             + gateway_expired
             // The 5-term form is the single-instance specialisation — incomplete here.
         })
     }
