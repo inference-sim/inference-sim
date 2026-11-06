@@ -158,3 +158,48 @@ print(json.dumps(pyrules.findings("x.py", src, vocab)))
 		t.Fatalf("the lint missed a restated rule: %s", got)
 	}
 }
+
+// Known-bad input (X18): a vocabulary built by a constant expression, not a literal.
+func TestPythonRuleLintFoldsConstantSetExpressions(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Fatal("python3 is required for the X15 lint")
+	}
+	script := `
+import json, sys
+sys.path.insert(0, "tools/pyrules")
+import pyrules
+vocab = {"methods": ["assumed", "measured"], "units": ["tokens", "bytes"], "scope_keys": [], "provenances": [], "source_kinds": [], "source_roles": [], "licences": []}
+bad = {
+ "union": 'allowed = {"measured"} | {"assumed"}',
+ "plus": 'allowed = ("measured",) + ("assumed",)',
+ "frozenset": 'allowed = frozenset(["measured"]) | frozenset({"assumed"})',
+ "method": 'allowed = {"measured"}.union({"assumed"})',
+ "name": 'a = {"measured"}\nallowed = a | {"assumed"}',
+ "set of list": 'allowed = set(["measured"] + ["assumed"])',
+}
+ok = 'allowed = {"measured"} | {"other"}\nx = {"tokens"} | {"nothing"}'
+res = {k: pyrules.findings("x.py", v, vocab) for k, v in bad.items()}
+res["ok"] = pyrules.findings("x.py", ok, vocab)
+print(json.dumps(res))
+`
+	cmd := exec.Command(python, "-I", "-c", script)
+	cmd.Dir = "../.."
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var res map[string][]string
+	if err := json.Unmarshal(out, &res); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for k, got := range res {
+		if k == "ok" {
+			if len(got) != 0 {
+				t.Errorf("a vocabulary with one member was flagged: %v", got)
+			}
+		} else if len(got) == 0 {
+			t.Errorf("%s: a restated vocabulary built by an expression was missed", k)
+		}
+	}
+}
