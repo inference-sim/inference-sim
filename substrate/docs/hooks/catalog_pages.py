@@ -180,7 +180,9 @@ def load(root: Path) -> Catalog:
         cat.models.append(Model(
             name=d.name,
             identity=_yaml(d / "model.yaml"),
-            config=json.loads((d / "config.json").read_text(encoding="utf-8")),
+            # A derived-only model commits no config.json: only its hash and revision.
+            config=(json.loads((d / "config.json").read_text(encoding="utf-8"))
+                    if (d / "config.json").exists() else {}),
             graph=_yaml(d / "graph.yaml"),
         ))
     for p in sorted((root / "hardware").glob("*.yaml")):
@@ -555,7 +557,8 @@ def model_page(cat: Catalog, m: Model) -> str:
         ]),
         "",
         "Files in this release: "
-        f"[`config.json`]({cat.source(f'models/{m.name}/config.json')}) · "
+        + (f"[`config.json`]({cat.source(f'models/{m.name}/config.json')}) · "
+           if (cat.root / "models" / m.name / "config.json").exists() else "") +
         f"[`model.yaml`]({cat.source(f'models/{m.name}/model.yaml')}) · "
         f"[`graph.yaml`]({cat.source(f'models/{m.name}/graph.yaml')})",
         "",

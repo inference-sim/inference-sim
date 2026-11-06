@@ -136,18 +136,18 @@ func run(args []string, w io.Writer) (int, error) {
 		}
 		for _, st := range steps {
 			tip, _ := gitIn(st.Dir, "rev-parse", "refs/heads/"+Branch(st))
-			fmt.Fprintf(w, "staged %s %s at %s; no tag yet\n", st.Repo, Branch(st), tip)
+			_, _ = fmt.Fprintf(w, "staged %s %s at %s; no tag yet\n", st.Repo, Branch(st), tip)
 		}
-		fmt.Fprintln(w, "staged in the local checkouts; nothing tagged, nothing pushed")
+		_, _ = fmt.Fprintln(w, "staged in the local checkouts; nothing tagged, nothing pushed")
 		return 0, nil
 	case *tag:
 		if err := Tag(env, lock, steps, *sign); err != nil {
 			return 1, err
 		}
-		fmt.Fprintln(w, "tagged the checked tips in the local checkouts; nothing pushed")
+		_, _ = fmt.Fprintln(w, "tagged the checked tips in the local checkouts; nothing pushed")
 		return 0, nil
 	}
-	fmt.Fprintln(w, "dry run: nothing changed")
+	_, _ = fmt.Fprintln(w, "dry run: nothing changed")
 	return 0, nil
 }
 
