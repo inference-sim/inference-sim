@@ -70,7 +70,10 @@ type ClusterSimulator struct {
 	// fates is the run's fate ledger (DEV-9, SIM-8): every request created, and the one fate
 	// each ends with. liveRequests are the requests that have arrived and have no fate yet, by
 	// ID; fateErr is the first ledger error, which fails the run.
-	fates            *sim.FateLedger
+	fates *sim.FateLedger
+	// requestFacts are what a request row states that no metric keeps: each created request's
+	// arrival, prompt length and tags, by ID (RequestFacts).
+	requestFacts     map[string]RequestFact
 	liveRequests     map[string]*sim.Request
 	fateErr          error
 	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
@@ -302,6 +305,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		shedByTier:        make(map[string]int),
 		injectedByClass:   make(map[string]int64),
 		fates:             sim.NewFateLedger(),
+		requestFacts:      make(map[string]RequestFact),
 		liveRequests:      make(map[string]*sim.Request),
 	}
 
@@ -2112,7 +2116,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
 		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
 		decodeEntry := m.Requests[dec]
-		_, prefillRow := m.Requests[pfx]
+		prefillEntry, prefillRow := m.Requests[pfx]
 		_, decodeRow := m.Requests[dec]
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
@@ -2130,6 +2134,8 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
 			rm.HandledBy = string(parent.DecodeInstanceID)
+			// The prompt's cache hit is the prefill instance's lookup.
+			rm.CachedLocalTokens, rm.CachedExternalTokens = prefillEntry.CachedLocalTokens, prefillEntry.CachedExternalTokens
 			// The parent completes when its decode sub-request does, on the decode instance,
 			// so it takes that completion's place in the completion order.
 			m.Requests[pid] = rm.WithCompletionOf(decodeEntry)

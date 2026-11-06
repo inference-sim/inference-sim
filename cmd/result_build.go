@@ -76,6 +76,8 @@ type resultMetrics struct {
 	InjectedByClass map[string]int64
 	// ClockUs is the cluster's clock when the run ended, and HorizonUs the horizon it ran to.
 	ClockUs, HorizonUs int64
+	// Rows are the per-request rows (DEV-9).
+	Rows []result.RequestRow
 }
 
 // buildResult assembles the Result document. The frame is filled by buildFrame once the
@@ -92,6 +94,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 		SelectedEntries: in.Selected,
 		Revisions:       in.Revisions,
 		Requests:        out.Ledger,
+		RequestRows:     out.Rows,
 		Reports:         result.Reports{Engine: out.Engine, Router: out.Router, Kernel: out.Kernel},
 		Artifacts:       in.Artifacts,
 	}

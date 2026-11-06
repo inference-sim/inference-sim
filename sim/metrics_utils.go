@@ -36,6 +36,12 @@ type RequestMetrics struct {
 	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
 	OutputTokens int `json:"output_tokens,omitempty"`
 
+	// CachedLocalTokens and CachedExternalTokens are the prompt tokens the device prefix cache and
+	// the KV offload tier supplied at the request's first admission (its Result row's
+	// cached_local_tokens and cached_external_tokens). Not part of the legacy file.
+	CachedLocalTokens    int `json:"-"`
+	CachedExternalTokens int `json:"-"`
+
 	// CompletionIndex is this request's 1-based position in the run's completion order,
 	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
 	// only in the --metrics-path file (Requests[] never reaches stdout). A consumer that

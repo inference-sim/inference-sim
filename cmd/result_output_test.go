@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -721,5 +722,38 @@ cohorts:
 	}
 	if !jsonEqual(t, run.Requests, rep.Requests) || !jsonEqual(t, run.Metrics, rep.Metrics) {
 		t.Errorf("INV-13: replay differs from run\nrequests %+v\n         %+v\nmetrics %v\n        %v", run.Requests, rep.Requests, run.Metrics, rep.Metrics)
+	}
+}
+
+// #2071 (DEV-9): the Result carries one row per generated request, each with its fate, and
+// the rows agree with the figures: the completed rows' time to first token has the mean
+// ttft_mean_ms reports, and a request cut off or dropped states no latency.
+func TestResult_RequestRowsAreOnePerGeneratedRequest(t *testing.T) {
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "7",
+		"--num-requests", "60", "--rate", "400", "--horizon", "700000")
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	r := parseResult(t, out)
+	if len(r.RequestRows) != r.Requests.Generated || r.Requests.Generated == 0 {
+		t.Fatalf("%d rows for %d generated requests", len(r.RequestRows), r.Requests.Generated)
+	}
+	if r.Requests.Unfinished() == 0 || r.Requests.Completed == 0 {
+		t.Fatalf("non-vacuity: the horizon should cut the run mid-way: %+v", r.Requests)
+	}
+	var sum float64
+	var n int
+	for _, row := range r.RequestRows {
+		if row.Fate != result.FateCompleted {
+			if row.E2EUs != nil || row.CompletionIndex != 0 {
+				t.Errorf("%s (%s) states a request latency", row.ID, row.Fate)
+			}
+			continue
+		}
+		sum += float64(*row.TTFTUs) / 1e3
+		n++
+	}
+	if want := r.Metrics["ttft_mean_ms"].Value; n != r.Requests.Completed || math.Abs(sum/float64(n)-want) > 1e-6*want {
+		t.Errorf("rows' mean ttft %v over %d completed, the metric %v over %d", sum/float64(n), n, want, r.Requests.Completed)
 	}
 }

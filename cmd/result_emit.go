@@ -169,6 +169,7 @@ func emitRunResult(p postRun) {
 		Router:          routerSection(routerReq, raw.ShedByTier, raw),
 		Kernel:          kernelSection(kernelProvenance(kernelOpened, kernelPDOpened)),
 		InjectedByClass: cs.InjectedByClass(),
+		Rows:            requestRows(cs, aggregated),
 		ClockUs:         cs.Clock(),
 		HorizonUs:       cs.Horizon(),
 	}
