@@ -269,3 +269,66 @@ func TestClaudeWorkflow_ReportStatusNeedsBothAgentJobs(t *testing.T) {
 		}
 	}
 }
+
+// A verdict names the commit and tree the job judged (X22, #1705). Both agent jobs record
+// them right after checkout, before the agent runs, and report-status publishes against those
+// outputs and never resolves the PR head itself: a push during the 60-minute run would move
+// a looked-up head onto a commit that was never examined, with a green status on it.
+func TestClaudeWorkflow_VerdictIsBoundToTheJudgedCommit(t *testing.T) {
+	path := filepath.Join("..", ".github", "workflows", "claude.yml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wf struct {
+		Jobs map[string]struct {
+			Outputs map[string]string `yaml:"outputs"`
+			Steps   []struct {
+				ID   string `yaml:"id"`
+				Uses string `yaml:"uses"`
+				Run  string `yaml:"run"`
+				With map[string]any
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &wf); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{writeJob, reviewJob} {
+		job := wf.Jobs[name]
+		if job.Outputs["reviewed_sha"] == "" || job.Outputs["reviewed_tree"] == "" {
+			t.Errorf("%s does not expose reviewed_sha and reviewed_tree as job outputs", name)
+		}
+		checkout, record, agent := -1, -1, -1
+		for i, s := range job.Steps {
+			switch {
+			case strings.HasPrefix(s.Uses, "actions/checkout@"):
+				checkout = i
+			case s.ID == "reviewed":
+				record = i
+				if !strings.Contains(s.Run, "git rev-parse HEAD") || !strings.Contains(s.Run, "HEAD^{tree}") {
+					t.Errorf("%s: the reviewed step does not record the HEAD commit and tree:\n%s", name, s.Run)
+				}
+			case strings.HasPrefix(s.Uses, "anthropics/claude-code-action@"):
+				agent = i
+			}
+		}
+		if checkout < 0 || checkout >= record || record >= agent {
+			t.Errorf("%s: want checkout (step %d), then the reviewed step (%d), then the agent (%d)", name, checkout, record, agent)
+		}
+	}
+	report := string(raw)
+	a := strings.Index(report, "\n  report-status:")
+	if a < 0 {
+		t.Fatal("report-status job missing")
+	}
+	body := report[a:]
+	for _, banned := range []string{"pulls.get", "pr_head_sha", "Resolve PR head SHA"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("report-status still resolves the PR head itself (%q): its verdict must bind to the commit the agent job recorded", banned)
+		}
+	}
+	if !strings.Contains(body, "needs.claude.outputs.reviewed_sha") || !strings.Contains(body, "needs.claude-review.outputs.reviewed_sha") {
+		t.Error("report-status does not read reviewed_sha from both agent jobs")
+	}
+}
