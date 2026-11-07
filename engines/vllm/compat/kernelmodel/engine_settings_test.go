@@ -220,9 +220,9 @@ func openWithMemoryUtilization(t *testing.T, release, line string) (*Model, erro
 // and the KV budget is sized from the resolved value, so the kernel and Engine agree.
 func TestEngineResolvesAnUnstatedMemoryUtilization(t *testing.T) {
 	for _, c := range []struct{ release, source string }{
-		{"0.29.0", "vllm/config/cache.py:111@98dff2a81d"},
-		{"0.31.0", "vllm/config/cache.py:103@db9527a468"},
-		{"0.32.0", "vllm/config/cache.py:102@5df63a7203"},
+		{"0.29.0", "vllm/config/cache.py:111@98dff2a8"},
+		{"0.31.0", "vllm/config/cache.py:103@db9527a4"},
+		{"0.32.0", "vllm/config/cache.py:102@5df63a72"},
 	} {
 		t.Run(c.release, func(t *testing.T) {
 			m, err := openWithMemoryUtilization(t, c.release, "")

@@ -509,7 +509,7 @@ func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
 
 	// The default comes from the resolver, with its source: 0.92, vllm/config/cache.py:102 at 5df63a7203.
 	v, src := resolvedMemoryUtilization(t, ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2))
-	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:102@5df63a7203") {
-		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:102@5df63a7203", v, src)
+	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:102@5df63a72") {
+		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:102@5df63a72", v, src)
 	}
 }
