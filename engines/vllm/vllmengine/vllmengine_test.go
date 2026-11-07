@@ -91,6 +91,7 @@ func TestDashboardDeploymentsBuildAndRun(t *testing.T) {
 		{"d071-032.yaml", "d071-031.yaml"}, // minimax-m2.5, b200, tp2
 	} {
 		t.Run(c.v032, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: poolEngine(t, c.v032),
 				Roots: roots(t, c.v032), Pool: 0}
 			e, err := engine.New(spec)
@@ -267,6 +268,7 @@ func TestDashboardDataParallelDeploymentsRun(t *testing.T) {
 	Register()
 	for _, name := range []string{"d079", "d088", "d103"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			r := roots(t, name+"-032.yaml")
 			_, par, err := poolBlock(r[RootScenario], 0)
 			if err != nil {
@@ -331,6 +333,7 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 		{"d106-032.yaml", []kv.Group{{Kind: kv.FullAttention}}},                                        // minimax-m3
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
 			done, err := prepare(spec, nil)
 			if err != nil {
@@ -383,6 +386,7 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72893 }},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
+			t.Parallel()
 			b, err := openPool(t, c.scenario).model.KVBudget()
 			if err != nil {
 				t.Fatal(err)
@@ -452,6 +456,7 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 		"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark-128k.yaml", "muse-gb200-nvl-tep8.yaml",
 		"muse-gb200-nvl-dep8-dspark.yaml"} {
 		t.Run(s, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
 			done, err := prepare(spec, nil)
 			if err != nil {

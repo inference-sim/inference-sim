@@ -11,8 +11,9 @@ permissions:
 
 jobs:
   # setup-go v5 caches the module download cache (GOMODCACHE) and the build cache (GOCACHE),
-  # keyed on go.sum and the Go version; every Go job below restores it, so a run that changes no
-  # dependency does not download modules again.
+  # keyed on go.sum and the Go version (cache: true is its default); every Go job below restores
+  # the same cache, so a run that changes no dependency does not download modules again. go vet
+  # runs once, in go-build; the test jobs do not repeat it (go test runs its own small vet subset).
 
   # The one check branch protection requires is named `go`; it passes only if every job below
   # it passed (or was skipped), and fails if one failed or was cancelled. Splitting the former
@@ -21,7 +22,7 @@ jobs:
   go:
     name: go
     if: always()
-    needs: [go-build, go-test-kerneltests, go-test-rest, go-race]
+    needs: [go-build, go-test-kerneltests, go-test-rest, go-race-guard, go-race]
     runs-on: ubuntu-latest
     steps:
       - env:
@@ -82,15 +83,25 @@ jobs:
         run: go test -timeout 30m $(go list ./... | grep -v '/kerneltests')
 
   # The race detector stays on every package that holds a goroutine, channel, atomic, mutex or
-  # Once (internal/substratedata, core/vllm, compat/prefix, compat/kernelmodel) and on the
-  # packages that drive them. The guard re-derives, from the non-test sources, every package
-  # that mentions go func, sync., atomic. or chan, and fails if one is neither in the race list
-  # below nor in EXCLUDED (a package listed there needs a stated reason).
-  go-race:
+  # Once. Today those are internal/substratedata (a sync.Once), core/vllm (the registration Once)
+  # and compat/prefix (two atomic counters); the guard below re-derives them from the non-test
+  # sources on every run. The legs also run the packages that drive them: compat/kv and compat/engine
+  # (through compat/prefix), compat/kernelmodel is not among them (its sources hold no primitive and
+  # its tests start no goroutine: under -race it took 1,659 s against 97 s without, and could find
+  # nothing), vllmengine and core/sched, core/engine, core/connector, compat/dplb and
+  # compat/kvtransfer (through core/vllm).
+  #
+  # The guard is its own small job. The race run is a matrix with one leg for each package or
+  # small group, so the job's wall-clock is the slowest leg, not the sum. The matrix legs are not
+  # required checks: `go` aggregates them.
+  go-race-guard:
     runs-on: ubuntu-latest
     env:
+      # The same list the legs below run, space separated. Keep the two in step: the guard fails
+      # when a package with a primitive is in neither this list nor EXCLUDED, and each leg's
+      # `pkgs` is checked against this list by the first guard step.
       RACE_PKGS: >-
-        ./internal/substratedata ./core/vllm ./compat/prefix ./compat/kernelmodel
+        ./internal/substratedata ./core/vllm ./compat/prefix
         ./compat/engine ./core/sched ./core/engine ./vllmengine ./compat/dplb ./compat/kv
         ./compat/kvtransfer ./core/connector/...
       # Import paths of packages with concurrency primitives that run without -race, space
@@ -114,9 +125,53 @@ jobs:
           echo "packages with concurrency primitives:"; cat "$tmp/concurrent"
           missing="$(comm -23 "$tmp/concurrent" <(sort -u "$tmp/raced" "$tmp/excluded"))"
           if [ -n "$missing" ]; then echo "not under -race and not excluded:"; echo "$missing"; exit 1; fi
+      # The matrix legs below carry their own package lists. A package in RACE_PKGS and in no leg
+      # would pass the guard and never be raced, so the legs are read back out of this file and
+      # compared with RACE_PKGS.
+      - name: the race legs run exactly the guarded packages
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          # shellcheck disable=SC2086
+          go list $RACE_PKGS | sort -u > "$tmp/guarded"
+          grep -E '^            pkgs: ' .github/workflows/ci.yml | sed -E 's/^ +pkgs: //' | tr ' ' '\n' \
+            | grep -v '^$' | xargs go list | sort -u > "$tmp/legs"
+          if ! diff "$tmp/guarded" "$tmp/legs"; then echo "RACE_PKGS and the go-race legs differ"; exit 1; fi
+
+  go-race:
+    name: go-race (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: vllmengine-a
+            pkgs: ./vllmengine
+            run: '^(TestMuse|TestDashboardDeploymentsBuild|TestDashboardDataParallel|TestKVPool|TestAnAllWindow)'
+          - name: vllmengine-b
+            pkgs: ./vllmengine
+            skip: '^(TestMuse|TestDashboardDeploymentsBuild|TestDashboardDataParallel|TestKVPool|TestAnAllWindow)'
+          - name: core
+            pkgs: ./internal/substratedata ./core/vllm ./core/sched ./core/engine ./core/connector/...
+          - name: compat
+            pkgs: ./compat/prefix ./compat/engine ./compat/dplb ./compat/kv ./compat/kvtransfer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
       - name: go test -race
-        # shellcheck disable=SC2086
-        run: go test -race -timeout 30m $RACE_PKGS
+        env:
+          PKGS: ${{ matrix.pkgs }}
+          ONLY: ${{ matrix.run }}
+          SKIP: ${{ matrix.skip }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ -n "$ONLY" ]; then args+=(-run "$ONLY"); fi
+          if [ -n "$SKIP" ]; then args+=(-skip "$SKIP"); fi
+          # shellcheck disable=SC2086
+          go test -race -timeout 30m "${args[@]}" $PKGS
 
   lint:
     runs-on: ubuntu-latest

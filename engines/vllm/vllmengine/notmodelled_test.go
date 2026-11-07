@@ -235,19 +235,23 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 		switch snippet, isRefused := refused[name]; {
 		case isRefused:
 			nRefused++
-			_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, snippet)})
-			if err == nil {
-				t.Errorf("%s: stated as %q and not refused", name, strings.TrimSpace(snippet))
-				continue
-			}
-			key := keyOf[name]
-			leaf := key[strings.LastIndex(key, ".")+1:]
-			if !strings.Contains(err.Error(), name) && !strings.Contains(err.Error(), leaf) {
-				t.Errorf("%s: the refusal does not name the field: %v", name, err)
-			}
-			if !strings.Contains(err.Error(), url) {
-				t.Errorf("%s: the refusal does not cite %s: %v", name, url, err)
-			}
+			// Each build opens its own Data and a scenario of its own, so the refusals run in parallel.
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+				_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, snippet)})
+				if err == nil {
+					t.Errorf("%s: stated as %q and not refused", name, strings.TrimSpace(snippet))
+					return
+				}
+				key := keyOf[name]
+				leaf := key[strings.LastIndex(key, ".")+1:]
+				if !strings.Contains(err.Error(), name) && !strings.Contains(err.Error(), leaf) {
+					t.Errorf("%s: the refusal does not name the field: %v", name, err)
+				}
+				if !strings.Contains(err.Error(), url) {
+					t.Errorf("%s: the refusal does not cite %s: %v", name, url, err)
+				}
+			})
 		case pricedByTheKernel[name] != "":
 			nPriced++
 			entry := pricedByTheKernel[name]

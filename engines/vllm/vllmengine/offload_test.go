@@ -181,6 +181,7 @@ func TestOffloadMappingRefusals(t *testing.T) {
 		{"a Mooncake option", "  eviction_policy: lru\n", "  eviction_policy: lru\n  connector_options: {load_async: true}\n", "blocks_per_chunk"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			s := string(raw)
 			if !strings.Contains(s, c.old) {
 				t.Fatalf("the fixture has no %q", c.old)

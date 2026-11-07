@@ -201,6 +201,7 @@ func TestDashboardDeepSeekDeploymentsBuildAndRun(t *testing.T) {
 		{"d027-032.yaml", 3*(8704+18432) + 16896 + 36864},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
 			done, err := prepare(spec, nil)
 			if err != nil {
