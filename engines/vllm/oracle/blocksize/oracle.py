@@ -84,7 +84,10 @@ NOT_RESOLVED = {
                          "(platforms/interface.py:783-790, _align_hybrid_block_size)",
 }
 
-# The catalog's model directories, whose config.json files are the models' own. Set by --catalog.
+# The catalog's model directories, whose config.json files are the models' own. Set by
+# BLIS_ORACLE_CATALOG. A derived-only model (its licence is not redistributable) has no config.json
+# there: its file is fetched from the source and revision its model.yaml pins and checked against
+# the SHA-256 recorded there (modelconfig.py), so that model needs network access to huggingface.co.
 CATALOG = os.environ.get("BLIS_ORACLE_CATALOG", "")
 
 # catalog/hardware/<gpu>.yaml ComputeCapability.
@@ -136,11 +139,11 @@ def load_vllm(vllm_dir):
 def hf_text_config(model):
     """The model's text config, as the backends' supports_combination read it (for example
     mla/flashinfer_mla.py:240-248, mla/tokenspeed_mla.py:157-166). It is the model's own
-    config.json, from the catalog; an attribute the file does not state is absent, as it is
+    config.json, from the catalog or, for a derived-only model, fetched at the pinned revision and
+    verified by hash; an attribute the file does not state is absent, as it is
     in vLLM's PretrainedConfig."""
-    path = os.path.join(CATALOG, model, "config.json")
-    with open(path) as f:
-        c = json.load(f)
+    import modelconfig
+    c = json.loads(modelconfig.config_bytes(model, os.path.join(CATALOG, model)))
     return types.SimpleNamespace(**c.get("text_config", c))
 
 

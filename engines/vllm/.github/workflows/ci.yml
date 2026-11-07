@@ -169,6 +169,8 @@ jobs:
       # Each guard must fail on the violation it exists to catch (oracle/test_checks.py).
       - name: the oracle's guards catch what they guard
         run: python3 -I oracle/test_checks.py
+      - name: the block-size oracle's config.json fetch is verified
+        run: python3 -I oracle/blocksize/test_modelconfig.py
 
   # Tier 2: vLLM v0.32.0's real Scheduler driven through every scenario, on CPU. The fuzz corpora
   # and vLLM's traces for them come from the cache (.github/actions/oracle-fuzz); every committed
