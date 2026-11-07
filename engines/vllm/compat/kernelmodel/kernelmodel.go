@@ -348,7 +348,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
-	// An unstated block_size or gpu_memory_utilization the release resolves is priced at the
+	// An unstated block_size, gpu_memory_utilization, max_num_seqs or max_num_batched_tokens the release resolves is priced at the
 	// resolved value, so the kernel and Engine describe one engine (resolveEngine).
 	r := resolveEngine(in, engine)
 	if r.engine.BlockSize > 0 {
@@ -356,6 +356,15 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	}
 	if r.engine.GPUMemoryUtilization > 0 {
 		settings.GPUMemoryUtilization = r.engine.GPUMemoryUtilization
+	}
+	// The batch settings Engine reports and the scheduler runs: left at zero the kernel would
+	// fall back to vLLM v0.31.0's defaults, which skip the caps 0.32.0 applies (batched-DP 256,
+	// min(max_num_seqs, max_num_batched_tokens), max_num_seqs x max_model_len).
+	if r.engine.MaxNumSeqs > 0 {
+		settings.MaxNumSeqs = r.engine.MaxNumSeqs
+	}
+	if r.engine.MaxNumBatchedTokens > 0 {
+		settings.MaxNumBatchedTokens = r.engine.MaxNumBatchedTokens
 	}
 	in.Engine = &settings
 	k, err := latencykernel.New(in)

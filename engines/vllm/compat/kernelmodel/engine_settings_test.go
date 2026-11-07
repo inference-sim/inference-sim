@@ -331,3 +331,50 @@ func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing
 		}
 	}
 }
+
+// The kernel prices the engine Engine reports and the scheduler runs, for all four resolved
+// settings. Under a batched data-parallel MoE (DeepEP low-latency, expert parallel, DP > 1)
+// vLLM 0.32.0 caps an unstated max_num_seqs and max_num_batched_tokens at 256; the kernel's own
+// fallback is v0.31.0's, which skips that cap.
+func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
+	const fixture = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
+	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(raw)
+	for _, d := range []string{"      max_num_batched_tokens: 8192\n", "      max_num_seqs: 256\n"} {
+		if !strings.Contains(body, d) {
+			t.Fatalf("%s has no %q", fixture, d)
+		}
+		body = strings.Replace(body, d, "", 1)
+	}
+	body = strings.Replace(body, "      block_size: 16\n", "      block_size: 16\n      all2all_backend: deepep_low_latency\n", 1)
+	r := repos()
+	r.Scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open("v.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := m.Engine()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.MaxNumSeqs != 256 || e.MaxNumBatchedTokens != 256 {
+		t.Fatalf("Engine: max_num_seqs %d, max_num_batched_tokens %d; want the batched-DP 256 and 256", e.MaxNumSeqs, e.MaxNumBatchedTokens)
+	}
+	k, ok := m.Kernel().(*latencykernel.Kernel)
+	if !ok {
+		t.Fatalf("the kernel is a %T, not the cost model", m.Kernel())
+	}
+	got := k.Engine()
+	if got.BlockSize != e.BlockSize || got.GPUMemoryUtilization != e.GPUMemoryUtilization ||
+		got.MaxNumSeqs != e.MaxNumSeqs || got.MaxNumBatchedTokens != e.MaxNumBatchedTokens {
+		t.Errorf("the kernel prices block_size %d, gpu_memory_utilization %v, max_num_seqs %d, max_num_batched_tokens %d; "+
+			"Engine reports %d, %v, %d, %d", got.BlockSize, got.GPUMemoryUtilization, got.MaxNumSeqs, got.MaxNumBatchedTokens,
+			e.BlockSize, e.GPUMemoryUtilization, e.MaxNumSeqs, e.MaxNumBatchedTokens)
+	}
+}
