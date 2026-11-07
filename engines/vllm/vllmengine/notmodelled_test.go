@@ -1,6 +1,7 @@
 package vllmengine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -119,11 +120,11 @@ var refused = map[string]string{
 	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: fp8\n",
 	"speculative_config.kv_cache_dtype":                         "speculative: {method: eagle3, num_spec_tokens: 3, kv_cache_dtype: fp8}\n",
 	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: synthetic}\n",
-	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: zmq}\n",
+	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: \"null\"}\n",
 	"kv_events_config.topic":                                    "kv_events: {enable_kv_cache_events: true, topic: kv}\n",
 	"mamba_ssm_cache_dtype":                                     "mamba_ssm_cache_dtype: float32\n",
-	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 32}\n",
-	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 512}\n",
+	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 64}\n",
+	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 1024}\n",
 	"eplb_config.window_size":                                   "eplb: {enable_eplb: true, window_size: 500}\n",
 	"eplb_config.step_interval":                                 "eplb: {enable_eplb: true, step_interval: 100}\n",
 	"prefix_match_unit":                                         "prefix_match_unit: 8\n",
@@ -131,6 +132,42 @@ var refused = map[string]string{
 	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 4\n",
 	"mamba_cache_mode":                                          "mamba_cache_mode: align\n",
 	"swa_bounded_replay":                                        "swa_bounded_replay: false\n",
+}
+
+// atDefault is the partner of each refused case (SIM-9's refusal pair): the same setting stated at
+// the value vLLM runs when it is not stated, which must build, so a user who hands BLIS the flags
+// they gave vLLM is not refused for a flag that changes nothing. The defaults are those of
+// unreadSettings (core/vllm/config.go), each cited there. A key whose default is "unstated" has no
+// such value, and its entry says so.
+var atDefault = map[string]string{
+	"stream_interval":                                           "stream_interval: 1\n",
+	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: auto\n",
+	"kernel_config.linear_backend":                              "linear_backend: auto\n",
+	"linear_backend":                                            "linear_backend: auto\n",
+	"compilation_config.custom_ops":                             "custom_ops: []\n",
+	"compilation_config.decoder_replay_cudagraph_capture_sizes": "decoder_replay_cudagraph_capture_sizes: []\n",
+	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: block}\n",
+	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: zmq}\n",
+	"kv_events_config.topic":                                    "kv_events: {enable_kv_cache_events: true, topic: \"\"}\n",
+	"mamba_ssm_cache_dtype":                                     "mamba_ssm_cache_dtype: auto\n",
+	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 32}\n",
+	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 512}\n",
+	"eplb_config.window_size":                                   "eplb: {enable_eplb: true, window_size: 1000}\n",
+	"eplb_config.step_interval":                                 "eplb: {enable_eplb: true, step_interval: 3000}\n",
+	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 0\n",
+	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 2\n",
+	"mamba_cache_mode":                                          "mamba_cache_mode: none\n",
+	"swa_bounded_replay":                                        "swa_bounded_replay: true\n",
+}
+
+// noDefaultValue lists the refused keys that vLLM leaves unstated (None), so no stated value is the
+// default and every stated one is a choice. Each cites the line that makes it None.
+var noDefaultValue = map[string]string{
+	"kv_cache_memory_bytes":                 "vllm/config/cache.py:257@5df63a72",
+	"attention_config.use_trtllm_attention": "vllm/config/attention.py:74@5df63a72",
+	"attention_config.mla_prefill_backend":  "vllm/config/attention.py:81@5df63a72",
+	"speculative_config.kv_cache_dtype":     "vllm/config/speculative.py:428@5df63a72",
+	"prefix_match_unit":                     "vllm/config/cache.py:90@5df63a72",
 }
 
 // pricedByTheKernel is the allow-list: keys the latency kernel reads and prices from blis-substrate's
@@ -240,8 +277,16 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 				t.Parallel()
 				_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, snippet)})
 				if err == nil {
-					t.Errorf("%s: stated as %q and not refused", name, strings.TrimSpace(snippet))
+					t.Errorf("%s: stated as %q, away from vLLM's default, and not refused", name, strings.TrimSpace(snippet))
 					return
+				}
+				// The pair: the same key at vLLM's default builds.
+				if def, ok := atDefault[name]; ok {
+					if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, def)}); err != nil {
+						t.Errorf("%s: stated at vLLM's default as %q, and refused: %v", name, strings.TrimSpace(def), err)
+					}
+				} else if _, ok := noDefaultValue[name]; !ok {
+					t.Errorf("%s: refused, with neither an at-default partner nor a stated reason it has no default value", name)
 				}
 				key := keyOf[name]
 				leaf := key[strings.LastIndex(key, ".")+1:]
@@ -409,6 +454,29 @@ func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
 		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("rejection_sample_method %s: err %v, want refused %t", c.method, err, c.refused)
+		}
+	}
+}
+
+// The default of kv_events.publisher depends on enable_kv_cache_events: None resolves to "zmq" when
+// events are enabled and "null" when not (vllm/config/kv_events.py:51-52@5df63a72). So "null" is the
+// default with events off and a deviation with events on, and "zmq" the reverse.
+func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
+	Register()
+	for _, c := range []struct {
+		enabled   bool
+		publisher string
+		refused   bool
+	}{
+		{true, "zmq", false}, {true, "null", true}, {false, "null", false}, {false, "zmq", true},
+	} {
+		extra := fmt.Sprintf("kv_events: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
+		if c.refused != (err != nil) {
+			t.Errorf("events %t, publisher %s: err %v, want refused %t", c.enabled, c.publisher, err, c.refused)
+		}
+		if err != nil && !strings.Contains(err.Error(), "issues/60") {
+			t.Errorf("events %t, publisher %s: refusal does not cite #60: %v", c.enabled, c.publisher, err)
 		}
 	}
 }

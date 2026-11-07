@@ -86,10 +86,15 @@ jobs:
   # Once. Today those are internal/substratedata (a sync.Once), core/vllm (the registration Once)
   # and compat/prefix (two atomic counters); the guard below re-derives them from the non-test
   # sources on every run. The legs also run the packages that drive them: compat/kv and compat/engine
-  # (through compat/prefix), compat/kernelmodel is not among them (its sources hold no primitive and
-  # its tests start no goroutine: under -race it took 1,659 s against 97 s without, and could find
-  # nothing), vllmengine and core/sched, core/engine, core/connector, compat/dplb and
+  # (through compat/prefix), vllmengine, core/sched, core/engine, core/connector, compat/dplb and
   # compat/kvtransfer (through core/vllm).
+  #
+  # compat/kernelmodel's non-test sources hold no primitive and start no goroutine, but its census test
+  # (TestBlockSizeResolutionOverTheCensusFixtures) runs parallel subtests that share counters under a
+  # sync.Mutex, and the package drives core/vllm through its registration Once. So one leg raced
+  # exactly the tests that use t.Parallel, sync or a goroutine (derived with grep over its _test.go
+  # files: that one test). The rest of compat/kernelmodel, about 90 seconds of serial pricing tests, is
+  # raced nowhere: under -race it took 1,659 seconds, and it holds no goroutine of its own.
   #
   # The guard is its own small job. The race run is a matrix with one leg for each package or
   # small group, so the job's wall-clock is the slowest leg, not the sum. The matrix legs are not
@@ -126,16 +131,30 @@ jobs:
           missing="$(comm -23 "$tmp/concurrent" <(sort -u "$tmp/raced" "$tmp/excluded"))"
           if [ -n "$missing" ]; then echo "not under -race and not excluded:"; echo "$missing"; exit 1; fi
       # The matrix legs below carry their own package lists. A package in RACE_PKGS and in no leg
-      # would pass the guard and never be raced, so the legs are read back out of this file and
-      # compared with RACE_PKGS.
+      # would pass the guard and never be raced, so the legs are read back out of this file (as
+      # YAML, whatever its indentation) and compared with RACE_PKGS. A file with no legs fails
+      # with a message, not with an empty comparison.
       - name: the race legs run exactly the guarded packages
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
           # shellcheck disable=SC2086
           go list $RACE_PKGS | sort -u > "$tmp/guarded"
-          grep -E '^            pkgs: ' .github/workflows/ci.yml | sed -E 's/^ +pkgs: //' | tr ' ' '\n' \
-            | grep -v '^$' | xargs go list | sort -u > "$tmp/legs"
+          python3 - "$tmp/legs" <<'PY'
+          import json, re, subprocess, sys
+          text = open(".github/workflows/ci.yml").read()
+          # The go-race job's matrix.include entries: each has a name and a pkgs line.
+          start = text.index("\n  go-race:\n")
+          block = text[start:text.index("\n  lint:\n", start)]
+          legs = re.findall(r"^\s+pkgs:\s*(.+?)\s*$", block, re.M)
+          if not legs:
+              sys.exit("the guard found no go-race matrix legs (no 'pkgs:' lines under the go-race job): "
+                       "the workflow was restructured, and this step must be updated with it")
+          pkgs = sorted({p for leg in legs for p in leg.split()})
+          out = subprocess.run(["go", "list", *pkgs], capture_output=True, text=True, check=True).stdout.split()
+          open(sys.argv[1], "w").write("\n".join(sorted(set(out))) + "\n")
+          print("go-race legs: %d, packages: %d" % (len(legs), len(set(out))))
+          PY
           if ! diff "$tmp/guarded" "$tmp/legs"; then echo "RACE_PKGS and the go-race legs differ"; exit 1; fi
 
   go-race:
@@ -155,6 +174,12 @@ jobs:
             pkgs: ./internal/substratedata ./core/vllm ./core/sched ./core/engine ./core/connector/...
           - name: compat
             pkgs: ./compat/prefix ./compat/engine ./compat/dplb ./compat/kv ./compat/kvtransfer
+          # The one compat/kernelmodel test that runs parallel subtests under a mutex. Its package is
+          # not in RACE_PKGS (no primitive in its sources), so this leg names its package as
+          # race_pkgs, which the guard does not read.
+          - name: kernelmodel-census
+            race_pkgs: ./compat/kernelmodel
+            run: '^TestBlockSizeResolutionOverTheCensusFixtures$'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -162,7 +187,7 @@ jobs:
           go-version-file: go.mod
       - name: go test -race
         env:
-          PKGS: ${{ matrix.pkgs }}
+          PKGS: ${{ matrix.pkgs || matrix.race_pkgs }}
           ONLY: ${{ matrix.run }}
           SKIP: ${{ matrix.skip }}
         run: |

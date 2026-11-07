@@ -94,14 +94,31 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   value the run recorded: a stated value is carried into the scenario as stated, whatever the
   field's status. A not-modelled field that the engine reads and prices when it is stated is a
   status to correct (modelled, with its evidence, or refused when stated, VLM-3); the rule does
-  not stand in for that. The v0.32.0 engine refuses every not-modelled key of the engine block that
-  nothing reads (`TestEveryNotModelledFieldIsRefusedOrExplained` walks fields.json), naming the
-  field and citing its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy
-  (`blis-vllm#73` to `#80`, `#83`, `#8`) are the walk's allow-list: the kernel prices them, and
-  `leave_unset` on `gpu_memory_utilization` and `engram_config.cpu_offload` fills only a value the
-  run did not record. `attention_config.indexer_kv_dtype` is `not_modelled` with `leave_unset`:
-  `auto` and the model's own default size MiniMax-M3's indexer cache, and any other stated value is
-  refused, for every model (`blis-vllm#84`). `data_parallel_size_local` is read as `parallel.dp_local`.
+  not stand in for that. The v0.32.0 engine refuses a not-modelled key of the engine block that nothing reads when it is
+  stated away from vLLM's default (`TestEveryNotModelledFieldIsRefusedOrExplained` walks fields.json
+  and gives each refusal a partner that states the default and builds), naming the field and citing
+  its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy (`blis-vllm#73`
+  to `#80`, `#83`, `#8`) are the walk's allow-list.
+
+  Every `not_modelled` field with the rule `leave_unset` is named below, with what a deployment that
+  states it gets, so leaving it unset gives vLLM's default (`TestReadmeNamesEveryLeaveUnsetField`
+  fails when this list and fields.json differ):
+
+  - not a key of the engine block, so a deployment that states it is refused when the block
+    is decoded (an unknown key), and a run that does not state it runs vLLM's default: `attention_backend`,
+    `attention_config.backend` (blis-vllm#80), `attention_config.indexer_sparse_logits` (#84),
+    `speculative_config.synthetic_acceptance_length` (#88), `kv_offloading_backend` (#87) and the
+    environment variable `VLLM_USE_SIMPLE_KV_OFFLOAD` (#87, refused by the block's `env`);
+  - a deployment field, not a key of the engine block, that the engine reads from the deployment:
+    `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
+    `parallel.data_parallel_load_balancing`, and `data_parallel_size_local` (#55), stated as
+    `parallel.dp_local` and refused when its packing differs from the engine's;
+  - read by the latency kernel, which prices a stated value at vLLM v0.31.0's policy:
+    `gpu_memory_utilization` (#73) and `engram_config.cpu_offload` (#78), where `leave_unset` fills
+    only a value the run did not record;
+  - refused when stated away from its default: `attention_config.indexer_kv_dtype` (#84). `auto`
+    and the model's own default size MiniMax-M3's indexer cache, and any other value is refused for
+    every model.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
