@@ -98,7 +98,7 @@ under either name is taken over a part-wide one.
 `Evidence()` returns three things: how many entries of `Provenance` rest on evidence (method
 `measured`, `literature` or `vendor_spec`), how many there are in all, and the names of those
 whose method is `assumed`. The last includes the kernel's own entries above and any registry
-coefficient recorded as assumed. Entries with the methods `copied` and `not_charged` are in
+coefficient recorded as assumed. Entries with the methods `transferred`, `roofline` and `not_charged` are in
 the total and in neither of the other two.
 [Refuse, assume, override](../concepts/resolution.md#the-evidence-summary) shows a worked
 example.

@@ -43,7 +43,8 @@ sets, and how a cost model combines them is described under
 | `ci95` | `[low, high]` | no | 95% confidence interval. Must contain `value`. |
 | `sources` | list | depends on `method` | Citations, below. If present, not empty. |
 | `rationale` | string | depends on `method` | The reasoning behind a value that was not measured. |
-| `copied_from` | string | with method `copied` | The scope the value was copied from. |
+| `transferred_from` | string | with method `transferred` | The scope the value was measured in, as the scope renders, such as `hardware=h200,model=deepseek-v4.1-flash`. |
+| `transfer_rule` | string | with method `transferred` | The stated rule that moved the value to this scope. |
 | `supersedes` | string | no | An entry this one replaces. |
 | `validated` | string or list | no | Names of metrics the value has been checked against, such as `itl`. Free text. |
 | `unsupported` | string or list | no | Names of metrics it has been found not to hold for. Free text. |
@@ -105,7 +106,8 @@ applicable entry supplies.
 | `calibrated` | required | at least one of kind `measured_case` | Allows `fitted: true`. `validated` must name the held-out metrics. |
 | `literature` | required | at least one | |
 | `vendor_spec` | required | at least one | |
-| `copied` | required | — | `copied_from` required. |
+| `transferred` | required | — | `transferred_from` and `transfer_rule` required. |
+| `roofline` | required | at least one, naming the catalog facts it was computed from | |
 | `assumed` | required | — | |
 | `not_charged` | required | — | `value` must be 0. |
 

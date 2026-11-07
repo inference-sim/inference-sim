@@ -104,8 +104,10 @@ type Profile struct {
 	Provenance *Provenance `yaml:"provenance,omitempty"`
 	// Rationale explains a value that was not measured.
 	Rationale string `yaml:"rationale,omitempty"`
-	// CopiedFrom names the profile a copied value came from, as its Key renders.
-	CopiedFrom string `yaml:"copied_from,omitempty"`
+	// TransferredFrom names the profile a transferred value was measured as, as its Key
+	// renders. TransferRule states how it was moved to this profile's model.
+	TransferredFrom string `yaml:"transferred_from,omitempty"`
+	TransferRule    string `yaml:"transfer_rule,omitempty"`
 }
 
 // Key is a profile's identity.
@@ -118,7 +120,7 @@ type Key struct {
 }
 
 // String renders a key as model/method/k<K>/thinking-<mode>/category, the form
-// copied_from and error messages use.
+// transferred_from and error messages use.
 func (k Key) String() string {
 	return fmt.Sprintf("%s/%s/k%d/thinking-%s/%s",
 		k.Model, k.SpeculativeMethod, k.NumSpecTokens, k.Thinking, k.Category)

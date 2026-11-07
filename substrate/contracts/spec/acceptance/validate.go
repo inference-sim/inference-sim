@@ -3,6 +3,7 @@ package acceptance
 import (
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
@@ -109,8 +110,15 @@ func (pr Profile) validateEvidence(p *validate.Problems, at string) {
 	if pr.Method != vocab.MethodMeasured && pr.Rationale == "" {
 		p.Field(at+".rationale", "method %q requires a rationale", pr.Method)
 	}
-	if pr.Method == vocab.MethodCopied && pr.CopiedFrom == "" {
-		p.Field(at+".copied_from", "method copied requires copied_from")
+	if pr.Method == vocab.MethodTransferred {
+		if pr.TransferredFrom == "" {
+			p.Field(at+".transferred_from", "method transferred requires transferred_from")
+		}
+		if strings.TrimSpace(pr.TransferRule) == "" {
+			p.Field(at+".transfer_rule", "method transferred requires transfer_rule, the stated rule that moved the value")
+		}
+	} else if pr.TransferredFrom != "" || pr.TransferRule != "" {
+		p.Field(at+".transferred_from", "transferred_from and transfer_rule apply only to method transferred, got method %q", pr.Method)
 	}
 	if pr.Provenance == nil {
 		if pr.Method != vocab.MethodAssumed {

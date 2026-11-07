@@ -13,7 +13,7 @@ and the front end's admission cost, each derived from a vendored measurement.
 Owns, in cost-model-host-overheads.yaml, scoped to model deepseek-v4.1-flash:
 
   host_launch_eager_per_kernel  {hardware: [h200]}       assumed  backed out of an H200 enforce-eager anchor
-  host_launch_eager_per_kernel  {hardware: [8 others]}   copied   the h200 value: an assumed transfer
+  host_launch_eager_per_kernel  {hardware: [8 others]}   transferred   the h200 value, carried unchanged
   host_admission_per_token      {hardware: [all]}   assumed  vLLM v0.31.0's V4.1 encoder +
                                                              tokenizer + block hash, timed on an
                                                              M1 Max: a transfer to every part
@@ -124,6 +124,12 @@ DEVICE_AISIM_MS = 7.34
 
 # The part whose nodes ran the anchor.
 ANCHOR_PART = "h200"
+# The rule that moves the H200 value to the other parts (design §9.2, transferred). It is the
+# assumption the rationale states: a part's host CPU and driver dispatch an op and launch a
+# kernel as fast as the H200 nodes behind the anchor.
+TRANSFER_RULE = ("the value derived on the H200 nodes is carried unchanged to the other parts, "
+                 "on the assumption that their host CPU and CUDA driver dispatch an op and launch "
+                 "a kernel as fast as the H200 nodes behind the anchor")
 ALL_PARTS = ["a100-80", "a100-sxm", "b200", "b300", "gb200-nvl72", "gb300", "h100", "h200",
              "l40s"]
 # The workload the transfer check runs (weka agentic replay) has a mean prompt of ~89.6k
@@ -205,11 +211,13 @@ def committed(name: str, chip: str) -> float:
     raise SystemExit(f"no committed part-wide {name} on {chip}")
 
 
-def lines(name, value, units, method, fitted, scope, sources, rationale, copied_from=None):
+def lines(name, value, units, method, fitted, scope, sources, rationale,
+          transferred_from=None, transfer_rule=None):
     out = [f"  - {name}:", f"      value: {value}", f"      units: {units}",
            f"      method: {method}"]
-    if copied_from:
-        out.append(f'      copied_from: "{copied_from}"')
+    if transferred_from:
+        out.append(f'      transferred_from: "{transferred_from}"')
+        out.append(f'      transfer_rule: "{transfer_rule}"')
     out += [f"      fitted: {'true' if fitted else 'false'}",
             f"      scope: {scope}", "      sources:"]
     out += [f'        - {{kind: {k}, cite: "{c}", role: {r}}}' for k, c, r in sources]
@@ -404,13 +412,13 @@ def entries(ea: dict, ad: dict) -> list:
             f"{ea['e']} us of per-launch Python dispatch in DeepSeek-V4.1-Flash's eager step "
             f"on the H200 nodes' host CPU, on top of host_launch_per_kernel. DERIVED ON H200 "
             f"NODES ONLY: this entry is the only one the anchor supports; every other part "
-            f"carries it as a copy (host_launch_eager_per_kernel, method copied), which is an "
+            f"carries it as a transfer (host_launch_eager_per_kernel, method transferred), which is an "
             f"assumption about host CPU and driver launch cost, not a derivation. ")
     out.append(lines("host_launch_eager_per_kernel", ea["e"], "us_per_transfer", "assumed",
                      False, f"{{hardware: [{ANCHOR_PART}], model: [{MODEL}]}}", src_anchor,
                      head + form + " " + deriv))
     copy_head = (
-        f"COPIED, AN ASSUMED TRANSFER, NOT A DERIVATION: {ea['e']} us, the value derived on "
+        f"TRANSFERRED, AN ASSUMED TRANSFER, NOT A DERIVATION: {ea['e']} us, the value derived on "
         f"H200 nodes (scope hardware={ANCHOR_PART}, model={MODEL}; see that entry for the "
         f"anchor, the form and the derivation). The term is host-CPU and CUDA-driver work, "
         f"not GPU work, so carrying it to another part assumes that part's nodes dispatch a "
@@ -424,10 +432,11 @@ def entries(ea: dict, ad: dict) -> list:
         f"enforce-eager ITL anchor -- the same model, TP8, --enforce-eager, no speculative "
         f"decoding, c1-c64 on H100 nodes -- with e = (ITL - device) / launches - "
         f"host_launch_per_kernel, re-derived by this writer. ")
-    out.append(lines("host_launch_eager_per_kernel", ea["e"], "us_per_transfer", "copied",
+    out.append(lines("host_launch_eager_per_kernel", ea["e"], "us_per_transfer", "transferred",
                      False, f"{{hardware: [{', '.join(others)}], model: [{MODEL}]}}",
                      src_anchor, copy_head + form,
-                     copied_from=f"hardware={ANCHOR_PART},model={MODEL}"))
+                     transferred_from=f"hardware={ANCHOR_PART},model={MODEL}",
+                     transfer_rule=TRANSFER_RULE))
     nr = ad["nearest"]
     share = ad["share"]
     bench_src = [("discussion", f"validator/testdata/anchors/{BENCH_JSON.name}: "

@@ -139,8 +139,11 @@ type Entry struct {
 	// Rationale explains a judgement. It is where the reasoning behind an assumed
 	// value belongs, and it is what lets a reader weigh an estimate.
 	Rationale string `yaml:"rationale,omitempty"`
-	// CopiedFrom names the scope a copied value came from.
-	CopiedFrom string `yaml:"copied_from,omitempty"`
+	// TransferredFrom names the scope a transferred value was measured in, as the scope
+	// renders (hardware=h200,model=...). TransferRule states how the value was moved to this
+	// scope. Both are required for method transferred (design §9.2, VAL-1).
+	TransferredFrom string `yaml:"transferred_from,omitempty"`
+	TransferRule    string `yaml:"transfer_rule,omitempty"`
 	// Supersedes names an entry this one replaces.
 	Supersedes string `yaml:"supersedes,omitempty"`
 	// Validated and Unsupported record asymmetric evidence: a term may be checked

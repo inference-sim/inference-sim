@@ -774,8 +774,10 @@ profiles:
   thinking: 'on'
   category: coding
   acceptance_length: 2.99
-  method: copied
-  copied_from: glm-5.2-fp8/mtp/k3/thinking-on/coding
+  method: transferred
+  transferred_from: glm-5.2-fp8/mtp/k3/thinking-on/coding
+  transfer_rule: the source model's acceptance length is carried unchanged, because the file
+    states the target shares its base and layer topology
   rationale: 'As its source states: PROVISIONAL — copied from glm5.2_mtp.yaml; NOT measured
     on GLM-5.3. GLM-5.3 shares GLM-5.2''s base and layer topology (its config.json differs
     only by the fp8 quantization block), so the GLM-5.2 curve is the closest committed reference.

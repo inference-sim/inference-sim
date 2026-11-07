@@ -313,7 +313,9 @@
   --reg-assumed: #1baf7a;
   --reg-not_charged: #eda100;
   --reg-literature: #e87ba4;
-  --reg-copied: #4a3aa7;
+  --reg-transferred: #4a3aa7;
+  --reg-calibrated: #0e8a9c;
+  --reg-roofline: #8a6d1f;
 }
 
 .section-registry .reg-table-wrap { overflow-x: auto; margin: 0.8em 0 0.4em; }
@@ -373,7 +375,9 @@
 
 .section-registry .reg-m-literature { color: var(--reg-literature); }
 
-.section-registry .reg-m-copied { color: var(--reg-copied); }
+.section-registry .reg-m-transferred { color: var(--reg-transferred); }
+.section-registry .reg-m-calibrated { color: var(--reg-calibrated); }
+.section-registry .reg-m-roofline { color: var(--reg-roofline); }
 
 .section-registry .md-typeset .reg-legend { font-size: 0.7rem; color: var(--cf-ink-2); }
 
@@ -401,7 +405,9 @@
 
 .section-registry .reg-fill-literature { fill: var(--reg-literature); }
 
-.section-registry .reg-fill-copied { fill: var(--reg-copied); }
+.section-registry .reg-fill-transferred { fill: var(--reg-transferred); }
+.section-registry .reg-fill-calibrated { fill: var(--reg-calibrated); }
+.section-registry .reg-fill-roofline { fill: var(--reg-roofline); }
 
 .section-registry .md-typeset .reg-shadow { font-size: 0.75em; margin-left: 0.15em; }
 

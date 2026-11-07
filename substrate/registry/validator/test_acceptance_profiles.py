@@ -76,11 +76,11 @@ def test_every_model_is_a_catalog_model_and_every_curve_left_out_is_named():
 def test_a_copied_profile_carries_the_value_it_names():
     by_key = {emit.key_string(p["model"], p["speculative_method"], p["num_spec_tokens"],
                               p["thinking"], p["category"]): p for p in SET["profiles"]}
-    copied = [p for p in SET["profiles"] if p["method"] == "copied"]
+    copied = [p for p in SET["profiles"] if p["method"] == "transferred"]
     assert copied
     for p in copied:
-        assert by_key[p["copied_from"]]["method"] == "measured"
-        assert by_key[p["copied_from"]]["acceptance_length"] == p["acceptance_length"]
+        assert by_key[p["transferred_from"]]["method"] == "measured"
+        assert by_key[p["transferred_from"]]["acceptance_length"] == p["acceptance_length"]
 
 
 def test_a_model_key_resolves_by_repository_basename_or_is_refused():

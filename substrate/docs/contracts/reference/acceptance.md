@@ -80,7 +80,8 @@ Two profiles with one key are an error.
 | `method` | string | yes | How the value was obtained. One of the [methods](vocabularies.md#methods) except `not_charged`. |
 | `provenance` | mapping | unless `method` is `assumed` | Where it was measured, below. |
 | `rationale` | string | unless `method` is `measured` | The reasoning behind a value that was not measured. |
-| `copied_from` | string | with method `copied` | The profile it was copied from, as `model/method/k<K>/thinking-<mode>/category`. |
+| `transferred_from` | string | with method `transferred` | The profile it was measured as, as `model/method/k<K>/thinking-<mode>/category`. |
+| `transfer_rule` | string | with method `transferred` | The stated rule that moved the value to this profile's model. |
 
 ### `provenance`
 

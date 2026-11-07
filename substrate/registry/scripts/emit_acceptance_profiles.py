@@ -34,6 +34,11 @@ TARGET = REPO / "acceptance" / "inferencex-golden-al.yaml"
 SET_NAME = "inferencex-golden-al"
 
 INFERENCEX_SHA = "9fa76586ed1ef66caadc6b95a9b1448acde94c6b"
+# The rule that moves a measured curve to a model InferenceX marks provisional. It is the one
+# InferenceX's own file states: the target shares the source model's base and layer topology,
+# so the source's acceptance length is carried unchanged for the draft lengths both run.
+TRANSFER_RULE = ("the source model's acceptance length is carried unchanged, because the file "
+                 "states the target shares its base and layer topology")
 INFERENCEX_URL = "https://github.com/SemiAnalysisAI/InferenceX"
 GOLDEN_PATH = "inferencex-e2e/infx/golden_al_distribution"
 GOLDEN = Path(os.environ.get("INFERENCEX_GOLDEN")
@@ -438,8 +443,9 @@ def profiles(carried: list[Carried], category: str) -> list[dict]:
                     if src.values.get(thinking, {}).get(k) != al:
                         raise SystemExit(f"{c.stem} {thinking}/{k} = {al} is not the value "
                                          f"of {src.stem}, which it states it copies")
-                    p["method"] = "copied"
-                    p["copied_from"] = key_string(src.model, src.method, k, thinking, category)
+                    p["method"] = "transferred"
+                    p["transferred_from"] = key_string(src.model, src.method, k, thinking, category)
+                    p["transfer_rule"] = TRANSFER_RULE
                 else:
                     p["method"] = "measured"
                 alias = (f"InferenceX names the model {c.alias[0]}: {c.alias[1]}."

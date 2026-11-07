@@ -19,38 +19,94 @@ The unit of a coefficient's `value`.
 ### Methods
 
 How a coefficient's value was obtained. This is the field that keeps a measurement
-distinguishable from an estimate, so it is never inferred.
+distinguishable from an estimate, so it is never inferred. The methods are ranked from most to
+least trusted (design 9.2), and a lookup that finds more than one entry uses the one with the
+smallest rank number.
 
 --8<-- "docs/contracts/generated/enum/vocab.Method.md"
 
-`measured`
-:   From a measurement. The entry should cite it; the schema does not require that.
+`measured` (rank 1)
+:   From a measurement of the thing it prices. The entry cites it.
 
-`literature`
-:   From a published result that was not independently reproduced.
-
-`vendor_spec`
-:   A datasheet figure: nominal, not achieved.
-
-`copied`
-:   Carried over from another scope, which `copied_from` names.
-
-`assumed`
-:   A placeholder, or an estimate reached by reasoning. A careful estimate is still assumed;
-    the reasoning goes in `rationale`.
-
-`not_charged`
-:   Deliberately zero, so that "no cost" can be told apart from "cost unknown".
-
-`calibrated`
+`calibrated` (rank 2)
 :   Back-solved through the cost model from end-to-end [measured runs](measurement.md), and
     checked against held-out ones. The entry cites its runs as sources of kind
     `measured_case` and names the held-out metrics in `validated`. It is not `derived`,
     which is a catalog [provenance](#provenances): a figure computed from other catalog
     facts.
 
-`measured`, `literature`, `vendor_spec` and `calibrated` count as evidenced. That is a statement about
-the basis of a number, not its quality: a vendor figure is evidenced but nominal.
+`transferred` (rank 3)
+:   A value measured in another scope and carried to this one by a stated rule. The entry names
+    the scope in `transferred_from` and the rule in `transfer_rule`.
+
+`literature` (rank 4)
+:   From a published result that was not independently reproduced.
+
+`vendor_spec` (rank 5)
+:   A datasheet figure: nominal, not achieved.
+
+`roofline` (rank 6)
+:   Derived from a datasheet peak by the roofline form, before any measurement exists.
+
+`assumed` (rank 7)
+:   A placeholder, or an estimate reached by reasoning. A careful estimate is still assumed;
+    the reasoning goes in `rationale`.
+
+`not_charged`
+:   Deliberately zero, so that "no cost" can be told apart from "cost unknown". It has no rank.
+
+`measured`, `calibrated`, `literature` and `vendor_spec` count as evidenced. That is a
+statement about the basis of a number, not its quality: a vendor figure is evidenced but nominal.
+
+A price reports the least trusted effective rank among the coefficients it used. A lookup
+outside the range an entry's fit covered ranks no better than `transferred`, and an entry whose
+interval is unbounded or wider than half its value ranks as `assumed`.
+
+### Rate bases
+
+What a rate in bytes per microsecond measures. SUB-5 bounds a rate by the chip's datasheet
+memory bandwidth only where the rate is a memory rate.
+
+--8<-- "docs/contracts/generated/enum/vocab.RateBasis.md"
+
+`memory`
+:   A rate at which a kernel reads or writes device memory. It cannot exceed the datasheet
+    memory bandwidth. This is the default.
+
+`work`
+:   A rate over a quantity of work counted in bytes, such as a record counted once per query
+    and key pair. It may exceed the memory bandwidth, and the entry's `rationale` says why.
+
+### Measurement times
+
+What a measured number includes (design VAL-9).
+
+--8<-- "docs/contracts/generated/enum/vocab.MeasurementTime.md"
+
+`device`
+:   Device time only.
+
+`device_and_host`
+:   Device time and the host issue time.
+
+### Measurement executions
+
+How the kernels ran when the number was measured.
+
+--8<-- "docs/contracts/generated/enum/vocab.MeasurementExecution.md"
+
+`captured`
+:   From a captured graph.
+
+`eager`
+:   Launched one by one.
+
+### Fit dimensions
+
+The inputs of a priced step that a fit's data can have covered (design VAL-10). A lookup with
+an input outside the recorded range is extrapolated.
+
+--8<-- "docs/contracts/generated/enum/vocab.FitDim.md"
 
 ### Scope keys
 

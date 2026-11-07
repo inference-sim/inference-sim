@@ -60,10 +60,10 @@ PART_ORDER = [
 # Display order and glyph per method. The glyph's shape carries the method on its own, so
 # the encoding survives colour-blindness, greyscale print and forced-colours mode; colour
 # is a second channel, set in extra.css.
-METHODS = ["measured", "vendor_spec", "literature", "copied", "assumed", "not_charged"]
+METHODS = ["measured", "calibrated", "transferred", "literature", "vendor_spec", "roofline", "assumed", "not_charged"]
 GLYPH = {
     "measured": "■", "vendor_spec": "◆", "literature": "▲",
-    "copied": "▼", "assumed": "○", "not_charged": "–",
+    "transferred": "▼", "calibrated": "●", "roofline": "◇", "assumed": "○", "not_charged": "–",
 }
 
 DIRECTIVE = re.compile(r"^<!-- registry:(\w+)(?: ([^>]*?))? -->$", re.MULTILINE)
@@ -568,7 +568,7 @@ def render_usage(args: str) -> str:
             for k in e.body.get("scope", {}):
                 counts[k] += 1
         elif field == "optional":
-            for k in ("sources", "rationale", "ci95", "copied_from", "supersedes",
+            for k in ("sources", "rationale", "ci95", "transferred_from", "transfer_rule", "supersedes",
                       "validated", "unsupported"):
                 if k in e.body:
                     counts[k] += 1

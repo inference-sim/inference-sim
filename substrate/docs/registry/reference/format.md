@@ -37,7 +37,8 @@ field is rejected, not ignored.
 | `sources` | list | by method | If present, non-empty. Required for `literature` and `vendor_spec`; `calibrated` requires at least one of kind `measured_case`. |
 | `rationale` | string | by method | Required for every method except `measured`. |
 | `ci95` | `[low, high]` | no | Finite, `low ≤ high`, and the value must lie inside. |
-| `copied_from` | string | for `copied` | The scope the value was copied from. |
+| `transferred_from` | string | for `transferred` | The scope the value was measured in. |
+| `transfer_rule` | string | for `transferred` | The stated rule that moved the value. |
 | `supersedes` | string | no | The entry this one replaces. |
 | `validated` | metric or list | for `calibrated` | Metrics the value has been checked against. |
 | `unsupported` | metric or list | no | Metrics it has explicitly not been checked against. |
@@ -63,7 +64,7 @@ the committed sets use each one, counted when this page was built.
 
 ### Methods
 
-`measured`, `vendor_spec`, `literature`, `copied`, `assumed`, `not_charged`, `calibrated`.
+`measured`, `calibrated`, `transferred`, `literature`, `vendor_spec`, `roofline`, `assumed`, `not_charged`.
 [Coefficients](../concepts/coefficients.md#method-how-the-value-was-obtained) explains
 each. In use:
 

@@ -1404,12 +1404,13 @@
         "method": {
           "enum": [
             "measured",
+            "calibrated",
+            "transferred",
             "literature",
             "vendor_spec",
-            "copied",
+            "roofline",
             "assumed",
-            "not_charged",
-            "calibrated"
+            "not_charged"
           ],
           "type": "string"
         },

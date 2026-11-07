@@ -38,8 +38,9 @@ profiles:
     thinking: "on"
     category: coding
     acceptance_length: 2.99
-    method: copied
-    copied_from: glm-5.2-fp8/mtp/k3/thinking-on/coding
+    method: transferred
+    transferred_from: glm-5.2-fp8/mtp/k3/thinking-on/coding
+    transfer_rule: the value measured on GLM-5.2 is carried unchanged, because GLM-5.3 shares its base and layer topology
     rationale: >
       Provisional. GLM-5.3 shares GLM-5.2's base and layer topology, so GLM-5.2's curve is
       the closest measured reference; replace it with a run on GLM-5.3.

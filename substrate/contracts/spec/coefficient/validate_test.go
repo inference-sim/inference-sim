@@ -56,8 +56,20 @@ func TestRejects(t *testing.T) {
 		{"not_charged with a value", func(s *Set) {
 			s.Coefficients[0].Method = vocab.MethodNotCharged
 		}},
-		{"copied without a source scope", func(s *Set) {
-			s.Coefficients[0].Method = vocab.MethodCopied
+		{"transferred without a source scope or rule", func(s *Set) {
+			s.Coefficients[0].Method = vocab.MethodTransferred
+		}},
+		{"transferred without a rule", func(s *Set) {
+			s.Coefficients[0].Method = vocab.MethodTransferred
+			s.Coefficients[0].TransferredFrom = "hardware=h100"
+		}},
+		{"transferred_from on a measured entry", func(s *Set) {
+			s.Coefficients[0].TransferredFrom = "hardware=h100"
+		}},
+		{"roofline without the facts it was computed from", func(s *Set) {
+			e := &s.Coefficients[0]
+			e.Method, e.Fitted, e.Sources = vocab.MethodRoofline, false, nil
+			e.Rationale = "larger of flops over peak and bytes over bandwidth"
 		}},
 		{"unknown source kind", func(s *Set) {
 			s.Coefficients[0].Sources[0].Kind = "rumour"
@@ -98,8 +110,8 @@ func TestRejects(t *testing.T) {
 // it is now an error for all non-measured methods, as the Python validator required.
 func TestRationaleRequiredForEveryMethodButMeasured(t *testing.T) {
 	for _, m := range []vocab.Method{
-		vocab.MethodLiterature, vocab.MethodVendorSpec, vocab.MethodCopied,
-		vocab.MethodAssumed, vocab.MethodNotCharged,
+		vocab.MethodLiterature, vocab.MethodVendorSpec, vocab.MethodTransferred,
+		vocab.MethodRoofline, vocab.MethodAssumed, vocab.MethodNotCharged,
 	} {
 		s := validSet()
 		e := &s.Coefficients[2] // the assumed entry
@@ -108,8 +120,10 @@ func TestRationaleRequiredForEveryMethodButMeasured(t *testing.T) {
 		switch m {
 		case vocab.MethodLiterature, vocab.MethodVendorSpec:
 			e.Sources = []Source{{Kind: vocab.SourceDatasheet, Cite: "x", Role: vocab.RolePrimary}}
-		case vocab.MethodCopied:
-			e.CopiedFrom = "hardware=h100"
+		case vocab.MethodTransferred:
+			e.TransferredFrom, e.TransferRule = "hardware=h100", "scaled by the ratio of link bandwidths"
+		case vocab.MethodRoofline:
+			e.Sources = []Source{{Kind: vocab.SourceDatasheet, Cite: "catalog hardware/h200.yaml", Role: vocab.RolePrimary}}
 		case vocab.MethodNotCharged:
 			e.Value = 0
 		}

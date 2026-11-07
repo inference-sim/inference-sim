@@ -568,7 +568,7 @@ def test_hardware_independent_sets_cover_every_catalog_part():
     # A MODEL-SCOPED term may be split across entries -- DeepSeek-V4.1's eager launch cost is
     # derived on h200 and copied to the other parts -- as long as together they cover every
     # part AND the split carries one value: every entry of the (set, name, model) has the
-    # same value, and any entry beyond the first is `copied` with copied_from naming a
+    # same value, and any entry beyond the first is `transferred` with transferred_from naming a
     # sibling's scope. A split may not smuggle in a per-part value.
     split: dict = {}
     for setname, name, body in ENTRIES:
@@ -610,17 +610,17 @@ def test_hardware_independent_sets_cover_every_catalog_part():
         assert len(values) == 1, (
             f"{setname}: {name} for {list(models)} is split across entries with values "
             f"{sorted(values)}; a host term has no per-part value, so a split must carry one.")
-        originals = [b for b in bodies if b.get("method") != "copied"]
+        originals = [b for b in bodies if b.get("method") != "transferred"]
         assert len(originals) == 1, (
             f"{setname}: {name} for {list(models)}: a split needs exactly one original entry "
-            f"and every other `copied`, found {len(originals)} originals.")
+            f"and every other `transferred`, found {len(originals)} originals.")
         orig = originals[0]["scope"].get("hardware", [])
         for b in bodies:
             if b is originals[0]:
                 continue
-            cf = b.get("copied_from", "")
+            cf = b.get("transferred_from", "")
             assert cf.startswith(f"hardware={','.join(orig)}"), (
-                f"{setname}: {name} for {list(models)}: copied_from {cf!r} does not name the "
+                f"{setname}: {name} for {list(models)}: transferred_from {cf!r} does not name the "
                 f"original entry's scope (hardware={','.join(orig)}).")
 
 

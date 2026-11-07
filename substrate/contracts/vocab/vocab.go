@@ -53,43 +53,76 @@ var units = map[Unit]bool{
 func (u Unit) Valid() bool { return units[u] }
 
 // Method records how a value was obtained. It is the field that keeps an estimate
-// distinguishable from a measurement, so it is never inferred from context.
+// distinguishable from a measurement, so it is never inferred from context. The methods
+// are the list of design §9.2, ranked from most to least trusted by Rank; not_charged
+// stands outside the ranking.
 type Method string
 
 const (
-	// MethodMeasured: obtained from a measurement, whose source the entry cites.
+	// MethodMeasured (rank 1): fitted to microbenchmarks of this exact kernel
+	// implementation on this chip, with held-out error reported.
 	MethodMeasured Method = "measured"
-	// MethodLiterature: taken from a published result not independently reproduced.
-	MethodLiterature Method = "literature"
-	// MethodVendorSpec: a datasheet figure. Nominal, not achieved.
-	MethodVendorSpec Method = "vendor_spec"
-	// MethodCopied: carried over from another scope, which copied_from names.
-	MethodCopied Method = "copied"
-	// MethodAssumed: a placeholder or an estimate arrived at by reasoning. The
-	// reasoning belongs in Rationale; a careful estimate is still assumed.
-	MethodAssumed Method = "assumed"
-	// MethodNotCharged: deliberately zero, so a reader can tell "no cost" from
-	// "cost unknown".
-	MethodNotCharged Method = "not_charged"
-	// MethodCalibrated: back-solved through the cost model from end-to-end measured
-	// cases. It is not "derived", which ProvenanceDerived already means: computed from
-	// other catalog facts. A calibrated entry cites its cases as SourceMeasuredCase and
+	// MethodCalibrated (rank 2): a formula with physical structure whose one or two
+	// factors are fitted to composite data (end-to-end runs or whole forward passes) for
+	// this implementation. A calibrated entry cites its cases as SourceMeasuredCase and
 	// records the held-out metrics it was checked against.
 	MethodCalibrated Method = "calibrated"
+	// MethodTransferred (rank 3): measured on a closely related implementation or chip,
+	// and moved here by a stated rule. The entry names the coefficient it came from
+	// (transferred_from) and the rule (transfer_rule).
+	MethodTransferred Method = "transferred"
+	// MethodLiterature (rank 4): a figure from published work, cited exactly.
+	MethodLiterature Method = "literature"
+	// MethodVendorSpec (rank 5): a datasheet figure used directly. Nominal, not achieved.
+	MethodVendorSpec Method = "vendor_spec"
+	// MethodRoofline (rank 6): computed from catalog facts alone, the larger of FLOPs over
+	// peak compute and bytes over peak bandwidth, times a default efficiency taken from the
+	// same primitive family on other chips. The entry cites the catalog facts it used.
+	MethodRoofline Method = "roofline"
+	// MethodAssumed (rank 7): a stated assumption with a reason. A careful estimate is
+	// still assumed; no data unit influenced the value (design D1).
+	MethodAssumed Method = "assumed"
+	// MethodNotCharged: deliberately zero, so a reader can tell "no cost" from "cost
+	// unknown". It is not an estimate and has no rank.
+	MethodNotCharged Method = "not_charged"
 )
 
 var methods = map[Method]bool{
-	MethodMeasured: true, MethodLiterature: true, MethodVendorSpec: true,
-	MethodCopied: true, MethodAssumed: true, MethodNotCharged: true,
-	MethodCalibrated: true,
+	MethodMeasured: true, MethodCalibrated: true, MethodTransferred: true,
+	MethodLiterature: true, MethodVendorSpec: true, MethodRoofline: true,
+	MethodAssumed: true, MethodNotCharged: true,
 }
 
 // Valid reports whether m is a recognized method.
 func (m Method) Valid() bool { return methods[m] }
 
+// Rank is the method's place in the order of design §9.2: 1 for measured to 7 for assumed.
+// A lookup that finds entries of several ranks uses the one with the smallest number.
+// not_charged is outside the ranking and returns 0, with false; so does an unknown method.
+func (m Method) Rank() (rank int, ranked bool) {
+	switch m {
+	case MethodMeasured:
+		return 1, true
+	case MethodCalibrated:
+		return 2, true
+	case MethodTransferred:
+		return 3, true
+	case MethodLiterature:
+		return 4, true
+	case MethodVendorSpec:
+		return 5, true
+	case MethodRoofline:
+		return 6, true
+	case MethodAssumed:
+		return 7, true
+	}
+	return 0, false
+}
+
 // Evidenced reports whether m rests on an observation rather than a judgement.
 // Callers use it to separate a calibrated deployment from an estimated one; it is
-// not a quality ranking, since a vendor spec is evidenced but nominal.
+// not a quality ranking, since a vendor spec is evidenced but nominal. A transferred
+// value rests on an observation made elsewhere and a rule, so it is not evidenced here.
 func (m Method) Evidenced() bool {
 	return m == MethodMeasured || m == MethodLiterature || m == MethodVendorSpec ||
 		m == MethodCalibrated

@@ -60,9 +60,15 @@ never inferred; the author states it.
     unknown". A value of zero under any other method is rejected.
 
 The schema also defines `literature` (a published result not reproduced here),
-`copied` (carried over from another scope, which `copied_from` names) and `calibrated` (back-solved through the cost model from end-to-end
-measured cases, which it cites as `measured_case` sources, with the held-out metrics in
-`validated`). No committed entry uses any of the three.
+`transferred` (measured elsewhere and moved here by a stated rule: `transferred_from` names the
+scope it was measured in and `transfer_rule` states the rule), `roofline` (computed from
+catalog facts alone, which it cites as sources) and `calibrated` (back-solved through the
+cost model from end-to-end measured cases, which it cites as `measured_case` sources, with
+the held-out metrics in `validated`). Ranked from most to least trusted the methods are
+`measured`, `calibrated`, `transferred`, `literature`, `vendor_spec`, `roofline`, `assumed`
+(design §9.2); `not_charged` is outside the ranking. One committed entry is `transferred`
+(DeepSeek-V4.1-Flash's `host_launch_eager_per_kernel` on the parts other than h200); no committed
+entry is `calibrated` or `roofline`.
 
 `fitted` is separate from `method` because the two answer different questions. A
 `vendor_spec` value is never fitted. A `measured` value may be fitted (the GEMM ramp) or

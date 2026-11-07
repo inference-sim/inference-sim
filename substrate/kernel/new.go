@@ -3003,8 +3003,8 @@ func scopeString(e coefficient.Entry, chip string) string {
 	default:
 		out = "unscoped"
 	}
-	if e.CopiedFrom != "" {
-		out += "; copied from " + e.CopiedFrom
+	if e.TransferredFrom != "" {
+		out += "; transferred from " + e.TransferredFrom
 	}
 	return out
 }

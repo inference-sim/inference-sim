@@ -164,8 +164,22 @@ func (e Entry) validate(p *validate.Problems, at string) {
 			len(e.Sources) == 0 {
 			p.Field(at+".sources", "method %q requires at least one source", e.Method)
 		}
-		if e.Method == vocab.MethodCopied && e.CopiedFrom == "" {
-			p.Field(at+".copied_from", "method copied requires copied_from")
+		// VAL-1: each method needs the sources that make it checkable. A transferred value
+		// names the coefficient it came from and the rule that moved it; a roofline value
+		// cites the catalog facts it was computed from.
+		if e.Method == vocab.MethodTransferred {
+			if strings.TrimSpace(e.TransferredFrom) == "" {
+				p.Field(at+".transferred_from", "method transferred requires transferred_from")
+			}
+			if strings.TrimSpace(e.TransferRule) == "" {
+				p.Field(at+".transfer_rule", "method transferred requires transfer_rule, the stated rule that moved the value")
+			}
+		}
+		if e.Method == vocab.MethodRoofline && len(e.Sources) == 0 {
+			p.Field(at+".sources", "method roofline requires at least one source naming the catalog facts it was computed from")
+		}
+		if e.Method != vocab.MethodTransferred && (e.TransferredFrom != "" || e.TransferRule != "") {
+			p.Field(at+".transferred_from", "transferred_from and transfer_rule apply only to method transferred, got method %q", e.Method)
 		}
 		// A calibrated value is only as good as the cases it was fitted to and the ones it
 		// was held out against, so both must be on the entry.
