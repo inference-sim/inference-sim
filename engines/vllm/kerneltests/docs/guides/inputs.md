@@ -55,4 +55,4 @@ name a candidate instead.
 go test ./kerneltests/...
 ```
 
-To test against a different checkout of either, set `BLIS_CATALOG` or `BLIS_REGISTRY`.
+To test against a different checkout of either, set `BLIS_CATALOG` or `BLIS_REGISTRY`. A catalog given this way is read through blis-substrate's loader, which requires each model's `model.yaml` to record the licence of its config.json (`licence:`, design X12). A released blis-catalog (0.3.0, 0.4.0, 0.5.0) has no such field, so the loader refuses it with a `licence: required` error for each model; use a checkout of blis-substrate's `catalog/` at the pinned release or later, or an unreleased blis-catalog that carries the field.

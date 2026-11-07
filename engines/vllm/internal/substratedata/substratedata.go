@@ -34,10 +34,12 @@ var (
 	dirErr error
 )
 
-// Dir is the on-disk directory of the blis-substrate module the current module selects, as
-// `go list -m` reports it from the working directory. A test runs in its package directory,
-// so this is the version the module under test selects: blis-vllm's own pin when blis-vllm's
-// tests run, and the simulator's selection when the simulator's tests run.
+// Dir is the on-disk directory of the blis-substrate module this module's go.mod requires, as
+// `go list -m` reports it from the working directory. locate runs the go command with the
+// workspace off (GOWORK=off) and the module graph read from go.mod alone, and refuses a result
+// whose version is not the one go.mod requires, so a test always gets blis-vllm's own pin, whatever
+// a go.work or a parent module selects. The simulator's tests that need its own selection do not
+// call this package.
 func Dir() (string, error) {
 	once.Do(func() { dir, dirErr = locate("") })
 	return dir, dirErr

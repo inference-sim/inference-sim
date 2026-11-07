@@ -670,7 +670,8 @@ func TestEnginesGivenOneDataShareItsReport(t *testing.T) {
 }
 
 // An overlay named in Roots cannot reach the engine: without the host's Data it is refused,
-// saying so, rather than priced on base data; with the host's Data it is not consulted.
+// saying so, rather than priced on base data; with the host's Data it is refused too, telling the
+// host to open the Data with the overlay (TestRootsAreRefusedBesideTheHostsData).
 func TestOverlayRootsAreRefusedWithoutTheHostsData(t *testing.T) {
 	Register()
 	for _, key := range []string{RootCatalogOverlays, RootRegistryOverlays} {
@@ -681,8 +682,67 @@ func TestOverlayRootsAreRefusedWithoutTheHostsData(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "Input.Data") || !strings.Contains(err.Error(), key) {
 			t.Errorf("Roots[%s] set, no Data: %v, want a refusal telling the host to pass its Data", key, err)
 		}
-		if _, err := New(Input{Spec: spec, Data: embeddedData(t)}); err != nil {
-			t.Errorf("Roots[%s] set with the host's Data: %v, want the Data used as given", key, err)
+		if _, err := New(Input{Spec: spec, Data: embeddedData(t)}); err == nil {
+			t.Errorf("Roots[%s] set beside the host's Data was accepted, and would be ignored", key)
 		}
+	}
+}
+
+// Through the registered factory one engine build opens the catalog and registry once, so its
+// lookups land in one report (VAL-6). Prepare and Pricer each opened a fresh copy, about 105 ms
+// apiece, and split the lookups between two reports.
+func TestOneBuildOpensItsDataOnce(t *testing.T) {
+	Register()
+	opens := 0
+	was := openData
+	openData = func(o load.Options) (*load.Data, error) { opens++; return was(o) }
+	defer func() { openData = was }()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	if _, err := engine.New(spec); err != nil {
+		t.Fatal(err)
+	}
+	if opens != 1 {
+		t.Errorf("one build through the registered factory opened its data %d times, want once", opens)
+	}
+	// Prepare and Pricer alone each open their own, as before: a caller that wants one step.
+	opens = 0
+	if _, err := Factory().Prepare(spec); err != nil {
+		t.Fatal(err)
+	}
+	if opens != 1 {
+		t.Errorf("Prepare opened its data %d times, want once", opens)
+	}
+}
+
+// When the host passes its opened Data, a catalog, registry or overlay root would be ignored: the
+// engine reads the Data as it is. Each is refused, telling the host to open the Data with the root,
+// and the same spec with no root builds.
+func TestRootsAreRefusedBesideTheHostsData(t *testing.T) {
+	Register()
+	for _, key := range []string{RootCatalog, RootRegistry, RootCatalogOverlays, RootRegistryOverlays} {
+		r := roots(t, "d058-032.yaml")
+		dir := t.TempDir()
+		r[key] = dir
+		_, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, Data: embeddedData(t)})
+		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), dir) || !strings.Contains(err.Error(), "load.Options") {
+			t.Errorf("Roots[%s] beside the host's Data: %v, want a refusal naming the root and telling the host to open its Data with it", key, err)
+		}
+	}
+	if _, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}, Data: embeddedData(t)}); err != nil {
+		t.Errorf("no root beside the host's Data: %v", err)
+	}
+}
+
+// The report of one build holds the lookups of both steps: the pricer's coefficients and the
+// pool's data, in the one Data the host passed, and a build with no Data leaves no other copy.
+func TestOneBuildWritesOneReport(t *testing.T) {
+	Register()
+	shared := embeddedData(t)
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
+		t.Fatal(err)
+	}
+	if len(shared.Report().Selected) == 0 {
+		t.Fatal("the build's lookups are not in the host's Data")
 	}
 }

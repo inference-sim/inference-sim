@@ -33,6 +33,12 @@ type Factory struct {
 	// block count, the pool's pipeline_parallel_size, the model runner), or the whole block from
 	// the scenario. Nil decodes the spec as given.
 	Prepare func(s engine.Spec) (engine.Spec, error)
+	// Open, when set, replaces Prepare and Pricer for a v0.32.0 spec: it completes the spec as
+	// Prepare does and returns the function that makes the spec's pricer, which New calls once the
+	// engine block has resolved. A caller whose two steps read the same data (vllmengine opens a
+	// pool, and with it the catalog and registry) opens it once here, so one build has one
+	// report and pays for one open. New reads Prepare and Pricer only when Open is nil.
+	Open func(s engine.Spec) (engine.Spec, func() (Pricer, error), error)
 }
 
 // Kind implements engine.Factory.
@@ -58,7 +64,24 @@ func (f Factory) New(s engine.Spec) (engine.Engine, error) {
 		return nil, fmt.Errorf("vllm: this build models vLLM %s; engine_version %q is refused (compatibility "+
 			"releases: %v)", Version, s.UpstreamVersion, CompatVersions)
 	}
-	if f.Prepare != nil {
+	pricer := func() (Pricer, error) {
+		if f.Pricer == nil {
+			return nil, fmt.Errorf("vllm: Factory.Pricer is nil: the caller prices steps (the latency kernel, " +
+				"or fixed durations in a behavioural test)")
+		}
+		p, err := f.Pricer(s)
+		if err != nil {
+			return nil, fmt.Errorf("vllm: pricer: %w", err)
+		}
+		return p, nil
+	}
+	switch {
+	case f.Open != nil:
+		var err error
+		if s, pricer, err = f.Open(s); err != nil {
+			return nil, err
+		}
+	case f.Prepare != nil:
 		var err error
 		if s, err = f.Prepare(s); err != nil {
 			return nil, err
@@ -72,13 +95,9 @@ func (f Factory) New(s engine.Spec) (engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	if f.Pricer == nil {
-		return nil, fmt.Errorf("vllm: Factory.Pricer is nil: the caller prices steps (the latency kernel, " +
-			"or fixed durations in a behavioural test)")
-	}
-	p, err := f.Pricer(s)
+	p, err := pricer()
 	if err != nil {
-		return nil, fmt.Errorf("vllm: pricer: %w", err)
+		return nil, err
 	}
 	if st.dp.ranks > 1 {
 		return newDPGroup(st, p)

@@ -13,11 +13,15 @@
 // report lives on the load.Data it was opened as, and the engine keeps no data of its own
 // between calls: there is no process-wide cache. A host that wants the engine's lookups in its
 // run's report, or that opened its data with overlays, opens one load.Data per run and builds
-// the engine with New(Input{Spec: ..., Data: data}); the engine then reads that Data as it is.
+// the engine with New(Input{Spec: ..., Data: data}); the engine then reads that Data as it is,
+// and refuses a catalog, registry or overlay root in Roots, which it would otherwise ignore.
 // A host that registers the factory and calls engine.New(Spec) hands the engine no Data, so
-// each call opens a fresh one from Roots[RootCatalog] and Roots[RootRegistry] (the embedded
-// copy when absent), whose report nobody reads, and an overlay is refused (RootCatalogOverlays,
-// RootRegistryOverlays) until the engine reads overlays itself. For that pool the factory:
+// each call opens one fresh Data for the whole build (not one for each of its steps) from
+// Roots[RootCatalog] and Roots[RootRegistry] (the embedded copy when absent), whose report
+// nobody reads, and an overlay is refused (RootCatalogOverlays,
+// RootRegistryOverlays) until the engine reads overlays itself. inference-sim adopting
+// Input{Data}, so that a whole run shares one report, is
+// https://github.com/inference-sim/blis-vllm/issues/90. For that pool the factory:
 //
 //   - prices every step with blis-latency-kernel, the same kernel the compatibility engine's
 //     compat/kernelmodel opens, so a 0.32.0 run and a 0.31.0 run of one deployment are priced by
@@ -55,7 +59,10 @@ import (
 // The Roots keys the factory reads.
 const (
 	// RootCatalog is a directory with blis-substrate's catalog layout that replaces the
-	// embedded catalog; absent or empty means the embedded copy (design §3.3).
+	// embedded catalog; absent or empty means the embedded copy (design §3.3). The loader requires
+	// each model's model.yaml to carry its licence (X12), which blis-catalog 0.3.0 to 0.5.0 lack, so
+	// a released blis-catalog is refused here with "licence: required"; the directory must be
+	// blis-substrate's catalog/ or a catalog that has the field.
 	RootCatalog = "catalog"
 	// RootRegistry is the same for the registry.
 	RootRegistry = "registry"
@@ -93,12 +100,28 @@ type Input struct {
 // from in, reading in.Data when set.
 func New(in Input) (engine.Engine, error) { return factoryFor(in.Data).New(in.Spec) }
 
+// factoryFor builds the factory over the host's opened data, or none. A build opens its pool once,
+// with the data once, and completes the engine block and makes the pricer from that one pool, so
+// the build has one report and pays for one open (vllm.Factory.Open). Prepare and Pricer stay set
+// for a caller that wants one step alone.
 func factoryFor(data *load.Data) vllm.Factory {
 	return vllm.Factory{
 		Pricer:  func(s engine.Spec) (vllm.Pricer, error) { return pricerFor(s, data) },
 		Prepare: func(s engine.Spec) (engine.Spec, error) { return prepare(s, data) },
+		Open: func(s engine.Spec) (engine.Spec, func() (vllm.Pricer, error), error) {
+			p, err := open(s, data)
+			if err != nil {
+				return s, nil, err
+			}
+			s.Config = p.complete(s.Config)
+			return s, func() (vllm.Pricer, error) { return pricerOf(p), nil }, nil
+		},
 	}
 }
+
+// openData opens the catalog and registry a build with no host Data reads. A variable so a test
+// can count the opens: one build opens its data once.
+var openData = kernelmodel.OpenData
 
 // pool is one opened pool: the kernel that prices it, its KV block count and its engine block.
 // kvBytes is the memory a hybrid model's pool was sized from (poolBlocks), 0 for one sized as
@@ -128,6 +151,17 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 		return pool{}, fmt.Errorf("vllmengine: Roots[%q] must name the scenario file", RootScenario)
 	}
 	data := given
+	if data != nil {
+		// The host's Data is read as it is. A root that names other data would be ignored, and the
+		// run would price on data it did not name, so it is refused.
+		for _, k := range []string{RootCatalog, RootRegistry, RootCatalogOverlays, RootRegistryOverlays} {
+			if s.Roots[k] != "" {
+				return pool{}, fmt.Errorf("vllmengine: Roots[%q] is %q, and the host also passed its opened Data (Input.Data), "+
+					"which the engine reads as it is, so the root would be ignored: open the Data with that root "+
+					"(load.Options) and drop it from Roots", k, s.Roots[k])
+			}
+		}
+	}
 	if data == nil {
 		for _, k := range []string{RootCatalogOverlays, RootRegistryOverlays} {
 			if s.Roots[k] != "" {
@@ -137,7 +171,7 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 			}
 		}
 		var err error
-		data, err = kernelmodel.OpenData(load.Options{Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+		data, err = openData(load.Options{Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
 		if err != nil {
 			return pool{}, fmt.Errorf("vllmengine: %w", err)
 		}
@@ -591,6 +625,11 @@ func pricerFor(s engine.Spec, data *load.Data) (vllm.Pricer, error) {
 	if err != nil {
 		return nil, err
 	}
+	return pricerOf(p), nil
+}
+
+// pricerOf is the kernel's pricing for an opened pool.
+func pricerOf(p pool) vllm.Pricer {
 	k := kernelPricer{m: p.model}
 	if per, err := offloadBytesPerBlock(p.model); err == nil {
 		k.blockBytes = per
@@ -598,7 +637,7 @@ func pricerFor(s engine.Spec, data *load.Data) (vllm.Pricer, error) {
 	if g, err := offloadGroupBytes(p.model); err == nil {
 		k.groupBytes = g
 	}
-	return k, nil
+	return k
 }
 
 // kernelPricer prices an engine.Batch with the latency kernel, as compat/kernelmodel prices the

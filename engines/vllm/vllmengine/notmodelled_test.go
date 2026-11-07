@@ -391,3 +391,20 @@ func TestADeploymentStatesDPSyncInterval(t *testing.T) {
 		t.Errorf("dp_sync_interval 1 ends at %d and 64 at %d: the stated interval does not reach the group", e1, e64)
 	}
 }
+
+// rejection_sample_method is not_modelled (#29) only for the value that fixes the acceptance length.
+// "standard" and "block", the values recorded runs state, are accepted: acceptance is supplied, so
+// they decide nothing the engine takes from the setting. "synthetic" is refused.
+func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
+	Register()
+	for _, c := range []struct {
+		method  string
+		refused bool
+	}{{"standard", false}, {"block", false}, {"synthetic", true}} {
+		extra := "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: " + c.method + "}\n"
+		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
+		if c.refused != (err != nil) {
+			t.Errorf("rejection_sample_method %s: err %v, want refused %t", c.method, err, c.refused)
+		}
+	}
+}

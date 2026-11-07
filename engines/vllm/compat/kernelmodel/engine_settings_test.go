@@ -493,3 +493,72 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
 		}
 	}
 }
+
+// A prefill and a decode pool are two engines, and each resolves its own block size from its own
+// tensor-parallel width (Platform.update_block_size_for_backend runs in each engine's workers). So the
+// width check of the resolution (MaxBlockSizeTP, the widest width the oracle ran) fires for the pool
+// that is too wide and for that pool only: a decode pool at tp 4 resolves beside a prefill pool at
+// tp 32 that is refused, naming its own width.
+func TestAPrefillAndADecodePoolResolveTheirBlockSizesFromTheirOwnWidths(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", "llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair := func(prefillTP, decodeTP int) string {
+		body := string(raw)
+		head, dep, _ := strings.Cut(body, "\n---\n")
+		pool := func(role string, tp int) string {
+			p := regexp.MustCompile(`(?s)pools:\n(.*)$`).FindStringSubmatch(dep)[1]
+			p = strings.Replace(p, "role: colocated", "role: "+role, 1)
+			p = regexp.MustCompile(`tp: \d+`).ReplaceAllString(p, fmt.Sprintf("tp: %d", tp))
+			p = regexp.MustCompile(`(?m)^\s*block_size:.*\n`).ReplaceAllString(p, "")
+			p = strings.Replace(p, "nodes: 1", fmt.Sprintf("nodes: %d", max(1, tp/8)), 1)
+			return p
+		}
+		nodes := max(1, prefillTP/8) + max(1, decodeTP/8)
+		head = strings.Replace(head, "nodes: 1\n", fmt.Sprintf("nodes: %d\n  fabric: ib-400g\n", nodes), 1)
+		return head + "\n---\nkind: Deployment\nname: pd\n\npools:\n" + pool("prefill", prefillTP) + pool("decode", decodeTP) +
+			"\npd_transfer:\n  connector: NixlConnector\n"
+	}
+	open := func(prefillTP, decodeTP int) (prefill, decode error) {
+		r := repos()
+		r.Scenarios = t.TempDir()
+		if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(pair(prefillTP, decodeTP)), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		roles, err := RolePools("v.yaml", r)
+		if err != nil {
+			t.Fatalf("RolePools: %v", err)
+		}
+		engineOf := func(idx int) error {
+			m, err := OpenPool("v.yaml", r, idx)
+			if err != nil {
+				return err
+			}
+			_, err = m.Engine()
+			return err
+		}
+		return engineOf(roles[deployment.RolePrefill]), engineOf(roles[deployment.RoleDecode])
+	}
+	// Both within the oracle's widths: both resolve.
+	if p, d := open(8, 4); p != nil || d != nil {
+		t.Fatalf("prefill tp 8, decode tp 4: %v, %v; want both to resolve", p, d)
+	}
+	// Prefill at tp 32, past the 16 the oracle ran: the prefill pool is refused naming its own width
+	// and #68, and the decode pool at tp 4 is not.
+	p, d := open(32, 4)
+	if p == nil || !strings.Contains(p.Error(), "tensor_parallel_size 32") || !strings.Contains(p.Error(), "blis-vllm/issues/68") {
+		t.Errorf("prefill tp 32: %v, want a refusal naming tensor_parallel_size 32 and #68", p)
+	}
+	if d != nil {
+		t.Errorf("decode tp 4 beside a prefill at tp 32: %v, want it to resolve", d)
+	}
+	// And the other way round: the decode pool is the wide one.
+	p, d = open(4, 32)
+	if d == nil || !strings.Contains(d.Error(), "tensor_parallel_size 32") {
+		t.Errorf("decode tp 32: %v, want a refusal naming tensor_parallel_size 32", d)
+	}
+	if p != nil {
+		t.Errorf("prefill tp 4 beside a decode at tp 32: %v, want it to resolve", p)
+	}
+}
