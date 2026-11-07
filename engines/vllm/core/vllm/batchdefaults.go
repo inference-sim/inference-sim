@@ -1,4 +1,7 @@
-// Original to blis-vllm.
+// SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+// Derived from vllm/engine/arg_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be).
+// The translation covers get_batch_defaults and _set_default_max_num_seqs_and_batched_tokens_args.
 
 package vllm
 
