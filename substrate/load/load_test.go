@@ -215,3 +215,98 @@ func TestAPathReplacesTheEmbeddedCopy(t *testing.T) {
 		t.Error("a catalog path that does not exist was accepted")
 	}
 }
+
+// X12: no simulation path reads, requires or enforces a licence. A model.yaml with no licence
+// record loads, as the base catalog (a BLIS_CATALOG-style root) and as a catalog overlay; a
+// licence record that is present but invalid does not stop the load either. The licence rule
+// is a CI check (validate-catalog); the project's own embedded catalog still passes it.
+func TestTheLoaderDoesNotRequireALicence(t *testing.T) {
+	const placeholder = "licence:\n  id: LicenseRef-other\n  evidence: http://example.invalid/README.md\n"
+	strip := func(t *testing.T, path string, with string) {
+		t.Helper()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := strings.Index(string(b), "licence:")
+		if i < 0 {
+			t.Fatalf("%s has no licence block to strip", path)
+		}
+		write(t, path, string(b[:i])+with)
+	}
+	for name, with := range map[string]string{"no licence": "", "invalid licence": placeholder} {
+		t.Run("root, "+name, func(t *testing.T) {
+			cat, _ := copyTree(t)
+			strip(t, filepath.Join(cat, "models", "qwen3-14b", "model.yaml"), with)
+			d, err := Open(Options{Catalog: cat})
+			if err != nil {
+				t.Fatalf("the loader refused a catalog over its licence record: %v", err)
+			}
+			if _, err := d.Model("qwen3-14b"); err != nil {
+				t.Error(err)
+			}
+		})
+		t.Run("overlay, "+name, func(t *testing.T) {
+			ov := t.TempDir()
+			for _, f := range []string{"graph.yaml", "model.yaml"} {
+				b, err := os.ReadFile(filepath.Join(repoDir, "catalog", "models", "qwen3-14b", f))
+				if err != nil {
+					t.Fatal(err)
+				}
+				write(t, filepath.Join(ov, "models", "private-model", f), strings.ReplaceAll(string(b), "qwen3-14b", "private-model"))
+			}
+			strip(t, filepath.Join(ov, "models", "private-model", "model.yaml"), with)
+			d, err := Open(Options{CatalogOverlays: []string{ov}})
+			if err != nil {
+				t.Fatalf("the loader refused an overlay over its licence record: %v", err)
+			}
+			if _, err := d.Model("private-model"); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	t.Run("a licence registry with off-list terms", func(t *testing.T) {
+		cat, _ := copyTree(t)
+		p := filepath.Join(cat, "measurements", "sources.yaml")
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Make the first verified source redistributable under a licence not on the allow-list.
+		out := strings.Replace(string(b), "license: Apache-2.0\n    status: verified", "license: LicenseRef-unlisted\n    status: verified", 1)
+		if out == string(b) {
+			t.Fatal("no verified Apache-2.0 source to edit")
+		}
+		write(t, p, out)
+		if _, err := Open(Options{Catalog: cat}); err != nil {
+			t.Fatalf("the loader judged a registry's licence terms: %v", err)
+		}
+	})
+	t.Run("an unknown key is still refused", func(t *testing.T) {
+		cat, _ := copyTree(t)
+		p := filepath.Join(cat, "models", "qwen3-14b", "model.yaml")
+		b, _ := os.ReadFile(p)
+		write(t, p, string(b)+"licence_note: x\n")
+		if _, err := Open(Options{Catalog: cat}); err == nil || !strings.Contains(err.Error(), "licence_note") {
+			t.Errorf("strict decoding was lost: %v", err)
+		}
+	})
+}
+
+// X12 (CI side): every model of the project's own embedded catalog records a licence that
+// passes the licence rule, so the requirement removed from the loader is still met by the
+// data the project ships.
+func TestTheEmbeddedCatalogRecordsEveryLicence(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.catalog.Identities) == 0 {
+		t.Fatal("the embedded catalog has no model identities")
+	}
+	for name, id := range d.catalog.Identities {
+		if p := id.ValidateLicence(); !p.OK() {
+			t.Errorf("models/%s/model.yaml: %s", name, p.Error())
+		}
+	}
+}

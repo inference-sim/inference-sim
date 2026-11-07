@@ -43,7 +43,8 @@ import (
 type Identity struct {
 	Name   string  `yaml:"name"`
 	Source *Source `yaml:"source"`
-	// Licence is the licence the model's vendor config.json is published under (X12).
+	// Licence is the licence the model's vendor config.json is published under (X12). The
+	// loader decodes it and does not require it; ValidateLicence, run in CI, does.
 	Licence *Licence `yaml:"licence"`
 	// Config pins the vendor config.json by hash, for a model whose licence is not on the
 	// allow-list: such a model commits only this hash and the source revision, and the
@@ -87,28 +88,65 @@ type Source struct {
 	Retrieved string `yaml:"retrieved,omitempty"`
 }
 
-// Validate performs field-level validation of a model identity manifest: a name must be
-// present (the directory-name match is checked by the caller that knows the directory),
-// and the source provenance must name a provider, a repo and a revision.
+// Validate performs the structural validation of a model identity manifest, the part the
+// loader applies on every load: a name must be present (the directory-name match is checked
+// by the caller that knows the directory), the source provenance must name a provider, a repo
+// and a revision, and a config pin must be a SHA-256.
+//
+// It does not look at the licence block. No simulation path reads, requires or enforces a
+// licence (X12): the block is decoded so that CI can read it, and ValidateLicence is the CI
+// check on it.
 func (id *Identity) Validate() *validate.Problems {
 	p := &validate.Problems{}
+	id.validateStructure(p)
+	return p
+}
+
+func (id *Identity) validateStructure(p *validate.Problems) {
 	if id.Name == "" {
 		p.Field("name", "required")
 	}
 	if id.Source == nil {
 		p.Field("source", "required: a model entry records where its config was retrieved from")
-		return p
+		return
 	}
 	p.Merge("source", id.Source.Validate())
-	if id.Licence == nil {
-		p.Field("licence", "required: a model entry records its config.json's licence (X12)")
-	} else {
-		p.Merge("licence", id.Licence.Validate(id.Source))
-	}
 	if id.Config != nil && !validate.IsSHA256(id.Config.SHA256) {
 		p.Field("config.sha256", "%q is not a lowercase hex SHA-256", id.Config.SHA256)
 	}
+}
+
+// ValidateLicence is the CI check on the licence block alone (X12): the project's own catalog
+// records, for each model, the licence its config.json is published under, and records it
+// well. It is run by validate-catalog and by the substrate's own tests, never by the loader,
+// so a catalog a user supplies is not refused for lacking a licence record.
+//
+// A model with no source is reported by Validate; it has no revision to read the licence at,
+// so this check has nothing to add.
+func (id *Identity) ValidateLicence() *validate.Problems {
+	p := &validate.Problems{}
+	id.validateLicence(p)
 	return p
+}
+
+// ValidateWithLicence is Validate followed by ValidateLicence, reported together, as
+// validate-catalog reports a model.yaml.
+func (id *Identity) ValidateWithLicence() *validate.Problems {
+	p := &validate.Problems{}
+	id.validateStructure(p)
+	id.validateLicence(p)
+	return p
+}
+
+func (id *Identity) validateLicence(p *validate.Problems) {
+	if id.Source == nil {
+		return
+	}
+	if id.Licence == nil {
+		p.Field("licence", "required: a model entry records its config.json's licence (X12)")
+		return
+	}
+	p.Merge("licence", id.Licence.Validate(id.Source))
 }
 
 var licenceRef = regexp.MustCompile(`^(LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.+-]*)$`)
@@ -122,7 +160,7 @@ var placeholderLicences = map[string]bool{
 	"LicenseRef-unknown":     true,
 }
 
-// Validate checks a licence record: an identifier in SPDX form, and evidence at the
+// Validate checks a licence record (a CI check; see Identity.ValidateLicence): an identifier in SPDX form, and evidence at the
 // source's pinned revision.
 func (l *Licence) Validate(src *Source) *validate.Problems {
 	p := &validate.Problems{}

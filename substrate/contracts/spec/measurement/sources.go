@@ -40,13 +40,24 @@ type Evidence struct {
 
 var slug = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
-// Validate performs field-level validation of the registry.
-func (r *Registry) Validate() *validate.Problems {
+// Validate is the CI check on the registry (X12, D6): the structural checks of ValidateStructure
+// and every rule about the terms themselves, namely what a verified source must state, the
+// allow-list for redistribution, and the notes an unverified or refused source owes. The
+// validators run it on the project's own catalog.
+func (r *Registry) Validate() *validate.Problems { return r.validate(true) }
+
+// ValidateStructure is the check the loader applies: the document is well formed. It does
+// not judge the terms. No simulation path reads, requires or enforces a licence (X12), so a
+// catalog a user supplies is not refused for what its registry says, or fails to say, about
+// a source's licence.
+func (r *Registry) ValidateStructure() *validate.Problems { return r.validate(false) }
+
+func (r *Registry) validate(terms bool) *validate.Problems {
 	p := &validate.Problems{}
 	if r.Kind != "MeasurementSources" {
 		p.Field("kind", "must be %q, got %q", "MeasurementSources", r.Kind)
 	}
-	if len(r.Sources) == 0 {
+	if terms && len(r.Sources) == 0 {
 		p.Field("sources", "a registry with no sources permits nothing")
 	}
 	seen := map[string]bool{}
@@ -59,12 +70,12 @@ func (r *Registry) Validate() *validate.Problems {
 			p.Field(at+".id", "duplicate source %q", l.ID)
 		}
 		seen[l.ID] = true
-		l.validate(p, at)
+		l.validate(p, at, terms)
 	}
 	return p
 }
 
-func (l License) validate(p *validate.Problems, at string) {
+func (l License) validate(p *validate.Problems, at string, terms bool) {
 	if l.Title == "" {
 		p.Field(at+".title", "required")
 	}
@@ -81,6 +92,9 @@ func (l License) validate(p *validate.Problems, at string) {
 			p.Field(pat, "duplicate use %q", u)
 		}
 		permitted[u] = true
+	}
+	if !terms {
+		return
 	}
 	switch l.Status {
 	case LicenseVerified:

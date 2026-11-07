@@ -602,3 +602,35 @@ func TestRunLicenceCheck(t *testing.T) {
 		})
 	}
 }
+
+// X12: the licence rule lives here, not in the loader. A model.yaml with no licence record, or
+// with an invalid or placeholder one, fails the validator, which names the licence and X12.
+func TestRunRequiresALicenceRecord(t *testing.T) {
+	const head = "name: tiny-llm\nsource:\n  provider: huggingface\n  repo: example/Tiny-LLM\n  revision: deadbeef\n"
+	const ev = "  evidence: https://huggingface.co/example/Tiny-LLM/raw/deadbeef/README.md\n"
+	for _, c := range []struct{ name, tail, want string }{
+		{"no licence", "", "licence: required: a model entry records its config.json's licence (X12)"},
+		{"placeholder", "licence:\n  id: LicenseRef-other\n" + ev, "names no licence text"},
+		{"bad id", "licence:\n  id: Llama 2\n" + ev, "is not an SPDX identifier"},
+		{"unpinned", "licence:\n  id: Apache-2.0\n  evidence: https://huggingface.co/example/Tiny-LLM/raw/main/README.md\n", "does not name the pinned revision"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root := catalogWith(t, map[string]string{
+				"models/tiny-llm/config.json": validConfigJSON,
+				"models/tiny-llm/model.yaml":  head + c.tail,
+			})
+			code, out, errb := exercise(t, root)
+			if code != 1 || !strings.Contains(out+errb, c.want) {
+				t.Fatalf("exit %d, want 1 with %q in:\n%s\n%s", code, c.want, out, errb)
+			}
+		})
+	}
+}
+
+// X12: the project's own committed catalog passes the validator, licence rule included.
+func TestRunTheCommittedCatalogPasses(t *testing.T) {
+	code, out, errb := exercise(t, filepath.Join("..", "..", "..", "catalog"))
+	if code != 0 {
+		t.Fatalf("the committed catalog fails validate-catalog (exit %d):\n%s\n%s", code, out, errb)
+	}
+}

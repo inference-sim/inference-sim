@@ -409,7 +409,7 @@ the entry is and where its `config.json` came from.
 |---|---|---|---|
 | `name` | string | yes | Must equal the model's directory name. |
 | `source` | mapping | yes | Where the vendor configuration was fetched from, below. |
-| `licence` | mapping | yes | The licence `config.json` is published under, below (X12). |
+| `licence` | mapping | no | The licence `config.json` is published under, below (X12). The loader decodes it and does not require it; `validate-catalog` requires it in the project's own catalog. |
 | `config` | mapping | no | The SHA-256 of a `config.json` that is not committed, below (X12). |
 
 ### `source`
@@ -544,9 +544,14 @@ Two problems are warnings: a layer kind that neither the stack nor the speculato
 and an `emit` condition on a node that is not a collective.
 
 A model identity is invalid if `name` is empty, `source` is absent, or `source` lacks a
-`provider`, `repo` or `revision`; if `licence` is absent, its `id` is not an SPDX identifier or
-`LicenseRef-<name>`, or its `evidence` is not an `https` URL naming the pinned revision; or if
-`config.sha256` is not a lowercase hex SHA-256.
+`provider`, `repo` or `revision`; or if `config.sha256` is not a lowercase hex SHA-256. This is
+all the loader checks. No simulation path reads, requires or enforces a licence (X12), so a
+catalog or overlay a user supplies is not refused for lacking a `licence` record, or for a
+record that is not well formed.
+
+The project's own catalog is held to more, in CI. `validate-catalog` fails a `model.yaml`
+whose `licence` is absent, whose `id` is not an SPDX identifier or `LicenseRef-<name>` that
+names a licence text, or whose `evidence` is not an `https` URL naming the pinned revision.
 
 `validate-catalog` also checks that `name` in both `graph.yaml` and `model.yaml` equals the
 directory name.

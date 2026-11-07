@@ -87,7 +87,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X12** (partial; target ci by M1) Only derived values are committed, never third-party data, with one exception: vendor config.json files whose licence is on the allow-list.
   - `new`, pull_request: Name scan in every repository, which also reads the text of every open issue each night
   - `ci`, pull_request: Provenance schema rules (`go run ./validate/cmd/validate-catalog catalog`)
-  - `ci`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml (`validate/cmd/validate-catalog: TestRunLicenceCheck`)
+  - `ci`, pull_request: A check that every committed config.json has an allow-listed licence in its model.yaml. It runs in CI on the project's own catalog; the loader does not require a licence record (`validate/cmd/validate-catalog: TestRunLicenceCheck`)
 - **X13** (partial; target ci by M1) Every behaviour change has a test that fails without it.
   - `new`, pull_request: The corpus comparison, run by the scoring harness at the pinned digest from each repository's CI, for pull requests declared as refactors
   - `new`, pull_request: Landing gate (VAL-6)

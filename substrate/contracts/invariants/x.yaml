@@ -1017,11 +1017,12 @@
     test: go run ./validate/cmd/validate-catalog catalog
   - repo: blis-substrate
     check: >-
-      A check that every committed config.json has an allow-listed licence in its model.yaml
+      A check that every committed config.json has an allow-listed licence in its model.yaml. It runs
+      in CI on the project's own catalog; the loader does not require a licence record
     runs: pull_request
     status: ci
     test: 'validate/cmd/validate-catalog: TestRunLicenceCheck'
-    known_bad: 'validate/cmd/validate-catalog: TestRunLicenceCheck'
+    known_bad: 'validate/cmd/validate-catalog: TestRunRequiresALicenceRecord'
   review: null
   status: partial
   target:

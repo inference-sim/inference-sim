@@ -705,12 +705,12 @@ licence:
 	if id.Licence == nil || id.Licence.ID != "MIT" {
 		t.Errorf("licence did not parse: %+v", id.Licence)
 	}
-	if p := id.Validate(); !p.OK() {
+	if p := id.ValidateWithLicence(); !p.OK() {
 		t.Errorf("a loaded identity failed validation:\n%s", p.Error())
 	}
 }
 
-// X12: the licence record is required, names an SPDX identifier or LicenseRef, and reads
+// X12: the licence record, checked in CI (ValidateLicence) and never by the loader, is required, names an SPDX identifier or LicenseRef, and reads
 // the licence at the pinned revision. Each case is a known-bad identity (X18).
 func TestModelIdentityLicence(t *testing.T) {
 	const rev = "b5968e9190ef611bbf34a7229255be88a0e937c1"
@@ -719,7 +719,7 @@ func TestModelIdentityLicence(t *testing.T) {
 			Source:  &model.Source{Provider: "huggingface", Repo: "o/m", Revision: rev},
 			Licence: &model.Licence{ID: "LicenseRef-llama2", Evidence: "https://huggingface.co/o/m/raw/" + rev + "/README.md"}}
 	}
-	if p := good().Validate(); !p.OK() {
+	if p := good().ValidateWithLicence(); !p.OK() {
 		t.Fatalf("a good identity failed: %s", p.Error())
 	}
 	for name, c := range map[string]struct {
@@ -736,8 +736,14 @@ func TestModelIdentityLicence(t *testing.T) {
 	} {
 		id := good()
 		c.edit(id)
-		if p := id.Validate(); p.OK() || !strings.Contains(p.Error(), c.want) {
+		if p := id.ValidateWithLicence(); p.OK() || !strings.Contains(p.Error(), c.want) {
 			t.Errorf("%s: want %q, got %v", name, c.want, p.Error())
+		}
+		// The loader's check must not see a licence fault, only the structural ones.
+		if name != "bad config hash" {
+			if p := id.Validate(); !p.OK() {
+				t.Errorf("%s: the structural check refused a licence fault: %s", name, p.Error())
+			}
 		}
 	}
 }
@@ -856,7 +862,7 @@ func TestLoadCatalogModels(t *testing.T) {
 			if id.Name != name {
 				t.Errorf("%s/model.yaml: name %q does not match directory %q", name, id.Name, name)
 			}
-			if p := id.Validate(); !p.OK() {
+			if p := id.ValidateWithLicence(); !p.OK() {
 				t.Errorf("%s/model.yaml failed validation:\n%s", name, p.Error())
 			}
 		}
