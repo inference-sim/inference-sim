@@ -85,6 +85,15 @@ BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
   python -I oracle/blocksize/oracle.py <vllm checkout> json > core/vllm/blocksize_table.json
 ```
 
+A derived-only model (its licence does not let the catalog redistribute it, as minimax-m2.7)
+has no `config.json` in the catalog. The oracle then fetches that file from the `source` and
+`revision` in the model's `model.yaml` and refuses it unless its SHA-256 equals `config.sha256`
+there, so the oracle reads the model's real file and no attention fact is copied. This needs
+network access to huggingface.co (in CI too); a failed fetch fails the run and never drops a model.
+`BLIS_ORACLE_FETCH_CACHE` names the cache directory (default: a temporary directory), keyed by
+digest and re-verified on every read; `HF_TOKEN`, if set, is sent to huggingface.co only. The file
+is never written into the repository or the catalog.
+
 Each combination is also run at every tensor-parallel width from 1 to 16 (`TP_WIDTHS`), and
 resolves only if the size is the same at all of them. The table is valid for a width up to 16, and
 `ResolveBlockSize` refuses a wider pool, citing blis-vllm#68.
