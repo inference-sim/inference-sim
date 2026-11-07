@@ -66,25 +66,23 @@ func CheckFits(c *Catalog, r *Registry) []Problem {
 }
 
 // CheckOrdered refuses two entries of one name, in any sets, that one deployment could
-// match and that the cost model's precedence does not order (VAL-4).
+// match and that the written precedence does not order (VAL-4).
 //
 // Two entries both match some deployment when, on every scope dimension, either leaves the
-// dimension unstated or the two share a value. The written precedence today is the cost
-// model's (kernel/internal/resolve.Load): an entry scoped to a model is chosen over one that
-// states no model. Any other matching pair would be decided by the order the sets are
-// listed in, so the data would mean something its files do not say; such a pair is
-// refused. The rank order of design §9.2 joins this precedence with the coefficient-method
-// migration (M2).
+// dimension unstated or the two share a value. The precedence is the one the cost model's
+// lookup applies, from the same code (coefficient.Select): the smaller method rank of design
+// §9.2 first, then the scope order of coefficient.PrecedenceOrder. A matching pair that
+// neither orders would be decided by the order the sets are listed in, so the data would mean
+// something its files do not say; such a pair is refused.
 func CheckOrdered(sets map[string]*coefficient.Set) []Problem {
 	type at struct {
 		set string
-		i   int
 		e   coefficient.Entry
 	}
 	byName := map[string][]at{}
 	for _, stem := range sortedKeys(sets) {
-		for i, e := range sets[stem].Coefficients {
-			byName[e.Name] = append(byName[e.Name], at{stem, i, e})
+		for _, e := range sets[stem].Coefficients {
+			byName[e.Name] = append(byName[e.Name], at{stem, e})
 		}
 	}
 	var out []Problem
@@ -93,20 +91,23 @@ func CheckOrdered(sets map[string]*coefficient.Set) []Problem {
 		for i := range es {
 			for j := i + 1; j < len(es); j++ {
 				a, b := es[i], es[j]
-				if (len(a.e.Scope.Model) > 0) != (len(b.e.Scope.Model) > 0) || !overlap(a.e.Scope, b.e.Scope) {
+				if !overlap(a.e.Scope, b.e.Scope) {
 					continue
 				}
-				if a.set == b.set && a.e.Scope.Key() == b.e.Scope.Key() {
-					// One set's own Validate reports the same name, scope and method twice. The
-					// same name and scope under different methods are different coefficients
-					// (design §3.3), ordered by method rank (M2); until then the cost model's
-					// resolver refuses a lookup that finds both.
+				if a.set == b.set && a.e.Scope.Key() == b.e.Scope.Key() && a.e.Method == b.e.Method {
+					// One set's own Validate reports the same name, scope and method twice.
+					continue
+				}
+				_, _, err := coefficient.Select([]coefficient.Candidate{
+					{Set: a.set, Entry: a.e}, {Set: b.set, Entry: b.e}})
+				if err == nil {
 					continue
 				}
 				out = append(out, Problem{"coefficients/" + b.set + ".yaml", fmt.Sprintf(
 					"entry %s (%s, %s) and coefficients/%s.yaml's entry %s (%s, %s) can match one "+
-						"deployment and no scope precedence orders them, so the order the sets are "+
-						"listed in would choose (VAL-4); narrow one scope or remove one entry",
+						"deployment and neither the method rank nor the scope precedence orders them, "+
+						"so the order the sets are listed in would choose (VAL-4); narrow one scope, "+
+						"or remove one entry",
 					name, b.e.Scope.Describe(), b.e.Method, a.set, name, a.e.Scope.Describe(), a.e.Method)})
 			}
 		}

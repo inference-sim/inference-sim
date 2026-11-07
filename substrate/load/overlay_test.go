@@ -65,9 +65,12 @@ func TestARegistryOverlayReplacesByIdentityAndAdds(t *testing.T) {
 	}
 
 	// An overlay entry the precedence cannot order against an existing one is refused once
-	// combined (VAL-4): same name, no model on either, overlapping scope, different method.
+	// combined (VAL-4): same name and method rank, and chip lists that overlap without being
+	// the same, which no dimension of the precedence decides.
 	bad := strings.Replace(fabricOverlay, "      scope: {fabric: [ethernet-100gbe], model: [qwen3-14b]}\n      rationale: an overlay's addition",
-		"      scope: {fabric: [ib-400g], tp: [8]}\n      rationale: an overlay's addition", 1)
+		"      scope: {fabric: [ethernet-100gbe], hardware: [h100, h200]}\n      rationale: an overlay's addition", 1)
+	bad = strings.Replace(bad, "      scope: {fabric: [ethernet-100gbe]}\n      rationale: an overlay's replacement",
+		"      scope: {fabric: [ethernet-100gbe], hardware: [h200, b200]}\n      rationale: an overlay's replacement", 1)
 	write(t, filepath.Join(ov, "coefficients", "cost-model-fabric.yaml"), bad)
 	if _, err := Open(Options{RegistryOverlays: []string{ov}}); err == nil || !strings.Contains(err.Error(), "VAL-4") {
 		t.Errorf("an unordered pair made by an overlay was not refused: %v", err)

@@ -36,44 +36,29 @@ type Coefficients struct {
 	selected map[string]Resolved
 }
 
-// Resolved is one coefficient with the set that supplied it.
+// Resolved is one coefficient with the set that supplied it, and the other entries that
+// matched the same lookup and lost to it (VAL-4): a price's provenance names them.
 type Resolved struct {
-	Entry coefficient.Entry
-	Set   string
+	Entry     coefficient.Entry
+	Set       string
+	Displaced []coefficient.Candidate
 }
 
 // Load builds a lookup from sets in scenario order. An entry whose scope excludes the
 // deployment is skipped rather than applied: a constant fitted on one part does not
 // describe another, and silently using it is the error this filtering prevents.
 //
-// An entry scoped to the deployment's model is never displaced by one that does not state
-// a model, wherever the two sit: a value fitted on one model is a narrower claim than the
-// part-wide one it sits beside, and letting file or set order decide between them would
-// make a model's own constant silently lose to the generic one placed after it. Among
-// entries equally specific in that sense, the later one wins as before.
+// Among the admitted entries of one name, the lookup uses the one design VAL-4 chooses: the
+// smaller method rank (design §9.2) first, then the scope precedence over every dimension.
+// The order of the sets decides nothing. When no entry is chosen over all the others the
+// lookup is refused, naming the entries the precedence does not order; the registry
+// validator refuses the same pairs at load (dataset.CheckOrdered), from the same code.
 func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 	c := &Coefficients{byName: map[string]Resolved{}, byNameFabric: map[string]Resolved{},
 		selected: map[string]Resolved{}}
-	var ambiguous error
-	put := func(into map[string]Resolved, e coefficient.Entry, set string) {
-		if prev, ok := into[e.Name]; ok {
-			if len(prev.Entry.Scope.Model) > 0 && len(e.Scope.Model) == 0 {
-				return
-			}
-			// Two admitted entries of one name and one scope that differ only in method are
-			// two coefficients (design §3.3) which only method rank can order, and rank
-			// selection is M2. Letting set order pick between them would make the data mean
-			// something its files do not say, so the lookup is refused instead.
-			if ambiguous == nil && prev.Entry.Scope.Key() == e.Scope.Key() &&
-				prev.Entry.Method != e.Method {
-				ambiguous = fmt.Errorf("coefficient %q at scope (%s) is supplied with method %q by set %q "+
-					"and with method %q by set %q; selecting between methods needs rank selection, "+
-					"which is not implemented, so the lookup is refused",
-					e.Name, e.Scope.Describe(), prev.Entry.Method, prev.Set, e.Method, set)
-			}
-		}
-		into[e.Name] = Resolved{Entry: e, Set: set}
-	}
+	all := map[string][]coefficient.Candidate{}
+	fabric := map[string][]coefficient.Candidate{}
+	var names []string
 	for _, s := range sets {
 		if s == nil {
 			continue
@@ -83,18 +68,40 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 			if !scope.Admits(e.Scope) {
 				continue
 			}
-			put(c.byName, e, s.Name)
+			if _, seen := all[e.Name]; !seen {
+				names = append(names, e.Name)
+			}
+			cand := coefficient.Candidate{Set: s.Name, Entry: e}
+			all[e.Name] = append(all[e.Name], cand)
 			if len(e.Scope.Fabric) > 0 {
-				put(c.byNameFabric, e, s.Name)
+				fabric[e.Name] = append(fabric[e.Name], cand)
 			}
 		}
 	}
-	if ambiguous != nil {
-		return nil, ambiguous
+	sort.Strings(names)
+	choose := func(into map[string]Resolved, from map[string][]coefficient.Candidate) error {
+		for _, name := range names {
+			cands := from[name]
+			if len(cands) == 0 {
+				continue
+			}
+			w, displaced, err := coefficient.Select(cands)
+			if err != nil {
+				return err
+			}
+			into[name] = Resolved{Entry: w.Entry, Set: w.Set, Displaced: displaced}
+		}
+		return nil
+	}
+	if err := choose(c.byName, all); err != nil {
+		return nil, err
+	}
+	// Fabric-scoped entries are chosen among themselves (EntryScopedToFabric).
+	if err := choose(c.byNameFabric, fabric); err != nil {
+		return nil, err
 	}
 	if len(c.byName) == 0 {
-		return nil, fmt.Errorf("no coefficient in %v applies to %s",
-			c.order, scope)
+		return nil, fmt.Errorf("no coefficient in %v applies to %s", c.order, scope)
 	}
 	return c, nil
 }
@@ -116,34 +123,10 @@ func (s Scope) String() string {
 		s.Hardware, s.Model, s.TP, s.EP, s.NodesSpanned, s.Fabric)
 }
 
-// Admits reports whether an entry's scope covers this deployment.
-//
-// An unstated dimension in the entry's scope means the entry does not constrain it, so
-// it admits any value. A stated dimension must list the deployment's value. That
-// asymmetry is deliberate: a coefficient scoped to hardware alone applies at every
-// parallelism width, where one scoped to tp: [8] does not apply at tp 4.
+// Admits reports whether an entry's scope covers this deployment (coefficient.Scope.Admits).
 func (s Scope) Admits(e coefficient.Scope) bool {
-	if len(e.Hardware) > 0 && !containsString(e.Hardware, s.Hardware) {
-		return false
-	}
-	if len(e.Model) > 0 && !containsString(e.Model, s.Model) {
-		return false
-	}
-	if len(e.TP) > 0 && !containsInt(e.TP, s.TP) {
-		return false
-	}
-	if len(e.EP) > 0 && !containsInt(e.EP, s.EP) {
-		return false
-	}
-	if len(e.NodesSpanned) > 0 && !containsInt(e.NodesSpanned, s.NodesSpanned) {
-		return false
-	}
-	// A fabric-scoped entry was measured over one interconnect, so a deployment on another
-	// fabric, or on none, is outside it.
-	if len(e.Fabric) > 0 && (s.Fabric == "" || !containsString(e.Fabric, s.Fabric)) {
-		return false
-	}
-	return true
+	return e.Admits(coefficient.Point{Hardware: s.Hardware, Model: s.Model, TP: s.TP, EP: s.EP,
+		NodesSpanned: s.NodesSpanned, Fabric: s.Fabric})
 }
 
 // Value returns a coefficient by name. A missing coefficient is an error rather than a

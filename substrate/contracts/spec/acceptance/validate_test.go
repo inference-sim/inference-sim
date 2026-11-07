@@ -39,8 +39,8 @@ func validProfileSet() *ProfileSet {
 				Thinking: ThinkingOn, Category: "coding", AcceptanceLength: 2.99,
 				Method: vocab.MethodTransferred, TransferredFrom: "glm-5.2-fp8/mtp/k3/thinking-on/coding",
 				TransferRule: "the value measured on GLM-5.2 is carried unchanged, because GLM-5.3 shares its base and layer topology",
-				Rationale:  "provisional; shares GLM-5.2's topology",
-				Provenance: &Provenance{Source: "glm5.3_mtp.yaml", Hardware: "b300"}},
+				Rationale:    "provisional; shares GLM-5.2's topology",
+				Provenance:   &Provenance{Source: "glm5.3_mtp.yaml", Hardware: "b300"}},
 		},
 	}
 }

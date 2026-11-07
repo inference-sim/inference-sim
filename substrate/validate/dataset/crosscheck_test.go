@@ -14,9 +14,9 @@ func entry(name string, s coefficient.Scope, m vocab.Method) coefficient.Entry {
 	return coefficient.Entry{Name: name, Value: 1, Method: m, Scope: s}
 }
 
-// VAL-4 at load: a model-scoped entry is ordered before one that states no model, and two
-// entries whose scopes cannot both match are not a pair. Any other matching pair is
-// refused, whichever sets hold them.
+// VAL-4 at load: entries are ordered by method rank first and then by the scope precedence,
+// and two entries whose scopes cannot both match are not a pair. A matching pair that neither
+// orders is refused, whichever sets hold them.
 func TestCheckOrdered(t *testing.T) {
 	h100 := coefficient.Scope{Hardware: []string{"h100"}}
 	for _, c := range []struct {
@@ -24,21 +24,38 @@ func TestCheckOrdered(t *testing.T) {
 		a, b coefficient.Scope
 		bad  bool
 	}{
-		{"same scope in two sets", h100, h100, true},
-		{"one scope inside another", h100, coefficient.Scope{Hardware: []string{"h100"}, TP: []int{8}}, true},
+		{"same scope and rank in two sets", h100, h100, true},
+		{"one scope inside another: the stated width decides", h100, coefficient.Scope{Hardware: []string{"h100"}, TP: []int{8}}, false},
 		{"disjoint chips", h100, coefficient.Scope{Hardware: []string{"h200"}}, false},
 		{"disjoint widths", coefficient.Scope{Hardware: []string{"h100"}, TP: []int{4}}, coefficient.Scope{Hardware: []string{"h100"}, TP: []int{8}}, false},
 		{"model-scoped over not", h100, coefficient.Scope{Hardware: []string{"h100"}, Model: []string{"m"}}, false},
-		{"case-insensitive chip", h100, coefficient.Scope{Hardware: []string{"H100"}}, true},
+		{"case-insensitive chip, same rank", h100, coefficient.Scope{Hardware: []string{"H100"}}, true},
+		{"overlapping lists that do not nest", coefficient.Scope{Hardware: []string{"h100", "h200"}},
+			coefficient.Scope{Hardware: []string{"h200", "b200"}}, true},
+		{"a list and one of its members", coefficient.Scope{Hardware: []string{"h100", "h200"}},
+			coefficient.Scope{Hardware: []string{"h200"}}, true},
 	} {
 		sets := map[string]*coefficient.Set{
 			"a": {Name: "a", Coefficients: []coefficient.Entry{entry("x", c.a, vocab.MethodMeasured)}},
-			"b": {Name: "b", Coefficients: []coefficient.Entry{entry("x", c.b, vocab.MethodAssumed)}},
+			"b": {Name: "b", Coefficients: []coefficient.Entry{entry("x", c.b, vocab.MethodMeasured)}},
 		}
 		got := CheckOrdered(sets)
 		if (len(got) > 0) != c.bad {
 			t.Errorf("%s: problems %v, want refused=%v", c.name, got, c.bad)
 		}
+	}
+}
+
+// Two entries of one name at one scope under different methods are ordered by rank, in
+// whichever sets they sit (VAL-4, design §9.2).
+func TestCheckOrderedAcceptsDifferentRanksAtOneScope(t *testing.T) {
+	h100 := coefficient.Scope{Hardware: []string{"h100"}}
+	sets := map[string]*coefficient.Set{
+		"a": {Name: "a", Coefficients: []coefficient.Entry{entry("x", h100, vocab.MethodMeasured)}},
+		"b": {Name: "b", Coefficients: []coefficient.Entry{entry("x", h100, vocab.MethodAssumed)}},
+	}
+	if got := CheckOrdered(sets); len(got) != 0 {
+		t.Errorf("a measured and an assumed entry at one scope are ordered by rank, got %v", got)
 	}
 }
 
