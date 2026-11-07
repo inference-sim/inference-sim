@@ -887,3 +887,37 @@ def test_the_h100_host_link_is_the_catalog_cpu_tier_fit_not_a_second_number():
     tier = yaml.safe_load(path.read_text())["cpu_dram"]
     assert _single("host_link_bandwidth", "h100") == max(
         tier["read_bandwidth_mb_s"], tier["write_bandwidth_mb_s"])
+
+
+# --------------------------------------------------------------------------------------
+# VAL-7: single-model coefficients only go down
+# --------------------------------------------------------------------------------------
+
+# A coefficient scoped to one model marks a cost the cost model's general forms do not yet
+# explain. All 46 committed ones are for deepseek-v4.1-flash. Lower this number when a
+# general form absorbs some of them; never raise it to admit a new one -- add the missing
+# general form instead (design VAL-7).
+MAX_SINGLE_MODEL_ENTRIES = 46
+
+
+def single_model_entries(entries):
+    return [(s, n, tuple(b["scope"]["model"])) for s, n, b in entries
+            if len((b.get("scope") or {}).get("model") or []) == 1]
+
+
+def test_single_model_coefficients_only_go_down():
+    found = single_model_entries(ENTRIES)
+    assert len(found) <= MAX_SINGLE_MODEL_ENTRIES, (
+        f"{len(found)} coefficients are scoped to a single model, above the "
+        f"{MAX_SINGLE_MODEL_ENTRIES} committed. A single-model coefficient marks a cost the "
+        f"general forms do not explain; add the general form instead of another one.")
+    assert found, "no single-model entries found; the filter is wrong"
+
+
+def test_the_single_model_ratchet_counts_a_new_entry():
+    """X18: the ratchet must count an entry added beyond the committed set."""
+    extra = ENTRIES + [("s.yaml", "gemm_eps_max_bf16",
+                        {"scope": {"hardware": ["h200"], "model": ["some-other-model"]}})]
+    assert len(single_model_entries(extra)) == len(single_model_entries(ENTRIES)) + 1
+    assert len(single_model_entries(ENTRIES)) == MAX_SINGLE_MODEL_ENTRIES, (
+        "the committed count differs from the ratchet: lower MAX_SINGLE_MODEL_ENTRIES to match")
