@@ -7256,7 +7256,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-latency-kernel#55"
       },
       "estimation": {
         "rule": "leave_unset"
