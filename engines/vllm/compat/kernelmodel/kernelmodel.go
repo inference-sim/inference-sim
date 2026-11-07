@@ -312,7 +312,7 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
 	// Read by the kernel only under adaptive verification, which sizes its verify budget from it
-	// (blis-latency-kernel#89); nil otherwise, as the kernel then prices without it.
+	// (blis-substrate kernel/adaptive.go); nil otherwise, as the kernel then prices without it.
 	if in.Acceptance, err = resolveAcceptance(in, engine, r.Data, acceptanceOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
@@ -640,7 +640,7 @@ func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
-// verifiedDrafter is the latency kernel's adaptive-verification answer (blis-latency-kernel#89):
+// verifiedDrafter is the latency kernel's adaptive-verification answer (blis-substrate kernel/adaptive.go):
 // for each request of a batch, how many drafts the verifier runs under the adaptive budget, or
 // nil when the pool does not verify adaptively.
 type verifiedDrafter interface {
