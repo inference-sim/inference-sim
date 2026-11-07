@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
-	"sync"
 
 	"github.com/inference-sim/blis-substrate/load"
 )
@@ -38,33 +36,17 @@ func DataOptions() load.Options {
 	return load.Options{Catalog: os.Getenv(catalogEnv), Registry: os.Getenv(registryEnv)}
 }
 
-var (
-	dataMu    sync.Mutex
-	dataCache = map[string]*load.Data{}
-)
+// OpenData opens the catalog and registry o names with blis-substrate's loader and returns a
+// fresh Data on every call. There is no process-wide cache: a Data carries its run's
+// selected-entry report (VAL-6), which only grows, so a Data shared across runs would report
+// run 1's entries in run 2, and two spellings of one path would open twice anyway. The host
+// opens one Data per run and hands it to everything that reads for that run (Repos.Data, and
+// vllmengine's Input.Data). Opening checks the data in full, so a malformed candidate is
+// refused here rather than priced.
+func OpenData(o load.Options) (*load.Data, error) { return load.Open(o) }
 
-// OpenData opens the catalog and registry o names with blis-substrate's loader, once per
-// distinct o, and returns the same Data to every later caller with the same options. A run's
-// simulator and its engine therefore read one Data, and its selected-entry report covers both.
-// Opening checks the data in full, so a malformed candidate is refused here rather than priced.
-func OpenData(o load.Options) (*load.Data, error) {
-	key := strings.Join([]string{o.Catalog, o.Registry,
-		strings.Join(o.CatalogOverlays, "\x00"), strings.Join(o.RegistryOverlays, "\x00")}, "\x01")
-	dataMu.Lock()
-	defer dataMu.Unlock()
-	if d, ok := dataCache[key]; ok {
-		return d, nil
-	}
-	d, err := load.Open(o)
-	if err != nil {
-		return nil, err
-	}
-	dataCache[key] = d
-	return d, nil
-}
-
-// DefaultData is the data DataOptions name (OpenData): the embedded copy when neither
-// BLIS_CATALOG nor BLIS_REGISTRY is set.
+// DefaultData opens the data DataOptions name (OpenData): the embedded copy when neither
+// BLIS_CATALOG nor BLIS_REGISTRY is set. Each call returns a fresh Data with an empty report.
 func DefaultData() (*load.Data, error) { return OpenData(DataOptions()) }
 
 // ownRoot is this file's own repository. self is <repo>/compat/kernelmodel/roots.go.

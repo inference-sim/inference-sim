@@ -25,7 +25,7 @@ type kvOffload struct {
 
 func preparedOffload(t *testing.T, spec engine.Spec) (kvOffload, int64) {
 	t.Helper()
-	done, err := prepare(spec)
+	done, err := prepare(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestOffloadMappingRefusals(t *testing.T) {
 			}
 			r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
 			r[RootScenario] = path
-			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err %v, want a refusal naming %q", err, c.want)
 			}
@@ -228,7 +228,7 @@ func TestAnOffloadTransferMovesThePoolsBytes(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
 	o, _ := preparedOffload(t, spec)
-	p, err := pricerFor(spec)
+	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func armDVariant(t *testing.T, parallel string) map[string]string {
 func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 	Register()
 	r := armDVariant(t, "{tp: 2, pp: 8, dp: 1, enable_expert_parallel: true}")
-	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,7 +312,7 @@ func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 func TestAnOffloadJobMovesEachGroupsLayers(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
-	p, err := pricerFor(spec)
+	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

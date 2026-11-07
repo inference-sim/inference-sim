@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -43,19 +44,26 @@ func TestEachVariableReplacesItsHalfOfTheData(t *testing.T) {
 	}
 }
 
-// OpenData opens one Data per distinct set of options and shares it, so a simulator and the
-// engine it builds read one Data and one selected-entry report.
-func TestOpenDataSharesOneDataPerOptions(t *testing.T) {
+// OpenData returns a fresh Data on every call, so a run's selected-entry report never carries
+// an earlier run's entries (VAL-6): record an entry, open again, and the new report is empty.
+func TestOpenDataIsFreshPerCallAndItsReportStartsEmpty(t *testing.T) {
 	a, err := OpenData(load.Options{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	a.RecordCoefficient("some-set", "some-entry", coefficient.Scope{}, "exact")
+	if got := len(a.Report().Selected); got != 1 {
+		t.Fatalf("the first run's report holds %d entries, want the 1 it recorded", got)
 	}
 	b, err := OpenData(load.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a != b {
-		t.Error("two opens of the embedded data returned two Data values")
+	if a == b {
+		t.Error("two opens returned one Data: a second run would inherit the first run's report")
+	}
+	if got := b.Report().Selected; len(got) != 0 {
+		t.Errorf("a new run's report holds %d entries, want none: %v", len(got), got)
 	}
 }
 

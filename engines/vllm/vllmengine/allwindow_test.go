@@ -28,7 +28,7 @@ func TestAnAllWindowModelSizesItsPoolFromItsGroupsPages(t *testing.T) {
 		t.Run(c.scenario, func(t *testing.T) {
 			// As open opens it: SettingsCheckedByGroups, not the compatibility engine's Settings,
 			// whose one full-attention group an all-window model has none of.
-			p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)})
+			p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}, nil)
 			if err != nil {
 				t.Fatalf("open: %v", err)
 			}
@@ -58,7 +58,7 @@ func TestAnAllWindowModelSizesItsPoolFromItsGroupsPages(t *testing.T) {
 			}
 
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
-			done, err := prepare(spec)
+			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatalf("prepare: %v", err)
 			}

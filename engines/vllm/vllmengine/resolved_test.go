@@ -73,7 +73,7 @@ func TestAnEngineBuildsFromAnUnstatedDeploymentWithOneSetOfValues(t *testing.T) 
 	const fixture = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 	roots := scenarioWithout(t, fixture, "block_size", "max_num_seqs", "max_num_batched_tokens", "gpu_memory_utilization")
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots, Pool: 0}
-	p, err := open(spec)
+	p, err := open(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestAStatedEngineSettingIsNeverReplaced(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Pool: 0,
 		Roots: scenarioWithout(t, "gpt-oss-120b-h200-fp4-vllm-tp4.yaml", "max_num_seqs", "max_num_batched_tokens")}
-	p, err := open(spec)
+	p, err := open(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

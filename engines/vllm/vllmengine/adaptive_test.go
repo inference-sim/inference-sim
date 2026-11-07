@@ -57,11 +57,11 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 	spec := func(r map[string]string) engine.Spec {
 		return engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
 	}
-	on, err := pricerFor(spec(roots(t, adaptiveScenario)))
+	on, err := pricerFor(spec(roots(t, adaptiveScenario)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	off, err := pricerFor(spec(withoutAdaptive(t)))
+	off, err := pricerFor(spec(withoutAdaptive(t)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 func TestAdaptiveVerificationRecipeRunsEndToEnd(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, adaptiveScenario)}
-	p, err := pricerFor(spec)
+	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

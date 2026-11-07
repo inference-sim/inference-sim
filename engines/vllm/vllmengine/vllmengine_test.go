@@ -332,7 +332,7 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
-			done, err := prepare(spec)
+			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -453,7 +453,7 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 		"muse-gb200-nvl-dep8-dspark.yaml"} {
 		t.Run(s, func(t *testing.T) {
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
-			done, err := prepare(spec)
+			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -504,7 +504,7 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 	var engines [2]engine.Engine
 	for i, want := range []string{"kv_producer", "kv_consumer"} {
 		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s), Pool: i}
-		done, err := prepare(spec)
+		done, err := prepare(spec, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -604,7 +604,7 @@ func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
 	}
 	r := roots(t, "muse-h100-roce-1p1d.yaml")
 	r[RootScenario] = filepath.Join(dir, "pull.yaml")
-	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1})
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -632,5 +632,57 @@ func TestARootDirectoryReplacesTheEmbeddedData(t *testing.T) {
 	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
 	if err == nil || !strings.Contains(err.Error(), empty) {
 		t.Errorf("an empty registry directory: %v, want a refusal naming %s", err, empty)
+	}
+}
+
+// An engine built with Input.Data reads that Data as it is: two engines given one Data share
+// its report, and a Data nobody passed stays empty (VAL-6). With no Data each build opens its
+// own, so no report outlives a run.
+func TestEnginesGivenOneDataShareItsReport(t *testing.T) {
+	Register()
+	shared, other := embeddedData(t), embeddedData(t)
+	if shared == other {
+		t.Fatal("two opens returned one Data: a report would outlive its run")
+	}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
+		t.Fatal(err)
+	}
+	first := len(shared.Report().Selected)
+	if first == 0 {
+		t.Fatal("the engine's lookups did not land in the Data the host passed")
+	}
+	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(shared.Report().Selected); got != first {
+		t.Errorf("a second engine on the same Data changed the report from %d to %d entries", first, got)
+	}
+	if got := len(other.Report().Selected); got != 0 {
+		t.Errorf("a Data the engine was not given holds %d entries, want none", got)
+	}
+	if _, err := New(Input{Spec: spec}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(other.Report().Selected); got != 0 {
+		t.Errorf("a build with no Data wrote %d entries into an unrelated Data", got)
+	}
+}
+
+// An overlay named in Roots cannot reach the engine: without the host's Data it is refused,
+// saying so, rather than priced on base data; with the host's Data it is not consulted.
+func TestOverlayRootsAreRefusedWithoutTheHostsData(t *testing.T) {
+	Register()
+	for _, key := range []string{RootCatalogOverlays, RootRegistryOverlays} {
+		r := roots(t, "d058-032.yaml")
+		r[key] = t.TempDir()
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
+		_, err := engine.New(spec)
+		if err == nil || !strings.Contains(err.Error(), "Input.Data") || !strings.Contains(err.Error(), key) {
+			t.Errorf("Roots[%s] set, no Data: %v, want a refusal telling the host to pass its Data", key, err)
+		}
+		if _, err := New(Input{Spec: spec, Data: embeddedData(t)}); err != nil {
+			t.Errorf("Roots[%s] set with the host's Data: %v, want the Data used as given", key, err)
+		}
 	}
 }

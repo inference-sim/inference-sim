@@ -7,7 +7,17 @@
 //
 // The factory registered here is the production one. The simulator passes only the paths the
 // engine reads (Roots) and which pool it is (Pool); the factory opens the scenario itself, so the
-// simulator opens no vLLM configuration (inference-sim#2021 B2, B3). For that pool it:
+// simulator opens no vLLM configuration (inference-sim#2021 B2, B3).
+//
+// Host contract for the catalog and registry data (design §3.3, VAL-6). A run's selected-entry
+// report lives on the load.Data it was opened as, and the engine keeps no data of its own
+// between calls: there is no process-wide cache. A host that wants the engine's lookups in its
+// run's report, or that opened its data with overlays, opens one load.Data per run and builds
+// the engine with New(Input{Spec: ..., Data: data}); the engine then reads that Data as it is.
+// A host that registers the factory and calls engine.New(Spec) hands the engine no Data, so
+// each call opens a fresh one from Roots[RootCatalog] and Roots[RootRegistry] (the embedded
+// copy when absent), whose report nobody reads, and an overlay is refused (RootCatalogOverlays,
+// RootRegistryOverlays) until the engine reads overlays itself. For that pool the factory:
 //
 //   - prices every step with blis-latency-kernel, the same kernel the compatibility engine's
 //     compat/kernelmodel opens, so a 0.32.0 run and a 0.31.0 run of one deployment are priced by
@@ -49,6 +59,12 @@ const (
 	RootCatalog = "catalog"
 	// RootRegistry is the same for the registry.
 	RootRegistry = "registry"
+	// RootCatalogOverlays and RootRegistryOverlays are overlay directories (load.Options) of
+	// a host's data, joined by the OS path-list separator. The engine does not read overlays:
+	// a non-empty value without Input.Data is refused, because the engine would price on base
+	// data the run did not name. A host with overlays passes its opened Data instead.
+	RootCatalogOverlays  = "catalog_overlays"
+	RootRegistryOverlays = "registry_overlays"
 	// RootScenario is the scenario file's path: its Scenario document and its Deployment.
 	RootScenario = "scenario"
 )
@@ -58,9 +74,30 @@ const (
 // compatibility engine itself. Later calls are no-ops.
 func Register() { vllm.Register(Factory()) }
 
-// Factory is the production factory Register registers.
-func Factory() vllm.Factory {
-	return vllm.Factory{Pricer: pricerFor, Prepare: prepare}
+// Factory is the production factory Register registers. It is given no Data, so each call it
+// serves opens a fresh one from the spec's Roots.
+func Factory() vllm.Factory { return factoryFor(nil) }
+
+// Input is what New builds an engine from: the spec, and optionally the run's opened data.
+type Input struct {
+	// Spec is the engine spec, with the Roots the engine reads.
+	Spec engine.Spec
+	// Data, when set, is the run's catalog and registry exactly as the host opened them,
+	// overlays included. The engine reads it as it is, so its lookups land in the host's
+	// selected-entry report, and Roots[RootCatalog], Roots[RootRegistry] and the overlay keys
+	// are not consulted. When nil the engine opens a fresh Data from Roots for this call.
+	Data *load.Data
+}
+
+// New builds a v0.32.0 engine (and refuses other releases, as the registered factory does)
+// from in, reading in.Data when set.
+func New(in Input) (engine.Engine, error) { return factoryFor(in.Data).New(in.Spec) }
+
+func factoryFor(data *load.Data) vllm.Factory {
+	return vllm.Factory{
+		Pricer:  func(s engine.Spec) (vllm.Pricer, error) { return pricerFor(s, data) },
+		Prepare: func(s engine.Spec) (engine.Spec, error) { return prepare(s, data) },
+	}
 }
 
 // pool is one opened pool: the kernel that prices it, its KV block count and its engine block.
@@ -84,17 +121,26 @@ type pool struct {
 }
 
 // open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
-func open(s engine.Spec) (pool, error) {
+// given is the host's opened Data, or nil to open a fresh one from the spec's Roots.
+func open(s engine.Spec, given *load.Data) (pool, error) {
 	path := s.Roots[RootScenario]
 	if path == "" {
 		return pool{}, fmt.Errorf("vllmengine: Roots[%q] must name the scenario file", RootScenario)
 	}
-	// The loader opens one Data per distinct pair of paths (kernelmodel.OpenData), so a
-	// simulator that opened the same paths shares it, and its selected-entry report covers the
-	// engine's lookups too.
-	data, err := kernelmodel.OpenData(load.Options{Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
-	if err != nil {
-		return pool{}, fmt.Errorf("vllmengine: %w", err)
+	data := given
+	if data == nil {
+		for _, k := range []string{RootCatalogOverlays, RootRegistryOverlays} {
+			if s.Roots[k] != "" {
+				return pool{}, fmt.Errorf("vllmengine: Roots[%q] names overlays (%s), which the engine does not read: "+
+					"the host must pass its opened Data (Input.Data) so the engine prices on the data the run named; "+
+					"an overlay is refused for a run until the engine reads overlays", k, s.Roots[k])
+			}
+		}
+		var err error
+		data, err = kernelmodel.OpenData(load.Options{Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+		if err != nil {
+			return pool{}, fmt.Errorf("vllmengine: %w", err)
+		}
 	}
 	repos := kernelmodel.Repos{Scenarios: filepath.Dir(path), Data: data}
 	m, err := kernelmodel.OpenPool(filepath.Base(path), repos, s.Pool)
@@ -441,8 +487,8 @@ func poolBlock(path string, index int) (yaml.Node, deployment.Parallelism, error
 // prepare completes a spec's engine block with what the kernel and the deployment know: the KV
 // block count, pipeline_parallel_size, the model runner and an MTP drafter's layer count. A block the spec carries is used as
 // given; an empty one is the pool's own, read from the scenario, so a simulator need not open it.
-func prepare(s engine.Spec) (engine.Spec, error) {
-	p, err := open(s)
+func prepare(s engine.Spec, data *load.Data) (engine.Spec, error) {
+	p, err := open(s, data)
 	if err != nil {
 		return s, err
 	}
@@ -540,8 +586,8 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 }
 
 // pricerFor is the kernel's pricing for the spec's pool.
-func pricerFor(s engine.Spec) (vllm.Pricer, error) {
-	p, err := open(s)
+func pricerFor(s engine.Spec, data *load.Data) (vllm.Pricer, error) {
+	p, err := open(s, data)
 	if err != nil {
 		return nil, err
 	}
