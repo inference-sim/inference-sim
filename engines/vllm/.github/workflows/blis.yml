@@ -3,8 +3,8 @@ name: blis
 # The shared BLIS checks (design §13.2, §13.4), called from blis-substrate by commit (X21):
 # the pull-request checks (description, review questions, commit policy, workflow lint,
 # version literals, documentation references, cited issues, quarantine, the generated
-# AGENTS.md section and pull-request template, the selected-version lint), the merge check on
-# the merge-queue tree, and the nightly checks (cited issues stay open, X28).
+# AGENTS.md section and pull-request template, the selected-version lint), and the
+# nightly checks (cited issues stay open, X28).
 #
 # The commit is the one blis-substrate's latest release is tagged at, which go.mod also pins; it moves to
 # the next release tag's commit when that release is cut.
@@ -12,7 +12,6 @@ name: blis
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
-  merge_group:
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
@@ -27,20 +26,13 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      checks: write
     with:
       repo: blis-vllm
       substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
 
-  merge:
-    if: github.event_name == 'merge_group'
-    uses: inference-sim/blis-substrate/.github/workflows/shared-merge-check.yml@d98137b23553da787f71a4ff08f4122f3f6f30bf
-    permissions:
-      contents: read
-      pull-requests: read
-      checks: read
-    with:
-      substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
-      required: "go,lint,blis checks / blis checks"
+  # No BLIS repository uses a merge queue (design X22), so there is no merge job here.
+  # shared-merge-check.yml stays available in blis-substrate if a queue is ever enabled.
 
   nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -50,3 +42,5 @@ jobs:
       issues: read
     with:
       substrate-ref: d98137b23553da787f71a4ff08f4122f3f6f30bf
+    secrets:
+      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}
