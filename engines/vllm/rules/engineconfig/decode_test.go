@@ -108,3 +108,29 @@ func TestEngineconfigImportsOnlyContractsAndYAML(t *testing.T) {
 		}
 	}
 }
+
+// A field fields.json lists as not_modelled with the leave_unset rule is not a key of the engine
+// block, so a deployment that states it is refused when the block is read, and its value is never
+// dropped (VLM-3, design §11.2). The rule applies only to a run that did not state the field.
+func TestStatedLeaveUnsetFieldsWithNoEngineKeyAreRefused(t *testing.T) {
+	for _, key := range []string{
+		"attention_backend", "attention_config",
+		"kv_offloading_backend", "indexer_sparse_logits", "data_parallel_external_lb",
+		"data_parallel_hybrid_lb",
+	} {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte(key+": x\n"), &n); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Decode(deployment.NewEngineBlock(n.Content[0])); err == nil {
+			t.Errorf("a block stating %s decodes; it must be refused", key)
+		}
+	}
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte("speculative: {method: m, num_spec_tokens: 1, synthetic_acceptance_length: 2}\n"), &n); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(deployment.NewEngineBlock(n.Content[0])); err == nil {
+		t.Error("a block stating speculative.synthetic_acceptance_length decodes; it must be refused")
+	}
+}

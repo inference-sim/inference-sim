@@ -148,7 +148,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#57"
+    "issue": "inference-sim/blis-vllm#75"
    },
    "status": "not_modelled"
   },
@@ -238,7 +238,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-schemas#82"
+    "issue": "inference-sim/blis-vllm#85"
    },
    "status": "not_modelled"
   },
@@ -259,7 +259,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -268,7 +268,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -367,7 +367,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-schemas#57"
+    "issue": "inference-sim/blis-vllm#84"
    },
    "status": "not_modelled"
   },
@@ -376,7 +376,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-schemas#57"
+    "issue": "inference-sim/blis-vllm#84"
    },
    "status": "not_modelled"
   },
@@ -394,7 +394,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -457,7 +457,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -604,7 +604,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -622,7 +622,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -640,7 +640,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -658,7 +658,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -667,7 +667,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -685,7 +685,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -793,7 +793,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1009,7 +1009,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1054,7 +1054,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#86"
    },
    "status": "not_modelled"
   },
@@ -1072,7 +1072,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#55"
+    "issue": "inference-sim/blis-vllm#86"
    },
    "status": "not_modelled"
   },
@@ -1138,7 +1138,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#48"
+    "issue": "inference-sim/blis-vllm#74"
    },
    "status": "not_modelled"
   },
@@ -1147,7 +1147,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#48"
+    "issue": "inference-sim/blis-vllm#74"
    },
    "status": "not_modelled"
   },
@@ -1156,7 +1156,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#84"
+    "issue": "inference-sim/blis-vllm#79"
    },
    "status": "not_modelled"
   },
@@ -1246,7 +1246,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1264,7 +1264,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1547,7 +1547,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#48"
+    "issue": "inference-sim/blis-vllm#74"
    },
    "status": "not_modelled"
   },
@@ -1574,7 +1574,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#61"
+    "issue": "inference-sim/blis-vllm#76"
    },
    "status": "not_modelled"
   },
@@ -1583,7 +1583,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1901,7 +1901,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1910,7 +1910,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1928,7 +1928,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -1973,7 +1973,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#61"
+    "issue": "inference-sim/blis-vllm#76"
    },
    "status": "not_modelled"
   },
@@ -1991,7 +1991,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#61"
+    "issue": "inference-sim/blis-vllm#76"
    },
    "status": "not_modelled"
   },
@@ -2009,7 +2009,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#61"
+    "issue": "inference-sim/blis-vllm#76"
    },
    "status": "not_modelled"
   },
@@ -2099,7 +2099,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#55"
+    "issue": "inference-sim/blis-vllm#73"
    },
    "status": "not_modelled"
   },
@@ -2342,7 +2342,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -2360,7 +2360,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#62"
+    "issue": "inference-sim/blis-vllm#77"
    },
    "status": "not_modelled"
   },
@@ -2378,7 +2378,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -2396,7 +2396,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#86"
+    "issue": "inference-sim/blis-vllm#81"
    },
    "status": "not_modelled"
   },
@@ -2497,7 +2497,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#60"
+    "issue": "inference-sim/blis-vllm#87"
    },
    "status": "not_modelled"
   },
@@ -2506,7 +2506,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#60"
+    "issue": "inference-sim/blis-vllm#87"
    },
    "status": "not_modelled"
   },
@@ -2617,7 +2617,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#91"
+    "issue": "inference-sim/blis-vllm#82"
    },
    "status": "not_modelled"
   },
@@ -2635,7 +2635,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -2801,7 +2801,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#92"
+    "issue": "inference-sim/blis-vllm#83"
    },
    "status": "not_modelled"
   },
@@ -2828,7 +2828,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#92"
+    "issue": "inference-sim/blis-vllm#83"
    },
    "status": "not_modelled"
   },
@@ -2873,7 +2873,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -3222,7 +3222,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#62"
+    "issue": "inference-sim/blis-vllm#77"
    },
    "status": "not_modelled"
   },
@@ -3795,7 +3795,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#83"
+    "issue": "inference-sim/blis-vllm#78"
    },
    "status": "not_modelled"
   },
@@ -3912,7 +3912,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-schemas#82"
+    "issue": "inference-sim/blis-vllm#85"
    },
    "status": "not_modelled"
   },
@@ -4341,7 +4341,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -4501,7 +4501,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#29"
+    "issue": "inference-sim/blis-vllm#88"
    },
    "status": "not_modelled"
   },
@@ -4510,7 +4510,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#29"
+    "issue": "inference-sim/blis-vllm#88"
    },
    "status": "not_modelled"
   },
@@ -6773,7 +6773,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -7169,7 +7169,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-latency-kernel#85"
+    "issue": "inference-sim/blis-vllm#80"
    },
    "status": "not_modelled"
   },
@@ -8636,7 +8636,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-schemas#82"
+    "issue": "inference-sim/blis-vllm#85"
    },
    "status": "not_modelled"
   },
@@ -8645,7 +8645,7 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#60"
+    "issue": "inference-sim/blis-vllm#87"
    },
    "status": "not_modelled"
   },

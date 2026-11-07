@@ -2221,7 +2221,7 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -2705,7 +2705,7 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -4498,7 +4498,7 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-schemas#82"
+        "issue": "inference-sim/blis-vllm#85"
       },
       "estimation": {
         "rule": "none"
@@ -4509,7 +4509,7 @@
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#60"
+        "issue": "inference-sim/blis-vllm#87"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -4875,7 +4875,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#57"
+        "issue": "inference-sim/blis-vllm#75"
       },
       "estimation": {
         "rule": "none"
@@ -4985,7 +4985,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-schemas#82"
+        "issue": "inference-sim/blis-vllm#85"
       },
       "estimation": {
         "rule": "none"
@@ -5010,7 +5010,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -5021,7 +5021,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -5142,7 +5142,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-schemas#57"
+        "issue": "inference-sim/blis-vllm#84"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -5153,7 +5153,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-schemas#57"
+        "issue": "inference-sim/blis-vllm#84"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -5175,7 +5175,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -5252,7 +5252,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -5431,7 +5431,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -5453,7 +5453,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -5475,7 +5475,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -5497,7 +5497,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -5508,7 +5508,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -5530,7 +5530,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -5662,7 +5662,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -5926,7 +5926,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -5981,7 +5981,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#86"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -6003,7 +6003,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "issue": "inference-sim/blis-vllm#86"
       },
       "estimation": {
         "rule": "none"
@@ -6083,7 +6083,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#48"
+        "issue": "inference-sim/blis-vllm#74"
       },
       "estimation": {
         "rule": "none"
@@ -6094,7 +6094,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#48"
+        "issue": "inference-sim/blis-vllm#74"
       },
       "estimation": {
         "rule": "none"
@@ -6105,7 +6105,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#84"
+        "issue": "inference-sim/blis-vllm#79"
       },
       "estimation": {
         "rule": "none"
@@ -6215,7 +6215,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -6237,7 +6237,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -6582,7 +6582,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#48"
+        "issue": "inference-sim/blis-vllm#74"
       },
       "estimation": {
         "rule": "none"
@@ -6615,7 +6615,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#61"
+        "issue": "inference-sim/blis-vllm#76"
       },
       "estimation": {
         "rule": "none"
@@ -6626,7 +6626,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -7014,7 +7014,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7025,7 +7025,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -7047,7 +7047,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -7102,7 +7102,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#61"
+        "issue": "inference-sim/blis-vllm#76"
       },
       "estimation": {
         "rule": "none"
@@ -7124,7 +7124,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#61"
+        "issue": "inference-sim/blis-vllm#76"
       },
       "estimation": {
         "rule": "none"
@@ -7146,7 +7146,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#61"
+        "issue": "inference-sim/blis-vllm#76"
       },
       "estimation": {
         "rule": "none"
@@ -7256,7 +7256,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#55"
+        "issue": "inference-sim/blis-vllm#73"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7553,7 +7553,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -7575,7 +7575,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#62"
+        "issue": "inference-sim/blis-vllm#77"
       },
       "estimation": {
         "rule": "none"
@@ -7597,7 +7597,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -7619,7 +7619,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#86"
+        "issue": "inference-sim/blis-vllm#81"
       },
       "estimation": {
         "rule": "none"
@@ -7742,7 +7742,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#60"
+        "issue": "inference-sim/blis-vllm#87"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -7753,7 +7753,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#60"
+        "issue": "inference-sim/blis-vllm#87"
       },
       "estimation": {
         "rule": "none"
@@ -7886,7 +7886,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#91"
+        "issue": "inference-sim/blis-vllm#82"
       },
       "estimation": {
         "rule": "none"
@@ -7908,7 +7908,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -8110,7 +8110,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#92"
+        "issue": "inference-sim/blis-vllm#83"
       },
       "estimation": {
         "rule": "none"
@@ -8143,7 +8143,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#92"
+        "issue": "inference-sim/blis-vllm#83"
       },
       "estimation": {
         "rule": "none"
@@ -8198,7 +8198,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -8621,7 +8621,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#62"
+        "issue": "inference-sim/blis-vllm#77"
       },
       "estimation": {
         "rule": "none"
@@ -9320,7 +9320,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#83"
+        "issue": "inference-sim/blis-vllm#78"
       },
       "estimation": {
         "rule": "none"
@@ -9463,7 +9463,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-schemas#82"
+        "issue": "inference-sim/blis-vllm#85"
       },
       "estimation": {
         "rule": "none"
@@ -9986,7 +9986,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-latency-kernel#85"
+        "issue": "inference-sim/blis-vllm#80"
       },
       "estimation": {
         "rule": "none"
@@ -10180,7 +10180,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#29"
+        "issue": "inference-sim/blis-vllm#88"
       },
       "estimation": {
         "rule": "leave_unset"
@@ -10191,7 +10191,7 @@
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#29"
+        "issue": "inference-sim/blis-vllm#88"
       },
       "estimation": {
         "rule": "none"

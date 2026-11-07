@@ -98,7 +98,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   `parallel.dp_local`) and `engram_config.cpu_offload` are such fields and keep `leave_unset`
   for now.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
-  blis-latency-kernel#85) and `cudagraph_specialize_lora` (#83) are `not_modelled` with `none`.
+  blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
   other checks are M2 work and are not here yet: the inertness proofs that turn each
   `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every

@@ -447,7 +447,7 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
 		return fmt.Errorf("vllm: env %s is not read by this engine, which reads only %s; the keys that "+
-			"change step time are the latency kernel's to price (https://github.com/inference-sim/blis-latency-kernel/issues/85)",
+			"change step time are the latency kernel's to price (https://github.com/inference-sim/blis-vllm/issues/80)",
 			strings.Join(keys, ", "), strings.Join(readEnv, ", "))
 	}
 	switch {
