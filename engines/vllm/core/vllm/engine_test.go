@@ -349,10 +349,11 @@ func TestFactoryAccepts(t *testing.T) {
 			"enable_adaptive_verification: false}\n"},
 		// quantization-known is a warning: vLLM admits out-of-tree methods the pack cannot list.
 		{"an out-of-tree quantization method", "quantization: my_out_of_tree_method\n"},
-		// mla-prefill-backend-known is a warning too: vllm serve loads plugins before it parses the
-		// flag, and a plugin can register a new backend name (vllm/engine/arg_utils.py:3202,
-		// vllm/v1/attention/backends/mla/prefill/registry.py:190@5df63a72).
-		{"an MLA prefill backend a plugin registers", "mla_prefill_backend: MY_PLUGIN_PREFILL\n"},
+		// mla-prefill-backend-known is a warning too (vllm serve loads plugins before it parses the
+		// flag, and a plugin can register a new backend name: vllm/engine/arg_utils.py:3202,
+		// vllm/v1/attention/backends/mla/prefill/registry.py:190@5df63a72), which the rules pack's
+		// own tests cover. The factory then refuses any stated mla_prefill_backend as unmodelled
+		// (TestEveryNotModelledFieldIsRefusedOrExplained).
 	} {
 		if _, err := build(t, c.extra)(); err != nil {
 			t.Errorf("%s: refused: %v", c.name, err)

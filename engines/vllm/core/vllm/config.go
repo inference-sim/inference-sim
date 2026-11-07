@@ -61,9 +61,6 @@ type Config struct {
 	// KVLayers are the model's attention layers by KV cache spec, which vLLM groups into the
 	// scheduler's KV cache groups (KVGroups). Unstated is one full-attention group.
 	KVLayers []KVLayerRun `yaml:"kv_layers,omitempty"`
-	// DPSyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:162@5df63a72,
-	// default 16): the steps between a DP group's unfinished-request all-reduces.
-	DPSyncInterval int `yaml:"dp_sync_interval,omitempty"`
 	// DPStatsIntervalUs is how often the DP coordinator publishes the ranks' request counts to
 	// the front end's load balancer: min_stats_update_interval_ms = 100
 	// (vllm/v1/engine/coordinator.py:154-162, 267-269@5df63a72), 100000 µs unstated. A
@@ -342,7 +339,7 @@ func resolve(c Config) (settings, error) {
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
 			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
-	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
+	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
 	if s.dp.syncInterval == 0 {
 		s.dp.syncInterval = 16
@@ -369,6 +366,10 @@ func resolve(c Config) (settings, error) {
 	}
 	// The release's own accepted values and refusals, for what the checks above do not cover.
 	if err := checkRules(e, pp); err != nil {
+		return settings{}, err
+	}
+	// After the release's own checks, so a value the release rejects is reported as it rejects it.
+	if err := refuseUnreadSettings(e); err != nil {
 		return settings{}, err
 	}
 	return s, nil
@@ -478,6 +479,57 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		return fmt.Errorf("vllm: swa_bounded_replay is not modelled: this factory builds full-attention KV " +
 			"groups only (https://github.com/inference-sim/blis-vllm/issues/7, " +
 			"https://github.com/inference-sim/blis-vllm/issues/17)")
+	}
+	return nil
+}
+
+// unreadSetting is an engine-block key that nothing in blis-vllm reads, neither this engine nor
+// the latency kernel (enginesettings.Settings has no field for it), with the open issue that
+// tracks modelling it. VLM-3: a field not modelled is refused when set away from its default, so a
+// stated value is never carried and dropped.
+type unreadSetting struct {
+	key, field, issue string
+	set               func(engineconfig.Engine) bool
+}
+
+const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
+
+var unreadSettings = []unreadSetting{
+	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
+	{"stream_interval", "stream_interval", "https://github.com/inference-sim/inference-sim/issues/2035", func(e engineconfig.Engine) bool { return e.StreamInterval != 0 }},
+	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueBase + "80", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
+	{"mla_prefill_backend", "attention_config.mla_prefill_backend", issueBase + "80", func(e engineconfig.Engine) bool { return e.MLAPrefillBackend != "" }},
+	{"linear_backend", "kernel_config.linear_backend", issueBase + "80", func(e engineconfig.Engine) bool { return e.LinearBackend != "" }},
+	{"custom_ops", "compilation_config.custom_ops", issueBase + "80", func(e engineconfig.Engine) bool { return len(e.CustomOps) > 0 }},
+	{"decoder_replay_cudagraph_capture_sizes", "compilation_config.decoder_replay_cudagraph_capture_sizes", issueBase + "80",
+		func(e engineconfig.Engine) bool { return len(e.DecoderReplayCUDAGraphCaptureSizes) > 0 }},
+	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype", issueBase + "80",
+		func(e engineconfig.Engine) bool { return e.Speculative != nil && e.Speculative.KVCacheDType != "" }},
+	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "29",
+		func(e engineconfig.Engine) bool {
+			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic"
+		}},
+	{"mamba_ssm_cache_dtype", "mamba_ssm_cache_dtype", issueBase + "83", func(e engineconfig.Engine) bool { return e.MambaSSMCacheDType != "" }},
+	{"dbo.dbo_decode_token_threshold", "dbo_decode_token_threshold", issueBase + "74",
+		func(e engineconfig.Engine) bool { return e.DBO != nil && e.DBO.DecodeTokenThreshold != nil }},
+	{"dbo.dbo_prefill_token_threshold", "dbo_prefill_token_threshold", issueBase + "74",
+		func(e engineconfig.Engine) bool { return e.DBO != nil && e.DBO.PrefillTokenThreshold != nil }},
+	{"eplb.window_size", "eplb_config.window_size", issueBase + "76", func(e engineconfig.Engine) bool { return e.EPLB != nil && e.EPLB.WindowSize != 0 }},
+	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "76", func(e engineconfig.Engine) bool { return e.EPLB != nil && e.EPLB.StepInterval != 0 }},
+	{"kv_events.publisher", "kv_events_config.publisher", issueBase + "60",
+		func(e engineconfig.Engine) bool { return e.KVEvents != nil && e.KVEvents.Publisher != "" }},
+	{"kv_events.topic", "kv_events_config.topic", issueBase + "60",
+		func(e engineconfig.Engine) bool { return e.KVEvents != nil && e.KVEvents.Topic != "" }},
+}
+
+// refuseUnreadSettings refuses the first stated key of unreadSettings, naming the key, the field
+// as vLLM names it and the issue.
+func refuseUnreadSettings(e engineconfig.Engine) error {
+	for _, u := range unreadSettings {
+		if u.set(e) {
+			return fmt.Errorf("vllm: %s (vLLM's %s) is not modelled: this engine and the cost model read no such setting, so a "+
+				"stated value would be dropped (%s)", u.key, u.field, u.issue)
+		}
 	}
 	return nil
 }

@@ -159,6 +159,12 @@ type Engine struct {
 	// requests, in [0, 1) (vllm/config/scheduler.py:196@5df63a72). A pointer, because 0 is a
 	// value the engine accepts and nil means its default (0).
 	Watermark *float64 `yaml:"watermark,omitempty"`
+	// DPSyncInterval is parallel_config.dp_sync_interval: the steps between a data-parallel
+	// group's unfinished-request all-reduces (vllm/config/parallel.py:162@5df63a72, default 16).
+	// It is a parallel_config field with no key in a deployment's parallel block, so a
+	// deployment states it here, in the engine block, as it states the other settings the engine
+	// reads. Zero means unset, the engine default of 16. Not negative.
+	DPSyncInterval int `yaml:"dp_sync_interval,omitempty"`
 	// PrefillScheduleInterval admits new prefills only once every N engine steps, aligned
 	// across data-parallel ranks (vllm/config/scheduler.py:203@5df63a72; applied by
 	// _should_throttle_prefills, vllm/v1/engine/core.py:2318-2325@5df63a72). Zero means unset,

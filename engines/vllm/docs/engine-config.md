@@ -47,6 +47,7 @@ Scheduling and memory:
 | `max_num_scheduled_tokens` | integer | no | The most tokens the scheduler issues in a step, where the model appends tokens to a batch, as speculative decoding does. Not negative; omitted or 0 uses `max_num_batched_tokens`. |
 | `max_num_active_seqs` | integer | no | Caps the requests admitted to running without shrinking `max_num_seqs`. Not negative, and not above `max_num_seqs`; omitted or 0 means `max_num_seqs`. |
 | `watermark` | number | no | Fraction of KV blocks kept free when admitting waiting or preempted requests, in [0, 1). Omitted means 0, the engine default. |
+| `dp_sync_interval` | integer | no | Steps between a data-parallel group's unfinished-request all-reduces (vLLM's `parallel_config.dp_sync_interval`, default 16). A deployment's `parallel` block has no key for it, so it is stated here. Not negative; omitted or 0 means 16. |
 | `prefill_schedule_interval` | integer | no | Admit new prefills only once every N engine steps, aligned across data-parallel ranks. Not negative; omitted or 0 means the engine default, 1 (no throttling). |
 | `stream_interval` | integer | no | Tokens the API server buffers before streaming them to the client. It changes when a client sees tokens, not what the scheduler does. Not negative; omitted or 0 means 1. |
 | `disable_hybrid_kv_cache_manager` | boolean | no | Give every attention layer the same KV size even when they differ (full and sliding-window). Omitted lets the engine decide. |

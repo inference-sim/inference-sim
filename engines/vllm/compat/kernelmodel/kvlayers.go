@@ -125,6 +125,27 @@ func ppIndices(layers, pp, stage int) (int, int) {
 }
 
 func kvLayersOf(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
+	runs, err := kvLayersRead(g, pool, engine, ds)
+	if err != nil {
+		return nil, err
+	}
+	// attention_config.indexer_kv_dtype is read only for MiniMax-M3's indexer cache
+	// (m3IndexerElemBytes). Stated for a model with no such cache nothing reads it, so it would be
+	// dropped (blis-vllm#84); "auto" is every model's own default and is not a deviation.
+	if d := engine.IndexerKVDType; g != nil && d != "" && d != "auto" {
+		indexer := false
+		for _, r := range runs {
+			indexer = indexer || r.Spec == "indexer"
+		}
+		if !indexer {
+			return nil, fmt.Errorf("indexer_kv_dtype=%q is read only for MiniMax-M3's indexer cache, and this model has none, so a "+
+				"stated value would be dropped (https://github.com/inference-sim/blis-vllm/issues/84)", d)
+		}
+	}
+	return runs, nil
+}
+
+func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	if g == nil {
 		return nil, nil
 	}
@@ -236,11 +257,12 @@ func m3IndexerElemBytes(dtype string, c model.Cache, headDim int) (int, error) {
 		elem = 1
 	default:
 		return 0, fmt.Errorf("indexer_kv_dtype=%q is not supported by the MiniMax M3 indexer cache (only 'bf16' or "+
-			"'fp8'/'fp8_e4m3')", dtype)
+			"'fp8'/'fp8_e4m3'; https://github.com/inference-sim/blis-vllm/issues/84)", dtype)
 	}
 	if headDim <= 0 || elem*headDim != c.BytesPerEntry {
 		return 0, fmt.Errorf("indexer_kv_dtype %q stores %d bytes a key of %d elements, and the catalog graph's %s "+
-			"cache states %d; the latency kernel prices the graph's entry, so this indexer dtype is not modelled",
+			"cache states %d; the latency kernel prices the graph's entry, so this indexer dtype is not modelled "+
+			"(https://github.com/inference-sim/blis-vllm/issues/84)",
 			dtype, elem*headDim, headDim, c.Name, c.BytesPerEntry)
 	}
 	return elem, nil

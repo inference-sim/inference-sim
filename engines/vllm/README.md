@@ -94,9 +94,14 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   value the run recorded: a stated value is carried into the scenario as stated, whatever the
   field's status. A not-modelled field that the engine reads and prices when it is stated is a
   status to correct (modelled, with its evidence, or refused when stated, VLM-3); the rule does
-  not stand in for that. `gpu_memory_utilization`, `data_parallel_size_local` (read as
-  `parallel.dp_local`) and `engram_config.cpu_offload` are such fields and keep `leave_unset`
-  for now.
+  not stand in for that. The v0.32.0 engine refuses every not-modelled key of the engine block that
+  nothing reads (`TestEveryNotModelledFieldIsRefusedOrExplained` walks fields.json), naming the
+  field and citing its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy
+  (`blis-vllm#73` to `#80`, `#83`, `#8`) are the walk's allow-list: the kernel prices them, and
+  `leave_unset` on `gpu_memory_utilization` and `engram_config.cpu_offload` fills only a value the
+  run did not record. `attention_config.indexer_kv_dtype` is `not_modelled` with `leave_unset`:
+  `auto` and the model's own default size MiniMax-M3's indexer cache, and any other stated value is
+  refused, for every model (`blis-vllm#84`). `data_parallel_size_local` is read as `parallel.dp_local`.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's

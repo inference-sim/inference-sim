@@ -2560,15 +2560,12 @@
   },
   "config:kv_transfer_config.kv_connector_extra_config": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "traces": [
-     "core/connector/nixl/testdata/golden/nixl-d-basic.json",
-     "core/connector/offloading/testdata/golden/offloading-chunk2-prompt-only.json"
-    ]
+    "issue": "inference-sim/blis-vllm#89"
    },
-   "status": "modelled"
+   "status": "not_modelled"
   },
   "config:kv_transfer_config.kv_connector_module_path": {
    "estimation": {
@@ -2581,15 +2578,12 @@
   },
   "config:kv_transfer_config.kv_load_failure_policy": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "traces": [
-     "core/connector/nixl/testdata/golden/nixl-d-fail-error.json",
-     "core/connector/nixl/testdata/golden/nixl-d-fail-recompute.json"
-    ]
+    "issue": "inference-sim/blis-vllm#89"
    },
-   "status": "modelled"
+   "status": "not_modelled"
   },
   "config:kv_transfer_config.kv_port": {
    "estimation": {
@@ -4372,9 +4366,12 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#58"
+    "traces": [
+     "compat/kernelmodel/muse_kvlayers_test.go",
+     "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:speculative_config.moe_backend": {
    "estimation": {
