@@ -42,7 +42,7 @@ func TestTheFieldListLoadsAndNamesThisRelease(t *testing.T) {
 		t.Error("fields.json is not in the substrate's canonical form; regenerate it with fields/gen_fields.py")
 	}
 	// A floor, so a generator that emits almost nothing cannot pass (X22).
-	const floor = 950
+	const floor = 970
 	if len(l.Fields) < floor {
 		t.Errorf("fields.json lists %d fields, want at least %d: vLLM v0.32.0 reads more than that", len(l.Fields), floor)
 	}

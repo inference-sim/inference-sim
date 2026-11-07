@@ -42,8 +42,10 @@ string in the same file:
   C and CUDA, every .c, .cc, .cpp, .cu, .cuh, .h, .hpp and .inl file under csrc/:
     getenv("X") and std::getenv("X"), or either applied to a const char* constant.
   Rust, every .rs file under rust/ (the vllm-rs front end, selected by VLLM_USE_RUST_FRONTEND):
-    env::var("X") and env::var_os("X"), or either applied to a const &str. Code from a file's
-    first #[cfg(test)] on is test code and is not read.
+    env::var("X") and env::var_os("X"), or either applied to a const &str; and a clap
+    attribute #[arg(..., env = "X")], which clap reads when the flag is absent (a commented-out
+    attribute is not read). Code from a file's first #[cfg(test)] on is test code and is not
+    read.
 A variable vLLM only writes (os.environ["X"] = v, del, or a pop whose value is dropped) is not a
 read: vLLM sets it for a library or a child process, and a value the user set is overwritten.
 NCCL_*, NVSHMEM_* and UCX_* are the exception. VLM-3 names those libraries, which read what vLLM
@@ -243,6 +245,11 @@ CPP_CONST = re.compile(r'\bconst\s+char\s*\*\s*(?:const\s+)?(\w+)\s*=\s*"([^"]+)
 CPP_READ = re.compile(r'\b(?:std::)?getenv\s*\(\s*(?:"([^"]+)"|(\w+))\s*\)')
 RS_CONST = re.compile(r'\bconst\s+(\w+)\s*:\s*&(?:\'static\s+)?str\s*=\s*"([^"]+)"')
 RS_READ = re.compile(r'\benv::var(?:_os)?\s*\(\s*(?:"([^"]+)"|(\w+))\s*\)')
+# A clap attribute, #[arg(long, env = "NAME")]: clap reads the variable when the flag is absent
+# (the clap `env` feature, rust/Cargo.toml). Only a literal name is read; a commented-out
+# attribute is not code (RS_COMMENT is removed first).
+RS_CLAP_ENV = re.compile(r'\benv\s*=\s*"([^"]+)"')
+RS_COMMENT = re.compile(r'/\*.*?\*/|//[^\n]*', re.S)
 
 
 def excluded(rel):
@@ -494,6 +501,21 @@ def regex_env_reads(path, rel, const_re, read_re, cut_at=None):
     return reads
 
 
+def clap_env_reads(path, rel):
+    """The variables a Rust file's clap attributes read, #[arg(env = "NAME")], with where.
+    Comments are blanked first, keeping line numbers, so a commented-out attribute is not a
+    read. Code from the first #[cfg(test)] on is test code."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    if "#[cfg(test)]" in text:
+        text = text[:text.index("#[cfg(test)]")]
+    text = RS_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    reads = {}
+    for m in RS_CLAP_ENV.finditer(text):
+        reads.setdefault(m.group(1), []).append("%s:%d" % (rel, text.count("\n", 0, m.start()) + 1))
+    return reads
+
+
 def literal_env_reads(src):
     """Every variable read by a literal name (READ RULE), with where it is read, and the
     reads whose name is not a literal."""
@@ -513,6 +535,7 @@ def literal_env_reads(src):
         add(reads, regex_env_reads(p, rel, CPP_CONST, CPP_READ))
     for p, rel in walk(src, "rust", (".rs",)):
         add(reads, regex_env_reads(p, rel, RS_CONST, RS_READ, cut_at="#[cfg(test)]"))
+        add(reads, clap_env_reads(p, rel))
     for name, where in writes.items():
         if COMM_ENV.match(name):
             reads.setdefault(name, []).extend(where)

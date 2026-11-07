@@ -89,6 +89,11 @@ READS = {
                  'constexpr const char* kName = "R_CPP_CONST";\nconst char* c = std::getenv(kName);\n',
     "rust/src/server/src/x.rs": 'const N: &str = "R_RUST_CONST";\nfn f() { std::env::var("R_RUST_VAR"); env::var_os(N); }\n'
                                 '#[cfg(test)]\nmod tests { fn t() { std::env::var("W_RUST_TEST"); } }\n',
+    # A clap attribute reads its variable too; a commented-out one and one in test code do not.
+    "rust/src/cmd/src/cli.rs": '#[derive(Parser)]\nstruct A {\n    #[arg(long, env = "R_CLAP_ENV")]\n    a: String,\n'
+                               '    #[arg(long, /* env = "W_CLAP_BLOCK_COMMENT" */)]\n    b: String,\n'
+                               '    // env = "W_CLAP_LINE_COMMENT",\n    c: String,\n}\n'
+                               '#[cfg(test)]\nmod t { #[arg(env = "W_CLAP_TEST")] x: u8 }\n',
     # EXCLUDED: separate commands and build steps, never the serving process.
     "vllm/collect_env.py": 'import os\nx = os.environ.get("X_COLLECT_ENV")\n',
     "vllm/benchmarks/b.py": 'import os\nx = os.environ.get("X_BENCHMARKS")\n',
@@ -102,7 +107,7 @@ READS = {
 READ_NAMES = sorted(["R_ENVIRON_GET", "R_OS_GETENV", "R_IMPORTED_GET", "R_IMPORTED_GETENV", "R_SUBSCRIPT",
                      "R_IN", "R_NOT_IN", "R_SETDEFAULT", "R_POP_USED", "R_IS_SET", "R_CONSTANT",
                      "R_IFEXP_A", "R_IFEXP_B", "R_ALIAS", "R_LOOP_A", "R_LOOP_B", "R_LOOP_C", "R_PLATFORM_MODULE",
-                     "R_CPP_STD", "R_CPP_PLAIN", "R_CPP_CONST", "R_RUST_CONST", "R_RUST_VAR",
+                     "R_CPP_STD", "R_CPP_PLAIN", "R_CPP_CONST", "R_RUST_CONST", "R_RUST_VAR", "R_CLAP_ENV",
                      "NCCL_PROTO", "UCX_TLS"])
 
 CONFIG = ["block_size", "chat_template", "enable_log_requests", "headless",
@@ -174,11 +179,13 @@ class GenFieldsTest(unittest.TestCase):
         self.assertEqual(reads["R_SUBSCRIPT"], ["vllm/a/subscript.py:2"])
         self.assertEqual(reads["R_CPP_CONST"], ["csrc/k.cu:4"])
         self.assertEqual(reads["R_RUST_CONST"], ["rust/src/server/src/x.rs:2"])
+        self.assertEqual(reads["R_CLAP_ENV"], ["rust/src/cmd/src/cli.rs:3"])
         self.assertEqual(dynamic, [])
 
     def test_a_variable_vllm_only_writes_is_not_a_read(self):
         reads, _ = self.reads(READS)
-        for name in ("W_ONLY_WRITTEN", "W_DELETED", "W_POP_DROPPED", "W_RUST_TEST"):
+        for name in ("W_ONLY_WRITTEN", "W_DELETED", "W_POP_DROPPED", "W_RUST_TEST",
+                     "W_CLAP_BLOCK_COMMENT", "W_CLAP_LINE_COMMENT", "W_CLAP_TEST"):
             self.assertNotIn(name, reads)
 
     def test_the_excluded_paths_and_only_those_are_skipped(self):

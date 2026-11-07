@@ -3900,11 +3900,33 @@
       }
     },
     {
+      "name": "VLLM_RS_DEBUG_CLI",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#85"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "VLLM_RS_DISABLE_RIPTOKEN",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "VLLM_RS_PYTHON",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#85"
       },
       "estimation": {
         "rule": "none"
