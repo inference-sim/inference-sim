@@ -105,14 +105,11 @@ func TestDefaultScenariosAreThisRepositorysFixtures(t *testing.T) {
 	}
 }
 
-// DefaultRepos agrees with the individual defaults; it is the form Open takes.
+// DefaultRepos agrees with the individual defaults; it is the form Open takes. Its Data is its
+// own, opened for that call.
 func TestDefaultReposMatchesTheDefaults(t *testing.T) {
 	r := DefaultRepos()
-	d, err := DefaultData()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Scenarios != DefaultScenarios() || r.Data != d || r.Rules == nil || r.EngineSettings == nil {
+	if r.Scenarios != DefaultScenarios() || r.Data == nil || r.Rules == nil || r.EngineSettings == nil {
 		t.Errorf("DefaultRepos() = %+v, want the default scenarios, data, rules and engine settings", r)
 	}
 }

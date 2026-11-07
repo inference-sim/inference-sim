@@ -104,6 +104,7 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 	return vllm.ResolveBlockSize(vllm.BlockSizeInput{
 		Model:               in.Scenario.Model,
 		Capability:          in.Chip.ComputeCapability,
+		TP:                  max(pool.Parallel.TP, 1),
 		KVCacheDType:        kv,
 		Speculative:         e.Speculative != nil,
 		ContextParallel:     max(pool.Parallel.DCP, 1) > 1 || max(pool.Parallel.PCP, 1) > 1,

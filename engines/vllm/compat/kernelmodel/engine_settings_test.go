@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -279,6 +280,54 @@ func TestEngineKeepsOrRefusesAStatedMemoryUtilization(t *testing.T) {
 		got := resolveEngine(in, engineconfig.Engine{GPUMemoryUtilization: c.util}).engine.GPUMemoryUtilization
 		if got != c.want {
 			t.Errorf("resolveEngine with gpu_memory_utilization %v gave %v, want %v", c.util, got, c.want)
+		}
+	}
+}
+
+// A pool wider than the block-size oracle ran (core/vllm.MaxBlockSizeTP) is refused, citing #68,
+// when its block_size is unstated: the per-rank head counts that feed vLLM's backend selection
+// change with the width. A pool at or under the limit is unaffected. The width reaches the
+// resolution through BlockSizeInput.TP.
+func TestEngineRefusesAnUnstatedBlockSizeOnAPoolWiderThanTheOracleRan(t *testing.T) {
+	const fixture = "minimax-m2.5-b200-fp4-vllm-tp4.yaml"
+	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		tp      int
+		refused bool
+	}{{4, false}, {16, false}, {32, true}} {
+		body := string(raw)
+		// gb200-nvl72 holds a rack of 72 GPUs, so the widest pool fits one cluster.
+		nodes := strconv.Itoa(max(c.tp/4, 1))
+		for _, e := range [][2]string{
+			{"  hardware: b200\n  nodes: 1\n  gpus_per_node: 8\n", "  hardware: gb200-nvl72\n  fabric: ib-400g\n  nodes: " + nodes + "\n"},
+			{"    nodes: 1\n    parallel", "    nodes: " + nodes + "\n    parallel"},
+			{"      tp: 4\n", "      tp: " + strconv.Itoa(c.tp) + "\n"},
+			{"      block_size: 16\n", ""},
+		} {
+			old, repl := e[0], e[1]
+			if !strings.Contains(body, old) {
+				t.Fatalf("%s has no %q", fixture, old)
+			}
+			body = strings.Replace(body, old, repl, 1)
+		}
+		r := repos()
+		r.Scenarios = t.TempDir()
+		if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		m, err := Open("v.yaml", r)
+		if err != nil {
+			t.Fatalf("tp %d: %v", c.tp, err)
+		}
+		e, err := m.Engine()
+		switch {
+		case c.refused && (err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/68") || !strings.Contains(err.Error(), "tensor_parallel_size")):
+			t.Errorf("tp %d: Engine: %v, want the #68 refusal for a width the oracle did not run", c.tp, err)
+		case !c.refused && (err != nil || e.BlockSize != 16):
+			t.Errorf("tp %d: Engine: block_size %d (%v), want 16 unaffected", c.tp, e.BlockSize, err)
 		}
 	}
 }
