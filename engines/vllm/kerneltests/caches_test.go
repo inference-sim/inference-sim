@@ -36,7 +36,7 @@ func ownedRecordRate(t *testing.T, in Inputs) float64 {
 		t.Fatal(err)
 	}
 	pool := in.Deployment.Pools[0]
-	dtype := rulesFor(in.Scenario.EngineVersion).ResolveCacheDType(g.Global.Architecture,
+	dtype := rulesFor(in.Scenario.EngineRelease()).ResolveCacheDType(g.Global.Architecture,
 		family, pool.Parallel.TP, mustDecode(t, pool).CacheDType)
 	byID := map[string]model.LayerKind{}
 	for _, lk := range g.LayerKinds {

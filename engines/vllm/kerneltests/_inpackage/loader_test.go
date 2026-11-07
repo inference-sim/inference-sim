@@ -88,7 +88,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	return Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineVersion), Engine: &eng,
+		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()), Engine: &eng,
 	}
 }
 
@@ -98,7 +98,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 func rulesFor(version string) *pack.Pack {
 	p := vllmrules.Lookup(version)
 	if p == nil {
-		panic(fmt.Sprintf("no vLLM rules pack for engine_version %q (known: %v)", version, vllmrules.Versions()))
+		panic(fmt.Sprintf("no vLLM rules pack for engine release %q (known: %v)", version, vllmrules.Versions()))
 	}
 	return p
 }

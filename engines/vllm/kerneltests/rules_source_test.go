@@ -5,6 +5,9 @@ package latencykernel_test
 import (
 	. "github.com/inference-sim/blis-substrate/kernel"
 
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/rules"
@@ -61,5 +64,31 @@ func TestNewValidatesWithTheCallersRules(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("the caller's rule checks ran %d times while the kernel was built, want once", n)
+	}
+}
+
+// A scenario may state its release only as engine: {kind, version}; engine_version is
+// deprecated. The rules lookup reads the release through EngineRelease, as the kernel does, so
+// such a fixture opens instead of panicking on the empty deprecated field.
+func TestAFixtureStatingOnlyTheEngineBlockFindsItsRules(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "glm5-h200-tp8.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := `engine_version: "0.32.0"`
+	if !strings.Contains(string(src), old) {
+		t.Fatalf("the fixture no longer states %s; update this test", old)
+	}
+	path := filepath.Join(t.TempDir(), "engine-block-only.yaml")
+	body := strings.Replace(string(src), old, "engine:\n  kind: vllm\n  version: \"0.32.0\"", 1)
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in := fixtureInputsAt(t, path)
+	if in.Scenario.EngineVersion != "" {
+		t.Fatalf("the deprecated engine_version is %q, want unstated", in.Scenario.EngineVersion)
+	}
+	if got := in.Rules.EngineVersion(); got != "0.32.0" {
+		t.Errorf("rules are for %q, want 0.32.0", got)
 	}
 }

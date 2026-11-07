@@ -243,8 +243,8 @@ func TestOpenUsesTheCallersRules(t *testing.T) {
 	if _, ok := in.Rules.(opaqueRules); !ok {
 		t.Errorf("Inputs.Rules is a %T, not the caller's rules", in.Rules)
 	}
-	if !reflect.DeepEqual(asked, []string{in.Scenario.EngineVersion}) {
-		t.Errorf("the rules source was asked for %v, want exactly the scenario's %q", asked, in.Scenario.EngineVersion)
+	if !reflect.DeepEqual(asked, []string{in.Scenario.EngineRelease()}) {
+		t.Errorf("the rules source was asked for %v, want exactly the scenario's %q", asked, in.Scenario.EngineRelease())
 	}
 }
 

@@ -78,9 +78,16 @@ func mustRoots() (catalog, registry string) {
 // subtests, 0 failures, suite reporting ok. artifacttest.RequireArtifact draws that line.
 func fixtureInputs(t testing.TB, scenario string) Inputs {
 	t.Helper()
+	return fixtureInputsAt(t, filepath.Join("testdata", scenario))
+}
+
+// fixtureInputsAt is fixtureInputs for a scenario file at path.
+func fixtureInputsAt(t testing.TB, path string) Inputs {
+	t.Helper()
+	scenario := filepath.Base(path)
 	// The fixture itself is committed beside this test, so it is never merely absent:
 	// a failure to read one is a malformed fixture and always a real failure.
-	sc, dep, err := LoadBundle(filepath.Join("testdata", scenario))
+	sc, dep, err := LoadBundle(path)
 	if err != nil {
 		t.Fatalf("committed fixture %s: %v", scenario, err)
 	}
@@ -121,7 +128,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	return Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Draft: draft, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineVersion), Engine: &eng,
+		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()), Engine: &eng,
 	}
 }
 
@@ -131,7 +138,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 func rulesFor(version string) *pack.Pack {
 	p := vllmrules.Lookup(version)
 	if p == nil {
-		panic(fmt.Sprintf("no vLLM rules pack for engine_version %q (known: %v)", version, vllmrules.Versions()))
+		panic(fmt.Sprintf("no vLLM rules pack for engine release %q (known: %v)", version, vllmrules.Versions()))
 	}
 	return p
 }
