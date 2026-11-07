@@ -1,0 +1,1010 @@
+{
+ "note": "Derived values only: each row's block size and where the run got it. The rows are InferenceX benchmark rows, read at the date the file was written (2026-11-07) from the public API; fetch.py writes this file.",
+ "runs": [
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m2.5",
+   "row": 411031,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m2.5",
+   "row": 411032,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m2.5",
+   "row": 411033,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m2.5",
+   "row": 411034,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m2.5",
+   "row": 411035,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m2.5",
+   "row": 411039,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m2.5",
+   "row": 417607,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m2.5",
+   "row": 417608,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m2.5",
+   "row": 417610,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m2.5",
+   "row": 417612,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m2.5",
+   "row": 417613,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8_e4m3",
+   "evidence": "engine_line",
+   "gpu": "b300",
+   "model": "kimi-k2.5",
+   "row": 420106,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8_e4m3",
+   "evidence": "engine_line",
+   "gpu": "b300",
+   "model": "kimi-k2.5",
+   "row": 420109,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "engine_line",
+   "gpu": "b200",
+   "model": "kimi-k2.5",
+   "row": 420170,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "fp8",
+   "evidence": "engine_line",
+   "gpu": "b200",
+   "model": "kimi-k2.5",
+   "row": 420174,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423663,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423664,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h100",
+   "model": "minimax-m3-mxfp8",
+   "row": 423665,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h100",
+   "model": "minimax-m3-mxfp8",
+   "row": 423666,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423667,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423668,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423671,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h100",
+   "model": "minimax-m3-mxfp8",
+   "row": 423672,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h100",
+   "model": "minimax-m3-mxfp8",
+   "row": 423674,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423676,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423687,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423688,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423730,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "auto",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "minimax-m3-mxfp8",
+   "row": 423742,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427168,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427172,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427176,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427179,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427186,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427189,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 427215,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 427378,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 427379,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 427384,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 427392,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 427394,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 427397,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3",
+   "row": 431681,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3",
+   "row": 431684,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3",
+   "row": 431693,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "auto",
+   "evidence": "engine_line",
+   "gpu": "b300",
+   "model": "kimi-k2.5",
+   "row": 432289,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "auto",
+   "evidence": "engine_line",
+   "gpu": "b300",
+   "model": "kimi-k2.5",
+   "row": 432292,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "auto",
+   "evidence": "engine_line",
+   "gpu": "b200",
+   "model": "kimi-k2.5",
+   "row": 432765,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 433461,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 433472,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 433474,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 433478,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 433490,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434496,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434497,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "deepseek-v4-pro",
+   "row": 434498,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434499,
+   "speculative_method": "mtp",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434500,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434501,
+   "speculative_method": "mtp",
+   "tp": 4
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434503,
+   "speculative_method": "mtp",
+   "tp": 4
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "deepseek-v4-pro",
+   "row": 434504,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434506,
+   "speculative_method": "mtp",
+   "tp": 4
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434509,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434510,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434513,
+   "speculative_method": "mtp",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "deepseek-v4-pro",
+   "row": 434533,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "deepseek-v4-pro",
+   "row": 434541,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434542,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434545,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "deepseek-v4-pro",
+   "row": 434546,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435169,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435172,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435174,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435175,
+   "speculative_method": "mtp",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435177,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435186,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435188,
+   "speculative_method": "mtp",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "h200",
+   "model": "deepseek-v4-pro",
+   "row": 435189,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "auto",
+   "evidence": "engine_line",
+   "gpu": "b200",
+   "model": "kimi-k2.5",
+   "row": 436175,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "auto",
+   "evidence": "engine_line",
+   "gpu": "b300",
+   "model": "kimi-k2.5",
+   "row": 436176,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 32,
+   "cache_dtype": "auto",
+   "evidence": "engine_line",
+   "gpu": "b300",
+   "model": "kimi-k2.5",
+   "row": 436178,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 436886,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 436887,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 436889,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 436890,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 436891,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 436894,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 436895,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 436898,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 436903,
+   "speculative_method": "none",
+   "tp": 8
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3-mxfp8",
+   "row": 436905,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 436915,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3-mxfp8",
+   "row": 436928,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 438369,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b300",
+   "model": "minimax-m3",
+   "row": 438372,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3",
+   "row": 438407,
+   "speculative_method": "none",
+   "tp": 4
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3",
+   "row": 438408,
+   "speculative_method": "none",
+   "tp": 2
+  },
+  {
+   "block_size": 128,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "minimax-m3",
+   "row": 438413,
+   "speculative_method": "none",
+   "tp": 1
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "deepseek-v4-pro",
+   "row": 439713,
+   "speculative_method": "mtp",
+   "tp": 8
+  },
+  {
+   "block_size": 256,
+   "cache_dtype": "fp8",
+   "evidence": "args",
+   "gpu": "b200",
+   "model": "deepseek-v4-pro",
+   "row": 439721,
+   "speculative_method": "mtp",
+   "tp": 8
+  }
+ ],
+ "source": "InferenceX server logs, https://inferencex.semianalysis.com/api/v1/server-log?id=<row>",
+ "unobtainable": [
+  446375,
+  446384
+ ]
+}
