@@ -73,8 +73,9 @@ type BlockSizeInput struct {
 	Model, Capability string
 	// KVCacheDType is the KV dtype that runs, "auto" when unstated.
 	KVCacheDType string
-	// Speculative is whether the pool speculates: a drafter adds attention layers whose
-	// backends join the selection (platforms/interface.py:699-701, _find_non_ssm_backends).
+	// Speculative is whether the pool's speculation adds attention layers whose backends join the
+	// selection (platforms/interface.py:674-697, _find_non_ssm_backends): see
+	// SpeculationAddsAttentionLayers.
 	Speculative bool
 	// ContextParallel is whether the pool shards a sequence (dcp or pcp above 1), which the
 	// selector's validity filter reads (v1/attention/selector.py:149-155, use_pcp and use_dcp).
@@ -87,6 +88,29 @@ type BlockSizeInput struct {
 	UsesTRTLLMAttention bool
 	// MLAPrefillBackend is attention_config.mla_prefill_backend when stated.
 	MLAPrefillBackend string
+}
+
+// SpeculationAddsAttentionLayers reports whether a pool's speculative_config adds attention
+// layers to the model, so that their backends join the block-size selection. vLLM selects the
+// size after the model and the drafter are loaded (uniproc_executor.py:74-75,
+// multiproc_executor.py:700-701@5df63a72), from every attention layer in the static forward
+// context (Platform._find_non_ssm_backends, vllm/platforms/interface.py:674-697@5df63a72). A
+// drafter with a model loads layers into it (the EAGLE family, MTP, DFlash and DSpark by
+// SpeculativeConfig.use_eagle, vllm/config/speculative.py:1944-1948@5df63a72; draft_model). The
+// n-gram proposers and suffix decoding have no model to load (NgramProposer.load_model,
+// vllm/v1/spec_decode/ngram_proposer.py:175-177; NgramProposerGPU.load_model, :468-469;
+// SuffixDecodingProposer.load_model, suffix_decoding.py:100-102@5df63a72), so the selection sees
+// only the target's layers. No speculation, or zero tokens, adds none. Any other method is taken
+// to add layers, which refuses rather than guesses.
+func SpeculationAddsAttentionLayers(method string, numSpecTokens int) bool {
+	if method == "" || numSpecTokens <= 0 {
+		return false
+	}
+	switch method {
+	case "ngram", "ngram_gpu", "suffix":
+		return false
+	}
+	return true
 }
 
 // BlockSize is a resolved block size and where it came from.

@@ -102,11 +102,12 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 		kv = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, fam, max(pool.Parallel.TP, 1), kv)
 	}
 	return vllm.ResolveBlockSize(vllm.BlockSizeInput{
-		Model:               in.Scenario.Model,
-		Capability:          in.Chip.ComputeCapability,
-		TP:                  max(pool.Parallel.TP, 1),
-		KVCacheDType:        kv,
-		Speculative:         e.Speculative != nil,
+		Model:        in.Scenario.Model,
+		Capability:   in.Chip.ComputeCapability,
+		TP:           max(pool.Parallel.TP, 1),
+		KVCacheDType: kv,
+		// Only a drafter with a model adds attention layers to the selection.
+		Speculative:         e.Speculative != nil && vllm.SpeculationAddsAttentionLayers(e.Speculative.Method, e.Speculative.NumSpecTokens),
 		ContextParallel:     max(pool.Parallel.DCP, 1) > 1 || max(pool.Parallel.PCP, 1) > 1,
 		Env:                 e.Env,
 		UsesTRTLLMAttention: e.UseTRTLLMAttention != nil,

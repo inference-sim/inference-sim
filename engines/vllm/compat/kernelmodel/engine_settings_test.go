@@ -1,6 +1,7 @@
 package kernelmodel
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
+	"github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
@@ -376,5 +378,78 @@ func TestKernelPricesTheEngineSettingsEngineReportsInBatchedDP(t *testing.T) {
 		t.Errorf("the kernel prices block_size %d, gpu_memory_utilization %v, max_num_seqs %d, max_num_batched_tokens %d; "+
 			"Engine reports %d, %v, %d, %d", got.BlockSize, got.GPUMemoryUtilization, got.MaxNumSeqs, got.MaxNumBatchedTokens,
 			e.BlockSize, e.GPUMemoryUtilization, e.MaxNumSeqs, e.MaxNumBatchedTokens)
+	}
+}
+
+// openGPTOSSWithSpeculation opens the gpt-oss-120b Hopper fixture at 0.32.0 with block_size
+// removed, the KV dtype auto and the given speculative block ("" for none).
+func openGPTOSSWithSpeculation(t *testing.T, speculative string) (*Model, error) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", "gpt-oss-120b-h100-fp4-vllm-tp2.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`).ReplaceAllString(string(raw), "")
+	body = strings.Replace(body, "cache_dtype: fp8\n", "cache_dtype: auto\n"+speculative, 1)
+	r := repos()
+	r.Scenarios = t.TempDir()
+	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return Open("v.yaml", r)
+}
+
+// A speculative method that loads no model adds no attention layer, so vLLM's block-size selection
+// sees only the target's layers (Platform._find_non_ssm_backends, after the drafter is loaded;
+// NgramProposer.load_model and SuffixDecodingProposer.load_model load nothing). Only a method
+// that builds draft layers, with at least one speculative token, makes the resolution refuse.
+func TestAnUnstatedBlockSizeIsRefusedOnlyForSpeculationThatAddsLayers(t *testing.T) {
+	const ind = "      "
+	spec := func(method string, k int) string {
+		return fmt.Sprintf("%sspeculative:\n%s  method: %s\n%s  num_spec_tokens: %d\n", ind, ind, method, ind, k)
+	}
+	for _, c := range []struct {
+		name, speculative string
+		size              int
+		refusal           string
+	}{
+		{"no speculation", "", 16, ""},
+		{"ngram", spec("ngram", 3), 16, ""},
+		{"ngram_gpu", spec("ngram_gpu", 3), 16, ""},
+		{"suffix", spec("suffix", 3), 16, ""},
+		{"eagle3 adds draft layers", spec("eagle3", 3), 0, "drafter"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := openGPTOSSWithSpeculation(t, c.speculative)
+			if err != nil {
+				t.Skipf("the kernel refuses this speculation before the block size is resolved: %v", err)
+			}
+			e, err := m.Engine()
+			if c.refusal != "" {
+				if err == nil || !strings.Contains(err.Error(), c.refusal) || !strings.Contains(err.Error(), "blis-vllm/issues/68") {
+					t.Fatalf("Engine: %v, want a refusal containing %q citing #68", err, c.refusal)
+				}
+				return
+			}
+			if err != nil || e.BlockSize != c.size {
+				t.Fatalf("Engine: block_size %d (%v), want %d", e.BlockSize, err, c.size)
+			}
+		})
+	}
+}
+
+func TestSpeculationAddsAttentionLayers(t *testing.T) {
+	for _, c := range []struct {
+		method string
+		k      int
+		want   bool
+	}{
+		{"", 0, false}, {"ngram", 3, false}, {"ngram_gpu", 3, false}, {"suffix", 3, false},
+		{"eagle", 0, false}, {"eagle3", 3, true}, {"mtp", 1, true}, {"dspark", 5, true}, {"draft_model", 2, true},
+		{"medusa", 2, true},
+	} {
+		if got := vllm.SpeculationAddsAttentionLayers(c.method, c.k); got != c.want {
+			t.Errorf("%q with %d tokens: %t, want %t", c.method, c.k, got, c.want)
+		}
 	}
 }
