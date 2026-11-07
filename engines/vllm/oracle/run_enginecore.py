@@ -32,7 +32,7 @@ What is replaced, all listed in oracle/mocks.json:
 - the V2 model runner's Triton requirement: use_v2_model_runner is read from the scenario
   and set on the scheduler and the config's derived values, as vLLM's own CPU tests do
   (tests/v1/core/test_async_scheduler.py:499-517@5df63a72), because the CPU wheel has no
-  Triton.
+  Triton (inference-sim/blis-vllm#3).
 
 No decision code is patched: schedule(), update_from_output(), _update_after_schedule and
 step_with_batch_queue itself run as released.
