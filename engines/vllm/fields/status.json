@@ -6,13 +6,14 @@
   "config:attention_config.indexer_kv_dtype": "AD33 \u00a715, indexer cache rows",
   "config:attention_config.indexer_sparse_logits": "AD33 \u00a715, last row",
   "config:speculative_config.synthetic_acceptance_length": "AD33 \u00a715, drafter acceptance",
-    "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a7203), which the engine resolves",
-    "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a7203), which the engine resolves",
-    "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a7203), which the engine resolves",
-    "config:engram_config.cpu_offload": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:292 maps it to engine.engram_config.cpu_offload; a run that does not state it leaves vLLM's default, True (vllm/config/engram.py:37@5df63a7203), which the engine resolves",
-    "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a7203), which the engine resolves",
+    "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
+    "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a72), which the engine resolves",
+    "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a72), which the engine resolves",
+    "config:engram_config.cpu_offload": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:292 maps it to engine.engram_config.cpu_offload; a run that does not state it leaves vLLM's default, True (vllm/config/engram.py:37@5df63a72), which the engine resolves",
+    "config:gpu_memory_utilization": "vllm/config/cache.py:102@5df63a72 sets the default, 0.92; a run that does not record it leaves that default, which the engine resolves (resolveEngine)",
+    "config:kv_offloading_backend": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:130 marks it inert, read with kv_offloading_size; a run that does not state it leaves vLLM's default, \"native\" (vllm/config/cache.py:272@5df63a72), which the engine resolves",
     "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
-    "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a7203), which the engine resolves"
+    "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves"
   },
  "extra_env": [],
  "dynamic_reads": {
@@ -618,12 +619,12 @@
   },
   "config:compilation_config.cudagraph_decoder_replay": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: DeepSeek-V4.1 decoder-replay CUDA graphs (a nightly feature after v0.31.0); the switch alone is the build's default."
+    "issue": "inference-sim/blis-latency-kernel#85"
    },
-   "status": "inert_unproven"
+   "status": "not_modelled"
   },
   "config:compilation_config.cudagraph_mm_encoder": {
    "estimation": {
@@ -654,12 +655,12 @@
   },
   "config:compilation_config.cudagraph_specialize_lora": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: Compiler internals (inductor passes, cache paths, warm-up counts); BLIS prices graph replay, not compilation."
+    "issue": "inference-sim/blis-latency-kernel#83"
    },
-   "status": "inert_unproven"
+   "status": "not_modelled"
   },
   "config:compilation_config.custom_ops": {
    "estimation": {

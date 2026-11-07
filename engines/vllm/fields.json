@@ -5451,12 +5451,12 @@
     {
       "name": "compilation_config.cudagraph_decoder_replay",
       "source": "config",
-      "status": "inert_unproven",
+      "status": "not_modelled",
       "evidence": {
-        "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: DeepSeek-V4.1 decoder-replay CUDA graphs (a nightly feature after v0.31.0); the switch alone is the build's default."
+        "issue": "inference-sim/blis-latency-kernel#85"
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
@@ -5495,12 +5495,12 @@
     {
       "name": "compilation_config.cudagraph_specialize_lora",
       "source": "config",
-      "status": "inert_unproven",
+      "status": "not_modelled",
       "evidence": {
-        "note": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml marks it inert; no inertness proof yet (VLM-3, due in M2). Policy note: Compiler internals (inductor passes, cache paths, warm-up counts); BLIS prices graph replay, not compilation."
+        "issue": "inference-sim/blis-latency-kernel#83"
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {

@@ -90,6 +90,13 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   for the models, GPUs and KV dtypes in `oracle/blocksize/TABLE.tsv` (`ResolveBlockSize` in
   `core/vllm/blocksize.go`) and refuses the rest, citing blis-vllm#68, and a field has one
   estimation rule, which cannot say that.
+  A rule applies when the run did not record the value, and to a setting the engine neither
+  reads nor prices when it is stated. For a field the engine reads and prices when it is stated,
+  a stated value is used as stated, and the rule applies only when the run did not record it.
+  `gpu_memory_utilization`, `data_parallel_size_local` (read as `parallel.dp_local`) and
+  `engram_config.cpu_offload` are such fields: they stay `not_modelled` with `leave_unset`.
+  The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
+  blis-latency-kernel#85) and `cudagraph_specialize_lora` (#83) are `not_modelled` with `none`.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
   other checks are M2 work and are not here yet: the inertness proofs that turn each
   `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every
