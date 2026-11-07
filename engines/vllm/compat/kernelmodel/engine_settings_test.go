@@ -562,3 +562,28 @@ func TestAPrefillAndADecodePoolResolveTheirBlockSizesFromTheirOwnWidths(t *testi
 		t.Errorf("prefill tp 4 beside a decode at tp 32: %v, want it to resolve", p)
 	}
 }
+
+// A model runs vLLM's Mamba hook (MambaModelConfig.verify_and_update_config) when it has recurrent
+// layers, and the engine block states it so core/vllm resolves mamba_cache_mode against the hook's
+// default (checkMambaCache). Nemotron-3-Ultra is a hybrid attention/Mamba model; MiniMax-M2.5 and
+// Llama have no recurrent layer.
+func TestHasRecurrentLayersNamesTheModelsThatRunTheMambaHook(t *testing.T) {
+	r := repos()
+	r.Scenarios = filepath.Join("..", "..", "kerneltests", "testdata")
+	for _, c := range []struct {
+		scenario string
+		want     bool
+	}{
+		{"nemotron3-ultra-h100-agg.yaml", true},
+		{filepath.Join("aisimulate", "llama-3.1-70b-instruct-h200-fp8-vllm-tp2.yaml"), false},
+		{filepath.Join("aisimulate", "minimax-m2.5-b200-fp8-vllm-tp2.yaml"), false},
+	} {
+		m, err := Open(c.scenario, r)
+		if err != nil {
+			t.Fatalf("%s: %v", c.scenario, err)
+		}
+		if got := m.HasRecurrentLayers(); got != c.want {
+			t.Errorf("%s: HasRecurrentLayers = %t, want %t", c.scenario, got, c.want)
+		}
+	}
+}

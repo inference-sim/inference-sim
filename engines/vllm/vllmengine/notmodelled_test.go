@@ -9,13 +9,14 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
+	"gopkg.in/yaml.v3"
+
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -478,5 +479,25 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 		if err != nil && !strings.Contains(err.Error(), "issues/60") {
 			t.Errorf("events %t, publisher %s: refusal does not cite #60: %v", c.enabled, c.publisher, err)
 		}
+	}
+}
+
+// A deployment's engine block is completed with mamba_model for a model that has recurrent layers,
+// and only for one: the hook that rewrites mamba_cache_mode runs for those models alone.
+func TestPrepareStatesMambaModelOnlyForARecurrentModel(t *testing.T) {
+	has := func(scenario string) bool {
+		t.Helper()
+		return stated(openPool(t, scenario).complete(yaml.Node{}), "mamba_model") == "true"
+	}
+	if has("d079-032.yaml") {
+		t.Error("d079 (minimax-m2.5) is not a Mamba model, and its block states mamba_model")
+	}
+	m, err := kernelmodel.Open("nemotron3-ultra-h100-agg.yaml", kernelmodel.Repos{
+		Scenarios: filepath.Join("..", "kerneltests", "testdata"), Data: embeddedData(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.HasRecurrentLayers() {
+		t.Error("nemotron3-ultra has recurrent layers and HasRecurrentLayers says it has none")
 	}
 }

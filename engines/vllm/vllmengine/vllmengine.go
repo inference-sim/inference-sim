@@ -560,6 +560,10 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// The pool's parallel.dp: the factory builds the data-parallel group behind one endpoint.
 		setIfAbsent(&block, "data_parallel_size", fmt.Sprint(p.dp))
 	}
+	if p.model.HasRecurrentLayers() {
+		// The model runs vLLM's Mamba hook, which resolves mamba_cache_mode (core/vllm checkMambaCache).
+		setIfAbsent(&block, "mamba_model", "true")
+	}
 	runner, _ := p.model.ModelRunner()
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
 	if n := p.model.MTPDraftLayers(); n > 0 {

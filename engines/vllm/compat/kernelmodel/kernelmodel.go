@@ -585,6 +585,22 @@ func (m *Model) V032Pieces() []string {
 	return out
 }
 
+// HasRecurrentLayers reports whether the pool's model graph has a recurrent (Mamba-style) layer,
+// which is when vLLM runs MambaModelConfig.verify_and_update_config for it
+// (vllm/model_executor/models/config.py:507-521, 672-708@5df63a72; ModelConfig.is_hybrid,
+// vllm/config/model.py:2023-2032@5df63a72). A Mamba-only architecture also has recurrent layers.
+func (m *Model) HasRecurrentLayers() bool {
+	has := false
+	if m.graph != nil {
+		m.graph.EachNode(func(_ string, n model.Node) {
+			if n.Op == model.OpRecurrentUpdate {
+				has = true
+			}
+		})
+	}
+	return has
+}
+
 // MTPDraftLayers is the pool's MTP drafter's layer count, the checkpoint's
 // num_nextn_predict_layers, as the model graph's speculator stack holds it; 0 when the pool does
 // not draft with method mtp or the graph describes no speculator. It sets the prefill lookahead

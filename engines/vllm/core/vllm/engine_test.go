@@ -271,8 +271,8 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a negative max_num_active_seqs", Version, "max_num_active_seqs: -1\n", "max_num_active_seqs -1 is negative"},
 		{"a negative max_loras", Version, "max_loras: -1\n", "max_loras -1 is negative"},
 		{"a NaN watermark", Version, "watermark: .nan\n", "watermark NaN is outside"},
-		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
-		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
+		{"mamba_cache_mode on a model with no Mamba hook", Version, "mamba_cache_mode: align\n", "mamba_cache_mode \"align\" runs as \"align\", away from the default \"none\""},
+		{"swa_bounded_replay false on the V2 runner", Version, "swa_bounded_replay: false\nuse_v2_model_runner: true\n", "swa_bounded_replay is not modelled"},
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
 		// A DP rank's batch queue is diff-tested on one pipeline stage (oracle/run_dp.py).
 		{"DP with pipeline parallelism", Version, "data_parallel_size: 2\npipeline_parallel_size: 2\n", "data parallelism with pipeline parallelism"},
