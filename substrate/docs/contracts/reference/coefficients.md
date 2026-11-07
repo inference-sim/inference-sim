@@ -39,6 +39,7 @@ sets, and how a cost model combines them is described under
 | `method` | string | yes | How the value was obtained. One of the [methods](vocabularies.md#methods). |
 | `fitted` | boolean | yes | Whether the value comes from fitting a curve. Must be present even when false. |
 | `scope` | mapping | yes | Where the value holds, below. At least one dimension. |
+| `rate_basis` | string | no | What a `bytes_per_us` rate measures: `memory` (the default) or `work`. A memory rate cannot exceed the chip's datasheet memory bandwidth (SUB-5). A `work` rate counts bytes of work, such as a record counted once per query and key pair, and may exceed it; it requires a `rationale`. One of the [rate bases](vocabularies.md#rate-bases). |
 | `ci95` | `[low, high]` | no | 95% confidence interval. Must contain `value`. |
 | `sources` | list | depends on `method` | Citations, below. If present, not empty. |
 | `rationale` | string | depends on `method` | The reasoning behind a value that was not measured. |

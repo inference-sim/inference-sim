@@ -114,6 +114,80 @@ def test_no_bandwidth_rate_exceeds_its_parts_datasheet_peak():
     assert checked >= 10, f"only {checked} rate/chip pairs checked; the filter is wrong"
 
 
+# The families whose bytes_per_us value is a rate through device memory. Link, host and
+# interconnect rates (collective_*, moe_a2a_*, host_*) are bounded by their own links, not by
+# HBM, and are not in this list.
+HBM_RATE_FAMILY = re.compile(r"(attention_|mhc_)\w*rate")
+# The work rates committed with rate_basis: work. A work rate may exceed the memory peak, so
+# marking an entry "work" would otherwise be a way around SUB-5. The count may only go down:
+# lower it when an entry is refitted as a memory rate, never raise it to admit a new one.
+# (Four entries: the sparse-MLA and block-index prefill rates on h100 and on h200.)
+MAX_WORK_RATES = 4
+
+
+def memory_rate_problems(entries, facts_of):
+    """SUB-5: no memory rate above the chip's datasheet memory bandwidth.
+
+    Returns (problems, examined). A rate is a memory rate unless it says rate_basis: work.
+    A work rate must say why in its rationale. A memory rate with no chip to compare against
+    is a problem too, so the check cannot pass by examining nothing.
+    """
+    problems, examined = [], 0
+    for setname, name, body in entries:
+        if body.get("units") != "bytes_per_us" or not HBM_RATE_FAMILY.match(name):
+            continue
+        basis = body.get("rate_basis", "memory")
+        if basis == "work":
+            if not str(body.get("rationale", "")).strip():
+                problems.append(f"{setname}: {name} is a work rate with no rationale")
+            continue
+        for chip in (body.get("scope") or {}).get("hardware", []):
+            facts = facts_of(chip)
+            if not facts or "BwPeakTBs" not in facts:
+                problems.append(f"{setname}: {name} names chip {chip}, which has no datasheet "
+                                f"memory bandwidth to compare against")
+                continue
+            examined += 1
+            peak = facts["BwPeakTBs"] * 1e6
+            if body["value"] > peak:
+                problems.append(
+                    f"{setname}: {name} on {chip} is {body['value']:,.0f} B/us, "
+                    f"{body['value'] / peak:.2f}x the part's {peak:,.0f} B/us datasheet memory "
+                    f"bandwidth. A kernel cannot read faster than its memory: fix the byte "
+                    f"count in the fit, or, if the rate counts work rather than memory "
+                    f"traffic, give it rate_basis: work and say why in its rationale.")
+    return problems, examined
+
+
+def test_no_memory_rate_exceeds_its_parts_datasheet_peak():
+    """SUB-5, every family that reads device memory, not only attention decode."""
+    problems, examined = memory_rate_problems(ENTRIES, chip_facts)
+    assert not problems, "\n".join(problems)
+    assert examined >= 36, f"only {examined} memory rate/chip pairs examined; the filter is wrong"
+
+
+def test_work_rates_are_few_and_only_go_down():
+    work = [(s, n, b["scope"]["hardware"]) for s, n, b in ENTRIES
+            if b.get("rate_basis") == "work"]
+    assert len(work) <= MAX_WORK_RATES, (
+        f"{len(work)} work rates, above the {MAX_WORK_RATES} committed: {work}. A work rate "
+        f"is allowed to exceed the memory peak, so each one is a reviewed exception.")
+
+
+def test_the_memory_rate_check_fails_on_its_known_bad_inputs():
+    """X18: the check must fail on an input it exists to refuse, and pass on its neighbour."""
+    facts = {"h200": {"BwPeakTBs": 4.8}}.get
+    rate = lambda v, **kw: [("s.yaml", "attention_decode_rate",
+                             {"units": "bytes_per_us", "value": v, "scope": {"hardware": ["h200"]}, **kw})]
+    peak = 4.8e6
+    assert memory_rate_problems(rate(peak), facts)[0] == []                     # at peak: allowed
+    assert memory_rate_problems(rate(peak * 1.001), facts)[0]                   # just above: refused
+    assert memory_rate_problems(rate(2 * peak, rate_basis="work", rationale="counts work"), facts)[0] == []
+    assert memory_rate_problems(rate(2 * peak, rate_basis="work"), facts)[0]    # work, no reason
+    assert memory_rate_problems(rate(1.0), {}.get)[0]                           # unknown chip
+    assert memory_rate_problems(rate(1e9), facts)[0]                            # 1000x slip, high
+
+
 def test_every_bandwidth_rate_is_a_plausible_fraction_of_peak():
     """And not implausibly far below it either.
 

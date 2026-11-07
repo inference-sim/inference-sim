@@ -744,6 +744,7 @@ coefficients:
       units: bytes_per_us
       method: measured
       fitted: true
+      rate_basis: work
       scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H200), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
@@ -777,6 +778,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
+      rate_basis: work
       scope: {hardware: [h200], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h200_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H200), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}
@@ -821,6 +823,7 @@ coefficients:
       units: bytes_per_us
       method: measured
       fitted: true
+      rate_basis: work
       scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_hca_attn_module_perf.parquet (NVIDIA H100), FLASHMLA_SPARSE_DSV4, sgl-project/DeepSeek-V4-Flash-FP8, 1642 prefill points", role: primary}
@@ -854,6 +857,7 @@ coefficients:
       units: bytes_per_us
       method: assumed
       fitted: false
+      rate_basis: work
       scope: {hardware: [h100], model: [deepseek-v4.1-flash]}
       sources:
         - {kind: model, cite: "NVIDIA AISimulate systems/data/h100_sxm/sparse_attention/vllm/0.25.0/dsv4_paged_mqa_logits_module_perf.parquet (NVIDIA H100), vllm.utils.deep_gemm.fp8_fp4_paged_mqa_logits, 3504 prefill-shaped points (a proxy for fp8_fp4_mqa_logits)", role: primary}

@@ -124,6 +124,13 @@ type Entry struct {
 	Fitted bool  `yaml:"fitted"`
 	Scope  Scope `yaml:"scope"`
 
+	// RateBasis says what a rate in bytes per microsecond measures (SUB-5). Empty means
+	// memory: a rate at which a kernel moves bytes through device memory, which cannot
+	// exceed the chip's datasheet memory bandwidth. "work" marks a rate over counted work
+	// that may exceed it, and requires a rationale. It is allowed only on a bytes_per_us
+	// entry.
+	RateBasis vocab.RateBasis `yaml:"rate_basis,omitempty"`
+
 	// CI95 is a confidence interval, where the fit produced one.
 	CI95 *Interval `yaml:"ci95,omitempty"`
 	// Sources cite the evidence. A Method that claims evidence should carry at

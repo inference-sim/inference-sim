@@ -376,3 +376,50 @@ func TestCalibratedRequiresMeasuredCasesAndHoldout(t *testing.T) {
 		t.Error("derived is a catalog provenance, not a coefficient method")
 	}
 }
+
+// rate_basis (SUB-5): a closed word, only on a bytes_per_us entry, and a work rate must say
+// why it is not a memory rate. Each case fails for exactly one reason.
+func TestRateBasis(t *testing.T) {
+	rate := func(mutate func(*Entry)) *Set {
+		s := validSet()
+		e := Entry{Name: "attention_decode_rate", Value: 1e6, Units: vocab.UnitBytesPerMicrosecond,
+			Method: vocab.MethodMeasured, Fitted: true, Scope: Scope{Hardware: []string{"h200"}}}
+		mutate(&e)
+		s.Coefficients = append(s.Coefficients, e)
+		return s
+	}
+	ok := []struct {
+		name   string
+		mutate func(*Entry)
+	}{
+		{"absent means memory", func(e *Entry) {}},
+		{"memory", func(e *Entry) { e.RateBasis = vocab.RateBasisMemory }},
+		{"work with a rationale", func(e *Entry) {
+			e.RateBasis, e.Rationale = vocab.RateBasisWork, "a work rate over cached bytes"
+		}},
+	}
+	for _, c := range ok {
+		if p := rate(c.mutate).Validate(); !p.OK() {
+			t.Errorf("%s was rejected:\n%s", c.name, p.Error())
+		}
+	}
+	bad := []struct {
+		name, want string
+		mutate     func(*Entry)
+	}{
+		{"unknown word", "is not one of", func(e *Entry) { e.RateBasis = "cache" }},
+		{"on a non-rate unit", "applies only to units", func(e *Entry) {
+			e.Units, e.RateBasis = vocab.UnitDimensionless, vocab.RateBasisMemory
+		}},
+		{"work with no rationale", "requires a rationale", func(e *Entry) { e.RateBasis = vocab.RateBasisWork }},
+		{"work with a blank rationale", "requires a rationale", func(e *Entry) {
+			e.RateBasis, e.Rationale = vocab.RateBasisWork, "  "
+		}},
+	}
+	for _, c := range bad {
+		p := rate(c.mutate).Validate()
+		if p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: want a problem containing %q, got ok=%v:\n%s", c.name, c.want, p.OK(), p.Error())
+		}
+	}
+}

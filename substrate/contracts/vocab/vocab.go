@@ -180,6 +180,26 @@ var sourceRoles = map[SourceRole]bool{
 // Valid reports whether r is a recognized source role.
 func (r SourceRole) Valid() bool { return sourceRoles[r] }
 
+// RateBasis says what a rate in bytes per microsecond measures. SUB-5 bounds a rate by the
+// chip's datasheet memory bandwidth only where the rate is a memory rate.
+type RateBasis string
+
+const (
+	// RateBasisMemory is a rate at which a kernel reads or writes device memory. It cannot
+	// exceed the chip's datasheet memory bandwidth. An entry that states no basis has this
+	// one.
+	RateBasisMemory RateBasis = "memory"
+	// RateBasisWork is a rate over a quantity of work counted in bytes, such as a record
+	// counted once per query and key pair, where the kernel reads the same bytes from cache
+	// many times. It can exceed the datasheet memory bandwidth, and its rationale says why.
+	RateBasisWork RateBasis = "work"
+)
+
+var rateBases = map[RateBasis]bool{RateBasisMemory: true, RateBasisWork: true}
+
+// Valid reports whether b is a recognized rate basis.
+func (b RateBasis) Valid() bool { return rateBases[b] }
+
 // Enumerate returns every member of a vocabulary, sorted, for error messages that
 // tell a reader what was allowed rather than only what was rejected.
 func Enumerate[T ~string](set map[T]bool) []string {
@@ -199,6 +219,7 @@ func AllScopeKeys() []string   { return Enumerate(scopeKeys) }
 func AllProvenances() []string { return Enumerate(provenances) }
 func AllSourceKinds() []string { return Enumerate(sourceKinds) }
 func AllSourceRoles() []string { return Enumerate(sourceRoles) }
+func AllRateBases() []string   { return Enumerate(rateBases) }
 
 func sortStrings(s []string) {
 	for i := 1; i < len(s); i++ {

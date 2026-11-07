@@ -479,7 +479,8 @@ def entries(chip: str, g: dict, mg: dict, sp: dict, ix: dict, rg: dict, mh: dict
               f"part's {tb:g} TB/s datasheet bandwidth and must not be rescaled by BwPeak. "
               f"Free of the floor and per-query terms the rate is {sp['two_rate'] / 1e6:.2f} "
               f"TB/s ({sp['two'][0]:.3f}x), which is why the four are used together. See "
-              f"attention_prefill_floor_sparse_mla for the form and every error."),
+              f"attention_prefill_floor_sparse_mla for the form and every error.",
+              rate_basis="work"),
     ]
     per_model = ", ".join(f"{k.split('/')[-1]} {v[0]:.3f}x"
                           for k, v in ix["per_model"].items())
@@ -556,7 +557,8 @@ def entries(chip: str, g: dict, mg: dict, sp: dict, ix: dict, rg: dict, mh: dict
               f"{g['fit_index_heads']}): a compute rate expressed per key byte -- every query "
               f"row of a request reads the same keys, which is why it exceeds the "
               f"{tb:g} TB/s HBM peak and why, unlike the decode rate, the shared-block-table "
-              f"sweep is representative here. See attention_prefill_floor_block_index_scores."),
+              f"sweep is representative here. See attention_prefill_floor_block_index_scores.",
+              rate_basis="work"),
     ]
     pre, post = mh["pre"], mh["post"]
     bpt = mh["bytes_per_token"]

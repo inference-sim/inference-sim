@@ -136,6 +136,19 @@ func (e Entry) validate(p *validate.Problems, at string) {
 			"fitted: true requires method %q or %q, got method %q",
 			vocab.MethodMeasured, vocab.MethodCalibrated, e.Method)
 	}
+	// rate_basis (SUB-5): a closed word, meaningful only for a rate in bytes per microsecond,
+	// and a work rate must say why it is not a memory rate.
+	if e.RateBasis != "" {
+		switch {
+		case !e.RateBasis.Valid():
+			p.Field(at+".rate_basis", "%q is not one of %v", e.RateBasis, vocab.AllRateBases())
+		case e.Units != vocab.UnitBytesPerMicrosecond:
+			p.Field(at+".rate_basis", "applies only to units %q, got units %q",
+				vocab.UnitBytesPerMicrosecond, e.Units)
+		case e.RateBasis == vocab.RateBasisWork && strings.TrimSpace(e.Rationale) == "":
+			p.Field(at+".rationale", "rate_basis work requires a rationale that says why the rate is not a memory rate")
+		}
+	}
 	// Companion fields required by method. Gated on a known method so an unknown one is
 	// reported once (as an unknown method) rather than also as a missing companion.
 	if e.Method.Valid() {

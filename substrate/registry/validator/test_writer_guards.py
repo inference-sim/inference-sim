@@ -248,3 +248,26 @@ def test_the_v41_eager_constant_reproduces_the_anchor_additively():
     step = ea["n"] * (ea["e"] + ea["launch"]) / 1e3 + ea["dev"]
     assert abs(step / ea["median"] - 1) < 1e-4
     assert 92.75 <= ea["e"] <= 93.7  # the kernel's TestTheEagerDecodeAnchorIsAdditive band
+
+
+# --------------------------------------------------------------------------------------
+# fit_attention: the bandwidth fraction (SUB-5, blis-substrate #16)
+# --------------------------------------------------------------------------------------
+
+def test_the_attention_fit_never_offers_a_fraction_above_the_datasheet_peak():
+    """relane_attention_decode.py writes fraction * peak unchanged, so a grid that reaches
+    2.0 would let a wrong byte count commit a rate above the part's HBM peak."""
+    import fit_attention
+
+    assert max(fit_attention.FRACTION_GRID) == 1.0
+    assert min(fit_attention.FRACTION_GRID) > 0.0
+    for f in fit_attention.FRACTION_GRID:
+        assert fit_attention.check_fraction(f) == f
+
+
+@pytest.mark.parametrize("bad", [0.0, -0.5, 1.02, 2.0, float("inf"), float("nan")])
+def test_the_attention_fit_refuses_a_fraction_outside_zero_to_one(bad):
+    import fit_attention
+
+    with pytest.raises(ValueError, match=r"outside \(0, 1\.0\]"):
+        fit_attention.check_fraction(bad)

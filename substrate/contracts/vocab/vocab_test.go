@@ -25,6 +25,7 @@ func TestVocabulariesAreClosed(t *testing.T) {
 			"vendor_doc"}},
 		{"source roles", AllSourceRoles(), []string{
 			"primary", "supporting", "upper_bound"}},
+		{"rate bases", AllRateBases(), []string{"memory", "work"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
