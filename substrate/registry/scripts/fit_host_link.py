@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Fit host_link_bandwidth per part from InferenceX CollectiveX swap_blocks, and re-derive the
-DeepSeek-V4.1 host-resident gather rate from a measured H2D payload ceiling.
+"""Fit host_link_bandwidth per part from InferenceX CollectiveX swap_blocks.
+
+This script writes only host_link_bandwidth. host_gather_rate_uva is written by
+fit_deepseek_v41_h200.py, from the nominal PCIe bandwidth (an assumed value).
 
 WHAT THE KERNEL MEANS BY IT. blis-latency-kernel caps a CPU tier's transfer rate at
 host_link_bandwidth (TierTime: rate = min(tier rate, host link)), and uses it as the UVA
@@ -20,13 +22,6 @@ MB/s). The cap over it is that fit's larger direction, so the cap never binds be
 fitted tier rate and states the link's measured ceiling. Other parts: the only block size
 every part measures is 1 MiB, so the estimator is the same median at 1 MiB blocks; on
 h100 that gives 46,008 against 46,089 (0.2%), so the two estimators agree where both apply.
-
-THE GATHER RATE. host_gather_rate_uva is an SM-issued UVA read of random 264 B rows. Its
-ceiling is the SM-driven H2D read rate, measured by vLLM PR #42212 on H100 (Triton swap
-kernel, onload, about 51 GB/s at every SM count >= 20) and by CollectiveX H2D at 1 GiB
-blocks (51.6 GB/s): 51 GB/s x 264/288 useful bytes. A measured payload rate already pays
-the PCIe line code, so no 128/130 factor. h200 shares the PCIe Gen5 x16 host link and has no
-SM-driven measurement: transferred, stated.
 
 THE BODIES MUST BE THE CITED ONES. CollectiveX's API serves only its latest 15 runs (bodies
 from https://inferencex.semianalysis.com/api/v1/collectivex/runs/<id>?version=1; the bare
@@ -59,8 +54,6 @@ PARTS = {"h100": "h100-dgxc", "h200": "h200-dgxc", "b200": "b200-nscale", "b300"
 MIN_PAYLOAD = 64 << 20
 H100_ESTIMATOR = "all block sizes"  # the catalog cpu_dram fit's estimator, on its own part
 BLOCK = 1 << 20
-SM_DRIVEN_H2D = 51000.0  # bytes/us, vLLM PR #42212 (H100, Triton onload ceiling)
-ENGRAM_ROW_BYTES, ENGRAM_FETCHED_BYTES = 256 + 8, 256 + 32
 
 _spec = importlib.util.spec_from_file_location("coefficient_blocks", HERE / "coefficient_blocks.py")
 cb = importlib.util.module_from_spec(_spec)
