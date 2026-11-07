@@ -233,6 +233,33 @@ var rateBases = map[RateBasis]bool{RateBasisMemory: true, RateBasisWork: true}
 // Valid reports whether b is a recognized rate basis.
 func (b RateBasis) Valid() bool { return rateBases[b] }
 
+// MeasurementTime and MeasurementExecution say what a measured coefficient's number includes
+// (design VAL-9): device time only, or host issue time as well; and whether the kernels ran
+// from a captured graph or eagerly. The formula that reads the coefficient declares the same.
+type MeasurementTime string
+
+const (
+	TimeDevice        MeasurementTime = "device"
+	TimeDeviceAndHost MeasurementTime = "device_and_host"
+)
+
+var measurementTimes = map[MeasurementTime]bool{TimeDevice: true, TimeDeviceAndHost: true}
+
+// Valid reports whether t is a recognized measurement time.
+func (t MeasurementTime) Valid() bool { return measurementTimes[t] }
+
+type MeasurementExecution string
+
+const (
+	ExecutionCaptured MeasurementExecution = "captured"
+	ExecutionEager    MeasurementExecution = "eager"
+)
+
+var measurementExecutions = map[MeasurementExecution]bool{ExecutionCaptured: true, ExecutionEager: true}
+
+// Valid reports whether e is a recognized measurement execution.
+func (e MeasurementExecution) Valid() bool { return measurementExecutions[e] }
+
 // Enumerate returns every member of a vocabulary, sorted, for error messages that
 // tell a reader what was allowed rather than only what was rejected.
 func Enumerate[T ~string](set map[T]bool) []string {
@@ -246,13 +273,15 @@ func Enumerate[T ~string](set map[T]bool) []string {
 
 // AllUnits, AllMethods and the rest expose each vocabulary for error text and for
 // tests that assert a vocabulary has not silently grown.
-func AllUnits() []string       { return Enumerate(units) }
-func AllMethods() []string     { return Enumerate(methods) }
-func AllScopeKeys() []string   { return Enumerate(scopeKeys) }
-func AllProvenances() []string { return Enumerate(provenances) }
-func AllSourceKinds() []string { return Enumerate(sourceKinds) }
-func AllSourceRoles() []string { return Enumerate(sourceRoles) }
-func AllRateBases() []string   { return Enumerate(rateBases) }
+func AllUnits() []string                 { return Enumerate(units) }
+func AllMethods() []string               { return Enumerate(methods) }
+func AllScopeKeys() []string             { return Enumerate(scopeKeys) }
+func AllProvenances() []string           { return Enumerate(provenances) }
+func AllSourceKinds() []string           { return Enumerate(sourceKinds) }
+func AllSourceRoles() []string           { return Enumerate(sourceRoles) }
+func AllRateBases() []string             { return Enumerate(rateBases) }
+func AllMeasurementTimes() []string      { return Enumerate(measurementTimes) }
+func AllMeasurementExecutions() []string { return Enumerate(measurementExecutions) }
 
 func sortStrings(s []string) {
 	for i := 1; i < len(s); i++ {

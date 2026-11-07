@@ -191,6 +191,6 @@ adds the method.
 | `MemoryBreakdown` | `Weights`, `ActivationPeak`, `CUDAGraph`, `EPLBRedundant`, `CommBuffers`, in bytes; `Total()` sums them. |
 | `Direction` | `to_tier` (eviction) or `from_tier` (fetch). Priced separately because flash reads and writes differ. |
 | `Placement` | A rank's `Node`, `Rack` and `Pool` (the pool's role). Comparing two placements chooses the link a transfer uses. |
-| `CoefficientOrigin` | One row of the provenance trail: entry `Name`, `Set`, `Method`, `Scope`. |
+| `CoefficientOrigin` | One row of the provenance trail: entry `Name`, `Set`, `Method`, `Scope`, and `KernelMatch`: `exact` when the entry lists a kernel implementation that runs, `unkeyed` when it lists none, empty for a value the kernel supplied itself. |
 
 Source: [`kernel`](https://github.com/inference-sim/blis-substrate/tree/main/contracts/kernel).

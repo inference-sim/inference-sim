@@ -336,6 +336,19 @@ type CoefficientOrigin struct {
 	Set    string // the set it came from
 	Method string // the evidence vocabulary's term
 	Scope  string // the scope as recorded
+	// KernelMatch says how the entry met the kernel implementations that run (design VAL-8):
+	// "exact" when it lists one of them by library, variant and code hash, "unkeyed" when it
+	// lists none and so applies to every implementation without having been shown to match
+	// the one that runs. Empty for a value the kernel supplied itself. A reader deciding that a
+	// price rests on the running kernel counts only "exact".
+	KernelMatch string
+	// Primitive is the lowered primitive the entry prices, and Running the kernel implementations
+	// the plan supplied for it, which the entry was matched against (VAL-8), as
+	// "library/variant/code_hash" joined by ", " in sorted order. Both are empty for a value the
+	// kernel supplied itself, and Running is empty when nothing was supplied. (A string, not a
+	// list, so that CoefficientOrigin stays comparable.)
+	Primitive string
+	Running   string
 }
 
 // Resolution reports what the constructor decided where a deployment expressed a

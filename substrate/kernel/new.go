@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
@@ -63,6 +64,16 @@ type Inputs struct {
 	// the caller, as speculative acceptance is. Nil prices an expert-parallel group as
 	// evenly loaded and records that as an assumption.
 	Routing *routing.Resolution
+	// Implementations are the kernel implementations the pool runs, by the lowered primitive each
+	// executes: the library, variant and code hash the engine lowered it to, which is
+	// plan.PoolPlan.ImplementationsByPrimitive() for a caller that holds the pool's plan (design
+	// VAL-8). A coefficient that lists kernel implementations is used only for the primitive it
+	// prices (coefficient.PrimitiveOf), and only when every implementation supplied for that
+	// primitive is one it lists, by library, variant and code hash together; a different hash of
+	// the same kernel, or a kernel of another primitive, is refused. A primitive with nothing
+	// supplied uses only coefficients that list no implementation, as every coefficient of the
+	// registry did before any listed one.
+	Implementations map[plan.Primitive][]plan.KernelImpl
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),
 	// resolved by the caller as Routing is. It is read only when the engine enables adaptive
 	// verification (enginesettings.Speculative.EnableAdaptiveVerification), where it is
@@ -134,6 +145,10 @@ func construct(in Inputs) (*Kernel, error) {
 	if err := validateDocuments(in); err != nil {
 		return nil, err
 	}
+	running := runningImpls(in.Implementations)
+	if err := coefficient.ValidateRunning(running); err != nil {
+		return nil, fmt.Errorf("the kernel implementations that run: %w", err)
+	}
 	// A deep copy: the engine block's optional settings are pointers, and a kernel that
 	// shared them with the caller's documents would change its answers when the caller
 	// edited a deployment it had already priced -- the config-search shape Inputs exists
@@ -203,7 +218,8 @@ func construct(in Inputs) (*Kernel, error) {
 	coeffs, err := resolve.Load(in.Coefficients, resolve.Scope{
 		Hardware: in.Chip.Name, Model: in.Model.Name,
 		TP: layout.TP, EP: layout.ExpertWidth, NodesSpanned: layout.NodesSpanned,
-		Fabric: fabricName,
+		Fabric:          fabricName,
+		Implementations: running,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolving coefficients: %w", err)
@@ -2822,6 +2838,26 @@ func (k *Kernel) residentBytes(l price.PlannedLayer) float64 {
 	return b
 }
 
+// runningImpls converts the engine's implementations to the registry's key: library, variant and
+// code hash. The toolkit is recorded by the engine and is not part of the key (design 6.2).
+func runningImpls(in map[plan.Primitive][]plan.KernelImpl) map[string][]coefficient.KernelImpl {
+	out := map[string][]coefficient.KernelImpl{}
+	for prim, impls := range in {
+		seen := map[coefficient.KernelImpl]bool{}
+		for _, k := range impls {
+			c := coefficient.KernelImpl{Library: k.Library, Variant: k.Variant, CodeHash: k.CodeHash}
+			if !seen[c] {
+				seen[c] = true
+				out[string(prim)] = append(out[string(prim)], c)
+			}
+		}
+		if _, ok := out[string(prim)]; !ok {
+			out[string(prim)] = nil
+		}
+	}
+	return out
+}
+
 // buildProvenance records every coefficient used, so a prediction can state its evidence.
 //
 // It records the kernel's own assumptions as well, after the registry's entries: see
@@ -2836,7 +2872,8 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 		}
 		k.origins = append(k.origins, kernel.CoefficientOrigin{
 			Name: name, Set: r.Set, Method: string(r.Entry.Method),
-			Scope: scopeString(r.Entry, k.chip.Name),
+			Scope:       scopeString(r.Entry, k.chip.Name),
+			KernelMatch: string(r.Match), Primitive: r.Primitive, Running: coefficient.DescribeImpls(r.Running),
 		})
 	}
 	k.origins = append(k.origins, k.assumptions...)

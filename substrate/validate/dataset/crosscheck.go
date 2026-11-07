@@ -69,7 +69,9 @@ func CheckFits(c *Catalog, r *Registry) []Problem {
 // match and that the written precedence does not order (VAL-4).
 //
 // Two entries both match some deployment when, on every scope dimension, either leaves the
-// dimension unstated or the two share a value. The precedence is the one the cost model's
+// dimension unstated or the two share a value, and one set of running kernel implementations can
+// match both (coefficient.ImplsCompatible: two entries keyed to different builds of one kernel
+// never both match, because a pool runs one build). The precedence is the one the cost model's
 // lookup applies, from the same code (coefficient.Select): the smaller method rank of design
 // §9.2 first, then the scope order of coefficient.PrecedenceOrder. A matching pair that
 // neither orders would be decided by the order the sets are listed in, so the data would mean
@@ -91,10 +93,10 @@ func CheckOrdered(sets map[string]*coefficient.Set) []Problem {
 		for i := range es {
 			for j := i + 1; j < len(es); j++ {
 				a, b := es[i], es[j]
-				if !overlap(a.e.Scope, b.e.Scope) {
+				if !overlap(a.e.Scope, b.e.Scope) || !coefficient.ImplsCompatible(a.e, b.e) {
 					continue
 				}
-				if a.set == b.set && a.e.Scope.Key() == b.e.Scope.Key() && a.e.Method == b.e.Method {
+				if a.set == b.set && a.e.Identity() == b.e.Identity() {
 					// One set's own Validate reports the same name, scope and method twice.
 					continue
 				}

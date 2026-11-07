@@ -33,10 +33,7 @@ KVGroup.Window # not yet priced: the cost model reads a plan in the boundary tra
 KVTier.Bytes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 KVTier.Device # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 KVTier.Shared # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-KernelImpl.CodeHash # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-KernelImpl.Library # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-KernelImpl.Toolkit # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-KernelImpl.Variant # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KernelImpl.Toolkit # not part of the lookup key (design 6.2): the kernel carries it and no coefficient is matched on it
 Layout.Context # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Layout.Data # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Layout.Expert # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
@@ -45,9 +42,7 @@ Layout.Pipeline # not yet priced: the cost model reads a plan in the boundary tr
 Layout.RanksPerNode # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Layout.Tensor # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Collective # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-LoweredLayer.KernelImpl # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Layer # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-LoweredLayer.Primitive # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Shape # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Stage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PaddedShape.Launch # not yet priced: the cost model reads a plan in the boundary transition's equivalence step

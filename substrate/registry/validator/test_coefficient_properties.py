@@ -921,3 +921,43 @@ def test_the_single_model_ratchet_counts_a_new_entry():
     assert len(single_model_entries(extra)) == len(single_model_entries(ENTRIES)) + 1
     assert len(single_model_entries(ENTRIES)) == MAX_SINGLE_MODEL_ENTRIES, (
         "the committed count differs from the ratchet: lower MAX_SINGLE_MODEL_ENTRIES to match")
+
+
+# --------------------------------------------------------------------------------------
+# D5, VAL-8, VAL-9, VAL-10: evidence records on measured and calibrated entries
+# --------------------------------------------------------------------------------------
+
+# A measured or calibrated entry is fitted to data, so it records what the data were
+# (design D5, VAL-8, VAL-9, VAL-10): the kernel implementations it is valid for
+# (kernel_impls), what the number includes (measures), the range of inputs the fit covered
+# (fit_range) and its 95% interval (ci95). The fields exist and are checked wherever
+# they appear, but the fitting scripts do not yet write them: the hashes come from the
+# engine repositories' kernel_impls.json, and the ranges and intervals from the fits. Until
+# they do, each count below is the number of fitted entries that state none, and it may
+# only fall. Lower the constant when a fitter starts writing the field; never raise it.
+FITTED = [(s, n, b) for s, n, b in ENTRIES if b.get("method") in ("measured", "calibrated")]
+MAX_FITTED_WITHOUT = {"kernel_impls": 901, "measures": 901, "fit_range": 901, "ci95": 901}
+
+
+@pytest.mark.parametrize("field", sorted(MAX_FITTED_WITHOUT))
+def test_fitted_entries_without_an_evidence_record_only_go_down(field):
+    missing = [(s, n) for s, n, b in FITTED if not b.get(field)]
+    assert len(missing) <= MAX_FITTED_WITHOUT[field], (
+        f"{len(missing)} measured or calibrated entries state no {field}, above the "
+        f"{MAX_FITTED_WITHOUT[field]} committed. A new fitted entry records {field}.")
+    assert len(FITTED) == 901, f"{len(FITTED)} fitted entries; update the ratchets with it"
+
+
+def fitted_without(field, entries):
+    return [(s, n) for s, n, b in entries
+            if b.get("method") in ("measured", "calibrated") and not b.get(field)]
+
+
+def test_the_evidence_ratchet_counts_a_new_fitted_entry_with_no_record():
+    """X18: a fitted entry added without the record raises the count above the ratchet."""
+    new = ("s.yaml", "gemm_eps_max_bf16", {"method": "measured", "scope": {"hardware": ["h200"]}})
+    for field, committed in MAX_FITTED_WITHOUT.items():
+        assert len(fitted_without(field, ENTRIES + [new])) == len(fitted_without(field, ENTRIES)) + 1
+        assert len(fitted_without(field, ENTRIES)) == committed, (
+            f"the committed count of fitted entries without {field} differs from the ratchet: "
+            f"lower MAX_FITTED_WITHOUT[{field!r}] to match")

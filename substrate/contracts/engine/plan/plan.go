@@ -19,6 +19,7 @@ package plan
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/units"
 )
@@ -56,6 +57,66 @@ type PoolPlan struct {
 	// InFlight is the most steps in flight at once; 0 means 1, the value without asynchronous
 	// or overlap scheduling.
 	InFlight int
+}
+
+// Implementations are the distinct kernel implementations the pool runs: those of Layers and of
+// DraftLayers, each once, sorted by library, variant, code hash and toolkit: the pool-wide list a
+// Result records. The cost model matches a coefficient against the implementations of the
+// primitive it prices, which ImplementationsByPrimitive gives.
+func (p PoolPlan) Implementations() []KernelImpl {
+	var all []KernelImpl
+	for _, ls := range [][]LoweredLayer{p.Layers, p.DraftLayers} {
+		for _, l := range ls {
+			all = append(all, l.KernelImpl)
+		}
+	}
+	return distinctSorted(all)
+}
+
+// distinctSorted returns each implementation once, sorted by library, variant, code hash and
+// toolkit.
+func distinctSorted(in []KernelImpl) []KernelImpl {
+	seen := map[KernelImpl]bool{}
+	var out []KernelImpl
+	for _, k := range in {
+		if !seen[k] {
+			seen[k] = true
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Library != b.Library {
+			return a.Library < b.Library
+		}
+		if a.Variant != b.Variant {
+			return a.Variant < b.Variant
+		}
+		if a.CodeHash != b.CodeHash {
+			return a.CodeHash < b.CodeHash
+		}
+		return a.Toolkit < b.Toolkit
+	})
+	return out
+}
+
+// ImplementationsByPrimitive are the distinct kernel implementations the pool runs for each
+// lowered primitive, from Layers and DraftLayers, each list sorted as Implementations is. It is
+// what the cost model binds a coefficient to (design VAL-8): a coefficient that prices a
+// primitive is matched against the implementations of that primitive, not against everything
+// the pool runs. A caller building a kernel for this pool passes it as
+// latencykernel.Inputs.Implementations.
+func (p PoolPlan) ImplementationsByPrimitive() map[Primitive][]KernelImpl {
+	out := map[Primitive][]KernelImpl{}
+	for _, ls := range [][]LoweredLayer{p.Layers, p.DraftLayers} {
+		for _, l := range ls {
+			out[l.Primitive] = append(out[l.Primitive], l.KernelImpl)
+		}
+	}
+	for prim, impls := range out {
+		out[prim] = distinctSorted(impls)
+	}
+	return out
 }
 
 // Layout is the parallel widths of a pool and the placement of its ranks. A width of 0 is
@@ -142,15 +203,16 @@ type LoweredLayer struct {
 // key is its CodeHash, not a package version (design §6.4): a version bump that leaves a kernel
 // unchanged needs no substrate change.
 type KernelImpl struct {
-	// Library names the library, such as a named attention library. The fixed list of library
-	// names is added with the exact kernel-implementation lookup (VAL-8); until then a plan
-	// requires only that it is stated.
+	// Library names the library, such as a named attention library. A plan requires only that it
+	// is stated. The coefficient lookup matches Library, Variant and CodeHash together (VAL-8), so
+	// a library name outside the registry's matches no keyed entry.
 	Library string
 	// Variant is the library's own exported kernel name; an engine's backend names map to it in
 	// the engine's lowering.
 	Variant string
 	// CodeHash is the hash of the kernel's source and target GPU architecture, or of a binary
-	// library's file and architecture.
+	// library's file and architecture. Empty means the engine could not identify the build; the
+	// lookup then matches no coefficient that names an implementation.
 	CodeHash string
 	// Toolkit is the compiler or CUDA toolkit version the kernel was built with. A toolkit
 	// change can change a kernel's speed without changing its source; the landing gate shows

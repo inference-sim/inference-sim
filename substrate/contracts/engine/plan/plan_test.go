@@ -311,3 +311,51 @@ func TestAPlanSurvivesJSON(t *testing.T) {
 		t.Errorf("round trip changed the plan:\n%+v\n%+v", p, back)
 	}
 }
+
+// The implementations a pool runs are what the coefficient lookup matches against (VAL-8):
+// each once, from the target's layers and the drafter's, in a fixed order.
+func TestImplementationsAreTheDistinctOnesThePoolRuns(t *testing.T) {
+	a := KernelImpl{Library: "nccl", Variant: "ncclAllReduce", CodeHash: "aaaaaaaaaaaa", Toolkit: "cuda13.0"}
+	b := KernelImpl{Library: "flashinfer", Variant: "decode", CodeHash: "bbbbbbbbbbbb"}
+	c := KernelImpl{Library: "nccl", Variant: "ncclAllGather", CodeHash: "aaaaaaaaaaaa"}
+	p := PoolPlan{
+		Layers:      []LoweredLayer{{KernelImpl: a}, {KernelImpl: b}, {KernelImpl: a}},
+		DraftLayers: []LoweredLayer{{KernelImpl: c}, {KernelImpl: b}},
+	}
+	got := p.Implementations()
+	want := []KernelImpl{b, c, a}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v, want %v", got, want)
+		}
+	}
+	if len((PoolPlan{}).Implementations()) != 0 {
+		t.Errorf("a plan with no layers runs no implementation")
+	}
+}
+
+// The coefficient lookup binds to the implementations of the primitive it prices, so a pool that
+// runs two kernels reports each under its own primitive.
+func TestImplementationsByPrimitiveKeepsEachKernelWithItsPrimitive(t *testing.T) {
+	a := KernelImpl{Library: "flashinfer", Variant: "decode", CodeHash: "aaaaaaaaaaaa"}
+	b := KernelImpl{Library: "cublas", Variant: "gemm", CodeHash: "bbbbbbbbbbbb"}
+	c := KernelImpl{Library: "cublas", Variant: "gemm", CodeHash: "cccccccccccc"}
+	p := PoolPlan{
+		Layers: []LoweredLayer{{Primitive: PrimAttentionDecode, KernelImpl: a}, {Primitive: PrimGEMM, KernelImpl: b},
+			{Primitive: PrimAttentionDecode, KernelImpl: a}},
+		DraftLayers: []LoweredLayer{{Primitive: PrimGEMM, KernelImpl: c}, {Primitive: PrimGEMM, KernelImpl: b}},
+	}
+	got := p.ImplementationsByPrimitive()
+	if len(got) != 2 || len(got[PrimAttentionDecode]) != 1 || got[PrimAttentionDecode][0] != a {
+		t.Fatalf("attention: %v", got)
+	}
+	if g := got[PrimGEMM]; len(g) != 2 || g[0] != b || g[1] != c {
+		t.Fatalf("gemm: %v, want the two builds sorted", g)
+	}
+	if len((PoolPlan{}).ImplementationsByPrimitive()) != 0 {
+		t.Errorf("a plan with no layers runs nothing")
+	}
+}
