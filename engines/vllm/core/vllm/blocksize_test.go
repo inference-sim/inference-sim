@@ -88,3 +88,36 @@ func TestResolveBlockSize(t *testing.T) {
 		})
 	}
 }
+
+// fp8_e4m3 is vLLM's name for fp8, and bfloat16 and float16 run as auto does where the model is
+// served in bfloat16 (CacheDType, vllm/config/cache.py:39-59). The oracle runs every one of these
+// names through vLLM's own selection, so the table, not an alias in Go, says they resolve alike:
+// each name must give the same answer, resolved or refused, as the name it stands for.
+func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
+	alias := map[string]string{"fp8_e4m3": "fp8", "bfloat16": "auto", "float16": "auto"}
+	seen := 0
+	for _, c := range blockSizes.Combinations {
+		base, ok := alias[c.KVCacheDType]
+		if !ok {
+			continue
+		}
+		seen++
+		in := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: c.KVCacheDType}
+		want := BlockSizeInput{Model: c.Model, Capability: c.Capability, KVCacheDType: base}
+		got, gerr := ResolveBlockSize(in)
+		exp, eerr := ResolveBlockSize(want)
+		if (gerr == nil) != (eerr == nil) || (gerr == nil && got.Size != exp.Size) {
+			t.Errorf("%s %s: %s gives %+v, %v but %s gives %+v, %v", c.Model, c.Capability, c.KVCacheDType, got, gerr, base, exp, eerr)
+		}
+	}
+	if seen == 0 {
+		t.Error("the table holds none of fp8_e4m3, bfloat16 or float16")
+	}
+	// The case the review reproduced: llama-3.1-70b-instruct on compute capability 9.0.
+	for _, kv := range []string{"fp8", "fp8_e4m3", "bfloat16", "float16", "auto"} {
+		got, err := ResolveBlockSize(BlockSizeInput{Model: "llama-3.1-70b-instruct", Capability: "9.0", KVCacheDType: kv})
+		if err != nil || got.Size != 16 {
+			t.Errorf("llama-3.1-70b-instruct, 9.0, %s: %+v, %v; want 16", kv, got, err)
+		}
+	}
+}

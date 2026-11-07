@@ -36,41 +36,101 @@
 model	gpu	cc	kv_dtype	backend(s)	status	size	[fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0]	[fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1]	[fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0]	[fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1]	[fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0]	[fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1]	[fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0]	[fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1]	[fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0]	[fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1]	[fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0]	[fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1]	[fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0]	[fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1]	[fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0]	[fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1]
 deepseek-v3	h100/h200	9.0	auto	FLASHMLA/FLASH_ATTN_MLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	16	16	16	16	16	16
 deepseek-v3	h100/h200	9.0	fp8	FLASHMLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	64	64	16	16	64	64
+deepseek-v3	h100/h200	9.0	fp8_e4m3	FLASHMLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	64	64	16	16	64	64
+deepseek-v3	h100/h200	9.0	bfloat16	FLASHMLA/FLASH_ATTN_MLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	16	16	16	16	16	16
+deepseek-v3	h100/h200	9.0	float16	FLASHMLA/FLASH_ATTN_MLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	16	16	16	16	16	16
 deepseek-v3	b200/gb200-nvl72	10.0	auto	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 deepseek-v3	b200/gb200-nvl72	10.0	fp8	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+deepseek-v3	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+deepseek-v3	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+deepseek-v3	b200/gb200-nvl72	10.0	float16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 deepseek-v3	b300/gb300	10.3	auto	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 deepseek-v3	b300/gb300	10.3	fp8	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+deepseek-v3	b300/gb300	10.3	fp8_e4m3	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+deepseek-v3	b300/gb300	10.3	bfloat16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+deepseek-v3	b300/gb300	10.3	float16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 gpt-oss-120b	h100/h200	9.0	auto	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	h100/h200	9.0	fp8	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	h100/h200	9.0	fp8_e4m3	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	h100/h200	9.0	bfloat16	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	h100/h200	9.0	float16	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	b200/gb200-nvl72	10.0	auto	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	b200/gb200-nvl72	10.0	fp8	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	b200/gb200-nvl72	10.0	float16	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	b300/gb300	10.3	auto	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 gpt-oss-120b	b300/gb300	10.3	fp8	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	b300/gb300	10.3	fp8_e4m3	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	b300/gb300	10.3	bfloat16	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+gpt-oss-120b	b300/gb300	10.3	float16	FLASHINFER/FLASH_ATTN/TRITON_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 kimi-k2.5	h100/h200	9.0	auto	FLASHMLA/FLASH_ATTN_MLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	16	16	16	16	16	16
 kimi-k2.5	h100/h200	9.0	fp8	FLASHMLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	64	64	16	16	64	64
+kimi-k2.5	h100/h200	9.0	fp8_e4m3	FLASHMLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	64	64	16	16	64	64
+kimi-k2.5	h100/h200	9.0	bfloat16	FLASHMLA/FLASH_ATTN_MLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	16	16	16	16	16	16
+kimi-k2.5	h100/h200	9.0	float16	FLASHMLA/FLASH_ATTN_MLA/TRITON_MLA	refused	-	16	16	64	64	16	16	64	64	16	16	16	16	16	16	16	16
 kimi-k2.5	b200/gb200-nvl72	10.0	auto	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 kimi-k2.5	b200/gb200-nvl72	10.0	fp8	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+kimi-k2.5	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+kimi-k2.5	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+kimi-k2.5	b200/gb200-nvl72	10.0	float16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 kimi-k2.5	b300/gb300	10.3	auto	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 kimi-k2.5	b300/gb300	10.3	fp8	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+kimi-k2.5	b300/gb300	10.3	fp8_e4m3	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+kimi-k2.5	b300/gb300	10.3	bfloat16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
+kimi-k2.5	b300/gb300	10.3	float16	FLASHINFER_MLA	resolved	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32	32
 llama-3.1-70b-instruct	h100/h200	9.0	auto	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 llama-3.1-70b-instruct	h100/h200	9.0	fp8	FLASHINFER/FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	h100/h200	9.0	fp8_e4m3	FLASHINFER/FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	h100/h200	9.0	bfloat16	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	h100/h200	9.0	float16	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 llama-3.1-70b-instruct	b200/gb200-nvl72	10.0	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 llama-3.1-70b-instruct	b200/gb200-nvl72	10.0	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	b200/gb200-nvl72	10.0	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 llama-3.1-70b-instruct	b300/gb300	10.3	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 llama-3.1-70b-instruct	b300/gb300	10.3	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	b300/gb300	10.3	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	b300/gb300	10.3	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+llama-3.1-70b-instruct	b300/gb300	10.3	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.5	h100/h200	9.0	auto	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.5	h100/h200	9.0	fp8	FLASHINFER/FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	h100/h200	9.0	fp8_e4m3	FLASHINFER/FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	h100/h200	9.0	bfloat16	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	h100/h200	9.0	float16	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.5	b200/gb200-nvl72	10.0	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.5	b200/gb200-nvl72	10.0	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	b200/gb200-nvl72	10.0	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.5	b300/gb300	10.3	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.5	b300/gb300	10.3	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	b300/gb300	10.3	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	b300/gb300	10.3	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.5	b300/gb300	10.3	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	h100/h200	9.0	auto	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	h100/h200	9.0	fp8	FLASHINFER/FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	h100/h200	9.0	fp8_e4m3	FLASHINFER/FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	h100/h200	9.0	bfloat16	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	h100/h200	9.0	float16	FLASH_ATTN	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	b200/gb200-nvl72	10.0	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	b200/gb200-nvl72	10.0	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	b200/gb200-nvl72	10.0	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	b200/gb200-nvl72	10.0	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	b200/gb200-nvl72	10.0	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	b300/gb300	10.3	auto	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 minimax-m2.7	b300/gb300	10.3	fp8	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	b300/gb300	10.3	fp8_e4m3	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	b300/gb300	10.3	bfloat16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
+minimax-m2.7	b300/gb300	10.3	float16	FLASHINFER	resolved	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16	16
 # refused: deepseek-v3 h100/h200 auto: depends on fa3_available, flashmla_built
 # refused: deepseek-v3 h100/h200 fp8: depends on flashmla_built
+# refused: deepseek-v3 h100/h200 fp8_e4m3: depends on flashmla_built
+# refused: deepseek-v3 h100/h200 bfloat16: depends on fa3_available, flashmla_built
+# refused: deepseek-v3 h100/h200 float16: depends on fa3_available, flashmla_built
 # refused: kimi-k2.5 h100/h200 auto: depends on fa3_available, flashmla_built
 # refused: kimi-k2.5 h100/h200 fp8: depends on flashmla_built
+# refused: kimi-k2.5 h100/h200 fp8_e4m3: depends on flashmla_built
+# refused: kimi-k2.5 h100/h200 bfloat16: depends on fa3_available, flashmla_built
+# refused: kimi-k2.5 h100/h200 float16: depends on fa3_available, flashmla_built

@@ -93,7 +93,12 @@ CATALOG = os.environ.get("BLIS_ORACLE_CATALOG", "")
 # catalog/hardware/<gpu>.yaml ComputeCapability.
 COMPUTE_CAPABILITY = {"h100": (9, 0), "h200": (9, 0), "b200": (10, 0), "b300": (10, 3),
                       "gb200-nvl72": (10, 0), "gb300": (10, 3)}
-KV_DTYPES = ["auto", "fp8"]
+# fp8_e4m3, bfloat16 and float16 are names a deployment may state for the same KV cache as fp8 and
+# auto (CacheDType, vllm/config/cache.py:39-59). Backends test the name against their own
+# supported_kv_cache_dtypes (v1/attention/backend.py:110-116), and a few list one name of a pair and
+# not the other, so the oracle runs each name and the table says which resolve alike, rather than Go
+# assuming an alias (blis-vllm#68).
+KV_DTYPES = ["auto", "fp8", "fp8_e4m3", "bfloat16", "float16"]
 # The tensor-parallel widths each combination is run at. The per-rank head counts shrink with the
 # width (num_heads // tp), and a backend may accept a head count at one width and not at another,
 # so a combination resolves only if the size is the same at all of them. The table is valid only

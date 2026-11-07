@@ -65,6 +65,101 @@
   },
   {
    "backends": [
+    "FLASHMLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v3",
+   "note": "depends on flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "FLASH_ATTN_MLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v3",
+   "note": "depends on fa3_available, flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "FLASH_ATTN_MLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v3",
+   "note": "depends on fa3_available, flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
     "FLASHINFER_MLA"
    ],
    "block_size": 32,
@@ -146,6 +241,96 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
    },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
@@ -179,6 +364,96 @@
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "deepseek-v3",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
    "model": "deepseek-v3",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
@@ -272,6 +547,102 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
    },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
    "capability": "10.0",
    "gpu": "b200/gb200-nvl72",
    "kv_cache_dtype": "auto",
@@ -336,6 +707,102 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
    },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
@@ -371,6 +838,102 @@
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "gpt-oss-120b",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN",
+    "TRITON_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
    "model": "gpt-oss-120b",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
@@ -440,6 +1003,101 @@
   },
   {
    "backends": [
+    "FLASHMLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "kimi-k2.5",
+   "note": "depends on flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "FLASH_ATTN_MLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "kimi-k2.5",
+   "note": "depends on fa3_available, flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
+    "FLASHMLA",
+    "FLASH_ATTN_MLA",
+    "TRITON_MLA"
+   ],
+   "block_size": null,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 64,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 64,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "kimi-k2.5",
+   "note": "depends on fa3_available, flashmla_built",
+   "status": "refused"
+  },
+  {
+   "backends": [
     "FLASHINFER_MLA"
    ],
    "block_size": 32,
@@ -521,6 +1179,96 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
    },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
@@ -554,6 +1302,96 @@
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "kimi-k2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER_MLA"
+   ],
+   "block_size": 32,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 32,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 32
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
    "model": "kimi-k2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
@@ -621,6 +1459,97 @@
   },
   {
    "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
     "FLASHINFER"
    ],
    "block_size": 16,
@@ -702,6 +1631,96 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
    },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
@@ -735,6 +1754,96 @@
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "llama-3.1-70b-instruct",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
    "model": "llama-3.1-70b-instruct",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
@@ -802,6 +1911,97 @@
   },
   {
    "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
     "FLASHINFER"
    ],
    "block_size": 16,
@@ -883,6 +2083,96 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
    },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
@@ -916,6 +2206,96 @@
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "minimax-m2.5",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
    "model": "minimax-m2.5",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
@@ -983,6 +2363,97 @@
   },
   {
    "backends": [
+    "FLASHINFER",
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "bfloat16",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASH_ATTN"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "9.0",
+   "gpu": "h100/h200",
+   "kv_cache_dtype": "float16",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
     "FLASHINFER"
    ],
    "block_size": 16,
@@ -1064,6 +2535,96 @@
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
     "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
    },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "bfloat16",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.0",
+   "gpu": "b200/gb200-nvl72",
+   "kv_cache_dtype": "float16",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "auto",
@@ -1097,6 +2658,96 @@
    "capability": "10.3",
    "gpu": "b300/gb300",
    "kv_cache_dtype": "fp8",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "fp8_e4m3",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "bfloat16",
+   "model": "minimax-m2.7",
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
+  },
+  {
+   "backends": [
+    "FLASHINFER"
+   ],
+   "block_size": 16,
+   "by_facts": {
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=0,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=0,flashmla_built=1,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=0,trtllm_usable=1": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=0": 16,
+    "fa3_available=1,fa4_available=1,flashmla_built=1,trtllm_usable=1": 16
+   },
+   "capability": "10.3",
+   "gpu": "b300/gb300",
+   "kv_cache_dtype": "float16",
    "model": "minimax-m2.7",
    "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
    "status": "resolved"
