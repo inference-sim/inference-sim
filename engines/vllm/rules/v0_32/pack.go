@@ -64,6 +64,11 @@ import (
 	"github.com/inference-sim/blis-vllm/rules/pack"
 )
 
+// ArchGlmMoeDsa is the architecture name of GLM-5, 5.2, 5.2-fp8 and 5.3, the architectures[0] of
+// their configuration: the key the cache-dtype hook is registered under
+// (vllm/model_executor/models/config.py:1078@5df63a72).
+const ArchGlmMoeDsa = "GlmMoeDsaForCausalLM"
+
 // Version is the engine release this pack describes.
 const Version = "0.32.0"
 
@@ -200,6 +205,13 @@ func Pack() *pack.Pack {
 				{CapabilityFamily: 10, Requested: []string{"auto", "fp8"}, ResolvesTo: "nvfp4_ds_mla", TPDivides: 8},
 				{CapabilityFamily: 10, Requested: []string{"auto", "fp8"}, ResolvesTo: "fp8_ds_mla"},
 				{CapabilityFamily: 9, Requested: []string{"auto", "fp8"}, ResolvesTo: "fp8_ds_mla"},
+			},
+			// GlmMoeDsaForCausalLM.verify_and_update_config changes an unstated (auto) cache dtype to
+			// fp8_e4m3 on CUDA capability family 100, SM10x (vllm/model_executor/models/config.py:43-55
+			// @5df63a72; the hook is registered at :1078). v0.31.0 has no such branch. A stated dtype,
+			// fp8 included, is not "auto" and runs as stated. GLM-5, 5.2, 5.2-fp8 and 5.3 are this class.
+			ArchGlmMoeDsa: {
+				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8_e4m3"},
 			},
 		},
 

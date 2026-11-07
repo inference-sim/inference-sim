@@ -1161,6 +1161,14 @@ func TestResolveCacheDType(t *testing.T) {
 		{v41, 9, 8, "auto", "fp8_ds_mla"},
 		{v41, 9, 8, "fp8", "fp8_ds_mla"},
 		{"DeepseekV3ForCausalLM", 10, 8, "auto", "auto"},
+		// GlmMoeDsaForCausalLM: an unstated (auto) dtype becomes fp8_e4m3 on SM10x
+		// (vllm/model_executor/models/config.py:43-55@5df63a72); a stated one stands, and SM9x is unchanged.
+		{ArchGlmMoeDsa, 10, 8, "", "fp8_e4m3"},
+		{ArchGlmMoeDsa, 10, 1, "auto", "fp8_e4m3"},
+		{ArchGlmMoeDsa, 10, 8, "fp8", "fp8"},
+		{ArchGlmMoeDsa, 10, 8, "bfloat16", "bfloat16"},
+		{ArchGlmMoeDsa, 9, 8, "auto", "auto"},
+		{ArchGlmMoeDsa, 12, 8, "auto", "auto"},
 	} {
 		if got := p.ResolveCacheDType(c.arch, c.family, c.tp, c.requested); got != c.want {
 			t.Errorf("%s sm%d0 tp %d %q: %q, want %q", c.arch, c.family, c.tp, c.requested, got, c.want)

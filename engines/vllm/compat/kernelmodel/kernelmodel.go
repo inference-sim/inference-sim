@@ -357,6 +357,8 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if r.engine.GPUMemoryUtilization > 0 {
 		settings.GPUMemoryUtilization = r.engine.GPUMemoryUtilization
 	}
+	// The cache dtype the architecture's hook resolves an unstated one to, priced as it runs.
+	settings.CacheDType = r.engine.CacheDType
 	// The batch settings Engine reports and the scheduler runs: left at zero the kernel would
 	// fall back to vLLM v0.31.0's defaults, which skip the caps 0.32.0 applies (batched-DP 256,
 	// min(max_num_seqs, max_num_batched_tokens), max_num_seqs x max_model_len).
@@ -389,7 +391,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	g := k.Graph()
 	m.graph = &g
 	if in.Rules != nil {
-		m.cacheDType = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, m.id.capabilityMajor,
+		m.cacheDType = in.Rules.ResolveCacheDType(architectureOf(in.Model), m.id.capabilityMajor,
 			max(pool.Parallel.TP, 1), engine.CacheDType)
 	}
 	return m, nil

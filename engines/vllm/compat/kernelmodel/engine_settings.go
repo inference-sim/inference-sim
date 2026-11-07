@@ -4,12 +4,15 @@ package kernelmodel
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	"github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
+	"github.com/inference-sim/blis-vllm/rules/v0_32"
 )
 
 // resolvedEngine is a pool's engine block with the settings its release resolves filled in,
@@ -41,6 +44,20 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 			// is not unstated, and stays what it is, for KVMemory to refuse.
 			r.engine.GPUMemoryUtilization = d.Value
 			r.sources["gpu_memory_utilization"] = d.Source
+		}
+	}
+	// An unstated cache dtype is "auto", which an architecture's own hook can change on the
+	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, rules/v0_32). A stated dtype is
+	// never changed here. Only a graph that names no architecture is resolved here: a
+	// DeepSeek-V4 graph names its own, and the kernel resolves that packed layout itself.
+	if in.Rules != nil && in.Model != nil && in.Model.Global.Architecture == "" && (e.CacheDType == "" || e.CacheDType == "auto") {
+		fam, _ := in.Chip.CapabilityMajor()
+		if arch := architectureOf(in.Model); arch != "" {
+			if kv := in.Rules.ResolveCacheDType(arch, fam, max(in.Deployment.Pools[in.PoolIndex].Parallel.TP, 1), "auto"); kv != "auto" {
+				r.engine.CacheDType = kv
+				r.sources["cache_dtype"] = "vllm/model_executor/models/config.py:43-55@5df63a72 changes an unstated cache dtype to " + kv +
+					" for " + arch + " on compute capability " + strconv.Itoa(fam) + ".x (rules pack CacheDTypeResolutions)"
+			}
 		}
 	}
 	if release != vllm.Version {
@@ -99,7 +116,7 @@ func resolveBlockSize(in latencykernel.Inputs, e engineconfig.Engine, pool deplo
 		// The KV dtype that runs: the release's rules resolve a requested one for the model's
 		// architecture, the chip's family and the TP width (rules.EngineRules.ResolveCacheDType).
 		fam, _ := in.Chip.CapabilityMajor()
-		kv = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, fam, max(pool.Parallel.TP, 1), kv)
+		kv = in.Rules.ResolveCacheDType(architectureOf(in.Model), fam, max(pool.Parallel.TP, 1), kv)
 	}
 	return vllm.ResolveBlockSize(vllm.BlockSizeInput{
 		Model:        in.Scenario.Model,
@@ -160,4 +177,31 @@ func (m *Model) EngineSources() map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// glmMoeDsaConfigs are the sha256 of the vendor config.json each catalog model whose
+// architectures[0] is GlmMoeDsaForCausalLM was derived from (graph.yaml derived_from). The catalog
+// graph of these models states no global.architecture, and the rules key behaviour on it, so the
+// hash names the architecture. TestGLMConfigHashesNameTheArchitecture checks each against the
+// pinned catalog's config.json and that no other catalog model is of the class.
+var glmMoeDsaConfigs = map[string]string{
+	"5ea2d79d3a77fe90836c18893de00996d096cd01516b52b88c6fc18993cb4df8": "glm-5",
+	"185f93ee6d12548e16a847e279dc0c3c90b1524c970b0866b42fb545747d859a": "glm-5.2",
+	"22e49334abf8562fecf70ca3292ba3f5b33f5602fb2bf10b52dd64a66cfe65ff": "glm-5.2-fp8",
+	"3ac72612095574542f7fff847ada8e59d9199dd8af44bdf625d7e02615572e69": "glm-5.3",
+}
+
+// architectureOf is the architecture the rules key on: the graph's own, else GlmMoeDsaForCausalLM
+// for a graph derived from one of glmMoeDsaConfigs.
+func architectureOf(g *model.Graph) string {
+	if g == nil {
+		return ""
+	}
+	if g.Global.Architecture != "" {
+		return g.Global.Architecture
+	}
+	if _, ok := glmMoeDsaConfigs[g.DerivedFrom.SHA256]; ok {
+		return v0_32.ArchGlmMoeDsa
+	}
+	return ""
 }
