@@ -17,6 +17,15 @@ capture ceiling the cap can change. Three runs: the fixtures as committed; the f
 `max_num_seqs` and `max_num_batched_tokens` removed; and the same with
 `all2all_backend: deepep_low_latency` added.
 
+The figures are written by `compat/kernelmodel/pricereport_test.go` (`TestWritePriceReport`, with
+`BLIS_PRICE_REPORT=<file>`; the third run is `BLIS_PRICE_VARIANT=nobatch-deepep`). It prints the step times
+unrounded, in microseconds, at a decode context of 1023 computed tokens. Run on the code before this
+change (the commit before it) and after, it reproduces the table below to the digit: all seven rows,
+in every column. It finds 59 pools that move in that third run, not seven: the seven below are the
+ones of the original table, and the other 52 are the `direct` fixtures and other pools of the same
+shape (expert parallel, DP > 1), which that table did not list because its run covered only the
+133 pools of the four directories it names. The cause and the size of the change are the same.
+
 ## Result
 
 - Fixtures as committed: no price moved. Every v0.32.0 fixture states both settings, so the
