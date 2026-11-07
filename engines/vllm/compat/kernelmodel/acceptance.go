@@ -14,7 +14,7 @@ import (
 )
 
 // Speculative acceptance reaches the kernel only for DSpark adaptive verification
-// (blis-latency-kernel#89): vLLM's verifier then sizes its draft budget from each request's
+// (blis-substrate kernel/adaptive.go): vLLM's verifier then sizes its draft budget from each request's
 // survival probability (AdaptiveVerificationManager.get_num_tokens,
 // vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350@5df63a72), which the kernel
 // derives from the run's acceptance. It is resolved here, per pool, by blis-schemas'

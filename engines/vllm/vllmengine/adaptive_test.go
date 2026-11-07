@@ -50,7 +50,7 @@ func decodeBatch(n, ctx, k int) engine.Batch {
 
 // The recipe default prices a K=7 decode below the same deployment without adaptive
 // verification, and says which drafts it verified: the verify forward runs the trimmed width
-// (blis-latency-kernel#89; vllm/v1/attention/selector.py:143-152 and
+// (blis-substrate kernel/adaptive.go; vllm/v1/attention/selector.py:143-152 and
 // vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350@5df63a72). Without the flag
 // nothing is trimmed (VerifiedDrafts nil).
 func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
@@ -95,7 +95,7 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 		}
 	}
 	if !trimmedAny {
-		// The kernel prices the adaptive budget (blis-latency-kernel#89, closed), so a run that
+		// The kernel prices the adaptive budget (blis-substrate kernel/adaptive.go), so a run that
 		// trims nothing means the budget stopped reaching the engine.
 		t.Error("the kernel verified every scheduled draft under adaptive verification: no trimmed budget was priced")
 	}
