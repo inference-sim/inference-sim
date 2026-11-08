@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/load"
@@ -48,11 +49,11 @@ func resolveKVOffloadConfig(cmd *cobra.Command) kvOffloadConfig {
 
 // loadCatalogStorageDevices is the run's storage-device table, read by the engine from the
 // catalog in use (build.StorageDevices).
-// openEngineData opens the catalog and registry the options name, once per distinct options:
-// kernelmodel.OpenData caches one load.Data for each, so the simulator and the engine, which
-// opens its data with the same paths, read one load.Data and one selected-entry report. It is
-// the build site's, as every use of blis-vllm is.
-func openEngineData(o load.Options) (*load.Data, error) { return kernelmodel.OpenData(o) }
+// openEngineData opens the catalog and registry the options name: a fresh load.Data with an
+// empty selected-entry report (kernelmodel.OpenData keeps no cache). runData calls it once for
+// a run and hands that Data to the simulator and to every engine (newContractEngine). It is the
+// build site's, as every use of blis-vllm is.
+var openEngineData = func(o load.Options) (*load.Data, error) { return kernelmodel.OpenData(o) }
 
 func loadCatalogStorageDevices(data *load.Data) (map[string]build.KVOffloadDevice, error) {
 	return build.StorageDevices(data)
@@ -839,23 +840,21 @@ func EngineReleases() []stack.Upstream {
 	return []stack.Upstream{{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit}}
 }
 
-// contractRoots are the roots the registered factory reads: the catalog and registry
-// directories (empty for the embedded copy) and the scenario file's path, which it opens
-// itself. The factory opens its data through kernelmodel.OpenData with the same paths, which
-// returns the Data the simulator opened, so one Data serves both and its selected-entry report
-// covers the engine's lookups.
-//
-// The factory's roots name no overlay (blis-vllm vllmengine reads RootCatalog and RootRegistry
-// only), so with an overlay the engine would read other data than the simulator. That run is
-// refused, naming the flag, until the engine takes overlay roots.
-func contractRoots(o load.Options, scenarioPath string) (map[string]string, error) {
-	if len(o.CatalogOverlays) > 0 || len(o.RegistryOverlays) > 0 {
-		return nil, fmt.Errorf("--catalog-overlay and --registry-overlay are not supported by the engine "+
-			"this build runs (%s): its factory reads the catalog and registry directories only, so it would "+
-			"price with data other than the run's", modulePathEngine)
-	}
-	return map[string]string{coreengine.RootCatalog: o.Catalog, coreengine.RootRegistry: o.Registry,
-		coreengine.RootScenario: scenarioPath}, nil
+// contractRoots are the roots the engine factory reads beside the run's Data: the scenario
+// file's path, which it opens itself. The catalog, registry and overlay roots are absent on
+// purpose: the engine reads the run's opened Data as it is and refuses a root that names other
+// data (vllmengine.Input), so the Data is opened with the run's catalog, registry and overlays
+// (dataOptions) and passed whole.
+func contractRoots(scenarioPath string) map[string]string {
+	return map[string]string{coreengine.RootScenario: scenarioPath}
+}
+
+// newContractEngine builds one engine from spec over the run's opened data. Every engine of a
+// run is built through here with the same Data, so the run has one selected-entry report and
+// the data is opened once, not once for each build. A variable so a test can count the builds
+// and the Data each was handed.
+var newContractEngine = func(spec engine.Spec, data *load.Data) (engine.Engine, error) {
+	return coreengine.New(coreengine.Input{Spec: spec, Data: data})
 }
 
 // Moved from sim/cluster/resolve.go at 739a519b, when the engine's configuration left the host

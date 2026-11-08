@@ -71,8 +71,8 @@ func dataOptions() load.Options {
 }
 
 // runData opens the run's catalog and registry once and returns the same Data on every later
-// call. The engine opens its data through kernelmodel.OpenData with the same options, which
-// caches one Data per options, so the simulator and the engine read one Data.
+// call. The engines are built over this same Data (newContractEngine), so the simulator and
+// every engine read one Data and report their lookups to one selected-entry report.
 //
 // The options are read on every call, and a call with options other than the opened Data's
 // opens those: one process can run several commands (the tests do), and each must read the data

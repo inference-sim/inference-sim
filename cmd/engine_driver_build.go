@@ -64,21 +64,21 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	}
 	registerContractEngines()
 	scenarioPath := filepath.Join(kernelScenarioDir, kernelScenario)
-	roots, err := contractRoots(dataOptions(), scenarioPath)
-	if err != nil {
-		logrus.Fatalf("%v", err)
-	}
+	// The run opens its catalog and registry once (runData) and every engine of the run reads
+	// that Data, so the Result's hashes and its one selected-entry report cover the lookups of
+	// every pool's engine (blis-vllm#90, design §3.3, VAL-6).
+	data := mustRunData()
 	frontend := groupFrontendConfigFromCLI(dataParallelism)
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
 		// The Spec carries no configuration: the factory reads the pool's engine block from the
 		// scenario file itself, so this binary opens no engine configuration.
-		eng, err := engine.New(engine.Spec{
+		eng, err := newContractEngine(engine.Spec{
 			Kind:            ref.Kind,
 			UpstreamVersion: ref.Version,
-			Roots:           roots,
+			Roots:           contractRoots(scenarioPath),
 			Pool:            poolOf(ic),
 			Seed:            seed,
-		})
+		}, data)
 		if err != nil {
 			return nil, fmt.Errorf("scenario %q: engine %s: %w", kernelScenario, version, err)
 		}

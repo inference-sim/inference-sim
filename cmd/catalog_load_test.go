@@ -581,15 +581,23 @@ func TestCatalogStrictLoad_DevicesNamespaceWithNothingReadableIsReported(t *test
 	})
 }
 
-// TestCatalogStrictLoad_EmptyTrailingDocumentIsAccepted is the precision control on the
-// one-document rule: a file ending in a bare `---` carries no second document (yaml.v3 decodes
-// it as nil), so refusing it would reject a harmless separator rather than hidden content.
-func TestCatalogStrictLoad_EmptyTrailingDocumentIsAccepted(t *testing.T) {
+// TestCatalogStrictLoad_EmptyTrailingDocumentIsNotCountedByTheHostGate is the precision control
+// on the one-document rule: a file ending in a bare `---` carries no second document (yaml.v3
+// decodes it as nil), so this gate does not count it, and refusing it here would reject a
+// harmless separator rather than hidden content. blis-substrate v0.13.0's own typed loader is
+// stricter (SUB-12: a file is one document, and a bare trailing `---` is a second one), so the
+// catalog load refuses such a file, naming it, in the substrate's words; the gate's verdict and
+// the substrate's are both stated, so neither moves unnoticed.
+func TestCatalogStrictLoad_EmptyTrailingDocumentIsNotCountedByTheHostGate(t *testing.T) {
+	body := modelEntryYAML(gateModel) + "---\n"
+	if err := checkCatalogAuthoredYAML("model.yaml", []byte(body)); err != nil {
+		t.Fatalf("the host gate must not count a bare trailing separator as a document: %v", err)
+	}
 	root := newCompleteCatalog(t)
-	writeCatalogFile(t, filepath.Join(root, catalogModelsSubdir, gateModel, catalogModelEntryFile),
-		modelEntryYAML(gateModel)+"---\n")
-	if err := loadOrFatal(t, root).Err(); err != nil {
-		t.Fatalf("a trailing empty YAML document must load clean; got: %v", err)
+	writeCatalogFile(t, filepath.Join(root, catalogModelsSubdir, gateModel, catalogModelEntryFile), body)
+	report := loadOrFatal(t, root)
+	if err := report.Err(); err == nil || !strings.Contains(err.Error(), "a file is one document") {
+		t.Errorf("the substrate loader's SUB-12 refusal is expected for a trailing separator; got %v", err)
 	}
 }
 

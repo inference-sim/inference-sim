@@ -21,7 +21,7 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `docs/reference/configuration.md` for detail.
 
-1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (refused until the engine reads overlays). The Result records the data under `data`. To use a checkout (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
+1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (the run opens its data once, overlays included, and every engine reads that Data). The Result records the data under `data`. To use a checkout (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash

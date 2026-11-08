@@ -43,8 +43,8 @@ environment variable is needed.
 `catalog/` that replaces the embedded catalog whole. `--registry <dir>` (or `BLIS_REGISTRY`)
 does the same for the registry. The flag wins over the environment variable, and the choice is
 announced on stderr. `--catalog-overlay <dir>` and `--registry-overlay <dir>` (repeatable) add
-or replace entries by identity on top of the catalog or registry in use; at this pin they are
-refused until the engine reads overlays. BLIS never fetches or writes a catalog file (NS-6).
+or replace entries by identity on top of the catalog or registry in use. The run opens its data once, overlays included,
+and every engine it builds reads that Data. BLIS never fetches or writes a catalog file (NS-6).
 The Result records the data the run read under `data.catalog` and `data.registry`.
 
 To read a checkout of blis-substrate instead of the embedded copy, check it out at the commit
