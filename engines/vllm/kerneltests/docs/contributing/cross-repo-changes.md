@@ -21,7 +21,7 @@ blis-schemas and before inference-sim.
 The catalog and registry are part of blis-substrate, so a newer one is a newer blis-substrate
 pin in `go.mod`, then `go test ./...`. A renamed chip or coefficient is meant to break the
 fixtures that name it. To test against an unreleased catalog or registry, set `BLIS_CATALOG` or
-`BLIS_REGISTRY` to its directory. A catalog given this way is read through blis-substrate's loader, which requires each model's `model.yaml` to record the licence of its config.json (`licence:`, design X12). A released blis-catalog (0.3.0, 0.4.0, 0.5.0) has no such field, so the loader refuses it with a `licence: required` error for each model; use a checkout of blis-substrate's `catalog/` at the pinned release or later, or an unreleased blis-catalog that carries the field.
+`BLIS_REGISTRY` to its directory. A catalog given this way is read through blis-substrate's loader, which checks that the data is well formed and does not require or judge a licence record on a model or a measurement source. A released blis-catalog (0.3.0, 0.4.0, 0.5.0) loads. The project's own catalog is checked for licences in CI (design X12).
 
 ## Evidence a kernel pull request carries
 

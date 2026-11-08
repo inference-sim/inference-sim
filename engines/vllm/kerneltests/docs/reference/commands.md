@@ -8,7 +8,7 @@ compares with a measured end-to-end benchmark, which is accuracy-dashboard's wor
 
 Every command takes `-catalog` and `-registry` to read a catalog or registry other than the
 pinned blis-substrate's; `BLIS_CATALOG` and `BLIS_REGISTRY` set the same defaults for all of them.
-A catalog read this way must carry each model's `licence:` (design X12): the released blis-catalog 0.3.0 to 0.5.0 do not, and are refused with `licence: required`.
+A catalog read this way goes through blis-substrate's loader, which checks that the data is well formed and does not require or judge a licence record; the released blis-catalog 0.3.0 to 0.5.0 load. The project's own catalog is checked for licences in CI (design X12).
 
 ## Inspecting
 

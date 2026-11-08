@@ -59,10 +59,9 @@ import (
 // The Roots keys the factory reads.
 const (
 	// RootCatalog is a directory with blis-substrate's catalog layout that replaces the
-	// embedded catalog; absent or empty means the embedded copy (design §3.3). The loader requires
-	// each model's model.yaml to carry its licence (X12), which blis-catalog 0.3.0 to 0.5.0 lack, so
-	// a released blis-catalog is refused here with "licence: required"; the directory must be
-	// blis-substrate's catalog/ or a catalog that has the field.
+	// embedded catalog; absent or empty means the embedded copy (design §3.3). The loader checks that the
+	// data is well formed and does not require or judge a licence record (X12), so a released
+	// blis-catalog loads here; the project's own catalog is checked for licences in CI.
 	RootCatalog = "catalog"
 	// RootRegistry is the same for the registry.
 	RootRegistry = "registry"
