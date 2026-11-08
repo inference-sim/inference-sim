@@ -19,8 +19,7 @@ deployment path as `blis run`.
     no deployment, so replay takes the offload tiers from the scenario's offload block or
     `--kv-offload-config` ([#2067](https://github.com/inference-sim/inference-sim/issues/2067)).
     The header modes are `generated`, `replayed` and `converted`; any other value is refused.
-    `mode: real` was written by `blis observe`, which v0.16.0 removed
-    ([#1901](https://github.com/inference-sim/inference-sim/issues/1901)), and is refused.
+    `mode: real` was written by `blis observe`, which v0.16.0 removed, and is refused.
 
 ## The trace format
 

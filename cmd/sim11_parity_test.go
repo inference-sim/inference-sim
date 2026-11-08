@@ -21,7 +21,7 @@ import (
 // refusal pair (SIM-9): the smallest refused value and the closest accepted one, through each
 // input.
 func TestSIM11_SameInvalidValueRefusedThroughEveryInput(t *testing.T) {
-	// The router's three timings: spans of simulated time, refused below 0 (#2007).
+	// The router's three timings: spans of simulated time, refused below 0.
 	timings := []struct {
 		flag, key string
 		header    func(v int64) *workload.TraceRouterConfig
@@ -132,7 +132,7 @@ func assertRefusal(t *testing.T, field string, v any, refuse bool, err error, sh
 
 // TestReplayCmd_RefusesNegativeHeaderRouterTiming: a trace whose router block states a negative
 // timing is refused before any simulation state is built, with a message naming the header key
-// and the value, rather than panicking in the event scheduler (#2007).
+// and the value, rather than panicking in the event scheduler.
 func TestReplayCmd_RefusesNegativeHeaderRouterTiming(t *testing.T) {
 	if os.Getenv("BLIS_SIM11_SUBPROCESS") == "1" {
 		dir := t.TempDir()

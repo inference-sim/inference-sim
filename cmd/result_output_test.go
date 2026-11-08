@@ -300,7 +300,7 @@ func TestResult_InputRecordsWhatTheRunWasGiven(t *testing.T) {
 	}
 }
 
-// BC-R9 (#2071): the legacy output files are gone. blis run and blis replay refuse
+// BC-R9: the legacy output files are gone. blis run and blis replay refuse
 // --metrics-path, and the Result carries the rows and aggregates those files held.
 func TestResult_MetricsPathIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metrics.json")
