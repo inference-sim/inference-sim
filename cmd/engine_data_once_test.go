@@ -20,7 +20,8 @@ import (
 // (blis-vllm#90, design §3.3, VAL-6). Three properties, each through a real multi-pool run:
 //
 //	(a) the Result's one selected-entry report holds the lookups of every pool's engine;
-//	(b) the run opens its Data once, and every engine build is handed that same Data;
+//	(b) the run opens its Data once through the host's opener, and every engine build the
+//	    host makes is handed that same Data;
 //	(c) a configuration that names a root beside the Data is refused with the host-facing
 //	    message, and the closest valid one (the Data alone) builds (SIM-9).
 
@@ -61,6 +62,11 @@ func TestEngineDataLeg(t *testing.T) {
 	os.Exit(0)
 }
 
+// What this proves and what it does not: it counts the host's own opener and the Data handed
+// to the host's engine-build seam, so it fails if the host opens its Data twice or hands two
+// builds different Data. It cannot see blis-vllm opening data inside a build (that opener is
+// unexported there), so it does not by itself fail on the old roots-based path; the report
+// test below and the root-refusal test do.
 func TestRun_OpensItsDataOnceForEveryPoolsEngine(t *testing.T) {
 	cmd := exec.Command(os.Args[0], "-test.run=^TestEngineDataLeg$")
 	cmd.Env = append(os.Environ(), engineDataLegEnv+"=1")
