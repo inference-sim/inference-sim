@@ -233,7 +233,7 @@ priority:
     critical: 10
 ```
 
-The mapping lives in `sim/slo_priority.go` (`sim.SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
+The mapping lives in the vLLM compatibility engine, in blis-vllm's `compat/engine/slo_priority.go` (`SLOPriorityMap`); `InvertForVLLM` converts it to the instance convention (lower = more urgent) when a request is enqueued.
 
 ## Deprecated Flags
 

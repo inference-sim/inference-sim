@@ -174,7 +174,7 @@ per-adapter TTFT comparison report with an error metric.
 **Dependencies**: Phase 5 (cost physics).
 
 - [ ] T041 [US5] Write calibration-import contract test: DT rank-table import + per-adapter **TTFT and throughput** comparison report produced with an error metric (fail first)
-- [ ] T042 [US5] Implement DT rank-table import + adapter-reference comparison in `cmd/calibrate.go` (add `--adapter-reference` flag); per-adapter MAPE on **TTFT and throughput**; R12 if output format changes
+- [ ] T042 [US5] Implement DT rank-table import + adapter-reference comparison in `blis calibrate` (removed in v0.16.0 with `blis observe`; add `--adapter-reference` flag); per-adapter MAPE on **TTFT and throughput**; R12 if output format changes
 - [ ] T043 [US5] Validate SC-007 (≤20% MAPE on **both TTFT and throughput**) for the two reference configs via a fixture-based test
 
 **Checkpoint**: Fidelity bounded and reported for the two calibrated configs.
