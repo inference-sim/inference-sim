@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
@@ -152,6 +154,131 @@ type layoutCase struct {
 	pcp    int // prefill-context-parallel width; 0 or 1 means off
 }
 
+// family is a coefficient name without the rank width and chip that name a collective's entry:
+// the quantity the registry measures, which is what a perturbation asks about.
+func family(name string) string {
+	return regexp.MustCompile(`_(\d+rank)`).ReplaceAllString(name, "_<R>rank")
+}
+
+// perturbed returns the scenario's coefficient sets with every entry of the given name scaled
+// by 0.8, leaving the others untouched. A smaller value keeps efficiencies and fractions valid.
+func perturbed(sets []*coefficient.Set, name string) []*coefficient.Set {
+	out := make([]*coefficient.Set, len(sets))
+	for i, s := range sets {
+		c := *s
+		c.Coefficients = append([]coefficient.Entry(nil), s.Coefficients...)
+		for j := range c.Coefficients {
+			if c.Coefficients[j].Name == name {
+				c.Coefficients[j].Value *= 0.8
+				if iv := c.Coefficients[j].CI95; iv != nil {
+					// The interval scales with the value, or the entry would lie outside its own.
+					c.Coefficients[j].CI95 = &coefficient.Interval{Low: iv.Low * 0.8, High: iv.High * 0.8}
+				}
+			}
+		}
+		out[i] = &c
+	}
+	return out
+}
+
+// SUB-11: every coefficient family changes some price when it is changed, or is listed as not
+// yet priced. Each scenario is built, then each coefficient its lookups returned is scaled by
+// 0.8 and the scenario priced again. A family is priced when any scenario's prices move. A
+// family no scenario reads, or one whose every read left every price unchanged, is a gap in
+// the cost model or in these scenarios, and is listed in testdata/unpriced_families.txt. The
+// list may only shrink: the test fails on a family not listed and on a listed family that is
+// now priced.
+func TestEveryCoefficientFamilyChangesSomePriceOrIsListed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("prices about 1,000 scenarios and takes about a minute; CI runs it without -short")
+	}
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenarios := perturbationScenarios(t, d)
+	if len(scenarios) < 400 {
+		t.Fatalf("only %d scenarios build; the perturbation is not reaching the kernel", len(scenarios))
+	}
+	priced := map[string]bool{}
+	read := map[string]bool{}
+	for _, s := range scenarios {
+		base, err := New(s.in)
+		if err != nil {
+			t.Fatalf("%s: %v", s.label, err)
+		}
+		want := pricesOf(base)
+		for _, sel := range base.selected {
+			name := sel.Entry.Name
+			fam := family(name)
+			read[fam] = true
+			if priced[fam] || sel.Entry.Value == 0 {
+				continue
+			}
+			in := s.in
+			in.Coefficients = perturbed(s.in.Coefficients, name)
+			k, err := New(in)
+			if err != nil {
+				t.Fatalf("%s: scaling %s by 0.8 makes the kernel refuse: %v", s.label, name, err)
+			}
+			if pricesOf(k) != want {
+				priced[fam] = true
+			}
+		}
+	}
+	all := map[string]bool{}
+	for _, set := range []string{"cost-model-primitives", "cost-model-collectives", "cost-model-host-overheads",
+		"cost-model-attention", "cost-model-recurrent", "cost-model-memory", "cost-model-fabric"} {
+		cs, err := d.CoefficientSet(set)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range cs.Coefficients {
+			if e.Value != 0 {
+				all[family(e.Name)] = true
+			}
+		}
+	}
+	var unpriced []string
+	for fam := range all {
+		if !priced[fam] {
+			why := "read but changes no price"
+			if !read[fam] {
+				why = "never read"
+			}
+			unpriced = append(unpriced, fam+" # "+why)
+		}
+	}
+	sort.Strings(unpriced)
+	got := strings.Join(unpriced, "\n") + "\n"
+	path := filepath.Join("testdata", "unpriced_families.txt")
+	if os.Getenv("UPDATE_COMPLETENESS") != "" {
+		old, _ := os.ReadFile(path)
+		var head []string
+		for _, l := range strings.Split(string(old), "\n") {
+			if strings.HasPrefix(l, "#") {
+				head = append(head, l)
+			}
+		}
+		out := got
+		if len(head) > 0 {
+			out = strings.Join(head, "\n") + "\n" + got
+		}
+		if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := stripComments(string(raw)); want != got {
+		t.Errorf("the families that change no price differ from testdata/unpriced_families.txt.\nwant:\n%s\ngot:\n%s", want, got)
+	}
+	t.Logf("%d scenarios, %d families, %d unpriced", len(scenarios), len(all), len(unpriced))
+}
+
 // SUB-20's second check: changing a node's label changes no price. Every node of every
 // catalog graph that carries a Role has it replaced by a string that matches nothing, and the
 // model is priced again. A price that moves is a decision that depends on the label.
@@ -214,7 +341,7 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 		}
 		return
 	}
-	if want := withoutCommentLines(string(raw)); want != got {
+	if want := stripComments(string(raw)); want != got {
 		t.Errorf("the models whose price depends on a node label differ from %s.\nwant:\n%s\ngot:\n%s", path, want, got)
 	}
 }
@@ -283,15 +410,4 @@ func visit(v reflect.Value, fn func(reflect.StructField, reflect.Value)) {
 			visit(v.Field(i), fn)
 		}
 	}
-}
-
-// withoutCommentLines drops the comment lines of a testdata list.
-func withoutCommentLines(s string) string {
-	var out []string
-	for _, l := range strings.Split(s, "\n") {
-		if !strings.HasPrefix(l, "#") {
-			out = append(out, l)
-		}
-	}
-	return strings.Join(out, "\n")
 }
