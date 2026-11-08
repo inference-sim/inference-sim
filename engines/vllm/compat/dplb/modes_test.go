@@ -5,7 +5,7 @@ package dplb
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // The modes are vLLM's three, and an unstated one is internal. They are blis-schemas' own

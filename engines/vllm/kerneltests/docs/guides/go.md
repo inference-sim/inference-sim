@@ -20,9 +20,9 @@ blis-registry checkout.
 // which decodes the vLLM engine block it opens the kernel from.
 ```
 
-These are the paths in this repository after `scripts/fetch-testdata.sh` has fetched the
-catalog and registry at the commits the kernel is tested against. Elsewhere, point `Catalog`
-and `Registry` at checkouts of the two repositories, at the versions on
+The catalog and registry are blis-substrate's, at the release `go.mod` pins. Elsewhere, point
+`Catalog` and `Registry` at a blis-substrate checkout's `catalog/` and `registry/`, at the
+versions on
 [Sources of truth](../reference/sources.md). [Scenarios and their inputs](inputs.md) describes
 the scenario files.
 

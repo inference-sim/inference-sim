@@ -3,8 +3,8 @@
 package kernelmodel
 
 import (
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"

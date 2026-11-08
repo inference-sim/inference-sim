@@ -13,26 +13,30 @@ import (
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 
-// A run needs its scenario, scenario directory and registry, and the refusal names every one
-// that is missing.
+// A run needs its scenario and scenario directory, and the refusal names every one that is
+// missing; with both, it needs the data its catalog and registry come from.
 func TestAdopt_NeedsTheScenarioAndItsRoots(t *testing.T) {
 	_, err := Adopt(AdoptInputs{})
 	if err == nil {
 		t.Fatal("no scenario must be refused")
 	}
-	for _, flag := range []string{"--scenario", "--scenarios", "--registry"} {
+	for _, flag := range []string{"--scenario", "--scenarios"} {
 		if !strings.Contains(err.Error(), flag) {
 			t.Errorf("refusal %q must name %s", err, flag)
 		}
 	}
+	repos := vendoredRepos(t)
+	_, err = Adopt(AdoptInputs{Scenario: "glm-5-h200-tp8-mtp3.yaml", ScenariosDir: repos.Scenarios})
+	if err == nil || !strings.Contains(err.Error(), "no catalog and registry") {
+		t.Errorf("no data: %v, want a refusal naming the missing catalog and registry", err)
+	}
 }
 
 // A P/D scenario adopts as disaggregated and refuses to open without a P/D topology; with one
-// it opens the first pool, sized by the kernel, at the catalog the locator names.
+// it opens the first pool, sized by the kernel, from the run's data.
 func TestAdopt_DisaggregatedNeedsAPDTopology(t *testing.T) {
 	repos := vendoredRepos(t)
-	in := AdoptInputs{Scenario: "glm-5-h200-3p1d-ib.yaml", ScenariosDir: repos.Scenarios, Registry: repos.Registry,
-		Catalog: func() (string, error) { return repos.Catalog, nil }}
+	in := AdoptInputs{Scenario: "glm-5-h200-3p1d-ib.yaml", ScenariosDir: repos.Scenarios, Data: repos.Data}
 	a, err := Adopt(in)
 	if err != nil || !a.Disaggregated || len(a.Shape.Roles) != 2 {
 		t.Fatalf("adopt: %+v, %v", a, err)
@@ -43,17 +47,12 @@ func TestAdopt_DisaggregatedNeedsAPDTopology(t *testing.T) {
 	in.PDTopology = true
 	opened := false
 	in.BeforeOpen = func(kernelmodel.Shape) error { opened = true; return nil }
-	if err := OpenFirstPool(in, &a); err != nil || a.Model == nil || a.Settings.KVBlocks <= 0 || a.CatalogRoot != repos.Catalog || !opened {
-		t.Fatalf("with a topology: model %v, %d blocks, root %q, hook %v, err %v", a.Model != nil, a.Settings.KVBlocks, a.CatalogRoot, opened, err)
+	if err := OpenFirstPool(in, &a); err != nil || a.Model == nil || a.Settings.KVBlocks <= 0 || !opened {
+		t.Fatalf("with a topology: model %v, %d blocks, hook %v, err %v", a.Model != nil, a.Settings.KVBlocks, opened, err)
 	}
 	if a.Deployment.Model == "" || a.Deployment.TP < 1 {
 		t.Errorf("deployment %+v, want the first pool's model and parallelism", a.Deployment)
 	}
-	in.Catalog = func() (string, error) { return "", errors.New("no catalog located") }
-	if err := OpenFirstPool(in, &a); err == nil || !strings.Contains(err.Error(), "no catalog located") {
-		t.Errorf("no catalog: %v", err)
-	}
-	in.Catalog = func() (string, error) { return repos.Catalog, nil }
 	in.BeforeOpen = func(kernelmodel.Shape) error { return errors.New("bad routing flags") }
 	if err := OpenFirstPool(in, &a); err == nil || !strings.Contains(err.Error(), "bad routing flags") {
 		t.Errorf("a failing hook: %v", err)
@@ -63,8 +62,7 @@ func TestAdopt_DisaggregatedNeedsAPDTopology(t *testing.T) {
 // A colocated scenario adopts as colocated and opens with no topology.
 func TestAdopt_Colocated(t *testing.T) {
 	repos := vendoredRepos(t)
-	in := AdoptInputs{Scenario: "glm-5-h200-tp8-mtp3.yaml", ScenariosDir: repos.Scenarios, Registry: repos.Registry,
-		Catalog: func() (string, error) { return repos.Catalog, nil }}
+	in := AdoptInputs{Scenario: "glm-5-h200-tp8-mtp3.yaml", ScenariosDir: repos.Scenarios, Data: repos.Data}
 	a, err := Adopt(in)
 	if err != nil || a.Disaggregated {
 		t.Fatalf("adopt: %+v, %v", a, err)
@@ -72,7 +70,7 @@ func TestAdopt_Colocated(t *testing.T) {
 	if err := OpenFirstPool(in, &a); err != nil || a.Model == nil {
 		t.Fatalf("open: %v", err)
 	}
-	if _, err := OpenModel("missing.yaml", repos.Scenarios, repos.Catalog, repos.Registry); err == nil ||
+	if _, err := OpenModel("missing.yaml", repos.Scenarios, repos.Data); err == nil ||
 		!strings.Contains(err.Error(), `"missing.yaml"`) {
 		t.Errorf("a missing scenario: %v", err)
 	}
@@ -117,7 +115,7 @@ func TestAdopt_RefusesTwoColocatedPools(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "two.yaml"), []byte(two), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err = Adopt(AdoptInputs{Scenario: "two.yaml", ScenariosDir: dir, Registry: repos.Registry})
+	_, err = Adopt(AdoptInputs{Scenario: "two.yaml", ScenariosDir: dir, Data: repos.Data})
 	if err == nil || !strings.Contains(err.Error(), "states 2 colocated pools") {
 		t.Errorf("two colocated pools: %v", err)
 	}
@@ -145,7 +143,7 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
+		a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
 		switch {
 		case c.ok && err != nil:
 			t.Errorf("engine_version %s: %v, want it adopted", c.version, err)
@@ -155,6 +153,53 @@ func TestAdopt_RefusesAReleaseTheEngineDoesNotModel(t *testing.T) {
 			!strings.Contains(err.Error(), "0.29.0, 0.31.0 and 0.32.0")):
 			t.Errorf("engine_version %q: %v, want a refusal naming it and the modelled releases", c.version, err)
 		}
+	}
+}
+
+// The scenario names its release as engine: {kind, version} (SIM-1). Until M4 the deprecated
+// engine_version is read alone, or beside engine with the same release; the two stated unequal,
+// or an engine kind other than vllm, are refused (kernelmodel.EngineRelease).
+func TestAdopt_ReadsTheScenariosEngineRelease(t *testing.T) {
+	repos := vendoredRepos(t)
+	raw, err := os.ReadFile(filepath.Join(repos.Scenarios, "glm-5-h200-tp8-mtp3.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const old = `engine_version: "0.29.0"` + "\n"
+	if !strings.Contains(string(raw), old) {
+		t.Fatal("fixture has no engine_version to edit")
+	}
+	for _, c := range []struct {
+		name, stated string
+		core         bool
+		refusal      string
+	}{
+		{"engine only, 0.32.0", "engine: {kind: vllm, version: \"0.32.0\"}\n", true, ""},
+		{"engine only, 0.31.0", "engine: {kind: vllm, version: \"0.31.0\"}\n", false, ""},
+		{"engine_version only", `engine_version: "0.32.0"` + "\n", true, ""},
+		{"both, equal", "engine: {kind: vllm, version: \"0.32.0\"}\n" + `engine_version: "0.32.0"` + "\n", true, ""},
+		{"both, unequal", "engine: {kind: vllm, version: \"0.32.0\"}\n" + `engine_version: "0.31.0"` + "\n", false,
+			`engine_version is "0.31.0" but engine.version is "0.32.0"`},
+		{"another kind", "engine: {kind: sglang, version: \"0.32.0\"}\n", false, `engine.kind is "sglang"`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			body := strings.Replace(string(raw), old, c.stated, 1)
+			if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
+			switch {
+			case c.refusal != "":
+				if err == nil || !strings.Contains(err.Error(), c.refusal) {
+					t.Errorf("%v, want a refusal containing %q", err, c.refusal)
+				}
+			case err != nil:
+				t.Errorf("%v, want it adopted", err)
+			case a.CoreEngine != c.core:
+				t.Errorf("CoreEngine %t, want %t", a.CoreEngine, c.core)
+			}
+		})
 	}
 }
 
@@ -176,7 +221,7 @@ func TestAdopt_032LeavesItsSettingsToTheV032Engine(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
+	a, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
 	if err != nil || !a.CoreEngine {
 		t.Errorf("a 0.32.0 scenario stating max_num_active_seqs: %v (CoreEngine %t), want it adopted to the v0.32.0 engine", err, a.CoreEngine)
 	}
@@ -205,7 +250,7 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		_, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry})
+		_, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data})
 		return err
 	}
 	if err := adopt(t, ""); err != nil {
@@ -253,7 +298,7 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 	if err := os.WriteFile(filepath.Join(dir, "v.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Registry: repos.Registry}); err == nil ||
+	if _, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data}); err == nil ||
 		!strings.Contains(err.Error(), "engine.speculative.draft_model") {
 		t.Errorf("speculative.draft_model: %v, want a refusal naming it", err)
 	}
@@ -263,9 +308,9 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 // none stated, not as the release "".
 func statedVersion(v string) string {
 	if v == "" {
-		return "states no engine_version"
+		return "states no engine release"
 	}
-	return `states engine_version "` + v + `"`
+	return `states engine release "` + v + `"`
 }
 
 // The compatibility engine's releases are the ones core/vllm's factory hands to it.
@@ -298,8 +343,7 @@ func TestAdopt_032HybridKVIsCheckedOverItsGroups(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "m.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		in := AdoptInputs{Scenario: "m.yaml", ScenariosDir: dir, Registry: repos.Registry,
-			Catalog: func() (string, error) { return repos.Catalog, nil }}
+		in := AdoptInputs{Scenario: "m.yaml", ScenariosDir: dir, Data: repos.Data}
 		a, err := Adopt(in)
 		if err != nil {
 			t.Fatalf("engine_version %s: adopt: %v", c.version, err)

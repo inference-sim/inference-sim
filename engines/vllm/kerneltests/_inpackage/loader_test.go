@@ -3,42 +3,36 @@
 package latencykernel
 
 import (
-	"os"
+	"fmt"
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/artifacttest"
+	"github.com/inference-sim/blis-substrate/kernel/internal/artifacttest"
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/vllm"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
 )
 
-// The catalog and registry are pinned copies under testdata, fetched by
-// scripts/fetch-testdata.sh at the commits testdata/upstream.lock names, so these tests read
-// real artifacts at a known version. See testdata/README.md for what is fetched and why.
-//
-// They are relative paths because a Go test runs with its own package directory as the
-// working directory, and this package is the repository root. Overridable so a working
-// copy can be scored against a live upstream checkout:
-//
-//	BLIS_CATALOG=../blis-catalog go test ./...
-var (
-	catalogRoot  = envOr("BLIS_CATALOG", filepath.Join("testdata", "catalog"))
-	registryRoot = envOr("BLIS_REGISTRY", filepath.Join("testdata", "registry"))
-)
+// catalogRoot, registryRoot and envOr are the kernel package's own (loader_test.go there):
+// blis-substrate's catalog/ and registry/, beside the package, which these tests read too.
+// testData is the same data through the loader, for the tests that open a kernel through Repos.
+var testData = mustData()
 
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+func mustData() *load.Data {
+	d, err := load.Open(load.Options{Catalog: catalogRoot, Registry: registryRoot})
+	if err != nil {
+		panic(err)
 	}
-	return fallback
+	return d
 }
 
 // fixture builds a kernel from a committed scenario and the real catalog and registry.
@@ -88,21 +82,25 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	if err != nil {
 		t.Fatalf("committed fixture %s: decoding its engine block: %v", scenario, err)
 	}
+	// A fixture states only what its run stated (X19); the cost model resolves no default
+	// (SUB-6), so gpu_memory_utilization is the engine's: blis-vllm's resolver gives vLLM's.
+	resolveMemoryUtilization(&eng, sc.EngineRelease())
 	return Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineVersion), Engine: &eng,
+		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()), Engine: &eng,
 	}
 }
 
-// rulesFor is the vLLM rules pack for a fixture's declared release, and the 0.29.0 pack for
-// a release with none, as these fixtures were written against. The packs come from the
-// engine model's rules module, as every caller's do: the kernel looks none up itself.
+// rulesFor is the vLLM rules pack for a fixture's declared release. The packs come from the
+// engine model's rules module, as every caller's do: the kernel looks none up itself. A release
+// with no pack is a malformed fixture, not a reason to price it with another release's pack.
 func rulesFor(version string) *pack.Pack {
-	if p := vllmrules.Lookup(version); p != nil {
-		return p
+	p := vllmrules.Lookup(version)
+	if p == nil {
+		panic(fmt.Sprintf("no vLLM rules pack for engine release %q (known: %v)", version, vllmrules.Versions()))
 	}
-	return v0_29.Pack()
+	return p
 }
 
 // withRules gives a Repos the vLLM rules packs and engine-block decoding, as a caller of Open
@@ -110,6 +108,7 @@ func rulesFor(version string) *pack.Pack {
 func withRules(r Repos) Repos {
 	r.Rules = RulesFrom(vllmrules.Lookup)
 	r.RulesVersions = vllmrules.Versions
+	r.RulesKind = "vllm"
 	r.EngineSettings = vllmsettings.OfPool
 	return r
 }
@@ -123,6 +122,7 @@ func newKernel(in Inputs) (*Kernel, error) {
 		if err != nil {
 			return nil, err
 		}
+		resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
 		in.Engine = &eng
 	}
 	return New(in)
@@ -228,4 +228,37 @@ func mustDecode(t testing.TB, pool deployment.Pool) engineconfig.Engine {
 func setEngine(t testing.TB, pool *deployment.Pool, e engineconfig.Engine) {
 	t.Helper()
 	pool.Engine = engineBlock(t, e)
+}
+
+// resolvedMemoryUtilization is what blis-vllm's resolver gives a pool that states no
+// gpu_memory_utilization at the scenario's release: vLLM's default with its source. The cost model
+// resolves none (SUB-6), so a fixture that states none (X19) reaches the kernel through this.
+func resolvedMemoryUtilization(t *testing.T, in Inputs) (float64, string) {
+	t.Helper()
+	d, ok := vllm.DefaultMemoryUtilization(in.Scenario.EngineRelease())
+	if !ok {
+		t.Fatalf("no default gpu_memory_utilization for release %q", in.Scenario.EngineRelease())
+	}
+	return d.Value, d.Source
+}
+
+// withResolvedMemoryUtilization states the resolver's default on a pool that states none.
+func withResolvedMemoryUtilization(t *testing.T, in Inputs) Inputs {
+	t.Helper()
+	e := mustDecode(t, in.Deployment.Pools[in.PoolIndex])
+	if e.GPUMemoryUtilization == 0 {
+		e.GPUMemoryUtilization, _ = resolvedMemoryUtilization(t, in)
+		setEngine(t, &in.Deployment.Pools[in.PoolIndex], e)
+	}
+	return in
+}
+
+// resolveMemoryUtilization gives a pool that states no gpu_memory_utilization vLLM's default for the
+// release, as blis-vllm's resolver does before it builds the kernel; the cost model resolves none.
+func resolveMemoryUtilization(eng *enginesettings.Settings, release string) {
+	if eng.GPUMemoryUtilization == 0 {
+		if d, ok := vllm.DefaultMemoryUtilization(release); ok {
+			eng.GPUMemoryUtilization = d.Value
+		}
+	}
 }

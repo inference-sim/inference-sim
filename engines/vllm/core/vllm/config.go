@@ -15,8 +15,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/sched"
@@ -58,12 +58,20 @@ type Config struct {
 	// the factory builds a data-parallel group of that many ranks behind one endpoint (DPGroup).
 	// Unstated or 1 is one engine.
 	DataParallelSize int `yaml:"data_parallel_size,omitempty"`
+	// MambaModel is whether the model runs vLLM's MambaModelConfig hook: a Mamba or hybrid
+	// attention/Mamba model (ModelConfig.is_hybrid, vllm/config/model.py:2023-2032@5df63a72, or a
+	// Mamba architecture, vllm/model_executor/models/config.py:1073-1095@5df63a72). It is the model's,
+	// not the deployment's, so the caller states it from the graph's recurrent layers. Unstated is a
+	// model without recurrent layers. checkMambaCache reads it.
+	MambaModel bool `yaml:"mamba_model,omitempty"`
+	// MambaSSMCacheDTypeDefault is what the model's hook resolves mamba_ssm_cache_dtype "auto" to:
+	// NemotronH's checkpoint value or float32 (config.py:716-732@5df63a72) and Qwen3.5's checkpoint
+	// value (:850-866). It is the checkpoint's, so the caller states it; empty means the model's hook
+	// rewrites nothing and the default stays "auto".
+	MambaSSMCacheDTypeDefault string `yaml:"mamba_ssm_cache_dtype_default,omitempty"`
 	// KVLayers are the model's attention layers by KV cache spec, which vLLM groups into the
 	// scheduler's KV cache groups (KVGroups). Unstated is one full-attention group.
 	KVLayers []KVLayerRun `yaml:"kv_layers,omitempty"`
-	// DPSyncInterval is parallel_config.dp_sync_interval (vllm/config/parallel.py:162@5df63a72,
-	// default 16): the steps between a DP group's unfinished-request all-reduces.
-	DPSyncInterval int `yaml:"dp_sync_interval,omitempty"`
 	// DPStatsIntervalUs is how often the DP coordinator publishes the ranks' request counts to
 	// the front end's load balancer: min_stats_update_interval_ms = 100
 	// (vllm/v1/engine/coordinator.py:154-162, 267-269@5df63a72), 100000 µs unstated. A
@@ -125,6 +133,9 @@ type dpSettings struct {
 	statsIntervalUs                      int64
 }
 
+// maxModelLenIssue is the open issue an unstated max_model_len cites (design X28).
+const maxModelLenIssue = "https://github.com/inference-sim/blis-vllm/issues/69"
+
 // resolve turns an engine block into the scheduler configuration vLLM v0.32.0 would run, or
 // refuses it. A setting that changes scheduling and that this engine does not model is refused
 // rather than ignored (refuseUnmodelled): a run that drops one would still produce numbers, and
@@ -163,9 +174,11 @@ func resolve(c Config) (settings, error) {
 	maxLen, ok := e.MaxModelLen.Stated()
 	if !ok {
 		// An unstated or auto window is the model's own, or one fitted to memory
-		// (vllm/config/model.py@5df63a72); either is the caller's to resolve.
-		return s, fmt.Errorf("vllm: max_model_len must be stated; an unstated or auto window is the model's " +
-			"or the memory's, which the caller resolves")
+		// (vllm/config/model.py@5df63a72); either is the caller's to resolve. The engine will
+		// resolve an unstated one from the graph's context window, with the model values moved
+		// into graph fields (https://github.com/inference-sim/blis-vllm/issues/69).
+		return s, fmt.Errorf("vllm: max_model_len must be stated; an unstated or auto window is the model's "+
+			"or the memory's, which the caller resolves (%s)", maxModelLenIssue)
 	}
 	// vLLM refuses to start when the KV cache cannot hold one max_model_len sequence: a
 	// full-attention group needs cdiv(max_model_len, block_size) blocks
@@ -258,6 +271,17 @@ func resolve(c Config) (settings, error) {
 	if err != nil {
 		return s, err
 	}
+	if e.SWABoundedReplay != nil && !*e.SWABoundedReplay && v2 {
+		// CacheConfig.swa_bounded_replay: true (vllm/config/cache.py:250@5df63a72), and DeepSeek-V4.1 forces
+		// it off on the V1 runner, under prefill context parallelism and on ROCm
+		// (vllm/models/deepseek_v41/attention.py:529-547@5df63a72). So on the V1 runner a stated false is
+		// the effective value and builds; on the V2 runner (prefill context parallelism is refused
+		// elsewhere, blis-vllm#67) false departs from the default, and lets the sliding-window KV take
+		// part in prefix caching, which this factory does not model. Only DeepSeek-V4.1 reads the
+		// setting; the engine block does not name the model, so any model is refused here.
+		return s, fmt.Errorf("vllm: swa_bounded_replay is not modelled: false departs from the default on the V2 "+
+			"model runner and lets the sliding-window KV take part in prefix caching (%s)", issueBase+"7")
+	}
 	if method == "dspark" && !v2 {
 		// DSpark is implemented only by the V2 model runner (vllm/config/vllm.py:2976-2979@5df63a72),
 		// which is the runner as resolved, not either statement of it alone.
@@ -280,6 +304,9 @@ func resolve(c Config) (settings, error) {
 	// blocked step schedules nothing until that batch completes; vllm/v1/engine/core.py:698-810@5df63a72).
 
 	prefixCaching := e.EnablePrefixCaching == nil || *e.EnablePrefixCaching
+	if err := checkMambaCache(c, prefixCaching); err != nil {
+		return settings{}, err
+	}
 	maxLoRAs := 0
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
@@ -325,19 +352,19 @@ func resolve(c Config) (settings, error) {
 	if s.offload != nil && s.connector != nil {
 		// Both at once is vLLM's MultiConnector, which is not modelled.
 		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
-			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/14")
+			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/15")
 	}
 	if s.connector != nil && c.DataParallelSize > 1 {
 		// The data-parallel group starts no transfers and holds no handoffs (DPGroup): a P/D pool
 		// at dp > 1 would never pull or release its KV.
 		return settings{}, fmt.Errorf("vllm: kv_transfer with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/44")
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
 	if s.offload != nil && c.DataParallelSize > 1 {
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/14")
+			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
-	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: c.DPSyncInterval,
+	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}
 	if s.dp.syncInterval == 0 {
 		s.dp.syncInterval = 16
@@ -366,7 +393,70 @@ func resolve(c Config) (settings, error) {
 	if err := checkRules(e, pp); err != nil {
 		return settings{}, err
 	}
+	// After the release's own checks, so a value the release rejects is reported as it rejects it.
+	if err := refuseUnreadSettings(e); err != nil {
+		return settings{}, err
+	}
 	return s, nil
+}
+
+// effectiveMambaCacheMode is the mamba_cache_mode that runs for a stated one. CacheConfig's
+// initializer is "none" (vllm/config/cache.py:189@5df63a72). For a model that runs
+// MambaModelConfig.verify_and_update_config the hook sets "align" when prefix caching is on and
+// the stated mode is "none", and sets "none" when prefix caching is off and the stated mode is not
+// (vllm/model_executor/models/config.py:685-706@5df63a72). It cannot tell a stated "none" from the
+// initializer, so a stated "none" with prefix caching on runs as "align", and a stated "align"
+// with it off runs as "none". Prefix caching defaults on (cache.py:141). For any other model no hook
+// runs and the stated value, or the initializer, stands: only the Mamba layers' specs and
+// backends read it, and the config validators that assert on "align" (vllm/config/vllm.py:3277-3281).
+func effectiveMambaCacheMode(stated string, prefixCaching, hook bool) string {
+	if stated == "" {
+		stated = "none"
+	}
+	if !hook {
+		return stated
+	}
+	if prefixCaching {
+		return "align"
+	}
+	return "none"
+}
+
+// checkMambaCache refuses mamba_cache_mode and mamba_ssm_cache_dtype only when the value that
+// runs differs from the default that runs: each is compared with what an unstated value resolves
+// to for this model and this enable_prefix_caching, not with the field's initializer (X1).
+//
+// mamba_cache_mode: for a Mamba model, the hook resolves every stated value to the same mode, so
+// none is away from the default and none is refused. For another model the stated value stands,
+// and "align" is away from the default "none". This factory builds full-attention KV groups only
+// (sched.Config.KVGroups), so a Mamba model's groups are refused earlier in vllmengine
+// (Model.V032Pieces, blis-vllm#7) and "align" on a model without them is refused here for the same
+// reason: it splits prefill chunks on block boundaries only for Mamba layers
+// (vllm/v1/core/sched/scheduler.py:375-379@5df63a72), which this engine does not model.
+//
+// mamba_ssm_cache_dtype: the initializer is "auto" (cache.py:185). NemotronH and Qwen3.5 replace a
+// stated "auto" with the checkpoint's value (config.py:724-732, 864-866) and keep any other stated
+// value, so a stated value equal to the resolved default is the default.
+func checkMambaCache(c Config, prefixCaching bool) error {
+	e := c.Engine
+	stated := effectiveMambaCacheMode(e.MambaCacheMode, prefixCaching, c.MambaModel)
+	if def := effectiveMambaCacheMode("", prefixCaching, c.MambaModel); stated != def {
+		return fmt.Errorf("vllm: mamba_cache_mode %q runs as %q, away from the default %q for this model with enable_prefix_caching %t; "+
+			"it is not modelled: this factory builds full-attention KV groups only (%s, %s)",
+			e.MambaCacheMode, stated, def, prefixCaching, issueBase+"7", issueBase+"17")
+	}
+	if v := e.MambaSSMCacheDType; v != "" && v != "auto" && v != c.MambaSSMCacheDTypeDefault {
+		return fmt.Errorf("vllm: mamba_ssm_cache_dtype %q is not modelled: it differs from the default %q for this model (%s)",
+			v, defaultOr(c.MambaSSMCacheDTypeDefault, "auto"), issueBase+"83")
+	}
+	return nil
+}
+
+func defaultOr(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 // specMethodModelled reports whether this factory builds a draft method: one tier 2 diff-tests
@@ -442,13 +532,15 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// blis-schemas' Env rule: a consumer refuses, or discloses, every key it cannot honour,
 		// and never ignores one (spec/deployment/deployment.go Engine.Env).
 		return fmt.Errorf("vllm: env %s is not read by this engine, which reads only %s; the keys that "+
-			"change step time are the latency kernel's to price (https://github.com/inference-sim/blis-latency-kernel/issues/85)",
+			"change step time are the latency kernel's to price (https://github.com/inference-sim/blis-vllm/issues/80)",
 			strings.Join(keys, ", "), strings.Join(readEnv, ", "))
 	}
 	switch {
 	case e.PrefixMatchUnit != 0:
 		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
-	case e.PrefixCacheRetentionInterval != nil:
+	case e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0:
+		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
+		// is the default and keeps only the semantic checkpoints, which this engine builds.
 		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
 	case e.PrefillScheduleInterval > 1 && !dataParallel:
 		// _should_throttle_prefills is the DP engine core's (vllm/v1/engine/core.py:2318-2325@5df63a72):
@@ -456,23 +548,114 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 		// would show, and stating it is refused rather than dropped.
 		return fmt.Errorf("vllm: prefill_schedule_interval throttles a data-parallel group's ranks; this engine " +
 			"has data_parallel_size 1")
-	case e.MaxCPULoRAs != 0:
+	case e.MaxCPULoRAs != 0 && e.MaxCPULoRAs != max(e.MaxLoRAs, 1):
+		// LoRAConfig.max_cpu_loras: None, which becomes max_loras (vllm/config/lora.py:42, 120-121@5df63a72),
+		// and max_loras defaults to 1 (:35); a stated value equal to that is the default.
 		return fmt.Errorf("vllm: max_cpu_loras is not modelled (https://github.com/inference-sim/blis-vllm/issues/5)")
-	case e.MambaCacheMode != "":
-		// mamba_cache_mode "align" splits prefill chunks on block boundaries for a model with
-		// Mamba layers (vllm/v1/core/sched/scheduler.py:375-379@5df63a72). This factory builds
-		// the full-attention KV cache only (sched.Config.KVGroups unset), so a recurrent
-		// model's groups, and with them this setting, are not modelled.
-		return fmt.Errorf("vllm: mamba_cache_mode is not modelled: this factory builds full-attention KV " +
-			"groups only (https://github.com/inference-sim/blis-vllm/issues/7, " +
-			"https://github.com/inference-sim/blis-vllm/issues/17)")
-	case e.SWABoundedReplay != nil:
-		// swa_bounded_replay keeps DeepSeek-V4.1's sliding-window KV out of prefix caching
-		// (vllm/config/cache.py:250@5df63a72; vllm/models/deepseek_v41/attention.py:529-547@5df63a72),
-		// a sliding-window group this factory does not build.
-		return fmt.Errorf("vllm: swa_bounded_replay is not modelled: this factory builds full-attention KV " +
-			"groups only (https://github.com/inference-sim/blis-vllm/issues/7, " +
-			"https://github.com/inference-sim/blis-vllm/issues/17)")
+	}
+	// mamba_cache_mode and mamba_ssm_cache_dtype are checked on their resolved values (checkMambaCache),
+	// and swa_bounded_replay after the model runner is resolved (resolve).
+	return nil
+}
+
+// unreadSetting is an engine-block key that nothing in blis-vllm reads, neither this engine nor
+// the latency kernel (enginesettings.Settings has no field for it), with the open issue that
+// tracks modelling it. VLM-3 and X1: a field not modelled is refused when it is set away from
+// vLLM's default, not when it is merely stated, so a user who hands BLIS the flags they gave vLLM,
+// with a value equal to the default, is not refused. away reports whether e states the key at a
+// value other than vLLM's default; each entry cites the line that sets the default.
+type unreadSetting struct {
+	key, field, issue string
+	away              func(engineconfig.Engine) bool
+}
+
+const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
+
+var unreadSettings = []unreadSetting{
+	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
+	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
+	// SchedulerConfig.stream_interval: 1 (vllm/config/scheduler.py:213@5df63a72).
+	{"stream_interval", "stream_interval", "https://github.com/inference-sim/inference-sim/issues/2035",
+		func(e engineconfig.Engine) bool { return e.StreamInterval != 0 && e.StreamInterval != 1 }},
+	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
+	// a stated true or false is a choice.
+	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueBase + "80", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
+	// AttentionConfig.mla_prefill_backend: None, selected automatically (vllm/config/attention.py:81@5df63a72).
+	{"mla_prefill_backend", "attention_config.mla_prefill_backend", issueBase + "80", func(e engineconfig.Engine) bool { return e.MLAPrefillBackend != "" }},
+	// KernelConfig.linear_backend: "auto" (vllm/config/kernel.py:350@5df63a72). A value is lower-cased
+	// and its dashes become underscores before it is validated (kernel.py:393-397, arg_utils.py:1809),
+	// so "AUTO" is the default too.
+	{"linear_backend", "kernel_config.linear_backend", issueBase + "80",
+		func(e engineconfig.Engine) bool {
+			v := strings.ReplaceAll(strings.ToLower(e.LinearBackend), "-", "_")
+			return v != "" && v != "auto"
+		}},
+	// CompilationConfig.custom_ops: [] (vllm/config/compilation.py:480@5df63a72).
+	{"custom_ops", "compilation_config.custom_ops", issueBase + "80", func(e engineconfig.Engine) bool { return len(e.CustomOps) > 0 }},
+	// CompilationConfig.decoder_replay_cudagraph_capture_sizes: [] (vllm/config/compilation.py:565@5df63a72).
+	{"decoder_replay_cudagraph_capture_sizes", "compilation_config.decoder_replay_cudagraph_capture_sizes", issueBase + "80",
+		func(e engineconfig.Engine) bool { return len(e.DecoderReplayCUDAGraphCaptureSizes) > 0 }},
+	// SpeculativeConfig.kv_cache_dtype: None, the draft keeps the target's layout
+	// (vllm/config/speculative.py:428@5df63a72). A stated "auto" is a value, not None: it overrides
+	// the draft's cache_config.cache_dtype (:382), so it differs from the default.
+	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype", issueBase + "80",
+		func(e engineconfig.Engine) bool { return e.Speculative != nil && e.Speculative.KVCacheDType != "" }},
+	// SpeculativeConfig.rejection_sample_method: "standard" (vllm/config/speculative.py:529@5df63a72).
+	// Only "synthetic" fixes the acceptance length (:532-548) and is refused; "block", which recorded
+	// runs state, decides which drafts are accepted, and acceptance is an input (#29).
+	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "29",
+		func(e engineconfig.Engine) bool {
+			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic"
+		}},
+	// mamba_cache_mode and mamba_ssm_cache_dtype are not listed: a model hook rewrites them, so what
+	// differs from the default is decided on the resolved value (checkMambaCache).
+	// ParallelConfig.dbo_decode_token_threshold: 32 (vllm/config/parallel.py:262@5df63a72)..
+	{"dbo.dbo_decode_token_threshold", "dbo_decode_token_threshold", issueBase + "74",
+		func(e engineconfig.Engine) bool {
+			return e.DBO != nil && e.DBO.DecodeTokenThreshold != nil && *e.DBO.DecodeTokenThreshold != 32
+		}},
+	// ParallelConfig.dbo_prefill_token_threshold: 512 (vllm/config/parallel.py:267@5df63a72).
+	{"dbo.dbo_prefill_token_threshold", "dbo_prefill_token_threshold", issueBase + "74",
+		func(e engineconfig.Engine) bool {
+			return e.DBO != nil && e.DBO.PrefillTokenThreshold != nil && *e.DBO.PrefillTokenThreshold != 512
+		}},
+	// EPLBConfig.window_size: 1000 (vllm/config/parallel.py:66@5df63a72).
+	{"eplb.window_size", "eplb_config.window_size", issueBase + "76",
+		func(e engineconfig.Engine) bool {
+			return e.EPLB != nil && e.EPLB.WindowSize != 0 && e.EPLB.WindowSize != 1000
+		}},
+	// EPLBConfig.step_interval: 3000 (vllm/config/parallel.py:68@5df63a72).
+	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "76",
+		func(e engineconfig.Engine) bool {
+			return e.EPLB != nil && e.EPLB.StepInterval != 0 && e.EPLB.StepInterval != 3000
+		}},
+	// KVEventsConfig.publisher: None, resolved in __post_init__ to "zmq" when enable_kv_cache_events
+	// is set and "null" otherwise (vllm/config/kv_events.py:19, 51-52@5df63a72), so the default depends on
+	// that setting.
+	{"kv_events.publisher", "kv_events_config.publisher", issueBase + "60",
+		func(e engineconfig.Engine) bool {
+			if e.KVEvents == nil || e.KVEvents.Publisher == "" {
+				return false
+			}
+			def := "null"
+			if e.KVEvents.EnableKVCacheEvents {
+				def = "zmq"
+			}
+			return e.KVEvents.Publisher != def
+		}},
+	// KVEventsConfig.topic: "" (vllm/config/kv_events.py:45@5df63a72).
+	{"kv_events.topic", "kv_events_config.topic", issueBase + "60",
+		func(e engineconfig.Engine) bool { return e.KVEvents != nil && e.KVEvents.Topic != "" }},
+}
+
+// refuseUnreadSettings refuses the first key of unreadSettings stated away from vLLM's default,
+// naming the key, the field as vLLM names it and the issue.
+func refuseUnreadSettings(e engineconfig.Engine) error {
+	for _, u := range unreadSettings {
+		if u.away(e) {
+			return fmt.Errorf("vllm: %s (vLLM's %s) is not modelled: this engine and the cost model read no such setting, so a "+
+				"value other than vLLM's default would be dropped (%s)", u.key, u.field, u.issue)
+		}
 	}
 	return nil
 }

@@ -19,7 +19,7 @@ import (
 // same layout and the assertion below could not fail.
 const disaggregated = `kind: Scenario
 name: disagg-probe
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -72,7 +72,7 @@ func writeDisaggregated(t *testing.T) Repos {
 		filepath.Join(dir, "disagg.yaml"), []byte(disaggregated), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return withRules(Repos{Scenarios: dir, Catalog: catalogRoot, Registry: registryRoot})
+	return withRules(Repos{Scenarios: dir, Data: testData})
 }
 
 // TestOpenPoolPricesTheRequestedPool is why OpenPool exists.

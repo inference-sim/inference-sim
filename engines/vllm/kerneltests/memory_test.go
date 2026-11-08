@@ -3,7 +3,7 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"math"
 	"path/filepath"
@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/vocab"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -62,7 +62,7 @@ func TestFixedOccupancyMatchesTheFiguresTheIssueStates(t *testing.T) {
 // OCCUPANCY ENTERS NO STEP TIME. Scaling every memory magnitude in the registry threefold
 // must move FixedBytes and leave every step, transfer and overhead exactly where it was:
 // these terms decide how many sequences fit, not how long a step takes. It is the
-// metamorphic form of #22's requirement that cmd/shape and cmd/score do not move.
+// metamorphic form of #22's requirement that end-to-end figures do not move.
 func TestMemoryMagnitudesMoveOccupancyAndNoStepTime(t *testing.T) {
 	memory := func(name string) bool {
 		for _, p := range []string{"nccl_communicator_bytes_", "engine_workspace_bytes",
@@ -217,7 +217,7 @@ func TestTheGraphModeIsChosenPerBatch(t *testing.T) {
 // filled in must appear as a kernel assumption, which a fully stated deployment has none of
 // -- except the cudagraph capture ceiling, which blis-schemas has no field to state, so any
 // capturing deployment reports vLLM's default for it, and the engine release, which the
-// fixture declares as 0.29.0 (a release the vLLM rules packs cover) where the kernel encodes
+// fixture declares as 0.32.0 (a release the vLLM rules packs cover) where the kernel encodes
 // 0.31.0.
 func TestProvenanceSeesEveryFigureFixedBytesReports(t *testing.T) {
 	k := fixture(t, memoryFixture)

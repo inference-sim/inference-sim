@@ -7,7 +7,21 @@
 //
 // The factory registered here is the production one. The simulator passes only the paths the
 // engine reads (Roots) and which pool it is (Pool); the factory opens the scenario itself, so the
-// simulator opens no vLLM configuration (inference-sim#2021 B2, B3). For that pool it:
+// simulator opens no vLLM configuration (inference-sim#2021 B2, B3).
+//
+// Host contract for the catalog and registry data (design §3.3, VAL-6). A run's selected-entry
+// report lives on the load.Data it was opened as, and the engine keeps no data of its own
+// between calls: there is no process-wide cache. A host that wants the engine's lookups in its
+// run's report, or that opened its data with overlays, opens one load.Data per run and builds
+// the engine with New(Input{Spec: ..., Data: data}); the engine then reads that Data as it is,
+// and refuses a catalog, registry or overlay root in Roots, which it would otherwise ignore.
+// A host that registers the factory and calls engine.New(Spec) hands the engine no Data, so
+// each call opens one fresh Data for the whole build (not one for each of its steps) from
+// Roots[RootCatalog] and Roots[RootRegistry] (the embedded copy when absent), whose report
+// nobody reads, and an overlay is refused (RootCatalogOverlays,
+// RootRegistryOverlays) until the engine reads overlays itself. inference-sim adopting
+// Input{Data}, so that a whole run shares one report, is
+// https://github.com/inference-sim/blis-vllm/issues/90. For that pool the factory:
 //
 //   - prices every step with blis-latency-kernel, the same kernel the compatibility engine's
 //     compat/kernelmodel opens, so a 0.32.0 run and a 0.31.0 run of one deployment are priced by
@@ -33,8 +47,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
@@ -43,10 +58,19 @@ import (
 
 // The Roots keys the factory reads.
 const (
-	// RootCatalog is a blis-catalog checkout or a pinned copy of one.
+	// RootCatalog is a directory with blis-substrate's catalog layout that replaces the
+	// embedded catalog; absent or empty means the embedded copy (design §3.3). The loader checks that the
+	// data is well formed and does not require or judge a licence record (X12), so a released
+	// blis-catalog loads here; the project's own catalog is checked for licences in CI.
 	RootCatalog = "catalog"
-	// RootRegistry is a blis-registry checkout or a pinned copy of one.
+	// RootRegistry is the same for the registry.
 	RootRegistry = "registry"
+	// RootCatalogOverlays and RootRegistryOverlays are overlay directories (load.Options) of
+	// a host's data, joined by the OS path-list separator. The engine does not read overlays:
+	// a non-empty value without Input.Data is refused, because the engine would price on base
+	// data the run did not name. A host with overlays passes its opened Data instead.
+	RootCatalogOverlays  = "catalog_overlays"
+	RootRegistryOverlays = "registry_overlays"
 	// RootScenario is the scenario file's path: its Scenario document and its Deployment.
 	RootScenario = "scenario"
 )
@@ -56,20 +80,59 @@ const (
 // compatibility engine itself. Later calls are no-ops.
 func Register() { vllm.Register(Factory()) }
 
-// Factory is the production factory Register registers.
-func Factory() vllm.Factory {
-	return vllm.Factory{Pricer: pricerFor, Prepare: prepare}
+// Factory is the production factory Register registers. It is given no Data, so each call it
+// serves opens a fresh one from the spec's Roots.
+func Factory() vllm.Factory { return factoryFor(nil) }
+
+// Input is what New builds an engine from: the spec, and optionally the run's opened data.
+type Input struct {
+	// Spec is the engine spec, with the Roots the engine reads.
+	Spec engine.Spec
+	// Data, when set, is the run's catalog and registry exactly as the host opened them,
+	// overlays included. The engine reads it as it is, so its lookups land in the host's
+	// selected-entry report, and Roots[RootCatalog], Roots[RootRegistry] and the overlay keys
+	// are not consulted. When nil the engine opens a fresh Data from Roots for this call.
+	Data *load.Data
 }
+
+// New builds a v0.32.0 engine (and refuses other releases, as the registered factory does)
+// from in, reading in.Data when set.
+func New(in Input) (engine.Engine, error) { return factoryFor(in.Data).New(in.Spec) }
+
+// factoryFor builds the factory over the host's opened data, or none. A build opens its pool once,
+// with the data once, and completes the engine block and makes the pricer from that one pool, so
+// the build has one report and pays for one open (vllm.Factory.Open). Prepare and Pricer stay set
+// for a caller that wants one step alone.
+func factoryFor(data *load.Data) vllm.Factory {
+	return vllm.Factory{
+		Pricer:  func(s engine.Spec) (vllm.Pricer, error) { return pricerFor(s, data) },
+		Prepare: func(s engine.Spec) (engine.Spec, error) { return prepare(s, data) },
+		Open: func(s engine.Spec) (engine.Spec, func() (vllm.Pricer, error), error) {
+			p, err := open(s, data)
+			if err != nil {
+				return s, nil, err
+			}
+			s.Config = p.complete(s.Config)
+			return s, func() (vllm.Pricer, error) { return pricerOf(p), nil }, nil
+		},
+	}
+}
+
+// openData opens the catalog and registry a build with no host Data reads. A variable so a test
+// can count the opens: one build opens its data once.
+var openData = kernelmodel.OpenData
 
 // pool is one opened pool: the kernel that prices it, its KV block count and its engine block.
 // kvBytes is the memory a hybrid model's pool was sized from (poolBlocks), 0 for one sized as
 // the compatibility engine sizes it.
 type pool struct {
-	model   *kernelmodel.Model
-	blocks  int64
-	kvBytes int64
-	engine  yaml.Node
-	pp, dp  int
+	model *kernelmodel.Model
+	// resolved are the engine settings as the release resolves them (Model.Engine).
+	resolved engineconfig.Engine
+	blocks   int64
+	kvBytes  int64
+	engine   yaml.Node
+	pp, dp   int
 	// role is the pool's role and connector the deployment's pd_transfer.connector, which a
 	// prefill or decode pool runs as kv_producer or kv_consumer.
 	role      deployment.Role
@@ -80,19 +143,40 @@ type pool struct {
 }
 
 // open opens the spec's pool through compat/kernelmodel, as the compatibility engine opens it.
-func open(s engine.Spec) (pool, error) {
+// given is the host's opened Data, or nil to open a fresh one from the spec's Roots.
+func open(s engine.Spec, given *load.Data) (pool, error) {
 	path := s.Roots[RootScenario]
 	if path == "" {
 		return pool{}, fmt.Errorf("vllmengine: Roots[%q] must name the scenario file", RootScenario)
 	}
-	for _, k := range []string{RootCatalog, RootRegistry} {
-		if s.Roots[k] == "" {
-			return pool{}, fmt.Errorf("vllmengine: Roots[%q] must name a directory", k)
+	data := given
+	if data != nil {
+		// The host's Data is read as it is. A root that names other data would be ignored, and the
+		// run would price on data it did not name, so it is refused.
+		for _, k := range []string{RootCatalog, RootRegistry, RootCatalogOverlays, RootRegistryOverlays} {
+			if s.Roots[k] != "" {
+				return pool{}, fmt.Errorf("vllmengine: Roots[%q] is %q, and the host also passed its opened Data (Input.Data), "+
+					"which the engine reads as it is, so the root would be ignored: open the Data with that root "+
+					"(load.Options) and drop it from Roots", k, s.Roots[k])
+			}
 		}
 	}
-	m, err := kernelmodel.OpenPool(filepath.Base(path), kernelmodel.Repos{
-		Scenarios: filepath.Dir(path), Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry],
-	}, s.Pool)
+	if data == nil {
+		for _, k := range []string{RootCatalogOverlays, RootRegistryOverlays} {
+			if s.Roots[k] != "" {
+				return pool{}, fmt.Errorf("vllmengine: Roots[%q] names overlays (%s), which the engine does not read: "+
+					"the host must pass its opened Data (Input.Data) so the engine prices on the data the run named; "+
+					"an overlay is refused for a run until the engine reads overlays", k, s.Roots[k])
+			}
+		}
+		var err error
+		data, err = openData(load.Options{Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+		if err != nil {
+			return pool{}, fmt.Errorf("vllmengine: %w", err)
+		}
+	}
+	repos := kernelmodel.Repos{Scenarios: filepath.Dir(path), Data: data}
+	m, err := kernelmodel.OpenPool(filepath.Base(path), repos, s.Pool)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
@@ -111,8 +195,7 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, err
 	}
-	shape, err := kernelmodel.ShapeOf(filepath.Base(path), kernelmodel.Repos{
-		Scenarios: filepath.Dir(path), Catalog: s.Roots[RootCatalog], Registry: s.Roots[RootRegistry]})
+	shape, err := kernelmodel.ShapeOf(filepath.Base(path), repos)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)
 	}
@@ -124,15 +207,23 @@ func open(s engine.Spec) (pool, error) {
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
-	return pool{model: m, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
+	// The settings as the release resolves them (Model.Engine), which the kernel prices and the
+	// engine block is completed with, so the scheduler and the cost model run one engine.
+	resolved, err := m.Engine()
+	if err != nil {
+		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
+	}
+	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
 		role: m.Role(), connector: shape.PDConnector, offload: off}, nil
 }
 
-// offloadIssue tracks the offload hierarchies the engine does not model; secondaryTierIssue the
-// tiers below the CPU one.
+// offloadIssue tracks the offload connectors and options the engine does not model (the tier-4
+// connector and offload work); secondaryTierIssue the tiers below the CPU one; prefetchIssue the
+// deployment's offload description, whose prefetch_depth is not a vLLM setting.
 const (
-	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/14"
-	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/13"
+	offloadIssue       = "https://github.com/inference-sim/blis-vllm/issues/4"
+	secondaryTierIssue = "https://github.com/inference-sim/blis-vllm/issues/63"
+	prefetchIssue      = "https://github.com/inference-sim/inference-sim/issues/1910"
 )
 
 // cpuTier is the catalog device class of host DRAM, the OffloadingConnector's CPU tier.
@@ -158,7 +249,7 @@ func offloadOf(m *kernelmodel.Model, o *deployment.Offload) (*yaml.Node, error) 
 	}
 	if o.PrefetchDepth != 0 {
 		return nil, fmt.Errorf("offload.prefetch_depth %d is not a vLLM setting: the OffloadingConnector loads a hit "+
-			"when the scheduler admits the request (%s)", o.PrefetchDepth, offloadIssue)
+			"when the scheduler admits the request (%s)", o.PrefetchDepth, prefetchIssue)
 	}
 	var cpu int64
 	for i, t := range o.Tiers {
@@ -429,8 +520,8 @@ func poolBlock(path string, index int) (yaml.Node, deployment.Parallelism, error
 // prepare completes a spec's engine block with what the kernel and the deployment know: the KV
 // block count, pipeline_parallel_size, the model runner and an MTP drafter's layer count. A block the spec carries is used as
 // given; an empty one is the pool's own, read from the scenario, so a simulator need not open it.
-func prepare(s engine.Spec) (engine.Spec, error) {
-	p, err := open(s)
+func prepare(s engine.Spec, data *load.Data) (engine.Spec, error) {
+	p, err := open(s, data)
 	if err != nil {
 		return s, err
 	}
@@ -452,6 +543,12 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		block = yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	}
 	block = *cloneNode(&block)
+	// What the deployment left unstated, as the release resolves it (Model.Engine): the factory
+	// (core/vllm resolve) refuses these when absent, for a caller that builds an engine with no
+	// resolver. A value the block states is never replaced.
+	setIfAbsent(&block, "block_size", fmt.Sprint(p.resolved.BlockSize))
+	setIfAbsent(&block, "max_num_seqs", fmt.Sprint(p.resolved.MaxNumSeqs))
+	setIfAbsent(&block, "max_num_batched_tokens", fmt.Sprint(p.resolved.MaxNumBatchedTokens))
 	setIfAbsent(&block, "num_gpu_blocks", fmt.Sprint(p.blocks))
 	if p.kvBytes > 0 {
 		// The memory the pool's blocks were sized from, for vLLM's start-up check's message.
@@ -461,6 +558,10 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	if p.dp > 1 {
 		// The pool's parallel.dp: the factory builds the data-parallel group behind one endpoint.
 		setIfAbsent(&block, "data_parallel_size", fmt.Sprint(p.dp))
+	}
+	if p.model.HasRecurrentLayers() {
+		// The model runs vLLM's Mamba hook, which resolves mamba_cache_mode (core/vllm checkMambaCache).
+		setIfAbsent(&block, "mamba_model", "true")
 	}
 	runner, _ := p.model.ModelRunner()
 	setIfAbsent(&block, "use_v2_model_runner", fmt.Sprint(runner == "v2"))
@@ -522,11 +623,16 @@ func vllmRuns(runs []kernelmodel.KVLayerRun) []vllm.KVLayerRun {
 }
 
 // pricerFor is the kernel's pricing for the spec's pool.
-func pricerFor(s engine.Spec) (vllm.Pricer, error) {
-	p, err := open(s)
+func pricerFor(s engine.Spec, data *load.Data) (vllm.Pricer, error) {
+	p, err := open(s, data)
 	if err != nil {
 		return nil, err
 	}
+	return pricerOf(p), nil
+}
+
+// pricerOf is the kernel's pricing for an opened pool.
+func pricerOf(p pool) vllm.Pricer {
 	k := kernelPricer{m: p.model}
 	if per, err := offloadBytesPerBlock(p.model); err == nil {
 		k.blockBytes = per
@@ -534,7 +640,7 @@ func pricerFor(s engine.Spec) (vllm.Pricer, error) {
 	if g, err := offloadGroupBytes(p.model); err == nil {
 		k.groupBytes = g
 	}
-	return k, nil
+	return k
 }
 
 // kernelPricer prices an engine.Batch with the latency kernel, as compat/kernelmodel prices the

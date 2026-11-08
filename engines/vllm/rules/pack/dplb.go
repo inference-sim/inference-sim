@@ -2,7 +2,7 @@
 
 package pack
 
-import "github.com/inference-sim/blis-schemas/spec/deployment"
+import "github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 // ResolveDPLoadBalancing returns the load-balancing mode a pool runs, as both registered
 // releases' EngineArgs.create_engine_config resolves it (v0.31.0 vllm/engine/arg_utils.py

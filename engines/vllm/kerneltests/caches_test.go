@@ -3,12 +3,12 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -36,7 +36,7 @@ func ownedRecordRate(t *testing.T, in Inputs) float64 {
 		t.Fatal(err)
 	}
 	pool := in.Deployment.Pools[0]
-	dtype := rulesFor(in.Scenario.EngineVersion).ResolveCacheDType(g.Global.Architecture,
+	dtype := rulesFor(in.Scenario.EngineRelease()).ResolveCacheDType(g.Global.Architecture,
 		family, pool.Parallel.TP, mustDecode(t, pool).CacheDType)
 	byID := map[string]model.LayerKind{}
 	for _, lk := range g.LayerKinds {

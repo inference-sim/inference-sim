@@ -4,10 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/model"
-	"github.com/inference-sim/blis-schemas/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -55,9 +56,15 @@ func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *rules.Problems
 		Coefficients: []string{"c"}, EngineVersion: Version,
 		Cluster: scenario.Cluster{Hardware: "h200", Nodes: nodes, GPUsPerNode: 8},
 	}
+	// The node size reaches the rules as the cluster's resolved packaging, as
+	// blis-substrate's Validate resolves it; an h200 entry leaves it to the scenario.
+	pk, err := s.Cluster.Packaging(&hardware.Chip{Name: "h200"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := &rules.Problems{}
 	for _, r := range Pack().Rules {
-		r.Check(rules.Input{Scenario: s, Deployment: d, Model: g}, p)
+		r.Check(rules.Input{Scenario: s, Deployment: d, Model: g, Packaging: &pk}, p)
 	}
 	return p
 }
@@ -1154,6 +1161,14 @@ func TestResolveCacheDType(t *testing.T) {
 		{v41, 9, 8, "auto", "fp8_ds_mla"},
 		{v41, 9, 8, "fp8", "fp8_ds_mla"},
 		{"DeepseekV3ForCausalLM", 10, 8, "auto", "auto"},
+		// GlmMoeDsaForCausalLM: an unstated (auto) dtype becomes fp8_e4m3 on SM10x
+		// (vllm/model_executor/models/config.py:43-55@5df63a72); a stated one stands, and SM9x is unchanged.
+		{ArchGlmMoeDsa, 10, 8, "", "fp8_e4m3"},
+		{ArchGlmMoeDsa, 10, 1, "auto", "fp8_e4m3"},
+		{ArchGlmMoeDsa, 10, 8, "fp8", "fp8"},
+		{ArchGlmMoeDsa, 10, 8, "bfloat16", "bfloat16"},
+		{ArchGlmMoeDsa, 9, 8, "auto", "auto"},
+		{ArchGlmMoeDsa, 12, 8, "auto", "auto"},
 	} {
 		if got := p.ResolveCacheDType(c.arch, c.family, c.tp, c.requested); got != c.want {
 			t.Errorf("%s sm%d0 tp %d %q: %q, want %q", c.arch, c.family, c.tp, c.requested, got, c.want)

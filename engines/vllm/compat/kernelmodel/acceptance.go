@@ -3,24 +3,18 @@
 package kernelmodel
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
-	"github.com/inference-sim/blis-schemas/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
 // Speculative acceptance reaches the kernel only for DSpark adaptive verification
-// (blis-latency-kernel#89): vLLM's verifier then sizes its draft budget from each request's
+// (blis-substrate kernel/adaptive.go): vLLM's verifier then sizes its draft budget from each request's
 // survival probability (AdaptiveVerificationManager.get_num_tokens,
 // vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350@5df63a72), which the kernel
 // derives from the run's acceptance. It is resolved here, per pool, by blis-schemas'
@@ -28,10 +22,6 @@ import (
 // ResolveAcceptance): the registry's profiles, the workload, the scenario's pin and the
 // caller's overrides (SetAcceptanceOverrides). Without adaptive verification nothing here runs,
 // so a pool that does not trim prices exactly as before.
-
-// registryAcceptanceDir is the registry's acceptance-profile namespace, beside coefficients/
-// and routing/.
-const registryAcceptanceDir = "acceptance"
 
 // AcceptanceOverrides are the acceptance layers a caller supplies beyond the scenario file: a
 // command-line value, a workload that is not the scenario's own binding (a catalog preset, with
@@ -59,7 +49,7 @@ func adaptiveVerification(e engineconfig.Engine) bool {
 // resolveAcceptance resolves one pool's speculative acceptance for the kernel, or nil when the
 // pool does not verify adaptively. A layer that does not resolve is an error: the kernel cannot
 // size the verify budget without it.
-func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, registry string, o AcceptanceOverrides) (*acceptance.Resolution, error) {
+func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *load.Data, o AcceptanceOverrides) (*acceptance.Resolution, error) {
 	if !adaptiveVerification(e) || e.Speculative.NumSpecTokens <= 0 {
 		return nil, nil
 	}
@@ -76,10 +66,7 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, registry 
 	if o.Workload != nil {
 		req.Workload = *o.Workload
 	}
-	sets, err := LoadRegistryAcceptanceSets(registry)
-	if err != nil {
-		return nil, fmt.Errorf("speculative acceptance: %w", err)
-	}
+	sets := data.AcceptanceSets()
 	req.Registry = sets
 	if pin := req.Scenario; pin != nil && pin.Profiles != "" {
 		req.ScenarioSet = FindAcceptanceSet(sets, pin.Profiles)
@@ -89,6 +76,7 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, registry 
 		return nil, fmt.Errorf("speculative.enable_adaptive_verification sizes the verify budget from the run's "+
 			"acceptance, and it does not resolve: %w", err)
 	}
+	data.RecordAcceptance(&r)
 	return &r, nil
 }
 
@@ -103,42 +91,6 @@ func bindingAcceptanceTerms(b *workload.Binding) acceptance.Workload {
 		return b.Replay.AcceptanceTerms()
 	}
 	return acceptance.Workload{}
-}
-
-// LoadRegistryAcceptanceSets loads and validates every acceptance-profile set under the
-// registry's acceptance/ namespace, in path order. A registry with no such namespace has no
-// sets; a set that fails to load or validate is an error, never skipped.
-func LoadRegistryAcceptanceSets(registry string) ([]*acceptance.ProfileSet, error) {
-	dir := filepath.Join(registry, registryAcceptanceDir)
-	if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	var paths []string
-	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.Type().IsRegular() && (strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
-			paths = append(paths, p)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", dir, err)
-	}
-	sort.Strings(paths)
-	sets := make([]*acceptance.ProfileSet, 0, len(paths))
-	for _, p := range paths {
-		s, err := blisschemas.LoadAcceptanceProfileSet(p)
-		if err != nil {
-			return nil, fmt.Errorf("acceptance profile set %s: %w", p, err)
-		}
-		if problems := s.Validate(); !problems.OK() {
-			return nil, fmt.Errorf("acceptance profile set %s: %s", p, problems.Error())
-		}
-		sets = append(sets, s)
-	}
-	return sets, nil
 }
 
 // FindAcceptanceSet is the loaded set named name, nil when none is.

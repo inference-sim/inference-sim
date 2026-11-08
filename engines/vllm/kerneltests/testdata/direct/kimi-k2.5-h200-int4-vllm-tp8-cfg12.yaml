@@ -24,7 +24,7 @@
 # deployment that cannot serve its own points.
 kind: Scenario
 name: kimi-k2.5-h200-int4-vllm-tp8-cfg12
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: kimi-k2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

@@ -2,7 +2,7 @@
 
 // Package blisvllm is a Go model of the vLLM inference engine's scheduling, KV-cache,
 // connector and metrics behaviour, for a discrete-event simulator to call through the
-// engine-neutral contract in github.com/inference-sim/blis-schemas/engine.
+// engine-neutral contract in github.com/inference-sim/blis-substrate/contracts/engine.
 //
 // One build of this module models one vLLM release, Upstream. Its behaviour is checked
 // against that release's own code in CI (see docs/testing.md): the same inputs, fed to the
@@ -15,11 +15,12 @@
 package blisvllm
 
 import (
+	_ "embed"
 	"fmt"
 	"runtime/debug"
 )
 
-// Kind is the engine kind this module registers with blis-schemas' engine factory.
+// Kind is the engine kind this module registers with the contracts' engine factory.
 const Kind = "vllm"
 
 // Upstream identifies the vLLM release this build models.
@@ -84,3 +85,11 @@ func ProvenanceFor(behaviour string) Provenance {
 		Behaviour:       behaviour,
 	}
 }
+
+// FieldListJSON is fields.json, the field list this build publishes (VLM-3): every
+// configuration field and environment variable the modelled vLLM release reads, with its
+// status, evidence and estimation rule. Its type is blis-substrate's contracts/spec/fields;
+// inference-sim's fields command prints it.
+//
+//go:embed fields.json
+var FieldListJSON []byte

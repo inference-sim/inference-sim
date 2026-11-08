@@ -73,10 +73,11 @@ func TestScenariosDoNotCarryGuessedBatchDefaults(t *testing.T) {
 		return
 	}
 
-	// The scenario files are generated into blis-latency-kernel and corrected by the
-	// extraction that reads each deployment's own engine log (#1867 and its sibling). Until
-	// that lands they all carry the guessed 256, so failing here would leave a permanently
-	// red suite that says nothing new on each run.
+	// The scenario files were generated into blis-latency-kernel with the guessed 256. They are
+	// regenerated for vLLM 0.32.0 with only stated values when the compatibility engine's
+	// scenarios are re-baselined (https://github.com/inference-sim/inference-sim/issues/2027).
+	// Until then failing here would leave a permanently red suite that says nothing new on
+	// each run.
 	//
 	// Set BLIS_REQUIRE_RESOLVED_SETTINGS=1 to make this fatal. That is what the scenario
 	// regeneration turns on, and what keeps a corrected file from silently regressing.

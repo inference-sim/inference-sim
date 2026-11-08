@@ -5,7 +5,6 @@ package kernelmodel
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -15,15 +14,9 @@ import (
 // Not the shared internal/artifacts gate, which imports this package and so cannot be
 // imported by its internal tests.
 func TestMain(m *testing.M) {
-	// This module vendors the catalog and registry the tests read under its own testdata/
-	// (testdata/README.md): the adapter's tests name that root, as a simulator names its own.
-	wd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	SetVendoredRoot(filepath.Dir(filepath.Dir(wd)))
-	if err := RequireRepos(DefaultRepos()); err != nil {
+	// The catalog and registry are the pinned substrate's embedded copy, or the directories
+	// BLIS_CATALOG and BLIS_REGISTRY name (DefaultData).
+	if err := RequireRepos(); err != nil {
 		fmt.Fprintf(os.Stderr, "kernel artifact roots are not available:\n%v\n", err)
 		os.Exit(1)
 	}

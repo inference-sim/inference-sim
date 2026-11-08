@@ -4,48 +4,23 @@ package artifacttest
 
 import (
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-vllm/internal/substratedata"
 )
 
-// Vendored reports whether a root is this checkout's own pinned copy: testdata/catalog or
-// testdata/registry, which scripts/fetch-testdata.sh populates from the commits
-// testdata/upstream.lock names.
+// Pinned reports whether a root is the pinned blis-substrate release's own data: its
+// catalog/ or registry/ in the module cache (internal/substratedata).
 //
-// A pinned root is never optional: if it is absent the checkout has not been fetched, and
-// if it is present and unreadable it is incompatible with this repository. Either must fail
-// rather than skip. An override pointing at a live upstream checkout can genuinely be
-// missing, and may skip.
-//
-// Decided by path rather than by asking harness, so this package stays a leaf that the
-// root package's own tests can import -- harness imports the root package, so a dependency
-// on it here would close an import cycle.
-func Vendored(root string) bool {
-	abs, err := filepath.Abs(root)
-	if err != nil {
-		return false
-	}
-	// The pinned copies live at <repo>/testdata/{catalog,registry}. Matching the tail
-	// rather than searching for "testdata" anywhere keeps a live checkout that happens to
-	// sit under a directory of that name from being mistaken for the pinned one.
-	for _, tail := range []string{
-		filepath.Join("testdata", "catalog"),
-		filepath.Join("testdata", "registry"),
-		filepath.Join("testdata"),
-	} {
-		if strings.HasSuffix(abs, string(filepath.Separator)+tail) {
-			return true
-		}
-	}
-	return false
-}
+// The pinned data is never optional: if it fails to load, this repository and the substrate
+// release it pins are incompatible, and that must fail rather than skip. An override pointing
+// at a candidate checkout can genuinely be missing, and may skip.
+func Pinned(root string) bool { return substratedata.InModule(root) }
 
 // RequireArtifact reports a failure to load a catalog or registry artifact as either a
 // skip or a test failure, depending on which of the two it actually is.
 //
-// A sibling checkout that is NOT THERE skips: not every working copy has an upstream
-// blis-catalog or blis-registry beside it, and a test cannot read what is absent. An
+// An override that is NOT THERE skips: a test cannot read what is absent. An
 // artifact that IS there and still failed to load FAILS, because that is an
 // incompatibility between this repository and that one — and a blanket skip over it is
 // how one hid for the whole life of a dependency pin.
@@ -63,7 +38,7 @@ func Vendored(root string) bool {
 // why it takes a testing.TB rather than reaching for os.Exit.
 //
 // Lives here, exported, rather than in each test package, because the first fix of this
-// applied the rule to one package of three and left cmd/shape and cmd/score masking the
+// applied the rule to one package of three and left two command packages masking the
 // same corruption under an "ok".
 //
 // root is the catalog or registry root being read; path is the specific artifact whose
@@ -74,14 +49,9 @@ func RequireArtifact(t testing.TB, root, path, what string, err error) {
 	if err == nil {
 		return
 	}
-	// A pinned root is never optional. Absent, the checkout has not been fetched; present,
-	// the failure is a real incompatibility.
-	if Vendored(root) {
-		if _, statErr := os.Stat(root); os.IsNotExist(statErr) {
-			t.Fatalf("the pinned %s %s has not been fetched: run scripts/fetch-testdata.sh",
-				what, root)
-		}
-		t.Fatalf("the pinned %s under testdata failed to load %s, which is an "+
+	// The pinned data is never optional: a failure is a real incompatibility.
+	if Pinned(root) {
+		t.Fatalf("the pinned blis-substrate %s failed to load %s, which is an "+
 			"incompatibility rather than a missing checkout: %v", what, path, err)
 	}
 	// An override pointing at a live checkout. Skip only if the artifact genuinely is not

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
 
 	"github.com/inference-sim/blis-vllm/rules/pack"
 )
@@ -975,6 +975,33 @@ func TestCacheDTypeResolutionsMatchSource(t *testing.T) {
 		if !strings.Contains(c.src, c.text) {
 			t.Errorf("%s changed: %q is gone", c.what, c.text)
 		}
+	}
+}
+
+// The GlmMoeDsaForCausalLM resolution in CacheDTypeResolutions: the hook changes "auto" to
+// fp8_e4m3 only on CUDA with capability family 100, and is the one registered for the architecture.
+// v0.31.0 has no such branch (TestCacheDTypeResolutionsMatchSource in rules/v0_31).
+func TestGlmMoeDsaCacheDTypeResolutionMatchesSource(t *testing.T) {
+	root := vllmSource(t)
+	src := readSource(t, root, "vllm", "model_executor", "models", "config.py")
+	hook := src[strings.Index(src, "class GlmMoeDsaForCausalLM(VerifyAndUpdateConfig):"):]
+	hook = hook[len("class "):]
+	hook = hook[:strings.Index(hook, "\nclass ")]
+	for _, want := range []string{
+		`cache_config.cache_dtype == "auto"`,
+		"current_platform.is_cuda()",
+		"current_platform.is_device_capability_family(100)",
+		`cache_config.cache_dtype = "fp8_e4m3"`,
+	} {
+		if !strings.Contains(hook, want) {
+			t.Errorf("the GlmMoeDsaForCausalLM hook changed: %q is gone", want)
+		}
+	}
+	if !strings.Contains(src, `"GlmMoeDsaForCausalLM": GlmMoeDsaForCausalLM,`) {
+		t.Error("the hook is no longer registered for GlmMoeDsaForCausalLM")
+	}
+	if n := strings.Count(hook, "cache_config.cache_dtype = "); n != 1 {
+		t.Errorf("the hook assigns the cache dtype %d times, want once", n)
 	}
 }
 

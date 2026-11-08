@@ -3,22 +3,18 @@
 package build
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/load"
 )
 
-// The device table is a lazy dependency: a block whose tiers all state their physics never
-// asks for the catalog, and the same block naming a device_class does (non-vacuity). The
-// locator records whether it was asked, which is what cmd's catalog resolver cost before the
-// move (it warns on a --catalog/BLIS_CATALOG conflict each time it runs).
-func TestResolveKVOffloadDevices_AsksForTheCatalogOnlyWhenATierNamesADevice(t *testing.T) {
-	asked := 0
-	noCatalog := func() (string, error) { asked++; return "", errors.New("no catalog located") }
+// The device table is a lazy dependency: a block whose tiers all state their physics resolves
+// with no data at all, and the same block naming a device_class needs it (non-vacuity).
+func TestResolveKVOffloadDevices_NeedsTheCatalogOnlyWhenATierNamesADevice(t *testing.T) {
 
 	explicit := &KVOffloadBlock{
 		CPUBytesToUse: i64p(1 << 30),
@@ -27,19 +23,19 @@ func TestResolveKVOffloadDevices_AsksForTheCatalogOnlyWhenATierNamesADevice(t *t
 			ReadBandwidth: f64p(7000), WriteBandwidth: f64p(5000), BaseLatency: f64p(80),
 		}},
 	}
-	devices, err := ResolveKVOffloadDevices(explicit, noCatalog)
-	if err != nil || devices != nil || asked != 0 {
-		t.Fatalf("explicit physics: devices %v, err %v, catalog asked %d times; want none, nil, 0", devices, err, asked)
+	devices, err := ResolveKVOffloadDevices(explicit, nil)
+	if err != nil || devices != nil {
+		t.Fatalf("explicit physics with no data: devices %v, err %v; want none, nil", devices, err)
 	}
 
 	withClass := *explicit
 	withClass.SecondaryTiers = append([]KVOffloadTierBlock(nil), explicit.SecondaryTiers...)
 	withClass.SecondaryTiers[0].DeviceClass = strp("nvme_gen4")
-	_, err = ResolveKVOffloadDevices(&withClass, noCatalog)
-	if err == nil || asked != 1 {
-		t.Fatalf("a device_class with no catalog located: err %v, asked %d; want a refusal after one ask", err, asked)
+	_, err = ResolveKVOffloadDevices(&withClass, nil)
+	if err == nil {
+		t.Fatal("a device_class with no data was accepted")
 	}
-	for _, frag := range []string{"device_class", CatalogStorageDevicesRelPath, "no catalog located"} {
+	for _, frag := range []string{"device_class", CatalogStorageDevicesRelPath, "no catalog was given"} {
 		if !strings.Contains(err.Error(), frag) {
 			t.Errorf("refusal %q must name %q", err, frag)
 		}
@@ -50,9 +46,8 @@ func TestResolveKVOffloadDevices_AsksForTheCatalogOnlyWhenATierNamesADevice(t *t
 // prices a tier from its catalog device, so a second source for the same physics is not
 // taken. Each of the three fields alone is enough.
 func TestResolveKVOffloadFile_RefusesExplicitTierPhysics(t *testing.T) {
-	catalog := writeCatalogStorageDevices(t,
+	locate := mustDataWithStorageDevices(t,
 		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
-	locate := func() (string, error) { return catalog, nil }
 	tier := "kv_offload:\n  cpu_bytes_to_use: 1073741824\n  secondary_tiers:\n" +
 		"    - type: fs\n      root_dir: /mnt/kv\n      direct_io: true\n      device_class: nvme_gen4\n"
 	write := func(extra string) string {
@@ -77,10 +72,8 @@ func TestResolveKVOffloadFile_RefusesExplicitTierPhysics(t *testing.T) {
 // --kv-offload-config restating it resolve to one config; a file that differs is refused
 // naming the field, and with neither the config is inert.
 func TestResolveKVOffloadConfig_TheScenarioAndTheFileMustAgree(t *testing.T) {
-	locate := func() (string, error) {
-		t.Fatal("no tier names a device_class; the catalog must not be asked")
-		return "", nil
-	}
+	// No tier names a device_class, so no data is needed: nil proves it is not read.
+	var locate *load.Data
 	scenario := &deployment.Offload{Tiers: []deployment.Tier{{Device: "cpu_dram", Bytes: 1 << 30}}}
 	write := func(body string) string {
 		p := filepath.Join(t.TempDir(), "offload.yaml")

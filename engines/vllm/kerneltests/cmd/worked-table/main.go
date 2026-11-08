@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/harness"
 )
 
@@ -63,21 +63,24 @@ var rows = []row{
 }
 
 func main() {
-	catalog := flag.String("catalog", harness.DefaultCatalog(),
-		"blis-catalog checkout")
-	registry := flag.String("registry", harness.DefaultRegistry(),
-		"blis-registry checkout")
+	catalog := flag.String("catalog", "", "a catalog directory that replaces the embedded one")
+	registry := flag.String("registry", "", "a registry directory that replaces the embedded one")
 	testdata := flag.String("testdata", "testdata/direct",
 		"scenario fixtures; the InferenceX vLLM deployments live under testdata/direct")
 	format := flag.String("format", "table", "table or markdown")
 	flag.Parse()
 
+	data, err := harness.Data(*catalog, *registry)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	cache := map[string]*latencykernel.Kernel{}
 	for _, r := range rows {
 		if _, ok := cache[r.scenario]; ok {
 			continue
 		}
-		k, err := harness.Open(r.scenario, harness.Repos{Scenarios: *testdata, Catalog: *catalog, Registry: *registry})
+		k, err := harness.Open(r.scenario, harness.Repos{Scenarios: *testdata, Data: data})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", r.scenario, err)
 			os.Exit(1)

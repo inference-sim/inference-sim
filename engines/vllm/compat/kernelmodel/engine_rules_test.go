@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -55,6 +55,7 @@ func TestTheSpeculativeMethodIsCheckedThroughTheInterface(t *testing.T) {
 		return nil
 	}
 	r.Rules = pack
+	r.RulesKind = "vllm"
 	if _, err := OpenPool(dspark, r, 0); err != nil {
 		t.Errorf("DSpark through rules that are not a *rules.Pack: %v", err)
 	}

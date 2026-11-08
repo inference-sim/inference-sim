@@ -23,7 +23,7 @@
 # deployment that cannot serve its own points.
 kind: Scenario
 name: deepseek-v3-b300-fp8-sglang-tp8
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: deepseek-v3
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

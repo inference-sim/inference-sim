@@ -230,5 +230,45 @@ class CheckMocks(unittest.TestCase):
         self.assertIn("replaces decision code", r.stdout)
 
 
+class CheckLockHashed(unittest.TestCase):
+    """oracle/check_lock.py --hashed: the hashed install file pins exactly what the lock pins."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def check(self, lock, hashed):
+        for name, body in [("lock", lock), ("hashed", hashed)]:
+            with open(os.path.join(self.dir, name), "w") as f:
+                f.write(body)
+        return run([sys.executable, "-I", os.path.join(HERE, "check_lock.py"), "--hashed",
+                    os.path.join(self.dir, "lock"), os.path.join(self.dir, "hashed")], self.dir)
+
+    LOCK = "# pins\ndocstring_parser==0.18.0\nvllm @ https://x/vllm.whl#sha256=ab\n"
+    HASHED = ("# generated\ndocstring-parser==0.18.0 \\\n    --hash=sha256:01\n"
+              "vllm @ https://x/vllm.whl#sha256=ab \\\n    --hash=sha256:ab\n")
+
+    def test_the_committed_files_agree(self):
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_lock.py"), "--hashed",
+                 os.path.join(HERE, "requirements.lock"), os.path.join(HERE, "requirements-hashed.txt")], HERE)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_the_same_pins_pass(self):
+        r = self.check(self.LOCK, self.HASHED)
+        self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_a_different_version_fails(self):
+        r = self.check(self.LOCK, self.HASHED.replace("0.18.0", "0.17.0"))
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("docstring-parser==0.18.0 is in the lock but not hashed", r.stdout)
+
+    def test_a_package_missing_from_the_hashed_file_fails(self):
+        r = self.check(self.LOCK + "torch==2.13.0+cpu\n", self.HASHED)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("torch==2.13.0+cpu is in the lock but not hashed", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

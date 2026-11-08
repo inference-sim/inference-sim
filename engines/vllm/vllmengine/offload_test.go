@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // kvOffload is the kv_offload the factory states in a prepared engine block.
@@ -25,7 +25,7 @@ type kvOffload struct {
 
 func preparedOffload(t *testing.T, spec engine.Spec) (kvOffload, int64) {
 	t.Helper()
-	done, err := prepare(spec)
+	done, err := prepare(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,8 +164,8 @@ func runWithReload(t *testing.T, spec engine.Spec, prompt int, gap engine.Time) 
 }
 
 // The mapping refuses what the engine does not model, each naming its issue: a tier other than
-// host DRAM or below it (secondary tiers, #13), another offload connector (#14), and connector
-// options other than blocks_per_chunk.
+// host DRAM or below it (secondary tiers, #13), another offload connector (#4), a prefetch depth (not a vLLM setting;
+// inference-sim#1910), and connector options other than blocks_per_chunk.
 func TestOffloadMappingRefusals(t *testing.T) {
 	Register()
 	raw, err := os.ReadFile(filepath.Join("testdata", "muse-h100-roce-armD-pp1-sync.yaml"))
@@ -174,12 +174,14 @@ func TestOffloadMappingRefusals(t *testing.T) {
 	}
 	const tier = "  tiers:\n    - {tier: cpu_dram, bytes: 549755813888}\n"
 	for _, c := range []struct{ name, old, new, want string }{
-		{"a secondary tier", tier, tier + "    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/13"},
-		{"a tier not of host DRAM", tier, "  tiers:\n    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/13"},
-		{"another connector", "  connector: OffloadingConnector\n", "  connector: LMCacheConnectorV1\n", "issues/14"},
+		{"a secondary tier", tier, tier + "    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/63"},
+		{"a tier not of host DRAM", tier, "  tiers:\n    - {tier: nvme_gen4, bytes: 1099511627776}\n", "issues/63"},
+		{"another connector", "  connector: OffloadingConnector\n", "  connector: LMCacheConnectorV1\n", "blis-vllm/issues/4)"},
+		{"a prefetch depth", "  connector: OffloadingConnector\n", "  connector: OffloadingConnector\n  prefetch_depth: 2\n", "inference-sim/issues/1910"},
 		{"a Mooncake option", "  eviction_policy: lru\n", "  eviction_policy: lru\n  connector_options: {load_async: true}\n", "blocks_per_chunk"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			s := string(raw)
 			if !strings.Contains(s, c.old) {
 				t.Fatalf("the fixture has no %q", c.old)
@@ -191,7 +193,7 @@ func TestOffloadMappingRefusals(t *testing.T) {
 			}
 			r := roots(t, "muse-h100-roce-armD-pp1-sync.yaml")
 			r[RootScenario] = path
-			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+			_, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, nil)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("err %v, want a refusal naming %q", err, c.want)
 			}
@@ -227,7 +229,7 @@ func TestAnOffloadTransferMovesThePoolsBytes(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
 	o, _ := preparedOffload(t, spec)
-	p, err := pricerFor(spec)
+	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +280,7 @@ func armDVariant(t *testing.T, parallel string) map[string]string {
 func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 	Register()
 	r := armDVariant(t, "{tp: 2, pp: 8, dp: 1, enable_expert_parallel: true}")
-	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	p, err := open(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +313,7 @@ func TestAPipelinedCPUTierIsSizedFromRankZero(t *testing.T) {
 func TestAnOffloadJobMovesEachGroupsLayers(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h100-roce-armD.yaml")}
-	p, err := pricerFor(spec)
+	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

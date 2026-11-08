@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-vllm/rules/pack"
 	"github.com/inference-sim/blis-vllm/rules/v0_29"

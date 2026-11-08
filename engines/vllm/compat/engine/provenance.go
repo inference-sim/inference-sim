@@ -3,8 +3,8 @@
 package engine
 
 import (
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/vocab"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 // The kernel provenance and routing records the latency kernel's adapter (sim/kernelmodel)

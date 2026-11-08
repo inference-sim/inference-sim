@@ -54,7 +54,8 @@ is checked by `go test`, so it is what this version computes.
 explain how a step is priced, how memory is counted, and what each kind of parallelism
 changes, without assuming you have read the code.
 
-**To judge how far to trust it**, read [Accuracy](research/accuracy.md) and the
+**To judge how far to trust it**, read accuracy-dashboard's published figures,
+[Accuracy](research/accuracy.md) and the
 [known divergences](reference/divergences.md): the places where it knowingly prices
 something differently from the engine it models.
 

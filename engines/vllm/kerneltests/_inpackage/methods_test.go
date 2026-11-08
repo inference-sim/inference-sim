@@ -6,10 +6,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
 
 // These tests assert BEHAVIOUR rather than arithmetic: what must hold of a method's
@@ -146,7 +146,6 @@ func TestFewerSMsCostMoreOnlyWhenComputeBinds(t *testing.T) {
 }
 
 func TestResolvedReportsWhatWillActuallyRun(t *testing.T) {
-	skipUntilSixteenRankAllToAllExists(t)
 	k := fixture(t, "minimax-m25-h200-ep16.yaml")
 	r := k.Resolved()
 	if r.ExpertParallelWidth != 16 {
@@ -290,7 +289,6 @@ func TestCrossNodeCollectivesCostMoreThanOnNodeOnes(t *testing.T) {
 	// TP=8 the reductions stay on the node and pay none. Removing the span check entirely
 	// is a mutation that no ordering test catches, because the NIC term merely becomes
 	// the NVLink term.
-	skipUntilSixteenRankAllToAllExists(t)
 	k := fixture(t, "minimax-m25-h200-ep16.yaml")
 	e := k.StepTime(decodeBatch(256, 2, 8192))
 	nic := e.PerResource[kernel.ResourceNIC]

@@ -5,7 +5,7 @@ package latencykernel_test
 // The Go examples on the documentation site are sections of this file, included between the
 // --8<-- markers. Go runs each Example and compares what it prints with its // Output:
 // comment, so a page cannot show a call that no longer compiles or a number this kernel no
-// longer computes. They read the fetched catalog and registry (scripts/fetch-testdata.sh).
+// longer computes. They read the catalog and registry of the blis-substrate release go.mod pins.
 
 import (
 	"fmt"
@@ -13,10 +13,11 @@ import (
 	"slices"
 	"time"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -25,11 +26,21 @@ import (
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
 	Scenarios:      "../testdata",
-	Catalog:        "../testdata/catalog",
-	Registry:       "../testdata/registry",
+	Data:           exampleData(), // the pinned blis-substrate's embedded catalog and registry
 	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
 	RulesVersions:  vllmrules.Versions,
+	RulesKind:      "vllm",
 	EngineSettings: vllmsettings.OfPool,
+}
+
+// exampleData is the catalog and registry the pinned blis-substrate release embeds, opened and
+// checked by its loader: data, err := load.Embedded().
+func exampleData() *load.Data {
+	d, err := load.Embedded()
+	if err != nil {
+		panic(err)
+	}
+	return d
 }
 
 func ms(d time.Duration) float64 { return d.Seconds() * 1e3 }

@@ -3,13 +3,11 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	. "github.com/inference-sim/blis-substrate/kernel"
 
-	"path/filepath"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // INSIDE ONE NVLINK RACK, A TRAY BOUNDARY IS NOT A FABRIC CROSSING. An NVL72-class part puts
@@ -19,19 +17,18 @@ import (
 func TestAGroupInsideOneNVLinkRackDoesNotCrossTheFabric(t *testing.T) {
 	build := func(rackDomain bool) *Kernel {
 		t.Helper()
-		in := fixtureInputs(t, "minimax-m25-gb300-tp4.yaml")
-		pool := &in.Deployment.Pools[0]
-		pool.Parallel.TP = 8
-		pool.Nodes, in.Scenario.Cluster.Nodes = 2, 2
-		in.Scenario.Cluster.Fabric = "ib-400g"
-		f, err := schemas.LoadFabric(filepath.Join(catalogRoot, "networks", "ib-400g.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		in.Fabric = f
+		in := fixtureInputs(t, "muse-gb200-tp8ep8.yaml")
+		// The fixture omits gpus_per_node and gpus_per_rack, so the 4 and 72 below come from the
+		// catalog entry through the resolver, not from the scenario.
 		if !rackDomain {
+			// The contrast also goes through the resolver: a copy of the chip whose entry
+			// states no rack, which Cluster.Packaging resolves to GPUsPerRack 0 (the scenario
+			// states none either). The node size stays the entry's 4.
 			chip := *in.Chip
 			chip.GPUsPerRack, chip.IntraRackBwGBps = 0, 0
+			if pk, err := in.Scenario.Cluster.Packaging(&chip); err != nil || pk.GPUsPerRack != 0 || pk.GPUsPerNode != 4 {
+				t.Fatalf("the rackless chip resolved to %+v, %v; want 4 per node and no rack", pk, err)
+			}
 			in.Chip = &chip
 		}
 		k, err := newKernel(in)

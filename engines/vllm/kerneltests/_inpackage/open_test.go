@@ -11,7 +11,7 @@ import (
 // repos points Open at the fixtures and the pinned catalog and registry, which is the
 // configuration every other test in this package reads.
 func repos() Repos {
-	return withRules(Repos{Scenarios: "testdata", Catalog: catalogRoot, Registry: registryRoot})
+	return withRules(Repos{Scenarios: "testdata", Data: testData})
 }
 
 // TestOpenAndNewAgreeOnTheSameScenario is the property that makes two constructors safe.
@@ -62,16 +62,12 @@ func TestOpenNamesWhatItCouldNotRead(t *testing.T) {
 			wantIn:   []string{"no-such-scenario.yaml"},
 		},
 		{
-			what:     "a catalog root that holds no models",
+			// An empty catalog or registry directory is the loader's to refuse, when the data
+			// is opened; a Repos with no data at all is Open's.
+			what:     "no data",
 			scenario: "minimax-m25-h200-ep8.yaml",
-			r:        withRules(Repos{Scenarios: "testdata", Catalog: t.TempDir(), Registry: registryRoot}),
-			wantIn:   []string{"model", "minimax-m2.5"},
-		},
-		{
-			what:     "a registry root that holds no coefficients",
-			scenario: "minimax-m25-h200-ep8.yaml",
-			r:        withRules(Repos{Scenarios: "testdata", Catalog: catalogRoot, Registry: t.TempDir()}),
-			wantIn:   []string{"coefficient set"},
+			r:        withRules(Repos{Scenarios: "testdata"}),
+			wantIn:   []string{"Repos.Data", "load.Embedded"},
 		},
 	} {
 		t.Run(tc.what, func(t *testing.T) {

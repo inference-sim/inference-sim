@@ -56,13 +56,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
 )
+
+// ArchGlmMoeDsa is the architecture name of GLM-5, 5.2, 5.2-fp8 and 5.3, the architectures[0] of
+// their configuration: the key the cache-dtype hook is registered under
+// (vllm/model_executor/models/config.py:1078@5df63a72).
+const ArchGlmMoeDsa = "GlmMoeDsaForCausalLM"
 
 // Version is the engine release this pack describes.
 const Version = "0.32.0"
@@ -200,6 +205,13 @@ func Pack() *pack.Pack {
 				{CapabilityFamily: 10, Requested: []string{"auto", "fp8"}, ResolvesTo: "nvfp4_ds_mla", TPDivides: 8},
 				{CapabilityFamily: 10, Requested: []string{"auto", "fp8"}, ResolvesTo: "fp8_ds_mla"},
 				{CapabilityFamily: 9, Requested: []string{"auto", "fp8"}, ResolvesTo: "fp8_ds_mla"},
+			},
+			// GlmMoeDsaForCausalLM.verify_and_update_config changes an unstated (auto) cache dtype to
+			// fp8_e4m3 on CUDA capability family 100, SM10x (vllm/model_executor/models/config.py:43-55
+			// @5df63a72; the hook is registered at :1078). v0.31.0 has no such branch. A stated dtype,
+			// fp8 included, is not "auto" and runs as stated. GLM-5, 5.2, 5.2-fp8 and 5.3 are this class.
+			ArchGlmMoeDsa: {
+				{CapabilityFamily: 10, Requested: []string{"auto"}, ResolvesTo: "fp8_e4m3"},
 			},
 		},
 
@@ -557,9 +569,12 @@ func ruleList(p *pack.Pack) []rules.Rule {
 			Name:    "custom-allreduce-reachable",
 			Because: "the SM-consuming kernel supports only certain rank counts and only within one node absent multi-node NVLink, so a request outside those falls back to the NIC",
 			Check: func(in rules.Input, out *rules.Problems) {
+				// The node size is the cluster's resolved packaging (the scenario's, or the
+				// chip's catalog entry's), not the scenario's field, which is zero where the
+				// scenario leaves it to the catalog.
 				gpusPerNode := 0
-				if in.Scenario != nil {
-					gpusPerNode = in.Scenario.Cluster.GPUsPerNode
+				if in.Packaging != nil {
+					gpusPerNode = in.Packaging.GPUsPerNode
 				}
 				forEachPool(in, func(at string, pool engineconfig.Pool) {
 					if pool.Engine.AllReduceBackend != "custom" {

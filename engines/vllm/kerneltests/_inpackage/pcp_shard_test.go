@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
 
 // Prefill-context parallelism splits a prefill sequence across ranks, and these pin that

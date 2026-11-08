@@ -13,16 +13,14 @@ import (
 // them, rather than half-read with the ramp silently dropped. The resolver half of the
 // device model is exercised from a device map below, which is the only way it is reached.
 func TestKVOffloadDevices_DeviceModelFieldsAreNotACatalogFormat(t *testing.T) {
-	catalog := writeCatalogStorageDevices(t,
+	_, err := dataWithStorageDevices(t,
 		"nvme_dm:\n"+
 			"  read_bandwidth_mb_s: 7.0e3\n"+
 			"  write_bandwidth_mb_s: 5.0e3\n"+
 			"  base_latency_us: 80.0\n"+
 			"  saturation_queue_depth: 8\n")
-	devices, err := LoadCatalogStorageDevices(catalog)
 	if err == nil {
-		t.Fatalf("a catalog table stating saturation_queue_depth loaded (%d classes); the "+
-			"catalog format does not define it", len(devices))
+		t.Fatal("a catalog table stating saturation_queue_depth loaded; the catalog format does not define it")
 	}
 	if !strings.Contains(err.Error(), "saturation_queue_depth") {
 		t.Errorf("the refusal must name the undefined key, got: %v", err)

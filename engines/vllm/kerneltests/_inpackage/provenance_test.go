@@ -6,9 +6,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 )
 
 // dropCoefficient returns the sets without the named entry.

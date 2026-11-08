@@ -3,7 +3,7 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"os"
 	"path/filepath"
@@ -41,7 +41,7 @@ func TestOpenRefusesAnUnregisteredEngineVersion(t *testing.T) {
 	}
 
 	_, err = Open("bogus.yaml", withRules(Repos{
-		Scenarios: dir, Catalog: catalogRoot, Registry: registryRoot,
+		Scenarios: dir, Data: testData,
 	}))
 	if err == nil {
 		t.Fatal("a scenario naming an unregistered engine version built a kernel")

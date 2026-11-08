@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
 )
 
 // Validate is the release-independent field checks of one pool's engine block: the bounds
@@ -124,6 +124,7 @@ func validateSchedulerKnobs(p *rules.Problems, at string, e Engine) {
 		"max_num_scheduled_tokens":  e.MaxNumScheduledTokens,
 		"max_num_active_seqs":       e.MaxNumActiveSeqs,
 		"prefill_schedule_interval": e.PrefillScheduleInterval,
+		"dp_sync_interval":          e.DPSyncInterval,
 		"stream_interval":           e.StreamInterval,
 		"prefix_match_unit":         e.PrefixMatchUnit,
 		"max_loras":                 e.MaxLoRAs,

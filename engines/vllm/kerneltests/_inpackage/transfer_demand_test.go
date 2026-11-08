@@ -5,9 +5,9 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/kernel/kerneltest"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/kerneltest"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // The P/D handoff's separable demand (blis-schemas kernel.TransferDemand): its contract with

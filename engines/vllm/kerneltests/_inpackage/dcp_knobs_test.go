@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 )
 
 // The three decode-context-parallel engine knobs blis-schemas v0.2.2 made expressible --

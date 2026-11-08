@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // trimPricer is a VerifyingPricer that trims each drafting request of a batch to width(i, s)

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"pgregory.net/rapid"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"

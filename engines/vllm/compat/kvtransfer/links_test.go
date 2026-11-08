@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"pgregory.net/rapid"
 )
 

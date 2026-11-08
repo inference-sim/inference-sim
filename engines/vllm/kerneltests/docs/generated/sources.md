@@ -2,7 +2,5 @@
 
 | What | Version | Commit | Pinned in |
 |---|---|---|---|
-| Engine behavior: [vLLM](https://github.com/vllm-project/vllm/tree/v0.31.0) | `v0.31.0` | `db9527a46873` | `EngineBehaviourVersion`, `EngineBehaviourCommit` in `new.go` |
-| Interfaces and document types: [blis-schemas](https://github.com/inference-sim/blis-schemas/tree/v0.10.0) | `v0.10.0` | — | `go.mod` |
-| Declared facts: [blis-catalog](https://github.com/inference-sim/blis-catalog/tree/b5550f750cb51571498577fbdc1c68f78cda67db) | `0.5.0` | `b5550f750cb5` | `testdata/upstream.lock` |
-| Coefficients: [blis-registry](https://github.com/inference-sim/blis-registry/tree/96bead697172ab7f2cf8346e04e65b837014d867) | `v0.3.0` | `96bead697172` | `testdata/upstream.lock` |
+| Engine behavior: [vLLM](https://github.com/vllm-project/vllm/tree/v0.31.0) | `v0.31.0` | `db9527a46873` | `EngineBehaviourVersion`, `EngineBehaviourCommit` in `kernel/new.go` |
+| Contracts, catalog, registry and cost model: [blis-substrate](https://github.com/inference-sim/blis-substrate) | `v0.13.0` | — | `go.mod` |

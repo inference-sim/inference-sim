@@ -7,27 +7,26 @@ still produces a plausible number.</p>
 ## Set up
 
 ```sh
-git clone https://github.com/inference-sim/blis-latency-kernel
-cd blis-latency-kernel
-scripts/fetch-testdata.sh
-go test ./...
+git clone https://github.com/inference-sim/blis-vllm
+cd blis-vllm
+go test ./kerneltests/...
 ```
 
-The fetch script brings in the catalog and registry at the commits the tests are pinned to;
-`testdata/README.md` describes what else is in `testdata/` and why some of it is not
+The tests read the catalog and registry of the blis-substrate release `go.mod` pins, from the
+Go module cache; `testdata/README.md` describes what else is in `testdata/` and why some of it is not
 committed. CI runs the same tests on every pull request, with `gofmt` and `go vet`.
 
 ## Layout
 
 | Path | Holds |
 |---|---|
-| `kernel.go` | The interface methods and the composition of a step |
-| `new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
-| `sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
-| `open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
-| `internal/price` | The cost laws, as pure functions |
-| `internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
-| blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `docs/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model and this module imports nothing from it |
+| `kernel/kernel.go` | The interface methods and the composition of a step |
+| `kernel/new.go` | `New`: validation, resolution, coefficient lookup, everything computed once |
+| `kernel/sparse_mla.go` | Which sparse-attention backend vLLM chooses, and what that decides |
+| `kernel/open.go` | `Open`, `OpenPool`, `OpenInputs`: from a scenario file to the documents |
+| `kernel/internal/price` | The cost laws, as pure functions |
+| `kernel/internal/resolve` | From a deployment to a layout: widths, groups, which collectives run |
+| blis-vllm `kerneltests/` | The commands on [Commands](../reference/commands.md), their harness, the generator for `kerneltests/docs/generated/`, and the tests that price vLLM engine blocks. They decode vLLM's configuration, so they live with the engine model and this module imports nothing from it |
 
 ## Conventions
 
@@ -43,21 +42,21 @@ through `optional`, which records its absence. Nothing is defaulted silently.
 left out, carries a comment marked `KNOWN DIVERGENCE`, `KNOWN over-charge` or `COVERAGE LIMIT`,
 with the reason and the engine lines. Those notes are listed on
 [Known divergences](../reference/divergences.md), each under a plain summary kept in
-`internal/docgen/summaries.go`; the generator refuses a note without one.
+`kerneltests/internal/docgen/summaries.go`; the generator refuses a note without one.
 
 **Test behavior, and see the test fail.** A test asserts what the kernel does for an input,
 not how its code is arranged. [How the laws are tested](../research/testing.md) describes the
 kinds of test used. Break a new law on purpose and confirm a test fails, and say in the commit
 what you broke.
 
-**Measure a change's effect.** A change to pricing reports how it moves `cmd/shape` and
-`cmd/score` in its commit message, with the figures before and after. Those commands need the
-measurement corpora, which are not in the repository.
+**Measure a change's effect.** A change to pricing reports how it moves end-to-end figures with
+accuracy-dashboard's scoring harness, run against a build of inference-sim at this change, before
+and after.
 
 ## Documentation
 
-[Documentation and releases](documentation.md) describes the site, how its generated parts are
-kept current, and how a release publishes it.
+[Documentation](documentation.md) says where the site is built and how its generated parts and
+examples are kept current.
 
 ## Changes across the repositories
 

@@ -9,6 +9,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/load"
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
 // historicalKVOffloadDevices is the pre-#1770 defaults.yaml `kv_offload_devices:` table,
@@ -27,7 +30,7 @@ func historicalKVOffloadDevices() map[string]KVOffloadDevice {
 	}
 }
 
-// catalogKVOffloadDevices is the table the vendored catalog must state: the frozen
+// catalogKVOffloadDevices is the table the substrate catalog must state: the frozen
 // historical block with the deliberate changes since, each argued in the catalog entry's
 // own _comment (blis-catalog 5f6ecab): cpu_dram refitted to the H100 host link (InferenceX
 // CollectiveX swap_blocks) and the assumed DGX H100 NVMe RAID0 class added.
@@ -38,20 +41,40 @@ func catalogKVOffloadDevices() map[string]KVOffloadDevice {
 	return t
 }
 
-// writeCatalogStorageDevices builds a catalog root holding devices/storage.yaml with the
-// given body and returns the root. Used by the device-table tests here and by the
-// retargeted YAML-parse tests in kv_offload_test.go / kv_offload_device_test.go.
-func writeCatalogStorageDevices(t *testing.T, body string) string {
+// dataWithStorageDevices is the default data with devices/storage.yaml replaced by body,
+// through a catalog overlay, opened and checked by blis-substrate's loader as a run's data is.
+func dataWithStorageDevices(t *testing.T, body string) (*load.Data, error) {
 	t.Helper()
 	root := t.TempDir()
-	dir := filepath.Join(root, CatalogDevicesSubdir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir %s: %v", dir, err)
+	if err := os.MkdirAll(filepath.Join(root, CatalogDevicesSubdir), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, CatalogStorageDevicesFile), []byte(body), 0o644); err != nil {
-		t.Fatalf("write storage.yaml: %v", err)
+	if err := os.WriteFile(filepath.Join(root, CatalogDevicesSubdir, CatalogStorageDevicesFile), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	return root
+	o := kernelmodel.DataOptions()
+	o.CatalogOverlays = []string{root}
+	return load.Open(o)
+}
+
+// mustDataWithStorageDevices is dataWithStorageDevices for a table that must load.
+func mustDataWithStorageDevices(t *testing.T, body string) *load.Data {
+	t.Helper()
+	d, err := dataWithStorageDevices(t, body)
+	if err != nil {
+		t.Fatalf("the device table must load: %v", err)
+	}
+	return d
+}
+
+// defaultData is the run's default data: the pinned substrate's embedded copy.
+func defaultData(t *testing.T) *load.Data {
+	t.Helper()
+	d, err := kernelmodel.DefaultData()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
 
 // ---------------------------------------------------------------------------
@@ -65,9 +88,9 @@ func writeCatalogStorageDevices(t *testing.T, body string) string {
 // simulator does with them — which is why this comparison, not a run-level diff, is the
 // load-bearing equivalence check.
 func TestBundledCatalogDevices_MatchHistoricalDefaultsBlock(t *testing.T) {
-	got, err := LoadCatalogStorageDevices("../../testdata/catalog")
+	got, err := StorageDevices(defaultData(t))
 	if err != nil {
-		t.Fatalf("bundled catalog device table must load: %v", err)
+		t.Fatalf("the substrate catalog's device table must load: %v", err)
 	}
 	want := catalogKVOffloadDevices()
 
@@ -105,9 +128,9 @@ func TestBundledCatalogDevices_MatchHistoricalDefaultsBlock(t *testing.T) {
 // that class's triple with the device model off. This is the value an offload run
 // actually consumes, so it is what INV-6 is about.
 func TestResolveKVOffload_CatalogClassResolvesHistoricalTriple(t *testing.T) {
-	devices, err := LoadCatalogStorageDevices("../../testdata/catalog")
+	devices, err := StorageDevices(defaultData(t))
 	if err != nil {
-		t.Fatalf("bundled catalog device table must load: %v", err)
+		t.Fatalf("the substrate catalog's device table must load: %v", err)
 	}
 	for class, want := range catalogKVOffloadDevices() {
 		cfg, err := ResolveKVOffload(rampBlock(class, true), devices, 16)
@@ -163,62 +186,38 @@ func TestResolveKVOffload_UnknownDeviceClassNamesCatalogTable(t *testing.T) {
 // BC-5: an absent / malformed / empty table is a hard error naming the path
 // ---------------------------------------------------------------------------
 
-// TestLoadCatalogStorageDevices_UnusableTableIsRefused: every way the table can fail to
-// answer is a refusal naming the path (R1). The alternatives are both silent mis-models:
-// an empty map degrades into "device_class X is not defined (known: <none configured>)",
-// which blames the operator's config for a missing catalog file, and a zero-valued device
-// would give plausible-but-wrong physics with no diagnostic anywhere.
-func TestLoadCatalogStorageDevices_UnusableTableIsRefused(t *testing.T) {
-	cases := []struct {
-		name string
-		root func(t *testing.T) string
-		// wantFrag distinguishes the failure CLASS, so a "no classes" file is not reported
-		// as a malformed document (and vice versa) — the message is the operator's only
-		// instruction about what to fix.
-		wantFrag string
-	}{
-		{"no devices namespace", func(t *testing.T) string { return t.TempDir() }, "is not readable"},
-		{"empty file", func(t *testing.T) string { return writeCatalogStorageDevices(t, "") }, "defines no device classes"},
-		{"comments only", func(t *testing.T) string { return writeCatalogStorageDevices(t, "# no classes here\n") }, "defines no device classes"},
-		{"no classes", func(t *testing.T) string { return writeCatalogStorageDevices(t, "{}\n") }, "declares no storage tier"},
-		{"malformed yaml", func(t *testing.T) string {
-			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth_mb_s: [unclosed\n")
-		}, "is malformed"},
-		{"unknown physics key", func(t *testing.T) string {
-			// R10: a misspelled key must be refused, never decoded to zero bandwidth.
-			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwith_mb_s: 5.0e3, base_latency_us: 80.0}\n")
-		}, "write_bandwith"},
-		{"missing required field", func(t *testing.T) string {
-			// R9/R10: an OMITTED required physics field must be refused, not silently decoded
-			// to 0. base_latency is the sharp case — read/write=0 is caught by Validate, but a
-			// missing base_latency would otherwise resolve to zero-latency physics.
-			return writeCatalogStorageDevices(t, "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3}\n")
-		}, "base_latency"},
-		{"table is a directory", func(t *testing.T) string {
-			root := t.TempDir()
-			if err := os.MkdirAll(filepath.Join(root, CatalogDevicesSubdir, CatalogStorageDevicesFile), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			return root
-		}, "is not readable"},
-	}
-	for _, tc := range cases {
+// TestAnUnusableDeviceTableIsRefused: every way the table can fail to answer is a refusal,
+// never an empty or zero-valued table. The alternatives are both silent mis-models: an empty
+// map degrades into "device_class X is not defined (known: <none configured>)", which blames
+// the operator's config for a missing catalog file, and a zero-valued device would give
+// plausible-but-wrong physics. The loader refuses a malformed table when the catalog opens;
+// StorageDevices refuses a catalog with none, and data that is absent.
+func TestAnUnusableDeviceTableIsRefused(t *testing.T) {
+	for _, tc := range []struct{ name, body, wantFrag string }{
+		{"no classes", "{}\n", "storage tier"},
+		{"malformed yaml", "nvme_gen4: {read_bandwidth_mb_s: [unclosed\n", "devices/storage.yaml"},
+		// R10: a misspelled key must be refused, never decoded to zero bandwidth.
+		{"unknown physics key", "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwith_mb_s: 5.0e3, base_latency_us: 80.0}\n", "write_bandwith"},
+		// R9/R10: an omitted required field is refused, not decoded to 0; a missing
+		// base_latency would otherwise resolve to zero-latency physics.
+		{"missing required field", "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3}\n", "base_latency"},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
-			root := tc.root(t)
-			devices, err := LoadCatalogStorageDevices(root)
+			d, err := dataWithStorageDevices(t, tc.body)
 			if err == nil {
-				t.Fatalf("expected refusal, got %d classes", len(devices))
-			}
-			if devices != nil {
-				t.Errorf("a failed load must return no table, got %+v", devices)
-			}
-			if want := CatalogStorageDevicesPath(root); !strings.Contains(err.Error(), want) {
-				t.Errorf("refusal must name the path %q, got: %v", want, err)
+				var devices map[string]KVOffloadDevice
+				devices, err = StorageDevices(d)
+				if err == nil {
+					t.Fatalf("expected refusal, got %d classes", len(devices))
+				}
 			}
 			if !strings.Contains(err.Error(), tc.wantFrag) {
-				t.Errorf("refusal must identify the failure class (%q), got: %v", tc.wantFrag, err)
+				t.Errorf("refusal must identify the failure (%q), got: %v", tc.wantFrag, err)
 			}
 		})
+	}
+	if _, err := StorageDevices(nil); err == nil || !strings.Contains(err.Error(), CatalogStorageDevicesRelPath) {
+		t.Errorf("no data: %v, want a refusal naming %s", err, CatalogStorageDevicesRelPath)
 	}
 }
 

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
@@ -50,18 +50,18 @@ func decodeBatch(n, ctx, k int) engine.Batch {
 
 // The recipe default prices a K=7 decode below the same deployment without adaptive
 // verification, and says which drafts it verified: the verify forward runs the trimmed width
-// (blis-latency-kernel#89; vllm/v1/attention/selector.py:143-152 and
+// (blis-substrate kernel/adaptive.go; vllm/v1/attention/selector.py:143-152 and
 // vllm/v1/worker/gpu/spec_decode/adaptive_verification.py:282-350@5df63a72). Without the flag
 // nothing is trimmed (VerifiedDrafts nil).
 func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 	spec := func(r map[string]string) engine.Spec {
 		return engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
 	}
-	on, err := pricerFor(spec(roots(t, adaptiveScenario)))
+	on, err := pricerFor(spec(roots(t, adaptiveScenario)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	off, err := pricerFor(spec(withoutAdaptive(t)))
+	off, err := pricerFor(spec(withoutAdaptive(t)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,9 +95,9 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 		}
 	}
 	if !trimmedAny {
-		// The kernel's adaptive budget (blis-latency-kernel#89) has not landed: it verifies every
-		// draft at the recipe's acceptance, so there is no trimmed price to compare.
-		t.Skip("the kernel verifies every scheduled draft under adaptive verification: no trimmed budget to price yet")
+		// The kernel prices the adaptive budget (blis-substrate kernel/adaptive.go), so a run that
+		// trims nothing means the budget stopped reaching the engine.
+		t.Error("the kernel verified every scheduled draft under adaptive verification: no trimmed budget was priced")
 	}
 }
 
@@ -107,7 +107,7 @@ func TestAdaptiveVerificationPricesTheTrimmedVerify(t *testing.T) {
 func TestAdaptiveVerificationRecipeRunsEndToEnd(t *testing.T) {
 	Register()
 	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, adaptiveScenario)}
-	p, err := pricerFor(spec)
+	p, err := pricerFor(spec, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

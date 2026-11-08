@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/blis-substrate/load"
 )
 
 const epScenario = "deepseek-v4.1-flash-h100-tp8-dspark5.yaml"
@@ -25,13 +26,10 @@ profiles:
               {batch_tokens: 8192, token_imbalance: 1.6, expert_imbalance: 1.0}]}
 `
 
-// registryWith copies the test registry's coefficients and adds one routing set.
-func registryWith(t *testing.T, role string) string {
+// registryWith is the default data with one routing set added, through a registry overlay.
+func registryWith(t *testing.T, role string) *load.Data {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.Symlink(filepath.Join(repos().Registry, "coefficients"), filepath.Join(dir, "coefficients")); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.MkdirAll(filepath.Join(dir, "routing"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -39,16 +37,22 @@ func registryWith(t *testing.T, role string) string {
 	if err := os.WriteFile(filepath.Join(dir, "routing", "capture.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	o := DataOptions()
+	o.RegistryOverlays = []string{dir}
+	d, err := load.Open(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
 
-func openWith(t *testing.T, registry string, o RoutingOverrides) *Model {
+func openWith(t *testing.T, registry *load.Data, o RoutingOverrides) *Model {
 	t.Helper()
 	SetRoutingOverrides(o)
 	t.Cleanup(func() { SetRoutingOverrides(RoutingOverrides{}) })
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
-	r.Registry = registry
+	r.Data = registry
 	m, err := OpenPool(epScenario, r, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +94,20 @@ func TestRoutingRegistryRoles(t *testing.T) {
 	if r := sens.Provenance().Routing; r.SourceLayer != string(routing.LayerDefault) {
 		t.Errorf("an unnamed sensitivity set applied: %+v", r)
 	}
-	def := openWith(t, registryWith(t, "default"), RoutingOverrides{Workload: text})
+	data := registryWith(t, "default")
+	def := openWith(t, data, RoutingOverrides{Workload: text})
 	r := def.Provenance().Routing
+	// The profile the resolution used is in the data's selected-entry report (VAL-6), beside
+	// the coefficients the kernel's lookups returned.
+	var routed, coefficients bool
+	for _, sel := range data.Report().Selected {
+		routed = routed || (sel.Kind == load.KindRouting && sel.Set == "capture")
+		coefficients = coefficients || sel.Kind == load.KindCoefficient
+	}
+	if !routed || !coefficients {
+		t.Errorf("the selected-entry report lacks the routing profile (%v) or the kernel's coefficients (%v): %+v",
+			routed, coefficients, data.Report().Selected)
+	}
 	if r.SourceLayer != string(routing.LayerRegistry) || r.Set != "capture" || r.MeasuredOn != "b200" ||
 		len(r.Keys) != 1 || r.Keys[0] != "deepseek-v4.1-flash/text/decode/linear/ep8" {
 		t.Fatalf("the registry profile is not resolved or not recorded: %+v", r)
@@ -124,7 +140,7 @@ func TestRoutingReadsTheDecodedEPLB(t *testing.T) {
 	}
 	r := repos()
 	r.Scenarios = dir
-	r.Registry = reg
+	r.Data = reg
 	m, err := OpenPool(epScenario, r, 0)
 	if err != nil {
 		t.Fatal(err)

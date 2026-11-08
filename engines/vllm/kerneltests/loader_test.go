@@ -3,45 +3,64 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	"fmt"
 
-	"os"
+	. "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
+
 	"path/filepath"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/vllm"
+	"github.com/inference-sim/blis-vllm/internal/substratedata"
 	"github.com/inference-sim/blis-vllm/kerneltests/internal/artifacttest"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
-	"github.com/inference-sim/blis-vllm/rules/v0_29"
 )
 
-// The catalog and registry are pinned copies under testdata, fetched by
-// scripts/fetch-testdata.sh at the commits testdata/upstream.lock names, so these tests read
-// real artifacts at a known version. See testdata/README.md for what is fetched and why.
+// The catalog and registry are blis-substrate's catalog/ and registry/ at the release go.mod
+// pins (internal/substratedata), so these tests read the data that release carries.
+// BLIS_CATALOG and BLIS_REGISTRY override them, so a working copy can be tested against a
+// candidate:
 //
-// They are relative paths because a Go test runs with its own package directory as the
-// working directory, and this package is the repository root. Overridable so a working
-// copy can be scored against a live upstream checkout:
+//	BLIS_REGISTRY=/path/to/candidate/registry go test ./kerneltests/...
 //
-//	BLIS_CATALOG=../blis-catalog go test ./...
-var (
-	catalogRoot  = envOr("BLIS_CATALOG", filepath.Join("testdata", "catalog"))
-	registryRoot = envOr("BLIS_REGISTRY", filepath.Join("testdata", "registry"))
-)
+// fixtureInputs reads its documents from those directories, the pinned module's own copy of the
+// data the loader embeds, because tests edit the documents they get and the loader's Data shares
+// its documents among readers. Everything that opens a kernel through Repos reads testData, the
+// loader's Data for the same pin (kernelmodel.DefaultData: the embedded copy, or the directories
+// BLIS_CATALOG and BLIS_REGISTRY name).
+var catalogRoot, registryRoot = mustRoots()
 
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+var testData = mustData()
+
+func mustData() *load.Data {
+	d, err := kernelmodel.DefaultData()
+	if err != nil {
+		panic(err)
 	}
-	return fallback
+	return d
+}
+
+func mustRoots() (catalog, registry string) {
+	var err error
+	if catalog, err = substratedata.Catalog(); err != nil {
+		panic(err)
+	}
+	if registry, err = substratedata.Registry(); err != nil {
+		panic(err)
+	}
+	return catalog, registry
 }
 
 // fixture builds a kernel from a committed scenario and the real catalog and registry.
@@ -59,9 +78,16 @@ func envOr(key, fallback string) string {
 // subtests, 0 failures, suite reporting ok. artifacttest.RequireArtifact draws that line.
 func fixtureInputs(t testing.TB, scenario string) Inputs {
 	t.Helper()
+	return fixtureInputsAt(t, filepath.Join("testdata", scenario))
+}
+
+// fixtureInputsAt is fixtureInputs for a scenario file at path.
+func fixtureInputsAt(t testing.TB, path string) Inputs {
+	t.Helper()
+	scenario := filepath.Base(path)
 	// The fixture itself is committed beside this test, so it is never merely absent:
 	// a failure to read one is a malformed fixture and always a real failure.
-	sc, dep, err := LoadBundle(filepath.Join("testdata", scenario))
+	sc, dep, err := LoadBundle(path)
 	if err != nil {
 		t.Fatalf("committed fixture %s: %v", scenario, err)
 	}
@@ -91,6 +117,7 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	if err != nil {
 		t.Fatalf("committed fixture %s: decoding its engine block: %v", scenario, err)
 	}
+	resolveMemoryUtilization(&eng, sc.EngineRelease())
 	// A drafter the deployment names by speculative.draft_model is a catalog model of its own.
 	var draft *model.Graph
 	if eng.Speculative != nil && eng.Speculative.DraftModel != "" {
@@ -101,18 +128,19 @@ func fixtureInputs(t testing.TB, scenario string) Inputs {
 	return Inputs{
 		Scenario: sc, Deployment: dep, PoolIndex: 0,
 		Model: graph, Draft: draft, Chip: chip, Fabric: fabric,
-		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineVersion), Engine: &eng,
+		Devices: devices, Coefficients: sets, Rules: rulesFor(sc.EngineRelease()), Engine: &eng,
 	}
 }
 
-// rulesFor is the vLLM rules pack for a fixture's declared release, and the 0.29.0 pack for
-// a release with none, as these fixtures were written against. The packs come from the
-// engine model's rules module, as every caller's do: the kernel looks none up itself.
+// rulesFor is the vLLM rules pack for a fixture's declared release. The packs come from the
+// engine model's rules module, as every caller's do: the kernel looks none up itself. A release
+// with no pack is a malformed fixture, not a reason to price it with another release's pack.
 func rulesFor(version string) *pack.Pack {
-	if p := vllmrules.Lookup(version); p != nil {
-		return p
+	p := vllmrules.Lookup(version)
+	if p == nil {
+		panic(fmt.Sprintf("no vLLM rules pack for engine release %q (known: %v)", version, vllmrules.Versions()))
 	}
-	return v0_29.Pack()
+	return p
 }
 
 // withRules gives a Repos the vLLM rules packs and engine-block decoding, as a caller of Open
@@ -120,7 +148,11 @@ func rulesFor(version string) *pack.Pack {
 func withRules(r Repos) Repos {
 	r.Rules = RulesFrom(vllmrules.Lookup)
 	r.RulesVersions = vllmrules.Versions
-	r.EngineSettings = vllmsettings.OfPool
+	r.RulesKind = "vllm"
+	r.EngineSettings = func(dep *deployment.Deployment, pool int) (enginesettings.Settings, error) {
+		eng, err := vllmsettings.OfPool(dep, pool)
+		return eng, err
+	}
 	return r
 }
 
@@ -144,6 +176,7 @@ func newKernel(in Inputs) (*Kernel, error) {
 		if err != nil {
 			return nil, err
 		}
+		resolveMemoryUtilization(&eng, in.Scenario.EngineRelease())
 		in.Engine = &eng
 	}
 	return New(in)
@@ -256,4 +289,15 @@ func editInputsEngine(in *Inputs, edit func(*engineconfig.Engine)) {
 		panic(err)
 	}
 	pool.Engine = b
+}
+
+// resolveMemoryUtilization gives a pool that states no gpu_memory_utilization vLLM's default for the
+// release, as blis-vllm's resolver does before it builds the kernel; the cost model resolves none
+// (SUB-6), and a fixture states only what its run stated (X19).
+func resolveMemoryUtilization(eng *enginesettings.Settings, release string) {
+	if eng.GPUMemoryUtilization == 0 {
+		if d, ok := vllm.DefaultMemoryUtilization(release); ok {
+			eng.GPUMemoryUtilization = d.Value
+		}
+	}
 }

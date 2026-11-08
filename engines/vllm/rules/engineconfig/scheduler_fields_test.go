@@ -22,6 +22,8 @@ func TestSchedulerAndCacheKnobs(t *testing.T) {
 		{"all unset", Engine{}, ""},
 		{"prefill_schedule_interval 16", Engine{PrefillScheduleInterval: 16}, ""},
 		{"prefill_schedule_interval negative", Engine{PrefillScheduleInterval: -1}, "prefill_schedule_interval"},
+		{"dp_sync_interval 8", Engine{DPSyncInterval: 8}, ""},
+		{"dp_sync_interval negative", Engine{DPSyncInterval: -1}, "dp_sync_interval"},
 		{"stream_interval 10", Engine{StreamInterval: 10}, ""},
 		{"stream_interval negative", Engine{StreamInterval: -2}, "stream_interval"},
 		{"max_num_active_seqs within max_num_seqs", Engine{MaxNumSeqs: 64, MaxNumActiveSeqs: 32}, ""},
@@ -79,7 +81,7 @@ func TestSchedulerAndCacheKnobs(t *testing.T) {
 // Each new key round-trips under its vLLM name, and an omitted one is not written.
 func TestSchedulerAndCacheKnobsRoundTrip(t *testing.T) {
 	e := Engine{
-		PrefillScheduleInterval: 8, DisableHybridKVCacheManager: ptrBool(true),
+		PrefillScheduleInterval: 8, DPSyncInterval: 4, DisableHybridKVCacheManager: ptrBool(true),
 		KVCacheMemoryBytes: ptrInt64(1 << 35), StreamInterval: 20, MaxNumActiveSeqs: 16,
 		MaxNumScheduledTokens: 4096, Watermark: ptrFloat(0), LongPrefillTokenThresholdAdaptive: ptrBool(true),
 		PrefixMatchUnit: 128, PrefixCacheRetentionInterval: ptrInt(32768),
@@ -93,7 +95,7 @@ func TestSchedulerAndCacheKnobsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
-		"prefill_schedule_interval", "disable_hybrid_kv_cache_manager", "kv_cache_memory_bytes",
+		"prefill_schedule_interval", "dp_sync_interval", "disable_hybrid_kv_cache_manager", "kv_cache_memory_bytes",
 		"stream_interval", "max_num_active_seqs", "max_num_scheduled_tokens", "watermark",
 		"long_prefill_token_threshold_adaptive", "prefix_match_unit", "prefix_cache_retention_interval",
 		"kv_events", "custom_ops", "decoder_replay_cudagraph_capture_sizes", "use_trtllm_attention",

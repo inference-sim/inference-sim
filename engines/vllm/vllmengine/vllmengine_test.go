@@ -11,24 +11,34 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/vllm"
 )
 
-// roots are the repository's vendored catalog and registry, which hold the dashboard models.
+// roots name the scenario only, so the engine reads the pinned substrate's embedded catalog and
+// registry, which hold the dashboard models.
 func roots(t *testing.T, scenario string) map[string]string {
 	t.Helper()
 	abs, err := filepath.Abs(filepath.Join("testdata", scenario))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
-	reg, _ := filepath.Abs(filepath.Join("..", "testdata", "registry"))
-	return map[string]string{RootCatalog: cat, RootRegistry: reg, RootScenario: abs}
+	return map[string]string{RootScenario: abs}
+}
+
+// embeddedData is the data the engine opens for roots: the embedded copy.
+func embeddedData(t *testing.T) *load.Data {
+	t.Helper()
+	d, err := kernelmodel.OpenData(load.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
 }
 
 // poolEngine is the scenario's first pool's engine block, as a host hands it over: unopened.
@@ -60,7 +70,7 @@ func compatBlocks(t *testing.T, scenario031 string) int64 {
 	t.Helper()
 	r := roots(t, scenario031)
 	m, err := kernelmodel.OpenPool(filepath.Base(r[RootScenario]), kernelmodel.Repos{
-		Scenarios: filepath.Dir(r[RootScenario]), Catalog: r[RootCatalog], Registry: r[RootRegistry]}, 0)
+		Scenarios: filepath.Dir(r[RootScenario]), Data: embeddedData(t)}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,6 +91,7 @@ func TestDashboardDeploymentsBuildAndRun(t *testing.T) {
 		{"d071-032.yaml", "d071-031.yaml"}, // minimax-m2.5, b200, tp2
 	} {
 		t.Run(c.v032, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Config: poolEngine(t, c.v032),
 				Roots: roots(t, c.v032), Pool: 0}
 			e, err := engine.New(spec)
@@ -137,12 +148,10 @@ func req(id string, prompt, output int) engine.Request {
 // data parallelism as a missing piece.
 func TestDashboardDataParallelDeploymentsAreNotRefused(t *testing.T) {
 	Register()
-	cat, _ := filepath.Abs(filepath.Join("..", "testdata", "catalog"))
-	reg, _ := filepath.Abs(filepath.Join("..", "testdata", "registry"))
 	for _, scenario := range []string{"d116-032.yaml", "d079-032.yaml", "d088-032.yaml", "d103-032.yaml"} {
 		abs, _ := filepath.Abs(filepath.Join("testdata", scenario))
 		eng, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0",
-			Roots: map[string]string{RootCatalog: cat, RootRegistry: reg, RootScenario: abs}})
+			Roots: map[string]string{RootScenario: abs}})
 		if err != nil {
 			if strings.Contains(err.Error(), "data parallelism") {
 				t.Errorf("%s: %v refuses data parallelism, which the engine builds", scenario, err)
@@ -163,7 +172,7 @@ func openPool(t *testing.T, scenario string) pool {
 	t.Helper()
 	r := roots(t, scenario)
 	m, err := kernelmodel.OpenPool(scenario, kernelmodel.Repos{Scenarios: filepath.Dir(r[RootScenario]),
-		Catalog: r[RootCatalog], Registry: r[RootRegistry]}, 0)
+		Data: embeddedData(t)}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,6 +268,7 @@ func TestDashboardDataParallelDeploymentsRun(t *testing.T) {
 	Register()
 	for _, name := range []string{"d079", "d088", "d103"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			r := roots(t, name+"-032.yaml")
 			_, par, err := poolBlock(r[RootScenario], 0)
 			if err != nil {
@@ -323,8 +333,9 @@ func TestDashboardHybridKVDeploymentsBuildAndRun(t *testing.T) {
 		{"d106-032.yaml", []kv.Group{{Kind: kv.FullAttention}}},                                        // minimax-m3
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, c.scenario)}
-			done, err := prepare(spec)
+			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -375,6 +386,7 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72893 }},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
+			t.Parallel()
 			b, err := openPool(t, c.scenario).model.KVBudget()
 			if err != nil {
 				t.Fatal(err)
@@ -444,8 +456,9 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 		"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark-128k.yaml", "muse-gb200-nvl-tep8.yaml",
 		"muse-gb200-nvl-dep8-dspark.yaml"} {
 		t.Run(s, func(t *testing.T) {
+			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
-			done, err := prepare(spec)
+			done, err := prepare(spec, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -496,7 +509,7 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 	var engines [2]engine.Engine
 	for i, want := range []string{"kv_producer", "kv_consumer"} {
 		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s), Pool: i}
-		done, err := prepare(spec)
+		done, err := prepare(spec, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -596,7 +609,7 @@ func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
 	}
 	r := roots(t, "muse-h100-roce-1p1d.yaml")
 	r[RootScenario] = filepath.Join(dir, "pull.yaml")
-	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1})
+	done, err := prepare(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r, Pool: 1}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,5 +623,131 @@ func TestAPDPoolRunsTheDeploymentsConnector(t *testing.T) {
 	}
 	if block.KV.Connector != "NixlPullConnector" {
 		t.Fatalf("kv_transfer.connector %q, want the deployment's NixlPullConnector", block.KV.Connector)
+	}
+}
+
+// Roots[RootCatalog] and Roots[RootRegistry] name directories that replace the embedded copy:
+// one that holds no data is refused when the engine is built, naming the directory, never
+// ignored in favour of the embedded data.
+func TestARootDirectoryReplacesTheEmbeddedData(t *testing.T) {
+	Register()
+	r := roots(t, "d058-032.yaml")
+	empty := t.TempDir()
+	r[RootRegistry] = empty
+	_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r})
+	if err == nil || !strings.Contains(err.Error(), empty) {
+		t.Errorf("an empty registry directory: %v, want a refusal naming %s", err, empty)
+	}
+}
+
+// An engine built with Input.Data reads that Data as it is: two engines given one Data share
+// its report, and a Data nobody passed stays empty (VAL-6). With no Data each build opens its
+// own, so no report outlives a run.
+func TestEnginesGivenOneDataShareItsReport(t *testing.T) {
+	Register()
+	shared, other := embeddedData(t), embeddedData(t)
+	if shared == other {
+		t.Fatal("two opens returned one Data: a report would outlive its run")
+	}
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
+		t.Fatal(err)
+	}
+	first := len(shared.Report().Selected)
+	if first == 0 {
+		t.Fatal("the engine's lookups did not land in the Data the host passed")
+	}
+	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(shared.Report().Selected); got != first {
+		t.Errorf("a second engine on the same Data changed the report from %d to %d entries", first, got)
+	}
+	if got := len(other.Report().Selected); got != 0 {
+		t.Errorf("a Data the engine was not given holds %d entries, want none", got)
+	}
+	if _, err := New(Input{Spec: spec}); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(other.Report().Selected); got != 0 {
+		t.Errorf("a build with no Data wrote %d entries into an unrelated Data", got)
+	}
+}
+
+// An overlay named in Roots cannot reach the engine: without the host's Data it is refused,
+// saying so, rather than priced on base data; with the host's Data it is refused too, telling the
+// host to open the Data with the overlay (TestRootsAreRefusedBesideTheHostsData).
+func TestOverlayRootsAreRefusedWithoutTheHostsData(t *testing.T) {
+	Register()
+	for _, key := range []string{RootCatalogOverlays, RootRegistryOverlays} {
+		r := roots(t, "d058-032.yaml")
+		r[key] = t.TempDir()
+		spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}
+		_, err := engine.New(spec)
+		if err == nil || !strings.Contains(err.Error(), "Input.Data") || !strings.Contains(err.Error(), key) {
+			t.Errorf("Roots[%s] set, no Data: %v, want a refusal telling the host to pass its Data", key, err)
+		}
+		if _, err := New(Input{Spec: spec, Data: embeddedData(t)}); err == nil {
+			t.Errorf("Roots[%s] set beside the host's Data was accepted, and would be ignored", key)
+		}
+	}
+}
+
+// Through the registered factory one engine build opens the catalog and registry once, so its
+// lookups land in one report (VAL-6). Prepare and Pricer each opened a fresh copy, about 105 ms
+// apiece, and split the lookups between two reports.
+func TestOneBuildOpensItsDataOnce(t *testing.T) {
+	Register()
+	opens := 0
+	was := openData
+	openData = func(o load.Options) (*load.Data, error) { opens++; return was(o) }
+	defer func() { openData = was }()
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	if _, err := engine.New(spec); err != nil {
+		t.Fatal(err)
+	}
+	if opens != 1 {
+		t.Errorf("one build through the registered factory opened its data %d times, want once", opens)
+	}
+	// Prepare and Pricer alone each open their own, as before: a caller that wants one step.
+	opens = 0
+	if _, err := Factory().Prepare(spec); err != nil {
+		t.Fatal(err)
+	}
+	if opens != 1 {
+		t.Errorf("Prepare opened its data %d times, want once", opens)
+	}
+}
+
+// When the host passes its opened Data, a catalog, registry or overlay root would be ignored: the
+// engine reads the Data as it is. Each is refused, telling the host to open the Data with the root,
+// and the same spec with no root builds.
+func TestRootsAreRefusedBesideTheHostsData(t *testing.T) {
+	Register()
+	for _, key := range []string{RootCatalog, RootRegistry, RootCatalogOverlays, RootRegistryOverlays} {
+		r := roots(t, "d058-032.yaml")
+		dir := t.TempDir()
+		r[key] = dir
+		_, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: r}, Data: embeddedData(t)})
+		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), dir) || !strings.Contains(err.Error(), "load.Options") {
+			t.Errorf("Roots[%s] beside the host's Data: %v, want a refusal naming the root and telling the host to open its Data with it", key, err)
+		}
+	}
+	if _, err := New(Input{Spec: engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}, Data: embeddedData(t)}); err != nil {
+		t.Errorf("no root beside the host's Data: %v", err)
+	}
+}
+
+// The report of one build holds the lookups of both steps: the pricer's coefficients and the
+// pool's data, in the one Data the host passed, and a build with no Data leaves no other copy.
+func TestOneBuildWritesOneReport(t *testing.T) {
+	Register()
+	shared := embeddedData(t)
+	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "d058-032.yaml")}
+	if _, err := New(Input{Spec: spec, Data: shared}); err != nil {
+		t.Fatal(err)
+	}
+	if len(shared.Report().Selected) == 0 {
+		t.Fatal("the build's lookups are not in the host's Data")
 	}
 }

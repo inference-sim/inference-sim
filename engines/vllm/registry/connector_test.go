@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/connector"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/connector"
 
 	blisvllm "github.com/inference-sim/blis-vllm"
 )

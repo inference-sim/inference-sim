@@ -3,7 +3,7 @@
 package latencykernel_test
 
 import (
-	. "github.com/inference-sim/blis-latency-kernel"
+	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"testing"
 
@@ -45,11 +45,19 @@ func TestWhatTheKernelCannotPriceItRefuses(t *testing.T) {
 			in.Deployment.Pools[0].Parallel.DP = dp
 		}
 	}
-	renamed := func(name string) func(*Inputs) {
+	renamed := func(name, capability string) func(*Inputs) {
 		return func(in *Inputs) {
 			chip := *in.Chip
 			chip.Name = name
+			// The part's generation is its catalog compute capability, not its name, so the
+			// renamed part states the capability of the part it stands for.
+			chip.ComputeCapability = capability
 			in.Chip = &chip
+			// The scenario names the renamed part too: its cluster's packaging resolves
+			// against the entry it names, and a chip of another name is refused.
+			sc := *in.Scenario
+			sc.Cluster.Hardware = name
+			in.Scenario = &sc
 		}
 	}
 	for _, c := range []struct {
@@ -81,9 +89,9 @@ func TestWhatTheKernelCannotPriceItRefuses(t *testing.T) {
 		{"fp8_inc", dcpMLAFixture, cache("fp8_inc"), false},
 		// A DSA model below SM90 has no sparse-MLA backend; a plain-MLA model on the same
 		// renamed part is the control.
-		{"plain MLA on l40s", dcpMLAFixture, renamed("l40s"), true},
-		{"DSA on l40s", dcpSparseFixture, renamed("l40s"), false},
-		{"DSA on h200", dcpSparseFixture, renamed("h200"), true},
+		{"plain MLA on l40s", dcpMLAFixture, renamed("l40s", "8.9"), true},
+		{"DSA on l40s", dcpSparseFixture, renamed("l40s", "8.9"), false},
+		{"DSA on h200", dcpSparseFixture, renamed("h200", "9.0"), true},
 	} {
 		if got := starts(c.fixture, c.edit); got != c.want {
 			t.Errorf("%s: starts %v, want %v", c.name, got, c.want)

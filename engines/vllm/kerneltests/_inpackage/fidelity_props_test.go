@@ -5,7 +5,7 @@ package latencykernel
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // (#29) On a rack that is one NVLink domain, a same-rack cross-node handoff avoids the

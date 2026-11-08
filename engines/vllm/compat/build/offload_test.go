@@ -46,9 +46,8 @@ func validBlock() *KVOffloadBlock {
 // T4 (#1770: retargeted from defaults.yaml to the catalog): a catalog
 // devices/storage.yaml parses through the real reader and a device resolves to a triple.
 func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
-	catalog := writeCatalogStorageDevices(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
-	devices, err := LoadCatalogStorageDevices(catalog)
+	devices, err := StorageDevices(mustDataWithStorageDevices(t,
+		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n"))
 	if err != nil {
 		t.Fatalf("catalog storage device table must load: %v", err)
 	}
@@ -61,12 +60,10 @@ func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
 	}
 }
 
-// T4 (#1770): the committed catalog device table parses (catches a malformed file). Since
-// #1771 deleted the bundled model_configs/ tree, the committed clone-root fixture
-// testdata/catalog/ (mirroring blis-catalog) carries the devices/ namespace the tests
+// T4 (#1770): the substrate catalog's device table loads and defines the class the tests
 // resolve against.
 func TestKVOffloadDevices_CommittedCatalogTableParses(t *testing.T) {
-	devices, err := LoadCatalogStorageDevices("../../testdata/catalog")
+	devices, err := StorageDevices(defaultData(t))
 	if err != nil {
 		t.Fatalf("committed catalog %s must load: %v", CatalogStorageDevicesRelPath, err)
 	}

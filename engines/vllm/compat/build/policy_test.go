@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
@@ -186,7 +186,7 @@ func TestResolveAcceptance_TheCommandLineIsTheHighestLayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	in := AcceptanceInputs{Scenario: "glm-5-h200-tp8-mtp3.yaml", Shape: sh, Registry: t.TempDir(), Hardware: "H200"}
+	in := AcceptanceInputs{Scenario: "glm-5-h200-tp8-mtp3.yaml", Shape: sh, Data: vendoredRepos(t).Data, Hardware: "H200"}
 	in.Flags = AcceptanceFlags{Rate: 0.5, RateSet: true}
 	a, speculating, err := ResolveAcceptance(in, 3, "mtp")
 	if err != nil || !speculating || a.CLIRate == nil || *a.CLIRate != 0.5 {
@@ -199,7 +199,7 @@ func TestResolveAcceptance_TheCommandLineIsTheHighestLayer(t *testing.T) {
 	}
 	in.Flags = AcceptanceFlags{}
 	if _, _, err := ResolveAcceptance(in, 3, "mtp"); err == nil || !strings.Contains(err.Error(), "--"+AcceptanceLengthFlag) {
-		t.Errorf("no layer states it (empty registry): %v; want a refusal naming the flags", err)
+		t.Errorf("no layer states it (the registry has no profile for glm-5 mtp on H200): %v; want a refusal naming the flags", err)
 	}
 }
 

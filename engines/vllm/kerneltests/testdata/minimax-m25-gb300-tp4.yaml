@@ -18,7 +18,7 @@
 # collective entries that are assumed.
 kind: Scenario
 name: minimax-m25-gb300-tp4
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: minimax-m2.5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -27,7 +27,10 @@ cluster:
   hardware: gb300
   # One tray, so nothing crosses a node boundary and no fabric is named.
   nodes: 1
+  # The ONE fixture that restates the catalog's packaging unchanged (gb300 fixes 4 and 72), to
+  # test the restatement path. Every other GB200/GB300 fixture omits both fields.
   gpus_per_node: 4
+  gpus_per_rack: 72
 ---
 kind: Deployment
 name: minimax-m25-gb300-tp4

@@ -9,10 +9,10 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-schemas/engine"
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/pack"
 )
@@ -271,8 +271,8 @@ func TestFactoryRefuses(t *testing.T) {
 		{"a negative max_num_active_seqs", Version, "max_num_active_seqs: -1\n", "max_num_active_seqs -1 is negative"},
 		{"a negative max_loras", Version, "max_loras: -1\n", "max_loras -1 is negative"},
 		{"a NaN watermark", Version, "watermark: .nan\n", "watermark NaN is outside"},
-		{"mamba_cache_mode", Version, "mamba_cache_mode: align\n", "mamba_cache_mode is not modelled"},
-		{"swa_bounded_replay", Version, "swa_bounded_replay: false\n", "swa_bounded_replay is not modelled"},
+		{"mamba_cache_mode on a model with no Mamba hook", Version, "mamba_cache_mode: align\n", "mamba_cache_mode \"align\" runs as \"align\", away from the default \"none\""},
+		{"swa_bounded_replay false on the V2 runner", Version, "swa_bounded_replay: false\nuse_v2_model_runner: true\n", "swa_bounded_replay is not modelled"},
 		{"a pipeline_parallel_size of 0", Version, "pipeline_parallel_size: 0\n", "pipeline_parallel_size must be stated"},
 		// A DP rank's batch queue is diff-tested on one pipeline stage (oracle/run_dp.py).
 		{"DP with pipeline parallelism", Version, "data_parallel_size: 2\npipeline_parallel_size: 2\n", "data parallelism with pipeline parallelism"},
@@ -349,10 +349,11 @@ func TestFactoryAccepts(t *testing.T) {
 			"enable_adaptive_verification: false}\n"},
 		// quantization-known is a warning: vLLM admits out-of-tree methods the pack cannot list.
 		{"an out-of-tree quantization method", "quantization: my_out_of_tree_method\n"},
-		// mla-prefill-backend-known is a warning too: vllm serve loads plugins before it parses the
-		// flag, and a plugin can register a new backend name (vllm/engine/arg_utils.py:3202,
-		// vllm/v1/attention/backends/mla/prefill/registry.py:190@5df63a72).
-		{"an MLA prefill backend a plugin registers", "mla_prefill_backend: MY_PLUGIN_PREFILL\n"},
+		// mla-prefill-backend-known is a warning too (vllm serve loads plugins before it parses the
+		// flag, and a plugin can register a new backend name: vllm/engine/arg_utils.py:3202,
+		// vllm/v1/attention/backends/mla/prefill/registry.py:190@5df63a72), which the rules pack's
+		// own tests cover. The factory then refuses any stated mla_prefill_backend as unmodelled
+		// (TestEveryNotModelledFieldIsRefusedOrExplained).
 	} {
 		if _, err := build(t, c.extra)(); err != nil {
 			t.Errorf("%s: refused: %v", c.name, err)

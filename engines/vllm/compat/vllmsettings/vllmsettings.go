@@ -10,10 +10,10 @@
 package vllmsettings
 
 import (
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
-	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 )
 
 // Of is the kernel's engine settings for a vLLM engine block, as blis-vllm decodes it

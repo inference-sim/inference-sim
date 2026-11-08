@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // Muse-Spark-Open-816B-A42B's KV layers, as vLLM v0.32.0 registers them: 16 full-attention and
@@ -15,7 +15,7 @@ import (
 // parallelism, each stage only its own share, the drafter's on the last.
 func TestMuseSparkKVLayersAreTheEngines(t *testing.T) {
 	r := repos()
-	r.Scenarios = filepath.Join(repoRoot(), "testdata", "scenarios")
+	r.Scenarios = filepath.Join(ownRoot(), "testdata", "scenarios")
 	count := func(runs []KVLayerRun) (full, sliding int) {
 		for _, x := range runs {
 			switch x.Spec {

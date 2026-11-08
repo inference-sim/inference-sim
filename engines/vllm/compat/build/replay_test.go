@@ -25,8 +25,8 @@ func validRecorded() engine.KVOffloadConfig {
 
 // On replay the trace header is authoritative (BC-G6): it is used verbatim, a stated config may
 // only restate it (PerBlockBytes, derived later, excluded), an unreproducible one is refused, and
-// a stated config cannot add offload to a sim-generated trace without one, though an observe or
-// agentic replay takes it.
+// a stated config cannot add offload to a generated or replayed trace without one, though a
+// converted trace or an agentic replay takes it.
 func TestReconcileReplayKVOffload(t *testing.T) {
 	recorded := validRecorded()
 	if got, err := ReconcileReplayKVOffload(recorded, false, engine.KVOffloadConfig{}, false); err != nil || !reflect.DeepEqual(got, recorded) {
@@ -52,29 +52,16 @@ func TestReconcileReplayKVOffload(t *testing.T) {
 	if got, err := ReconcileReplayKVOffload(engine.KVOffloadConfig{}, false, engine.KVOffloadConfig{}, false); err != nil || got.IsEnabled() {
 		t.Errorf("no header, no flag: %+v %v; want inert", got, err)
 	}
-	if _, err := ReconcileReplayKVOffload(engine.KVOffloadConfig{}, true, recorded, false); err == nil || !strings.Contains(err.Error(), "cannot add one on replay of a sim-generated trace") {
-		t.Errorf("a flag adding offload to a sim-generated trace: %v", err)
+	if _, err := ReconcileReplayKVOffload(engine.KVOffloadConfig{}, true, recorded, false); err == nil || !strings.Contains(err.Error(), `cannot add one on replay of a trace blis run or blis replay wrote (mode "generated" or "replayed"`) ||
+		!strings.Contains(err.Error(), `converted traces (mode "converted")`) || strings.Contains(err.Error(), "observe") ||
+		strings.Contains(err.Error(), `"real"`) {
+		t.Errorf("a flag adding offload to a generated trace: %v; want the refusal naming the trace modes that exist", err)
 	}
 	if got, err := ReconcileReplayKVOffload(engine.KVOffloadConfig{}, true, recorded, true); err != nil || !reflect.DeepEqual(got, recorded) {
-		t.Errorf("a flag on an observe or agentic replay: %+v %v; want the flag's", got, err)
+		t.Errorf("a flag on a converted trace or an agentic replay: %+v %v; want the flag's", got, err)
 	}
 	if got, err := ReconcileReplayKVOffload(engine.KVOffloadConfig{}, true, engine.KVOffloadConfig{}, false); err != nil || got.IsEnabled() {
 		t.Errorf("a stated but inert config: %+v %v; want inert, no refusal", got, err)
-	}
-}
-
-// A tiered observed hit-rate needs a replay that reproduces a tiered offload config (BC-10); a
-// GPU-prefix-cache observation, or none, needs nothing.
-func TestRequireOffloadForTieredObservation(t *testing.T) {
-	if err := RequireOffloadForTieredObservation(true, "tiered", false); err == nil || !strings.Contains(err.Error(), `source="tiered"`) {
-		t.Errorf("tiered, no offload: %v", err)
-	}
-	for _, c := range []struct {
-		tiered, enabled bool
-	}{{true, true}, {false, false}, {false, true}} {
-		if err := RequireOffloadForTieredObservation(c.tiered, "x", c.enabled); err != nil {
-			t.Errorf("tiered %v, offload %v: %v, want none", c.tiered, c.enabled, err)
-		}
 	}
 }
 
@@ -134,8 +121,8 @@ func TestCheckHybridDPNodeLocal(t *testing.T) {
 		t.Errorf("a replica across nodes: %v", err)
 	}
 	// The refusal names the issue that brings one endpoint per node.
-	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/28#issuecomment-6408150356") {
-		t.Errorf("a replica across nodes: %v, want the refusal to cite blis-vllm#28's hybrid comment", err)
+	if err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/64") {
+		t.Errorf("a replica across nodes: %v, want the refusal to cite blis-vllm#64", err)
 	}
 	// Only the last rank of the second replica crosses a node, so the check must look at each
 	// replica's last rank, and at every replica including the last one.

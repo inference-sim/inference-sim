@@ -61,8 +61,7 @@ const dpPricingScenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
 // prompt length, each at the end of its prompt so the kernel classifies it as a decode). Identical
 // so a comparison between n and 2n isolates batch SIZE -- one rank's share vs the aggregate -- and
 // nothing about request shape. Each decode schedules one token, so n and 2n schedule n and 2n
-// tokens, far below the kernel's capture-ceiling anomaly (blis-latency-kernel#42, pinned by
-// TestTheKernelsCaptureCeilingDropIsStillPresent on GLM-5); the per-request prompt length does not
+// tokens, far below the kernel's CUDA-graph capture ceiling; the per-request prompt length does not
 // count toward that ceiling.
 func identicalDecodeBatch(n int, promptLen int64) []*sim.Request {
 	batch := make([]*sim.Request, n)

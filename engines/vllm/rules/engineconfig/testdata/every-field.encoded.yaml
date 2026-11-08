@@ -31,6 +31,7 @@ long_prefill_token_threshold_adaptive: true
 max_num_scheduled_tokens: 4096
 max_num_active_seqs: 128
 watermark: 0.01
+dp_sync_interval: 8
 prefill_schedule_interval: 2
 stream_interval: 4
 disable_hybrid_kv_cache_manager: false

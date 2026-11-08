@@ -60,6 +60,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"max_num_active_seqs":                    "--max-num-active-seqs",
 		"watermark":                              "--watermark",
 		"prefill_schedule_interval":              "--prefill-schedule-interval",
+		"dp_sync_interval":                       "--data-parallel-sync-interval (parallel_config.dp_sync_interval)",
 		"stream_interval":                        "--stream-interval",
 		"disable_hybrid_kv_cache_manager":        "--disable-hybrid-kv-cache-manager / --no-disable-hybrid-kv-cache-manager",
 		"kv_cache_memory_bytes":                  "--kv-cache-memory-bytes",

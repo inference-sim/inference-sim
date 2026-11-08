@@ -99,6 +99,10 @@ func TestTheMovedPacksAreTheOnesThisKernelReadBefore(t *testing.T) {
 			}
 		}
 		before = bytes.ReplaceAll(bytes.Join(kept, nil), []byte("validate.Problems"), []byte("rules.Problems"))
+		// Undo the substrate move: blis-schemas' packages are blis-substrate's contracts/
+		// packages under the same names (blis-substrate 4eb16d8).
+		before = bytes.ReplaceAll(before, []byte(`"github.com/inference-sim/blis-schemas/`),
+			[]byte(`"github.com/inference-sim/blis-substrate/contracts/`))
 		if !bytes.Equal(before, now) {
 			t.Errorf("%s/pack.go differs from the pack %s shipped, beyond the move's header "+
 				"and import rewrite: a rules change reached this kernel through the move, and "+
@@ -127,4 +131,17 @@ var engineBlockRewrite = []struct{ now, before string }{
 	{"pack.SequenceParallelCondition", "rules.SequenceParallelCondition"},
 	{"pack.KVCachePacking", "rules.KVCachePacking"},
 	{"pack.NormalizeMoEBackend", "rules.NormalizeMoEBackend"},
+	// The node-size read (design SUB-3): the custom-all-reduce rule reads the cluster's
+	// resolved packaging, blis-substrate's rules.Input.Packaging, where it read the scenario's
+	// gpus_per_node, which is zero when the scenario leaves the value to the chip's catalog
+	// entry. On a scenario that states it the two are the same number.
+	{"\t\t\t\t// The node size is the cluster's resolved packaging (the scenario's, or the\n" +
+		"\t\t\t\t// chip's catalog entry's), not the scenario's field, which is zero where the\n" +
+		"\t\t\t\t// scenario leaves it to the catalog.\n" +
+		"\t\t\t\tgpusPerNode := 0\n" +
+		"\t\t\t\tif in.Packaging != nil {\n" +
+		"\t\t\t\t\tgpusPerNode = in.Packaging.GPUsPerNode\n",
+		"\t\t\t\tgpusPerNode := 0\n" +
+			"\t\t\t\tif in.Scenario != nil {\n" +
+			"\t\t\t\t\tgpusPerNode = in.Scenario.Cluster.GPUsPerNode\n"},
 }

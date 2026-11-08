@@ -6,14 +6,15 @@ package latencykernel
 import (
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	schemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
-	"github.com/inference-sim/blis-schemas/spec/model"
+	schemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -107,7 +108,7 @@ func TestPPCapacityIsTheSmallestStagesPool(t *testing.T) {
 		// Each worker's budget is the deployment's share of its GPU (gpu_worker.py:535-540@v0.32.0).
 		util := k.engine.GPUMemoryUtilization
 		if util <= 0 {
-			util = defaultMemoryUtilization
+			t.Fatalf("%s pp %d tp %d: the kernel was given gpu_memory_utilization %v; fixtureInputs resolves an unstated one", c.fix, c.pp, c.tp, util)
 		}
 		budget := k.chip.MemoryGiB * (1 << 30) * util
 		best, at := math.Inf(1), -1
@@ -465,7 +466,7 @@ func TestMusePoolerShardsAtDecodeOnBlackwell(t *testing.T) {
 // stage is the smallest of the pools recomputed at that utilization, and the kernel's
 // recorded fallback appears only where the block states none.
 func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
-	for _, util := range []float64{0, 0.5, 0.92, 0.98} {
+	for _, util := range []float64{0.5, 0.92, 0.98} {
 		in := ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2)
 		e := mustDecode(t, in.Deployment.Pools[0])
 		e.GPUMemoryUtilization = util
@@ -474,11 +475,7 @@ func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
 		if err != nil {
 			t.Fatalf("util %v: %v", util, err)
 		}
-		u := util
-		if u <= 0 {
-			u = defaultMemoryUtilization
-		}
-		budget := k.chip.MemoryGiB * (1 << 30) * u
+		budget := k.chip.MemoryGiB * (1 << 30) * util
 		best, at := math.Inf(1), -1
 		for i := range k.stages {
 			st := &k.stages[i]
@@ -490,12 +487,29 @@ func TestPPBindingStageFollowsTheDeploymentsUtilization(t *testing.T) {
 		if at != k.ppKVStage {
 			t.Errorf("util %v: binding stage %d, the smallest pool at that utilization is stage %d's", util, k.ppKVStage, at)
 		}
-		recorded := false
 		for _, a := range k.assumptions {
-			recorded = recorded || a.Name == "pipeline_binding_utilization"
+			if a.Name == "pipeline_binding_utilization" {
+				t.Errorf("util %v: the kernel records an assumed utilization; it resolves none (SUB-6)", util)
+			}
 		}
-		if recorded != (util == 0) {
-			t.Errorf("util %v: pipeline_binding_utilization recorded %t", util, recorded)
-		}
+	}
+
+	// The cost model applies no default (SUB-6): a plan that states none is refused, naming the
+	// setting. The engine resolves it before the kernel is built (TestTheEngineResolvesTheDefault).
+	in := ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2)
+	e := mustDecode(t, in.Deployment.Pools[0])
+	e.GPUMemoryUtilization = 0
+	setEngine(t, &in.Deployment.Pools[0], e)
+	eng, _ := vllmsettings.OfPool(in.Deployment, 0)
+	in.Engine = &eng // as stated: newKernel would resolve it, the cost model does not
+	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "gpu_memory_utilization") ||
+		!strings.Contains(err.Error(), "SUB-6") {
+		t.Errorf("util 0: err %v, want a refusal naming gpu_memory_utilization and SUB-6", err)
+	}
+
+	// The default comes from the resolver, with its source: 0.92, vllm/config/cache.py:102 at 5df63a7203.
+	v, src := resolvedMemoryUtilization(t, ppInputs(t, "minimax-m25-h200-tp8.yaml", 3, 2))
+	if v != 0.92 || !strings.Contains(src, "vllm/config/cache.py:102@5df63a72") {
+		t.Errorf("the resolver's default is %v (%q), want 0.92 from vllm/config/cache.py:102@5df63a72", v, src)
 	}
 }

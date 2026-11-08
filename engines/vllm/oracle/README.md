@@ -16,10 +16,15 @@ weights; the scenario's fixed `num_blocks` and `block_size` govern every decisio
 
 ## Environment
 
-`oracle/requirements.lock` is the whole environment, every package pinned (Linux x86_64, CPU):
-`pip install --no-deps --extra-index-url https://download.pytorch.org/whl/cpu -r
-oracle/requirements.lock`, then `python -I oracle/check_lock.py oracle/requirements.lock <(pip
-freeze)` confirms it. The runners also read:
+`oracle/requirements.lock` is the whole environment, every package pinned (Linux x86_64, CPU).
+`oracle/lock.sh` writes the same pins with every archive's sha256 into
+`oracle/requirements-hashed.txt`, and pip's own release into `oracle/requirements-pip.txt`
+(X21). Install with `python -m pip install --require-hashes -r oracle/requirements-pip.txt`,
+then `pip install --require-hashes --no-deps --extra-index-url https://download.pytorch.org/whl/cpu
+-r oracle/requirements-hashed.txt`; `python -I oracle/check_lock.py oracle/requirements.lock <(pip
+freeze)` confirms it. After changing the lock, run `oracle/lock.sh` and commit all three files;
+`python -I oracle/check_lock.py --hashed oracle/requirements.lock oracle/requirements-hashed.txt`,
+which CI runs first, fails while they disagree. The runners also read:
 
 | Variable | What |
 |---|---|
@@ -54,6 +59,48 @@ produces now), `check_manifest.py` (tier 5's manifest against vLLM's live regist
 `test_checks.py` (each guard fails on what it guards). The mutation sweeps: `mutate.py` (T2),
 `mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_offloading.py` (the OffloadingConnector), `mutate_e24.py` (the engine interface) and
 `mutate_metrics.py` (T5).
+
+## Block-size oracle
+
+`oracle/blocksize/oracle.py` answers a different question from the tiers above: what block size
+vLLM resolves an unstated `block_size` to. vLLM chooses it from the attention backends it
+selects for the model, GPU and KV dtype (`Platform.update_block_size_for_backend`,
+`vllm/platforms/interface.py:757-781`; the backend priority list `platforms/cuda.py:83-180`; each
+backend's preferred and supported sizes). The oracle runs vLLM's own `CudaPlatform.get_valid_backends`
+and `_preferred_block_size_for_backends` on a CPU, with the GPU-only wheels replaced
+(`oracle/blocksize/stubs.py`; each replacement is listed in the table, as FID-1 requires).
+
+A CPU cannot discover four facts: whether vLLM's wheel ships FlashAttention 3 and 4, whether
+FlashInfer's TRTLLM kernels are usable, and whether the wheel carries FlashMLA. The oracle runs
+every combination of model, compute capability and KV dtype under every setting of those facts. A
+combination resolves only if the size is the same under all of them; otherwise it is refused,
+naming the fact. `oracle/blocksize/TABLE.tsv` is the table to read: each combination, its backend,
+its size and the size under each setting of the facts. The committed table is
+`core/vllm/blocksize_table.json`, which
+`core/vllm/blocksize.go` embeds, and CI fails if it differs from what the oracle prints:
+
+```sh
+BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
+  python -I oracle/blocksize/oracle.py <vllm checkout> table > oracle/blocksize/TABLE.tsv   # for reading
+  python -I oracle/blocksize/oracle.py <vllm checkout> json > core/vllm/blocksize_table.json
+```
+
+A derived-only model (its licence does not let the catalog redistribute it, as minimax-m2.7)
+has no `config.json` in the catalog. The oracle then fetches that file from the `source` and
+`revision` in the model's `model.yaml` and refuses it unless its SHA-256 equals `config.sha256`
+there, so the oracle reads the model's real file and no attention fact is copied. This needs
+network access to huggingface.co (in CI too); a failed fetch fails the run and never drops a model.
+`BLIS_ORACLE_FETCH_CACHE` names the cache directory (default: a temporary directory), keyed by
+digest and re-verified on every read; `HF_TOKEN`, if set, is sent to huggingface.co only. The file
+is never written into the repository or the catalog.
+
+Each combination is also run at every tensor-parallel width from 1 to 16 (`TP_WIDTHS`), and
+resolves only if the size is the same at all of them. The table is valid for a width up to 16, and
+`ResolveBlockSize` refuses a wider pool, citing blis-vllm#68.
+
+It needs vLLM's `requirements/common.txt` and `torch`; it does not need a GPU. At a new vLLM
+release, re-read each model's attention layer (the `LAYERS` table cites the line that builds it)
+and rerun it.
 
 ## Scenario
 

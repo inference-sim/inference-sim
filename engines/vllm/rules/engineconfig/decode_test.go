@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,10 +91,10 @@ func TestDecodeRefusesAnUnknownKey(t *testing.T) {
 	}
 }
 
-// engineconfig imports only blis-schemas and yaml.v3 beside the standard library: a cost
+// engineconfig imports only blis-substrate's contracts/ and yaml.v3 beside the standard library: a cost
 // model reads it, and the rules packs build on it, so it may import neither a pack nor a cost
 // model.
-func TestEngineconfigImportsOnlyBlisSchemasAndYAML(t *testing.T) {
+func TestEngineconfigImportsOnlyContractsAndYAML(t *testing.T) {
 	pkg, err := build.ImportDir(".", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -103,8 +103,34 @@ func TestEngineconfigImportsOnlyBlisSchemasAndYAML(t *testing.T) {
 		if !strings.Contains(imp, ".") {
 			continue // the standard library
 		}
-		if !strings.HasPrefix(imp, "github.com/inference-sim/blis-schemas/") && imp != "gopkg.in/yaml.v3" {
+		if !strings.HasPrefix(imp, "github.com/inference-sim/blis-substrate/contracts/") && imp != "gopkg.in/yaml.v3" {
 			t.Errorf("engineconfig imports %s", imp)
 		}
+	}
+}
+
+// A field fields.json lists as not_modelled with the leave_unset rule is not a key of the engine
+// block, so a deployment that states it is refused when the block is read, and its value is never
+// dropped (VLM-3, design §11.2). The rule applies only to a run that did not state the field.
+func TestStatedLeaveUnsetFieldsWithNoEngineKeyAreRefused(t *testing.T) {
+	for _, key := range []string{
+		"attention_backend", "attention_config",
+		"kv_offloading_backend", "indexer_sparse_logits", "data_parallel_external_lb",
+		"data_parallel_hybrid_lb",
+	} {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte(key+": x\n"), &n); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Decode(deployment.NewEngineBlock(n.Content[0])); err == nil {
+			t.Errorf("a block stating %s decodes; it must be refused", key)
+		}
+	}
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte("speculative: {method: m, num_spec_tokens: 1, synthetic_acceptance_length: 2}\n"), &n); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Decode(deployment.NewEngineBlock(n.Content[0])); err == nil {
+		t.Error("a block stating speculative.synthetic_acceptance_length decodes; it must be refused")
 	}
 }

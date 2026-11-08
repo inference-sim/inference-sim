@@ -6,8 +6,8 @@
 package engineconfig
 
 import (
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // ConnectorOptions are the KV connector options a deployment states, from vLLM's

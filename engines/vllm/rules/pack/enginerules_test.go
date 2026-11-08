@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/rules"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-vllm/rules/pack"
 	"github.com/inference-sim/blis-vllm/rules/v0_29"
 	"github.com/inference-sim/blis-vllm/rules/v0_31"

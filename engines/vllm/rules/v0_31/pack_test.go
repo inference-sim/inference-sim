@@ -4,10 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/rules"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/model"
-	"github.com/inference-sim/blis-schemas/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/rules"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -55,9 +56,15 @@ func run(t *testing.T, d *deployment.Deployment, g *model.Graph) *rules.Problems
 		Coefficients: []string{"c"}, EngineVersion: Version,
 		Cluster: scenario.Cluster{Hardware: "h200", Nodes: nodes, GPUsPerNode: 8},
 	}
+	// The node size reaches the rules as the cluster's resolved packaging, as
+	// blis-substrate's Validate resolves it; an h200 entry leaves it to the scenario.
+	pk, err := s.Cluster.Packaging(&hardware.Chip{Name: "h200"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	p := &rules.Problems{}
 	for _, r := range Pack().Rules {
-		r.Check(rules.Input{Scenario: s, Deployment: d, Model: g}, p)
+		r.Check(rules.Input{Scenario: s, Deployment: d, Model: g, Packaging: &pk}, p)
 	}
 	return p
 }

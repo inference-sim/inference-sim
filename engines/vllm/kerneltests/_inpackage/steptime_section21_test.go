@@ -3,7 +3,7 @@
 package latencykernel
 
 import (
-	"github.com/inference-sim/blis-schemas/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 func decodeBatch(requests, queryLen, context int) kernel.Batch {

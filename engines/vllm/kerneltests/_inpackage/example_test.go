@@ -5,12 +5,13 @@ package latencykernel_test
 // The Go examples on the documentation site are sections of this file, included between the
 // --8<-- markers. Go runs each Example and compares what it prints with its // Output:
 // comment, so a page cannot show a call that no longer compiles or a number this kernel no
-// longer computes. They read the fetched catalog and registry (scripts/fetch-testdata.sh).
+// longer computes. They read the catalog and registry blis-substrate embeds.
 
 import (
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 )
 
@@ -19,9 +20,19 @@ import (
 // sets), and the engine rules its engine_version selects: vLLM's, from the engine model.
 var repos = latencykernel.Repos{
 	Scenarios:      "testdata",
-	Catalog:        "testdata/catalog",
-	Registry:       "testdata/registry",
+	Data:           exampleData(),
 	Rules:          latencykernel.RulesFrom(vllmrules.Lookup),
 	RulesVersions:  vllmrules.Versions,
+	RulesKind:      "vllm",
 	EngineSettings: vllmsettings.OfPool,
+}
+
+// exampleData is the catalog and registry this substrate release embeds, opened and checked by
+// its loader.
+func exampleData() *load.Data {
+	d, err := load.Embedded()
+	if err != nil {
+		panic(err)
+	}
+	return d
 }

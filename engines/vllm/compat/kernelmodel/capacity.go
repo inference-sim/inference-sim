@@ -39,7 +39,7 @@ package kernelmodel
 import (
 	"fmt"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 )
 
 // KVBudget is the KV-block budget derived from a kernel, with the terms that produced it.

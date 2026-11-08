@@ -5,7 +5,8 @@ package build
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
@@ -38,12 +39,12 @@ type AcceptanceFlags struct {
 }
 
 // AcceptanceInputs are the resolution's inputs: the scenario (its name, shape and pin), the
-// registry it names, the hardware, what the simulated workload states (nil defers to the
+// run's data (whose registry holds the acceptance profiles), the hardware, what the simulated workload states (nil defers to the
 // scenario's workload binding), and the command line.
 type AcceptanceInputs struct {
 	Scenario string
 	Shape    kernelmodel.Shape
-	Registry string
+	Data     *load.Data
 	Hardware string
 	Workload *acceptance.Workload
 	Flags    AcceptanceFlags
@@ -100,10 +101,11 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 		l := f.Length
 		req.CLI = &acceptance.Value{NumSpecTokens: k, AcceptanceLength: &l, Source: "--" + AcceptanceLengthFlag}
 	}
-	sets, err := loadRegistryAcceptanceSets(in.Registry)
-	if err != nil {
-		return Acceptance{}, false, fmt.Errorf("speculative acceptance: %w", err)
+	if in.Data == nil {
+		return Acceptance{}, false, fmt.Errorf("scenario %q drafts %d %q tokens: no catalog and registry to "+
+			"resolve its acceptance from (AcceptanceInputs.Data is unset)", in.Scenario, k, method)
 	}
+	sets := in.Data.AcceptanceSets()
 	req.Registry = sets
 	if pin := req.Scenario; pin != nil && pin.Profiles != "" {
 		req.ScenarioSet = findSet(sets, pin.Profiles)
@@ -115,6 +117,7 @@ func ResolveAcceptance(in AcceptanceInputs, k int, method string) (Acceptance, b
 			"the scenario", in.Scenario, k, method, err, AcceptanceLengthFlag, AcceptanceRateFlag,
 			AcceptanceThinkingFlag, AcceptanceCategoryFlag)
 	}
+	in.Data.RecordAcceptance(&res)
 	out.Res = res
 	return out, true, nil
 }
@@ -139,12 +142,6 @@ func acceptanceWorkloadTerms(in AcceptanceInputs) acceptance.Workload {
 		w.Category = in.Flags.Category
 	}
 	return w
-}
-
-// loadRegistryAcceptanceSets is kernelmodel's loader, the one copy: the kernel resolves the same
-// sets for adaptive verification (kernelmodel resolveAcceptance).
-func loadRegistryAcceptanceSets(registry string) ([]*acceptance.ProfileSet, error) {
-	return kernelmodel.LoadRegistryAcceptanceSets(registry)
 }
 
 func findSet(sets []*acceptance.ProfileSet, name string) *acceptance.ProfileSet {

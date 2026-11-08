@@ -60,14 +60,16 @@ import (
 	"strings"
 	"time"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/kernel/enginesettings"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
-	"github.com/inference-sim/blis-schemas/spec/model"
-	"github.com/inference-sim/blis-schemas/spec/workload"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -92,6 +94,7 @@ func withEngineRules(r Repos) Repos {
 	if r.Rules == nil {
 		r.Rules = latencykernel.RulesFrom(vllmrules.Lookup)
 		r.RulesVersions = vllmrules.Versions
+		r.RulesKind = "vllm"
 	}
 	if r.EngineSettings == nil {
 		// The kernel prices the engine settings its caller decodes, as it takes its rules from
@@ -138,6 +141,9 @@ type Model struct {
 	// requested one for the model's architecture, the chip's family and the TP width
 	// (rules.EngineRules.ResolveCacheDType), the key a cache record is read by (KVLayers).
 	cacheDType string
+	// resolved is the pool's engine settings as its release resolves them (resolveEngine): for
+	// vLLM 0.32.0 the batch settings a deployment leaves unstated, with each one's source.
+	resolved resolvedEngine
 
 	// No Scenario, Deployment or pool index is retained. Engine settings and widths are
 	// read from the kernel, which resolved this pool: holding the documents to index back
@@ -173,6 +179,9 @@ type identity struct {
 	poolNodes   int
 	gpusPerNode int
 	gpusPerRack int
+	// packaging is the cluster's packaging as blis-substrate resolved it, with each value's
+	// source; gpusPerNode and gpusPerRack are its two counts.
+	packaging scenario.Packaging
 	// rankGPUs is the GPUs one data-parallel rank occupies: pp x tp x pcp.
 	rankGPUs int
 	// tpRanks is the pool's TP width; latentKV is whether every attention layer stores one
@@ -189,7 +198,10 @@ type identity struct {
 	capabilityMajor int
 }
 
-func identityOf(in latencykernel.Inputs, engine engineconfig.Engine) identity {
+// identityOf reads the pool's placement from pk, the cluster's packaging as the scenario and
+// the chip's catalog entry resolve it (scenario.Cluster.Packaging), never from the scenario's
+// own gpus_per_node and gpus_per_rack, which are zero where it leaves them to the catalog.
+func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario.Packaging) identity {
 	experts, topK := expertCounts(in.Model)
 	pool := in.Deployment.Pools[in.PoolIndex]
 	first := 0
@@ -208,8 +220,9 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine) identity {
 		role:            pool.Role,
 		firstNode:       first,
 		poolNodes:       pool.Nodes,
-		gpusPerNode:     in.Scenario.Cluster.GPUsPerNode,
-		gpusPerRack:     in.Scenario.Cluster.GPUsPerRack,
+		gpusPerNode:     pk.GPUsPerNode,
+		gpusPerRack:     pk.GPUsPerRack,
+		packaging:       pk,
 		rankGPUs:        max(1, pl.PP) * max(1, pl.TP) * max(1, pl.PCP),
 		tpRanks:         max(1, pl.TP),
 		latentKV:        allLatent(in.Model),
@@ -295,15 +308,15 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Model, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
-	if in.Routing, err = resolveRouting(in, engine, r.Registry, routingOverrides); err != nil {
+	if in.Routing, err = resolveRouting(in, engine, r.Data, routingOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
 	// Read by the kernel only under adaptive verification, which sizes its verify budget from it
-	// (blis-latency-kernel#89); nil otherwise, as the kernel then prices without it.
-	if in.Acceptance, err = resolveAcceptance(in, engine, r.Registry, acceptanceOverrides); err != nil {
+	// (blis-substrate kernel/adaptive.go); nil otherwise, as the kernel then prices without it.
+	if in.Acceptance, err = resolveAcceptance(in, engine, r.Data, acceptanceOverrides); err != nil {
 		return nil, fmt.Errorf("%s: %w", scenario, err)
 	}
-	return fromDecoded(in, engine)
+	return fromDecoded(in, engine, r.Data)
 }
 
 // fromInputs builds and adapts the kernel for loaded Inputs, decoding the priced pool's engine
@@ -313,30 +326,64 @@ func fromInputs(in latencykernel.Inputs) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fromDecoded(in, engine)
+	return fromDecoded(in, engine, nil)
 }
 
 // fromDecoded builds and adapts the kernel for loaded Inputs and the priced pool's decoded engine
 // block, refusing a speculative method the scenario's engine release does not accept first.
-func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, error) {
+//
+// data is where in's documents came from: the kernel is built with New, so its coefficient
+// lookups are recorded into data's selected-entry report here (design §3.3, VAL-6). A test
+// that assembled in by hand passes nil.
+func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load.Data) (*Model, error) {
 	if err := checkSpeculativeMethod(in, engine); err != nil {
 		return nil, err
 	}
 	pool := in.Deployment.Pools[in.PoolIndex]
-	if err := checkDPLocal(pool.Parallel, in.Scenario.Cluster.GPUsPerNode); err != nil {
+	pk, err := in.Scenario.Cluster.Packaging(in.Chip)
+	if err != nil {
+		return nil, fmt.Errorf("the scenario's cluster: %w", err)
+	}
+	if err := checkDPLocal(pool.Parallel, pk.GPUsPerNode); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
+	// An unstated block_size, gpu_memory_utilization, max_num_seqs or max_num_batched_tokens the release resolves is priced at the
+	// resolved value, so the kernel and Engine describe one engine (resolveEngine).
+	r := resolveEngine(in, engine)
+	if r.engine.BlockSize > 0 {
+		settings.BlockSize = r.engine.BlockSize
+	}
+	if r.engine.GPUMemoryUtilization > 0 {
+		settings.GPUMemoryUtilization = r.engine.GPUMemoryUtilization
+	}
+	// The cache dtype the architecture's hook resolves an unstated one to, priced as it runs.
+	settings.CacheDType = r.engine.CacheDType
+	// The batch settings Engine reports and the scheduler runs: left at zero the kernel would
+	// fall back to vLLM v0.31.0's defaults, which skip the caps 0.32.0 applies (batched-DP 256,
+	// min(max_num_seqs, max_num_batched_tokens), max_num_seqs x max_model_len).
+	if r.engine.MaxNumSeqs > 0 {
+		settings.MaxNumSeqs = r.engine.MaxNumSeqs
+	}
+	if r.engine.MaxNumBatchedTokens > 0 {
+		settings.MaxNumBatchedTokens = r.engine.MaxNumBatchedTokens
+	}
 	in.Engine = &settings
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err
 	}
-	m, err := newModel(k, identityOf(in, engine))
+	if data != nil {
+		k.RecordSelected(data)
+	}
+	m, err := newModel(k, identityOf(in, engine, pk))
 	if err != nil {
 		return nil, err
 	}
-	m.engine = engine
+	// Every reader below sees the engine as its release resolves it (resolveEngine): the block
+	// size, the memory budget and the batch settings the deployment left unstated.
+	m.resolved = resolveEngine(in, engine)
+	m.engine = m.resolved.engine
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by
@@ -344,7 +391,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine) (*Model, e
 	g := k.Graph()
 	m.graph = &g
 	if in.Rules != nil {
-		m.cacheDType = in.Rules.ResolveCacheDType(in.Model.Global.Architecture, m.id.capabilityMajor,
+		m.cacheDType = in.Rules.ResolveCacheDType(architectureOf(in.Model), m.id.capabilityMajor,
 			max(pool.Parallel.TP, 1), engine.CacheDType)
 	}
 	return m, nil
@@ -439,6 +486,13 @@ func (m *Model) RankCapacity() int {
 	return m.id.poolNodes * m.id.gpusPerNode / m.id.rankGPUs
 }
 
+// Packaging is the cluster's packaging this pool is placed and priced with, as
+// blis-substrate resolves it from the scenario and the chip's catalog entry
+// (scenario.Cluster.Packaging): the GPUs per node and per rack, and whether each was stated
+// or taken from the catalog. A simulator reads it here rather than from the scenario, whose
+// fields are zero where it leaves them to the catalog, and records it in the Result's inputs.
+func (m *Model) Packaging() scenario.Packaging { return m.id.packaging }
+
 // PlacementOf places the pool's rank-th replica, its ranks packed onto the pool's nodes in
 // order: rank r occupies GPUs [r*rankGPUs, (r+1)*rankGPUs) of the pool and sits on the node
 // holding its first GPU. The rack is the node's position in GPUsPerRack-sized domains; a
@@ -531,6 +585,22 @@ func (m *Model) V032Pieces() []string {
 	return out
 }
 
+// HasRecurrentLayers reports whether the pool's model graph has a recurrent (Mamba-style) layer,
+// which is when vLLM runs MambaModelConfig.verify_and_update_config for it
+// (vllm/model_executor/models/config.py:507-521, 672-708@5df63a72; ModelConfig.is_hybrid,
+// vllm/config/model.py:2023-2032@5df63a72). A Mamba-only architecture also has recurrent layers.
+func (m *Model) HasRecurrentLayers() bool {
+	has := false
+	if m.graph != nil {
+		m.graph.EachNode(func(_ string, n model.Node) {
+			if n.Op == model.OpRecurrentUpdate {
+				has = true
+			}
+		})
+	}
+	return has
+}
+
 // MTPDraftLayers is the pool's MTP drafter's layer count, the checkpoint's
 // num_nextn_predict_layers, as the model graph's speculator stack holds it; 0 when the pool does
 // not draft with method mtp or the graph describes no speculator. It sets the prefill lookahead
@@ -588,7 +658,7 @@ func (m *Model) StepTimeOfShapes(reqs []ReqShape) int64 {
 	return max(1, ticks(m.k.StepTime(b).NoOverlap))
 }
 
-// verifiedDrafter is the latency kernel's adaptive-verification answer (blis-latency-kernel#89):
+// verifiedDrafter is the latency kernel's adaptive-verification answer (blis-substrate kernel/adaptive.go):
 // for each request of a batch, how many drafts the verifier runs under the adaptive budget, or
 // nil when the pool does not verify adaptively.
 type verifiedDrafter interface {
@@ -737,39 +807,10 @@ func shapeOf(req *sim.Request) kernel.ReqShape {
 // smallest step in the evaluation corpus (553 us for an empty batch) is under 0.2%.
 func ticks(d interface{ Microseconds() int64 }) int64 { return d.Microseconds() }
 
-// Engine reports the engine settings of the pool this kernel prices.
-//
-// A caller configuring a simulator needs the same block size, token budget and sequence cap
-// the kernel resolved against, or the two would describe different deployments: a scheduler
-// admitting 512 sequences while the kernel priced a 256-sequence engine is not a
-// disagreement the numbers would reveal.
-//
-// It returns the deployment's own values rather than a copy with defaults filled in, and
-// errors when a value a simulator requires is absent, so a missing setting is a failure
-// rather than a silent zero.
-//
-// The settings live on the DEPLOYMENT as of blis-schemas v0.2.0: engine knobs are tunable
-// configuration chosen against a scenario, not part of the immutable problem it states.
-// The error text says "deployment" for the same reason -- a reader told the scenario lacks
-// a block_size would look in the wrong document.
 // DPLoadBalancing is the pool's parallel.data_parallel_load_balancing as stated ("" is
 // internal; blis-schemas#76).
 func (m *Model) DPLoadBalancing() deployment.DPLoadBalancing {
 	return m.k.Deployment().Parallel.DataParallelLoadBalancing
-}
-
-func (m *Model) Engine() (engineconfig.Engine, error) {
-	e := m.engine
-	if e.BlockSize <= 0 {
-		return e, fmt.Errorf("kernelmodel: deployment states no block_size")
-	}
-	if e.MaxNumSeqs <= 0 {
-		return e, fmt.Errorf("kernelmodel: deployment states no max_num_seqs")
-	}
-	if e.MaxNumBatchedTokens <= 0 {
-		return e, fmt.Errorf("kernelmodel: deployment states no max_num_batched_tokens")
-	}
-	return e, nil
 }
 
 // DataParallelWidth is the pool's attention data-parallel width.
@@ -890,8 +931,8 @@ type Shape struct {
 	Model           string
 	Acceptance      *acceptance.Pin
 	WorkloadBinding *workload.Binding
-	// EngineVersion is the scenario's engine_version: the engine release its deployment was
-	// written for.
+	// EngineVersion is the engine release the scenario names (EngineRelease): engine.version,
+	// or the deprecated engine_version.
 	EngineVersion string
 	// Unmodelled are each pool's stated engine settings that the compatibility engine does not
 	// model, by their scenario field names (unmodelledSettings), parallel to Roles.
@@ -945,8 +986,12 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 	if err != nil {
 		return Shape{}, err
 	}
+	release, err := EngineRelease(sc)
+	if err != nil {
+		return Shape{}, fmt.Errorf("%s: %w", scenario, err)
+	}
 	sh := Shape{Roles: make([]deployment.Role, len(dep.Pools)), StatesOffload: dep.Offload != nil,
-		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload, EngineVersion: sc.EngineVersion,
+		Model: sc.Model, Acceptance: sc.Acceptance, WorkloadBinding: sc.Workload, EngineVersion: release,
 		Router: dep.Router, Labels: make([]map[string]string, len(dep.Pools)), Dir: filepath.Dir(path)}
 	if dep.PDTransfer != nil {
 		sh.PDConnector = dep.PDTransfer.Connector
@@ -988,7 +1033,7 @@ func checkSpeculativeMethod(in latencykernel.Inputs, engine engineconfig.Engine)
 	}
 	if in.Rules == nil {
 		return fmt.Errorf("engine.speculative.method %q cannot be checked: no engine rules for "+
-			"version %q", sp.Method, in.Scenario.EngineVersion)
+			"version %q", sp.Method, in.Scenario.EngineRelease())
 	}
 	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
 		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",

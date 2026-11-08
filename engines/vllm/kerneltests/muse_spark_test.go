@@ -4,15 +4,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/kernel/kerneltest"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
-	"github.com/inference-sim/blis-schemas/vocab"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/kerneltest"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
 // Muse-Spark-Open-816B-A42B, NVFP4, on the three clusters it is served on: H100 over RoCE at
 // PP2 x TP8 (the best layout in internal deployment measurements), H200 over InfiniBand at the
-// same layout, and GB200 at TP8 x EP8 over two trays of one NVL72 rack.
+// same layout, and GB200 at TP8 x EP8 over two trays of one NVL72 rack. The GB200 fixture omits
+// gpus_per_node and gpus_per_rack: the 4 and 72 of its trays and rack come from the catalog entry.
 
 func museBatches() []kernel.Batch {
 	decode := func(n, ctx int) kernel.Batch {
@@ -105,7 +106,16 @@ func TestMuseSparkPricesItsFabricPerCluster(t *testing.T) {
 	}
 	derate := func(name, fabric string, eff float64) kernel.StepEstimate {
 		in := fixtureInputs(t, name)
-		in.Coefficients = append(in.Coefficients, &coefficient.Set{Kind: "CoefficientSet", Name: "fabric",
+		// A coefficient is its name, scope and method, and two methods for one name and scope
+		// are refused until rank selection exists: the measurement replaces the registry's
+		// fabric set rather than joining it.
+		kept := in.Coefficients[:0:0]
+		for _, s := range in.Coefficients {
+			if s.Name != "cost-model-fabric" {
+				kept = append(kept, s)
+			}
+		}
+		in.Coefficients = append(kept, &coefficient.Set{Kind: "CoefficientSet", Name: "fabric",
 			Coefficients: []coefficient.Entry{{Name: "fabric_bandwidth_efficiency", Value: eff,
 				Units: vocab.UnitDimensionless, Method: vocab.MethodMeasured,
 				Scope: coefficient.Scope{Fabric: []string{fabric}}}}})

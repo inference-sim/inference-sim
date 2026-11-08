@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	latencykernel "github.com/inference-sim/blis-latency-kernel"
+	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"pgregory.net/rapid"
 
 	sim "github.com/inference-sim/blis-vllm/compat/engine"
@@ -259,10 +259,13 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 // request sizing gives vLLM's count, to the 0.005 GiB rounding of the logged figure (about
 // 2,350 tokens).
 //
-// End to end BLIS's own pool is smaller, so it admits about 11% fewer tokens (25.5M): the
-// kernel's fixed occupancy leaves about 54.4 GiB, not 61.18, its weights being 48.2 GiB
-// against vLLM's logged 45.8. That gap is the kernel's FixedBytes (blis-latency-kernel#46), not
-// the admission sizing this pins; the test logs it.
+// End to end BLIS's own pool differs: the test logs BLIS pool 436776 blocks (47.56 GiB),
+// admitting 22318251 tokens, against vLLM's 61.18 GiB and 28706997 tokens. The fixed per-rank
+// occupancy the pool subtracts is the kernel's own estimate and differs from the engine's, and
+// nothing here localizes the difference or asserts its sign beyond these figures. That gap is
+// not the admission sizing this test pins; the test logs it, and
+// https://github.com/inference-sim/blis-vllm/issues/73 tracks making it an asserted, measured
+// figure.
 func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 	const (
 		scenario    = "deepseek-v4.1-flash-h200-tp8-dspark5-1m.yaml"

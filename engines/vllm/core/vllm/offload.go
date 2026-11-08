@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 
 	"github.com/inference-sim/blis-vllm/core/connector/offloading"
 	"github.com/inference-sim/blis-vllm/core/sched"
@@ -251,7 +251,7 @@ func (o *offload) done(id engine.TransferID, ok bool) error {
 	}
 	if !ok {
 		return fmt.Errorf("vllm: offload transfer %d failed, which vLLM's offloading worker does not support "+
-			"(it asserts success, offloading/worker.py:293-294@5df63a72; %s)", id, offloading.Issue)
+			"(it asserts success, offloading/worker.py:293-294@5df63a72)", id)
 	}
 	o.complete(j)
 	return nil

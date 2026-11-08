@@ -123,7 +123,8 @@ Every oracle trace records, in its `provenance` block:
 - the vLLM version and commit, and the installed vLLM distribution (the release CPU wheel in CI);
 - the Python version and the platform;
 - `lockfile_sha256`, the hash of the environment's frozen package list. CI installs
-  `oracle/requirements.lock` and records the hash of what `pip freeze` then lists; a local run
+  `oracle/requirements.lock`, through its hash-locked form `oracle/requirements-hashed.txt`
+  (`oracle/lock.sh`), and records the hash of what `pip freeze` then lists; a local run
   passes its own list as `ORACLE_LOCKFILE`;
 - `requirements_lock_sha256`, the hash of the committed `oracle/requirements.lock`, which CI
   installs and `oracle/check_lock.py` proves was installed exactly: the environment a CI trace
@@ -135,7 +136,7 @@ Every oracle trace records, in its `provenance` block:
   `HEAD`, marked `+dirty` when it has uncommitted changes);
 - the mock version and the list of mocks.
 
-The Go side of a CI run is recorded once per run, in the artifact's `oracle/out/provenance.json`,
+The Go side of a CI run is recorded once per run, in the artifact's file oracle/out/provenance.json,
 by `go run ./cmd/provenance`. It holds blis-vllm's identity as the build records it
 (`blisvllm.ProvenanceFor`), the commit, the Go toolchain and the platform. The property and
 metamorphic tests' verbose results are in the same artifact (`property-results.txt`), and each
@@ -150,7 +151,7 @@ a trace's recorded version names the exact mock list it ran under.
 
 A golden trace (`core/sched/testdata/golden/`) is the oracle's output for a scenario, committed
 so the Go tests can run without Python. It is never overwritten without review:
-`oracle/run_scheduler.py` refuses to write into `testdata/golden/` unless
+`oracle/run_scheduler.py` refuses to write into a `testdata/golden*` directory unless
 `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1`, and CI (`goldens-reviewed`, `oracle/check_goldens.py`) fails a
 push or pull request with a commit that changes the decisions an existing golden records (its
 `steps` or `finished`), or deletes one, without a `golden-reviewed: <reviewer>` trailer naming

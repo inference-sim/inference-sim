@@ -13,7 +13,7 @@ import (
 
 // The tests that tie the documentation site to the code. The Go examples themselves are run by
 // example_test.go and the generated files are checked by internal/docgen; these cover what the
-// pages say beside them. docs/contributing/documentation.md describes all of it.
+// pages say beside them. kerneltests/docs/contributing/documentation.md describes all of it.
 
 // exampleOutputs maps each snippet section of example_test.go to the // Output: of the example
 // that contains it.

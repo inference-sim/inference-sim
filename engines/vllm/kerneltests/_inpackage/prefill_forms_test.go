@@ -6,10 +6,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 
-	"github.com/inference-sim/blis-latency-kernel/internal/price"
+	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
 
 // contractEntries are blis-registry PR #47's DeepSeek-V4.1-Flash h200 entries as
