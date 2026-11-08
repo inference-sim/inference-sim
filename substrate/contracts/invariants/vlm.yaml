@@ -50,25 +50,25 @@
 - id: VLM-3
   section: §5
   statement: >-
-    fields.json classifies every configuration field and every environment variable the release
-    reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*),
-    as modelled, proven inert (with a passing proof), or not modelled (with an issue). No other
-    status is allowed, except one a release plan allows for a stated time (glossary: Inert,
-    unproven). A field is modelled when the port reads it and setting it changes a decision in a
-    recorded trace, or a field of the emitted plan or step shape that the cost model prices
-    (SUB-11). Its evidence is an oracle scenario that sets it and whose trace the port reproduces,
-    or a test that sets it and finds the emitted plan or step shape equal to the upstream's own
-    resolution. A field that reaches only a plan or step-shape field on SUB-11's not-yet-priced list
-    is not modelled, and cites that list's issue. A field the port reads but carries to no decision,
-    plan or step shape is proven inert or not modelled. A field marked modelled records the value
-    classes its evidence covers: for a boolean or enumerated field, the values its evidence sets;
-    for an ordered numeric field, the range its evidence sets, split at every threshold the upstream
-    compares the field with, generated from the upstream's comparisons. The probe values of a
-    proven-inert field follow the same classes. A field that can name code outside the pinned
-    release, such as a class or module path, is marked so. A field marked not modelled cites an open
-    issue that names the setting or its group, and says why the port does not model it, what the
-    setting does upstream, and the milestone that models it or the reason it never will. Each field
-    also states its estimation rule (§11.2), or that it has none.
+    The engine’s field list classifies every configuration field and every environment variable the
+    pinned release reads, including those read by the communication libraries it uses, as modelled,
+    proven inert (with a passing proof), or not modelled (with an issue). No other status is
+    allowed, except one a release plan allows for a stated time (glossary: Inert, unproven). A field
+    is modelled when the port reads it and setting it changes a decision in a recorded trace, or a
+    field of the emitted plan or step shape that the cost model prices (SUB-11). Its evidence is an
+    oracle scenario that sets it and whose trace the port reproduces, or a test that sets it and
+    finds the emitted plan or step shape equal to the upstream's own resolution. A field that
+    reaches only a plan or step-shape field on SUB-11's not-yet-priced list is not modelled, and
+    cites that list's issue. A field the port reads but carries to no decision, plan or step shape
+    is proven inert or not modelled. A field marked modelled records the value classes its evidence
+    covers: for a boolean or enumerated field, the values its evidence sets; for an ordered numeric
+    field, the range its evidence sets, split at every threshold the upstream compares the field
+    with, generated from the upstream's comparisons. The probe values of a proven-inert field follow
+    the same classes. A field that can name code outside the pinned release, such as a class or
+    module path, is marked so. A field marked not modelled cites an open issue that names the
+    setting or its group, and says why the port does not model it, what the setting does upstream,
+    and the milestone that models it or the reason it never will. Each field also states its
+    estimation rule (§11.2), or that it has none.
   scope:
   - blis-vllm
   checks:
@@ -161,12 +161,12 @@
   section: §5
   statement: >-
     Every KV-cache spec type and group role the pinned release registers in KVCacheSpecRegistry has
-    a status in surface.json that X9 allows. For a modelled one, the manager the registry maps it
-    to is ported, with oracle scenarios that allocate, evict and free its blocks and, where the manager
-    supports prefix caching, share a prefix between requests. A model whose layers need a refused
-    spec type is refused before the run starts, with a message naming the spec type. The grouping
-    of layers into KV-cache groups at start-up, and the coordinators that run one manager per group,
-    are ported once and serve every manager.
+    a status in surface.json that X9 allows. For a modelled one, the manager that
+    KVCacheSpecRegistry maps it to is ported, with oracle scenarios that allocate, evict and free
+    its blocks and, where the manager supports prefix caching, share a prefix between requests. A
+    model whose layers need a refused spec type is refused before the run starts, with a message
+    naming the spec type. The grouping of layers into KV-cache groups at start-up, and the
+    coordinators that run one manager per group, are ported once and serve every manager.
   scope:
   - blis-vllm
   checks:

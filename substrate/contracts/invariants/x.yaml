@@ -427,12 +427,12 @@
   section: §4
   title: Same inputs, same output.
   statement: >-
-    For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry
-    content hashes, the simulator's standard output is identical byte for byte across runs, thread
-    counts and supported platforms. The data source (embedded or path) is recorded in the Result,
-    but is left out of the output the byte gate compares. Simulated time is passed in as a number,
-    and no code reads the system clock. Randomness comes from named substreams seeded from the scenario
-    (DEV-6).
+    For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and
+    coefficient registry content hashes, the simulator's standard output is identical byte for byte
+    across runs, thread counts and supported platforms. The data source (embedded or path) is
+    recorded in the Result, but is left out of the output the byte gate compares. Simulated time is
+    passed in as a number, and no code reads the system clock. Randomness comes from named
+    substreams seeded from the scenario (DEV-6).
   scope:
   - blis-sglang
   - blis-substrate
@@ -1468,12 +1468,14 @@
   section: §4.1
   statement: >-
     Every commit written for BLIS is signed. Every commit that contains work by a person or an agent
-    carries a DCO Signed-off-by line from the person who takes responsibility for it; an agent never
-    signs off, since only a person can certify the DCO. A commit written with an agent's help says
-    so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot
-    commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies
-    to every commit not reachable from the upstream tag being merged; upstream history is kept as
-    upstream wrote it.
+    carries a DCO Signed-off-by line from the person who takes responsibility for it. An agent never
+    signs off in its own name, since only a person can certify the DCO; an agent that pushes commits
+    for a person, on that person’s instruction and with that person’s key, signs and signs off in
+    that person’s name, and the person is responsible for them. A commit written with an agent's
+    help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the
+    tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the
+    router fork, this applies to every commit not reachable from the upstream tag being merged;
+    upstream history is kept as upstream wrote it.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1669,11 +1671,10 @@
   statement: >-
     Every verdict (a CI result, an agent's review, or a person's answer to a review question) names
     the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull
-    request, and is run again when merging changes a path it covers; an agent's or person's verdict
-    is on the head tree, and is requested again when merging changes a path it covers. BLIS
-    repositories do not use a merge queue. Every job that scores, fits or checks data states the
-    minimum number of items it must process, and fails below it. No step in a required job ignores
-    an exit code.
+    request. An agent's or person's verdict is on the head tree, and is given again after a push.
+    BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states
+    the minimum number of items it must process, and fails below it. No step in a required job
+    ignores an exit code.
   scope:
   - accuracy-dashboard
   - blis-config-search

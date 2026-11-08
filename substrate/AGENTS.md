@@ -66,7 +66,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
   - `ci`, pull_request: The cost model imports no engine module (`kernel: TestTheLibraryImportsNoEngineModel`)
   - `new`, pull_request: Scheduler and KV types exist only in engine modules
-- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
+- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and coefficient registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
   - `new`, pull_request: No clock reads and no goroutines in engine or cost-model code
   - `new`, pull_request: No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this lint covers files the fork wrote; upstream code is covered by the differential test in X4
 - **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
@@ -162,7 +162,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
   - `ci`, pull_request: The graph deriver --check runs on every pull request (`ci.yml job catalog: derive_graph.py --check`)
   - `new`, pull_request: Every registry writer --check runs on every pull request, on redistributable fixtures
-- **SUB-9** (ci; target reached) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between catalog and registry), and the same content hash.
+- **SUB-9** (ci; target reached) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between the catalog and the coefficient registry), and the same content hash.
   - `ci`, pull_request: A test that loads the embedded copy and an exported checkout of the same commit, and gets identical data and an identical hash (`load: TestEmbeddedAndExportedCheckoutAreTheSame`)
   - `ci`, pull_request: A test comparing the two pattern lists (`TestEmbedPatternsEqualLoaderPatterns`)
 - **SUB-10** (new; target ci by M2) contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all.

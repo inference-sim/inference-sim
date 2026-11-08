@@ -74,12 +74,12 @@
 - id: CFG-4
   section: §5
   statement: >-
-    A specification ranks and checks configurations on any metric of the metric registry, at any scope
-    (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99 time to
-    first token over instances, and output tokens per second per accelerator for one pool. Every metric
-    it uses has one definition from the registry, shared by the search, the ranking and the report
-    (DEV-8), and every figure states its metric, scope and aggregate. A run that is overloaded or
-    incomplete is never ranked (DEV-10).
+    A specification ranks and checks configurations on any metric of the metric registry, at any
+    scope (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99
+    time to first token over instances, and output tokens per second per accelerator for one pool.
+    Every metric it uses has one definition in the metric registry, shared by the search, the
+    ranking and the report (DEV-8), and every figure states its metric, scope and aggregate. A run
+    that is overloaded or incomplete is never ranked (DEV-10).
   scope:
   - blis-config-search
   checks:

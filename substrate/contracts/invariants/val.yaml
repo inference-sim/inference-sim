@@ -182,9 +182,9 @@
   section: §9.4
   statement: >-
     A lookup matches a coefficient only for the exact kernel implementation that runs. A value taken
-    from a different implementation is a transferred entry (D5). Every registry entry is selected
-    by a lookup on the conformance scenarios, or its kernel hash appears in the kernel_impls.json
-    of an engine release that some supported inference-sim release pins.
+    from a different implementation is a transferred entry (D5). Every coefficient registry entry is
+    selected by a lookup on the conformance scenarios, or its kernel hash appears in the
+    kernel_impls.json of an engine release that some supported inference-sim release pins.
   scope:
   - blis-substrate
   checks:

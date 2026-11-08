@@ -107,9 +107,9 @@
 - id: SIM-6
   section: §5
   statement: >-
-    A run that names no catalog or registry uses the embedded copy. A run that names a path uses that
-    directory instead of the embedded copy, plus any overlays the overlay flags name. A path flag
-    never overlays.
+    A run that names no catalog or coefficient registry uses the embedded copy. A run that names a
+    path uses that directory instead of the embedded copy, plus any overlays the overlay flags name.
+    A path flag never overlays.
   scope:
   - inference-sim
   checks:

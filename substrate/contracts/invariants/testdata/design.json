@@ -27,7 +27,7 @@
  {
   "ID": "X6",
   "Title": "Same inputs, same output.",
-  "Statement": "For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms. The data source (embedded or path) is recorded in the Result, but is left out of the output the byte gate compares. Simulated time is passed in as a number, and no code reads the system clock. Randomness comes from named substreams seeded from the scenario (DEV-6)."
+  "Statement": "For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and coefficient registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms. The data source (embedded or path) is recorded in the Result, but is left out of the output the byte gate compares. Simulated time is passed in as a number, and no code reads the system clock. Randomness comes from named substreams seeded from the scenario (DEV-6)."
  },
  {
   "ID": "X7",
@@ -97,7 +97,7 @@
  {
   "ID": "X20",
   "Title": "",
-  "Statement": "Every commit written for BLIS is signed. Every commit that contains work by a person or an agent carries a DCO Signed-off-by line from the person who takes responsibility for it; an agent never signs off, since only a person can certify the DCO. A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies to every commit not reachable from the upstream tag being merged; upstream history is kept as upstream wrote it."
+  "Statement": "Every commit written for BLIS is signed. Every commit that contains work by a person or an agent carries a DCO Signed-off-by line from the person who takes responsibility for it. An agent never signs off in its own name, since only a person can certify the DCO; an agent that pushes commits for a person, on that person’s instruction and with that person’s key, signs and signs off in that person’s name, and the person is responsible for them. A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies to every commit not reachable from the upstream tag being merged; upstream history is kept as upstream wrote it."
  },
  {
   "ID": "X21",
@@ -107,7 +107,7 @@
  {
   "ID": "X22",
   "Title": "",
-  "Statement": "Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull request, and is run again when merging changes a path it covers; an agent's or person's verdict is on the head tree, and is requested again when merging changes a path it covers. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states the minimum number of items it must process, and fails below it. No step in a required job ignores an exit code."
+  "Statement": "Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull request. An agent's or person's verdict is on the head tree, and is given again after a push. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states the minimum number of items it must process, and fails below it. No step in a required job ignores an exit code."
  },
  {
   "ID": "X23",
@@ -182,7 +182,7 @@
  {
   "ID": "SUB-9",
   "Title": "",
-  "Statement": "Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between catalog and registry), and the same content hash. The embedded patterns equal the loader's patterns."
+  "Statement": "Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between the catalog and the coefficient registry), and the same content hash. The embedded patterns equal the loader's patterns."
  },
  {
   "ID": "SUB-10",
@@ -217,7 +217,7 @@
  {
   "ID": "SUB-16",
   "Title": "",
-  "Statement": "Quantities carry units as types. Bytes, seconds, tokens, FLOPs, bytes per second and dimensionless ratios are distinct Go types in contracts/, and so are per-rank, per-node and per-group amounts, so adding a byte count to a token count, or a per-rank amount to a per-group one, does not compile. A registry entry's unit equals the unit the formula reading it requires, checked when the registry loads. An efficiency lies in (0, 1]. A quantised format is one type (payload bits, scale bits, block shape) with one function for its stored bytes."
+  "Statement": "Quantities carry units as types. Bytes, seconds, tokens, FLOPs, bytes per second and dimensionless ratios are distinct Go types in contracts/, and so are per-rank, per-node and per-group amounts, so adding a byte count to a token count, or a per-rank amount to a per-group one, does not compile. A coefficient registry entry's unit equals the unit the formula reading it requires, checked when the coefficient registry loads. An efficiency lies in (0, 1]. A quantised format is one type (payload bits, scale bits, block shape) with one function for its stored bytes."
  },
  {
   "ID": "SUB-17",
@@ -227,7 +227,7 @@
  {
   "ID": "SUB-18",
   "Title": "",
-  "Statement": "Provenance is recorded per field, not per file. A catalog field holds a datasheet figure, a published figure, or a measurement of one named device, and says which. A fitted or assumed value is a coefficient, and belongs in the registry."
+  "Statement": "Provenance is recorded per field, not per file. A catalog field holds a datasheet figure, a published figure, or a measurement of one named device, and says which. A fitted or assumed value is a coefficient, and belongs in the coefficient registry."
  },
  {
   "ID": "SUB-19",
@@ -252,7 +252,7 @@
  {
   "ID": "VLM-3",
   "Title": "",
-  "Statement": "fields.json classifies every configuration field and every environment variable the release reads, including those read by the communication libraries it uses (NCCL_*, NVSHMEM_*, UCX_*), as modelled, proven inert (with a passing proof), or not modelled (with an issue). No other status is allowed, except one a release plan allows for a stated time (glossary: Inert, unproven). A field is modelled when the port reads it and setting it changes a decision in a recorded trace, or a field of the emitted plan or step shape that the cost model prices (SUB-11). Its evidence is an oracle scenario that sets it and whose trace the port reproduces, or a test that sets it and finds the emitted plan or step shape equal to the upstream's own resolution. A field that reaches only a plan or step-shape field on SUB-11's not-yet-priced list is not modelled, and cites that list's issue. A field the port reads but carries to no decision, plan or step shape is proven inert or not modelled. A field marked modelled records the value classes its evidence covers: for a boolean or enumerated field, the values its evidence sets; for an ordered numeric field, the range its evidence sets, split at every threshold the upstream compares the field with, generated from the upstream's comparisons. The probe values of a proven-inert field follow the same classes. A field that can name code outside the pinned release, such as a class or module path, is marked so. A field marked not modelled cites an open issue that names the setting or its group, and says why the port does not model it, what the setting does upstream, and the milestone that models it or the reason it never will. Each field also states its estimation rule (§11.2), or that it has none."
+  "Statement": "The engine’s field list classifies every configuration field and every environment variable the pinned release reads, including those read by the communication libraries it uses, as modelled, proven inert (with a passing proof), or not modelled (with an issue). No other status is allowed, except one a release plan allows for a stated time (glossary: Inert, unproven). A field is modelled when the port reads it and setting it changes a decision in a recorded trace, or a field of the emitted plan or step shape that the cost model prices (SUB-11). Its evidence is an oracle scenario that sets it and whose trace the port reproduces, or a test that sets it and finds the emitted plan or step shape equal to the upstream's own resolution. A field that reaches only a plan or step-shape field on SUB-11's not-yet-priced list is not modelled, and cites that list's issue. A field the port reads but carries to no decision, plan or step shape is proven inert or not modelled. A field marked modelled records the value classes its evidence covers: for a boolean or enumerated field, the values its evidence sets; for an ordered numeric field, the range its evidence sets, split at every threshold the upstream compares the field with, generated from the upstream's comparisons. The probe values of a proven-inert field follow the same classes. A field that can name code outside the pinned release, such as a class or module path, is marked so. A field marked not modelled cites an open issue that names the setting or its group, and says why the port does not model it, what the setting does upstream, and the milestone that models it or the reason it never will. Each field also states its estimation rule (§11.2), or that it has none."
  },
  {
   "ID": "VLM-4",
@@ -272,7 +272,7 @@
  {
   "ID": "VLM-7",
   "Title": "",
-  "Statement": "Every KV-cache spec type and group role the pinned release registers in KVCacheSpecRegistry has a status in surface.json that X9 allows. For a modelled one, the manager the registry maps it to is ported, with oracle scenarios that allocate, evict and free its blocks and, where the manager supports prefix caching, share a prefix between requests. A model whose layers need a refused spec type is refused before the run starts, with a message naming the spec type. The grouping of layers into KV-cache groups at start-up, and the coordinators that run one manager per group, are ported once and serve every manager."
+  "Statement": "Every KV-cache spec type and group role the pinned release registers in KVCacheSpecRegistry has a status in surface.json that X9 allows. For a modelled one, the manager that KVCacheSpecRegistry maps it to is ported, with oracle scenarios that allocate, evict and free its blocks and, where the manager supports prefix caching, share a prefix between requests. A model whose layers need a refused spec type is refused before the run starts, with a message naming the spec type. The grouping of layers into KV-cache groups at start-up, and the coordinators that run one manager per group, are ported once and serve every manager."
  },
  {
   "ID": "SGL-1",
@@ -287,7 +287,7 @@
  {
   "ID": "SGL-3",
   "Title": "",
-  "Statement": "fields.json covers SGLang's ServerArgs and its SGLANG_* environment variables, under the rules of VLM-3. Defaults are resolved as SGLang's own resolution hooks resolve them."
+  "Statement": "The field list covers every configuration field and every environment variable the pinned SGLang release reads, under the rules of VLM-3. Defaults are resolved as SGLang's own resolution hooks resolve them."
  },
  {
   "ID": "SGL-4",
@@ -367,7 +367,7 @@
  {
   "ID": "SIM-6",
   "Title": "",
-  "Statement": "A run that names no catalog or registry uses the embedded copy. A run that names a path uses that directory instead of the embedded copy, plus any overlays the overlay flags name. A path flag never overlays."
+  "Statement": "A run that names no catalog or coefficient registry uses the embedded copy. A run that names a path uses that directory instead of the embedded copy, plus any overlays the overlay flags name. A path flag never overlays."
  },
  {
   "ID": "SIM-7",
@@ -427,7 +427,7 @@
  {
   "ID": "CFG-4",
   "Title": "",
-  "Statement": "A specification ranks and checks configurations on any metric of the metric registry, at any scope (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99 time to first token over instances, and output tokens per second per accelerator for one pool. Every metric it uses has one definition from the registry, shared by the search, the ranking and the report (DEV-8), and every figure states its metric, scope and aggregate. A run that is overloaded or incomplete is never ranked (DEV-10)."
+  "Statement": "A specification ranks and checks configurations on any metric of the metric registry, at any scope (§8.7). Examples are the p95 time to first token for the whole cluster, the largest p99 time to first token over instances, and output tokens per second per accelerator for one pool. Every metric it uses has one definition in the metric registry, shared by the search, the ranking and the report (DEV-8), and every figure states its metric, scope and aggregate. A run that is overloaded or incomplete is never ranked (DEV-10)."
  },
  {
   "ID": "CFG-5",
@@ -592,7 +592,7 @@
  {
   "ID": "VAL-8",
   "Title": "",
-  "Statement": "A lookup matches a coefficient only for the exact kernel implementation that runs. A value taken from a different implementation is a transferred entry (D5). Every registry entry is selected by a lookup on the conformance scenarios, or its kernel hash appears in the kernel_impls.json of an engine release that some supported inference-sim release pins."
+  "Statement": "A lookup matches a coefficient only for the exact kernel implementation that runs. A value taken from a different implementation is a transferred entry (D5). Every coefficient registry entry is selected by a lookup on the conformance scenarios, or its kernel hash appears in the kernel_impls.json of an engine release that some supported inference-sim release pins."
  },
  {
   "ID": "VAL-9",
