@@ -3,12 +3,12 @@
 #
 #   scripts/kernel/price-report.sh OLD_REPO OUT_DIR
 #
-# OLD_REPO is a checkout of inference-sim v0.15.0 (the last release that runs the old fixtures;
+# OLD_REPO is a checkout of the v0.15.0 release of inference-sim (the last release that runs the old fixtures;
 # `git worktree add OLD_REPO v0.15.0`; the script writes scripts/kernel/priceprobe into it, so use
 # a throwaway worktree). REPORT_BASE is the commit whose testdata/kernel holds the old fixtures: the
 # parent of the commit that regenerated them. OUT_DIR receives the probe outputs and the report.
 set -euo pipefail
-OLD_REPO=${1:?path to an inference-sim v0.15.0 checkout}
+OLD_REPO=${1:?path to a checkout of the v0.15.0 release of inference-sim}
 OUT=${2:?output directory}
 BASE=${REPORT_BASE:?commit holding the old testdata/kernel (the parent of the regeneration)}
 HERE=$(cd "$(dirname "$0")/../.." && pwd)

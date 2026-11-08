@@ -26,10 +26,11 @@ package selected
 import _ "github.com/inference-sim/inference-sim/cmd"
 GO
 # The main module's own packages come from the checkout.
+placeholder_version=v0.0.0-00010101000000-000000000000
 echo "replace github.com/inference-sim/inference-sim => $root" >> "$scratch/go.mod"
 sed -i.bak 's#^module github.com/inference-sim/inference-sim$#module blis.test/selected#' "$scratch/go.mod"
 rm -f "$scratch/go.mod.bak"
-(cd "$scratch" && go mod edit -require=github.com/inference-sim/inference-sim@v0.0.0-00010101000000-000000000000)
+(cd "$scratch" && go mod edit -require="github.com/inference-sim/inference-sim@${placeholder_version}")
 
 cd "$scratch"
 pkgs="$(go list -deps ./selected | grep -E '^(github.com/inference-sim/blis-vllm|github.com/llm-d/llm-d-router)(/|$)' || true)"

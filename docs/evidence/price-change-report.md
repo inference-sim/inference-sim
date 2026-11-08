@@ -10,7 +10,7 @@ Rerun it at a later pin with the script; the numbers below are for the pin of th
 (blis-substrate 4a3becf2d09a, blis-vllm 44fb7c506b6c).
 
 
-Every cost-model fixture (testdata/kernel) priced in two builds on the same catalog and registry: before, inference-sim v0.15.0 on the fixtures as v0.5.0 wrote them; after, this branch on the regenerated fixtures (`engine: {kind: vllm, version: "0.32.0"}`, only what each run stated, X19). Steps: decode batches of 1, 32 and 256 sequences at context 4096, one prefill of 2048 tokens; KV bytes per sequence at 1024 tokens; fixed bytes.
+Every cost-model fixture (testdata/kernel) priced in two builds on the same catalog and registry: before, the v0.15.0 release of inference-sim on the fixtures as v0.5.0 wrote them; after, this branch on the regenerated fixtures (`engine: {kind: vllm, version: "0.32.0"}`, only what each run stated, X19). Steps: decode batches of 1, 32 and 256 sequences at context 4096, one prefill of 2048 tokens; KV bytes per sequence at 1024 tokens; fixed bytes.
 
 688 fixtures priced in both builds: 678 regenerated, 10 hand-written (engine block unchanged). Not priced in both: 0.
 

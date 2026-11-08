@@ -5,7 +5,7 @@ fixtures to vLLM 0.32.0, stating only what each run stated (X19), did to the pri
     scripts/kernel/price_change_report.py BEFORE.jsonl AFTER.jsonl OLD_FIXTURES_DIR [NEW_FIXTURES_DIR]
 
 BEFORE and AFTER are `go run ./scripts/kernel/priceprobe` output (one JSON line per fixture) for
-the old fixtures priced by the build that ran them (inference-sim v0.15.0) and the new fixtures
+the old fixtures priced by the build that ran them (the v0.15.0 release of inference-sim) and the new fixtures
 priced by this build, on the same catalog and registry. OLD_FIXTURES_DIR is the old
 testdata/kernel (to read which settings each old fixture wrote); NEW_FIXTURES_DIR defaults to the
 repository's own. Prints markdown.
@@ -107,7 +107,7 @@ def main():
         (hw if a == b else gen).append(k)
     print("## Price-change report\n")
     print("Every cost-model fixture (testdata/kernel) priced in two builds on the same catalog and registry: "
-          "before, inference-sim v0.15.0 on the fixtures as v0.5.0 wrote them; after, this branch on the "
+          "before, the v0.15.0 release of inference-sim on the fixtures as v0.5.0 wrote them; after, this branch on the "
           "regenerated fixtures (`engine: {kind: vllm, version: \"0.32.0\"}`, only what each run stated, X19). "
           "Steps: decode batches of 1, 32 and 256 sequences at context 4096, one prefill of 2048 tokens; "
           "KV bytes per sequence at 1024 tokens; fixed bytes.\n")

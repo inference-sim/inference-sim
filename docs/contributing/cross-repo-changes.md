@@ -13,7 +13,7 @@ page adds the cross-repository steps around them.
 1. `go.mod`: blis-substrate and blis-vllm at their pushed heads' pseudo-versions (release tags
    before merge), then the llm-d router fork's `replace` at its `vX.Y.Z-blis.N` tag
    ([The llm-d Router Fork](llm-d-router-fork.md)). The fork's `replace` is the only one
-   (design X11), and `exclude github.com/inference-sim/blis-vllm v0.32.0` stays. Run
+   (design X11), and the `exclude` of blis-vllm's plain v0.32.0 tag stays. Run
    `go mod tidy`.
 2. The catalog and registry need no step: the tests read the `catalog/` and `registry/`
    directories of the blis-substrate module that `go.mod` selects
