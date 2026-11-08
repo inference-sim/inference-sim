@@ -47,7 +47,7 @@ the router's outbound HTTP (engine metrics, prompt rendering).
 | `IdleSkippable()` | Whether the host may skip background ticks over an idle period. |
 | `SetEndpoint`, `RemoveEndpoint` | The endpoints and their readiness. |
 | `Route(ctx, req, done)` | One routing decision. `done` receives a `Flight` and a `Decision`, or a `Rejection`, exactly once. |
-| `WantsKVEvents`, `IngestKVEvents`, `ClearKVEvents` | Engines' KV events, in vLLM's vocabulary (`BlockStored`, `BlockRemoved`, `AllBlocksCleared`). |
+| `WantsKVEvents`, `IngestKVEvents`, `ClearKVEvents` | Engines' KV events, in vLLM's vocabulary (`BlockStored`, `BlockRemoved`, `AllBlocksCleared`). A batch names the engine that published it in `KVBatch.Engine`, `vllm` or `sglang`; unset means `vllm`, and a router refuses any other value instead of decoding it as vLLM's. |
 | `Stop()` | Ends every loop and goroutine the router started. |
 
 `KVIndexInspector` is an optional capability, found by type assertion, for a router that can

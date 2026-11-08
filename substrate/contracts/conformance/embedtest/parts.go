@@ -364,6 +364,24 @@ func partKV(e *env) {
 	e.rt.Advance(e.s.Observe)
 	holds(b, nil, "after it was cleared")
 	goes(a, "the other endpoint's blocks were cleared")
+
+	// The engine a batch names: an unset kind is vLLM's, SGLang's is accepted, and a kind the
+	// contract does not define is refused, not decoded as vLLM's.
+	named := func(kind string) error {
+		return e.r.IngestKVEvents(e.ctx(), b, e.s.Model,
+			embed.KVBatch{Timestamp: e.rt.Now(), Engine: kind, Events: []embed.KVEvent{e.stored(prompt, blocks, 0)}})
+	}
+	for _, kind := range []string{"", embed.EngineVLLM, embed.EngineSGLang} {
+		if err := named(kind); err != nil {
+			e.fail("IngestKVEvents with Engine %q: %v", kind, err)
+		}
+	}
+	e.rt.Settle()
+	e.rt.Advance(e.s.Observe)
+	holds(b, e.hashes(0, blocks), "after batches that named vllm, sglang and no engine")
+	if err := named("tensorrt"); err == nil {
+		e.fail("IngestKVEvents accepted Engine \"tensorrt\", which the contract does not define; it must refuse it")
+	}
 }
 
 // stored is a BlockStored of the first n blocks of prompt, keyed from base.

@@ -508,6 +508,37 @@ type KVBatch struct {
 	// that keeps vLLM's float-seconds form converts it as float64(Timestamp.UnixNano())/1e9.
 	Timestamp time.Time
 	Events    []KVEvent
+	// Engine is the engine kind that published the batch: EngineVLLM or EngineSGLang. A
+	// router that decodes events as the engine's own adapter does reads it to pick the
+	// adapter, because the two adapters read the same event differently (SGLang carries a
+	// cache salt where vLLM folds it into the extra keys). "" means EngineVLLM, so a batch
+	// built before the field existed means what it always meant. A router that is given a
+	// value it does not know refuses the batch rather than decoding it as vLLM's.
+	Engine string
+}
+
+// The engine kinds a KVBatch names. They are the kinds the engine repositories register
+// (engine.Spec.Kind), so a router and a host agree on them without a second list.
+const (
+	EngineVLLM   = "vllm"
+	EngineSGLang = "sglang"
+)
+
+// EngineOf returns the engine kind a batch names, with "" read as EngineVLLM.
+func (b KVBatch) EngineOf() string {
+	if b.Engine == "" {
+		return EngineVLLM
+	}
+	return b.Engine
+}
+
+// Known reports whether the batch names an engine kind this contract defines.
+func (b KVBatch) Known() bool {
+	switch b.EngineOf() {
+	case EngineVLLM, EngineSGLang:
+		return true
+	}
+	return false
 }
 
 // KVEvent is BlockStored, BlockRemoved or AllBlocksCleared. AllBlocksCleared joined the

@@ -82,6 +82,7 @@ func TestMutationsFail(t *testing.T) {
 		{checkStalePool, "check: Check saw Pool"},
 		{inspectorStale, "kv: KVBlocks(10.0.0.2:8000) after its blocks were removed holds 1 blocks; want 0"},
 		{addressKept, "at the address it was updated to"},
+		{unknownEngineKept, `accepted Engine "tensorrt"`},
 		{requestTTLIgnored, "Request.TTL 1.25s did not bound its wait"},
 		{unauditedAllowed, "unaudited: construction succeeded although experimental has not been audited"},
 		{unauditedNoAsk, "unaudited: Allow was never asked about experimental"},
