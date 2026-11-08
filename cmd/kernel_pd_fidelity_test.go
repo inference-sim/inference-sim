@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,13 +122,4 @@ func TestRunCmd_KernelBackend_PDHandoffRefusals(t *testing.T) {
 		!strings.Contains(stderr, "BLIS models NIXL's handoff") {
 		t.Errorf("a MooncakeConnector handoff must be refused; err=%v\n%s", err, lastLines(stderr, 3))
 	}
-}
-
-func mustMarshal(t *testing.T, v any) []byte {
-	t.Helper()
-	b, err := json.Marshal(v)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
 }

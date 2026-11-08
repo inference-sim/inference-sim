@@ -117,8 +117,6 @@ nav:
       - validation/index.md
       - "InferenceX DSV4.1 Agentic": validation/inferencex-agentic.md
       - "InferenceX Single-Turn": validation/inferencex-single-turn.md
-      - "Price-change report (vLLM 0.32.0 fixtures)": validation/price-change-report.md
-      - "Golden equivalence (Result schema 2)": validation/golden-equivalence.md
       - "Internal llm-d Deployments": validation/internal-deployments.md
       - "llm-d Prism": validation/llm-d-prism.md
   - Change evidence:

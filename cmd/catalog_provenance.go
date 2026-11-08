@@ -20,8 +20,6 @@ func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.Ke
 	return out
 }
 
-// buildVersions reads the BLIS and blis-substrate versions from the binary's build
-// information; see versionsFrom.
 // buildRevision is the commit a binary was built from, set with
 //
 //	go build -ldflags "-X github.com/inference-sim/inference-sim/cmd.buildRevision=$(git rev-parse HEAD)$(git diff --quiet HEAD || echo -dirty)"
@@ -30,11 +28,6 @@ func kernelProvenance(colocated *engineModel, pd *kernelPools) map[string]sim.Ke
 // .git is a directory, so a git worktree (whose .git is a file) builds with no VCS settings.
 // A stamped vcs.revision wins over it.
 var buildRevision string
-
-func buildVersions() *sim.BuildVersions {
-	info, _ := debug.ReadBuildInfo()
-	return versionsFrom(info)
-}
 
 // versionsFrom extracts the build pins from build information. A local build's main module
 // is "(devel)"; its VCS revision, when the toolchain stamped one, is appended so the file

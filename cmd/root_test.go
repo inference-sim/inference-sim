@@ -917,19 +917,19 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
-	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, gpuVal string
-	defaultsFile                                                                string
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, kvCPU, baseLatency    int64
-	threshold, maxModelLen                                                      int64
-	offload, bandwidth                                                          float64
-	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix    int
-	rateV                                                                       float64
-	seedV                                                                       int64
-	traceLvl, workloadT, sched, workloadSpec                                    string
-	promptMean, promptStdev, promptMin, promptMax                               int
-	outputMean, outputStdev, outputMin, outputMax                               int
-	requestTimeout                                                              int
-	lazy                                                                        bool
+	model, policyConfig, traceOut, logLvl, catalogDir, gpuVal                string
+	defaultsFile                                                             string
+	totalKV, blockSize, maxRunning, maxSched, simHorizon, kvCPU, baseLatency int64
+	threshold, maxModelLen                                                   int64
+	offload, bandwidth                                                       float64
+	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix int
+	rateV                                                                    float64
+	seedV                                                                    int64
+	traceLvl, workloadT, sched, workloadSpec                                 string
+	promptMean, promptStdev, promptMin, promptMax                            int
+	outputMean, outputStdev, outputMin, outputMax                            int
+	requestTimeout                                                           int
+	lazy                                                                     bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
