@@ -30,6 +30,7 @@ interface in its own repository with no change here or in the simulator.
 | `InFlightLimit() int` | How many batches may be in flight at once (for vLLM, `max_concurrent_batches`); at least one. |
 | `Metrics(now Time) Metrics` | The engine's exported metrics. |
 | `Snapshot() State` | Current state (waiting, running, in-flight, KV capacity), a copy the caller may keep. |
+| `Fields() fields.FieldList` | The field list of the engine release this engine models: every configuration field and environment variable it reads, with its status and estimation rule (design VLM-3, SGL-3). The substrate defines the method and the shape of a list ([the field list](fields.md)) and holds no engine's fields. The same list on every call, valid under `FieldList.Validate`, naming the engine kind and upstream release. `inference-sim fields` prints what the registered engine returns, without reading it. |
 
 Calls are sequential: a simulator never calls an engine from two goroutines, and an engine
 starts none.

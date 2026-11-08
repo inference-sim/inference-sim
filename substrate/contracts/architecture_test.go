@@ -82,11 +82,19 @@ func TestRulesPackagesAreVersioned(t *testing.T) {
 	}
 }
 
-// TestEngineIsEngineNeutral: the engine contract names no engine, so it imports nothing
-// from this module. A document type or a rules pack reaching into it would make a second
-// engine edit this module to plug in, which is what the contract exists to rule out.
+// TestEngineIsEngineNeutral: the engine contract names no engine, so it imports nothing from
+// this module beyond the one document type its Fields method returns. A document type or a
+// rules pack reaching into it would make a second engine edit this module to plug in, which is
+// what the contract exists to rule out.
+//
+// The exception is the field list (spec/fields) and the strict-decoding helpers it is built
+// on (check). The list is a document about engines in general: it holds no engine's fields, and
+// each engine repository states its own (design VLM-3, SGL-3). It is allowed because the
+// design makes it a method of engine.Engine, and it is the only one: every other package under
+// contracts/ stays out of engine's dependencies.
 func TestEngineIsEngineNeutral(t *testing.T) {
 	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	allowed := map[string]bool{"spec/fields": true, "check": true}
 	for _, pkg := range []string{"./engine", "./conformance/enginetest"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {
@@ -94,9 +102,25 @@ func TestEngineIsEngineNeutral(t *testing.T) {
 		}
 		for _, dep := range strings.Split(string(out), "\n") {
 			rel, ok := strings.CutPrefix(dep, mod)
-			if ok && !strings.HasPrefix(rel, "engine") && rel != "conformance/enginetest" {
-				t.Errorf("%s depends on %s; the engine contract must not know any document type or rules pack", pkg, rel)
+			if ok && !strings.HasPrefix(rel, "engine") && rel != "conformance/enginetest" && !allowed[rel] {
+				t.Errorf("%s depends on %s; the engine contract must not know any document type or rules pack beyond spec/fields", pkg, rel)
 			}
+		}
+	}
+}
+
+// X18 for the engine-neutrality rule: spec/fields does not itself reach a rules pack, a
+// scenario, a model or any other document, so allowing it does not let those in behind it.
+func TestTheFieldListImportsNoEngineKnowledge(t *testing.T) {
+	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	out, err := exec.Command("go", "list", "-deps", "./spec/fields").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dep := range strings.Split(string(out), "\n") {
+		rel, ok := strings.CutPrefix(dep, mod)
+		if ok && rel != "spec/fields" && rel != "check" {
+			t.Errorf("spec/fields depends on %s; it may import only check, or the exception in TestEngineIsEngineNeutral would let it in", rel)
 		}
 	}
 }

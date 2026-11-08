@@ -9,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 )
 
 // FIFO is a deliberately small engine that is not a model of any real server: first come
@@ -334,6 +335,24 @@ func (f *FIFO) NextWake(now engine.Time) (engine.Time, bool) {
 
 // InFlightLimit implements engine.Engine.
 func (f *FIFO) InFlightLimit() int { return f.cfg.InFlight }
+
+// Fields implements engine.Engine. The test engine reads one field, its in-flight bound,
+// and models it; a real engine returns the list of its whole upstream release.
+func (f *FIFO) Fields() fields.FieldList {
+	return fields.FieldList{
+		Kind:   fields.Kind,
+		Engine: fields.Engine{Kind: "fifo", Version: "0"},
+		Fields: []fields.Field{{
+			Name:   "max_concurrent_batches",
+			Source: fields.SourceConfig,
+			Status: fields.StatusModelled,
+			Evidence: fields.Evidence{
+				Traces: []string{"contracts/conformance/enginetest/enginetest_test.go"},
+			},
+			Estimation: fields.Estimation{Rule: fields.RuleNone},
+		}},
+	}
+}
 
 // Metrics implements engine.Engine.
 func (f *FIFO) Metrics(now engine.Time) engine.Metrics {

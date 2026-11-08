@@ -19,6 +19,8 @@ package engine
 import (
 	"errors"
 	"fmt"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 )
 
 // Time is a simulated instant in microseconds since the start of a run. It is a value,
@@ -92,6 +94,17 @@ type Engine interface {
 	// Snapshot returns the engine's current state for routing and tests. It is a copy the
 	// caller may keep.
 	Snapshot() State
+
+	// Fields returns the field list of the engine release this engine models: every
+	// configuration field and environment variable it reads, each with its status and the
+	// estimation rule a scoring harness applies (design VLM-3, SGL-3). The substrate defines
+	// this method and the shape of a list (spec/fields) and holds no engine's fields: a list
+	// depends on the engine and its release, and only the engine repository can state it.
+	//
+	// The list is the same on every call and valid under fields.FieldList.Validate, and its
+	// Engine names the kind and the upstream release this engine was built for. A simulator's
+	// `fields` command prints what the registered engine returns without reading it.
+	Fields() fields.FieldList
 }
 
 // Pipelined is implemented by an engine whose batches run through more than one pipeline

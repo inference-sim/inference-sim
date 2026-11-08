@@ -357,6 +357,9 @@ func Drive(newEngine func() (engine.Engine, error), arrivals []Arrival, opt Opti
 	if e.InFlightLimit() < 1 {
 		return Trace{}, fmt.Errorf("InFlightLimit() = %d, want at least 1", e.InFlightLimit())
 	}
+	if err := CheckFields(e); err != nil {
+		return Trace{}, err
+	}
 	d := &driver{
 		e: e, opt: opt,
 		started: map[engine.BatchID]engine.Time{}, batches: map[engine.BatchID]engine.Batch{},
@@ -451,6 +454,21 @@ func (q *queue) peek() *event {
 		return nil
 	}
 	return (*q)[0]
+}
+
+// CheckFields checks the field list an engine reports (design VLM-3): it validates as a list,
+// it names an engine kind and an upstream release, and a second call returns the same list.
+// The substrate holds no engine's fields, so it cannot check that the list is complete; that
+// is the engine repository's own completeness check.
+func CheckFields(e engine.Engine) error {
+	l := e.Fields()
+	if err := l.Validate(); err != nil {
+		return fmt.Errorf("Fields() is not a valid field list: %w", err)
+	}
+	if again := e.Fields(); !reflect.DeepEqual(l, again) {
+		return fmt.Errorf("Fields() returned a different list on a second call")
+	}
+	return nil
 }
 
 // TestEngine drives arrivals through newEngine twice and fails on any broken law, or if the
