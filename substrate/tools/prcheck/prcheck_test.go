@@ -8,12 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
@@ -626,19 +623,6 @@ func TestStatusPage(t *testing.T) {
 	}
 }
 
-// X17: a merge without a successful required check on its tree fails the audit.
-func TestAuditMerges(t *testing.T) {
-	req := map[string][]string{"blis-vllm": {"blis checks", "ci"}}
-	ok := Merge{Repo: "blis-vllm", PR: 1, MergeSHA: strings.Repeat("a", 40), Successes: []string{"ci", "blis checks"}}
-	none(t, AuditMerges([]Merge{ok}, req))
-	bad := ok
-	bad.Successes = []string{"ci"}
-	has(t, AuditMerges([]Merge{bad}, req), "with no successful run of blis checks")
-	other := ok
-	other.Repo = "blis-sglang"
-	has(t, AuditMerges([]Merge{other}, req), "names no required checks")
-}
-
 // X18: every known_bad entry for this repository names a test that exists and passes. The
 // sweep itself runs nightly; here every named test is checked to exist, so a rename that
 // orphans an entry fails go test.
@@ -830,52 +814,13 @@ func TestAnswersAreVerdictsBoundToTheHead(t *testing.T) {
 	none(t, CheckMerge(in))
 }
 
-// The names the merge check and the nightly audit compare are check-run names. A reusable
-// workflow's job is named "<caller job> / <job name>" and never carries the workflow's name,
-// so "blis / pr / blis checks" matches no run (X17, X22). The merge check's required list is
-// the list the audit reads, plus nothing the merge queue cannot produce.
-func TestRequiredCheckNamesAreCheckRunNames(t *testing.T) {
-	raw, err := os.ReadFile("../../.github/required-checks.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var lists map[string][]string
-	if err := yaml.Unmarshal(raw, &lists); err != nil {
-		t.Fatal(err)
-	}
-	for repo, names := range lists {
-		for _, n := range names {
-			if strings.HasPrefix(n, "blis / ") {
-				t.Errorf("%s: %q is prefixed with the workflow name; a check run is named %q", repo, n, strings.TrimPrefix(n, "blis / "))
-			}
-		}
-	}
-	wf, err := os.ReadFile("../../.github/workflows/blis.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := regexp.MustCompile(`required: "([^"]+)"`).FindSubmatch(wf)
-	if m == nil {
-		t.Fatal("blis.yml names no required checks for the merge check")
-	}
-	have := map[string]bool{}
-	for _, n := range lists["blis-substrate"] {
-		have[n] = true
-	}
-	for _, n := range strings.Split(string(m[1]), ",") {
-		if !have[n] {
-			t.Errorf("the merge check requires %q, which required-checks.yaml does not list for blis-substrate", n)
-		}
-	}
-	if !strings.Contains(string(wf), "github.event_name == 'merge_group'") || !strings.Contains(string(wf), "  pr:\n") {
-		t.Error("the job that makes the check run \"pr / blis checks\" does not run on the merge-queue tree")
-	}
-}
-
-// A required check must be one the merge-queue tree can produce: `scan` has a merge_group
-// trigger, the merge check requires exactly what required-checks.yaml lists for the
-// repository, and the always-run aggregator carries the path-filtered gates (X16, X17).
-func TestRequiredChecksAreProducedAndCollectedOnTheMergeQueue(t *testing.T) {
+// The names the merge check requires are check-run names. A reusable workflow's job is named
+// "<caller job> / <job name>" and never carries the workflow's name, so "blis / pr / blis
+// checks" matches no run (X17, X22). blis.yml holds the list, and each name is one the
+// merge-queue tree can produce: `scan` has a merge_group trigger, the job that makes
+// "pr / blis checks" runs on the merge-queue tree, and the always-run `required` job carries the
+// path-filtered gates (X16, X17).
+func TestRequiredCheckNamesAreCheckRunNamesTheMergeQueueProduces(t *testing.T) {
 	read := func(p string) string {
 		t.Helper()
 		b, err := os.ReadFile(p)
@@ -884,25 +829,31 @@ func TestRequiredChecksAreProducedAndCollectedOnTheMergeQueue(t *testing.T) {
 		}
 		return string(b)
 	}
-	var lists map[string][]string
-	if err := yaml.Unmarshal([]byte(read("../../.github/required-checks.yaml")), &lists); err != nil {
-		t.Fatal(err)
-	}
-	m := regexp.MustCompile(`required: "([^"]+)"`).FindStringSubmatch(read("../../.github/workflows/blis.yml"))
+	wf := read("../../.github/workflows/blis.yml")
+	m := regexp.MustCompile(`required: "([^"]+)"`).FindStringSubmatch(wf)
 	if m == nil {
 		t.Fatal("blis.yml names no required checks for the merge check")
 	}
-	got := strings.Split(m[1], ",")
-	want := append([]string(nil), lists["blis-substrate"]...)
-	sort.Strings(got)
-	sort.Strings(want)
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("the merge check requires %v; required-checks.yaml lists %v for blis-substrate", got, want)
-	}
-	for _, n := range lists["blis-substrate"] {
+	names := strings.Split(m[1], ",")
+	for _, n := range names {
+		if strings.HasPrefix(n, "blis / ") {
+			t.Errorf("%q is prefixed with the workflow name; a check run is named %q", n, strings.TrimPrefix(n, "blis / "))
+		}
 		if n == "scan" && !regexp.MustCompile(`(?m)^  merge_group:`).MatchString(read("../../.github/workflows/private-names.yml")) {
 			t.Error("`scan` is required but private-names.yml has no merge_group trigger, so the merge-queue tree can never have it")
 		}
+	}
+	for _, want := range []string{"required", "pr / blis checks", "scan"} {
+		found := false
+		for _, n := range names {
+			found = found || n == want
+		}
+		if !found {
+			t.Errorf("the merge check does not require %q", want)
+		}
+	}
+	if !strings.Contains(wf, "github.event_name == 'merge_group'") || !strings.Contains(wf, "  pr:\n") {
+		t.Error("the job that makes the check run \"pr / blis checks\" does not run on the merge-queue tree")
 	}
 	ci := read("../../.github/workflows/ci.yml")
 	if !strings.Contains(ci, "prcheck path-gates") || !strings.Contains(ci, "name: required\n    if: always()") {

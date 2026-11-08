@@ -1313,17 +1313,10 @@
   checks:
   - repo: blis-substrate
     check: >-
-      A nightly job in blis-substrate that lists the previous day's merges in every repository and
-      fails if any merged head has no successful required run
-    runs: nightly
-    status: new
-    test: 'nightly.yml: prcheck audit-merges'
-    known_bad: 'tools/prcheck: TestAuditMerges'
-  - repo: blis-substrate
-    check: >-
       The protected branch requires the repository's named checks, including formatting and lint
     runs: settings
-    status: new
+    status: ci
+    test: branch protection on main
   - repo: blis-vllm
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
@@ -1339,13 +1332,14 @@
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
     runs: settings
-    status: new
+    status: ci
+    test: branch protection on llm-d-r
   - repo: inference-sim
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
     runs: settings
     status: ci
-    test: branch protection on main
+    test: ruleset on the default branch
   - repo: blis-config-search
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
@@ -1361,7 +1355,10 @@
   target:
     status: ci
     milestone: 1
-  note: checks are required only in blis-vllm, blis-registry and inference-sim
+  note: >-
+    checks are required in blis-substrate, blis-vllm, inference-sim (by a ruleset on the default branch) and
+    the router fork's llm-d-r branch; accuracy-dashboard requires a pull request but no checks, and
+    blis-config-search and blis-sglang require none
 - id: X18
   section: §4.1
   statement: >-

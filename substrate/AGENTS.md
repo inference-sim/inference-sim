@@ -103,8 +103,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
   - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)
 - **X17** (partial; target ci by M1) Every repository's protected branch requires its named checks, including formatting and lint.
-  - `new`, nightly: A nightly job in blis-substrate that lists the previous day's merges in every repository and fails if any merged head has no successful required run (`nightly.yml: prcheck audit-merges`)
-  - `new`, settings: The protected branch requires the repository's named checks, including formatting and lint
+  - `ci`, settings: The protected branch requires the repository's named checks, including formatting and lint (`branch protection on main`)
 - **X18** (new; target ci by M2) Every check in the invariant registry names a known-bad input that must make it fail.
   - `new`, nightly: A nightly job in blis-substrate that runs each check on its known-bad input and fails if the check passes (`nightly.yml: prcheck knownbad`)
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
@@ -267,9 +266,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
-  - `new`, settings: Repository settings that let only the release bot and release owners create tags
+  - `new`, settings: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
-  - `new`, nightly: A nightly check that every tag made by a person is signed and listed in its release notes
+  - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
 - **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
   - `new`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
 - **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.

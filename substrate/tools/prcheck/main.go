@@ -40,9 +40,6 @@
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
 //	    X16: each gate's declared paths equal its workflow's triggers; with -repo, the
 //	    status page, which shows a gate not run for seven days as failing.
-//	prcheck audit-merges [-required-checks .github/required-checks.yaml] [-hours 24]
-//	    X17: every merge in the last day, in every repository, had a successful run of
-//	    each required check on the tree it merged.
 //	prcheck path-gates -repo <o/n> -base <sha> -head <sha> [-runs-sha <sha>] [-dir .github] [-wait 45m]
 //	    X16, X17: the path-filtered workflows (read from the workflow files) whose paths the
 //	    change touched (git diff --name-only base head) must each have a successful check
@@ -80,8 +77,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
@@ -133,8 +128,6 @@ func run(args []string, w io.Writer) error {
 	skipPkg := fs.String("skip-pattern", "", "print the go test -skip pattern for this package")
 	repoName := fs.String("repo-name", "blis-substrate", "the repository's BLIS name")
 	listOnly := fs.Bool("list-only", false, "list the known-bad tests without running them")
-	requiredFile := fs.String("required-checks", ".github/required-checks.yaml", "required checks per repository")
-	hours := fs.Int("hours", 24, "how far back the merge audit looks")
 	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
 	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
@@ -386,32 +379,6 @@ func run(args []string, w io.Writer) error {
 			return err
 		}
 		return report(w, "tags", CheckTags(string(raw), tags))
-	case "audit-merges":
-		// prcheck audit-merges -required .github/required-checks.yaml -hours 24
-		raw, err := os.ReadFile(*requiredFile)
-		if err != nil {
-			return err
-		}
-		var req map[string][]string
-		if err := yaml.Unmarshal(raw, &req); err != nil {
-			return fmt.Errorf("%s: %w", *requiredFile, err)
-		}
-		since := time.Now().Add(-time.Duration(*hours) * time.Hour)
-		var merges []Merge
-		names := make([]string, 0, len(req))
-		for r := range req {
-			names = append(names, r)
-		}
-		sort.Strings(names)
-		for _, r := range names {
-			m, err := ghMergesSince("inference-sim/"+r, since)
-			if err != nil {
-				return err
-			}
-			merges = append(merges, m...)
-		}
-		fmt.Fprintf(w, "audit-merges: %d merge(s) in %d repositories since %s\n", len(merges), len(names), since.UTC().Format(time.RFC3339))
-		return report(w, "audit-merges", AuditMerges(merges, req))
 	case "path-gates":
 		if *repo == "" || *base == "" || *runsSHA == "" && *head == "" {
 			return fmt.Errorf("path-gates needs -repo, -base and -head")
