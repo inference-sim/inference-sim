@@ -495,3 +495,25 @@ func TestMeasuredRunThatFitsTheCatalogEntryPasses(t *testing.T) {
 	r.Cluster.GPUsPerNode = 8
 	requireProblemAt(t, r.ValidateAgainstCatalog(permitting(), gb200Chip()).Errors(), "cluster.gpus_per_node")
 }
+
+// X12: the loader's check of the licence registry is structural; the terms are judged in CI.
+func TestRegistryStructureIsTheLoadersAndTermsAreCIs(t *testing.T) {
+	r := &Registry{Kind: "MeasurementSources", Sources: []License{
+		// Verified, redistributable by its own statement, but the licence is off the allow-list
+		// and no evidence is quoted: a terms fault, not a structural one.
+		{ID: "x", Title: "X", License: "LicenseRef-unlisted", Status: LicenseVerified, Permits: []Use{UseRedistribute}},
+		// Unverified with no note: also terms.
+		{ID: "y", Title: "Y", Status: LicenseUnverified},
+	}}
+	if p := r.ValidateStructure(); !p.OK() {
+		t.Errorf("the loader's check judged licence terms:\n%s", p.Error())
+	}
+	p := r.Validate()
+	if p.OK() || !strings.Contains(p.Error(), "allow-list") || !strings.Contains(p.Error(), "X12") {
+		t.Errorf("the CI check did not refuse an off-list redistributable source: %v", p.Error())
+	}
+	bad := &Registry{Kind: "Other"}
+	if bad.ValidateStructure().OK() {
+		t.Error("a registry of the wrong kind passed the structural check")
+	}
+}

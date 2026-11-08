@@ -87,3 +87,22 @@ func TestIdentityValidateRejectsEmptyRequiredStrings(t *testing.T) {
 		t.Errorf("the empty repo was not reported at source.repo:\n%s", p.Error())
 	}
 }
+
+// X12: the structural check does not look at the licence block; the licence check does.
+func TestIdentityValidateLeavesTheLicenceToCI(t *testing.T) {
+	id := &Identity{Name: "m", Source: &Source{Provider: "p", Repo: "r", Revision: "v"}}
+	if p := id.Validate(); !p.OK() {
+		t.Fatalf("an identity with no licence failed the structural check:\n%s", p.Error())
+	}
+	p := id.ValidateLicence()
+	if p.OK() || !strings.Contains(p.Error(), "licence") || !strings.Contains(p.Error(), "X12") {
+		t.Errorf("the licence check did not require a licence naming X12: %v", p.Error())
+	}
+	id.Licence = &Licence{ID: "LicenseRef-other", Evidence: "http://x"}
+	if p := id.Validate(); !p.OK() {
+		t.Errorf("an invalid licence failed the structural check:\n%s", p.Error())
+	}
+	if id.ValidateLicence().OK() {
+		t.Error("an invalid licence passed the licence check")
+	}
+}

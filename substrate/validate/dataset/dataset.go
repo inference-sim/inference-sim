@@ -38,14 +38,30 @@ func CheckModelGraph(rel string, b []byte) (*model.Graph, *validate.Problems, er
 	return g, p, nil
 }
 
-// CheckModelIdentity checks models/<name>/model.yaml: the identity validates, and it names
-// itself what its directory is called.
+// CheckModelIdentity checks models/<name>/model.yaml: the identity is well formed, and it
+// names itself what its directory is called. It is the loader's check, and it does not look at
+// the licence block: no simulation path requires a licence (X12). CI uses
+// CheckModelIdentityLicensed.
 func CheckModelIdentity(rel string, b []byte) (*model.Identity, *validate.Problems, error) {
 	id, err := contracts.ParseModelIdentity(rel, b)
 	if err != nil {
 		return nil, nil, err
 	}
 	p := id.Validate()
+	if dir := path.Base(path.Dir(rel)); id.Name != dir {
+		p.Field("name", "model.yaml names itself %q but its directory is %q", id.Name, dir)
+	}
+	return id, p, nil
+}
+
+// CheckModelIdentityLicensed is CheckModelIdentity plus the CI rule that the entry records a
+// valid licence (X12). validate-catalog uses it; the loader does not.
+func CheckModelIdentityLicensed(rel string, b []byte) (*model.Identity, *validate.Problems, error) {
+	id, err := contracts.ParseModelIdentity(rel, b)
+	if err != nil {
+		return nil, nil, err
+	}
+	p := id.ValidateWithLicence()
 	if dir := path.Base(path.Dir(rel)); id.Name != dir {
 		p.Field("name", "model.yaml names itself %q but its directory is %q", id.Name, dir)
 	}
@@ -92,13 +108,15 @@ func CheckWorkload(rel string, b []byte) (*workload.CatalogWorkload, *validate.P
 	return w, w.Validate(), nil
 }
 
-// CheckMeasurementSources checks measurements/sources.yaml.
+// CheckMeasurementSources checks measurements/sources.yaml as the loader does: the registry is
+// well formed. It does not judge the licence terms (X12); validate-catalog does, through
+// Registry.Validate.
 func CheckMeasurementSources(rel string, b []byte) (*measurement.Registry, *validate.Problems, error) {
 	r, err := contracts.ParseMeasurementSources(rel, b)
 	if err != nil {
 		return nil, nil, err
 	}
-	return r, r.Validate(), nil
+	return r, r.ValidateStructure(), nil
 }
 
 // CheckCoefficientSet checks coefficients/<name>.yaml. A scenario names a set by its file

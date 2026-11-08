@@ -255,7 +255,7 @@ func validateModelIdentities(r *reporter, dirs []string) map[string]*model.Ident
 			r.loadFail(label, "model.yaml is a directory, not a file")
 			continue
 		}
-		id, p, err := checkFile(path, "models/"+name+"/model.yaml", dataset.CheckModelIdentity)
+		id, p, err := checkFile(path, "models/"+name+"/model.yaml", dataset.CheckModelIdentityLicensed)
 		if err != nil {
 			r.loadFail(label, "%v", err)
 			continue
