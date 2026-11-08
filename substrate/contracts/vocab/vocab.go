@@ -233,6 +233,25 @@ var rateBases = map[RateBasis]bool{RateBasisMemory: true, RateBasisWork: true}
 // Valid reports whether b is a recognized rate basis.
 func (b RateBasis) Valid() bool { return rateBases[b] }
 
+// FitDim names an input of a priced step that a fit's data can have covered (design VAL-10).
+// The set is closed so that a recorded range is one a lookup can check: a dimension the
+// cost model does not take as input could never mark a price extrapolated.
+type FitDim string
+
+const (
+	// FitTokens is the tokens one rank runs a forward over in a step, padding included.
+	FitTokens FitDim = "tokens"
+	// FitRequests is the requests in the step.
+	FitRequests FitDim = "requests"
+	// FitContextTokens is the longest context any request in the step reads.
+	FitContextTokens FitDim = "context_tokens"
+)
+
+var fitDims = map[FitDim]bool{FitTokens: true, FitRequests: true, FitContextTokens: true}
+
+// Valid reports whether d is a recognized fit dimension.
+func (d FitDim) Valid() bool { return fitDims[d] }
+
 // MeasurementTime and MeasurementExecution say what a measured coefficient's number includes
 // (design VAL-9): device time only, or host issue time as well; and whether the kernels ran
 // from a captured graph or eagerly. The formula that reads the coefficient declares the same.
@@ -282,6 +301,7 @@ func AllSourceRoles() []string           { return Enumerate(sourceRoles) }
 func AllRateBases() []string             { return Enumerate(rateBases) }
 func AllMeasurementTimes() []string      { return Enumerate(measurementTimes) }
 func AllMeasurementExecutions() []string { return Enumerate(measurementExecutions) }
+func AllFitDims() []string               { return Enumerate(fitDims) }
 
 func sortStrings(s []string) {
 	for i := 1; i < len(s); i++ {

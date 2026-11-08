@@ -283,8 +283,8 @@ func (e Entry) validateEvidenceRecords(p *validate.Problems, at string) {
 	seenDim := map[string]bool{}
 	for i, b := range e.FitRange {
 		bat := fmt.Sprintf("%s.fit_range[%d]", at, i)
-		if strings.TrimSpace(b.Dim) == "" {
-			p.Field(bat+".dim", "required")
+		if !vocab.FitDim(b.Dim).Valid() {
+			p.Field(bat+".dim", "%q is not one of %v", b.Dim, vocab.AllFitDims())
 		}
 		if seenDim[b.Dim] {
 			p.Field(bat+".dim", "duplicate dimension %q", b.Dim)

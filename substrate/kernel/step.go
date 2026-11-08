@@ -6,6 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/vocab"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 )
@@ -275,6 +276,11 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 			Overlap: host, NoOverlap: host,
 			Bottleneck:  kernel.ResourceHost,
 			PerResource: per,
+			// An empty step prices only the host's per-step cost, so only the entries a step
+			// with no tokens reads count; the fit ranges are checked at the empty step.
+			Trust: trustOf(k.trust, map[string]float64{
+				string(vocab.FitTokens): float64(tokens), string(vocab.FitRequests): 0,
+				string(vocab.FitContextTokens): 0}),
 		}
 	}
 	s := k.shapeOf(b)
@@ -366,6 +372,7 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	return kernel.StepEstimate{
 		Overlap: overlap, NoOverlap: noOverlap,
 		Bottleneck: bottleneck, PerResource: per,
+		Trust: trustOf(k.trust, s.inputs()),
 	}
 }
 

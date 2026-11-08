@@ -26,6 +26,7 @@ func TestVocabulariesAreClosed(t *testing.T) {
 		{"source roles", AllSourceRoles(), []string{
 			"primary", "supporting", "upper_bound"}},
 		{"rate bases", AllRateBases(), []string{"memory", "work"}},
+		{"fit dimensions", AllFitDims(), []string{"context_tokens", "requests", "tokens"}},
 		{"measurement times", AllMeasurementTimes(), []string{"device", "device_and_host"}},
 		{"measurement executions", AllMeasurementExecutions(), []string{"captured", "eager"}},
 	}

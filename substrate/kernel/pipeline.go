@@ -460,7 +460,7 @@ func (k *Kernel) stagedStepTime(b kernel.Batch,
 	}
 	_, bottleneck := summarize(&total, per)
 	return kernel.StepEstimate{Overlap: overlap, NoOverlap: noOverlap, Bottleneck: bottleneck,
-		PerResource: per, Stages: stages}
+		PerResource: per, Stages: stages, Trust: trustOf(k.trust, s.inputs())}
 }
 
 // stageHost is one stage's launch-and-replay cost, which every stage's worker pays for its

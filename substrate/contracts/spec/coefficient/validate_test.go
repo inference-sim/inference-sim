@@ -529,7 +529,10 @@ func TestEvidenceRecords(t *testing.T) {
 		{"fit range with a repeated dimension", "duplicate dimension", func(e *Entry) {
 			e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 2}, {Dim: "tokens", Low: 1, High: 3}}
 		}},
-		{"fit range with no dimension", "dim", func(e *Entry) { e.FitRange = []Bound{{Low: 1, High: 2}} }},
+		{"fit range with no dimension", "is not one of", func(e *Entry) { e.FitRange = []Bound{{Low: 1, High: 2}} }},
+		{"fit range with a dimension the cost model does not take", "is not one of", func(e *Entry) {
+			e.FitRange = []Bound{{Dim: "ranks", Low: 1, High: 2}}
+		}},
 		{"fit range on an assumed entry", "no fit range", func(e *Entry) {
 			e.Method, e.Fitted, e.Rationale = vocab.MethodAssumed, false, "reason"
 			e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 2}}
@@ -565,16 +568,16 @@ func TestUnidentifiedExtrapolatedAndEffectiveRank(t *testing.T) {
 			t.Errorf("%s: Unidentified = %v, want %v", c.name, got, c.unidentified)
 		}
 	}
-	e := Entry{Method: vocab.MethodMeasured, FitRange: []Bound{{Dim: "tokens", Low: 1, High: 100}, {Dim: "ranks", Low: 2, High: 8}}}
+	e := Entry{Method: vocab.MethodMeasured, FitRange: []Bound{{Dim: "tokens", Low: 1, High: 100}, {Dim: "requests", Low: 2, High: 8}}}
 	for _, c := range []struct {
 		name string
 		in   map[string]float64
 		want bool
 	}{
-		{"inside", map[string]float64{"tokens": 50, "ranks": 4}, false},
-		{"on the bound", map[string]float64{"tokens": 100, "ranks": 8}, false},
-		{"above on one dimension", map[string]float64{"tokens": 101, "ranks": 4}, true},
-		{"below on the other", map[string]float64{"tokens": 50, "ranks": 1}, true},
+		{"inside", map[string]float64{"tokens": 50, "requests": 4}, false},
+		{"on the bound", map[string]float64{"tokens": 100, "requests": 8}, false},
+		{"above on one dimension", map[string]float64{"tokens": 101, "requests": 4}, true},
+		{"below on the other", map[string]float64{"tokens": 50, "requests": 1}, true},
 		{"a recorded dimension not supplied is not judged", map[string]float64{"tokens": 50}, false},
 	} {
 		if got := e.Extrapolated(c.in); got != c.want {

@@ -220,6 +220,26 @@ type StepEstimate struct {
 	// The law, part of this contract: the stages' Overlap figures sum to Overlap and their
 	// NoOverlap figures sum to NoOverlap, exactly. Package kerneltest checks it.
 	Stages []StageEstimate
+
+	// Trust says how much the price rests on measurement (design VAL-3): the least trusted
+	// effective rank among the coefficients the price used. The zero value means the
+	// implementation does not report it, so the field is compatible with every implementer.
+	Trust Trust
+}
+
+// Trust is the least trusted effective rank among the coefficients a price used.
+//
+// Rank is a method's place in design §9.2, 1 (measured) to 7 (assumed). A lookup outside the
+// range its entry's fit covered counts as transferred (3), and an entry whose interval is
+// unbounded or wider than half its value counts as assumed (7), whichever is least trusted;
+// Flag then says "extrapolated" or "unidentified". Method is the method of the entry that sets
+// the rank, and Entry is its name. A price that used no ranked coefficient reports the zero
+// value.
+type Trust struct {
+	Rank   int
+	Method string
+	Flag   string
+	Entry  string
 }
 
 // StageEstimate is one pipeline stage's share of a step, bracketed as the step is.

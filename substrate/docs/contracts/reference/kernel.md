@@ -70,6 +70,17 @@ previous layer's output. Within a stage, work on different resources can overlap
     time, while each batch's output takes the whole sum. `kerneltest.CheckStages` checks the
     law.
 
+`Trust`
+:   How much the price rests on measurement (design VAL-3): the least trusted effective rank
+    among the coefficients the price used, with the method and the entry that set it. The rank
+    is a method's place in the order measured (1), calibrated, transferred, literature,
+    vendor_spec, roofline, assumed (7). A price that reads an entry outside the range its fit
+    covered ranks no better than transferred (3) and carries the flag `extrapolated`. An entry
+    whose 95% interval is unbounded or wider than half its value ranks as assumed (7) and
+    carries the flag `unidentified`; it keeps its method and its citations. The zero value
+    means the implementation does not report trust. Ties go to the entry whose name sorts
+    first, so the answer does not depend on the order of lookups.
+
 ## Unusual model shapes
 
 `conformance/shapetest` holds six model graphs that each differ from the catalog's models in one

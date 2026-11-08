@@ -308,7 +308,9 @@ type Kernel struct {
 	// construction, so the list is complete when New returns.
 	selected    []resolve.Resolved
 	assumptions []kernel.CoefficientOrigin
-	resolution  kernel.Resolution
+	// trust is the selected entries as terms of a price's trust (trust.go, VAL-3).
+	trust      []trustTerm
+	resolution kernel.Resolution
 
 	// tiers maps a tier name to its device facts, for TierTime.
 	tiers map[string]hardware.StorageDevice
