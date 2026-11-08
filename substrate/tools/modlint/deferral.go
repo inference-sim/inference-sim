@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 )
 
 // The pin-by-commit deferral. While the M1 pull requests are drafts, each pins the BLIS
@@ -71,9 +71,7 @@ func ApplyDeferral(src []byte, today time.Time, findings []string) (fail, deferr
 		return findings, nil
 	}
 	var d deferral
-	dec := yaml.NewDecoder(bytes.NewReader(src))
-	dec.KnownFields(true)
-	if err := dec.Decode(&d); err != nil {
+	if err := validate.DecodeStrict("modlint-deferral.yaml", src, &d); err != nil {
 		return append(append([]string{}, findings...), fmt.Sprintf("modlint-deferral.yaml: %v", err)), nil
 	}
 	var bad []string

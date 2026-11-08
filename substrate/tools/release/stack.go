@@ -1,12 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"regexp"
 	"sort"
 
-	"gopkg.in/yaml.v3"
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 )
 
 // StackLock describes one review set (design §13.6): the change it makes, the plan
@@ -55,11 +54,9 @@ var commitHash = regexp.MustCompile(`^[0-9a-f]{40}$`)
 // ParseStackLock reads and validates a stack.lock, and returns its repositories in release
 // order: bottom-up by layer (X10), then by name.
 func ParseStackLock(src []byte) (*StackLock, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(src))
-	dec.KnownFields(true)
 	var s StackLock
-	if err := dec.Decode(&s); err != nil {
-		return nil, fmt.Errorf("stack.lock: %w", err)
+	if err := validate.DecodeStrict("stack.lock", src, &s); err != nil {
+		return nil, err
 	}
 	if s.Set == "" {
 		return nil, fmt.Errorf("stack.lock: set is empty")

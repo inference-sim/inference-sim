@@ -1,7 +1,10 @@
 package validate
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"reflect"
 	"strconv"
@@ -106,6 +109,36 @@ func DecodeNode(n *yaml.Node, dst any) error {
 		return err
 	}
 	return n.Decode(dst)
+}
+
+// DecodeStrict decodes one YAML document into dst the way every loader of a BLIS document
+// does (design SUB-12): it refuses a document over MaxDocumentBytes, a repeated key, a
+// recursive alias, a non-finite number, a number that does not convert exactly to its field,
+// an unknown key, and a second document. name is the file or source, for the message.
+//
+// Callers that read a BLIS document use this, or a function that ends here, so there is one
+// definition of "strict" to test. An empty document is the caller's to treat; DecodeStrict
+// returns the decoder's own end-of-input error for it.
+func DecodeStrict(name string, raw []byte, dst any) error {
+	if err := CheckSize(name, len(raw)); err != nil {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if err := CheckNode(&doc, reflect.TypeOf(dst)); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+	if err := dec.Decode(dst); err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
+		return fmt.Errorf("%s: holds a second YAML document, which would be ignored; a file is one document", name)
+	}
+	return nil
 }
 
 // checkShape refuses recursive aliases and repeated keys anywhere in n.

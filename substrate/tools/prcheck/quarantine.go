@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 )
 
 // The quarantine list (X25): tests that fail on the main branch, each with an owning issue
@@ -53,9 +53,7 @@ func CheckQuarantine(src []byte, today time.Time, first map[string]time.Time) ([
 	if len(bytes.TrimSpace(src)) == 0 {
 		return nil, nil
 	}
-	dec := yaml.NewDecoder(bytes.NewReader(src))
-	dec.KnownFields(true)
-	if err := dec.Decode(&list); err != nil {
+	if err := validate.DecodeStrict("quarantine.yaml", src, &list); err != nil {
 		return nil, []string{fmt.Sprintf("quarantine.yaml: %v", err)}
 	}
 	var bad []string
@@ -112,7 +110,7 @@ func QuarantineHistory(file string, src []byte) map[string]time.Time {
 		return nil
 	}
 	var list []QuarantineEntry
-	if yaml.Unmarshal(src, &list) != nil {
+	if validate.DecodeStrict("quarantine.yaml", src, &list) != nil {
 		return nil
 	}
 	first := map[string]time.Time{}
