@@ -26,6 +26,9 @@ func KnownBadTests(reg *invariants.Registry, repo string) (map[string][]string, 
 			if c.Repo != repo {
 				continue
 			}
+			if c.Runs == invariants.RunsPractice {
+				continue // a maintainer practice has no program to feed a bad input to
+			}
 			if c.KnownBad == "" {
 				if c.Status == invariants.StatusCI {
 					missing = append(missing, fmt.Sprintf("%s: %q names no known-bad input (X18)", inv.ID, c.Check))

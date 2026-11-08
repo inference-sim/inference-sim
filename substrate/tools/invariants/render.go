@@ -160,6 +160,8 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 			b.WriteString(line + "\n")
 		}
 	}
+	b.WriteString(renderPractices(reg, repo))
+	b.WriteString(renderGuidance(reg, repo))
 	qs := reg.Questions(repo)
 	if len(qs) > 0 {
 		b.WriteString("\n### Review questions\n\n")
@@ -171,6 +173,49 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 		}
 	}
 	b.WriteString(endMarker + "\n")
+	return b.String()
+}
+
+// renderPractices writes the maintainer checklist for one repository: one item for each
+// practice check that concerns it (design §4.2). No program checks these. A maintainer with
+// write access keeps each one and confirms it when the repository's settings change.
+func renderPractices(reg *invariants.Registry, repo string) string {
+	var items []string
+	for _, inv := range reg.Invariants {
+		for _, c := range inv.Checks {
+			if c.Repo == repo && c.Runs == invariants.RunsPractice {
+				items = append(items, fmt.Sprintf("- [ ] **%s** %s\n", inv.ID, c.Check))
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n### Maintainer practices\n\n")
+	b.WriteString("No program checks these. A maintainer with write access keeps each one for this\n")
+	b.WriteString("repository as a whole and confirms it when the repository's settings change (design §4.2).\n\n")
+	for _, it := range items {
+		b.WriteString(it)
+	}
+	return b.String()
+}
+
+// renderGuidance writes the agent guidance for one repository: the part of each rule that
+// shapes how an agent writes or reviews a change and that no program can decide.
+func renderGuidance(reg *invariants.Registry, repo string) string {
+	var b strings.Builder
+	for _, inv := range reg.Invariants {
+		if inv.Guidance == "" || !applies(inv, repo) {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("\n### Agent guidance\n\n")
+			b.WriteString("Follow these on every change you write or review. They are not checked by a program\n")
+			b.WriteString("(design §4.2).\n\n")
+		}
+		fmt.Fprintf(&b, "- **%s** %s\n", inv.ID, strings.TrimSpace(inv.Guidance))
+	}
 	return b.String()
 }
 

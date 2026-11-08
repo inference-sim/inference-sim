@@ -189,6 +189,9 @@ func TestLoadRefusesMalformedRecords(t *testing.T) {
 		{"scope disagrees", "scope: [blis-vllm, inference-sim]", "scope: [blis-vllm]", "scope [blis-vllm] must equal"},
 		{"ci check without a test", "status: ci, test: TestA}", "status: ci}", "has status ci but names no test"},
 		{"bad runs", "runs: pull_request, status: new", "runs: weekly, status: new", `runs "weekly"`},
+		{"the retired settings kind", "runs: pull_request, status: new", "runs: settings, status: new", `runs "settings"`},
+		{"a practice with a test", "runs: pull_request, status: new}", "runs: practice, status: new, test: TestA}", "no program runs: it has no test"},
+		{"a practice with a known-bad input", "runs: pull_request, status: new}", "runs: practice, status: new, known_bad: 'x: TestB'}", "no program runs: it has no test"},
 		{"status disagrees with checks", "  status: partial\n", "  status: ci\n", `status "ci" disagrees with its checks`},
 		{"status review", "  status: partial\n", "  status: review\n", "no invariant in the design is enforced by review alone"},
 		{"no checks", "  checks:\n    - {repo: blis-vllm, check: fields are classified, runs: pull_request, status: ci, test: TestA}\n    - {repo: inference-sim, check: router flags reach the router, runs: pull_request, status: new}\n", "  checks: []\n", "has no check"},
@@ -273,5 +276,34 @@ func TestTriggerMatchesHonoursRepoAndExclude(t *testing.T) {
 	}
 	if (Trigger{Manual: true}).Matches("blis-substrate", "kernel/new.go") {
 		t.Error("a manual trigger matches no path")
+	}
+}
+
+// A maintainer practice (design §4.2) names its repository and states its checklist item in
+// check, has no test and no known-bad input, and at status ci needs no test: no program runs
+// it. It counts toward the invariant's status like any check, so a record whose checks are one
+// automated check at ci and one practice at new is partial.
+func TestAPracticeIsValidWithoutATest(t *testing.T) {
+	doc := `- id: X1
+  section: §4
+  statement: A practice and a program keep this rule.
+  scope: [blis-vllm]
+  checks:
+    - {repo: blis-vllm, check: the protected branch requires the named checks, runs: practice, status: ci}
+    - {repo: blis-vllm, check: a program checks the form, runs: pull_request, status: ci, test: TestA}
+  review: null
+  status: ci
+  target: {status: ci, milestone: null}
+`
+	reg, err := LoadFS(fsWith(doc))
+	if err != nil {
+		t.Fatalf("a practice at ci with no test was refused: %v", err)
+	}
+	if got := reg.Invariants[0].Checks[0]; got.Runs != RunsPractice || got.Test != "" {
+		t.Errorf("loaded %+v", got)
+	}
+	// The same record with the practice still new is partial, not new.
+	if _, err := LoadFS(fsWith(strings.Replace(strings.Replace(doc, "runs: practice, status: ci", "runs: practice, status: new", 1), "  status: ci\n  target: {status: ci, milestone: null}", "  status: partial\n  target: {status: ci, milestone: 2}", 1))); err != nil {
+		t.Errorf("a practice at new beside an automated check at ci should make the record partial: %v", err)
 	}
 }

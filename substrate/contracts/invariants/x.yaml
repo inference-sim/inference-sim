@@ -1314,41 +1314,37 @@
   - repo: blis-substrate
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: ci
-    test: branch protection on main
   - repo: blis-vllm
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: ci
-    test: branch protection on main
   - repo: blis-sglang
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: new
   - repo: llm-d-router
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: ci
-    test: branch protection on llm-d-r
   - repo: inference-sim
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: ci
-    test: ruleset on the default branch
   - repo: blis-config-search
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: new
   - repo: accuracy-dashboard
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: new
   review: null
   status: partial
@@ -1476,6 +1472,10 @@
     tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the
     router fork, this applies to every commit not reachable from the upstream tag being merged;
     upstream history is kept as upstream wrote it.
+  guidance: >-
+    A commit written with your help says so in one Assisted-by: <tool> line and carries no
+    Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the
+    person who takes responsibility signs off.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1529,6 +1529,48 @@
       A commit-policy check, required on every pull request in every repository, over the commits
       the pull request adds
     runs: pull_request
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
+    status: new
+  - repo: inference-sim
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name
+    runs: practice
     status: new
   review: null
   status: new
@@ -1864,6 +1906,9 @@
     Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue,
     or rejected with a reason. An issue closes only through a commit or pull request that names it,
     or as not planned, by a reviewer with write access, with a reason.
+  guidance: >-
+    Answer each review thread with its commit or its issue, and resolve the thread once the
+    reviewer is satisfied.
   scope:
   - accuracy-dashboard
   - blis-config-search

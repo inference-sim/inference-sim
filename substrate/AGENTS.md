@@ -103,7 +103,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
   - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)
 - **X17** (partial; target ci by M1) Every repository's protected branch requires its named checks, including formatting and lint.
-  - `ci`, settings: The protected branch requires the repository's named checks, including formatting and lint (`branch protection on main`)
+  - `ci`, practice: The protected branch requires the repository's named checks, including formatting and lint
 - **X18** (new; target ci by M2) Every check in the invariant registry names a known-bad input that must make it fail.
   - `new`, nightly: A nightly job in blis-substrate that runs each check on its known-bad input and fails if the check passes (`nightly.yml: prcheck knownbad`)
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
@@ -111,6 +111,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
 - **X20** (new; target ci by M4) Every commit written for BLIS is signed.
   - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds (`shared-pr-checks.yml: prcheck commits`)
+  - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
   - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
@@ -259,14 +260,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
-  - `new`, settings: Protected tags
+  - `new`, practice: Protected tags
   - `new`, nightly: A nightly check that every tag resolves to its recorded commit (`shared-nightly.yml: prcheck tags`)
 - **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
   - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
-  - `new`, settings: Repository settings that let only the release bot and people with write access create tags
+  - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
   - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
 - **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
@@ -275,6 +276,24 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, release: A tag check in the release bot: format, N one above the previous tag on the same upstream release, no plain tag (`tools/release: CheckEngineTag`)
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
   - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)
+
+### Maintainer practices
+
+No program checks these. A maintainer with write access keeps each one for this
+repository as a whole and confirms it when the repository's settings change (design §4.2).
+
+- [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
+- [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name
+- [ ] **LIF-1** Protected tags
+- [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
+
+### Agent guidance
+
+Follow these on every change you write or review. They are not checked by a program
+(design §4.2).
+
+- **X20** A commit written with your help says so in one Assisted-by: <tool> line and carries no Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the person who takes responsibility signs off.
+- **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
 
 ### Review questions
 

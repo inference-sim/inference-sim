@@ -446,7 +446,41 @@ func TestMilestoneReleaseIsHeldToItsTargets(t *testing.T) {
 	sub := newRepo(t, subMod)
 	h := sub.branch("b", "a.go", "package a\n", "Change")
 	st := planOne(t, env(t, nil), "blis-substrate", sub.dir, h, "bump: minor\nmilestone_release: true", 1)
-	has(t, st.Refusals, "X14: milestone M1 is reached and the invariant is new")
+	has(t, st.Refusals, "X14: milestone M1 is reached and its automated checks are new, not the target ci")
+}
+
+// A maintainer practice has no check run to wait for, so it neither blocks a milestone release
+// nor counts toward an invariant's status there (design §13.1): an invariant whose only checks
+// are practices is not held to a target by the gate, and one with automated checks is held by
+// those alone.
+func TestAPracticeIsNotHeldByTheMilestoneGate(t *testing.T) {
+	one := 1
+	mk := func(checks ...invariants.Check) *invariants.Registry {
+		return &invariants.Registry{Invariants: []invariants.Invariant{{
+			ID: "T-1", Checks: checks, Status: invariants.StatusNew,
+			Target: invariants.Target{Status: invariants.StatusCI, Milestone: &one}}}}
+	}
+	practice := invariants.Check{Repo: "blis-substrate", Runs: invariants.RunsPractice, Status: invariants.StatusNew, Check: "branch protection"}
+	autoNew := invariants.Check{Repo: "blis-substrate", Runs: invariants.RunsPullRequest, Status: invariants.StatusNew, Check: "a check", Test: "t"}
+	autoCI := invariants.Check{Repo: "blis-substrate", Runs: invariants.RunsPullRequest, Status: invariants.StatusCI, Check: "a check", Test: "t"}
+	passed := map[string]bool{"t": true}
+	// A practice alone: nothing for the gate to hold, though its status is new.
+	if bad := CheckInvariants(mk(practice), "blis-substrate", passed, 1, true); len(bad) != 0 {
+		t.Errorf("a practice alone was held by the gate: %v", bad)
+	}
+	// A practice beside an automated check at ci: held by the automated status, which is met.
+	if bad := CheckInvariants(mk(practice, autoCI), "blis-substrate", passed, 1, true); len(bad) != 0 {
+		t.Errorf("a practice made an invariant whose automated checks are ci fail the gate: %v", bad)
+	}
+	// A practice beside an automated check still new: refused, naming the automated status.
+	has(t, CheckInvariants(mk(practice, autoNew), "blis-substrate", passed, 1, true),
+		"T-1: milestone M1 is reached and its automated checks are new, not the target ci")
+	// A practice at status ci names no test and needs no recorded result.
+	done := practice
+	done.Status = invariants.StatusCI
+	if bad := CheckInvariants(mk(done), "blis-substrate", map[string]bool{}, 1, false); len(bad) != 0 {
+		t.Errorf("a practice at ci needed a recorded result: %v", bad)
+	}
 }
 
 // stagedSet plans and stages a one-repository set and returns what Tag needs.

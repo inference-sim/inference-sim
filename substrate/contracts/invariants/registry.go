@@ -49,7 +49,7 @@ var Families = []Family{
 	{File: "lif.yaml", Prefix: "LIF-"},
 }
 
-// A Family is one registry file and the identifier prefix its records carry.
+// A Family is one invariant registry file and the identifier prefix its records carry.
 type Family struct {
 	File   string
 	Prefix string
@@ -68,7 +68,13 @@ const (
 	RunsPullRequest = "pull_request"
 	RunsNightly     = "nightly"
 	RunsRelease     = "release"
-	RunsSettings    = "settings"
+	// RunsPractice is a maintainer practice (design §4.2): a rule a person with write access
+	// keeps for a repository as a whole, such as its branch protection or who may tag. It names
+	// the repository it concerns and states its checklist item in Check. No program runs or
+	// audits it, so it has no test and no known-bad input, and the release bot does not wait on
+	// it. Its status says whether the practice is in place, as the maintainers' checklist last
+	// recorded it.
+	RunsPractice = "practice"
 )
 
 // Invariant is one record of the registry.
@@ -80,11 +86,15 @@ type Invariant struct {
 	Scope     []string `yaml:"scope"`
 	Checks    []Check  `yaml:"checks"`
 	Review    []Review `yaml:"review"`
-	Status    string   `yaml:"status"`
-	Target    Target   `yaml:"target"`
-	Note      string   `yaml:"note,omitempty"`
-	family    string   // the file the record came from
-	line      int      // the record's line in that file
+	// Guidance is the part of the rule an agent follows on every change it writes or reviews
+	// (design §4.2), in the design's words, or "" when the rule has none. The generator renders
+	// it into the AGENTS.md of every repository the invariant's checks or practices concern.
+	Guidance string `yaml:"guidance,omitempty"`
+	Status   string `yaml:"status"`
+	Target   Target `yaml:"target"`
+	Note     string `yaml:"note,omitempty"`
+	family   string // the file the record came from
+	line     int    // the record's line in that file
 }
 
 // Check is one check of an invariant, run in one repository.
@@ -137,17 +147,17 @@ func (r *Registry) Get(id string) (Invariant, bool) {
 	return r.Invariants[i], true
 }
 
-// Embedded loads the registry compiled into this package.
+// Embedded loads the invariant registry compiled into this package.
 func Embedded() (*Registry, error) {
 	return LoadFS(embedded)
 }
 
-// Load reads the registry from a directory with the layout of contracts/invariants/.
+// Load reads the invariant registry from a directory with the layout of contracts/invariants/.
 func Load(dir string) (*Registry, error) {
 	return LoadFS(os.DirFS(dir))
 }
 
-// LoadFS reads the registry from the root of fsys. Every family file must exist, and no
+// LoadFS reads the invariant registry from the root of fsys. Every family file must exist, and no
 // other .yaml file may: a stray file would hold records no reader sees.
 func LoadFS(fsys fs.FS) (*Registry, error) {
 	known := map[string]bool{}
@@ -282,6 +292,9 @@ func (inv Invariant) validate() []error {
 	if strings.TrimSpace(inv.Statement) == "" {
 		bad("statement is empty")
 	}
+	if inv.Guidance != "" && strings.TrimSpace(inv.Guidance) == "" {
+		bad("guidance is blank; leave it out for a rule an agent has no part in")
+	}
 	if len(inv.Checks) == 0 {
 		bad("has no check; a rule with no check is not enforced (design §13.1)")
 	}
@@ -297,14 +310,17 @@ func (inv Invariant) validate() []error {
 			bad("%s.check is empty", at)
 		}
 		switch c.Runs {
-		case RunsPullRequest, RunsNightly, RunsRelease, RunsSettings:
+		case RunsPullRequest, RunsNightly, RunsRelease, RunsPractice:
 		default:
-			bad("%s.runs %q is not one of pull_request, nightly, release, settings", at, c.Runs)
+			bad("%s.runs %q is not one of pull_request, nightly, release, practice", at, c.Runs)
+		}
+		if c.Runs == RunsPractice && (c.Test != "" || c.KnownBad != "") {
+			bad("%s is a maintainer practice, which no program runs: it has no test and no known_bad (design §4.2)", at)
 		}
 		switch c.Status {
 		case StatusCI:
 			nci++
-			if strings.TrimSpace(c.Test) == "" {
+			if c.Runs != RunsPractice && strings.TrimSpace(c.Test) == "" {
 				bad("%s has status ci but names no test", at)
 			}
 		case StatusNew:
@@ -346,6 +362,10 @@ func (inv Invariant) validate() []error {
 	}
 	return errs
 }
+
+// StatusOf is the status n checks give when nci of them are ci: new for none, ci for all,
+// partial between.
+func StatusOf(nci, n int) string { return statusOf(nci, n) }
 
 func statusOf(nci, n int) string {
 	switch {
