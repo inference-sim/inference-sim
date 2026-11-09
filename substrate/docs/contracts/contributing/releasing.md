@@ -1,8 +1,8 @@
 # Releasing BLIS repositories
 
 Every BLIS release is made by the release bot, `tools/release` in this repository, or, while
-the bot is unavailable, by two release owners, named by the project team under its own procedure, following the manual procedure below (design
-§13.6, LIF-3). Both produce the same tags in the same order. blis-substrate's first release is
+the bot is unavailable, by a person with write access to the repository, following the manual
+procedure below (design §13.6, LIF-3). Both produce the same tags in the same order. blis-substrate's first release is
 tagged by the manual procedure, because the bot's code arrives with it (release
 plan §3.1).
 
@@ -23,8 +23,8 @@ The bot refuses to tag a repository when any of these holds:
 - A MAJOR release, or a MINOR release at v0, still contains a deprecated feature (LIF-7). The
   features release plan §3.3 relaxes until M4 are listed in `tools/release/relaxations.go`.
 - An open issue labelled `invariant-bug` lives in the repository or in one whose code it ships,
-  unless the release fixes only that issue, is a security release, or a release owner records a
-  waiver in the release notes (X27).
+  unless the release fixes only that issue, is a security release, or the person cutting the
+  release records a waiver in the release notes (X27).
 
 ## A review set
 
@@ -36,14 +36,13 @@ the applications. For each repository the bot stages the final release commit on
 `release/<tag>`: it merges the head into the base branch and writes the pins to the published
 tags of the layers below it in one commit. It tags nothing at that point. The commit it stages is not the head
 that was checked, so a person or the release job pushes the branch, CI runs on that exact commit,
-and its results are recorded under that commit's SHA. Only then does the bot make the signed,
-annotated tag, whose message is the generated release notes (LIF-4), on that same commit, and
+and its results are recorded under that commit's SHA. Only then does the bot make the annotated tag, whose message is the generated release notes (LIF-4), on that same commit, and
 only if the recorded results cover every ci check (LIF-3). A tip that moved after the check has
 no results and is refused. A head that already carries a release tag is refused, and so is a
 `go.mod` that requires a BLIS module at a pseudo-version.
 
 The release job does not exist yet (it arrives in M2). Until it does, the bot works one layer at
-a time and the owners do the pushing and the waiting by hand. Each run re-plans the whole
+a time and a person does the pushing and the waiting by hand. Each run re-plans the whole
 `stack.lock` from the repositories as they stand, so it can be repeated after any interruption:
 a head that is already staged keeps its tag and its branch, a head whose tag is already made is
 reported as done and skipped, and the version numbers never advance. It is refused only when the
@@ -54,16 +53,16 @@ For each layer, lowest first:
 1. `-apply` stages the layer (`-layer <repo>`, by default the first layer not yet tagged). A
    layer above the first is staged only when the tag of every layer below it exists and is
    published on that repository's origin, because its `go.mod` is pinned to those real tags.
-2. The owners push `release/<tag>` and run the layer's checks on that exact commit, and record
+2. The person pushes `release/<tag>` and run the layer's checks on that exact commit, and record
    the results under its SHA.
 3. `-tag` makes the annotated tag on that tip, if the recorded results cover every ci check, and
    tags nothing else.
-4. The owners push the tag and run the layer's checks against it. Then they run `-apply` for the
+4. The person pushes the tag and run the layer's checks against it. Then they run `-apply` for the
    next layer.
 
 The command prints the next step after each run. The push to `main` needs a bypass for the
-release bot or the release owners, because the branch requires a pull request and an approving
-review; the tag push needs the same, because tags are protected (LIF-1).
+release bot or a person with write access, because the branch requires a pull request and an
+approving review; the tag push needs the same, because tags are protected (LIF-1).
 
 A dry run prints each tag, pin, refusal and the notes, and changes nothing:
 
@@ -80,32 +79,34 @@ direct `blis-substrate` requirement.
 
 `-apply` stages one layer's release commit on `release/<tag>` in the local checkout and tags
 nothing. After CI has run on the staged commit, `-tag` with a `results.json` that records it tags
-that exact commit. `-sign` signs the pin commits and tags. The command never pushes.
+that exact commit. `-sign` signs the pin commits and tags with the key git is configured with;
+without it they are annotated and unsigned. The command never pushes.
 
 ## The manual procedure
 
-Two of the project's release owners run it together.
-One acts; the other checks each step against the bot's dry run before it is taken.
+Any person with write access to the repository can run it, with standard git or the hosting
+service's interface. It needs no second person and no signing key. Another person can read each
+step against the bot's dry run before it is taken, and the project may ask for one; the procedure
+does not.
 
-1. Both owners run the bot's dry run on the approved `stack.lock` and compare the output. If the
-   bot cannot run at all, they work through the list under "What the bot checks" by hand and write
-   down each result.
+1. Run the bot's dry run on the approved `stack.lock`. If the bot cannot run at all, work through
+   the list under "What the bot checks" by hand and write down each result.
 2. If anything is refused, stop. The refusal is fixed in a pull request, or, for X27 only, a
-   waiver is written into the release notes and signed off by both owners.
+   waiver is written into the release notes.
 3. For each repository in bottom-up order:
    1. Merge the head into the base branch with a merge commit (`git merge --no-ff <head>`), with
       the head commit stated in the message.
    2. If the dry run lists pins, set exactly those versions in `go.mod` (`go get <module>@<tag>`
       for each), run `go mod tidy`, and commit with the subject `Pin <module> <tag>, ... for <tag>`.
-      The commit is signed and carries no sign-off, as a release-bot commit would (X20).
-   3. Create the tag the dry run named, annotated and signed with the acting owner's key, with the
-      dry run's notes as its message, and a final line `Tagged by the manual procedure: <owner>,
-      checked by <owner>` (LIF-3).
+   3. Create the tag the dry run named: `git tag -a <tag> -m <notes> <commit>`, where the notes are
+      the dry run's, ending with a final line `Tagged by the manual procedure: <person>` (LIF-3).
+      Signing the tag is encouraged and not required (X20).
    4. Append `<tag> <commit>` to `.github/tags.lock` in the same pull request as the next
       repository's pin, or in a follow-up pull request for the top repository (LIF-1).
-   5. Push the branch, then the tag. Wait for the next layer's checks against the new tag to pass.
-4. Neither owner moves or deletes a tag. A mistake gets a new tag (LIF-1).
+   5. Push the branch, then the tag: `git push origin <tag>`. Wait for the next layer's checks
+      against the new tag to pass.
+4. Nobody moves or deletes a tag. A mistake gets a new tag (LIF-1).
 
-A nightly check confirms that every tag made by a person is signed and listed in its release
+A nightly check confirms that every tag made by a person is annotated and listed in its release
 notes (LIF-3), and that every tag still resolves to the commit `.github/tags.lock` records
 (LIF-1).

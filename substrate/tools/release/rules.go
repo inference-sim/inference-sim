@@ -250,7 +250,7 @@ type Bug struct {
 
 // CheckBugs refuses a release while an open invariant bug lives in the repository or in a
 // repository whose code it ships, unless the release fixes only that bug (fixes lists the
-// issues this release closes, and it closes nothing else) or a release owner records a
+// issues this release closes, and it closes nothing else) or the person cutting the release records a
 // waiver (waived lists issues waived in the release notes).
 func CheckBugs(bugs []Bug, fixes []int, waived []int, security bool) []string {
 	if security {
