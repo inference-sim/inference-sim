@@ -156,7 +156,7 @@ Two guard tests keep that arrangement honest. `TestINV1_HelperMatchesRegistry` d
 
 **Verification:** Clock is advanced in the event loop only via min-heap extraction (`sim/event_queue.go`), which guarantees non-decreasing order; `sim.EngineDriver.ProcessNextEvent` (`sim/engine_driver.go`) returns a cancelled wake or an orphaned timeout without advancing the clock (`Skipped`). `sim/cluster/cluster_test.go` — `TestClusterSimulator_SharedClock_MonotonicGlobal` and `TestClusterSimulator_ClockMonotonicity_ClusterDominatesInstances` — and `sim/cluster/progress_hook_test.go` — `TestClusterSimulator_ProgressHook_SnapshotClockMonotonicity` — assert it at the cluster level.
 
-The *cluster* `prevClusterClock` restore described below is **executed** by a test of each kind — `TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime` (`sim/cluster/cluster_test.go`) and `TestClusterSimulator_SupersededIdleWake_DoesNotAdvanceClusterClock` (`sim/cluster/offload_deferral_e2e_test.go`, gated on `IdleWakesSuperseded() > 0`) — but **no test can assert the restored value**, and neither claims to. Nothing observable depends on it: aggregated `SimEndedTime` is a max over per-instance metrics, each taken from that *instance's* clock, and `c.clock` is reassigned at the top of every loop iteration, so deleting the restore leaves the end-of-run cluster clock, max instance clock and `SimEndedTime` identical (measured). Its only reader is a progress snapshot delivered in the same iteration, which the restore keeps from reporting a no-op's timestamp.
+The *cluster* `prevClusterClock` restore described below is **executed** by `TestClusterSimulator_OrphanedTimeout_DoesNotInflateSimEndedTime` (`sim/cluster/cluster_test.go`) — a second test of this kind, `TestClusterSimulator_SupersededIdleWake_DoesNotAdvanceClusterClock`, went with the offload-deferral end-to-end test when the engine moved to blis-vllm — but **no test can assert the restored value**, and neither claims to. Nothing observable depends on it: aggregated `SimEndedTime` is a max over per-instance metrics, each taken from that *instance's* clock, and `c.clock` is reassigned at the top of every loop iteration, so deleting the restore leaves the end-of-run cluster clock, max instance clock and `SimEndedTime` identical (measured). Its only reader is a progress snapshot delivered in the same iteration, which the restore keeps from reporting a no-op's timestamp.
 
 **The carve-out, and why it is not a violation:** `sim/cluster/cluster.go` advances the cluster clock to an instance's next event time *before* the event is known to be real, then restores the previous value when `ProcessNextEvent()` turns out to have skipped a lazily-cancelled event (`prevClusterClock`). Two kinds are skipped this way, and the restore mirrors both (`sim/cluster/cluster.go:883-888`): a `TimeoutEvent` whose request already completed, and — since #1886 — a `StepEvent` reporting `Cancelled()`, an idle wake that `scheduleStepBy` superseded because work arrived before the wake tick. Neither no-op may advance the cluster clock, so the advance is undone. Nothing was processed across that pair of assignments, which is why the statement is scoped to *processed* events. One further case: the horizon guard between the advance and the restore reads the optimistically advanced clock and can `break` out of the loop, leaving the advance in place unrestored — benign, because the cluster's reported `SimEndedTime` comes from per-instance `Finalize` as `min(Clock, Horizon)`, progress snapshots clamp, and `ClusterSimulator.Clock()` has no production caller. This also means a test asserting on the raw `c.clock` field would fail here and look like a real bug — assert on processed event timestamps instead.
 
@@ -364,7 +364,7 @@ Scoped to one subsystem or one optional feature. Outside that subsystem they are
 
 **Statement:** On a speculating instance (`K > 0`), after any allocation a request holds `max(blocks held before, token blocks, ceil(min(end + L, max_model_len) / block))` token and spare blocks besides its INV-K3 state blocks, where `end` is its computed tokens plus everything scheduled this step and `L` is vLLM's `num_lookahead_tokens` for the method (vLLM v0.31.0 `allocate_slots`, `num_tokens_need_slot`, `kv_cache_manager.py:536-538`; a running request's slots are never handed back, `single_type_kv_cache_manager.py:223-228`); a speculating decode schedules and debits `1 + K` of `max_num_batched_tokens` (fewer only when the budget or `max_model_len` leaves less), never less than it advances; every scheduled request also debits the drafter's `max_num_new_slots_for_drafting` from the input budget (`stepBudget`, scheduler.py:682, 825-826, 1073, 1313-1314); a preemption returns what the victim debited, draft slots included. Progress is still the accepted count (INV-K2). A run without speculation reserves nothing extra and is byte-identical.
 
-**Enforced:** blis-vllm `compat/kv` `KVCacheState.AllocateKVBlocks` (`slotTarget`, `reserveSlots`, spare blocks consumed first by `takeBlock`); blis-vllm `compat/engine/batch_formation.go` (`SpecVerifyWidth`, `scheduledTokens`); `sim.NewEngine` (`sim/engine_build.go`, called by `cluster.NewInstanceSimulator`) derives the reservation from the `SpeculativeConfig` (`SpeculativeConfig.KV`).
+**Enforced:** blis-vllm `compat/kv` `KVCacheState.AllocateKVBlocks` (`slotTarget`, `reserveSlots`, spare blocks consumed first by `takeBlock`); blis-vllm `compat/engine/batch_formation.go` (`SpecVerifyWidth`, `scheduledTokens`); the engine build (`cmd/engine_build.go`) hands the `SpeculativeConfig` to blis-vllm, whose `SpeculativeConfig.KV` derives the reservation.
 
 **Verification:** `TestSpeculativeSlots_HoldTheVerifyWidthAndLookahead` (rapid), `TestSpeculativeSlots_TokensFillTheReservedBlocksFirst`, `TestSpeculativeSlotsStopAtMaxModelLen` (blis-vllm `compat/kv`), and `TestEveryRunningRequestHoldsKVForItsComputedTokens` (rapid: the exact hold after every allocation under every store with state, speculation, max_model_len and preemption at once) (`sim`); `TestSpecDecode_ADecodeDebitsItsVerifyWidthFromTheTokenBudget`, `TestSpecDecode_APreemptedDecodeReturnsItsVerifyWidth`, `TestSpecDecode_TheSimulatorSchedulesTheVerifyWidth`, `TestSpecDecode_LookaheadReservationPreemptsEarlierUnderKVPressure`, `TestSpecDecode_ReservationPropertiesAroundSaturation` (rapid; tokens conserved across K), `TestSpecDecode_AcceptanceLengthOneChangesPriceNotProgress`, `TestLookaheadTokensFollowVLLMsNumLookaheadTokens`, `TestSpecDecode_ParallelDraftSlotsDebitTheInputBudget`, `TestDraftSlotsFollowVLLMsMaxNumNewSlotsForDrafting`, `TestSpecDecode_TheSimulatorChargesTheDraftersSlots` (`sim`); `TestInstanceKVReservesTheSpeculativeConfigsSlots` (`sim/cluster`).
 
@@ -436,7 +436,7 @@ vLLM v0.31.0 sources:
 
 **Context:** With `--preemption-policy priority`, the preemption victim may be at any index in the running batch (not just the tail). Removing an element at index `i < reqIndex` shifts subsequent elements left by one. Without the `reqIndex -= adjustment` correction (analog of vLLM `scheduler.py:853` `req_index -= 1`), the Phase 1 loop skips the shifted element.
 
-**Verification:** `sim/batch_formation_test.go` — `TestPreemption_Priority_Phase1Completeness`: verifies that after non-tail eviction where `victimIdx < reqIndex`, ALL remaining running requests receive decode tokens (NumNewTokens > 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.
+**Verification:** `TestPreemption_Priority_Phase1Completeness`, in the simulator's batch-formation test before the engine moved to blis-vllm (the index correction is now in blis-vllm `compat/engine/batch_formation.go`; the test is not in the pinned blis-vllm): verifies that after non-tail eviction where `victimIdx < reqIndex`, ALL remaining running requests receive decode tokens (NumNewTokens > 0). The index adjustment is tested with [bg, crit, std] batch where bg is evicted at index 0 while processing crit at index 1.
 
 **Trivially satisfied for FCFS:** With `--preemption-policy fcfs` (default), victims are always at the batch tail (`victimIdx == len-1 >= reqIndex`), so `adjustment == 0` and no element skipping is possible.
 
@@ -446,7 +446,7 @@ vLLM v0.31.0 sources:
 
 #### INV-16, INV-17: retired
 
-BLIS's own gateway queue (`sim/cluster/gateway_queue.go`) is gone: flow control is the embedded llm-d router's, whose flow registry and processor own their queue accounting and are tested upstream. INV-16 (gateway queue counter consistency) and INV-17 (the shed victim is the flow tail) protected code that no longer exists, and llm-d never sheds a queued request to admit another. The IDs are not reused.
+BLIS's own gateway queue (the former gateway-queue file of the cluster package) is gone: flow control is the embedded llm-d router's, whose flow registry and processor own their queue accounting and are tested upstream. INV-16 (gateway queue counter consistency) and INV-17 (the shed victim is the flow tail) protected code that no longer exists, and llm-d never sheds a queued request to admit another. The IDs are not reused.
 
 ### Routing and observability
 
@@ -469,7 +469,7 @@ KV-cache events (the precise-prefix tier) are not simulated yet; the plugins tha
 
 #### INV-18: retired
 
-The router-side prefix-cache index (`sim/prefix_cache_index.go`) is gone with BLIS's native routing; approximate-prefix routing is llm-d's `approx-prefix-cache-producer`, tested upstream. The ID is not reused.
+The router-side prefix-cache index (the former prefix-cache-index file of the simulator package) is gone with BLIS's native routing; approximate-prefix routing is llm-d's `approx-prefix-cache-producer`, tested upstream. The ID is not reused.
 
 ### Metrics output
 
@@ -616,7 +616,7 @@ TTFT population), `TestAggregatedMetrics_CarriesTheMeasuredWindowInputs`.
 
 **Verification:** `sim/workload/session_test.go` — `TestSession_RoundGeneration_CorrectArrivalTime` verifies the arrival time formula. The ThinkTimeUs=0 boundary is inherent in the formula.
 
-**Evidence:** Design doc `docs/plans/2026-03-13-client-behavior-model-design.md` — INV-10 definition. Guaranteed by construction in `SessionManager.OnComplete`.
+**Evidence:** The client-behaviour model design document of 2026-03-13 (kept under the untracked docs/plans, not in the tree) — INV-10 definition. Guaranteed by construction in `SessionManager.OnComplete`.
 
 **Hypothesis family:** Scheduler invariants (safety/liveness) — causality chain for session rounds.
 
@@ -945,7 +945,7 @@ vLLM v0.31.0 sources:
 
 **Statement:** Per-pool hardware overrides produce a valid `SimConfig` for each pool role: zero-valued `PoolOverrides` is a no-op (backward-compatible), non-nil fields override only the specified fields, and the global `SimConfig` is never mutated.
 
-**Verification:** `sim/cluster/resolve_test.go` — `TestINV_P2_1_PoolConfigConsistency` verifies observable KV capacity differences between pools pre-simulation via `FreeKVBlocks()`; `TestINV_P2_1_RequestConservation` verifies INV-1 holds under heterogeneous pool configuration.
+**Verification:** `sim/cluster/pool_role_config_test.go` — `TestINV_P2_1_PoolConfigConsistency` verifies observable KV capacity differences between pools pre-simulation via `FreeKVBlocks()`; `TestINV_P2_1_RequestConservation` verifies INV-1 holds under heterogeneous pool configuration.
 
 **Evidence:** `ResolvePoolConfig` performs a struct copy and applies only non-nil/non-zero overrides. `resolveConfigForRole` is called in the instance construction loop in `NewClusterSimulator`, before any simulation state is created. The simulator no longer derives KV capacity itself: on the CLI each pool's `TotalKVBlocks` (and `MaxModelLen`, `MaxNumSeqs`, `MaxNumBatchedTokens`) is the kernel's per-data-parallel-rank answer for that pool's engine, carried in as `PoolOverrides`, and a node-pool-placed instance keeps the block count it was configured with. The per-GPU KV re-sizing at placement (#1522) was removed with the in-repo KV auto-calculation (kernel-exclusive change).
 

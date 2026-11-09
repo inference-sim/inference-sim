@@ -109,8 +109,7 @@ The cluster talks to the router through the `Gateway` interface (`sim/cluster/ga
 The cluster hands it each arrival (`OnArrival`) and reports what happens to a dispatched
 request (`OnDispatched`, `OnFirstToken`, `OnDone`) and to instances (`OnInstanceChange`). The
 gateway acts on the cluster only through `GatewayHost`: it reads the clock and the instances,
-schedules events, and calls `Dispatch` or `Reject`. `sim/llmd.Gateway` is the production
-implementation; `sim/cluster` unit tests use a small round-robin fake.
+schedules events, and calls `Dispatch` or `Reject`. The production implementation is in `sim/llmd/gateway.go`; `sim/cluster` unit tests use a small round-robin fake.
 
 ## Request Path
 

@@ -524,7 +524,7 @@ A typical PR from an RFC sub-issue:
 
 1. **Create worktree:** `git worktree add .worktrees/pr8-routing -b pr8-routing && cd .worktrees/pr8-routing`
 2. **Audit source:** Scan source document for ambiguities, contradictions, missing info. Record clarifications.
-3. **Write plan:** Write plan, save to `docs/plans/pr8-routing-plan.md`
+3. **Write plan:** Write plan, save under `docs/plans/` (for example as `pr8-routing-plan.md`)
 4. **Review plan:** For Medium/Large PRs, run holistic pre-pass first. Then run all 10 perspectives in convergence rounds. Fix issues, re-run until converged. (Small PRs skip the pre-pass.)
 5. **Human review:** Read plan — contracts, tasks, appendix. Approve to proceed.
 6. **Implement:** Execute TDD tasks: test → fail → implement → pass → lint → commit.
@@ -547,7 +547,7 @@ The workflow is the same regardless of source (RFC sub-issue, design doc, GitHub
 7. **Document where it belongs — not in CLAUDE.md** — per-PR rationale goes in the commit body; durable detail goes in the relevant `docs/` guide or `--help`. Touch `CLAUDE.md` only when the change alters an operating rule an agent needs *every* session, and keep it a pointer when a canonical doc exists (see the charter at the top of CLAUDE.md). CLAUDE.md is loaded into every session, so a per-PR note there is expensive and re-accretes the changelog bloat #1818 removed. **If a change genuinely does target `CLAUDE.md`, label its issue `docs:claude-md`** — a `ci.yml` size-ceiling job guards the file's size on every PR, and the delivery loop's verify phase withholds `ready-for-merge` from a `CLAUDE.md` edit whose issue lacks that label (it fails safe to `needs-human`).
 8. **Keep source documents updated** — close resolved issues; update tracking issue if needed
 9. **Don't trust automated passes alone** — the self-audit (Step 4.75) catches substance bugs that pattern-matching agents miss. In PR9, 3 real bugs were found by critical thinking after 4 automated passes found 0 issues.
-10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to `.claude/checkpoint.md` after each major phase. If you hit context limits, read the checkpoint first.
+10. **Checkpoint long sessions** — for PRs with 8+ tasks or multi-round reviews, write a checkpoint summary to a checkpoint file in `.claude/` after each major phase. If you hit context limits, read the checkpoint first.
 
 ### Headless Mode for Reviews (Context Overflow Workaround)
 

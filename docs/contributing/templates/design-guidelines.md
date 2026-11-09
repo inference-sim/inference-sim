@@ -474,5 +474,5 @@ If a design doc follows this principle, its content stays durable, its modules s
 1. Banks, J., Carson, J. S., Nelson, B. L., & Nicol, D. M. *Discrete-Event System Simulation* (5th ed.). Pearson. — Foundational text on DES methodology, model scoping, input modeling, output analysis, V&V.
 2. Misra, J. "Distributed Discrete-Event Simulation." *Computing Surveys*, Vol. 18, No. 1, March 1986. — Formal correctness proofs for DES, causal ordering, simulation as formal property.
 3. BLIS Issue #183 — Golden dataset encoded a silently-dropped request. Conservation invariant test would have caught it on day one.
-4. BLIS PR12 Pre-Design (`docs/plans/archive/pr12-architectural-predesign.md`) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
-5. BLIS Hardening Design (`docs/plans/archive/2026-02-18-hardening-antipattern-refactoring-design.md`) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.
+4. BLIS PR12 Pre-Design (archived design document, no longer in the tree) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
+5. BLIS Hardening Design (archived design document of 2026-02-18, no longer in the tree) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.

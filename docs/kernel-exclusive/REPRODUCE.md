@@ -91,7 +91,7 @@ prefix a token ID moves no latency.
 ## Earlier comparisons (historical)
 
 The four-estimator Hopper comparison and its audit, recorded in `RESULTS.md`, were produced by
-`cmd/estimatorscore` against the roofline and trained-physics backends. Both backends and that
+the `estimatorscore` command against the roofline and trained-physics backends. Both backends and that
 command were removed when BLIS became kernel-exclusive, so those figures cannot be re-run here;
 `git log` holds the revision that produced them.
 
@@ -105,7 +105,7 @@ go run ./cmd/worked-table                             # the five-row table in th
 go run ./cmd/overlap-probe testdata/aisimulate/glm-5-h200-fp8-sglang-tp8.yaml
 ```
 
-`cmd/shape` assumes resident batch equals client concurrency, which is the assumption the
+`blis-latency-kernel/cmd/shape` assumes resident batch equals client concurrency, which is the assumption the
 simulator removes; the difference between its figure and `kernelscore`'s is the value of having a
 scheduler.
 
@@ -263,7 +263,7 @@ on a stale or missing one, so a graph cannot drift from the config it came from.
 
 ## The design documents
 
-In the `vllm` checkout, `docs/perf-model` holds four documents and seven verifiers. Each document
+In the `vllm` checkout, `vllm/docs/perf-model` holds four documents and seven verifiers. Each document
 builds only if its verifiers pass:
 
 ```bash
@@ -283,7 +283,7 @@ python audit.py                             # all four rendered documents
 ```
 
 `verify_kernel_implementation.py` is the one that keeps the documents honest about accuracy: it
-runs `cmd/shape` and `cmd/score` and diffs their output against the tables, so a stale figure
+runs `blis-latency-kernel/cmd/shape` and `blis-latency-kernel/cmd/score` and diffs their output against the tables, so a stale figure
 fails the build. `SKIP_GO=1` skips those and says so rather than passing silently.
 
 ## Sensitivity: what the figures do not depend on

@@ -25,7 +25,7 @@ for the pinned release.
 ## Scored deployments
 
 blis-latency-kernel `v0.3.0` ships the scenarios it was scored on in
-`testdata/aisimulate` of its module, covering deepseek-v3, deepseek-v4-pro, glm-5,
+`blis-latency-kernel/testdata/aisimulate`, covering deepseek-v3, deepseek-v4-pro, glm-5,
 gpt-oss-120b, kimi-k2.5, llama-3.1-70b-instruct, minimax-m2.5, minimax-m3 and
 qwen3.5-397b-a17b on H100, H200, B200 and B300 under several TP degrees and precisions. The
 accuracy figures are in [Latency Models](../guide/latency-models.md#the-published-accuracy-figures).
