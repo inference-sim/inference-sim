@@ -188,7 +188,7 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 ### Templates & Plans
 
 - `docs/contributing/templates/design-guidelines.md` — start here when designing anything new.
-- Active plans: `docs/plans/` (gitignored). Archived design docs: `docs/plans/archive/`.
+- Active plans: `docs/plans/` (gitignored). Archived design docs are gone.
 
 ## Active Technologies
 

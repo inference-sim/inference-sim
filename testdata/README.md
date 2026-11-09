@@ -3,12 +3,12 @@
 ## Golden Dataset (`goldendataset.json`)
 
 The golden dataset contains known-good simulation outputs for regression testing.
-Tests in `sim/simulator_test.go`, `sim/cluster/cluster_test.go` and
-`sim/cluster/instance_test.go` compare simulation output against these values.
+Tests in `sim/cluster/cluster_test.go` and `sim/cluster/instance_golden_test.go` compare
+simulation output against these values.
 
 Steps are priced by the deterministic fake latency model in `sim/internal/testutil`
-(`testutil.DefaultFakeLatency`, adapted to `sim.LatencyModel` by
-`sim/internal/testutil/fakelatency` and by package sim's `fake_latency_test.go`) --
+(`testutil.DefaultFakeLatency`, adapted to the engine contract by
+`fake_latency_engine_test.go` in `sim/cluster` and in `sim/llmd`) --
 not by any real latency backend. The dataset therefore pins simulation behavior
 (scheduling, batch formation, KV allocation, workload generation, metric aggregation),
 never pricing; each case records `"approach": "fake-latency"`.

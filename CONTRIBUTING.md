@@ -163,7 +163,7 @@ The full pipeline for features that introduce new module boundaries, new interfa
 
 **Phase 2 — Plan** (after agreement):
 4. **Encode .archon plan** — following [`docs/contributing/templates/rfc-to-plan.md`](docs/contributing/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
-5. **PR0** — create `feature/<name>` branch, persist plan to `specs/NNN-feature/`, push
+5. **PR0** — create `feature/<name>` branch, persist plan to a new `specs/<NNN>-<feature>/` directory, push
 
 **Phase 3 — Deliver** (repeat for each sub-issue, PRs target the feature branch):
 6. **Follow the Bug Fix journey** (steps 1–8) for each hole
@@ -261,7 +261,7 @@ a scenario that deploys it.
 
 ### Policy Template (lightest — ~3 files)
 
-1. Implement the interface in the corresponding file (`sim/admission.go`, `sim/routing.go`, `sim/priority.go`, `sim/scheduler.go`)
+1. Implement the interface in the repository that owns the policy (see [extension recipes](docs/contributing/extension-recipes.md)): admission and routing in llm-d-router, the instance scheduler and its priority in blis-vllm (`core/sched`)
 2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
 3. Add `case` to factory function
 4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)
