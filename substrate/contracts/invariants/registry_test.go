@@ -3,7 +3,6 @@ package invariants
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -105,10 +104,7 @@ func TestRegistryAgreesWithThePlan(t *testing.T) {
 		if inv.Status != status {
 			t.Errorf("%s: registry status %q, plan status %q", id, inv.Status, status)
 		}
-		got := "now"
-		if inv.Target.Milestone != nil {
-			got = fmt.Sprintf("M%d", *inv.Target.Milestone)
-		}
+		got := MilestoneLabel(inv.Target.Milestone)
 		if got != by {
 			t.Errorf("%s: registry target milestone %s, plan In CI by %s", id, got, by)
 		}
@@ -305,5 +301,38 @@ func TestAPracticeIsValidWithoutATest(t *testing.T) {
 	// The same record with the practice still new is partial, not new.
 	if _, err := LoadFS(fsWith(strings.Replace(strings.Replace(doc, "runs: practice, status: ci", "runs: practice, status: new", 1), "  status: ci\n  target: {status: ci, milestone: null}", "  status: partial\n  target: {status: ci, milestone: 2}", 1))); err != nil {
 		t.Errorf("a practice at new beside an automated check at ci should make the record partial: %v", err)
+	}
+}
+
+func TestMilestoneLabel(t *testing.T) {
+	one, four, after := 1, 4, PostM4
+	for _, c := range []struct {
+		m    *int
+		want string
+	}{{nil, "now"}, {&one, "M1"}, {&four, "M4"}, {&after, "after M4"}} {
+		if got := MilestoneLabel(c.m); got != c.want {
+			t.Errorf("MilestoneLabel = %q, want %q", got, c.want)
+		}
+	}
+}
+
+// A target is a milestone of the plan, 1 to 4, or after M4; nothing else. The known-bad
+// records go through the loader, which is where the rule lives.
+func TestATargetMilestoneIsOneToFourOrAfterM4(t *testing.T) {
+	with := func(m string) string {
+		return strings.Replace(goodRecord, "milestone: 4", "milestone: "+m, 1)
+	}
+	if !strings.Contains(goodRecord, "milestone: 4") {
+		t.Fatal("test setup: the good record's target is not milestone 4")
+	}
+	for _, m := range []string{"0", "-1", "6"} {
+		if _, err := LoadFS(fsWith(with(m))); err == nil || !strings.Contains(err.Error(), "not a milestone of the release plan") {
+			t.Errorf("milestone %s: %v", m, err)
+		}
+	}
+	for _, m := range []string{"1", "4", "5"} {
+		if _, err := LoadFS(fsWith(with(m))); err != nil {
+			t.Errorf("milestone %s was refused: %v", m, err)
+		}
 	}
 }

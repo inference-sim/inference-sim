@@ -131,7 +131,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
-- **X20** (new; target ci by M4) A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool.
+- **X20** (new; target ci by after M4) A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool.
   - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool (`shared-pr-checks.yml: prcheck commits`)
   - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.

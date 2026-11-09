@@ -85,10 +85,7 @@ func renderStatusTable(reg *invariants.Registry) string {
 	b.WriteString("<!-- Generated from blis-substrate/contracts/invariants by go run ./tools/invariants render. Do not edit. -->\n")
 	b.WriteString("<div class=\"tbl\"><table>\n<thead><tr><th>Invariant</th><th>Statement, first sentence</th><th>Status</th><th>In CI by</th><th>Note</th></tr></thead>\n<tbody>\n")
 	for _, inv := range reg.Invariants {
-		by := "now"
-		if inv.Target.Milestone != nil {
-			by = fmt.Sprintf("M%d", *inv.Target.Milestone)
-		}
+		by := invariants.MilestoneLabel(inv.Target.Milestone)
 		fmt.Fprintf(&b, "<tr><td><span class=\"inv\">%s</span></td><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>\n",
 			inv.ID, html.EscapeString(firstSentence(inv.Statement)), inv.Status, by, html.EscapeString(inv.Note))
 	}
@@ -146,7 +143,7 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 		}
 		target := "target reached"
 		if inv.Target.Milestone != nil {
-			target = fmt.Sprintf("target %s by M%d", inv.Target.Status, *inv.Target.Milestone)
+			target = fmt.Sprintf("target %s by %s", inv.Target.Status, invariants.MilestoneLabel(inv.Target.Milestone))
 		}
 		fmt.Fprintf(&b, "- **%s** (%s; %s) %s\n", inv.ID, inv.Status, target, firstSentence(inv.Statement))
 		for _, c := range inv.Checks {

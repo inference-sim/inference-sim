@@ -483,6 +483,27 @@ func TestAPracticeIsNotHeldByTheMilestoneGate(t *testing.T) {
 	}
 }
 
+// An invariant whose target is after M4 is held by no milestone release from M1 to M4: its
+// checks may be new at every milestone and the gate refuses nothing for it.
+func TestATargetAfterM4IsNotHeldByAnyMilestoneRelease(t *testing.T) {
+	after := invariants.PostM4
+	reg := &invariants.Registry{Invariants: []invariants.Invariant{{
+		ID: "T-1", Status: invariants.StatusNew,
+		Checks: []invariants.Check{{Repo: "blis-substrate", Runs: invariants.RunsPullRequest, Status: invariants.StatusNew, Check: "a check", Test: "t"}},
+		Target: invariants.Target{Status: invariants.StatusCI, Milestone: &after}}}}
+	for m := 1; m <= 4; m++ {
+		for _, release := range []bool{false, true} {
+			if bad := CheckInvariants(reg, "blis-substrate", map[string]bool{"t": true}, m, release); len(bad) != 0 {
+				t.Errorf("milestone %d (release %v) held an invariant targeted after M4: %v", m, release, bad)
+			}
+		}
+	}
+	// The same invariant targeted at M4 is held by the M4 release, so the exemption is the target's.
+	four := 4
+	reg.Invariants[0].Target.Milestone = &four
+	has(t, CheckInvariants(reg, "blis-substrate", map[string]bool{"t": true}, 4, true), "milestone M4 is reached")
+}
+
 // stagedSet plans and stages a one-repository set and returns what Tag needs.
 func stagedSet(t *testing.T, e Env) (*repo, *StackLock, []Step) {
 	t.Helper()

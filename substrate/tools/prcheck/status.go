@@ -140,7 +140,7 @@ func StatusPage(repo string, now time.Time, gs []Gate, last map[string]*Run, reg
 		}
 		target := "reached"
 		if inv.Target.Milestone != nil {
-			target = fmt.Sprintf("%s by M%d", inv.Target.Status, *inv.Target.Milestone)
+			target = fmt.Sprintf("%s by %s", inv.Target.Status, invariants.MilestoneLabel(inv.Target.Milestone))
 		}
 		gate := state[inv.ID]
 		if gate == "" {

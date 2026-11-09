@@ -127,8 +127,25 @@ type Trigger struct {
 	Exclude []string `yaml:"exclude,omitempty"`
 }
 
+// PostM4 is the milestone of an invariant scheduled after M4, at the release's closing step. No
+// milestone release reaches it, so the release bot never waits on it during M1 to M4.
+const PostM4 = 5
+
+// MilestoneLabel renders a target milestone as the release plan's "In CI by" column does: M1 to
+// M4, "after M4" for PostM4, and "now" for none.
+func MilestoneLabel(m *int) string {
+	switch {
+	case m == nil:
+		return "now"
+	case *m == PostM4:
+		return "after M4"
+	}
+	return fmt.Sprintf("M%d", *m)
+}
+
 // Target is the status an invariant must reach, and the release plan milestone by which
-// it must reach it. Milestone is nil when the status already equals the target.
+// it must reach it. Milestone is nil when the status already equals the target, and PostM4 when
+// the invariant is scheduled for the closing step after the last milestone.
 type Target struct {
 	Status    string `yaml:"status"`
 	Milestone *int   `yaml:"milestone"`
@@ -358,9 +375,9 @@ func (inv Invariant) validate() []error {
 	case inv.Target.Milestone == nil && inv.Status != inv.Target.Status:
 		bad("target.milestone is null, but status %q has not reached target %q", inv.Status, inv.Target.Status)
 	case inv.Target.Milestone != nil && inv.Status == inv.Target.Status:
-		bad("target.milestone is M%d, but status already equals the target; set it to null", *inv.Target.Milestone)
-	case inv.Target.Milestone != nil && *inv.Target.Milestone < 1:
-		bad("target.milestone %d is not a milestone of the release plan", *inv.Target.Milestone)
+		bad("target.milestone is %s, but status already equals the target; set it to null", MilestoneLabel(inv.Target.Milestone))
+	case inv.Target.Milestone != nil && (*inv.Target.Milestone < 1 || *inv.Target.Milestone > PostM4):
+		bad("target.milestone %d is not a milestone of the release plan (1 to 4, or %d for after M4)", *inv.Target.Milestone, PostM4)
 	}
 	return errs
 }

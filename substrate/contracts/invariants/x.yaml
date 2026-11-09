@@ -1575,7 +1575,7 @@
   status: new
   target:
     status: ci
-    milestone: 4
+    milestone: 5
   note: >-
     the router fork has a signature and DCO check, but it is not required and did not run on its pull
     requests #3 and #4; no repository checks Assisted-by or Co-authored-by lines; the check runs in
