@@ -1,5 +1,7 @@
 # Implementation Plan: Defer Instance Construction Until After Placement
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `006-defer-instance-placement` | **Date**: 2026-03-31 | **Spec**: [spec.md](spec.md)
 **Input**: Feature specification from `specs/006-defer-instance-placement/spec.md`
 
@@ -128,7 +130,7 @@ Option A is chosen: `placedInstance` gains `simCfg` (from `pendingInstance.simCf
 
 ### Task T3 — `CachedSnapshotProvider.AddInstance`
 
-**File**: `sim/cluster/snapshot.go`
+**File**: the cluster package's snapshot file
 
 **Behavioral contract**:
 - GIVEN a `CachedSnapshotProvider` initialized with N instances, WHEN `AddInstance(id, inst)` is called with a new ID, THEN subsequent `Snapshot(id, clock)` calls return a valid snapshot for that instance

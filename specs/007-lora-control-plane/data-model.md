@@ -1,5 +1,7 @@
 # Phase 1 Data Model: LoRA Control-Plane Subsystem
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Feature**: `007-lora-control-plane` | **Date**: 2026-07-15
 
 Entities described at the behavioral level (per BLIS's abstraction rule; exact Go
@@ -57,7 +59,7 @@ Existing `sim.Request` gains one field.
 ## Entity: Resident-Adapter Set (per instance)
 
 New per-instance state modeling the finite GPU adapter slots. Reuses the `cpuTier`
-hash-keyed LRU pattern (`sim/kv/tiered.go`: `store`/`touch`/`unlink`/`appendToTail`).
+hash-keyed LRU pattern (the simulator's tiered KV store: `store`/`touch`/`unlink`/`appendToTail`).
 
 | Attribute | Meaning | Validation |
 |---|---|---|

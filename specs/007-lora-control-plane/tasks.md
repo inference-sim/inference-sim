@@ -4,6 +4,8 @@ description: "Task list for LoRA Control-Plane Subsystem"
 
 # Tasks: LoRA Control-Plane Subsystem
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Input**: Design documents from `/specs/007-lora-control-plane/`
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/
 
@@ -23,8 +25,8 @@ independent — but each still delivers an independently testable increment.
 
 ## Path Conventions
 
-Single Go project: CLI in `cmd/`, library in `sim/` (+ subpackages `sim/lora/`,
-`sim/latency/`, `sim/kv/`, `sim/workload/`, `sim/cluster/`). New subpackage `sim/lora/`
+Single Go project: CLI in `cmd/`, library in `sim/` (+ subpackages the lora package,
+the simulator's latency package, the simulator's KV package, `sim/workload/`, `sim/cluster/`). New lora package
 registers into `sim/` via `init()` (no reverse import — Principle I).
 
 ---
@@ -33,7 +35,7 @@ registers into `sim/` via `init()` (no reverse import — Principle I).
 
 **Purpose**: Scaffolding with no observable behavior.
 
-- [X] T001 [P] Create `sim/lora/` package skeleton with `sim/lora/doc.go` documenting the subsystem (no-op default, registers into `sim/` via `init()`, no RNG)
+- [X] T001 [P] Create the lora package package skeleton with the lora package's doc file documenting the subsystem (no-op default, registers into `sim/` via `init()`, no RNG)
 - [X] T002 [P] Capture pre-feature no-op golden baseline: run `./blis run --model qwen/qwen3-14b --seed 42` and store stdout as `specs/007-lora-control-plane/testdata/baseline_noop.json` for INV-6 regression
 
 **Checkpoint**: Package compiles; baseline captured.
@@ -46,17 +48,17 @@ registers into `sim/` via `init()` (no reverse import — Principle I).
 stories. No user story can start until this phase completes. All paths reduce to a
 no-op when adapters are unconfigured (INV-6).
 
-- [X] T003 Write LoRAConfig validation contract tests in `sim/config_test.go`: adapters-present + `adapter_capacity==0` ⇒ error; `rank<=0` ⇒ error; `load_bandwidth_bytes_us<=0` ⇒ error (R11); request adapter id absent from registry ⇒ error; empty config ⇒ valid/inert (tests MUST fail first)
-- [X] T004 Add `LoRAConfig` sub-config + `AdapterSpec{ID string; Rank int}` types in `sim/config.go` — pointer types where zero is meaningful (R9), yaml tags, no logic yet
-- [X] T005 Implement `LoRAConfig.Validate()` in `sim/config.go` to pass T003 (R3 numeric guards; library returns error / factory panics, never `logrus.Fatalf` in `sim/` — Principle V)
-- [X] T006 Embed `LoRAConfig` as the 7th sub-config in `SimConfig` (`sim/simulator.go`); update factory signatures to accept the narrowest sub-config; **R4: grep and update ALL `SimConfig` construction sites**
+- [X] T003 Write LoRAConfig validation contract tests in the simulator's config test file: adapters-present + `adapter_capacity==0` ⇒ error; `rank<=0` ⇒ error; `load_bandwidth_bytes_us<=0` ⇒ error (R11); request adapter id absent from registry ⇒ error; empty config ⇒ valid/inert (tests MUST fail first)
+- [X] T004 Add `LoRAConfig` sub-config + `AdapterSpec{ID string; Rank int}` types in the simulator's config file — pointer types where zero is meaningful (R9), yaml tags, no logic yet
+- [X] T005 Implement `LoRAConfig.Validate()` in the simulator's config file to pass T003 (R3 numeric guards; library returns error / factory panics, never `logrus.Fatalf` in `sim/` — Principle V)
+- [X] T006 Embed `LoRAConfig` as the 7th sub-config in `SimConfig` (the simulator's host file); update factory signatures to accept the narrowest sub-config; **R4: grep and update ALL `SimConfig` construction sites**
 - [X] T007 Add inert `lora:` defaults to `defaults.yaml` (capacity nil/unset; coefficients present but only applied when adapters configured)
-- [X] T007a Write CLI-flag contract test in `cmd/run_test.go`/`cmd/replay_test.go`: each `--lora-*` config flag maps onto `LoRAConfig`; unset flags do NOT override `defaults.yaml` (R18); `--lora-adapter-capacity 0` with adapters present ⇒ `logrus.Fatalf` (contracts/cli-flags.md) (fail first)
-- [X] T007b Register `--lora-adapter-capacity`, `--lora-load-base-latency-us`, `--lora-load-bandwidth-bytes-us`, `--lora-footprint-bytes-per-rank` in `cmd/run.go` and `cmd/replay.go`, each guarded by `cmd.Flags().Changed(...)` before applying defaults (R18); bind onto `SimConfig.LoRAConfig`, to pass T007a. (The per-rank compute-overhead coefficients `step_overhead_tiers` and the adapter registry are **config-file only** — a scalar flag cannot express a per-rank map — so no `--lora-step-overhead-*` flags are registered.)
-- [X] T008 [P] Write adapter-registry contract tests in `sim/lora/registry_test.go`: `id→rank` lookup; iteration is key-sorted (R2); completeness check flags unknown ids (tests MUST fail first)
-- [X] T009 Implement adapter registry in `sim/lora/registry.go` (built from `LoRAConfig.Adapters`) + `init()` registration into `sim/`, to pass T008
+- [X] T007a Write CLI-flag contract test in the run command's test file/`cmd/replay_test.go`: each `--lora-*` config flag maps onto `LoRAConfig`; unset flags do NOT override `defaults.yaml` (R18); `--lora-adapter-capacity 0` with adapters present ⇒ `logrus.Fatalf` (contracts/cli-flags.md) (fail first)
+- [X] T007b Register `--lora-adapter-capacity`, `--lora-load-base-latency-us`, `--lora-load-bandwidth-bytes-us`, `--lora-footprint-bytes-per-rank` in the run command's file and `cmd/replay.go`, each guarded by `cmd.Flags().Changed(...)` before applying defaults (R18); bind onto `SimConfig.LoRAConfig`, to pass T007a. (The per-rank compute-overhead coefficients `step_overhead_tiers` and the adapter registry are **config-file only** — a scalar flag cannot express a per-rank map — so no `--lora-step-overhead-*` flags are registered.)
+- [X] T008 [P] Write adapter-registry contract tests in the lora package's registry test file: `id→rank` lookup; iteration is key-sorted (R2); completeness check flags unknown ids (tests MUST fail first)
+- [X] T009 Implement adapter registry in the lora package's registry file (built from `LoRAConfig.Adapters`) + `init()` registration into `sim/`, to pass T008
 - [X] T010 Add `Request.Adapter string` field in `sim/request.go`; **R4: grep and update ALL `Request{...}` literal construction sites**; zero value `""` MUST preserve byte-identity
-- [X] T011 Write INV-6 no-op byte-identity test comparing an adapter-blind run against `testdata/baseline_noop.json` (companion invariant test; must pass after T010)
+- [X] T011 Write INV-6 no-op byte-identity test comparing an adapter-blind run against the no-op baseline fixture (companion invariant test; must pass after T010)
 
 **Checkpoint**: Config validates, registry resolves, `Request.Adapter` exists, adapter-blind output byte-identical to baseline. User stories can now begin.
 
@@ -95,9 +97,9 @@ N; evictions follow LRU; in-use adapters not evicted.
 
 **Dependencies**: Phase 2 (registry, `Request.Adapter`). Metrics wiring builds on US1's T017.
 
-- [ ] T020 [US2] Write resident-set contract tests in `sim/lora/resident_set_test.go`: `store`/`touch`/`evictLRU`; invariant `resident ≤ capacity`; pinned (in-use) never evicted; deterministic LRU order, no RNG (fail first)
-- [ ] T021 [US2] Implement resident-adapter set (LRU) in `sim/lora/resident_set.go` reusing the `cpuTier` pattern (`store`/`touch`/`unlink`/`appendToTail` from `sim/kv/tiered.go`), to pass T020
-- [ ] T022 [US2] Wire a per-instance resident set into instance state in `sim/simulator.go` (InstanceSimulator): `touch` on warm reference, `admit` (+`evictLRU`) on cold — STATE ONLY, no latency effect yet
+- [ ] T020 [US2] Write resident-set contract tests in the lora package's resident-set test file: `store`/`touch`/`evictLRU`; invariant `resident ≤ capacity`; pinned (in-use) never evicted; deterministic LRU order, no RNG (fail first)
+- [ ] T021 [US2] Implement resident-adapter set (LRU) in the lora package's resident-set file reusing the `cpuTier` pattern (`store`/`touch`/`unlink`/`appendToTail` from the simulator's tiered KV store), to pass T020
+- [ ] T022 [US2] Wire a per-instance resident set into instance state in the simulator's host file (InstanceSimulator): `touch` on warm reference, `admit` (+`evictLRU`) on cold — STATE ONLY, no latency effect yet
 - [ ] T023 [US2] Companion integration invariant test: resident set never exceeds capacity across all steps of a M>N run (SC-003)
 - [ ] T024 [US2] Wire `AdapterLoadCount`/`AdapterEvictionCount` in `sim/metrics.go` from resident-set load/evict events (fills the US1 placeholder)
 
@@ -117,26 +119,26 @@ rank → longer step; usable KV shrinks with resident adapters, total conserved.
 
 ### Cost model core
 
-- [ ] T025 [P] [US3] Write cost-model contract tests in `sim/lora/cost_model_test.go`: `LoadLatency(rank) = base + ceil(bytes/bw) ≥ 0`; `FootprintBytes(rank)` monotonic in rank; `StepOverheadFactor` = `1.0` when no adapters; pure/deterministic (fail first)
-- [ ] T026 [US3] Implement `sim/lora/cost_model.go` (pure query methods per Principle III) to pass T025; register into `sim/` via `init()`
+- [ ] T025 [P] [US3] Write cost-model contract tests in the lora package's cost-model test file: `LoadLatency(rank) = base + ceil(bytes/bw) ≥ 0`; `FootprintBytes(rank)` monotonic in rank; `StepOverheadFactor` = `1.0` when no adapters; pure/deterministic (fail first)
+- [ ] T026 [US3] Implement the lora package's cost-model file (pure query methods per Principle III) to pass T025; register into `sim/` via `init()`
 
 ### Cold-load latency — pre-admission gate (PR3)
 
 - [ ] T027 [US3] Write cold-load contract test: cold adapter adds `LoadLatency` to TTFT (charged once), warm adds zero (US3 scenario 1, SC-004); loads serialized per instance (fail first)
-- [ ] T028 [US3] Implement the pre-admission gate in `sim/batch_formation.go` + `sim/simulator.go`: a cold request is held out of the runnable batch; schedule a serialized per-instance adapter-load completion at `now + LoadLatency`; adapter becomes resident + request batch-eligible at completion
+- [ ] T028 [US3] Implement the pre-admission gate in the simulator's batch-formation file + the simulator's host file: a cold request is held out of the runnable batch; schedule a serialized per-instance adapter-load completion at `now + LoadLatency`; adapter becomes resident + request batch-eligible at completion
 - [ ] T029 [US3] Companion invariant tests: INV-5 (`enqueue ≤ schedule`), INV-8 (load event keeps queue non-idle), INV-3 (load completion ≥ now), no RNG (determinism)
 
 ### Per-step compute overhead (PR4)
 
-- [X] T030 [P] [US3] Write step-overhead contract test in `sim/latency/` (`*_test.go`): factor `1.0` when `A_B==0` **including a non-unit `K7` case** (normalized factor = 1.0 for any `K7`, guards the no-op regression); **strictly increasing in max rank** — a batch whose max-rank tier is higher yields a strictly larger factor for the same `A_B>0` (non-vacuous; asserts rank actually enters via the tier, FR-009); monotonic in unique-adapter count; duplicate adapter counted once; **out-of-envelope rank/batch is clamped to the nearest calibrated tier (factor stays ≥1, no inversion)**; roofline factor == trained-physics factor (R23) (fail first)
-- [X] T030a [US3] Extend latency-model construction to accept an adapter-cost accessor (e.g. `AdapterCost` with `RankOf(id) int` / `StepOverheadFactor(batch)`), threaded from `sim/lora` via the existing `NewLatencyModelFunc` registration; nil accessor ⇒ no adapter effect (INV-6). Both roofline and trained-physics receive the same accessor (R13/R23)
-- [X] T031 [US3] Implement the shared adapter-overhead factor `1 + (K6(r_max)/K7(r_max))·A_B` in `sim/latency/` — `K6/K7` looked up from the **rank-tier table** (`step_overhead_tiers`) by the batch's max rank `r_max`, clamped to the nearest calibrated tier when out of envelope; normalized to = 1.0 at `A_B=0` by construction. Rank resolved via the T030a accessor (NOT a per-request field); applied identically by both backends (R23); preserve `StepTime ≥ 1` (INV-3)
+- [X] T030 [P] [US3] Write step-overhead contract test in the simulator's latency package (`*_test.go`): factor `1.0` when `A_B==0` **including a non-unit `K7` case** (normalized factor = 1.0 for any `K7`, guards the no-op regression); **strictly increasing in max rank** — a batch whose max-rank tier is higher yields a strictly larger factor for the same `A_B>0` (non-vacuous; asserts rank actually enters via the tier, FR-009); monotonic in unique-adapter count; duplicate adapter counted once; **out-of-envelope rank/batch is clamped to the nearest calibrated tier (factor stays ≥1, no inversion)**; roofline factor == trained-physics factor (R23) (fail first)
+- [X] T030a [US3] Extend latency-model construction to accept an adapter-cost accessor (e.g. `AdapterCost` with `RankOf(id) int` / `StepOverheadFactor(batch)`), threaded from the lora package via the existing `NewLatencyModelFunc` registration; nil accessor ⇒ no adapter effect (INV-6). Both roofline and trained-physics receive the same accessor (R13/R23)
+- [X] T031 [US3] Implement the shared adapter-overhead factor `1 + (K6(r_max)/K7(r_max))·A_B` in the simulator's latency package — `K6/K7` looked up from the **rank-tier table** (`step_overhead_tiers`) by the batch's max rank `r_max`, clamped to the nearest calibrated tier when out of envelope; normalized to = 1.0 at `A_B=0` by construction. Rank resolved via the T030a accessor (NOT a per-request field); applied identically by both backends (R23); preserve `StepTime ≥ 1` (INV-3)
 - [X] T032 [US3] Companion invariant test: no-op byte-identity preserved when `A_B==0` (INV-6); `StepTime ≥ 1` for empty and adapter batches
 
 ### HBM accounting (PR5, static)
 
-- [X] T033 [P] [US3] Write HBM contract test in `sim/latency/kv_capacity_test.go`: usable KV blocks shrink by the **fixed `capacity × per-slot footprint` (max declared rank)** reservation set once at startup; `allocated + free + adapter_reserved = total` (INV-4/INV-L4); and **`adapter_reserved` stays numerically invariant across adapter load/evict churn** (guards against the rejected dynamic running-sum model, which would nominally satisfy a laxer test); an infeasible reservation is rejected at startup (R22), not a runtime drop (fail first)
-- [X] T034 [US3] Subtract the **fixed capacity-based reservation** (`capacity × per-slot footprint`, from max declared rank) in `CalculateKVBlocks` (`sim/latency/kv_capacity.go`), once at startup beside model weights, to pass T033
+- [X] T033 [P] [US3] Write HBM contract test in the latency package's KV-capacity test file: usable KV blocks shrink by the **fixed `capacity × per-slot footprint` (max declared rank)** reservation set once at startup; `allocated + free + adapter_reserved = total` (INV-4/INV-L4); and **`adapter_reserved` stays numerically invariant across adapter load/evict churn** (guards against the rejected dynamic running-sum model, which would nominally satisfy a laxer test); an infeasible reservation is rejected at startup (R22), not a runtime drop (fail first)
+- [X] T034 [US3] Subtract the **fixed capacity-based reservation** (`capacity × per-slot footprint`, from max declared rank) in `CalculateKVBlocks` (the latency package's KV-capacity file), once at startup beside model weights, to pass T033
 
 **Checkpoint**: All three cost terms live; TTFT/throughput/memory physically meaningful; INV-4 extended and holds.
 
@@ -152,11 +154,11 @@ adapter-blind router; scorer not selected → routing unchanged.
 
 **Dependencies**: Phase 4 (resident set → snapshot), Phase 3 (identity).
 
-- [ ] T035 [US4] Write scorer contract tests in `sim/routing_scorers_test.go`: warm instance scores > cold (US4-1); empty `req.Adapter` ⇒ neutral; scorer absent from profile ⇒ routing unchanged (US4-3, INV-6); reads only `Adapter`/`ResidentAdapters`, never `OutputTokens` (INV-9) (fail first)
+- [ ] T035 [US4] Write scorer contract tests in the simulator's routing-scorers test file: warm instance scores > cold (US4-1); empty `req.Adapter` ⇒ neutral; scorer absent from profile ⇒ routing unchanged (US4-3, INV-6); reads only `Adapter`/`ResidentAdapters`, never `OutputTokens` (INV-9) (fail first)
 - [ ] T036 [US4] Add `ResidentAdapters` field to `RoutingSnapshot` in `sim/routing.go` (zero value ⇒ scorer neutral)
 - [ ] T037 [US4] Populate `ResidentAdapters` in `buildRouterState()` (`sim/cluster/cluster_event.go`) at Periodic freshness (INV-7); confirm adapter rides the existing per-model routing filter
-- [ ] T038 [US4] Implement `lora-affinity` `scorerFunc` + register in `validScorerNames` (R8) and the `newScorerWithObserver` switch in `sim/routing_scorers.go`; min-max normalize (llm-d parity); doc comment declares `ResidentAdapters` + Periodic tier (R17), to pass T035
-- [ ] T039 [US4] Add `--lora-scorer-weight` flag + profile composition in `cmd/run.go` and `cmd/replay.go` with `Flags().Changed` guard (R18)
+- [ ] T038 [US4] Implement `lora-affinity` `scorerFunc` + register in `validScorerNames` (R8) and the `newScorerWithObserver` switch in the simulator's routing-scorers file; min-max normalize (llm-d parity); doc comment declares `ResidentAdapters` + Periodic tier (R17), to pass T035
+- [ ] T039 [US4] Add `--lora-scorer-weight` flag + profile composition in the run command's file and `cmd/replay.go` with `Flags().Changed` guard (R18)
 - [ ] T040 [US4] Integration test in `sim/cluster/`: skewed (Zipfian) adapter popularity → ≥30% fewer total adapter loads with `lora-affinity` vs least-loaded routing (SC-005)
 
 **Checkpoint**: Placement control surface live; routing payoff demonstrated; default routing unchanged.
@@ -214,7 +216,7 @@ Setup (P1) ─▶ Foundational (P2) ─▶ US1 (P3, MVP) ─▶ US2 (P4) ─▶ 
 ## Parallel Execution Examples
 
 - **Setup**: T001, T002 in parallel.
-- **Foundational**: T008 (registry tests, `sim/lora/`) ∥ T003 (config tests, `sim/config_test.go`) — different files.
+- **Foundational**: T008 (registry tests, the lora package) ∥ T003 (config tests, the simulator's config test file) — different files.
 - **US1**: T013 (metrics test) ∥ T012 (workload test) — different files.
 - **US3**: T025 (cost-model test) ∥ T030 (step-overhead test) ∥ T033 (HBM test) — different packages/files; implementations (T026/T031/T034) then proceed per their own test.
 - **Polish**: T044 ∥ T045 ∥ T046 — independent files.

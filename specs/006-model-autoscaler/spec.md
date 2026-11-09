@@ -1,10 +1,12 @@
 # Feature Specification: Phase 1C Model Autoscaler
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Feature Branch**: `006-model-autoscaler`  
 **Created**: 2026-04-01  
 **Status**: Draft  
 **Tracking Issue**: [#696](https://github.com/inference-sim/inference-sim/issues/696)  
-**Design Document**: `docs/plans/2026-04-01-phase1c-autoscaling-design.md`
+**Design Document**: the Phase 1C autoscaling design document of 2026-04-01 (kept in the untracked docs/plans directory, not in the tree)
 
 ## User Scenarios & Testing *(mandatory)*
 

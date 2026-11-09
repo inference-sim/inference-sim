@@ -1,5 +1,7 @@
 # Research Notes: Phase 1A — Infrastructure: Nodes, GPUs, Instances
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `001-infra-nodes-gpus-instances`
 **Date**: 2026-03-13
 **Phase**: 0 — Resolve unknowns before design
@@ -10,17 +12,17 @@
 
 **Decision**: Add all new types (`Node`, `GPU`, `NodePool`, `PlacementManager`, `InstanceState`) to `sim/cluster/` — no new sub-package.
 
-**Rationale**: Consistent with existing cluster-level types (`InstanceSimulator`, `ClusterSimulator`, `DeploymentConfig`). Adding a `sim/cluster/infra/` sub-package would increase import depth without architectural benefit; the infra types are tightly coupled to cluster orchestration.
+**Rationale**: Consistent with existing cluster-level types (`InstanceSimulator`, `ClusterSimulator`, `DeploymentConfig`). Adding an infra sub-package of the cluster package would increase import depth without architectural benefit; the infra types are tightly coupled to cluster orchestration.
 
 **Alternatives considered**:
-- `sim/cluster/infra/` sub-package — rejected; unnecessary for 5–6 new files.
+- an infra sub-package of the cluster package — rejected; unnecessary for 5–6 new files.
 - Promoting to `sim/` — rejected; node/GPU placement is cluster-level (instance-level code must not see cluster state).
 
 ---
 
 ## Decision 2: Node Provisioning Delay Distribution
 
-**Decision**: Reuse `sim/workload.DistSpec` type for provisioning delay and instance loading delay distributions, sampled via `PartitionedRNG` with named subsystems (`"node-provisioning"`, `"instance-loading"`).
+**Decision**: Reuse `sim/workload/spec.go` (`DistSpec`) type for provisioning delay and instance loading delay distributions, sampled via `PartitionedRNG` with named subsystems (`"node-provisioning"`, `"instance-loading"`).
 
 **Rationale**: `DistSpec` already models durations (Gaussian, Exponential, Weibull, Constant) and is validated by `sim/workload` constructors. Reuse avoids duplication and keeps the delay model consistent with arrival-process modeling.
 

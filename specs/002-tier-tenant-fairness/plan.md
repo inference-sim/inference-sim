@@ -1,5 +1,7 @@
 # Implementation Plan: Phase 1B — Service Tiers & Tenant Fairness
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `002-tier-tenant-fairness` | **Date**: 2026-03-23 | **Spec**: [spec.md](spec.md)
 
 ## Summary
@@ -76,7 +78,7 @@ cmd/root.go               PR-4: call ComputePerTenantMetrics + printPerTenantMet
 
 ### Changes
 
-#### `sim/admission.go` (~40 lines added)
+#### the simulator's admission file (~40 lines added)
 
 ```go
 // SLOTierPriority maps SLOClass string to an integer priority.
@@ -266,7 +268,7 @@ Add invariant comment:
 
 ### Changes
 
-#### `sim/cluster/tenant.go` (new file, ~60 lines)
+#### the cluster package's tenant-tracker file (new file, ~60 lines)
 
 ```go
 // TenantTracker tracks in-flight request counts per tenant and enforces fair-share budgets.

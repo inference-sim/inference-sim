@@ -1,5 +1,7 @@
 # Implementation Plan: LoRA Control-Plane Subsystem
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `007-lora-control-plane` | **Date**: 2026-07-15 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/007-lora-control-plane/spec.md`
 
@@ -19,10 +21,10 @@ mandatory) plus one **Policy Template** (the scorer). Technical approach, ground
 the code as read on 2026-07-15:
 
 - Adapters are a **pre-declared registry** (`id → rank`); requests reference an adapter by string id (clarified 2026-07-15). Rank is the single source of truth for both load latency and HBM footprint.
-- Cold-load latency uses the tiered-KV transfer shape `baseLatency + ceil(size/bw)` (`sim/kv/tiered.go`) and is applied as a **pre-admission gate** (request cannot join a batch until its adapter is resident; loads serialized per instance).
-- The resident-adapter set reuses the `cpuTier` hash-keyed LRU pattern (`store`/`touch`/`unlink`/`appendToTail`, `sim/kv/tiered.go`).
+- Cold-load latency uses the tiered-KV transfer shape `baseLatency + ceil(size/bw)` (the simulator's tiered KV store) and is applied as a **pre-admission gate** (request cannot join a batch until its adapter is resident; loads serialized per instance).
+- The resident-adapter set reuses the `cpuTier` hash-keyed LRU pattern (`store`/`touch`/`unlink`/`appendToTail`, the simulator's tiered KV store).
 - The compute-overhead term folds into the existing `LatencyModel.StepTime(batch []*Request)` (which already receives requests) — no new single-impl interface (R13).
-- HBM accounting subtracts per-adapter bytes in `CalculateKVBlocks` (`sim/latency/kv_capacity.go`), extending INV-4.
+- HBM accounting subtracts per-adapter bytes in `CalculateKVBlocks` (the latency package's KV-capacity file), extending INV-4.
 - The scorer is a new `scorerFunc` entry reading a resident-adapter-set field added to `RoutingSnapshot` — extending an existing type, not minting an interface (R13).
 
 ## Technical Context
@@ -32,7 +34,7 @@ the code as read on 2026-07-15:
 **Storage**: N/A — in-memory adapter registry and per-instance resident sets; no external storage.
 **Testing**: `go test ./...` (table-driven; every golden test paired with an invariant test per Principle IV), `golangci-lint run ./...` (v2.9.0, zero tolerance). Full suite MUST stay < 60s.
 **Target Platform**: CPU-only deterministic discrete-event simulator (Linux/macOS dev).
-**Project Type**: Single Go project — CLI (`cmd/`) over a simulation library (`sim/`, `sim/cluster/`, `sim/kv/`, `sim/latency/`, `sim/workload/`, `sim/trace/`).
+**Project Type**: Single Go project — CLI (`cmd/`) over a simulation library (`sim/`, `sim/cluster/`, the simulator's KV package, the simulator's latency package, `sim/workload/`, `sim/trace/`).
 **Performance Goals**: (1) No-op default: adapter-blind runs byte-identical to pre-feature output (INV-6, SC-001, SC-006). (2) No measurable slowdown when unconfigured. (3) Test suite < 60s.
 **Constraints**: `sim/` never terminates (errors/panic only); unidirectional deps `cmd/ → sim/cluster/ → sim/`; subpackages register into `sim/` via `init()`; determinism via `PartitionedRNG` (this subsystem introduces **no randomness** — LRU and cost terms are deterministic, so no new RNG subsystem).
 **Scale/Scope**: Research regimes of N adapters (heterogeneous rank) contending for M slots across K instances; skewed popularity; bursty per-adapter arrivals. Delivery decomposes into 7 small, individually no-op-safe PRs (see Project Structure).
@@ -112,7 +114,7 @@ sim/cluster/
 ```
 
 **Structure Decision**: Single Go project, no new top-level directories. A new
-`sim/lora/` subpackage owns the adapter registry, resident-set (LRU), and cost
+the lora package owns the adapter registry, resident-set (LRU), and cost
 model, registering into `sim/` via `init()` to preserve the unidirectional
 dependency rule (Principle I). Cross-cutting fields (`Request.Adapter`,
 `RoutingSnapshot` resident set, `SimConfig.LoRAConfig`) live in `sim/` where the

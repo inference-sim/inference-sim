@@ -1,5 +1,7 @@
 # Tasks: Phase 1B — Service Tiers & Tenant Fairness
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Input**: Design documents from `specs/002-tier-tenant-fairness/`
 **Branch**: `002-tier-tenant-fairness`
 **PRs**: #809 (US1), #810 (US2), #811 (US3), #812 (US4)
@@ -17,7 +19,7 @@
 
 **Purpose**: Add the `sloTierPriority()` helper that US1 and US3 both depend on. Unblocks all subsequent phases.
 
-- [ ] T001 Add `SLOTierPriority(class string) int` function (exported; Background=0 … Critical=4; empty→3) to `sim/admission.go` — exported so `sim/cluster/` can call it without a circular import
+- [ ] T001 Add `SLOTierPriority(class string) int` function (exported; Background=0 … Critical=4; empty→3) to the simulator's admission file — exported so `sim/cluster/` can call it without a circular import
 - [ ] T002 Add `shedByTier map[string]int` field to `ClusterSimulator` struct and initialize to `make(map[string]int)` in `NewClusterSimulator()` in `sim/cluster/cluster.go`
 
 **Checkpoint**: `go build ./...` passes. Foundation ready for all user stories.
@@ -40,15 +42,15 @@ No additional foundational work — T001 and T002 are sufficient. User story pha
 
 > **Write these first — they MUST FAIL before T008 is implemented.**
 
-- [ ] T003 [US1] Table-driven unit tests for `sloTierPriority()`: all 5 canonical classes + empty string + unknown string — `sim/admission_tier_test.go` (new file)
-- [ ] T004 [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for Critical and Standard under overload — `sim/admission_tier_test.go`
-- [ ] T005 [US1] Behavior test: `TierShedAdmission.Admit()` returns `(false, reason)` for Sheddable when max effective load > threshold — `sim/admission_tier_test.go`
-- [ ] T006 [US1] Behavior test: Batch and Background always return `(true,"")` from `TierShedAdmission` regardless of load — `sim/admission_tier_test.go`
+- [ ] T003 [US1] Table-driven unit tests for `sloTierPriority()`: all 5 canonical classes + empty string + unknown string — the simulator's admission tier test file (new file)
+- [ ] T004 [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for Critical and Standard under overload — the simulator's admission tier test file
+- [ ] T005 [US1] Behavior test: `TierShedAdmission.Admit()` returns `(false, reason)` for Sheddable when max effective load > threshold — the simulator's admission tier test file
+- [ ] T006 [US1] Behavior test: Batch and Background always return `(true,"")` from `TierShedAdmission` regardless of load — the simulator's admission tier test file
 - [ ] T007 [US1] Invariant test: monotonic shedding order under a load ramp — shed counts satisfy `Sheddable ≥ Standard ≥ Critical` at each measurement point — `sim/cluster/cluster_tier_test.go` (new file)
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Implement `TierShedAdmission` struct + `Admit()` method in `sim/admission.go` (depends on T001; T003–T006 must fail first)
+- [ ] T008 [US1] Implement `TierShedAdmission` struct + `Admit()` method in the simulator's admission file (depends on T001; T003–T006 must fail first)
 - [ ] T009 [US1] Register `"tier-shed"` in `validAdmissionPolicies`, add `TierShedThreshold int` and `TierShedMinPriority int` to `AdmissionConfig`, add `case "tier-shed":` in `NewAdmissionPolicy()` — `sim/bundle.go`
 - [ ] T010 [US1] In `AdmissionDecisionEvent.Execute()` increment `cs.shedByTier[tier]++` on rejection (after `cs.rejectedRequests++`) — `sim/cluster/cluster_event.go`
 
@@ -68,9 +70,9 @@ No additional foundational work — T001 and T002 are sufficient. User story pha
 
 > **Write these first — they MUST FAIL before T014–T016 are implemented.**
 
-- [ ] T011 [US2] Behavior test: Batch request during busy cluster enters `deferredQueue` and is NOT counted as rejected — `sim/cluster/cluster_deferred_test.go` (new file)
-- [ ] T012 [US2] Behavior test: deferred request is promoted (injected as ClusterArrivalEvent) within one scheduling step of all instance WaitQueues becoming empty — `sim/cluster/cluster_deferred_test.go`
-- [ ] T013 [US2] Invariant test: INV-1 holds at simulation end with non-empty deferred queue at horizon (`injected == completed + running + queued + shed + dropped + deferred_horizon_interrupted`) — `sim/cluster/cluster_deferred_test.go`
+- [ ] T011 [US2] Behavior test: Batch request during busy cluster enters `deferredQueue` and is NOT counted as rejected — the cluster package's deferred-queue test file (new file)
+- [ ] T012 [US2] Behavior test: deferred request is promoted (injected as ClusterArrivalEvent) within one scheduling step of all instance WaitQueues becoming empty — the cluster package's deferred-queue test file
+- [ ] T013 [US2] Invariant test: INV-1 holds at simulation end with non-empty deferred queue at horizon (`injected == completed + running + queued + shed + dropped + deferred_horizon_interrupted`) — the cluster package's deferred-queue test file
 
 ### Implementation for User Story 2
 
@@ -94,14 +96,14 @@ No additional foundational work — T001 and T002 are sufficient. User story pha
 
 > **Write these first — they MUST FAIL before T020–T023 are implemented.**
 
-- [X] T017 [US3] Unit tests for `TenantTracker`: `IsOverBudget` true/false, `OnStart`/`OnComplete` balance, zero-value safety (nil budgets → always false), empty TenantID → no-op — `sim/cluster/tenant_test.go` (new file)
-- [X] T018 [US3] Behavior test: over-budget tenant's Sheddable request rejected while on-budget tenant's Sheddable request admitted under same load — `sim/cluster/cluster_tenant_test.go` (new file)
-- [X] T019 [US3] Behavior test: over-budget tenant's Critical request is NOT rejected solely due to budget status — `sim/cluster/cluster_tenant_test.go`
-- [X] T020 [US3] Invariant test: simulation with `TenantBudgets: nil` produces byte-identical stdout to run without tenant tracking (INV-6) — `sim/cluster/cluster_tenant_test.go`
+- [X] T017 [US3] Unit tests for `TenantTracker`: `IsOverBudget` true/false, `OnStart`/`OnComplete` balance, zero-value safety (nil budgets → always false), empty TenantID → no-op — the cluster package's tenant-tracker test file (new file)
+- [X] T018 [US3] Behavior test: over-budget tenant's Sheddable request rejected while on-budget tenant's Sheddable request admitted under same load — the cluster package's tenant test file (new file)
+- [X] T019 [US3] Behavior test: over-budget tenant's Critical request is NOT rejected solely due to budget status — the cluster package's tenant test file
+- [X] T020 [US3] Invariant test: simulation with `TenantBudgets: nil` produces byte-identical stdout to run without tenant tracking (INV-6) — the cluster package's tenant test file
 
 ### Implementation for User Story 3
 
-- [X] T021 [P] [US3] Implement `TenantTracker` struct + `NewTenantTracker()` + `IsOverBudget()` + `OnStart()` + `OnComplete()` — `sim/cluster/tenant.go` (new file; depends on T017 failing first)
+- [X] T021 [P] [US3] Implement `TenantTracker` struct + `NewTenantTracker()` + `IsOverBudget()` + `OnStart()` + `OnComplete()` — the cluster package's tenant-tracker file (new file; depends on T017 failing first)
 - [X] T022 [P] [US3] Add `TenantBudgets map[string]float64 \`yaml:"tenant_budgets,omitempty"\`` to `DeploymentConfig` — `sim/cluster/deployment.go` (R8 note: this exported map field is config-time only and never mutated after `NewClusterSimulator()` reads it, satisfying R8's intent — no runtime mutation through the exported field)
 - [X] T023 [US3] Add `tenantTracker *TenantTracker` field to `ClusterSimulator`; initialize in `NewClusterSimulator()` when `config.TenantBudgets != nil`; call `OnStart`/`OnComplete` at request dispatch and terminal state — `sim/cluster/cluster.go` (depends on T021, T022)
 - [X] T024 [US3] Add tenant budget override in `AdmissionDecisionEvent.Execute()`: after admission policy returns `admitted=true`, if `cs.tenantTracker.IsOverBudget(req.TenantID)` and `sim.SLOTierPriority(req.SLOClass) < 3`, override to rejected — `sim/cluster/cluster_event.go` (depends on T023)

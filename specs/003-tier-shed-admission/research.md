@@ -1,5 +1,7 @@
 # Research: Phase 1B-1a — Tier-Ordered Admission Shedding
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Status**: Complete — all decisions resolved by reading the codebase directly.
 
 ## What Already Exists (No Work Needed)
@@ -7,7 +9,7 @@
 | Thing | Location | Note |
 |-------|----------|------|
 | `Request.SLOClass string` | `sim/request.go` | "critical"/"standard"/"sheddable"/"batch"/"background"/"" |
-| `AdmissionPolicy` interface | `sim/admission.go:11` | `Admit(req *Request, state *RouterState) (admitted bool, reason string)` |
+| `AdmissionPolicy` interface | the simulator's admission file (line 11 at the time) | `Admit(req *Request, state *RouterState) (admitted bool, reason string)` |
 | `RoutingSnapshot.EffectiveLoad()` | `sim/routing.go:28` | `QueueDepth + BatchSize + InFlightRequests` — already the correct overload signal |
 | `RouterState.Snapshots` | `sim/routing.go` | Passed to `Admit()` — overload signal available without new wiring |
 | `validAdmissionPolicies` | `sim/bundle.go:61` | Unexported map, exposed via `IsValidAdmissionPolicy()` — correct pattern (R8) |
@@ -32,7 +34,7 @@
 
 **D-4: SLOTierPriority export requirement**
 - Decision: `SLOTierPriority(class string) int` must be exported (capital S).
-- Rationale: Called from `sim/cluster/cluster_event.go` (`sim/cluster` package). `sim/admission.go` is in `sim` package. Go package boundary requires export for cross-package calls. `sim/cluster/` can import `sim/` without circular dependency (correct direction per constitution I).
+- Rationale: Called from `sim/cluster/cluster_event.go` (`sim/cluster` package). the simulator's admission file is in `sim` package. Go package boundary requires export for cross-package calls. `sim/cluster/` can import `sim/` without circular dependency (correct direction per constitution I).
 
 **D-5: Per-tier shed counter**
 - Decision: Add `shedByTier map[string]int` (unexported) to `ClusterSimulator`. Initialize to `make(map[string]int)` in `NewClusterSimulator()`. Increment in `AdmissionDecisionEvent.Execute()` after `cs.rejectedRequests++`.
