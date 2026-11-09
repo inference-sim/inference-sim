@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
@@ -22,25 +22,25 @@ func TestKernelPools_Overrides_AreEachPoolsOwnEngine(t *testing.T) {
 		// The pools must cache in one format (a handoff moves KV between them), so the
 		// decode pool's KV budget differs through its memory utilisation instead.
 		"      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.8\n\npd_transfer")
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, loraReservedBytesForKV, numInstances}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, loraReservedBytesForKV = saved[4].(int), saved[5].(int), saved[6].(int64)
 		numInstances = saved[7].(int)
 	}()
-	repos := kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry}
+	repos := reposOf(dir, catalog, registry)
 	m, err := kernelmodel.Open("variant.yaml", repos)
 	if err != nil {
 		t.Fatal(err)
 	}
-	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = "variant.yaml", dir, registry, m
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = "variant.yaml", dir, registry, m
 	prefillInstances, decodeInstances, numInstances = 3, 1, 4
 
 	for _, reserve := range []int64{0, 2 << 30} {
 		loraReservedBytesForKV = reserve
-		pools := openKernelPools(catalog)
+		pools := openKernelPools()
 		pre, dec := pools.overrides()
 		want := map[deployment.Role]kernelmodel.Settings{}
 		for _, c := range []struct {

@@ -2,6 +2,7 @@ package workload
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -474,28 +475,6 @@ func TestUpgradeV1ToV2_V2Version_NoChange(t *testing.T) {
 	}
 }
 
-func TestUpgradeV1ToV2_RealtimeMappedToCritical(t *testing.T) {
-	spec := &WorkloadSpec{
-		Version: "1",
-		Clients: []ClientSpec{{SLOClass: "realtime"}},
-	}
-	UpgradeV1ToV2(spec)
-	if spec.Clients[0].SLOClass != "critical" {
-		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "critical")
-	}
-}
-
-func TestUpgradeV1ToV2_InteractiveMappedToStandard(t *testing.T) {
-	spec := &WorkloadSpec{
-		Version: "1",
-		Clients: []ClientSpec{{SLOClass: "interactive"}},
-	}
-	UpgradeV1ToV2(spec)
-	if spec.Clients[0].SLOClass != "standard" {
-		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "standard")
-	}
-}
-
 func TestUpgradeV1ToV2_EmptySLOClassUnchanged(t *testing.T) {
 	spec := &WorkloadSpec{
 		Version: "1",
@@ -515,59 +494,6 @@ func TestUpgradeV1ToV2_BatchUnchanged(t *testing.T) {
 	UpgradeV1ToV2(spec)
 	if spec.Clients[0].SLOClass != "batch" {
 		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "batch")
-	}
-}
-
-func TestUpgradeV1ToV2_Idempotent(t *testing.T) {
-	spec := &WorkloadSpec{
-		Version: "1",
-		Clients: []ClientSpec{{SLOClass: "realtime"}, {SLOClass: "interactive"}},
-	}
-	UpgradeV1ToV2(spec)
-	UpgradeV1ToV2(spec)
-	if spec.Clients[0].SLOClass != "critical" {
-		t.Errorf("SLOClass[0] = %q, want %q", spec.Clients[0].SLOClass, "critical")
-	}
-	if spec.Clients[1].SLOClass != "standard" {
-		t.Errorf("SLOClass[1] = %q, want %q", spec.Clients[1].SLOClass, "standard")
-	}
-}
-
-func TestLoadWorkloadSpec_V1File_AutoUpgradedToV2(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "v1.yaml")
-	yamlContent := `
-version: "1"
-seed: 42
-category: language
-aggregate_rate: 100.0
-clients:
-  - id: "c1"
-    slo_class: "realtime"
-    rate_fraction: 1.0
-    arrival:
-      process: poisson
-    input_distribution:
-      type: exponential
-      params:
-        mean: 100
-    output_distribution:
-      type: exponential
-      params:
-        mean: 50
-`
-	if err := os.WriteFile(path, []byte(yamlContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-	spec, err := LoadWorkloadSpec(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if spec.Version != "2" {
-		t.Errorf("Version = %q, want %q", spec.Version, "2")
-	}
-	if spec.Clients[0].SLOClass != "critical" {
-		t.Errorf("SLOClass = %q, want %q", spec.Clients[0].SLOClass, "critical")
 	}
 }
 
@@ -680,8 +606,8 @@ func TestValidate_LifecycleNoWindows_Rejects(t *testing.T) {
 		Version: "2", AggregateRate: 10.0,
 		Clients: []ClientSpec{{
 			ID: "bad", RateFraction: 1.0,
-			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
 			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 			Lifecycle:  &LifecycleSpec{Windows: []ActiveWindow{}},
 		}},
@@ -697,8 +623,8 @@ func TestValidate_LifecycleNegativeStartUs_Rejects(t *testing.T) {
 		Version: "2", AggregateRate: 10.0,
 		Clients: []ClientSpec{{
 			ID: "bad", RateFraction: 1.0,
-			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
 			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 			Lifecycle: &LifecycleSpec{
 				Windows: []ActiveWindow{{StartUs: -1, EndUs: 1_000_000}},
@@ -716,8 +642,8 @@ func TestValidate_LifecycleEndUsNotGreaterThanStartUs_Rejects(t *testing.T) {
 		Version: "2", AggregateRate: 10.0,
 		Clients: []ClientSpec{{
 			ID: "bad", RateFraction: 1.0,
-			Arrival:   ArrivalSpec{Process: "poisson"},
-			InputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 100}},
 			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 50}},
 			Lifecycle: &LifecycleSpec{
 				Windows: []ActiveWindow{{StartUs: 1_000_000, EndUs: 1_000_000}},
@@ -1249,5 +1175,63 @@ func TestExampleWorkloadFiles_CanonicalSLOClasses(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The v1 SLO class names realtime and interactive, deprecated in v0.15.0, were removed in
+// v0.16.0: a version-1 spec that uses one is refused naming the class, as any unknown class
+// is, and no longer mapped to critical or standard.
+func TestGenerateRequests_V1SLOClassNamesAreRefused(t *testing.T) {
+	for _, class := range []string{"realtime", "interactive"} {
+		spec := &WorkloadSpec{
+			Version: "1", Seed: 42, AggregateRate: 10.0,
+			Clients: []ClientSpec{{
+				ID: "c1", RateFraction: 1.0, SLOClass: class,
+				Arrival:    ArrivalSpec{Process: "poisson"},
+				InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+				OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+			}},
+		}
+		_, err := GenerateRequests(spec, 1_000_000, 20)
+		if err == nil {
+			t.Fatalf("slo_class %q: want a refusal, got none", class)
+		}
+		if !strings.Contains(err.Error(), fmt.Sprintf("unknown slo_class %q", class)) {
+			t.Errorf("slo_class %q: the refusal must name the class, got %v", class, err)
+		}
+	}
+	// The closest spec that runs: version 1 with a v2 class name.
+	spec := &WorkloadSpec{
+		Version: "1", Seed: 42, AggregateRate: 10.0,
+		Clients: []ClientSpec{{
+			ID: "c1", RateFraction: 1.0, SLOClass: "critical",
+			Arrival:    ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "exponential", Params: map[string]float64{"mean": 100}},
+			OutputDist: DistSpec{Type: "exponential", Params: map[string]float64{"mean": 50}},
+		}},
+	}
+	if _, err := GenerateRequests(spec, 1_000_000, 20); err != nil {
+		t.Fatalf("version 1 with slo_class critical: %v", err)
+	}
+}
+
+// ServeGen's single-period servegen_data.time_window, deprecated in v0.15.0, was removed in
+// v0.16.0: strict parsing refuses the key by name.
+func TestLoadWorkloadSpec_ServeGenTimeWindowIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	bad := write("bad.yaml", "version: \"2\"\nseed: 1\nservegen_data:\n  path: /data\n  time_window: morning\n")
+	if _, err := LoadWorkloadSpec(bad); err == nil || !strings.Contains(err.Error(), "time_window") {
+		t.Errorf("servegen_data.time_window: want a refusal naming the key, got %v", err)
+	}
+	ok := write("ok.yaml", "version: \"2\"\nseed: 1\nservegen_data:\n  path: /data\n  window_duration_secs: 600\n")
+	if _, err := LoadWorkloadSpec(ok); err != nil {
+		t.Errorf("servegen_data without time_window: %v", err)
 	}
 }

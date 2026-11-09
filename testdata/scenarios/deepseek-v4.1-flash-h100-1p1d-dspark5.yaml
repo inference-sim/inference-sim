@@ -5,7 +5,7 @@
 # nominal roce-200g; no H100 deployment records its NIC speed.
 kind: Scenario
 name: deepseek-v4.1-flash-h100-1p1d-dspark5
-engine_version: "0.31.0"
+engine_version: "0.32.0"
 
 model: deepseek-v4.1-flash
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -28,7 +28,7 @@ pools:
       cache_dtype: fp8
       max_num_seqs: 1024
       max_num_batched_tokens: 8192
-      max_model_len: auto
+      max_model_len: 1048576
       gpu_memory_utilization: 0.8
       engram_config:
         cpu_offload: true
@@ -43,7 +43,7 @@ pools:
       cache_dtype: fp8
       max_num_seqs: 1024
       max_num_batched_tokens: 8192
-      max_model_len: auto
+      max_model_len: 1048576
       gpu_memory_utilization: 0.8
       engram_config:
         cpu_offload: true

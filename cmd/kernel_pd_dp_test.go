@@ -1,60 +1,24 @@
 package cmd
 
 import (
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"pgregory.net/rapid"
 )
 
-// P/D disaggregation with data parallelism on the kernel backend. The fixture
+// P/D disaggregation with data parallelism. The fixture
 // (testdata/scenarios/minimax-m2.5-gb200-1p1d-dp2.yaml) states a routed MoE at dp 2 in both
-// pools, so DP-as-placement expands every logical instance into two per-rank replicas:
-//
-//   - 1P1D logical runs as 2 prefill + 2 decode replicas, conserving every request;
-//   - its exported trace replays byte-identically with the same flags and horizon (INV-13);
-//   - after the expansion, the handoff pricer between any prefill and decode replica is the
-//     prefill kernel's price between those replicas' placements in their pools.
+// pools. The v0.32.0 engine does not build a KV transfer from a data-parallel group yet
+// (blis-vllm#44), so a run of it is refused; the handoff pricer between the pools' placements
+// is checked without a run.
 
 const pdDPScenario = "minimax-m2.5-gb200-1p1d-dp2.yaml"
-
-func TestRunCmd_KernelBackend_DisaggregatedDataParallel(t *testing.T) {
-	const n = 20
-	prefix := filepath.Join(t.TempDir(), "trace")
-	common := []string{"--scenarios", pdScenarios, "--scenario", pdDPScenario,
-		"--num-instances", "2", "--prefill-instances", "1", "--decode-instances", "1", "--seed", "11",
-		"--horizon", "600000000"}
-	runOut, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", strconv.Itoa(n), "--rate", "8",
-		"--trace-output", prefix}, common...)...)
-	if err != nil {
-		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
-	}
-	if ids := instanceIDs(t, runOut); len(ids) != 4 {
-		t.Fatalf("1P1D logical at dp 2 must run 2 prefill + 2 decode replicas, got %v", ids)
-	}
-	clusterConservationHolds(t, runOut, n)
-	if got := clusterMetricInt(t, runOut, "completed_requests"); got != n {
-		t.Errorf("completed %d of %d requests", got, n)
-	}
-	if got, _ := pdFigure(t, runOut, "disaggregated_requests"); int(got) != n {
-		t.Errorf("not every request was disaggregated:\n%s", runOut)
-	}
-
-	repOut, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", prefix + ".yaml",
-		"--trace-data", prefix + ".csv"}, common...)...)
-	if err != nil {
-		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
-	}
-	if inv13View(t, repOut) != inv13View(t, runOut) {
-		t.Errorf("the dp=2 disaggregated run's replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
-	}
-}
 
 // After DP expansion, transferTime() between prefill replica i and decode replica j, under the
 // cluster's own instance numbering, is the prefill kernel's PDTransferTicks between rank i's and
@@ -64,15 +28,15 @@ func TestRunCmd_KernelBackend_DisaggregatedDataParallel(t *testing.T) {
 // decode rank would break the law.
 func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, numInstances, blockSizeTokens}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, numInstances = saved[4].(int), saved[5].(int), saved[6].(int)
 		blockSizeTokens = saved[7].(int64)
 	}()
-	repos := kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry}
+	repos := reposOf(pdScenarios, catalog, registry)
 	m, err := kernelmodel.Open(pdDPScenario, repos)
 	if err != nil {
 		t.Fatal(err)
@@ -84,14 +48,14 @@ func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 	if st.DataParallel != 2 {
 		t.Fatalf("fixture lost its point: dp %d", st.DataParallel)
 	}
-	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = pdDPScenario, pdScenarios, registry, m
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = pdDPScenario, pdScenarios, registry, m
 	blockSizeTokens = int64(st.BlockSize)
 	prefillInstances, decodeInstances, numInstances = 1, 1, 2 // logical, as the CLI states them
-	pools := openKernelPools(catalog)
+	pools := openKernelPools()
 	if pools == nil {
 		t.Fatal("no pools opened for a disaggregated run")
 	}
-	// DP-as-placement multiplies every pool by the replica factor.
+	// Every pool at dp instances, one per rank, as the pricer places them.
 	dp := st.DataParallel
 	prefillInstances, decodeInstances, numInstances = dp, dp, 2*dp
 	price := pools.transferTime()

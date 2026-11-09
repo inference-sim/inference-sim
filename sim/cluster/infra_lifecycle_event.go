@@ -3,8 +3,6 @@
 package cluster
 
 import (
-	"container/heap"
-
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/sirupsen/logrus"
 )
@@ -142,13 +140,7 @@ func (cs *ClusterSimulator) scheduleInstanceLoadedEvent(inst *InstanceSimulator)
 		return
 	}
 
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &InstanceLoadedEvent{
-			timestamp:  readyTime,
-			instanceID: inst.ID(),
-		},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&InstanceLoadedEvent{timestamp: readyTime, instanceID: inst.ID()}, &cs.lifecycleSender)
 }
 
 // ─── DrainPolicy interface and implementations ──────────────────────────────
@@ -269,7 +261,7 @@ func (d *drainRedirect) Drain(inst *InstanceSimulator, cs *ClusterSimulator) {
 		// the entry when the request is enqueued there.
 		inst.ForgetRequest(req.ID)
 		req.Redirected = true
-		cs.pushArrival(req, cs.clock)
+		cs.pushArrival(req, cs.clock, cs.instanceSender(inst))
 	}
 
 	// I5 (known edge case): Arrival events already in the instance event queue for

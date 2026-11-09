@@ -51,14 +51,14 @@ func simToHeaderOffload(c kvOffloadConfig) *workload.TraceKVOffloadConfig {
 	return h
 }
 
-// replayRecordsDeployment reports whether a replay's trace records the deployment BLIS ran:
-// a BLIS-generated trace does, and INV-13 keeps its header authoritative, so neither the
-// scenario's offload block nor --kv-offload-config may add tiers it did not run. An observe
-// trace (mode "real") records a server's requests, not BLIS's deployment, and an agentic
-// replay (#1937) has no trace at all -- its header is synthesized -- so for both the scenario
-// and an agreeing flag supply the tiers.
+// replayRecordsDeployment reports whether a replay's trace records the deployment BLIS ran.
+// A trace blis run or blis replay wrote does, and INV-13 keeps its header authoritative, so
+// neither the scenario's offload block nor --kv-offload-config may add tiers it did not run.
+// A trace blis convert wrote (mode "converted") records external traffic and no deployment
+// (#2067), and an agentic replay (#1937) has no trace at all -- its header is synthesized --
+// so for both the scenario and an agreeing flag supply the tiers.
 func replayRecordsDeployment(h workload.TraceHeader, agentic bool) bool {
-	return !agentic && h.Mode != "real"
+	return !agentic && h.RecordsDeployment()
 }
 
 // headerToSimOffload reads a trace header's offload block back into the engine's offload

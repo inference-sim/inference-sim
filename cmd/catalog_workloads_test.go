@@ -10,11 +10,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +24,8 @@ import (
 //	BC-1 the catalog file IS the preset source: its values reach the synthesized workload;
 //	BC-2 INV-6 — the cutover moves no number: the bundled catalog's presets equal the values
 //	     the deleted defaults.yaml block declared, and a preset-driven run is deterministic;
-//	BC-3 one shared reader and one shared locator behind all three preset consumers
-//	     (`blis run --workload`, `blis convert preset`, `blis observe --workload`);
+//	BC-3 one shared reader and one shared locator behind both preset consumers
+//	     (`blis run --workload`, `blis convert preset`);
 //	BC-4 an absent preset is refused naming the path looked at and the presets the catalog
 //	     does define;
 //	BC-5 strict parsing (R10): an unknown key or a missing token distribution is refused
@@ -35,9 +33,6 @@ import (
 //	BC-6 no catalog located is refused naming both --catalog and BLIS_CATALOG;
 //	BC-7 --catalog is registered on every command that resolves a preset or a model;
 //	BC-8 the retired duplicate cannot come back unnoticed.
-//
-// The cross-command parity half of BC-3 lives on the observe path in observe_cmd_test.go
-// (TestBuildPresetSpec_ParityWithRunPresetPath), where both legs are already available.
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -93,16 +88,6 @@ output:
 		w.OutputTokensMean, w.OutputTokensStdev, w.OutputTokensMin, w.OutputTokensMax)
 }
 
-// bundledPresetFixtures renders the four shipped presets as catalog file bodies, for tests
-// that need a catalog defining the standard set.
-func bundledPresetFixtures() map[string]string {
-	out := make(map[string]string, len(retiredDefaultsPresets))
-	for name, w := range retiredDefaultsPresets {
-		out[name] = presetYAML(w)
-	}
-	return out
-}
-
 // writeTestPresetCatalog builds a catalog CLONE ROOT whose workloads/ namespace holds the
 // given preset bodies, and returns the root.
 func writeTestPresetCatalog(t *testing.T, presets map[string]string) string {
@@ -120,16 +105,28 @@ func writeTestPresetCatalog(t *testing.T, presets map[string]string) string {
 	return root
 }
 
+// readPresetFrom reads a preset from the embedded catalog with the given presets as a catalog
+// overlay, through the loader as a run reads them. An error from the loader (a file the
+// contracts' strict decoding or validation refuses) is returned as the reader's would be.
+func readPresetFrom(t *testing.T, presets map[string]string, name string) (*presetWorkload, error) {
+	t.Helper()
+	d, err := dataWithCatalogOverlay(writeTestPresetCatalog(t, presets))
+	if err != nil {
+		return nil, err
+	}
+	return readCatalogPresetWorkload(name, d)
+}
+
 // withTestCatalogPath points the production locator at the given catalog for the duration
-// of a test: it sets the --catalog flag var and neutralizes any ambient BLIS_CATALOG, so
-// the test exercises the real resolveCatalogRoot rather than an injectable core. The
-// returned function restores the previous flag value.
+// of a test: it sets the --catalog flag var, neutralizes any ambient BLIS_CATALOG, and drops the
+// run's opened data, so the test exercises the real runData. The returned function restores
+// the previous values.
 func withTestCatalogPath(t *testing.T, catalog string) func() {
 	t.Helper()
-	prev := catalogPath
-	catalogPath = catalog
+	prev, prevData := catalogPath, openedData
+	catalogPath, openedData = catalog, nil
 	t.Setenv(catalogEnvVar, "")
-	return func() { catalogPath = prev }
+	return func() { catalogPath, openedData = prev, prevData }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,8 +134,8 @@ func withTestCatalogPath(t *testing.T, catalog string) func() {
 // ---------------------------------------------------------------------------
 
 // TestCatalogPresets_BundledCatalogMatchesRetiredDefaults is BC-2. It reads each preset
-// through the production reader out of the committed test catalog (testdata/catalog, a
-// clone-root-shaped fixture mirroring blis-catalog) and compares every field to the
+// through the production reader out of the catalog of the blis-substrate
+// module go.mod selects and compares every field to the
 // values the deleted defaults.yaml block declared. Since the downstream path (PresetConfig →
 // SynthesizeFromPreset) is untouched by this PR, equal inputs there mean an equal workload,
 // which is the INV-6 argument for the cutover.
@@ -150,7 +147,7 @@ func TestCatalogPresets_BundledCatalogMatchesRetiredDefaults(t *testing.T) {
 		if want.PromptTokensMean <= 0 || want.OutputTokensMean <= 0 {
 			t.Fatalf("non-vacuity: golden preset %q has no token distribution", name)
 		}
-		got, err := readCatalogPresetWorkload(name, filepath.Join("..", "testdata", "catalog"))
+		got, err := readCatalogPresetWorkload(name, testData())
 		if err != nil {
 			t.Fatalf("preset %q must resolve from the test catalog: %v", name, err)
 		}
@@ -174,9 +171,7 @@ func TestCatalogPresets_ReaderReadsCatalogFile(t *testing.T) {
 		PromptTokensMean: 111, PromptTokensStdev: 22, PromptTokensMin: 3, PromptTokensMax: 999,
 		OutputTokensMean: 55, OutputTokensStdev: 6, OutputTokensMin: 2, OutputTokensMax: 777,
 	}
-	catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(want)})
-
-	got, err := readCatalogPresetWorkload("chatbot", catalog)
+	got, err := readPresetFrom(t, map[string]string{"chatbot": presetYAML(want)}, "chatbot")
 	if err != nil {
 		t.Fatalf("readCatalogPresetWorkload: %v", err)
 	}
@@ -195,107 +190,32 @@ func TestCatalogPresets_ReaderReadsCatalogFile(t *testing.T) {
 	}
 }
 
-// TestCatalogWorkloadPath_Law pins the pure path law: a preset resolves to
-// <catalog>/workloads/<name>.yaml, and a name that could escape the workloads namespace is
-// refused rather than joined (the name comes from a user flag).
-func TestCatalogWorkloadPath_Law(t *testing.T) {
-	tests := []struct {
-		name      string
-		preset    string
-		catalog   string
-		want      string
-		wantError bool
-	}{
-		{name: "clone root", preset: "chatbot", catalog: "/cat", want: filepath.Join("/cat", "workloads", "chatbot.yaml")},
-		{name: "relative root preserved", preset: "chatbot", catalog: "rel/catalog", want: filepath.Join("rel/catalog", "workloads", "chatbot.yaml")},
-		{name: "empty catalog refused", preset: "chatbot", catalog: "", wantError: true},
-		{name: "empty name refused", preset: "", catalog: "/cat", wantError: true},
-		{name: "parent traversal refused", preset: "../models/qwen3-14b", catalog: "/cat", wantError: true},
-		{name: "bare dotdot refused", preset: "..", catalog: "/cat", wantError: true},
-		{name: "separator refused", preset: "sub/chatbot", catalog: "/cat", wantError: true},
-		{name: "absolute name refused", preset: "/etc/passwd", catalog: "/cat", wantError: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := catalogWorkloadPath(tc.preset, tc.catalog)
-			if tc.wantError {
-				if err == nil {
-					t.Fatalf("expected refusal for preset %q catalog %q, got %q", tc.preset, tc.catalog, got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("path: got %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 // ---------------------------------------------------------------------------
 // BC-4 / BC-5: refusals name the path, and never fall back
 // ---------------------------------------------------------------------------
 
 // TestCatalogPresets_UnknownPreset_NamesPathAndAvailable is BC-4. The refusal has to be
-// actionable in two ways: it names the file it looked for, and it lists what this catalog
-// does define — a hard-coded list would go stale the moment a catalog adds a preset.
+// actionable in two ways: it names where the entry belongs, and it lists what the catalog in
+// use does define — a hard-coded list would go stale the moment a catalog adds a preset.
 func TestCatalogPresets_UnknownPreset_NamesPathAndAvailable(t *testing.T) {
-	catalog := writeTestPresetCatalog(t, bundledPresetFixtures())
-
-	_, err := readCatalogPresetWorkload("nosuchpreset", catalog)
+	_, err := readCatalogPresetWorkload("nosuchpreset", testData())
 	if err == nil {
 		t.Fatal("an uncatalogued preset must be refused, never silently substituted")
 	}
 	msg := err.Error()
-	wantPath := filepath.Join(catalog, catalogWorkloadsSubdir, "nosuchpreset"+presetFileExt)
-	if !strings.Contains(msg, wantPath) {
-		t.Errorf("refusal must name the path looked at (%s), got: %q", wantPath, msg)
+	if want := catalogWorkloadsSubdir + "/nosuchpreset" + presetFileExt; !strings.Contains(msg, want) {
+		t.Errorf("refusal must name where the entry belongs (%s), got: %q", want, msg)
 	}
 	for name := range retiredDefaultsPresets {
 		if !strings.Contains(msg, name) {
 			t.Errorf("refusal must list the available preset %q, got: %q", name, msg)
 		}
 	}
-	if !strings.Contains(msg, catalogEnvVar) || !strings.Contains(msg, "--catalog") {
-		t.Errorf("refusal must name both catalog locator forms, got: %q", msg)
-	}
-}
-
-// TestAvailablePresetNames_SortedAndYAMLOnly keeps the diagnostic deterministic (INV-6):
-// the listed set is sorted and holds only preset definitions, so two runs against the same
-// catalog produce byte-identical refusals.
-func TestAvailablePresetNames_SortedAndYAMLOnly(t *testing.T) {
-	catalog := writeTestPresetCatalog(t, bundledPresetFixtures())
-	// Noise the reader must ignore: a README and a nested directory.
-	if err := os.WriteFile(filepath.Join(catalog, catalogWorkloadsSubdir, "README.md"), []byte("hi\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(catalog, catalogWorkloadsSubdir, "nested.yaml"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	got := availablePresetNames(catalog)
-	want := make([]string, 0, len(retiredDefaultsPresets))
-	for name := range retiredDefaultsPresets {
-		want = append(want, name)
-	}
-	sort.Strings(want)
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("available presets: got %v, want %v (sorted, .yaml files only)", got, want)
-	}
-
-	// A catalog with no workloads/ namespace lists nothing rather than failing: the caller
-	// reports the path either way.
-	if names := availablePresetNames(t.TempDir()); len(names) != 0 {
-		t.Errorf("a catalog with no workloads/ namespace must list no presets, got %v", names)
-	}
 }
 
 // TestCatalogPresets_StrictParsing is BC-5. A preset file is decoded with KnownFields(true)
-// (R10), and a definition with no token distribution is refused — the alternative is a
-// plausible-but-wrong zero-token workload with no diagnostic anywhere.
+// (R10), and a definition with no token distribution is refused when the catalog opens — the
+// alternative is a plausible-but-wrong zero-token workload with no diagnostic anywhere.
 func TestCatalogPresets_StrictParsing(t *testing.T) {
 	tests := []struct {
 		name string
@@ -312,23 +232,24 @@ func TestCatalogPresets_StrictParsing(t *testing.T) {
 			body: "prompt: {tokens: 256}\noutput: {tokens: 256, tokens_stdevv: 100}\n",
 			want: "tokens_stdevv",
 		},
-		{name: "empty file", body: "", want: "no token distribution"},
-		{name: "zero prompt tokens", body: "prompt: {tokens: 0}\noutput: {tokens: 256}\n", want: "no token distribution"},
-		{name: "negative output tokens", body: "prompt: {tokens: 256}\noutput: {tokens: -1}\n", want: "no token distribution"},
+		// The catalog loader refuses these when the data opens, before a run reads the preset, and
+		// names the file and the key.
+		{name: "empty file", body: "", want: "workloads/chatbot.yaml"},
+		{name: "zero prompt tokens", body: "prompt: {tokens: 0}\noutput: {tokens: 256}\n", want: "prompt.tokens: must be positive"},
+		{name: "negative output tokens", body: "prompt: {tokens: 256}\noutput: {tokens: -1}\n", want: "output.tokens: must be positive"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": tc.body})
-			_, err := readCatalogPresetWorkload("chatbot", catalog)
+			_, err := readPresetFrom(t, map[string]string{"chatbot": tc.body}, "chatbot")
 			if err == nil {
 				t.Fatal("a malformed preset definition must be refused, not silently zeroed")
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("refusal must name %q, got: %q", tc.want, err.Error())
 			}
-			// Every refusal names the offending file, so the fix is obvious.
-			if !strings.Contains(err.Error(), "chatbot"+presetFileExt) {
-				t.Errorf("refusal must name the preset file, got: %q", err.Error())
+			// Every refusal names the offending preset, so the fix is obvious.
+			if !strings.Contains(err.Error(), "chatbot") {
+				t.Errorf("refusal must name the preset, got: %q", err.Error())
 			}
 		})
 	}
@@ -398,18 +319,16 @@ func TestCatalogPresets_DistributionBoundsValidated(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := base
 			tc.mutate(&w)
-			catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(w)})
-
-			_, err := readCatalogPresetWorkload("chatbot", catalog)
+			_, err := readPresetFrom(t, map[string]string{"chatbot": presetYAML(w)}, "chatbot")
 
 			if tc.refused {
 				if err == nil {
 					t.Fatalf("a preset with invalid distribution bounds must be refused, not silently "+
 						"clamped by the sampler: %+v", w)
 				}
-				// Actionable (R1): the refusal names the offending file.
-				if !strings.Contains(err.Error(), "chatbot"+presetFileExt) {
-					t.Errorf("refusal must name the preset file, got: %q", err.Error())
+				// Actionable (R1): the refusal names the offending preset.
+				if !strings.Contains(err.Error(), "chatbot") {
+					t.Errorf("refusal must name the preset, got: %q", err.Error())
 				}
 			} else if err != nil {
 				t.Fatalf("a valid preset must still load unchanged (INV-6), got refusal: %v", err)
@@ -433,46 +352,44 @@ func TestCatalogPresets_DistributionBoundsValidated(t *testing.T) {
 // BC-6: no catalog located
 // ---------------------------------------------------------------------------
 
-// TestCatalogPresets_NoCatalogLocated_RefusedNamingBothForms is BC-6: with neither
-// --catalog nor BLIS_CATALOG there is no default and no search path, and the refusal names
-// both forms — the same law resolveCatalogRoot already applies to the model config (#1731),
-// now reached by the preset path too.
-func TestCatalogPresets_NoCatalogLocated_RefusedNamingBothForms(t *testing.T) {
+// TestCatalogPresets_NoCatalogLocated_ReadsTheEmbeddedCopy is BC-6 under design §3.3: with
+// neither --catalog nor BLIS_CATALOG a preset comes from the catalog embedded in the pinned
+// substrate release, never from a search path.
+func TestCatalogPresets_NoCatalogLocated_ReadsTheEmbeddedCopy(t *testing.T) {
 	restore := withTestCatalogPath(t, "")
 	defer restore()
 
-	_, err := loadPresetWorkload("chatbot")
-	if err == nil {
-		t.Fatal("a preset request with no catalog located must be refused")
+	wl, err := loadPresetWorkload("chatbot")
+	if err != nil {
+		t.Fatalf("with no catalog named, the embedded catalog's chatbot must load: %v", err)
 	}
-	for _, want := range []string{"--catalog", catalogEnvVar} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("refusal must name %q, got: %q", want, err.Error())
-		}
+	if *wl != retiredDefaultsPresets["chatbot"] {
+		t.Errorf("embedded chatbot: %+v, want %+v", *wl, retiredDefaultsPresets["chatbot"])
 	}
 }
 
 // TestCatalogPresets_LocatorHonorsEnvVar shows the preset reader inherits the whole locator
-// law rather than only its flag half: BLIS_CATALOG alone locates the catalog, and --catalog
-// wins when both are set.
+// law: BLIS_CATALOG alone replaces the embedded catalog, and --catalog wins when both are set.
 func TestCatalogPresets_LocatorHonorsEnvVar(t *testing.T) {
-	// Full valid bounds: since #1793 the reader validates min/max/stdev, so a mean-only
-	// fixture (min==max==0) would be refused. The distinguishing signal stays the differing
-	// prompt means (100 vs 200), which is all this locator-precedence test reads.
-	viaEnv := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(presetWorkload{
-		PromptTokensMean: 100, PromptTokensStdev: 10, PromptTokensMin: 1, PromptTokensMax: 800,
-		OutputTokensMean: 10, OutputTokensStdev: 2, OutputTokensMin: 1, OutputTokensMax: 100,
-	})})
-	viaFlag := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(presetWorkload{
-		PromptTokensMean: 200, PromptTokensStdev: 10, PromptTokensMin: 1, PromptTokensMax: 800,
-		OutputTokensMean: 20, OutputTokensStdev: 2, OutputTokensMin: 1, OutputTokensMax: 100,
-	})})
+	// Two whole catalogs, each the test catalog with its own chatbot (prompt mean 100 or 200).
+	catalogWith := func(promptMean int) string {
+		root := copyKernelCatalog(t)
+		body := presetYAML(presetWorkload{
+			PromptTokensMean: promptMean, PromptTokensStdev: 10, PromptTokensMin: 1, PromptTokensMax: 800,
+			OutputTokensMean: 10, OutputTokensStdev: 2, OutputTokensMin: 1, OutputTokensMax: 100,
+		})
+		if err := os.WriteFile(filepath.Join(root, catalogWorkloadsSubdir, "chatbot"+presetFileExt), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return root
+	}
+	viaEnv, viaFlag := catalogWith(100), catalogWith(200)
 
-	prev := catalogPath
-	defer func() { catalogPath = prev }()
+	restore := withTestCatalogPath(t, "")
+	defer restore()
 
-	catalogPath = ""
 	t.Setenv(catalogEnvVar, viaEnv)
+	openedData = nil
 	wl, err := loadPresetWorkload("chatbot")
 	if err != nil {
 		t.Fatalf("%s alone must locate the catalog: %v", catalogEnvVar, err)
@@ -481,7 +398,7 @@ func TestCatalogPresets_LocatorHonorsEnvVar(t *testing.T) {
 		t.Errorf("preset read via %s: prompt_tokens=%d, want 100", catalogEnvVar, wl.PromptTokensMean)
 	}
 
-	catalogPath = viaFlag
+	catalogPath, openedData = viaFlag, nil
 	wl, err = loadPresetWorkload("chatbot")
 	if err != nil {
 		t.Fatalf("--catalog must locate the catalog: %v", err)
@@ -499,13 +416,13 @@ func TestCatalogPresets_LocatorHonorsEnvVar(t *testing.T) {
 // command that resolves a preset (or a model config) without accepting the locator fails
 // here rather than at an operator's first invocation.
 func TestCatalogPresets_CatalogFlagOnEveryConsumer(t *testing.T) {
-	for _, path := range [][]string{{"run"}, {"replay"}, {"observe"}, {"convert", "preset"}} {
+	for _, path := range [][]string{{"run"}, {"replay"}, {"convert", "preset"}} {
 		cmd := findCommandByPath(t, rootCmd, path)
 		if f := cmd.Flags().Lookup("catalog"); f == nil {
 			t.Errorf("`blis %s` must accept --catalog: it resolves a model config or a workload preset from the catalog",
 				strings.Join(path, " "))
 		} else if f.DefValue != "" {
-			t.Errorf("`blis %s` --catalog default: got %q, want empty (no default, no search path)",
+			t.Errorf("`blis %s` --catalog default: got %q, want empty (the embedded copy)",
 				strings.Join(path, " "), f.DefValue)
 		}
 	}
@@ -579,6 +496,16 @@ func TestCatalogPresets_DuplicateSourceIsGone(t *testing.T) {
 			return ok && imported[x.Name]
 		}
 		skip := map[*ast.Ident]bool{}
+		// selectorOf marks the selector identifiers that are called as methods.
+		selectorOf := map[*ast.Ident]bool{}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			if c, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := c.Fun.(*ast.SelectorExpr); ok {
+					selectorOf[sel.Sel] = true
+				}
+			}
+			return true
+		})
 		ast.Inspect(parsed, func(n ast.Node) bool {
 			switch v := n.(type) {
 			case *ast.SelectorExpr:
@@ -601,6 +528,11 @@ func TestCatalogPresets_DuplicateSourceIsGone(t *testing.T) {
 		ast.Inspect(parsed, func(n ast.Node) bool {
 			id, ok := n.(*ast.Ident)
 			if !ok || skip[id] {
+				return true
+			}
+			// A method call on a value (data.Workload(name), blis-substrate's catalog reader) is
+			// not the retired type: the ban is on the identifier as a type or a field.
+			if call, isSel := selectorOf[id]; isSel && call {
 				return true
 			}
 			if why, banned := bannedIdents[id.Name]; banned {
@@ -671,12 +603,12 @@ func TestCatalogPresets_StaleWorkloadsBlockIsRefused(t *testing.T) {
 	}
 }
 
-// TestCatalogPresets_RetiredLocatorFlagsAreGone pins the other half of the cutover: the two
-// commands that only ever read defaults.yaml for its preset block no longer accept
+// TestCatalogPresets_RetiredLocatorFlagsAreGone pins the other half of the cutover: the
+// command that only ever read defaults.yaml for its preset block no longer accepts
 // --defaults-filepath. A flag whose sole consumer was deleted is a config key with no
 // consumer (#1768's lesson), and leaving it would silently accept a path nothing reads.
 func TestCatalogPresets_RetiredLocatorFlagsAreGone(t *testing.T) {
-	for _, path := range [][]string{{"observe"}, {"convert", "preset"}} {
+	for _, path := range [][]string{{"convert", "preset"}} {
 		cmd := findCommandByPath(t, rootCmd, path)
 		if f := cmd.Flags().Lookup("defaults-filepath"); f != nil {
 			t.Errorf("`blis %s` must not accept --defaults-filepath: its only consumer was the "+
@@ -757,9 +689,8 @@ func runPresetLeg(t *testing.T, catalog string) string {
 // if the preset were ignored entirely.
 func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if os.Getenv(presetRunLegEnv) == "1" {
-		repos := kernelmodel.DefaultRepos()
 		rootCmd.SetArgs([]string{
-			"run", "--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry,
+			"run", "--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", testRegistryDir(),
 			"--workload", "chatbot", "--rate", "5", "--num-requests", "20",
 			"--seed", "42", "--horizon", "600000000",
 			"--defaults-filepath", "../defaults.yaml",
@@ -789,5 +720,24 @@ func TestCatalogPresets_RunCLI_PresetComesFromCatalog(t *testing.T) {
 	if shifted == first {
 		t.Error("changing the catalog preset's token means left stdout unchanged: the preset " +
 			"definition in <catalog>/workloads/chatbot.yaml is not reaching the simulation")
+	}
+}
+
+// TestRemovedCommandsAreGone pins the v0.16.0 removal of blis observe and blis calibrate
+// (#1901): neither is a subcommand. run, replay and convert are, so the walk is not vacuous.
+func TestRemovedCommandsAreGone(t *testing.T) {
+	names := map[string]bool{}
+	for _, c := range rootCmd.Commands() {
+		names[c.Name()] = true
+	}
+	for _, gone := range []string{"observe", "calibrate"} {
+		if names[gone] {
+			t.Errorf("`blis %s` was removed in v0.16.0 (#1901) and must not be registered", gone)
+		}
+	}
+	for _, kept := range []string{"run", "replay", "convert"} {
+		if !names[kept] {
+			t.Errorf("`blis %s` must be registered", kept)
+		}
 	}
 }

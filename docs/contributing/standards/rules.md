@@ -79,7 +79,7 @@ Any code that allocates resources (blocks, slots, counters) must ensure no parti
 
 **Evidence:** KV block allocation originally used rollback, but `rollbackAllocation` had a bug (#1061) that deleted `RequestMap` for continuing requests, orphaning blocks and causing deadlocks. The check-then-act refactor eliminates this bug class entirely.
 
-**Additional evidence:** H12 hypothesis experiment — preemption loop in the host loop of the time (`sim/simulator.go:383`, since moved to blis-vllm) accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
+**Additional evidence:** H12 hypothesis experiment — preemption loop in the host loop of the time (line 383 of the simulator's host loop, since moved to blis-vllm) accesses `RunningBatch.Requests[len-1]` without bounds check. When all running requests are evicted and the batch is empty, the code panics with index out of range (bug #293).
 
 **Check:** For every loop that mutates state, verify either: (a) a pre-check gate prevents entry when capacity is insufficient, or (b) the failure path rolls back all mutations.
 
@@ -141,7 +141,7 @@ Use `yaml.KnownFields(true)` or equivalent strict parsing for all config loading
 
 **Evidence:** YAML typos in field names were silently accepted, producing default behavior instead of the user's intended configuration. The same gap existed in JSON: the since-removed `hardware_config.json` was decoded permissively until #1728, so a misspelled numeric key read as 0 — a plausible-but-wrong bandwidth, MFU or memory capacity with no diagnostic.
 
-**Check:** Every `yaml.Unmarshal` / `json.Unmarshal` or decoder usage on a config path must enable strict/known-fields mode (or an equivalent allowlist check — `sim/latency.rejectUnknownHardwareCalibKeys` names the offending key *and* the GPU entry, which `DisallowUnknownFields` cannot). Deliberately exempt: parsers for **external payloads** BLIS does not own (HuggingFace `config.json`, OpenTelemetry and Weka trace records) — those must tolerate unknown fields by contract.
+**Check:** Every `yaml.Unmarshal` / `json.Unmarshal` or decoder usage on a config path must enable strict/known-fields mode (or an equivalent allowlist check — the hardware-calibration check of the former latency package named the offending key *and* the GPU entry, which `DisallowUnknownFields` cannot). Deliberately exempt: parsers for **external payloads** BLIS does not own (HuggingFace `config.json`, OpenTelemetry and Weka trace records) — those must tolerate unknown fields by contract.
 
 **Enforced:** Micro-plan Phase 8.
 

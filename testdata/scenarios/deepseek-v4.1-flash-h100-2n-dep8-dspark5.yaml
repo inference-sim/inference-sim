@@ -1,9 +1,10 @@
 # DeepSeek-V4.1-Flash on two 8-GPU H100 nodes, DEP8 per node (TP1 DP8 EP8), DSpark K=5, max_model_len
 # 262144 at gpu_memory_utilization 0.85: the start-up KV check's DP fixture (#1955 follow-up). DeepEP
 # high-throughput: low-latency at max_num_batched_tokens 32768 is refused for its buffers (kernel fe1dfa7).
+# The internal data-parallel balancer: the v0.32.0 engine runs the DP group behind one endpoint.
 kind: Scenario
 name: deepseek-v4.1-flash-h100-2n-dep8-dspark5
-engine_version: "0.31.0"
+engine_version: "0.32.0"
 
 model: deepseek-v4.1-flash
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
@@ -26,7 +27,7 @@ pools:
       dp: 8
       dp_local: 8
       enable_expert_parallel: true
-      data_parallel_load_balancing: external
+      data_parallel_load_balancing: internal
     engine:
       block_size: 64
       cache_dtype: fp8

@@ -2,7 +2,7 @@
 # The kernel's glm-5-h200-fp8-sglang-tp8 scenario with an engine.speculative block added.
 kind: Scenario
 name: glm-5-h200-tp8-mtp3
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: glm-5
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

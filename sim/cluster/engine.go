@@ -35,11 +35,10 @@ func (e *UnlimitedEngine) Optimize(results []AnalyzerResult, _ GPUInventory) []S
 			vcs := sortedByDescCost(r.VariantCapacities)
 			for _, vc := range vcs {
 				if vc.ReplicaCount > 0 {
-					decisions = append(decisions, ScaleDecision{
-						ModelID: r.ModelID,
-						Variant: vc.Variant,
-						Delta:   -scaleDownN(r.SpareCapacity, vc),
-					})
+					// A zero count means the check proved no removal safe: emit nothing (INV-19).
+					if n := scaleDownN(r.SpareCapacity, vc, r.SafeRemovals); n > 0 {
+						decisions = append(decisions, ScaleDecision{ModelID: r.ModelID, Variant: vc.Variant, Delta: -n})
+					}
 					break
 				}
 			}
@@ -85,11 +84,10 @@ func (e *GreedyEngine) Optimize(results []AnalyzerResult, inventory GPUInventory
 			vcs := sortedByDescCost(r.VariantCapacities)
 			for _, vc := range vcs {
 				if vc.ReplicaCount > 0 {
-					decisions = append(decisions, ScaleDecision{
-						ModelID: r.ModelID,
-						Variant: vc.Variant,
-						Delta:   -scaleDownN(r.SpareCapacity, vc),
-					})
+					// A zero count means the check proved no removal safe: emit nothing (INV-19).
+					if n := scaleDownN(r.SpareCapacity, vc, r.SafeRemovals); n > 0 {
+						decisions = append(decisions, ScaleDecision{ModelID: r.ModelID, Variant: vc.Variant, Delta: -n})
+					}
 					break
 				}
 			}
@@ -113,28 +111,21 @@ func scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int {
 	return n
 }
 
-// scaleDownN returns exact replicas to remove from vc.
-// Returns 0 when vc has no active replicas (safe no-op regardless of caller).
-// Falls back to 1 when perReplicaCapacity == 0; clamps to [1, replicaCount].
-func scaleDownN(spareCapacity float64, vc VariantCapacity) int {
-	if vc.ReplicaCount <= 0 {
+// scaleDownN returns how many replicas to remove from vc: floor(spareCapacity / per-replica
+// capacity), at least 1, and at most both vc.ReplicaCount and safeRemovals, the count the
+// Analyzer's check proved safe (AnalyzerResult.SafeRemovals). It returns 0 when vc has no active
+// replicas or safeRemovals <= 0; the caller then emits no decision (INV-19). Without the
+// safeRemovals bound an idle start, whose spare capacity is the whole supply, drained every
+// replica at the first tick (#2015).
+func scaleDownN(spareCapacity float64, vc VariantCapacity, safeRemovals int) int {
+	if vc.ReplicaCount <= 0 || safeRemovals <= 0 {
 		return 0
 	}
-	if vc.Supply <= 0 {
-		return 1
+	n := 1
+	if vc.Supply > 0 {
+		n = max(1, int(math.Floor(spareCapacity/(vc.Supply/float64(vc.ReplicaCount)))))
 	}
-	prc := vc.Supply / float64(vc.ReplicaCount)
-	if prc <= 0 {
-		return 1
-	}
-	n := int(math.Floor(spareCapacity / prc))
-	if n < 1 {
-		n = 1
-	}
-	if n > vc.ReplicaCount {
-		n = vc.ReplicaCount
-	}
-	return n
+	return min(n, vc.ReplicaCount, safeRemovals)
 }
 
 // perReplicaCapacityForScaleUp returns Supply/ReplicaCount from the first active variant in vcs.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"io"
 	"math"
 	"os"
@@ -51,8 +52,8 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		// registerSimConfigFlags: tiered KV cache
 		"kv-cpu-blocks", "kv-offload-threshold",
 
-		// replay-specific: results
-		"results-path",
+		// replay-specific: the Result
+		"from-result",
 
 		// replay-specific flags
 		"trace-header", "trace-data",
@@ -61,212 +62,6 @@ func TestReplayCmd_SimConfigFlags_Registered(t *testing.T) {
 		f := replayCmd.Flags().Lookup(name)
 		if f == nil {
 			t.Errorf("replayCmd missing flag --%s", name)
-		}
-	}
-}
-
-func TestSimResult_JSONRoundTrip(t *testing.T) {
-	// GIVEN a workload.SimResult with known values
-	// workload.SimResult is in sim/workload/calibrate.go — JSON tags added by Task 2.
-	sr := workload.SimResult{
-		RequestID:    42,
-		TTFT:         12345.0,
-		E2E:          98765.0,
-		InputTokens:  256,
-		OutputTokens: 128,
-	}
-
-	// WHEN marshaled to JSON and back
-	data, err := json.Marshal(sr)
-	if err != nil {
-		t.Fatalf("json.Marshal failed: %v", err)
-	}
-	var got workload.SimResult
-	if err := json.Unmarshal(data, &got); err != nil {
-		t.Fatalf("json.Unmarshal failed: %v", err)
-	}
-
-	// THEN all fields round-trip correctly (BC-2)
-	if got.RequestID != 42 {
-		t.Errorf("RequestID: got %d, want 42", got.RequestID)
-	}
-	if got.TTFT != 12345.0 {
-		t.Errorf("TTFT: got %f, want 12345.0", got.TTFT)
-	}
-	if got.E2E != 98765.0 {
-		t.Errorf("E2E: got %f, want 98765.0", got.E2E)
-	}
-	if got.InputTokens != 256 {
-		t.Errorf("InputTokens: got %d, want 256", got.InputTokens)
-	}
-	if got.OutputTokens != 128 {
-		t.Errorf("OutputTokens: got %d, want 128", got.OutputTokens)
-	}
-
-	// THEN JSON keys match the calibrate contract
-	if !strings.Contains(string(data), `"request_id":42`) {
-		t.Errorf("JSON must contain integer request_id, got: %s", data)
-	}
-	if !strings.Contains(string(data), `"ttft_us"`) {
-		t.Errorf("JSON must contain ttft_us key, got: %s", data)
-	}
-	if !strings.Contains(string(data), `"e2e_us"`) {
-		t.Errorf("JSON must contain e2e_us key, got: %s", data)
-	}
-}
-
-func TestExtractSimResults_SortsAndConverts(t *testing.T) {
-	// GIVEN a Metrics struct with 3 completed requests
-	m := sim.NewMetrics()
-	// Populate as simulator does (RequestTTFTs in ticks = microseconds)
-	m.RequestTTFTs["request_2"] = 2000.0
-	m.RequestTTFTs["request_0"] = 1000.0
-	m.RequestTTFTs["request_1"] = 1500.0
-	m.RequestE2Es["request_2"] = 20000.0
-	m.RequestE2Es["request_0"] = 10000.0
-	m.RequestE2Es["request_1"] = 15000.0
-	m.Requests["request_0"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
-	m.Requests["request_1"] = sim.RequestMetrics{NumPrefillTokens: 200, NumDecodeTokens: 60}
-	m.Requests["request_2"] = sim.RequestMetrics{NumPrefillTokens: 300, NumDecodeTokens: 70}
-
-	// WHEN extractSimResults is called
-	results := extractSimResults(m) // returns []workload.SimResult
-
-	// THEN 3 results are returned in ascending request_id order (BC-5: determinism, R2)
-	if len(results) != 3 {
-		t.Fatalf("want 3 results, got %d", len(results))
-	}
-	if results[0].RequestID != 0 || results[1].RequestID != 1 || results[2].RequestID != 2 {
-		t.Errorf("results not sorted by request_id: %v", results)
-	}
-
-	// THEN TTFT and E2E are in microseconds (BC-2, BC-6)
-	if results[0].TTFT != 1000.0 {
-		t.Errorf("results[0].TTFT: got %f, want 1000.0 (microseconds)", results[0].TTFT)
-	}
-	if results[0].E2E != 10000.0 {
-		t.Errorf("results[0].E2E: got %f, want 10000.0 (microseconds)", results[0].E2E)
-	}
-	if results[0].InputTokens != 100 || results[0].OutputTokens != 50 {
-		t.Errorf("token counts wrong for results[0]: %+v", results[0])
-	}
-}
-
-func TestExtractSimResults_SkipsNonNumericIDs(t *testing.T) {
-	// GIVEN metrics with a non-numeric ID (session follow-up)
-	m := sim.NewMetrics()
-	m.RequestTTFTs["request_0"] = 1000.0
-	m.RequestTTFTs["session_follow_abc"] = 2000.0
-	m.RequestE2Es["request_0"] = 5000.0
-	m.RequestE2Es["session_follow_abc"] = 8000.0
-	m.Requests["request_0"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
-	m.Requests["session_follow_abc"] = sim.RequestMetrics{NumPrefillTokens: 200, NumDecodeTokens: 60}
-
-	// WHEN extractSimResults is called
-	results := extractSimResults(m)
-
-	// THEN only the numeric-ID request is included (BC-7)
-	if len(results) != 1 {
-		t.Fatalf("want 1 result (non-numeric ID skipped), got %d", len(results))
-	}
-	if results[0].RequestID != 0 {
-		t.Errorf("wrong RequestID: got %d, want 0", results[0].RequestID)
-	}
-}
-
-func TestExtractSimResults_ExcludesPartialTTFT(t *testing.T) {
-	// GIVEN a request with TTFT but no E2E (timed out during decode)
-	m := sim.NewMetrics()
-	m.RequestTTFTs["request_0"] = 1000.0
-	// No entry in RequestE2Es for request_0
-	m.Requests["request_0"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 0}
-
-	// WHEN extractSimResults is called
-	results := extractSimResults(m)
-
-	// THEN the incomplete request is excluded (no E2E = timeout after prefill)
-	if len(results) != 0 {
-		t.Errorf("want 0 results (no E2E = incomplete), got %d", len(results))
-	}
-}
-
-func TestExtractSimResults_EmptyMetrics_ReturnsEmptySlice(t *testing.T) {
-	// GIVEN empty metrics (all requests timed out before prefill)
-	m := sim.NewMetrics()
-
-	// WHEN extractSimResults is called
-	results := extractSimResults(m)
-
-	// THEN an initialized empty slice is returned (not nil)
-	// A nil slice marshals to JSON "null"; an empty slice marshals to "[]"
-	if results == nil {
-		t.Error("want initialized empty slice (not nil) so JSON marshal produces [] not null")
-	}
-	data, err := json.Marshal(results)
-	if err != nil {
-		t.Fatalf("json.Marshal failed: %v", err)
-	}
-	if string(data) != "[]" {
-		t.Errorf("want JSON [], got %s", data)
-	}
-}
-
-func TestExtractSimResults_MixedRequests_OnlyCompletedIncluded(t *testing.T) {
-	// GIVEN metrics with completed, timed-out, and non-numeric IDs mixed
-	m := sim.NewMetrics()
-	// Completed request
-	m.RequestTTFTs["request_1"] = 1500.0
-	m.RequestE2Es["request_1"] = 15000.0
-	m.Requests["request_1"] = sim.RequestMetrics{NumPrefillTokens: 200, NumDecodeTokens: 60}
-	// Timed out after prefill (TTFT but no E2E)
-	m.RequestTTFTs["request_2"] = 2000.0
-	m.Requests["request_2"] = sim.RequestMetrics{NumPrefillTokens: 300, NumDecodeTokens: 0}
-	// Session follow-up (non-numeric ID)
-	m.RequestTTFTs["session_followup_abc"] = 3000.0
-	m.RequestE2Es["session_followup_abc"] = 30000.0
-	m.Requests["session_followup_abc"] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
-
-	// WHEN extractSimResults is called
-	results := extractSimResults(m)
-
-	// THEN only the fully-completed numeric-ID request is included
-	if len(results) != 1 {
-		t.Fatalf("want 1 result (only completed numeric request), got %d: %v", len(results), results)
-	}
-	if results[0].RequestID != 1 {
-		t.Errorf("want RequestID=1, got %d", results[0].RequestID)
-	}
-}
-
-func TestExtractSimResults_DeterminismInvariant(t *testing.T) {
-	// GIVEN the same metrics populated in two different key-insertion orders
-	makeMetrics := func() *sim.Metrics {
-		m := sim.NewMetrics()
-		for _, id := range []string{"request_2", "request_0", "request_1"} {
-			m.RequestTTFTs[id] = float64(len(id)) * 1000
-			m.RequestE2Es[id] = float64(len(id)) * 5000
-			m.Requests[id] = sim.RequestMetrics{NumPrefillTokens: 100, NumDecodeTokens: 50}
-		}
-		return m
-	}
-
-	// WHEN extractSimResults is called twice
-	r1 := extractSimResults(makeMetrics())
-	r2 := extractSimResults(makeMetrics())
-
-	// THEN the output is identical (INV-6: determinism)
-	if len(r1) != len(r2) {
-		t.Fatalf("different lengths: %d vs %d", len(r1), len(r2))
-	}
-	for i := range r1 {
-		if r1[i].RequestID != r2[i].RequestID {
-			t.Errorf("index %d: RequestID %d vs %d — output is non-deterministic", i, r1[i].RequestID, r2[i].RequestID)
-		}
-	}
-	// Verify order is ascending (the invariant being tested)
-	for i := 1; i < len(r1); i++ {
-		if r1[i].RequestID <= r1[i-1].RequestID {
-			t.Errorf("results not sorted: index %d (%d) <= index %d (%d)", i, r1[i].RequestID, i-1, r1[i-1].RequestID)
 		}
 	}
 }
@@ -326,49 +121,6 @@ func TestReplayCmd_TraceDataFlag_Registered(t *testing.T) {
 	}
 }
 
-func TestComputeReplayHorizon_TwiceMaxArrival(t *testing.T) {
-	// BC-3: horizon = max(arrivals) * 2
-	requests := []*sim.Request{
-		{ArrivalTime: 1000},
-		{ArrivalTime: 5000},
-		{ArrivalTime: 3000},
-	}
-	horizon := computeReplayHorizon(requests)
-	if horizon != 10000 {
-		t.Errorf("want horizon 10000 (5000*2), got %d", horizon)
-	}
-}
-
-func TestComputeReplayHorizon_EmptyRequests_ReturnsMaxInt64(t *testing.T) {
-	// Edge case: no requests → MaxInt64 fallback
-	horizon := computeReplayHorizon([]*sim.Request{})
-	if horizon != math.MaxInt64 {
-		t.Errorf("want math.MaxInt64 for empty requests, got %d", horizon)
-	}
-}
-
-func TestComputeReplayHorizon_AllArrivalsAtZero_ReturnsFixedBuffer(t *testing.T) {
-	// Edge case: all requests at t=0 (common for synthetic traces)
-	// Must NOT return math.MaxInt64 (would hang simulation)
-	requests := []*sim.Request{{ArrivalTime: 0}, {ArrivalTime: 0}}
-	horizon := computeReplayHorizon(requests)
-	if horizon <= 0 || horizon == math.MaxInt64 {
-		t.Errorf("want a finite positive buffer for all-zero arrivals, got %d", horizon)
-	}
-}
-
-func TestComputeReplayHorizon_LargeArrival_NoOverflow(t *testing.T) {
-	// Overflow guard: maxArrival > MaxInt64/2 must not wrap to negative
-	requests := []*sim.Request{{ArrivalTime: math.MaxInt64/2 + 1}}
-	horizon := computeReplayHorizon(requests)
-	if horizon <= 0 {
-		t.Errorf("want positive horizon for large arrival (no overflow), got %d", horizon)
-	}
-	if horizon != math.MaxInt64 {
-		t.Errorf("want MaxInt64 as overflow fallback, got %d", horizon)
-	}
-}
-
 // TestReplayCmd_TraceOutput_FilesCreated verifies BC-1 and BC-2:
 // --trace-output creates <prefix>.yaml with mode:"replayed" and <prefix>.csv.
 func TestReplayCmd_TraceOutput_FilesCreated(t *testing.T) {
@@ -378,19 +130,18 @@ func TestReplayCmd_TraceOutput_FilesCreated(t *testing.T) {
 	outputPrefix := filepath.Join(dir, "out")
 
 	// Write header YAML
-	headerContent := `trace_version: 2
+	headerContent := `trace_version: 4
 time_unit: microseconds
 mode: generated
-warm_up_requests: 0
 `
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Write data CSV: 2 requests
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,100000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +156,6 @@ warm_up_requests: 0
 	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
-	origResults := resultsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -435,7 +185,6 @@ warm_up_requests: 0
 		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
-		resultsPath = origResults
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -467,7 +216,6 @@ warm_up_requests: 0
 	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
-	resultsPath = ""
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9
@@ -532,13 +280,6 @@ warm_up_requests: 0
 		t.Errorf("BC-1: want 2 records, got %d", len(loaded.Records))
 	}
 
-	// BC-3: for all requests, send_time_us = arrival_time_us (universal)
-	for i, rec := range loaded.Records {
-		if rec.SendTimeUs != rec.ArrivalTimeUs {
-			t.Errorf("BC-3: record[%d] send_time_us=%d != arrival_time_us=%d", i, rec.SendTimeUs, rec.ArrivalTimeUs)
-		}
-	}
-
 	// BC-3: completed requests have simulation-computed timing (non-zero chunk times)
 	for i, rec := range loaded.Records {
 		if rec.Status == "ok" {
@@ -563,20 +304,19 @@ func TestReplayCmd_EndToEnd_KernelBackend(t *testing.T) {
 	resultsFilePath := filepath.Join(dir, "results.json")
 
 	// Write header YAML
-	header := `trace_version: 2
+	header := `trace_version: 4
 time_unit: microseconds
 mode: generated
-warm_up_requests: 0
 `
 	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	// Write data CSV: 3 requests with arrival times spread over 200ms
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n" +
-		"2,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,200000,200000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,100000,0,0,ok\n" +
+		"2,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,200000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -591,7 +331,6 @@ warm_up_requests: 0
 	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
-	origResults := resultsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -621,7 +360,6 @@ warm_up_requests: 0
 		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
-		resultsPath = origResults
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -672,13 +410,7 @@ warm_up_requests: 0
 		}
 	}
 
-	// Verify horizon computation (BC-3): max arrival = 200000, horizon = 400000
-	horizon := computeReplayHorizon(reqs)
-	if horizon != 400000 {
-		t.Errorf("want horizon 400000 (200000*2), got %d (BC-3)", horizon)
-	}
-
-	// Full simulation via replayCmd.Run (BC-2: verifies SimResult JSON output)
+	// Full simulation via replayCmd.Run (BC-2: verifies the Result's request rows)
 	model = "test-model"
 	totalKVBlocks = 1000
 	blockSizeTokens = 16
@@ -686,7 +418,9 @@ warm_up_requests: 0
 	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
-	resultsPath = resultsFilePath
+	origOutput := resultOutput
+	defer func() { resultOutput = origOutput }()
+	resultOutput = resultsFilePath
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9
@@ -723,37 +457,38 @@ warm_up_requests: 0
 	// Run the replay command
 	replayCmd.Run(testCmd, nil)
 
-	// Verify SimResult file was written (BC-2)
+	// Verify the Result carries one row per trace record (BC-2)
 	data, err := os.ReadFile(resultsFilePath)
 	if err != nil {
-		t.Fatalf("results file not written: %v", err)
+		t.Fatalf("the Result was not written to --output: %v", err)
 	}
-	var simResults []workload.SimResult
-	if err := json.Unmarshal(data, &simResults); err != nil {
-		t.Fatalf("failed to parse SimResult JSON: %v\ncontent: %s", err, data)
+	var doc result.Result
+	if err := result.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("failed to parse the Result: %v\ncontent: %s", err, data)
 	}
+	rows := doc.RequestRows
 
 	// All 3 requests should have completed (BC-1: fidelity)
-	if len(simResults) != 3 {
-		t.Errorf("want 3 SimResult entries (one per trace record), got %d", len(simResults))
+	if len(rows) != 3 {
+		t.Fatalf("want 3 request rows (one per trace record), got %d", len(rows))
 	}
 
-	// Verify integer request IDs 0, 1, 2 in sorted order (BC-2)
-	for i, sr := range simResults {
-		if sr.RequestID != i {
-			t.Errorf("simResults[%d].RequestID = %d, want %d", i, sr.RequestID, i)
+	// Request ids request_0..request_2 in creation order (BC-2)
+	for i, row := range rows {
+		if want := fmt.Sprintf("request_%d", i); row.ID != want {
+			t.Errorf("rows[%d].ID = %q, want %q", i, row.ID, want)
 		}
-		if sr.TTFT <= 0 {
-			t.Errorf("simResults[%d].TTFT must be > 0, got %f", i, sr.TTFT)
+		if row.Fate != result.FateCompleted || row.TTFTUs == nil || *row.TTFTUs <= 0 {
+			t.Errorf("rows[%d]: fate %q, ttft %v, want completed with ttft_us > 0", i, row.Fate, row.TTFTUs)
 		}
-		if sr.E2E <= 0 {
-			t.Errorf("simResults[%d].E2E must be > 0, got %f", i, sr.E2E)
+		if row.E2EUs == nil || *row.E2EUs <= 0 {
+			t.Errorf("rows[%d].E2EUs must be > 0, got %v", i, row.E2EUs)
 		}
-		if sr.InputTokens != 10 {
-			t.Errorf("simResults[%d].InputTokens = %d, want 10", i, sr.InputTokens)
+		if row.PromptTokens != 10 {
+			t.Errorf("rows[%d].PromptTokens = %d, want 10", i, row.PromptTokens)
 		}
-		if sr.OutputTokens != 5 {
-			t.Errorf("simResults[%d].OutputTokens = %d, want 5", i, sr.OutputTokens)
+		if row.OutputTokens != 5 {
+			t.Errorf("rows[%d].OutputTokens = %d, want 5", i, row.OutputTokens)
 		}
 	}
 
@@ -766,12 +501,12 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 
-	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	headerContent := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n"
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -786,7 +521,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
-	origResults := resultsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -816,7 +550,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
-		resultsPath = origResults
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -847,7 +580,6 @@ func TestReplayCmd_TraceOutput_NoOp(t *testing.T) {
 	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
-	resultsPath = ""
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9
@@ -899,13 +631,13 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 
-	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	headerContent := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n"
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,20,8,20,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,20,8,20,0,0,0,0.0,,0,100000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -923,7 +655,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		origMaxSched := maxNumBatchedTokens
 		origInstances := numInstances
 		origSeed := seed
-		origResults := resultsPath
 		origThreshold := longPrefillTokenThreshold
 		origKVCPU := kvCPUBlocks
 		origOffload := kvOffloadThreshold
@@ -953,7 +684,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 			maxNumBatchedTokens = origMaxSched
 			numInstances = origInstances
 			seed = origSeed
-			resultsPath = origResults
 			longPrefillTokenThreshold = origThreshold
 			kvCPUBlocks = origKVCPU
 			kvOffloadThreshold = origOffload
@@ -984,7 +714,6 @@ func TestReplayCmd_TraceOutput_Determinism(t *testing.T) {
 		maxNumBatchedTokens = 2048
 		numInstances = 1
 		seed = 42
-		resultsPath = ""
 		longPrefillTokenThreshold = 0
 		kvCPUBlocks = 0
 		kvOffloadThreshold = 0.9
@@ -1054,12 +783,12 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
 
-	headerContent := "trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"
+	headerContent := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n"
 	if err := os.WriteFile(headerPath, []byte(headerContent), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,1,0,0,0,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,1,0,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1074,7 +803,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
-	origResults := resultsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -1104,7 +832,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
-		resultsPath = origResults
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -1135,7 +862,6 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	maxNumBatchedTokens = 2048
 	numInstances = 1
 	seed = 42
-	resultsPath = ""
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9
@@ -1172,11 +898,14 @@ func TestReplayCmd_AnomalyBlock_TimedOutRequests(t *testing.T) {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
+	// Read while the command runs: a Result is larger than the pipe's buffer.
+	var buf bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&buf, r); close(copied) }()
 	replayCmd.Run(testCmd, nil)
 	_ = w.Close()
 	os.Stdout = old
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	<-copied
 	out := buf.String()
 
 	// THEN: the Result's ledger records the timeout (BC-1): the one request timed out and
@@ -1203,8 +932,8 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		}
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1231,7 +960,6 @@ func TestReplayCmd_AutoscalerBundleFatal(t *testing.T) {
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
 		replaySessionMode = "fixed"
-		resultsPath = ""
 		replayTraceOutput = ""
 
 		testCmd := &cobra.Command{}
@@ -1281,8 +1009,8 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		}
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1309,7 +1037,6 @@ func TestReplayCmd_NodePoolsBundleFatal(t *testing.T) {
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
 		replaySessionMode = "fixed"
-		resultsPath = ""
 		replayTraceOutput = ""
 
 		testCmd := &cobra.Command{}
@@ -1353,12 +1080,12 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "trace.yaml")
 	dataPath := filepath.Join(dir, "trace.csv")
-	if err := os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644); err != nil {
+	if err := os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n" +
-		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,100000,100000,0,0,0,ok,,\n"
+	csvData := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n" +
+		"1,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,100000,0,0,ok\n"
 	if err := os.WriteFile(dataPath, []byte(csvData), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -1383,7 +1110,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
-	origResults := resultsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -1413,7 +1139,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
-		resultsPath = origResults
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -1445,7 +1170,6 @@ func TestReplayCmd_PD_BasicSmoke(t *testing.T) {
 	maxNumBatchedTokens = 2048
 	numInstances = 2
 	seed = 42
-	resultsPath = ""
 	longPrefillTokenThreshold = 0
 	kvCPUBlocks = 0
 	kvOffloadThreshold = 0.9
@@ -1503,8 +1227,8 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1531,7 +1255,6 @@ func TestReplayCmd_AutoscalerFlagFatal(t *testing.T) {
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
 		replaySessionMode = "fixed"
-		resultsPath = ""
 		replayTraceOutput = ""
 
 		testCmd := &cobra.Command{}
@@ -1577,8 +1300,8 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		_ = os.WriteFile(headerPath, []byte("trace_version: 2\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n"), 0644)
-		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"), 0644)
+		_ = os.WriteFile(headerPath, []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\n"), 0644)
+		_ = os.WriteFile(dataPath, []byte("request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"), 0644)
 
 		catalogDir := setupKernelTestFixtures(t)
 		model = "test-model"
@@ -1605,7 +1328,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 		tensorParallelism = 1
 		defaultsFilePath = "../defaults.yaml"
 		replaySessionMode = "fixed"
-		resultsPath = ""
 		replayTraceOutput = ""
 		prefillInstances = 4
 		decodeInstances = 0
@@ -1645,95 +1367,6 @@ func TestReplayCmd_PDTopologyFatal(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "topology") {
 		t.Errorf("BC-5: fatal message should mention 'topology', got:\n%s", out)
-	}
-}
-
-func TestExtractSimResults_PropagatesSLOClassModelITL(t *testing.T) {
-	// GIVEN a Metrics struct with one completed request that has SLOClass, Model, and ITL set
-	m := sim.NewMetrics()
-	m.RequestTTFTs["request_0"] = 1000.0
-	m.RequestE2Es["request_0"] = 5000.0
-	m.RequestITLs["request_0"] = 5000.0 // 5000 ticks = 5ms = 5000µs (same unit as TTFT/E2E)
-	m.Requests["request_0"] = sim.RequestMetrics{
-		NumPrefillTokens: 100,
-		NumDecodeTokens:  50,
-		SLOClass:         "standard",
-		Model:            "qwen3-14b",
-		// ITL field NOT set here — production code reads m.RequestITLs[reqID], not rm.ITL
-	}
-
-	// WHEN extractSimResults is called
-	results := extractSimResults(m)
-
-	// THEN SLOClass, Model, and ITLMeanUs are populated correctly (BC-1)
-	if len(results) != 1 {
-		t.Fatalf("want 1 result, got %d", len(results))
-	}
-	r := results[0]
-	if r.SLOClass != "standard" {
-		t.Errorf("SLOClass: got %q, want %q", r.SLOClass, "standard")
-	}
-	if r.Model != "qwen3-14b" {
-		t.Errorf("Model: got %q, want %q", r.Model, "qwen3-14b")
-	}
-	// ITLMeanUs sourced from m.RequestITLs (ticks = µs), not rm.ITL (ms)
-	if r.ITLMeanUs != 5000.0 {
-		t.Errorf("ITLMeanUs: got %f, want 5000.0 (from m.RequestITLs, ticks=µs)", r.ITLMeanUs)
-	}
-}
-
-func TestSimResult_NewFields_JSONOmitWhenEmpty(t *testing.T) {
-	// BC-2: omitempty means empty SLOClass/Model and zero ITLMeanUs are omitted from JSON
-	sr := workload.SimResult{
-		RequestID:    1,
-		TTFT:         100.0,
-		E2E:          200.0,
-		InputTokens:  10,
-		OutputTokens: 5,
-		// SLOClass, Model, ITLMeanUs intentionally zero/empty
-	}
-	data, err := json.Marshal(sr)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	s := string(data)
-	if strings.Contains(s, "slo_class") {
-		t.Errorf("omitempty: slo_class should be absent, got: %s", s)
-	}
-	if strings.Contains(s, `"model"`) {
-		t.Errorf("omitempty: model should be absent, got: %s", s)
-	}
-	if strings.Contains(s, "itl_mean_us") {
-		t.Errorf("omitempty: itl_mean_us should be absent, got: %s", s)
-	}
-
-	// GIVEN non-empty fields: all three must round-trip correctly (BC-1)
-	sr2 := workload.SimResult{
-		RequestID:    2,
-		TTFT:         100.0,
-		E2E:          200.0,
-		InputTokens:  10,
-		OutputTokens: 5,
-		SLOClass:     "standard",
-		Model:        "qwen3-14b",
-		ITLMeanUs:    5000.0,
-	}
-	data2, err := json.Marshal(sr2)
-	if err != nil {
-		t.Fatalf("json.Marshal (non-empty): %v", err)
-	}
-	var got workload.SimResult
-	if err := json.Unmarshal(data2, &got); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-	if got.SLOClass != "standard" {
-		t.Errorf("SLOClass round-trip: got %q, want %q", got.SLOClass, "standard")
-	}
-	if got.Model != "qwen3-14b" {
-		t.Errorf("Model round-trip: got %q, want %q", got.Model, "qwen3-14b")
-	}
-	if got.ITLMeanUs != 5000.0 {
-		t.Errorf("ITLMeanUs round-trip: got %f, want 5000.0", got.ITLMeanUs)
 	}
 }
 
@@ -1781,7 +1414,6 @@ func TestReplayCmd_SessionPoolFlags(t *testing.T) {
 func runReplayCaptureStdout(t *testing.T, args []string) string {
 	t.Helper()
 
-	origResultsPath := resultsPath
 	origTraceOutput := replayTraceOutput
 	origSaturationReport := saturationReport
 	origDetectorName := detectorName
@@ -1799,7 +1431,6 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	origShuffleCorpus := replayShuffleCorpus
 	origRequestTimeoutSecs := requestTimeoutSecs
 	t.Cleanup(func() {
-		resultsPath = origResultsPath
 		replayTraceOutput = origTraceOutput
 		saturationReport = origSaturationReport
 		detectorName = origDetectorName
@@ -1818,7 +1449,6 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 		requestTimeoutSecs = origRequestTimeoutSecs
 	})
 
-	resultsPath = ""
 	replayTraceOutput = ""
 	saturationReport = ""
 	detectorName = ""
@@ -1837,7 +1467,6 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	registerSimConfigFlags(testCmd)
 	testCmd.Flags().StringVar(&traceHeaderPath, "trace-header", "", "")
 	testCmd.Flags().StringVar(&traceDataPath, "trace-data", "", "")
-	testCmd.Flags().StringVar(&resultsPath, "results-path", "", "")
 	testCmd.Flags().StringVar(&replayTraceOutput, "trace-output", "", "")
 	testCmd.Flags().StringVar(&replaySessionMode, "session-mode", "fixed", "")
 	testCmd.Flags().IntVar(&replayThinkTimeMs, "think-time-ms", 0, "")
@@ -1851,11 +1480,14 @@ func runReplayCaptureStdout(t *testing.T, args []string) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
+	// Read while the command runs: a Result is larger than the pipe's buffer.
+	var buf bytes.Buffer
+	copied := make(chan struct{})
+	go func() { _, _ = io.Copy(&buf, r); close(copied) }()
 	replayCmd.Run(testCmd, nil)
 	_ = w.Close()
 	os.Stdout = old
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
+	<-copied
 	return buf.String()
 }
 
@@ -1888,7 +1520,7 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 	dataPath := filepath.Join(dir, "d.csv")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000, Status: "ok"},
@@ -1913,10 +1545,10 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 }
 
 // TestReplayCmd_SessionPool_SelfDrainsAllWaves proves the pool drains all
-// `--total-sessions` with --horizon UNSET — i.e. the self-drain horizon
-// override (Task 4, Step 5) is not truncated to the first wave by the 600s
-// auto-fallback (computeHorizonFromMaxArrival returns 600s when every
-// injected arrival is at t=0, which every OTel-derived corpus is). Uses a
+// `--total-sessions` with --horizon UNSET — i.e. the replay is not truncated
+// to the first wave by a horizon derived from the last arrival (a 600s
+// fallback when every injected arrival is at t=0, which every OTel-derived
+// corpus is; the replay's horizon is unlimited now, #1615). Uses a
 // 2-session corpus of single-round sessions and --total-sessions 8 (4 waves
 // at --concurrent-sessions 2): total sessions == total rounds == total
 // completed requests, so completed_requests in the metrics JSON must be 8.
@@ -1927,7 +1559,7 @@ func TestReplayCmd_SessionPool_SelfDrainsAllWaves(t *testing.T) {
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// 2 single-round sessions; round-0 arrivals at 0 (auto-horizon would be 600s).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s1", RoundIndex: 0, InputTokens: 120, OutputTokens: 15, ArrivalTimeUs: 0, Status: "ok"},
@@ -1972,7 +1604,7 @@ func TestReplayCmd_FixedMode_TimeoutOverride_EndToEnd(t *testing.T) {
 
 	// One non-session request with a 1µs deadline (arrival 0) — far shorter than its
 	// service time, so it times out under the trace deadline.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, DeadlineUs: 1, Status: "ok"},
 	}
@@ -2017,7 +1649,7 @@ func TestReplayCmd_Pool_TimeoutOverride_ReachesClones(t *testing.T) {
 
 	// One single-round session, no recorded deadline; a long enough output that a 1s
 	// deadline cannot be met.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 1000, OutputTokens: 8000, ArrivalTimeUs: 0, DeadlineUs: 0, Status: "ok"},
 	}
@@ -2044,9 +1676,9 @@ func TestReplayCmd_Pool_TimeoutOverride_ReachesClones(t *testing.T) {
 // the wiring end-to-end but never actually approaches a 600s wall-clock, so it
 // cannot by itself distinguish "override applied" from "override no-op").
 //
-// One 2-round session, round-0 arriving at t=0 (so the un-overridden auto
-// horizon — computeHorizonFromMaxArrival(0) — is exactly 600s, matching every
-// OTel-derived corpus where every round-0 arrival is 0). --think-time-ms
+// One 2-round session, round-0 arriving at t=0 (so a horizon derived from the
+// last arrival would be exactly 600s, matching every OTel-derived corpus where
+// every round-0 arrival is 0). --think-time-ms
 // forces the round-1 -> round-2 think-time gap to 700s, past that 600s
 // auto-horizon. Per session.go's BC-19 guard (arrivalTime > bp.Horizon), round
 // 2 is silently dropped (session state -> horizon_interrupted) unless
@@ -2058,7 +1690,7 @@ func TestReplayCmd_SessionPool_SelfDrainOverridesBlueprintHorizon(t *testing.T) 
 	dataPath := filepath.Join(dir, "d.csv")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 5, ArrivalTimeUs: 700_000_000, Status: "ok"},
@@ -2113,7 +1745,7 @@ func TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime(t *testing.T) {
 	dataPath := filepath.Join(dir, "d.csv")
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 50, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 	}
@@ -2170,7 +1802,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 		records := []workload.TraceRecord{
 			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 			{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 4, OutputTokens: 5, ArrivalTimeUs: 100_000, Status: "ok"},
@@ -2208,7 +1840,6 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 		replayTotalSessions = 0
 		replayThinkTimeMs = 0
 		replayThinkTimeDist = ""
-		resultsPath = ""
 		replayTraceOutput = ""
 
 		testCmd := &cobra.Command{}
@@ -2255,7 +1886,7 @@ func TestReplayCmd_AccumulateHeaderRequiresClosedLoop(t *testing.T) {
 	// Single-round session (matches TestReplayCmd_SessionPool_AutoPromotePermitsThinkTime's
 	// shape): completed_requests == 1 is an unambiguous "the guard let this run
 	// proceed to completion" signal, independent of round-index/think-time bookkeeping.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 	}
@@ -2301,7 +1932,7 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "trace.yaml")
 		dataPath := filepath.Join(dir, "trace.csv")
-		header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 		records := []workload.TraceRecord{
 			{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 10, OutputTokens: 5, ArrivalTimeUs: 0, Status: "ok"},
 			{RequestID: 1, SessionID: "", RoundIndex: 0, InputTokens: 8, OutputTokens: 4, ArrivalTimeUs: 0, Status: "ok"},
@@ -2339,7 +1970,6 @@ func TestReplayCmd_PoolRejectsNonSessionRecords(t *testing.T) {
 		replayTotalSessions = 0
 		replayThinkTimeMs = 0
 		replayThinkTimeDist = ""
-		resultsPath = ""
 		replayTraceOutput = ""
 
 		testCmd := &cobra.Command{}
@@ -2401,7 +2031,7 @@ func TestReplayCmd_ClosedLoopAccumulate_FaithfulReExport(t *testing.T) {
 
 	// Accumulate corpus: one 3-round session with a compaction round and a recorded
 	// think column. Encoded deltas (100, 30, 0); round 2 compacts (input_tokens_reset=40).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 100, OutputTokens: 20, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 30, OutputTokens: 15, ArrivalTimeUs: 5_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
@@ -2485,7 +2115,7 @@ func TestReplayCmd_Pool_FaithfulReExport(t *testing.T) {
 
 	// Accumulate corpus: 3 sessions x 2 rounds (with think). --total-sessions 3 == corpus
 	// size, so no cache-busting clones are added (keeps the round-trip clean to reason about).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},
@@ -2575,7 +2205,7 @@ func TestReplayCmd_ClosedLoopNonAccumulate_FaithfulReExport(t *testing.T) {
 
 	// Non-accumulate corpus (no SessionContextGrowth): one 3-round session with independent
 	// absolute per-round inputs and a recorded think column.
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s1", RoundIndex: 0, InputTokens: 60, OutputTokens: 12, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s1", RoundIndex: 1, InputTokens: 45, OutputTokens: 10, ArrivalTimeUs: 4_000_000, ThinkTimeUs: i64p(1_500_000), Status: "ok"},
@@ -2648,7 +2278,7 @@ func TestReplayCmd_Pool_ClonesCapturedInReExport(t *testing.T) {
 	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
 
 	// Accumulate corpus, 2 sessions x 2 rounds; --total-sessions 4 => 2 clones (s0_dup1, s1_dup2).
-	header := &workload.TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &workload.TraceHeader{Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	records := []workload.TraceRecord{
 		{RequestID: 0, SessionID: "s0", RoundIndex: 0, InputTokens: 80, OutputTokens: 10, ArrivalTimeUs: 0, Status: "ok"},
 		{RequestID: 1, SessionID: "s0", RoundIndex: 1, InputTokens: 20, OutputTokens: 8, ArrivalTimeUs: 3_000_000, ThinkTimeUs: i64p(1_000_000), Status: "ok"},

@@ -2,37 +2,49 @@
 
 Run your first BLIS simulation in 30 seconds.
 
-No credentials or network access are needed to *run* a simulation: BLIS reads each model's architecture from a local checkout of the model catalog and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
+No credentials or network access are needed to *run* a simulation: BLIS reads each model's architecture from the model catalog it carries and makes no HuggingFace requests. (`HF_TOKEN` matters only if you are downloading a new — possibly gated — model's `config.json` by hand to add a catalog entry.)
 
-## Set up the catalog, registry and scenarios
+## The catalog, registry and scenarios
 
-Every `blis run` / `blis replay` needs three things besides the binary:
+Every `blis run` / `blis replay` reads three inputs besides the binary:
 
-- the **catalog** — a clone of [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
-  (models, chips, fabrics, storage devices, workload presets), located by `--catalog <path>`
-  or `BLIS_CATALOG` (the flag wins; there is no default and no search path);
-- the **registry** — a clone of [`blis-registry`](https://github.com/inference-sim/blis-registry)
-  (the fitted coefficients), passed as `--registry`;
+- the **catalog** (models, chips, fabrics, storage devices, workload presets) — by default the
+  copy embedded in the blis-substrate module this build pins. `--catalog <dir>` or
+  `BLIS_CATALOG` names a directory with the layout of blis-substrate's
+  [`catalog/`](https://github.com/inference-sim/blis-substrate/tree/main/catalog) that replaces
+  it (the flag wins);
+- the **registry** (the fitted coefficients) — by default the embedded copy. `--registry <dir>`
+  or `BLIS_REGISTRY` names a directory with the layout of blis-substrate's
+  [`registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry) that
+  replaces it (the flag wins);
 - a **scenario** — a [`blis-schemas`](https://github.com/inference-sim/blis-schemas) Scenario +
   Deployment YAML naming the model, hardware, parallelism and engine settings, picked with
-  `--scenario <file name>` from `--scenarios <dir>`.
+  `--scenario <file name>` from `--scenarios <dir>`. The scenario is required.
 
 ```bash
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
 export SCENARIOS=examplescenarios
 ```
 
 A scenario directory can be any directory of scenario YAMLs. `$SCENARIOS` above is this
-repository's ready-to-run set (`examplescenarios/`). The clones pin the releases BLIS is tested
-against — see [Catalog compatibility](installation.md#catalog-compatibility).
+repository's ready-to-run set (`examplescenarios/`).
+
+To read a catalog of your own instead of the embedded one, check out blis-substrate at the
+commit this build pins ([Data compatibility](installation.md#catalog-compatibility)) and point
+`BLIS_CATALOG` at its `catalog/`. This step is optional:
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout v0.13.0
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
+```
+<!-- END GENERATED -->
 
 ## Single-Instance Simulation
 
 ```bash
 ./blis run --scenarios $SCENARIOS \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-registry \
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
   --rate 10 --num-requests 100
 ```
 
@@ -51,22 +63,23 @@ priced by `blis-latency-kernel`.
 BLIS prints diagnostic logs to stderr and one **Result** document to stdout: JSON by default,
 YAML with `--format yaml`; `--output result.json` writes the same bytes to a file, and
 `--view summary` renders a readable summary to stderr. The metrics are over the measured
-window, under blis-schemas' standard names ([Metrics & Results](../guide/results.md)):
+window, under the contracts/metrics registry's names; each is a figure with its `value` and
+`samples` ([Metrics & Results](../guide/results.md)):
 
 | Path | What It Measures |
 |------|-----------------|
-| `metrics.ttft_mean_ms`, `metrics.ttft_p99_ms` | **Time to First Token**: how long until the first output token. |
-| `metrics.e2e_mean_ms`, `metrics.e2e_p99_ms` | **End-to-End latency**: request arrival to the last output token. |
-| `metrics.itl_mean_ms`, `metrics.itl_p99_ms` | **Inter-Token Latency**, per token: (E2E - TTFT) / (output tokens - 1). |
-| `metrics.output_tok_s`, `metrics.request_throughput` | Output tokens and completed requests per second. |
-| `requests.completed`, `requests.injected` | The request ledger (INV-1): every injected request ends in one bucket. |
-| `requests.still_queued`, `requests.still_running` | Not done when the run ended: the workload outlasted the horizon. |
-| `engine.cluster.preemptions` | Running requests evicted to make room. Non-zero suggests overload. |
+| `metrics.ttft_mean_ms.value`, `metrics.ttft_p99_ms.value` | **Time to First Token**: how long until the first output token. |
+| `metrics.e2e_mean_ms.value`, `metrics.e2e_p99_ms.value` | **End-to-End latency**: request arrival to the last output token. |
+| `metrics.tpot_mean_ms.value`, `metrics.tpot_p99_ms.value` | **Time Per Output Token**: (E2E - TTFT) / (output tokens - 1). |
+| `metrics.output_tok_s.value`, `metrics.request_throughput.value` | Output tokens and completed requests per second. |
+| `requests.generated`, `requests.completed` | The fate ledger (DEV-9): every generated request has one fate. |
+| `requests.queued_at_horizon`, `requests.in_flight_at_horizon` | Not done when the run ended: the workload outlasted the horizon. |
+| `reports.engine.cluster.preemptions` | Running requests evicted to make room. Non-zero suggests overload. |
 
 ```bash
 ./blis run --scenarios $SCENARIOS \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --registry $PWD/blis-registry \
-  --rate 10 --num-requests 100 2>/dev/null | jq '.metrics.ttft_p99_ms'
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
+  --rate 10 --num-requests 100 2>/dev/null | jq '.metrics.ttft_p99_ms.value'
 ```
 
 ## Cluster Mode
@@ -79,7 +92,7 @@ ranks, up to eight instances):
 ```bash
 ./blis run \
   --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --num-instances 4 \
   --rate 100 --num-requests 500
 ```
@@ -88,26 +101,26 @@ This simulates a 4-instance cluster receiving 100 requests/second. Every cluster
 
 !!! note "Multi-instance output"
     The Result's `metrics` and `requests` are the whole cluster's. Each instance's own figures
-    are under `engine.instances`, keyed by instance id:
-    pipe the run above to `jq '.engine.instances.instance_0.completed_requests'`.
+    are under `reports.engine.instances`, keyed by instance id:
+    pipe the run above to `jq '.reports.engine.instances.instance_0.completed_requests'`.
 
 ## Try Different Configurations
 
 ```bash
 # Higher traffic rate
 ./blis run --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --num-instances 8 --rate 500 --num-requests 2000
 
 # With decision tracing (see where each request was routed)
 ./blis run --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml \
   --num-instances 4 --rate 100 --num-requests 500 \
   --trace-level decisions --summarize-trace --view summary
 
 # A different deployment: pick another scenario (single-node TP2: up to 4 instances)
 ./blis run --scenarios examplescenarios \
-  --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --registry $PWD/blis-registry \
+  --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml \
   --num-instances 2 --rate 100 --num-requests 500
 ```
 

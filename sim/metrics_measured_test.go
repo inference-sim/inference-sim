@@ -1,13 +1,9 @@
 package sim
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 	"testing"
 )
 
@@ -187,41 +183,24 @@ func TestCalculatePercentile_MatchesNumpyLinear(t *testing.T) {
 	near(t, "mean", CalculateMean(ticks), 20.997478260869563)
 }
 
-// The measured aggregates reach the --metrics-path file only: stdout keeps the whole-run
-// figures and none of the new keys (INV-6), while the file's ttft_*/e2e_* are the measured
-// window's and completed_requests stays the run-wide count INV-1 conserves.
-func TestEmitOutput_MeasuredAggregatesAreFileOnly(t *testing.T) {
+// The measured aggregates are the measured window's: the warm-up request moves the whole-run
+// TTFT mean but not the measured one, and completed_requests stays the run-wide count INV-1
+// conserves.
+func TestMeasured_AggregatesAreTheMeasuredWindows(t *testing.T) {
 	m := measuredFixture()
 	output := m.BuildOutput("cluster")
-	path := filepath.Join(t.TempDir(), "metrics.json")
-	stdout := captureStdout(t, func() {
-		if err := m.EmitOutput(output, path); err != nil {
-			t.Fatal(err)
-		}
-	})
-	for _, key := range []string{"request_itl_p90_ms", "interactivity_p90", "measured_window_s", "step_interval_p90_ms"} {
-		if strings.Contains(stdout, key) {
-			t.Errorf("stdout carries file-only key %q", key)
-		}
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var file map[string]any
-	if err := json.Unmarshal(data, &file); err != nil {
-		t.Fatal(err)
-	}
-	near(t, "file ttft_mean_ms", file["ttft_mean_ms"].(float64), 250)
+	measured := m.Measured()
+	sum := m.Summary()
+	near(t, "measured ttft_mean_ms", sum.TTFTMeanMs, 250)
 	if output.TTFTMeanMs == 250 {
 		t.Fatal("the fixture's warm-up request must move the whole-run TTFT mean, or this test is vacuous")
 	}
-	near(t, "file request_itl_p90_ms", file["request_itl_p90_ms"].(float64), 420)
-	if got := int(file["completed_requests"].(float64)); got != m.CompletedRequests {
-		t.Errorf("file completed_requests = %d, want the run-wide %d", got, m.CompletedRequests)
+	near(t, "request_itl_p90_ms", measured.RequestITLP90Ms, 420)
+	if output.CompletedRequests != m.CompletedRequests {
+		t.Errorf("completed_requests = %d, want the run-wide %d", output.CompletedRequests, m.CompletedRequests)
 	}
-	if got := int(file["measured_completed_requests"].(float64)); got != 4 {
-		t.Errorf("file measured_completed_requests = %d, want 4", got)
+	if measured.MeasuredCompletedRequests != 4 {
+		t.Errorf("measured_completed_requests = %d, want 4", measured.MeasuredCompletedRequests)
 	}
 }
 

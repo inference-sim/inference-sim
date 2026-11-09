@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +19,7 @@ import (
 // BLIS_CATALOG and nothing else, and --model-config-folder is retired.
 //
 //	AC-1 — both forms locate the catalog; --catalog wins when both are set.
-//	AC-2 — a run with NEITHER is refused, naming both forms. No working-directory default.
+//	AC-2 — a run with NEITHER reads the embedded copy (SIM-6). No working-directory default.
 //	AC-3 — --model-config-folder is gone from cmd/'s production sources and every command.
 //	AC-5 — locating a catalogued model via --catalog changes no number (INV-6).
 //
@@ -45,9 +46,9 @@ func runCatalogLeg(t *testing.T, leg, env string) (stdout, stderr string, err er
 	return out.String(), errBuf.String(), err
 }
 
-// TestRunCmd_CatalogLocation is AC-1 and AC-2 at the CLI boundary: `--catalog` and
-// `BLIS_CATALOG` each locate the catalog for a real `blis run`, and a run with neither is
-// refused naming both forms rather than falling back to a working-directory default.
+// TestRunCmd_CatalogLocation is SIM-6 at the CLI boundary: `--catalog` and `BLIS_CATALOG` each
+// locate the catalog for a real `blis run`, and a run with neither reads the copy embedded in
+// the pinned blis-substrate, never a working-directory default, and records it as embedded.
 //
 // Each leg runs in a re-exec subprocess so the real cobra tree executes and a
 // logrus.Fatalf surfaces as exit status 1.
@@ -75,10 +76,12 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 		leg       string
 		env       string // BLIS_CATALOG value for the subprocess ("" = unset-equivalent)
 		wantFatal bool
+		// wantEmbedded: the Result's data record names the embedded catalog.
+		wantEmbedded bool
 	}{
 		{name: "--catalog locates the catalog", leg: "flag", wantFatal: false},
 		{name: "BLIS_CATALOG locates the catalog", leg: "env", env: catalog, wantFatal: false},
-		{name: "neither is refused", leg: "none", wantFatal: true},
+		{name: "neither reads the embedded copy", leg: "none", wantEmbedded: true},
 	}
 
 	for _, tt := range tests {
@@ -93,6 +96,12 @@ func TestRunCmd_CatalogLocation(t *testing.T) {
 				// silently-empty run would satisfy "no error".
 				if !completedAny(stdout) {
 					t.Errorf("expected simulation metrics on stdout, got:\n%s", stdout)
+				}
+				if src := parseResult(t, stdout).Data.Catalog.Source; (src == result.SourceEmbedded) != tt.wantEmbedded {
+					t.Errorf("data.catalog.source = %q; embedded wanted: %v", src, tt.wantEmbedded)
+				}
+				if strings.Contains(stderr, "using config from") {
+					t.Errorf("the run resolved a config from a working-directory default; stderr:\n%s", stderr)
 				}
 				return
 			}
@@ -189,8 +198,8 @@ func TestS4_ModelConfigFolderRetired_StaticGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read root.go: %v", err)
 	}
-	if !strings.Contains(string(root), "catalogPath") {
-		t.Fatal("non-vacuity: cmd/root.go does not mention catalogPath, so the guard is not " +
+	if !strings.Contains(string(root), "registerDataFlags") {
+		t.Fatal("non-vacuity: cmd/root.go does not register the data flags, so the guard is not " +
 			"scanning the flag-registration source")
 	}
 }

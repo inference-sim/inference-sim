@@ -35,7 +35,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 
@@ -205,7 +205,7 @@ func (g *Gateway) Start(host cluster.GatewayHost) (err error) {
 		}
 	}()
 	g.host = host
-	seed := streamSeed(host.RNG())
+	seed := streamSeed(host.Seed())
 	if g.opts.Seed != nil {
 		seed = *g.opts.Seed
 	}
@@ -503,7 +503,11 @@ func (g *Gateway) Stop() {
 		return
 	}
 	for _, id := range g.sortedFlights() {
-		g.flights[id].cancel()
+		// A flight still on its way to the router (the gateway latency) has no context yet:
+		// nothing of it runs in the router to end (#2002).
+		if f := g.flights[id]; f.cancel != nil {
+			f.cancel()
+		}
 	}
 	g.cancel()
 	if g.router != nil {

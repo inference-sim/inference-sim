@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"testing"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
@@ -37,7 +36,7 @@ func TestArrivals_ADrainRedirectIsNotANewArrival(t *testing.T) {
 		r.ArrivalTime = 0 // all at once, so instance 0 holds a queue to redirect
 	}
 	cs := newTestCluster(cfg, NewSliceRequestSource(reqs), nil)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{event: &drainAt{at: 0, inst: 0}, seqID: cs.nextSeqID()})
+	cs.scheduleTestEvent(&drainAt{at: 0, inst: 0})
 	if err := cs.Run(); err != nil {
 		t.Fatal(err)
 	}

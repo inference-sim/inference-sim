@@ -14,7 +14,7 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 | [Workload Specifications](workloads.md) | Defining multi-client traffic patterns with YAML |
 | [Cluster Simulation](cluster.md) | Running multi-instance simulations with the full pipeline |
 | [Metrics & Results](results.md) | Understanding JSON output, metrics, anomaly counters, and fitness scores |
-| [Observe / Replay / Calibrate](observe-replay-calibrate.md) | Replaying trace workloads (`blis replay`); `observe`/`calibrate` are deprecated (#1901) |
+| [Trace Replay](replay.md) | Replaying trace workloads (`blis replay`), converted agentic traces, closed-loop and pooled sessions |
 | [Skills & Plugins](skills-and-plugins.md) | Claude Code skills, plugin marketplaces, and workflow tooling |
 
 ## Reading Paths
@@ -27,5 +27,5 @@ Task-oriented guides for using BLIS effectively. Each guide covers a specific fe
 
 **New model evaluation:** [Latency Model](latency-models.md) → [Workload Specifications](workloads.md) → [Metrics & Results](results.md)
 
-**Trace replay:** [Latency Model](latency-models.md) → [Workload Specifications](workloads.md) → [Observe / Replay / Calibrate](observe-replay-calibrate.md) → [Metrics & Results](results.md)
+**Trace replay:** [Latency Model](latency-models.md) → [Workload Specifications](workloads.md) → [Trace Replay](replay.md) → [Metrics & Results](results.md)
 

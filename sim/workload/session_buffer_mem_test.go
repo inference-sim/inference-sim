@@ -37,7 +37,7 @@ func TestReasoningAccumulate_PerSessionMemoryIsLinear(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rng := rand.New(rand.NewSource(42))
+			seed := int64(42)
 			spec := &ReasoningSpec{
 				MultiTurn: &MultiTurnSpec{
 					MaxRounds:     tc.maxRounds,
@@ -48,7 +48,7 @@ func TestReasoningAccumulate_PerSessionMemoryIsLinear(t *testing.T) {
 			inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 0, "min": 100, "max": 100}})
 			outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 0, "min": 50, "max": 50}})
 
-			reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", nil)
+			reqs, err := GenerateReasoningRequests(seed, "sess_test", spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", "", nil)
 			if err != nil {
 				t.Fatalf("GenerateReasoningRequests: %v", err)
 			}
@@ -120,7 +120,7 @@ func TestSessionAccumulate_ClosedLoopMemoryIsLinear(t *testing.T) {
 		Horizon:       1 << 30,
 		InputSampler:  &constantSampler{value: 100},
 		OutputSampler: &constantSampler{value: 50},
-		RNG:           rand.New(rand.NewSource(7)),
+		Streams:       SessionStreams(7, "s"),
 	}
 	sm := NewSessionManager([]SessionBlueprint{bp})
 
@@ -179,7 +179,7 @@ func TestReasoningAccumulate_WithPrefix_MemoryIsLinear(t *testing.T) {
 		inputLen  = 100
 		outputLen = 50
 	)
-	rng := rand.New(rand.NewSource(123))
+	seed := int64(123)
 	spec := &ReasoningSpec{
 		MultiTurn: &MultiTurnSpec{
 			MaxRounds:     R,
@@ -191,7 +191,7 @@ func TestReasoningAccumulate_WithPrefix_MemoryIsLinear(t *testing.T) {
 	outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": float64(outputLen), "std_dev": 0, "min": float64(outputLen), "max": float64(outputLen)}})
 	prefix := sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(2)), prefixLen)
 
-	reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", prefix)
+	reqs, err := GenerateReasoningRequests(seed, "sess_test", spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", "sys", prefix)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestReportMemoryWinForPR(t *testing.T) {
 		{50, 20.0},
 	}
 	for _, tc := range cases {
-		rng := rand.New(rand.NewSource(42))
+		seed := int64(42)
 		spec := &ReasoningSpec{
 			MultiTurn: &MultiTurnSpec{
 				MaxRounds:     tc.R,
@@ -259,7 +259,7 @@ func TestReportMemoryWinForPR(t *testing.T) {
 		inputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 1500, "std_dev": 0, "min": 1500, "max": 1500}})
 		outputSampler, _ := NewLengthSampler(DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 425, "std_dev": 0, "min": 425, "max": 425}})
 
-		reqs, err := GenerateReasoningRequests(rng, spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", nil)
+		reqs, err := GenerateReasoningRequests(seed, "sess_test", spec, inputSampler, outputSampler, 0, "c", "t", "s", "", "", "", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

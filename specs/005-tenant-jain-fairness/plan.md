@@ -9,7 +9,7 @@ Add `ComputePerTenantMetrics` to `sim/cluster/metrics.go` following the existing
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+
+**Language/Version**: the pinned Go release (go.mod)
 **Primary Dependencies**: `sim/cluster` (metrics), `sim` (Metrics, RequestMetrics types), `cobra`, `logrus`
 **Storage**: N/A — all in-memory, post-simulation aggregation
 **Testing**: `go test ./...`, table-driven tests, BDD behavioral contracts

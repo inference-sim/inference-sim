@@ -39,8 +39,8 @@ func rosterRank(name string) int {
 }
 
 // Bank holds and drives a roster of streaming detectors over ONE deterministic
-// replay of completed request metrics (sourced from run/replay's sim or observe's
-// real server), so every selected detector is scored on a byte-identical event
+// replay of completed request metrics (from the run or replay simulation), so every
+// selected detector is scored on a byte-identical event
 // sequence in a single pass (#1519). It reimplements no Detector method — it only
 // multiplexes the streaming replay across N detectors, recording every
 // (event, detector) verdict to the shared sink. The collected records are reduced

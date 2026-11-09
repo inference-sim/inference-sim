@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 )
 
 // P/D handoffs through engine.Engine. A disaggregated prefill reaches its engine as

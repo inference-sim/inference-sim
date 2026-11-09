@@ -31,7 +31,7 @@ func inv1Accounted(m *Metrics) int {
 
 // TestINV1_InstanceHelperMatchesRegistry asserts this package's five-term list is
 // the one the registry states as the single-instance specialisation. The cluster
-// package runs the eleven-term half of the same check; between them the two copies
+// package runs the ten-term half of the same check; between them the two copies
 // of the five-term list cannot drift from the statement or from each other.
 //
 // Anchored on `injected_requests ==` because the registry also carries the

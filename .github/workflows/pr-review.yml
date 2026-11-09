@@ -128,7 +128,7 @@ jobs:
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
 
       # Assert the key really is absent from this job's environment (BC-3). The
       # litellm-proxy holds it; the workflow holds only the dummy. Fails loud if a
@@ -156,10 +156,13 @@ jobs:
         run: |
           # PR body as the declaration source; written as file CONTENTS, never a
           # shell argument.
-          gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/decl.txt" || : > "$RUNNER_TEMP/decl.txt"
+          if ! gh pr view "$PR" --repo "$REPO" --json body --jq '.body // ""' > "$RUNNER_TEMP/decl.txt"; then
+            echo "::warning::could not read the PR body; reviewing with no declarations"
+            printf '' > "$RUNNER_TEMP/decl.txt"
+          fi
           echo "file=$RUNNER_TEMP/decl.txt" >> "$GITHUB_OUTPUT"
       - name: Run archon
-        continue-on-error: true
+        continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
         env:
           ARCHON_BIN: ${{ steps.archon_build.outputs.archon_bin }}
           DECL_FILE: ${{ steps.decl.outputs.file }}
@@ -223,7 +226,7 @@ jobs:
       # litellm-proxy with a dummy key.
       - name: Run qa-review
         id: qa
-        continue-on-error: true
+        continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
         env:
           OPENAI_BASE_URL: ${{ env.LLM_PROXY_URL }}
           OPENAI_API_KEY: ${{ env.LLM_DUMMY_KEY }}
@@ -263,7 +266,7 @@ jobs:
       # a dummy key.
       - name: Run blis-pr-review
         id: blis
-        continue-on-error: true
+        continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
         timeout-minutes: 20
         env:
           ANTHROPIC_BASE_URL: ${{ env.LLM_PROXY_URL }}
@@ -322,7 +325,7 @@ jobs:
             weighs:
               1. Correctness & preservation of invariants (INV-*; esp. INV-1 conservation,
                  INV-6 determinism, INV-13 run/replay parity).
-              2. Cross-path parity — run / replay / observe behave consistently.
+              2. Cross-path parity — run and replay behave consistently.
               3. Preemption safety and timeout consistency.
               4. Separation of concerns, module boundaries/contracts, modularity.
               5. Behavioral test quality (tests assert behaviour/laws, not structure; would
@@ -349,7 +352,7 @@ jobs:
           # for HEAD_SHA), but we NAME the reviewed SHA and flag staleness so the
           # comment can never be mistaken for a review of the current head.
           stale=""
-          cur=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || echo "")
+          cur=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null) || { echo "::warning::could not read the PR head; the result is treated as stale"; cur=""; }
           # Fail CLOSED: an empty/failed lookup is treated as "cannot confirm the
           # head is unchanged" and flagged stale, so a flaky `gh` can never let a
           # moved-head result publish as if it were fresh.
@@ -364,7 +367,9 @@ jobs:
           # Actions UI (jgchn review, #1883).
           for r in "archon=$RUNNER_TEMP/archon-output.md" "qa-review=$RUNNER_TEMP/qa-output.md" "blis-pr-review=$RUNNER_TEMP/blis-verdict.md"; do
             name="${r%%=*}"; f="${r#*=}"
-            [[ -s "$f" ]] || echo "::warning::pr-review: the ${name} reviewer produced no output; its section will read 'did not complete' — see the step logs"
+            if [[ ! -s "$f" ]]; then
+              echo "::warning::pr-review: the ${name} reviewer produced no output; its section will read 'did not complete' — see the step logs"
+            fi
           done
           python3 scripts/pr_review/assemble_comment.py \
             --pr "$PR" \
@@ -392,7 +397,7 @@ jobs:
     steps:
       - name: Download the comment
         id: dl
-        continue-on-error: true
+        continue-on-error: true # lint-ok: X22 an untrusted reviewer step: the post job publishes a failure note when its output is absent
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: pr-review-comment

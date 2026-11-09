@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 )
@@ -118,5 +118,34 @@ func TestCheckEngineSignals_Order(t *testing.T) {
 		if err := checkEngineSignals(tc.req, nil, 16); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: %v, want %q", tc.name, err, tc.want)
 		}
+	}
+}
+
+// #2002: a run that aborts while another request is still on its way to the router (inside
+// the gateway latency) returns the abort's error; shutting the gateway down does not panic on
+// the flight that has no router context yet. Two requests arrive together; the first's
+// unclassifiable outcome aborts the run before the second's gateway latency has passed.
+func TestAbortWithAFlightBeforeTheRouterReturnsTheAbort(t *testing.T) {
+	reqs := testRequests(2, 1, 0, 0)
+	reqs[1].ArrivalTime = reqs[0].ArrivalTime + 50
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(reqs), nil)
+	gw := New(Options{Model: "test-model", GatewayLatencyUs: 100})
+	injected := false
+	gw.observe = func(kind, detail string) {
+		if kind == "request" && !injected {
+			injected = true
+			f := gw.flights[detail]
+			f.held = false
+			gw.pending--
+			gw.reject(f, &embed.Rejection{Kind: embed.Unclassified, Msg: "inference error: Internal - injected internal error"})
+		}
+	}
+	cs.SetGateway(gw)
+	err := cs.Run()
+	if err == nil || !strings.Contains(err.Error(), "injected internal error") {
+		t.Fatalf("Run() = %v, want the unclassifiable outcome's abort", err)
+	}
+	if f := gw.flights[reqs[1].ID]; f == nil || f.cancel != nil {
+		t.Fatalf("premise: %s should still be before the router at the abort (flight %+v)", reqs[1].ID, f)
 	}
 }

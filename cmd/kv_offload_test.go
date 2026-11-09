@@ -58,7 +58,7 @@ func FuzzKVOffloadRoundTrip(f *testing.F) {
 		}
 		// Serialize through the real trace-header YAML path.
 		hdr := &workload.TraceHeader{
-			Version: 3, TimeUnit: "microseconds", Mode: "generated",
+			Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 			KVOffload: simToHeaderOffload(cfg),
 		}
 		out, err := yaml.Marshal(hdr)
@@ -203,8 +203,7 @@ func TestKVOffload_EndToEnd_RunReplayRoundTrip(t *testing.T) {
 	if err := os.WriteFile(offloadPath, []byte(offloadYAML), 0644); err != nil {
 		t.Fatal(err)
 	}
-	_, catalog, _ := kernelRepos(t)
-	devices, err := loadCatalogStorageDevices(catalog)
+	devices, err := loadCatalogStorageDevices(testData())
 	if err != nil {
 		t.Fatal(err)
 	}

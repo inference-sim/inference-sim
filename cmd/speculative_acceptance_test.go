@@ -12,9 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/acceptance"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -31,41 +32,33 @@ const (
 func acceptanceRepos(t *testing.T, preset string) (registry, catalog string) {
 	t.Helper()
 	root := t.TempDir()
+	// blis-substrate's loader refuses a symbolic link, so each is a real copy of the embedded
+	// data; the registry's acceptance profile set is replaced by the fixture.
 	registry = filepath.Join(root, "registry")
-	mustSymlinkAbs(t, "../testdata/registry/coefficients", filepath.Join(registry, "coefficients"))
+	if err := os.CopyFS(registry, os.DirFS(substratedata.MustRegistry())); err != nil {
+		t.Fatal(err)
+	}
 	set, err := os.ReadFile(acceptFixtureSet)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(registry, "acceptance")); err != nil {
 		t.Fatal(err)
 	}
 	mustWrite(t, filepath.Join(registry, "acceptance", "inferencex-golden-al.yaml"), set)
 
 	catalog = filepath.Join(root, "catalog")
-	for _, d := range []string{"models", "hardware", "networks", "devices"} {
-		mustSymlinkAbs(t, filepath.Join("../testdata/catalog", d), filepath.Join(catalog, d))
+	if err := os.CopyFS(catalog, os.DirFS(substratedata.MustCatalog())); err != nil {
+		t.Fatal(err)
 	}
-	chat, err := os.ReadFile("../testdata/catalog/workloads/chatbot.yaml")
+	chat, err := os.ReadFile(filepath.Join(substratedata.MustCatalog(), "workloads", "chatbot.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, filepath.Join(catalog, "workloads", "chatbot.yaml"), chat)
 	if preset != "" {
 		mustWrite(t, filepath.Join(catalog, "workloads", "accept.yaml"), append(chat, []byte("\n"+preset)...))
 	}
 	return registry, catalog
-}
-
-func mustSymlinkAbs(t *testing.T, target, link string) {
-	t.Helper()
-	abs, err := filepath.Abs(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(abs, link); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func mustWrite(t *testing.T, path string, data []byte) {
@@ -96,13 +89,12 @@ func dsparkVariant(t *testing.T, k int, scenarioExtra string) string {
 }
 
 // runAccept runs blis against the given scenario directory, registry and catalog, returning
-// the results file's acceptance block (nil when absent), stdout and stderr.
+// the Result's acceptance block (nil when absent), stdout and stderr.
 func runAccept(t *testing.T, scenarios, registry, catalog string, args ...string) (*sim.AcceptanceRecord, string, string, error) {
 	t.Helper()
-	metrics := filepath.Join(t.TempDir(), "metrics.json")
 	full := append(args, "--scenario", acceptScenarioFile, "--scenarios", scenarios,
 		"--registry", registry, "--catalog", catalog, "--defaults-filepath", "../defaults.yaml",
-		"--metrics-path", metrics, "--seed", "3", "--log", "info")
+		"--seed", "3", "--log", "info")
 	c := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
 	c.Env = append(os.Environ(), kernelCLIArgsEnv+"="+strings.Join(full, "\x1f"))
 	var out, errBuf bytes.Buffer
@@ -111,15 +103,21 @@ func runAccept(t *testing.T, scenarios, registry, catalog string, args ...string
 	if err != nil {
 		return nil, out.String(), errBuf.String(), err
 	}
-	data, rerr := os.ReadFile(metrics)
-	if rerr != nil {
-		t.Fatalf("reading the results file: %v", rerr)
-	}
 	var file struct {
-		Acceptance *sim.AcceptanceRecord `json:"acceptance"`
+		Acceptance *sim.AcceptanceRecord
 	}
-	if jerr := json.Unmarshal(data, &file); jerr != nil {
-		t.Fatal(jerr)
+	eng, _ := resultDoc(t, out.String())["reports"].(map[string]any)["engine"].(map[string]any)
+	cluster, _ := eng["cluster"].(map[string]any)
+	if raw, ok := cluster["acceptance"]; ok {
+		enc, merr := json.Marshal(raw)
+		if merr != nil {
+			t.Fatal(merr)
+		}
+		var rec sim.AcceptanceRecord
+		if jerr := json.Unmarshal(enc, &rec); jerr != nil {
+			t.Fatal(jerr)
+		}
+		file.Acceptance = &rec
 	}
 	return file.Acceptance, out.String(), errBuf.String(), nil
 }

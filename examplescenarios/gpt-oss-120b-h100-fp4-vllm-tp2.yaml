@@ -6,7 +6,7 @@
 # --speculative-* flag.
 kind: Scenario
 name: gpt-oss-120b-h100-fp4-vllm-tp2
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: gpt-oss-120b
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

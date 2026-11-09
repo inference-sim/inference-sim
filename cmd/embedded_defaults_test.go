@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +31,15 @@ func builtBlis(t *testing.T) string {
 			builtBlisErr = err
 			return
 		}
-		dir := filepath.Join(cache, "inference-sim", "cmd-test")
+		root, err := filepath.Abs("..")
+		if err != nil {
+			builtBlisErr = err
+			return
+		}
+		// Keyed by checkout: two checkouts testing at once (a worktree per commit, a parallel
+		// suite) must not replace each other's binary with one built from other sources.
+		sum := sha256.Sum256([]byte(root))
+		dir := filepath.Join(cache, "inference-sim", "cmd-test", hex.EncodeToString(sum[:6]))
 		if builtBlisErr = os.MkdirAll(dir, 0o755); builtBlisErr != nil {
 			return
 		}
@@ -39,11 +49,6 @@ func builtBlis(t *testing.T) string {
 			return
 		}
 		_ = tmp.Close()
-		root, err := filepath.Abs("..")
-		if err != nil {
-			builtBlisErr = err
-			return
-		}
 		build := exec.Command("go", "build", "-o", tmp.Name(), ".")
 		build.Dir = root
 		if out, err := build.CombinedOutput(); err != nil {

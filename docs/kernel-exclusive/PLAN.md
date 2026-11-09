@@ -11,7 +11,7 @@ outside this directory.
 ## The thesis this tests
 
 `blis-latency-kernel` scores 13.67% shape MAPE against AISimulate's 9.41% on 447 points
-(`docs/perf-model/latency-kernel-implementation.html` §6.1). That comparison assumes
+(§6.1 of `latency-kernel-implementation.html`, in the perf-model documents of the vllm checkout). That comparison assumes
 **resident batch == client concurrency**, because the snapshot states no resident batch.
 §6.3 of that document names this as the largest known error source and says a
 discrete-event simulator is what supplies the real value.
@@ -58,12 +58,12 @@ in flight and let the scheduler decide the resident batch, rather than driving a
    - `PostDecodeFixedOverhead()` -> `kernel.CompletionOverhead()`
    - `QueueingTime(req)` -> `kernel.AdmissionOverhead(promptTokens)`
 3. **Exclusive reliance.** The adapter is registered through the existing
-   `sim.NewLatencyModelFunc` seam (`sim/latency/register.go`), so roofline and
+   `sim.NewLatencyModelFunc` seam (the registration in the former latency package), so roofline and
    trained-physics are not called. They are left on disk untouched; "exclusive" is about
    what runs, and a behavioural test asserts the other two models are never constructed.
 4. **Reuse the existing corpus and scenarios.** The 39 scenario files and the 447-point
    corpus in `blis-latency-kernel/testdata/` are read as-is. No new fixtures.
-5. **Compare.** Same normalisation, same points, same anchor as `cmd/shape`.
+5. **Compare.** Same normalisation, same points, same anchor as `blis-latency-kernel/cmd/shape`.
 
 ## Tests: behavioural, not structural
 
@@ -80,7 +80,7 @@ Each test states the behaviour it pins and the failure it would catch.
 - **Closed-loop concurrency is honoured.** With N in flight, observed in-flight count
   never exceeds N. Catches a harness that drives a rate instead.
 - **The comparison is anchored on both sides.** Reproduce AISimulate's published 10.05%
-  whole-snapshot shape error from its own per-point data, as `cmd/shape` does. Catches the
+  whole-snapshot shape error from its own per-point data, as `blis-latency-kernel/cmd/shape` does. Catches the
   metric-identity error already made once in this project.
 
 Structural checks to avoid: asserting a file contains a string, asserting a type has a

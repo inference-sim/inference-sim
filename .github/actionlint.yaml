@@ -1,0 +1,5 @@
+# actionlint's configuration (the workflow-lint job of ci.yml). pr-review-untrusted is the label of
+# the self-hosted runner pool k8s/pr-review-runner.yaml defines; actionlint cannot know it.
+self-hosted-runner:
+  labels:
+    - pr-review-untrusted

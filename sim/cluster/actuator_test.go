@@ -49,8 +49,9 @@ func TestDirectActuatorApply(t *testing.T) {
 	t.Run("scale_down_no_match_returns_error", func(t *testing.T) {
 		// No active instances matching the variant — should return error.
 		cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
-		inst := newActiveInst("inst-1", "m1", "H100", 2) // wrong variant
-		cs.instances = []*InstanceSimulator{inst}
+		inst := newActiveInst("inst-1", "m1", "H100", 2)   // wrong variant
+		keeper := newActiveInst("inst-2", "m1", "H100", 2) // keeps m1 above its minimum of 1
+		cs.instances = []*InstanceSimulator{inst, keeper}
 
 		actuator := NewDirectActuator(cs)
 		err := actuator.Apply([]ScaleDecision{
@@ -67,7 +68,8 @@ func TestDirectActuatorApply(t *testing.T) {
 		draining := newActiveInst("inst-a", "m1", "A100", 1)
 		draining.State = sim.InstanceStateDraining
 		active := newActiveInst("inst-b", "m1", "A100", 1)
-		cs.instances = []*InstanceSimulator{draining, active}
+		keeper := newActiveInst("inst-c", "m1", "H100", 2) // keeps m1 above its minimum of 1
+		cs.instances = []*InstanceSimulator{draining, active, keeper}
 
 		actuator := NewDirectActuator(cs)
 		err := actuator.Apply([]ScaleDecision{
@@ -100,7 +102,9 @@ func TestDirectActuatorApply(t *testing.T) {
 		// First iteration drains it, second finds no match → error, but first drain still applied.
 		cs := newTestCluster(newTestDeploymentConfig(1), NewSliceRequestSource(nil), nil)
 		inst := newActiveInst("inst-a", "m1", "A100", 1)
-		cs.instances = []*InstanceSimulator{inst}
+		// Two replicas of another variant keep m1 above its minimum of 1 after the first drain.
+		keepers := []*InstanceSimulator{newActiveInst("inst-b", "m1", "H100", 2), newActiveInst("inst-c", "m1", "H100", 2)}
+		cs.instances = append([]*InstanceSimulator{inst}, keepers...)
 
 		actuator := NewDirectActuator(cs)
 		err := actuator.Apply([]ScaleDecision{
@@ -257,4 +261,47 @@ func containsInstance(insts []*InstanceSimulator, id InstanceID) bool {
 		}
 	}
 	return false
+}
+
+// TestDirectActuator_ScaleDownKeepsMinimum (#2015): a scale-down decision is applied after the
+// HPA scrape delay, so it may predate removals already applied. The actuator drains no
+// replica that would leave the model below the analyzer's MinReplicas.
+func TestDirectActuator_ScaleDownKeepsMinimum(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		minReplicas int
+		wantActive  int
+	}{
+		{"default minimum keeps one", 0, 1},
+		{"configured minimum keeps two", 2, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := newTestDeploymentConfig(1)
+			cfg.AutoscalerAnalyzerConfig.MinReplicas = tc.minReplicas
+			cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
+			var insts []*InstanceSimulator
+			for i := 0; i < 4; i++ {
+				simCfg := newTestDeploymentConfig(1).InstanceConfig
+				simCfg.GPU = "A100"
+				inst := newCompatInstance(InstanceID(fmt.Sprintf("inst-%d", i)), simCfg)
+				inst.Model, inst.TPDegree, inst.State = "m1", 1, sim.InstanceStateActive
+				insts = append(insts, inst)
+			}
+			cs.instances = insts
+			// Two decisions from the same stale view, each removing three of four replicas.
+			d := ScaleDecision{ModelID: "m1", Variant: NewVariantSpec("A100", 1), Delta: -3}
+			if err := NewDirectActuator(cs).Apply([]ScaleDecision{d, d}); err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			active := 0
+			for _, inst := range insts {
+				if inst.State == sim.InstanceStateActive {
+					active++
+				}
+			}
+			if active != tc.wantActive {
+				t.Errorf("%d replicas left active, want %d", active, tc.wantActive)
+			}
+		})
+	}
 }

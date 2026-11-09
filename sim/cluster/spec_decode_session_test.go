@@ -2,10 +2,10 @@ package cluster
 
 import (
 	"fmt"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
-	"math/rand"
 	"testing"
+
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/workload"
@@ -74,7 +74,7 @@ func runAccumulateSession(t *testing.T, cfg DeploymentConfig, outLen, maxRounds 
 		Horizon:       math.MaxInt64,
 		InputSampler:  inputSampler,
 		OutputSampler: outputSampler,
-		RNG:           rand.New(rand.NewSource(1657)),
+		Streams:       workload.SessionStreams(1657, sessID),
 		Model:         "test-model",
 	}
 	seed := &sim.Request{

@@ -279,7 +279,7 @@ Print the rendered report verbatim as the final reply (same rule as Step 5).
 
 - **Porting / BLIS-specific tuning.** The fixed questions and topics
   (`questioner.py`) and the answerer/adjudicator system prompts are tuned for BLIS
-  (its `INV-*` invariants, `R*` rules, run/replay/observe parity). This is why the
+  (its `INV-*` invariants, `R*` rules, run/replay parity). This is why the
   skill lives in this repo rather than being generic.
 - Re-running posts another comment (no dedup) — preview without `--post` first.
 - Keep the whole report; the model-free surface of the scripts is unit-tested in

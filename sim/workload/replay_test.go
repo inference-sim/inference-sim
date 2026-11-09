@@ -10,7 +10,7 @@ import (
 
 func TestLoadTraceV2Requests_CorrectTokenCounts(t *testing.T) {
 	// GIVEN a trace with 2 requests
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, InputTokens: 100, OutputTokens: 50,
 			ArrivalTimeUs: 0, TenantID: "t1", SLOClass: "batch", Status: "ok"},
@@ -95,7 +95,7 @@ func TestRunReplayParity_Adapter_INV13(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestRunReplayParity_Adapter_INV13(t *testing.T) {
 }
 
 func TestLoadTraceV2Requests_PrefixGroup_SharedTokens(t *testing.T) {
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, InputTokens: 100, OutputTokens: 50,
 			PrefixGroup: "shared", PrefixLength: 128, ArrivalTimeUs: 0, Status: "ok"},
@@ -405,285 +405,29 @@ func TestLoadTraceV2SessionBlueprints_NonConsecutiveRoundIndex_Error(t *testing.
 	}
 }
 
-// --- effectiveInputTokenCount unit tests ---
-
-func TestEffectiveInputTokenCount(t *testing.T) {
-	cases := []struct {
-		name         string
-		inputTokens  int
-		serverTokens int
-		prefixGroup  string
-		want         int
-	}{
-		// Server > client, no prefix: use server (chat-template overhead case)
-		{"server_overrides_client", 512, 530, "", 530},
-		// Server < client, no prefix: use server (unusual but valid — server is authoritative)
-		{"server_smaller_than_client", 512, 480, "", 480},
-		// Server == client, no prefix: use server (no-op, same result)
-		{"server_equals_client", 256, 256, "", 256},
-		// Server > 0 but prefix group set: fall back to client (avoid double-counting)
-		{"prefix_group_falls_back", 100, 246, "shared", 100},
-		// Server == 0, no prefix: fall back to client (not recorded, e.g. generated trace)
-		{"zero_server_falls_back", 256, 0, "", 256},
-		// Server == 0 and prefix group: fall back to client
-		{"zero_server_prefix_group", 100, 0, "shared", 100},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := effectiveInputTokenCount(tc.inputTokens, tc.serverTokens, tc.prefixGroup)
-			if got != tc.want {
-				t.Errorf("effectiveInputTokenCount(%d, %d, %q) = %d, want %d",
-					tc.inputTokens, tc.serverTokens, tc.prefixGroup, got, tc.want)
-			}
-		})
-	}
-}
-
-// --- ServerInputTokens tests (BC-1, BC-2) ---
-
-func TestLoadTraceV2Requests_ServerInputTokens_UsedWhenPresent(t *testing.T) {
-	// GIVEN a trace record where ServerInputTokens > InputTokens (chat template overhead)
-	// and no PrefixGroup (the --api-format chat use case)
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 0, InputTokens: 512, ServerInputTokens: 530,
-				OutputTokens: 64, ArrivalTimeUs: 0, Status: "ok"},
-		},
-	}
-	requests, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// BC-1: len(InputTokens) reflects server-reported count, not client-side count
-	if len(requests[0].InputTokens) != 530 {
-		t.Errorf("input token count = %d, want 530 (server-reported)", len(requests[0].InputTokens))
-	}
-}
-
-func TestLoadTraceV2Requests_ServerInputTokens_Zero_FallsBackToInputTokens(t *testing.T) {
-	// GIVEN a trace record with ServerInputTokens == 0 (generated trace, not observed)
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 0, InputTokens: 256, ServerInputTokens: 0,
-				OutputTokens: 32, ArrivalTimeUs: 0, Status: "ok"},
-		},
-	}
-	requests, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// BC-2: fallback to InputTokens when ServerInputTokens not recorded
-	if len(requests[0].InputTokens) != 256 {
-		t.Errorf("input token count = %d, want 256 (fallback)", len(requests[0].InputTokens))
-	}
-}
-
-func TestLoadTraceV2Requests_ServerInputTokens_PrefixGroup_FallsBackToInputTokens(t *testing.T) {
-	// GIVEN a prefix-group record with ServerInputTokens > InputTokens.
-	// ServerInputTokens includes the prefix length — applying it as suffix count would double-count.
-	// WHEN LoadTraceV2Requests constructs the request
-	// THEN the suffix uses InputTokens, not ServerInputTokens (prefix prepended separately)
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 0, InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
-				ServerInputTokens: 246, // = PrefixLength(128) + InputTokens(100) + overhead(18)
-				OutputTokens:      32, ArrivalTimeUs: 0, Status: "ok"},
-		},
-	}
-	requests, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// BC-2: total = PrefixLength(128) + InputTokens(100) = 228, not 128+246=374
-	if len(requests[0].InputTokens) != 228 {
-		t.Errorf("input token count = %d, want 228 (prefix 128 + suffix 100, not ServerInputTokens 246)",
-			len(requests[0].InputTokens))
-	}
-}
-
-// --- ServerInputTokens session tests (BC-3, BC-4, BC-5) ---
-
-func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Round0(t *testing.T) {
-	// GIVEN a 2-round session where round-0 has server overhead tokens
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "A", RoundIndex: 0,
-				InputTokens: 512, ServerInputTokens: 530,
-				OutputTokens: 64, ArrivalTimeUs: 0},
-			{RequestID: 2, SessionID: "A", RoundIndex: 1,
-				InputTokens: 256, ServerInputTokens: 274,
-				OutputTokens: 32, ArrivalTimeUs: 5000},
-		},
-	}
-	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(requests) != 1 {
-		t.Fatalf("expected 1 round-0 request, got %d", len(requests))
-	}
-	// BC-3: round-0 token count uses ServerInputTokens
-	if len(requests[0].InputTokens) != 530 {
-		t.Errorf("round-0 input token count = %d, want 530 (server-reported)", len(requests[0].InputTokens))
-	}
-}
-
-func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler(t *testing.T) {
-	// GIVEN a 3-round session with ServerInputTokens on rounds 1 and 2
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "A", RoundIndex: 0,
-				InputTokens: 512, ServerInputTokens: 530, OutputTokens: 64, ArrivalTimeUs: 0},
-			{RequestID: 2, SessionID: "A", RoundIndex: 1,
-				InputTokens: 256, ServerInputTokens: 274, OutputTokens: 32, ArrivalTimeUs: 5000},
-			{RequestID: 3, SessionID: "A", RoundIndex: 2,
-				InputTokens: 128, ServerInputTokens: 0, OutputTokens: 16, ArrivalTimeUs: 10000},
-		},
-	}
-	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bp := blueprints[0]
-	// Each successive Sample() call returns the next round's token count.
-	// BC-4: round-1 sampler returns ServerInputTokens (274 > 256)
-	got1 := bp.InputSampler.Sample(nil)
-	if got1 != 274 {
-		t.Errorf("round-1 sampler value = %d, want 274 (server-reported)", got1)
-	}
-	// BC-2: round-2 sampler falls back to InputTokens (ServerInputTokens == 0)
-	got2 := bp.InputSampler.Sample(nil)
-	if got2 != 128 {
-		t.Errorf("round-2 sampler value = %d, want 128 (fallback)", got2)
-	}
-}
-
-func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSessionRecord(t *testing.T) {
-	// GIVEN a non-session record with ServerInputTokens > InputTokens
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "", InputTokens: 512, ServerInputTokens: 530,
-				OutputTokens: 64, ArrivalTimeUs: 0},
-		},
-	}
-	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(requests) != 1 {
-		t.Fatalf("expected 1 request, got %d", len(requests))
-	}
-	// BC-5: non-session path uses ServerInputTokens
-	if len(requests[0].InputTokens) != 530 {
-		t.Errorf("non-session input token count = %d, want 530", len(requests[0].InputTokens))
-	}
-}
-
-// BC-2 session guard: PrefixGroup records must fall back to InputTokens even when
-// ServerInputTokens > 0, to avoid double-counting the prefix prepended by the session
-// manager. These tests guard all three application sites in LoadTraceV2SessionBlueprints.
-
-func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Round0_PrefixGroup_FallsBack(t *testing.T) {
-	// GIVEN a session with PrefixGroup on round-0 and ServerInputTokens set
-	// ServerInputTokens(246) = PrefixLength(128) + InputTokens(100) + overhead(18, illustrative)
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "A", RoundIndex: 0,
-				InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
-				ServerInputTokens: 246, OutputTokens: 32, ArrivalTimeUs: 0},
-			{RequestID: 2, SessionID: "A", RoundIndex: 1,
-				InputTokens: 50, PrefixGroup: "shared", PrefixLength: 128,
-				ServerInputTokens: 196, OutputTokens: 16, ArrivalTimeUs: 5000},
-		},
-	}
-	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(requests) != 1 {
-		t.Fatalf("expected 1 round-0 request, got %d", len(requests))
-	}
-	// BC-2: total = PrefixLength(128) + InputTokens(100) = 228, not 128+246=374
-	if len(requests[0].InputTokens) != 228 {
-		t.Errorf("round-0 input token count = %d, want 228 (prefix 128 + suffix 100, not ServerInputTokens 246)",
-			len(requests[0].InputTokens))
-	}
-}
-
-func TestLoadTraceV2SessionBlueprints_ServerInputTokens_Sampler_PrefixGroup_FallsBack(t *testing.T) {
-	// GIVEN a session where round-1 has PrefixGroup set and ServerInputTokens populated
-	// THEN the InputSampler returns InputTokens (fallback), not ServerInputTokens
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "A", RoundIndex: 0,
-				InputTokens: 512, ServerInputTokens: 530, OutputTokens: 64, ArrivalTimeUs: 0},
-			{RequestID: 2, SessionID: "A", RoundIndex: 1,
-				InputTokens: 50, PrefixGroup: "shared", PrefixLength: 64,
-				ServerInputTokens: 132, // = PrefixLength(64) + InputTokens(50) + overhead(18)
-				OutputTokens:      16, ArrivalTimeUs: 5000},
-		},
-	}
-	_, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// first Sample() call returns inputSeq[1] (round-1 token count): prefix-group round → falls back to InputTokens(50)
-	got := blueprints[0].InputSampler.Sample(nil)
-	if got != 50 {
-		t.Errorf("round-1 sampler value = %d, want 50 (fallback: PrefixGroup set, ServerInputTokens ignored)",
-			got)
-	}
-}
-
-func TestLoadTraceV2SessionBlueprints_ServerInputTokens_NonSession_PrefixGroup_FallsBack(t *testing.T) {
-	// GIVEN a non-session record in LoadTraceV2SessionBlueprints with PrefixGroup set
-	// and ServerInputTokens > InputTokens
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "", InputTokens: 100, PrefixGroup: "shared", PrefixLength: 128,
-				ServerInputTokens: 246, OutputTokens: 32, ArrivalTimeUs: 0},
-		},
-	}
-	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(requests) != 1 {
-		t.Fatalf("expected 1 request, got %d", len(requests))
-	}
-	// BC-2/BC-5: total = PrefixLength(128) + InputTokens(100) = 228, not 128+246=374
-	if len(requests[0].InputTokens) != 228 {
-		t.Errorf("non-session input token count = %d, want 228 (prefix 128 + suffix 100, not ServerInputTokens 246)",
-			len(requests[0].InputTokens))
-	}
-}
-
 // TestLoadTraceV2Requests_ModelAndDeadline verifies that Model, Deadline, empty Model,
 // and zero Deadline are propagated from TraceRecord to sim.Request
-// (2026-03-14-pr653-tracev2-schema-plan.md BC-3–6), and that ServerInputTokens is used
-// as the token count when > 0 and PrefixGroup is empty (replay-server-tokens-plan.md BC-1).
+// (2026-03-14-pr653-tracev2-schema-plan.md BC-3–6), and that the prompt is input_tokens long.
 func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{
-			RequestID:         0,
-			Model:             "meta-llama/Llama-3.1-8B-Instruct",
-			DeadlineUs:        7500000,
-			ServerInputTokens: 300, // used as token count for InputTokens generation (> InputTokens: 100)
-			InputTokens:       100,
-			OutputTokens:      50,
-			ArrivalTimeUs:     0,
-			Status:            "ok",
+			RequestID:     0,
+			Model:         "meta-llama/Llama-3.1-8B-Instruct",
+			DeadlineUs:    7500000,
+			InputTokens:   300,
+			OutputTokens:  50,
+			ArrivalTimeUs: 0,
+			Status:        "ok",
 		},
 		{
-			RequestID:         1,
-			Model:             "", // BC-6: empty = default model
-			DeadlineUs:        0,  // BC-5: no timeout
-			ServerInputTokens: 0,
-			InputTokens:       50,
-			OutputTokens:      25,
-			ArrivalTimeUs:     1000,
-			Status:            "ok",
+			RequestID:     1,
+			Model:         "", // BC-6: empty = default model
+			DeadlineUs:    0,  // BC-5: no timeout
+			InputTokens:   50,
+			OutputTokens:  25,
+			ArrivalTimeUs: 1000,
+			Status:        "ok",
 		},
 	}
 
@@ -721,118 +465,22 @@ func TestLoadTraceV2Requests_ModelAndDeadline(t *testing.T) {
 	if requests[1].Deadline != 0 {
 		t.Errorf("request 1 Deadline = %d, want 0", requests[1].Deadline)
 	}
-	// BC-1: ServerInputTokens (300) used as token count for InputTokens generation, not InputTokens (100).
-	// sim.Request has no ServerInputTokens field; the value is used only to size the synthetic token slice.
-	if len(requests[0].InputTokens) != 300 {
-		t.Errorf("request 0 input token count = %d, want 300 (server-reported)", len(requests[0].InputTokens))
-	}
-	// BC-2: ServerInputTokens == 0 → fallback to InputTokens (50)
-	if len(requests[1].InputTokens) != 50 {
-		t.Errorf("request 1 input token count = %d, want 50 (fallback)", len(requests[1].InputTokens))
-	}
-}
-
-// TestInjectionTime_ChoiceLogic verifies the raw send-vs-arrival CHOICE in
-// injectionTime (unchanged by #1606). The chosen basis is later re-based onto the
-// arrival origin by injectionOriginShift; this test isolates the choice so a
-// regression there is caught independently of the normalization.
-func TestInjectionTime_ChoiceLogic(t *testing.T) {
-	tests := []struct {
-		name          string
-		sendTimeUs    int64
-		arrivalTimeUs int64
-		wantBasis     int64
-	}{
-		{
-			name:          "non-zero send_time is the injection basis (slot wait)",
-			sendTimeUs:    50000,
-			arrivalTimeUs: 0,
-			wantBasis:     50000,
-		},
-		{
-			name:          "send_time == arrival_time: basis unchanged",
-			sendTimeUs:    100000,
-			arrivalTimeUs: 100000,
-			wantBasis:     100000,
-		},
-		{
-			name:          "zero send_time falls back to arrival_time",
-			sendTimeUs:    0,
-			arrivalTimeUs: 200000,
-			wantBasis:     200000,
-		},
-		{
-			// Negative send_time (clock corruption) must NOT be used as the
-			// basis — the > 0 guard falls back to arrival_time so no negative
-			// DES timestamp reaches the sim (INV-3).
-			name:          "negative send_time falls back to arrival_time",
-			sendTimeUs:    -100,
-			arrivalTimeUs: 300000,
-			wantBasis:     300000,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := injectionTime(TraceRecord{ArrivalTimeUs: tc.arrivalTimeUs, SendTimeUs: tc.sendTimeUs})
-			if got != tc.wantBasis {
-				t.Errorf("injectionTime = %d, want %d", got, tc.wantBasis)
-			}
-		})
-	}
-}
-
-// TestLoadTraceV2Requests_NormalizesEpochSendOrigin verifies BC-1 and BC-4: an
-// epoch-scale send_time_us trace (a real blis observe trace) is injected on the
-// arrival origin with send-delta spacing preserved. This is the #1606 fix.
-func TestLoadTraceV2Requests_NormalizesEpochSendOrigin(t *testing.T) {
-	// Two records. arrival_time_us is run-relative (starts ~0); send_time_us is
-	// Unix-epoch µs. rec0 waited 100ms for a concurrency slot, rec1 waited 250ms,
-	// so the SEND delta (200000) differs from the ARRIVAL delta (50000).
-	const epoch = int64(1_787_274_995_712_218)
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: epoch + 100_000,
-				DeadlineUs: 300_000_000, InputTokens: 50, OutputTokens: 25, Status: "ok"},
-			{RequestID: 1, ArrivalTimeUs: 50_000, SendTimeUs: epoch + 300_000,
-				DeadlineUs: 350_000_000, InputTokens: 50, OutputTokens: 25, Status: "ok"},
-		},
-	}
-	reqs, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(reqs) != 2 {
-		t.Fatalf("got %d requests, want 2", len(reqs))
-	}
-	// BC-1: injection is re-based onto the arrival origin. The earliest injected
-	// request lands at min(arrival) == 0, NOT at an epoch-scale tick.
-	if reqs[0].ArrivalTime != 0 {
-		t.Errorf("BC-1: request 0 ArrivalTime = %d, want 0 (arrival origin, not epoch)", reqs[0].ArrivalTime)
-	}
-	// BC-1: injection must be far below the deadline (no instant timeout).
-	if reqs[0].ArrivalTime >= reqs[0].Deadline {
-		t.Errorf("BC-1: request 0 injected at %d >= deadline %d — would instant-timeout (#1606)", reqs[0].ArrivalTime, reqs[0].Deadline)
-	}
-	// BC-4: spacing follows the SEND delta (200000), not the arrival delta (50000).
-	gotDelta := reqs[1].ArrivalTime - reqs[0].ArrivalTime
-	if gotDelta != 200_000 {
-		t.Errorf("BC-4: injection delta = %d, want 200000 (send delta); arrival delta 50000 would be wrong", gotDelta)
+	// The synthetic prompt is input_tokens long.
+	if len(requests[0].InputTokens) != 300 || len(requests[1].InputTokens) != 50 {
+		t.Errorf("input token counts = %d, %d, want 300 and 50", len(requests[0].InputTokens), len(requests[1].InputTokens))
 	}
 }
 
 // TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged verifies BC-3
-// (INV-13/INV-6): a generated blis run trace (send_time_us == arrival_time_us,
-// arrival origin > 0 for a positive rate) injects EXACTLY at arrival_time_us —
-// the origin shift is 0, so replay is byte-identical to pre-#1606.
+// (INV-13/INV-6): a request is injected exactly at its arrival_time_us, also when the
+// first arrival is after 0, as a blis run trace's is for a positive rate.
 func TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged(t *testing.T) {
-	// blis run --rate 10 produces the first arrival at 99999 (not 0), with
-	// send_time_us == arrival_time_us (tracev2.go). See #1606 deviation D1.
+	// blis run --rate 10 produces the first arrival at 99999 (not 0).
 	trace := &TraceV2{
 		Records: []TraceRecord{
-			{RequestID: 0, ArrivalTimeUs: 99_999, SendTimeUs: 99_999, InputTokens: 50, OutputTokens: 25, Status: "ok"},
-			{RequestID: 1, ArrivalTimeUs: 199_998, SendTimeUs: 199_998, InputTokens: 50, OutputTokens: 25, Status: "ok"},
-			{RequestID: 2, ArrivalTimeUs: 299_997, SendTimeUs: 299_997, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+			{RequestID: 0, ArrivalTimeUs: 99_999, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+			{RequestID: 1, ArrivalTimeUs: 199_998, InputTokens: 50, OutputTokens: 25, Status: "ok"},
+			{RequestID: 2, ArrivalTimeUs: 299_997, InputTokens: 50, OutputTokens: 25, Status: "ok"},
 		},
 	}
 	reqs, err := LoadTraceV2Requests(trace, 42)
@@ -842,232 +490,59 @@ func TestLoadTraceV2Requests_GeneratedTraceInjectionUnchanged(t *testing.T) {
 	want := []int64{99_999, 199_998, 299_997}
 	for i, req := range reqs {
 		if req.ArrivalTime != want[i] {
-			t.Errorf("BC-3 (INV-13): request %d ArrivalTime = %d, want %d (shift must be 0 for generated traces)", i, req.ArrivalTime, want[i])
+			t.Errorf("BC-3 (INV-13): request %d ArrivalTime = %d, want %d (the arrival time)", i, req.ArrivalTime, want[i])
 		}
 	}
 }
 
-// TestLoadTraceV2Requests_MixedSendSign_RelativeClock_ShiftZero pins the ONLY
-// "mixed send sign" case a real producer emits: a generated blis run trace whose
-// first request arrives at t=0 has send_time_us == 0 for that record (so
-// injectionTime falls back to arrival) while later records have send_time_us > 0.
-// All are on ONE relative clock (send == arrival), so injectionTime == arrival for
-// every record ⇒ shift == 0 ⇒ injection == arrival (byte-identical, INV-13). A
-// mix of send>0 and send<=0 must NOT be misread as a cross-clock trace.
-func TestLoadTraceV2Requests_MixedSendSign_RelativeClock_ShiftZero(t *testing.T) {
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: 0, InputTokens: 40, OutputTokens: 8, Status: "ok"},
-			{RequestID: 1, ArrivalTimeUs: 100_000, SendTimeUs: 100_000, InputTokens: 40, OutputTokens: 8, Status: "ok"},
-		},
-	}
-	if got := injectionOriginShift(trace.Records); got != 0 {
-		t.Fatalf("injectionOriginShift = %d, want 0 (uniform relative clock)", got)
-	}
-	reqs, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if reqs[0].ArrivalTime != 0 || reqs[1].ArrivalTime != 100_000 {
-		t.Errorf("injection = [%d, %d], want [0, 100000] (== arrival; shift must be 0)", reqs[0].ArrivalTime, reqs[1].ArrivalTime)
-	}
-}
-
-// TestLoadTraceV2Requests_MixedEpochAndFallback_StaysNonNegative documents the
-// uniform-clock PRECONDITION via the INV-3 law. A trace that mixes an epoch-clock
-// record (send_time_us > 0) with a fallback record (send_time_us <= 0, using its
-// relative arrival) is UNREACHABLE from blis observe/run/converters — every real
-// producer writes a single uniform clock (all epoch, or all relative/send==arrival,
-// or all-fallback). Re-basing to one origin is exact only for a uniform-clock trace,
-// so the epoch record is not re-based correctly here — but INV-3 still holds for
-// EVERY input: injection = injectionTime - minInjection + minArrival >= minArrival
-// >= 0. Pinning this proves the fix never emits a negative DES tick, even in the
-// pathological corner (rather than a heuristic "uniform-clock" guard, which would
-// false-positive on the legitimate t=0-first-arrival case above).
-func TestLoadTraceV2Requests_MixedEpochAndFallback_StaysNonNegative(t *testing.T) {
-	const epoch = int64(1_787_274_995_712_218)
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			{RequestID: 0, ArrivalTimeUs: 0, SendTimeUs: epoch, InputTokens: 40, OutputTokens: 8, Status: "ok"},
-			{RequestID: 1, ArrivalTimeUs: 50_000, SendTimeUs: -1, InputTokens: 40, OutputTokens: 8, Status: "ok"},
-		},
-	}
-	reqs, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	for _, r := range reqs {
-		if r.ArrivalTime < 0 {
-			t.Errorf("INV-3: %s injected at negative tick %d", r.ID, r.ArrivalTime)
-		}
-	}
-}
-
-// TestInjectionOriginShift_AllFallback_IsZero verifies BC-5: a trace whose every
-// record falls back to arrival_time_us (send_time_us <= 0) has a zero origin
-// shift, so injection == arrival and no negative DES tick is produced (INV-3).
-func TestInjectionOriginShift_AllFallback_IsZero(t *testing.T) {
-	records := []TraceRecord{
-		{RequestID: 0, ArrivalTimeUs: 10_000, SendTimeUs: 0},
-		{RequestID: 1, ArrivalTimeUs: 20_000, SendTimeUs: -100},
-	}
-	if got := injectionOriginShift(records); got != 0 {
-		t.Errorf("injectionOriginShift = %d, want 0 (all records fall back to arrival)", got)
-	}
-	// Empty record set → 0 (defensive).
-	if got := injectionOriginShift(nil); got != 0 {
-		t.Errorf("injectionOriginShift(nil) = %d, want 0", got)
-	}
-}
-
-// TestMaxNormalizedInjectionTimeUs verifies BC-6: the preliminary closed-loop
-// horizon basis is the max NORMALIZED injection over injected records (round-0 +
-// non-session), on the arrival origin — not the raw arrival_time_us column.
+// TestMaxNormalizedInjectionTimeUs verifies BC-6: the preliminary closed-loop horizon basis
+// is the latest arrival among the records injected initially (round-0 and non-session).
 func TestMaxNormalizedInjectionTimeUs(t *testing.T) {
-	const epoch = int64(1_787_274_995_712_218)
 	trace := &TraceV2{
 		Records: []TraceRecord{
 			// Session round-0 (injected initially).
-			{RequestID: 0, SessionID: "A", RoundIndex: 0, ArrivalTimeUs: 0, SendTimeUs: epoch},
+			{RequestID: 0, SessionID: "A", RoundIndex: 0, ArrivalTimeUs: 0},
 			// Session follow-up (NOT injected initially — must be skipped).
-			{RequestID: 1, SessionID: "A", RoundIndex: 1, ArrivalTimeUs: 500_000, SendTimeUs: epoch + 9_000_000},
-			// Non-session (injected initially); latest send → sets the max.
-			{RequestID: 2, ArrivalTimeUs: 300_000, SendTimeUs: epoch + 700_000},
+			{RequestID: 1, SessionID: "A", RoundIndex: 1, ArrivalTimeUs: 900_000},
+			// Non-session (injected initially); latest arrival → sets the max.
+			{RequestID: 2, ArrivalTimeUs: 700_000},
 		},
 	}
-	// shift = min(injectionTime) - min(arrival) = epoch - 0 = epoch.
-	// Normalized injected: r0 → 0, r2 → 700000. Follow-up r1 skipped.
 	if got := MaxNormalizedInjectionTimeUs(trace); got != 700_000 {
-		t.Errorf("MaxNormalizedInjectionTimeUs = %d, want 700000 (normalized max over injected records)", got)
+		t.Errorf("MaxNormalizedInjectionTimeUs = %d, want 700000 (max arrival over injected records)", got)
 	}
 	if got := MaxNormalizedInjectionTimeUs(nil); got != 0 {
 		t.Errorf("MaxNormalizedInjectionTimeUs(nil) = %d, want 0", got)
 	}
 }
 
-// TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection verifies that the
-// round-0 and non-session injection sites use the send-based basis re-based onto
-// the arrival origin (#1606, BC-1/BC-4), and that think-time still comes from
+// TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection verifies that the round-0 and
+// non-session requests are injected at their arrival_time_us, and that think time comes from
 // arrival deltas.
 func TestLoadTraceV2SessionBlueprints_ConcurrencyModeInjection(t *testing.T) {
-	// injectionTimes: A/r0 → 50000, A/r1 → 230000, non-session → 40000.
-	// min(injectionTime) = 40000, min(arrival) = 0 → origin shift = 40000.
-	// Normalized injection: A/r0 → 10000, non-session → 0.
 	trace := &TraceV2{
 		Records: []TraceRecord{
-			// Session A: round-0 delayed by concurrency slot wait (50ms)
-			{RequestID: 1, SessionID: "A", RoundIndex: 0,
-				ArrivalTimeUs: 0, SendTimeUs: 50000,
-				InputTokens: 100, OutputTokens: 50},
-			// Session A: round-1 delayed by concurrency slot wait (30ms)
-			{RequestID: 2, SessionID: "A", RoundIndex: 1,
-				ArrivalTimeUs: 200000, SendTimeUs: 230000,
-				InputTokens: 150, OutputTokens: 60},
-			// Non-session record with send_time > arrival_time (earliest send → origin)
-			{RequestID: 3, SessionID: "",
-				ArrivalTimeUs: 10000, SendTimeUs: 40000,
-				InputTokens: 80, OutputTokens: 30},
+			{RequestID: 1, SessionID: "A", RoundIndex: 0, ArrivalTimeUs: 0, InputTokens: 100, OutputTokens: 50},
+			{RequestID: 2, SessionID: "A", RoundIndex: 1, ArrivalTimeUs: 200000, InputTokens: 150, OutputTokens: 60},
+			{RequestID: 3, SessionID: "", ArrivalTimeUs: 10000, InputTokens: 80, OutputTokens: 30},
 		},
 	}
-
 	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	// Find the session round-0 request and the non-session request by ArrivalTime
-	sessionArrival := int64(-1)
-	nonSessionArrival := int64(-1)
+	got := map[string]int64{}
 	for _, r := range requests {
-		switch r.SessionID {
-		case "A":
-			sessionArrival = r.ArrivalTime
-		case "":
-			nonSessionArrival = r.ArrivalTime
-		}
+		got[r.SessionID] = r.ArrivalTime
 	}
-	if sessionArrival == -1 {
-		t.Fatal("session round-0 request not found")
+	if got["A"] != 0 || got[""] != 10000 || len(got) != 2 {
+		t.Errorf("injections %v, want session A round 0 at 0 and the non-session request at 10000", got)
 	}
-	if nonSessionArrival == -1 {
-		t.Fatal("non-session request not found")
+	if len(blueprints) != 1 || blueprints[0].ThinkTimeSampler == nil {
+		t.Fatalf("expected one blueprint with a think-time sampler, got %+v", blueprints)
 	}
-
-	// BC-1/BC-4: session round-0 injected at send basis re-based to arrival origin
-	// (send 50000 - shift 40000 = 10000). The send-delta between the two injected
-	// records (50000 - 40000 = 10000) is preserved, not the arrival delta.
-	if sessionArrival != 10000 {
-		t.Errorf("session round-0 ArrivalTime = %d, want 10000 (send 50000 - origin shift 40000)", sessionArrival)
-	}
-
-	// BC-4: earliest-sent (non-session) request lands at the arrival origin (0).
-	if nonSessionArrival != 0 {
-		t.Errorf("non-session ArrivalTime = %d, want 0 (earliest send at arrival origin)", nonSessionArrival)
-	}
-
-	// Think-time gap derived from ArrivalTimeUs differences (200000 - 0 = 200000),
-	// origin-invariant and unaffected by the injection normalization.
-	if len(blueprints) != 1 {
-		t.Fatalf("expected 1 blueprint, got %d", len(blueprints))
-	}
-	bp := blueprints[0]
-	if bp.ThinkTimeSampler == nil {
-		t.Fatal("expected ThinkTimeSampler for multi-round session")
-	}
-	gotThinkTime := bp.ThinkTimeSampler.Sample(nil)
-	// ArrivalTimeUs gap: 200000 - 0 = 200000.
-	// SendTimeUs gap:    230000 - 50000 = 180000.
-	// Asserting == 200000 AND != 180000 makes the law explicit: think-time MUST
-	// come from ArrivalTimeUs deltas, not SendTimeUs deltas.
-	if gotThinkTime != 200000 {
-		t.Errorf("think time = %d, want 200000 (ArrivalTimeUs gap); if 180000, SendTimeUs gap was used instead", gotThinkTime)
-	}
-	if gotThinkTime == 180000 {
-		t.Error("think time == 180000 (SendTimeUs gap) — must use ArrivalTimeUs gap instead")
-	}
-}
-
-// TestLoadTraceV2SessionBlueprints_NegativeSendTime verifies that negative SendTimeUs
-// (clock corruption) falls back to ArrivalTimeUs for both the session round-0 and
-// non-session call sites in LoadTraceV2SessionBlueprints (INV-3 guard, mirroring the
-// negative case in TestLoadTraceV2Requests_ConcurrencyModeUseSendTime).
-func TestLoadTraceV2SessionBlueprints_NegativeSendTime(t *testing.T) {
-	trace := &TraceV2{
-		Records: []TraceRecord{
-			// Session round-0: negative SendTimeUs must not become injection time.
-			{RequestID: 1, SessionID: "A", RoundIndex: 0,
-				ArrivalTimeUs: 10000, SendTimeUs: -500,
-				InputTokens: 50, OutputTokens: 25},
-			// Non-session: same guard on the independent call site.
-			{RequestID: 2, SessionID: "",
-				ArrivalTimeUs: 20000, SendTimeUs: -100,
-				InputTokens: 30, OutputTokens: 15},
-		},
-	}
-
-	requests, _, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	sessionArrival := int64(-1)
-	nonSessionArrival := int64(-1)
-	for _, r := range requests {
-		switch r.SessionID {
-		case "A":
-			sessionArrival = r.ArrivalTime
-		case "":
-			nonSessionArrival = r.ArrivalTime
-		}
-	}
-
-	// Session round-0: must use ArrivalTimeUs (10000), not SendTimeUs (-500).
-	if sessionArrival != 10000 {
-		t.Errorf("session round-0: ArrivalTime = %d, want 10000 (negative send_time must fall back)", sessionArrival)
-	}
-	// Non-session: must use ArrivalTimeUs (20000), not SendTimeUs (-100).
-	if nonSessionArrival != 20000 {
-		t.Errorf("non-session: ArrivalTime = %d, want 20000 (negative send_time must fall back)", nonSessionArrival)
+	if think := blueprints[0].ThinkTimeSampler.Sample(nil); think != 200000 {
+		t.Errorf("think time = %d, want 200000 (the arrival gap)", think)
 	}
 }
 
@@ -1089,7 +564,7 @@ func TestLoadTraceV2SessionBlueprints_UnknownContextGrowth_Errors(t *testing.T) 
 
 func TestLoadTraceV2SessionBlueprints_AccumulateFromHeader(t *testing.T) {
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000},
@@ -1109,7 +584,7 @@ func TestLoadTraceV2SessionBlueprints_AccumulateFromHeader(t *testing.T) {
 
 func TestLoadTraceV2SessionBlueprints_DefaultNoAccumulate(t *testing.T) {
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}, // no growth field
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}, // no growth field
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000},
@@ -1126,7 +601,7 @@ func TestLoadTraceV2SessionBlueprints_DefaultNoAccumulate(t *testing.T) {
 
 func TestAccumulateReplay_StrictPrefixIdentity(t *testing.T) {
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 8_000_000},
@@ -1287,7 +762,7 @@ func TestLoadTraceV2SessionBlueprints_MixedThinkSessions(t *testing.T) {
 func TestAccumulateReplay_TransitivityAndLengthCap(t *testing.T) {
 	mk := func() (*sim.Request, *SessionManager) {
 		trace := &TraceV2{
-			Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+			Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 			Records: []TraceRecord{
 				{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 				{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
@@ -1352,7 +827,7 @@ func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
 	// Recorded absolutes: 100 → 150(mono) → 50(COMPACTION, 50 < 150+20) → 80(mono).
 	// As delta-encoded records: round2 carries delta 0 + InputTokensReset=&50.
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},
@@ -1430,7 +905,7 @@ func TestAccumulateReplay_CompactionResetsBuffer(t *testing.T) {
 // pins that the reset path handles it without panicking rather than assuming InputLen()>0.
 func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 			// round 1 compacts to an absolute of 0 (full context discarded).
@@ -1475,7 +950,7 @@ func TestAccumulateReplay_ZeroReset_EmptyBuffer(t *testing.T) {
 func TestAccumulateReplay_ConsecutiveCompactions(t *testing.T) {
 	// abs: 200, then 150 (150 < 200+10), then 100 (100 < 150+5) — two compactions in a row.
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 200, OutputTokens: 10, ArrivalTimeUs: 0},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 0, OutputTokens: 5, ArrivalTimeUs: 1_000_000, InputTokensReset: i64p(150)},
@@ -1527,7 +1002,7 @@ func TestAccumulateReplay_ConsecutiveCompactions(t *testing.T) {
 // pre-#1609 append-only path (byte-identical, INV-6).
 func TestAccumulateReplay_NoResetSampler_WhenMonotone(t *testing.T) {
 	trace := &TraceV2{
-		Header: TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
+		Header: TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"},
 		Records: []TraceRecord{
 			{RequestID: 0, SessionID: "s", RoundIndex: 0, InputTokens: 100, OutputTokens: 10, ArrivalTimeUs: 0},
 			{RequestID: 1, SessionID: "s", RoundIndex: 1, InputTokens: 40, OutputTokens: 20, ArrivalTimeUs: 1_000_000},

@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -266,7 +267,7 @@ func TestReExportClosedLoopRecords_StatusMapping(t *testing.T) {
 	want := []struct {
 		session string
 		round   int
-		status  string
+		status  trace.Status
 	}{
 		{"s1", 0, "ok"},
 		{"s1", 1, "timeout"},

@@ -42,25 +42,21 @@ import (
 	"math"
 	"os"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/vendored"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
 	"github.com/inference-sim/inference-sim/tools/harness"
+	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 func main() {
 	corpusPath := flag.String("corpus",
-		kernelmodel.MeasurementPath("aisimulate_e2e.json"), "")
+		corpora.MeasurementPath("aisimulate_e2e.json"), "")
 	scenarios := flag.String("scenarios",
-		kernelmodel.DefaultScenarios(), "")
-	catalog := flag.String("catalog", kernelmodel.DefaultCatalog(), "")
-	registry := flag.String("registry", kernelmodel.DefaultRegistry(), "")
+		kernelfixtures.AISimulate(), "")
+	catalog := flag.String("catalog", "", "catalog directory (empty: the embedded copy)")
+	registry := flag.String("registry", "", "registry directory (empty: the embedded copy)")
 	framework := flag.String("framework", "vllm", "")
 	settings := flag.String("engine-settings",
-		kernelmodel.MeasurementPath("inferencex_engine_settings.json"),
+		corpora.MeasurementPath("inferencex_engine_settings.json"),
 		"the settings each measured run was launched with; the baseline is the scored configuration")
 	draws := flag.Bool("draws", true, "also re-score with the numpy seed-1..4 length fixtures")
 	monotoneOnly := flag.Bool("monotone", true, "score only sweeps with a monotone measurement")
@@ -71,7 +67,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	if err := kernelmodel.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
+	if err := corpora.RequireCorpora(map[string]string{"corpus": *corpusPath, "engine-settings": *settings}); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
@@ -86,10 +82,13 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	repos, err := harness.OpenRepos(*scenarios, *catalog, *registry)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	base := harness.Config{
-		Repos: kernelmodel.Repos{
-			Scenarios: *scenarios, Catalog: *catalog, Registry: *registry,
-		},
+		Repos: repos, Catalog: *catalog, Registry: *registry,
 		Blis: *blis, Seed: 42, EngineSettings: eset,
 	}
 

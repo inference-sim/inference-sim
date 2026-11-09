@@ -1,6 +1,6 @@
 # BLIS Policy Configuration (defaults)
 #
-# Use with: ./blis run --scenario <file> --scenarios <dir> --registry <blis-registry root> \
+# Use with: ./blis run --scenario <file> --scenarios <dir> \
 #   --policy-config examples/policy-config.yaml
 #
 # All fields are optional. Omit any field to use CLI flags or built-in defaults.

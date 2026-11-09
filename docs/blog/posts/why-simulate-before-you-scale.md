@@ -88,7 +88,7 @@ Most inference estimation tools answer a narrow question: "how fast is one forwa
 
 ## See It in Action
 
-BLIS requires only [Go 1.21+](https://go.dev/dl/) and Git. Clone, build, and run a 4-instance cluster simulation in under a minute:
+BLIS requires only [the pinned Go release](https://github.com/inference-sim/inference-sim/blob/main/go.mod) and Git. Clone, build, and run a 4-instance cluster simulation in under a minute:
 
 ```bash
 git clone https://github.com/inference-sim/inference-sim.git

@@ -229,6 +229,10 @@ func TestResolve_MissingDeclarationFile_ReportsError(t *testing.T) {
 // Existence is not readability: an unreadable declaration file must not read as "no
 // declaration", which would drop the plan gate silently.
 func TestResolve_UnreadableDeclarationFile_ReportsError(t *testing.T) {
+	// chmod 000 denies a read to everyone but root, which the permission bits do not bind.
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 does not deny reads to root, so the declaration stays readable (#1741)")
+	}
 	repo := newRepo(t)
 	base := commitFileAt(t, repo, declaredPlan, `{"holes":1}`)
 	decl := writeDecl(t, "archon-plan: "+declaredPlan+"\n")

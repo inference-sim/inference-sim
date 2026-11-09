@@ -23,7 +23,7 @@ reported as such, never silently fitted from the wrong family.
 
 ## T2. Fit per-kind decode attention (blis-registry)
 
-`scripts/fit_attention_by_kind.py`, fitting the SAME form the registry already uses --
+`blis-substrate/registry/scripts/fit_attention_by_kind.py` (the script now lives in blis-substrate), fitting the SAME form the registry already uses --
 `floor + kv_bytes/rate` -- separately per kind, per part, on ONE kernel_source lane.
 
 CORRECTNESS:
@@ -54,13 +54,13 @@ present and fall back to the unsuffixed pair when not.
 CORRECTNESS:
   - A behavioural test: two deployments identical except for attention kind must price
     DIFFERENTLY once per-kind coefficients exist, and identically when they do not.
-  - `cmd/shape` must be unchanged for any model whose kind has no per-kind fit. That is the
+  - `blis-latency-kernel/cmd/shape` must be unchanged for any model whose kind has no per-kind fit. That is the
     no-regression guarantee.
   - Mutation: deleting the dispatch must fail a named test.
 
 ## T5. Build the table-oracle gate (blis-registry)
 
-`scripts/validate_against_aisimulate_tables.py`: for each fitted form, report the
+`blis-substrate/registry/scripts/validate_against_aisimulate_tables.py` (now in blis-substrate): for each fitted form, report the
 geometric-mean ratio of our prediction to NVIDIA's measurements, per kind and per part, on the
 regime the evaluation corpus actually runs.
 

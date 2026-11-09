@@ -64,7 +64,7 @@ What version/commit of the external system are we targeting? (e.g., "llmd v0.8.2
 - [ ] Core simulator (`sim/`)
 - [ ] Cluster simulation (`sim/cluster/`)
 - [ ] Workload generation (`sim/workload/`)
-- [ ] KV cache (`sim/kv/`)
+- [ ] KV cache (an engine repository: blis-vllm `compat/kv`)
 - [ ] Decision tracing (`sim/trace/`)
 - [ ] CLI (`cmd/`)
 - [ ] New package needed

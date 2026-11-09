@@ -17,10 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -32,7 +32,7 @@ jobs:
     # Spelled out as GitHub derives a matrix job's name, because the names are main's required
     # checks: an entry whose packages moved keeps its old name (name_packages), byte for byte.
     name: test (${{ matrix.name }}, ${{ matrix.name_packages || matrix.packages }}, ${{ matrix.timeout }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -44,8 +44,8 @@ jobs:
             packages: "./sim ./sim/trace"
             timeout: "10m"
           # The latency kernel's scoring harness and the offline scoring tools. Hermetic: scenarios
-          # come from the kernel module go.mod pins, the catalog and registry are vendored under
-          # testdata/. The measurement-corpus tests are behind -tags scoring and do not run here.
+          # come from blis-vllm's kernel fixtures, the catalog and registry from the blis-substrate
+          # module go.mod pins (internal/substratedata). The measurement-corpus tests are behind -tags scoring and do not run here.
           # The harness and the tools moved from sim/kernelmodel and cmd/ to tools/ (phase 2c of
           # #2021), so that sim/ and cmd/ link blis-vllm only through cmd/engine_build.go. Only
           # the package list moved: the entry's name is a required check, so it still names the
@@ -70,48 +70,134 @@ jobs:
           - name: "llm-d router"
             packages: "./sim/llmd"
             timeout: "10m"
-          # Every other package with tests: the vendored catalog and registry's lock test, the
-          # saturation detectors and the invariant scan (the offline scoring tools moved to
-          # tools/, which "kernel backend" runs). A new entry, not a renamed one, since the
-          # entries' names are required checks; this one is not.
+          # The byte gate (design SIM-4, X13): a fixed set of runs whose standard output must not
+          # change in a refactor, compared byte for byte (outside the Result's runtime member)
+          # with testdata/bytegate/golden, at GOMAXPROCS 1 and 4. A pull request that moves a
+          # golden file is not a refactor and says so, with the diff and its price-change report.
+          - name: "byte gate"
+            packages: "./internal/bytegate"
+            timeout: "10m"
+          # The same gate on arm64: the outputs must be identical across platforms (design X6),
+          # and arm64 is where Go fuses a multiply and an add that amd64 does not.
+          - name: "byte gate arm64"
+            packages: "./internal/bytegate"
+            timeout: "10m"
+            runner: "ubuntu-24.04-arm"
+          # Every other package with tests: the substrate data roots, the stack record, the
+          # saturation detectors, the input validators (sim/check) and the invariant scan (the
+          # offline scoring tools moved to tools/, which "kernel backend" runs). A new entry, not a
+          # renamed one, since the entries' names are required checks; this one is not.
           # scripts' TestEveryPackageWithTestsRunsInCI fails if a package with tests is in none.
           - name: "other packages"
-            packages: "./sim/vendored ./sim/saturation ./internal/invariantscan"
+            packages: "./internal/substratedata ./internal/kernelfixtures ./internal/stack/... ./sim/saturation ./sim/check ./internal/invariantscan"
             timeout: "5m"
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Test ${{ matrix.name }}
+      # The scripts package parses every inline github-script body with Node (#1811). The Node is
+      # pinned here, not taken from the runner, which can be too old for optional chaining; a
+      # missing Node fails that test (REQUIRE_NODE) instead of skipping it (X16).
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      # Tests read only their declared inputs (X25): the module cache starts empty, so a test
+      # that needs a module it does not download itself fails here rather than passing on a
+      # cache a previous job filled.
+      - name: Test ${{ matrix.name }} from an empty module cache
+        env:
+          GOMODCACHE: ${{ runner.temp }}/gomodcache
+          GOFLAGS: -modcacherw
+          REQUIRE_NODE: "1"
         run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
 
   lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # The module targets Go 1.27 (the llm-d router requires it). golangci-lint refuses a module
+      # The module targets the Go release that go.mod names (the llm-d router requires it). golangci-lint refuses a module
       # newer than the Go that built it and the published binaries are built with an older Go,
       # so the linter is built from source with the module's Go.
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
         with:
           version: v2.14.0
           install-mode: goinstall
+
+  # The stack record and the version rules (design SIM-3, LIF-2, X11, X23): stack.json equals
+  # what the build selects; go.mod has one replace and only engine excludes; the toolchain is
+  # contracts/toolchain at the selected substrate, installed exactly (GOTOOLCHAIN=local, so no
+  # build downloads one); and the documents that state versions are the ones rendered from
+  # stack.json. internal/stack's tests hold the first three; versions-doc --check the last.
+  stack:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: The toolchain is contracts/toolchain
+        run: |
+          dir="$(go mod download -json "github.com/inference-sim/blis-substrate@$(go list -m -f '{{.Version}}' github.com/inference-sim/blis-substrate)" | jq -r .Dir)"
+          if [ -z "$dir" ] || [ "$dir" = null ] || [ ! -f "$dir/contracts/toolchain" ]; then
+            echo "cannot find contracts/toolchain: go mod download reported directory '$dir' for blis-substrate" >&2
+            exit 1
+          fi
+          want="$(cat "$dir/contracts/toolchain")"
+          got="$(go env GOVERSION)"
+          if [ "$got" != "$want" ]; then
+            echo "go is $got; contracts/toolchain at the selected substrate is $want" >&2
+            exit 1
+          fi
+
+      - name: stack.json, go.mod and the toolchain
+        run: go test -count=1 ./internal/stack/... && go run ./internal/stack/cmd/stackgen -check
+
+      - name: Rendered version strings
+        run: go run ./internal/stack/cmd/versions-doc -check
+
+  # Before a release: every blis-vllm and llm-d router package the binary links, tested at the
+  # versions inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod.
+  selected-deps:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Test engine and router packages at the selected versions
+        run: scripts/test-selected-deps.sh -count=1
 
   # A NEW job, not a step added to an existing shard: renaming a required check blocks PRs, so the
   # size guard gets its own name. Path-independent backstop for the CLAUDE.md charter — it catches
@@ -119,11 +205,29 @@ jobs:
   # delivery-verify `claude_md_edit` guard never sees. The ceiling leaves generous headroom over
   # the lean file so a legitimate operating-rule addition does not trip it; it fires only on
   # changelog-scale bloat, which is what #1818 removed.
+  # actionlint parses every workflow and its expressions and the inline github-script bodies'
+  # syntax is checked by the scripts package (#1811). actionlint is pinned to a release; its
+  # shellcheck and pyflakes integrations are off because the existing run blocks have not been
+  # through them, and a gate that fails on first contact would be switched off, not fixed.
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Lint the workflows
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 -shellcheck= -pyflakes=
+
   claude-md-size:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Enforce the CLAUDE.md size ceiling
         run: scripts/claude-md-size.sh CLAUDE.md 40000

@@ -1,7 +1,9 @@
 # Contract: Routing Snapshot & LoRA-Aware Scorer
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Feature**: `007-lora-control-plane`
-**Extends**: `sim.RoutingSnapshot` (add field) + `sim/routing_scorers.go` (add scorerFunc).
+**Extends**: `sim.RoutingSnapshot` (add field) + the simulator's routing-scorers file (add scorerFunc).
 NO new interface (R13) — reuses `scorerFunc func(req *Request, snapshots []RoutingSnapshot) map[string]float64`.
 
 ## `RoutingSnapshot.ResidentAdapters` (PR6)

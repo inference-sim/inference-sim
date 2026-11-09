@@ -21,8 +21,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/result"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 )
 
 // The --format, --output and --view values, shared by run and replay.
@@ -41,6 +41,7 @@ func registerResultFlags(cmd *cobra.Command) {
 		"Encoding of the Result document on stdout and in --output: json or yaml")
 	cmd.Flags().StringVar(&resultOutput, "output", "",
 		"File to write the Result document to: the same bytes stdout carries")
+	registerFromResultFlag(cmd)
 	cmd.Flags().StringVar(&resultView, "view", "",
 		"Also render the Result for a reader, to stderr: summary (the text sections run and replay printed before the Result document)")
 }
@@ -58,17 +59,6 @@ func checkResultFlags() {
 	default:
 		logrus.Fatalf("--view %q: the one view is %q", resultView, viewSummary)
 	}
-}
-
-// warnDeprecatedFile logs that a results file is deprecated in favor of --output (#1871).
-// The file keeps its content for one release.
-func warnDeprecatedFile(flag, path string) {
-	if path == "" {
-		return
-	}
-	logrus.Warnf("%s is deprecated and will be removed in the next release: its file keeps its "+
-		"content for this release, and the Result document on stdout (or --output) carries the same "+
-		"figures under blis-schemas' names", flag)
 }
 
 // emitResult validates r, writes it to stdout and to --output in the selected format, and,

@@ -2,8 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,40 +26,6 @@ func TestRunCmd_DefaultLogLevel_RemainsWarn(t *testing.T) {
 	assert.NotNil(t, flag, "log flag must be registered")
 	assert.Equal(t, "warn", flag.DefValue,
 		"default log level must remain 'warn'; simulation results use fmt.Println to bypass logrus")
-}
-
-func TestSaveResults_MetricsPrintedToStdout(t *testing.T) {
-	// GIVEN a Metrics struct with completed requests
-	m := sim.NewMetrics()
-	m.CompletedRequests = 5
-	m.TotalInputTokens = 100
-	m.TotalOutputTokens = 50
-	m.SimEndedTime = 1_000_000 // 1 second in ticks
-	m.RequestTTFTs["r1"] = 100.0
-	m.RequestE2Es["r1"] = 500.0
-	m.RequestSchedulingDelays["r1"] = 50
-	m.AllITLs = []int64{10, 20, 30}
-
-	// Capture stdout
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// WHEN SaveResults is called
-	if err := m.SaveResults("test", 1_000_000, 1000, ""); err != nil {
-		t.Fatalf("SaveResults returned error: %v", err)
-	}
-
-	// Restore stdout and read captured output
-	_ = w.Close()
-	os.Stdout = old
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
-
-	// THEN the metrics JSON MUST appear on stdout (BC-1)
-	assert.Contains(t, output, "Simulation Metrics", "metrics header must be on stdout")
-	assert.Contains(t, output, "completed_requests", "metrics JSON must be on stdout")
 }
 
 func TestConvertCmd_NoCSVTraceSubcommand(t *testing.T) {
@@ -315,9 +279,6 @@ func TestValidateDistributionParams(t *testing.T) {
 // TestRunCmdDistributionDefaults_NoHardcodedLiterals verifies that none of the distDefaults
 // constant values appear as hardcoded literals in root.go's distribution flag IntVar calls
 // (BC-2: single source of truth).
-//
-// Companion to TestObserveDistributionDefaults_NoHardcodedLiterals in observe_cmd_test.go.
-// Together they ensure neither command can silently bypass the shared constants.
 func TestRunCmdDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 	data, err := os.ReadFile("root.go")
 	if err != nil {
@@ -348,15 +309,13 @@ func TestRunCmdDistributionDefaults_NoHardcodedLiterals(t *testing.T) {
 }
 
 // TestRunCmdNumRequestsDefault_Is100 verifies that runCmd's --num-requests defaults to 100.
-// This value is referenced in observe_cmd.go's --num-requests help text ("differs from blis run
-// default of 100"). If this default ever changes, the help text must be updated too.
 func TestRunCmdNumRequestsDefault_Is100(t *testing.T) {
 	f := runCmd.Flags().Lookup("num-requests")
 	if f == nil {
 		t.Fatal("flag --num-requests not found on runCmd")
 	}
 	if f.DefValue != "100" {
-		t.Errorf("--num-requests default: got %q, want \"100\" (referenced in observe --help text)", f.DefValue)
+		t.Errorf("--num-requests default: got %q, want \"100\"", f.DefValue)
 	}
 }
 
@@ -395,28 +354,18 @@ func TestRunCmdDistributionDefaults_UseSharedConstants(t *testing.T) {
 	}
 }
 
-// TestRunCmd_HasMetricsPathFlag verifies BC-1: blis run exposes --metrics-path,
-// not --results-path.
-func TestRunCmd_HasMetricsPathFlag(t *testing.T) {
-	if runCmd.Flags().Lookup("metrics-path") == nil {
-		t.Error("BC-1: runCmd missing --metrics-path flag")
-	}
-	if runCmd.Flags().Lookup("results-path") != nil {
-		t.Error("BC-1: runCmd must NOT have --results-path flag (schema footgun)")
-	}
-}
-
-// TestReplayCmd_HasResultsPathFlag verifies blis replay exposes --results-path (the
-// per-request SimResult path) AND, as of #1583, --metrics-path (the aggregate
-// MetricsOutput path, symmetric with `blis run`). The latter carries the simulator's
-// cache_hit_rate for `blis calibrate --sim-metrics`; it aligns replay with the
-// already-documented "run/replay --metrics-path" adapter-reference workflow.
-func TestReplayCmd_HasResultsPathFlag(t *testing.T) {
-	if replayCmd.Flags().Lookup("results-path") == nil {
-		t.Error("replayCmd missing --results-path flag")
-	}
-	if replayCmd.Flags().Lookup("metrics-path") == nil {
-		t.Error("#1583: replayCmd must expose --metrics-path (aggregate MetricsOutput incl. cache_hit_rate)")
+// The legacy output files are gone (#2071): the Result document on stdout, and --output, carry
+// the aggregate figures and the per-request rows. Neither command registers either flag.
+func TestRunAndReplay_HaveNoMetricsOrResultsPathFlag(t *testing.T) {
+	for name, cmd := range map[string]*cobra.Command{"run": runCmd, "replay": replayCmd} {
+		for _, flag := range []string{"metrics-path", "results-path"} {
+			if cmd.Flags().Lookup(flag) != nil {
+				t.Errorf("blis %s still registers --%s", name, flag)
+			}
+		}
+		if cmd.Flags().Lookup("from-result") == nil || cmd.Flags().Lookup("output") == nil {
+			t.Errorf("blis %s lacks --from-result or --output", name)
+		}
 	}
 }
 
@@ -476,7 +425,7 @@ func TestApplyTimeoutToSpec_SynthesizedSpec(t *testing.T) {
 
 // TestApplyTimeoutToSpec_NonPositiveMeansDisabled verifies that timeout<=0 results in an
 // explicit no-timeout pointer (*int64 pointing to 0), not nil. Both 0 and negative values
-// disable the deadline. The CLI rejects 0 before calling this function (matching blis observe),
+// disable the deadline. The CLI rejects 0 before calling this function,
 // but the function itself treats all non-positive values identically: explicit *0 disables
 // the deadline and suppresses the 300s session default in computeDeadline (#1127).
 //
@@ -711,151 +660,6 @@ func TestApplyTimeoutToRequests_NegativeSetsSessionBlueprintExplicitZero(t *test
 	}
 }
 
-// TestRunCmd_MetricsPath_WritesMetricsOutput verifies BC-3: --metrics-path on
-// blis run produces MetricsOutput JSON (instance_id string ≠ SimResult request_id int).
-// NOTE: Do NOT use t.Parallel() — mutates package-level vars.
-func TestRunCmd_MetricsPath_WritesMetricsOutput(t *testing.T) {
-	outFile := filepath.Join(t.TempDir(), "metrics.json")
-
-	catalogDir, defaultsPath := setupKernelTestFixturesWithDefaults(t)
-
-	// Save and restore all package-level flag vars mutated by runCmd.Run.
-	// Base list copied from TestReplayCmd_EndToEnd_KernelBackend;
-	// run-only workload vars and metricsPath added on top.
-	origMetrics := metricsPath
-	origModel := model
-	origTotalKV := totalKVBlocks
-	origBlockSize := blockSizeTokens
-	origMaxRunning := maxNumSeqs
-	origMaxSched := maxNumBatchedTokens
-	origInstances := numInstances
-	origSeed := seed
-	origResults := resultsPath
-	origThreshold := longPrefillTokenThreshold
-	origKVCPU := kvCPUBlocks
-	origOffload := kvOffloadThreshold
-	origBandwidth := kvTransferBandwidth
-	origBaseLatency := kvTransferBaseLatency
-	origScheduler := scheduler
-	origPolicyConfig := policyConfigPath
-	origMaxModelLen := maxModelLen
-	origTraceLevel := traceLevel
-	origCounterfactualK := counterfactualK
-	origSimHorizon := simulationHorizon
-	// run-only workload vars
-	origWorkloadType := workloadType
-	origRate := rate
-	origNumReqs := numRequests
-	origConcurrency := concurrency
-	origThinkTime := thinkTimeMs
-	origPrefix := prefixTokens
-	origPromptMean := promptTokensMean
-	origPromptStdev := promptTokensStdev
-	origPromptMin := promptTokensMin
-	origPromptMax := promptTokensMax
-	origOutputMean := outputTokensMean
-	origOutputStdev := outputTokensStdev
-	origOutputMin := outputTokensMin
-	origOutputMax := outputTokensMax
-	origWorkloadSpec := workloadSpecPath
-	origRequestTimeout := requestTimeoutSecs
-	origTraceOut := traceOutput
-	origLogLevel := logLevel
-	origCatalogPath := catalogPath
-	origGPU := gpu
-	origTP := tensorParallelism
-	defer func() {
-		metricsPath = origMetrics
-		model = origModel
-		totalKVBlocks = origTotalKV
-		blockSizeTokens = origBlockSize
-		maxNumSeqs = origMaxRunning
-		maxNumBatchedTokens = origMaxSched
-		numInstances = origInstances
-		seed = origSeed
-		resultsPath = origResults
-		longPrefillTokenThreshold = origThreshold
-		kvCPUBlocks = origKVCPU
-		kvOffloadThreshold = origOffload
-		kvTransferBandwidth = origBandwidth
-		kvTransferBaseLatency = origBaseLatency
-		scheduler = origScheduler
-		policyConfigPath = origPolicyConfig
-		maxModelLen = origMaxModelLen
-		traceLevel = origTraceLevel
-		counterfactualK = origCounterfactualK
-		simulationHorizon = origSimHorizon
-		workloadType = origWorkloadType
-		rate = origRate
-		numRequests = origNumReqs
-		concurrency = origConcurrency
-		thinkTimeMs = origThinkTime
-		prefixTokens = origPrefix
-		promptTokensMean = origPromptMean
-		promptTokensStdev = origPromptStdev
-		promptTokensMin = origPromptMin
-		promptTokensMax = origPromptMax
-		outputTokensMean = origOutputMean
-		outputTokensStdev = origOutputStdev
-		outputTokensMin = origOutputMin
-		outputTokensMax = origOutputMax
-		workloadSpecPath = origWorkloadSpec
-		requestTimeoutSecs = origRequestTimeout
-		traceOutput = origTraceOut
-		logLevel = origLogLevel
-		catalogPath = origCatalogPath
-		gpu = origGPU
-		tensorParallelism = origTP
-	}()
-
-	// Set required run vars — runCmd.Run has logrus.Fatalf guards on zero/invalid values.
-	metricsPath = outFile
-	workloadType = "distribution" // avoids preset-path Fatalf("Undefined workload")
-	rate = 1.0                    // required by distribution rate-mode path
-	numRequests = 1               // minimal run
-	promptTokensMean = 512
-	promptTokensStdev = 256
-	promptTokensMin = 2
-	promptTokensMax = 7000
-	outputTokensMean = 512
-	outputTokensStdev = 256
-	outputTokensMin = 2
-	outputTokensMax = 7000
-
-	// Build testCmd with Changed() tracking so resolveLatencyConfig works.
-	testCmd := &cobra.Command{}
-	registerSimConfigFlags(testCmd)
-	// Register run-only workload flags that runCmd.Run checks via Changed().
-	testCmd.Flags().IntVar(&numRequests, "num-requests", 0, "")
-	testCmd.Flags().Float64Var(&rate, "rate", 0, "")
-	testCmd.Flags().StringVar(&workloadType, "workload", "", "")
-	if err := testCmd.ParseFlags([]string{
-		"--defaults-filepath", defaultsPath,
-		"--catalog", catalogDir, "--scenario", kernelTestScenario, "--scenarios", kernelScenariosDir(t), "--registry", kernelRegistryDir(t),
-		"--num-requests", "1",
-		"--seed", "42",
-		"--rate", "1.0",
-		"--workload", "distribution",
-	}); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-
-	runCmd.Run(testCmd, nil)
-
-	data, err := os.ReadFile(outFile)
-	if err != nil {
-		t.Fatalf("BC-3: metrics file not written: %v", err)
-	}
-	var out sim.MetricsOutput
-	if err := json.Unmarshal(data, &out); err != nil {
-		t.Fatalf("BC-3: not MetricsOutput JSON: %v\nraw: %s", err, data)
-	}
-	// MetricsOutput.InstanceID is "cluster"; SimResult.RequestID is an int — schemas are distinct.
-	if out.InstanceID == "" {
-		t.Error("BC-3: InstanceID empty — wrong schema or SaveResults not called")
-	}
-}
-
 // TestRunCmd_TraceOutput_RecordCountMatchesRequests verifies the issue
 // #1440 end-to-end contract: when `blis run --trace-output X` is used,
 // the exported `X.csv` contains exactly one TraceV2 record per request
@@ -873,7 +677,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	// Save and restore the package-level flag vars runCmd.Run mutates.
 	// Same list as TestRunCmd_MetricsPath_WritesMetricsOutput, with
 	// traceOutput added.
-	origMetrics := metricsPath
 	origModel := model
 	origTotalKV := totalKVBlocks
 	origBlockSize := blockSizeTokens
@@ -881,7 +684,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origMaxSched := maxNumBatchedTokens
 	origInstances := numInstances
 	origSeed := seed
-	origResults := resultsPath
 	origThreshold := longPrefillTokenThreshold
 	origKVCPU := kvCPUBlocks
 	origOffload := kvOffloadThreshold
@@ -915,7 +717,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 	origGPU := gpu
 	origTP := tensorParallelism
 	defer func() {
-		metricsPath = origMetrics
 		model = origModel
 		totalKVBlocks = origTotalKV
 		blockSizeTokens = origBlockSize
@@ -923,7 +724,6 @@ func TestRunCmd_TraceOutput_RecordCountMatchesRequests(t *testing.T) {
 		maxNumBatchedTokens = origMaxSched
 		numInstances = origInstances
 		seed = origSeed
-		resultsPath = origResults
 		longPrefillTokenThreshold = origThreshold
 		kvCPUBlocks = origKVCPU
 		kvOffloadThreshold = origOffload
@@ -1117,26 +917,26 @@ func runRunCmdAndCaptureTraces(t *testing.T, seedVal int64, numReq int, lazyFlag
 // dance in TestRunCmd_TraceOutput_RecordCountMatchesRequests but as a
 // helper to keep the lazy-generation tests short.
 type origCmdLevelVars struct {
-	metrics, model, results, policyConfig, traceOut, logLvl, catalogDir, gpuVal string
-	defaultsFile                                                                string
-	totalKV, blockSize, maxRunning, maxSched, simHorizon, kvCPU, baseLatency    int64
-	threshold, maxModelLen                                                      int64
-	offload, bandwidth                                                          float64
-	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix    int
-	rateV                                                                       float64
-	seedV                                                                       int64
-	traceLvl, workloadT, sched, workloadSpec                                    string
-	promptMean, promptStdev, promptMin, promptMax                               int
-	outputMean, outputStdev, outputMin, outputMax                               int
-	requestTimeout                                                              int
-	lazy                                                                        bool
+	model, policyConfig, traceOut, logLvl, catalogDir, gpuVal                string
+	defaultsFile                                                             string
+	totalKV, blockSize, maxRunning, maxSched, simHorizon, kvCPU, baseLatency int64
+	threshold, maxModelLen                                                   int64
+	offload, bandwidth                                                       float64
+	instances, tp, counterfactualK, numReqs, concurrencyV, thinkTime, prefix int
+	rateV                                                                    float64
+	seedV                                                                    int64
+	traceLvl, workloadT, sched, workloadSpec                                 string
+	promptMean, promptStdev, promptMin, promptMax                            int
+	outputMean, outputStdev, outputMin, outputMax                            int
+	requestTimeout                                                           int
+	lazy                                                                     bool
 }
 
 func captureCmdLevelVars() origCmdLevelVars {
 	return origCmdLevelVars{
-		metrics: metricsPath, model: model,
+		model:   model,
 		totalKV: totalKVBlocks, blockSize: blockSizeTokens, maxRunning: maxNumSeqs,
-		maxSched: maxNumBatchedTokens, instances: numInstances, seedV: seed, results: resultsPath,
+		maxSched: maxNumBatchedTokens, instances: numInstances, seedV: seed,
 		threshold: longPrefillTokenThreshold, kvCPU: kvCPUBlocks, offload: kvOffloadThreshold,
 		bandwidth: kvTransferBandwidth, baseLatency: kvTransferBaseLatency,
 		sched: scheduler, policyConfig: policyConfigPath,
@@ -1155,7 +955,6 @@ func captureCmdLevelVars() origCmdLevelVars {
 }
 
 func (o origCmdLevelVars) restore() {
-	metricsPath = o.metrics
 	model = o.model
 	totalKVBlocks = o.totalKV
 	blockSizeTokens = o.blockSize
@@ -1163,7 +962,6 @@ func (o origCmdLevelVars) restore() {
 	maxNumBatchedTokens = o.maxSched
 	numInstances = o.instances
 	seed = o.seedV
-	resultsPath = o.results
 	longPrefillTokenThreshold = o.threshold
 	kvCPUBlocks = o.kvCPU
 	kvOffloadThreshold = o.offload
@@ -1200,15 +998,16 @@ func (o origCmdLevelVars) restore() {
 	defaultsFilePath = o.defaultsFile
 }
 
-// TestRunCmd_LazyGeneration_FlagRegistered verifies the --lazy-generation
-// flag is registered on `blis run` and defaults to false. BC-1, #1441.
+// TestRunCmd_LazyGeneration_FlagRegistered verifies the --lazy-generation flag is registered
+// on `blis run` and defaults to true: streaming generation is the default since v0.16.0
+// (#1449), and the eager generator runs only on an explicit --lazy-generation=false.
 func TestRunCmd_LazyGeneration_FlagRegistered(t *testing.T) {
 	flag := runCmd.Flags().Lookup("lazy-generation")
 	if flag == nil {
 		t.Fatal("--lazy-generation flag must be registered on runCmd")
 	}
-	if flag.DefValue != "false" {
-		t.Errorf("--lazy-generation default = %q, want %q", flag.DefValue, "false")
+	if flag.DefValue != "true" {
+		t.Errorf("--lazy-generation default = %q, want %q", flag.DefValue, "true")
 	}
 }
 

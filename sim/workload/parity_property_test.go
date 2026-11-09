@@ -581,13 +581,10 @@ func TestProperty_EagerEqualsLazy_RequestStreams(t *testing.T) {
 						i, propertyBaseSeed, eagerSpec.Seed, j,
 						wl.Sessions[j].ClientID, lazySessions[j].ClientID, label)
 				}
-				// A blueprint's RNG seeds the follow-up round stream. If the
-				// two blueprints were seeded identically, one draw from each
-				// must match — this catches a shifted blueprintRNG (the
-				// tight-cap pre-pass bug class from PR #1453). The draw is
-				// destructive but both RNGs are discarded after.
-				if e, l := wl.Sessions[j].RNG.Int63(), lazySessions[j].RNG.Int63(); e != l {
-					t.Fatalf("draw %d [base=%#x, seed=%d]: blueprint %d (session %q) RNG diverged eager=%d lazy=%d — blueprintRNG seeds shifted\n  spec: %s",
+				// A blueprint's streams name its follow-up rounds' draws. Equal
+				// names give equal draws, so the two must name the same family.
+				if e, l := wl.Sessions[j].Streams, lazySessions[j].Streams; e != l {
+					t.Fatalf("draw %d [base=%#x, seed=%d]: blueprint %d (session %q) streams diverged eager=%+v lazy=%+v\n  spec: %s",
 						i, propertyBaseSeed, eagerSpec.Seed, j, wl.Sessions[j].SessionID, e, l, label)
 				}
 			}

@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+
+	"github.com/inference-sim/inference-sim/sim"
 )
 
-// subsystem names for PartitionedRNG (INV-6: determinism requires named subsystems).
-const (
-	subsystemNodeProvisioning = "node-provisioning"
-	subsystemInstanceLoading  = "instance-loading"
-	subsystemAutoscaler       = "autoscaler" // Phase 1C: partitioned RNG for actuation delay sampling
+// The cluster's named random streams (DEV-6). Each depends on how the system responds (when a
+// node is provisioned, when an instance loads, when the autoscaler acts), so each is its own
+// substream and never shifts a workload draw.
+var (
+	streamNodeProvisioning = sim.StreamName{Component: "cluster/node-pools", Purpose: "provisioning-delay"}
+	streamInstanceLoading  = sim.StreamName{Component: "cluster/instances", Purpose: "loading-delay"}
+	streamAutoscaler       = sim.StreamName{Component: "cluster/autoscaler", Purpose: "actuation-delay"}
 )
 
 // DelaySpec parameterizes a duration distribution for provisioning/loading delays.

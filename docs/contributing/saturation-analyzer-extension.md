@@ -61,20 +61,17 @@ doesn't change on the events it ignores.
 ```bash
 # Single detector (streaming path, #1516)
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --detectors composite --saturation-report sat.json
 
 # The whole roster, or a named subset, over ONE deterministic replay (bank, #1519)
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --detectors all --saturation-report sat.json
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --detectors composite,threshold --saturation-report sat.json
 ```
 
 `--detectors` also works on `blis replay` (byte-identical to `run` for the same
-trace, INV-13) and `blis observe` (same pipeline over real-server latencies).
+trace, INV-13).
 
 ### Tuning via `--saturation-config`
 
@@ -305,8 +302,7 @@ are sorted so repeated runs are byte-identical (INV-6).
 ```
 
 For `blis run` and `blis replay` the same `final` map is the Result document's
-`saturation.final` (a run *without* `--detectors` has no `saturation` section);
-`blis observe` splices it onto its metrics JSON.
+`saturation.final` (a run *without* `--detectors` has no `saturation` section).
 
 ## Design principles
 

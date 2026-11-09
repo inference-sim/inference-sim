@@ -13,15 +13,15 @@ BLIS is six repositories, each owning one kind of thing:
 | **inference-sim** (this repo) | simulates | the end-to-end simulation: the clock and event loop, arrivals and workloads, the cluster and placement, the hosting of the llm-d router, metrics and reports; no vLLM code |
 | **blis-vllm** | runs the engine | the vLLM engine: vLLM v0.32.0's scheduler, KV cache, MTP, DP and connectors translated to Go and diff-tested against real vLLM; the vLLM engine configuration and rules; the kernel adapter |
 | **blis-latency-kernel** | prices | step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads |
-| **blis-catalog** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
-| **blis-registry** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |
+| **blis-substrate `catalog/`** | states the facts | declared vendor facts: model graphs and configs, chips, fabrics, storage devices, workload presets |
+| **blis-substrate `registry/`** | holds what was fitted | coefficient sets, each with its provenance and the range it holds over |
 | **blis-schemas** | defines the formats | the source of truth for every shared format: scenario, deployment, engine and catalog files, and the kernel interface |
 
 ```mermaid
 flowchart LR
     SC["Scenario<br/>(blis-schemas format)"] --> SIM
-    CAT["blis-catalog<br/>facts"] --> K
-    REG["blis-registry<br/>coefficients"] --> K
+    CAT["blis-substrate catalog/<br/>facts"] --> K
+    REG["blis-substrate registry/<br/>coefficients"] --> K
     SC --> E
     SIM["inference-sim<br/>simulates"] -- "engine.Engine:<br/>add, schedule, complete" --> E["blis-vllm<br/>runs the engine"]
     E -- "batch, transfer, tier" --> K["blis-latency-kernel<br/>prices"]
@@ -37,8 +37,9 @@ memory is left for KV. The simulator reaches the engine only through blis-schema
 blis-vllm at one build site, `cmd/engine_build.go`. A deployment choice -- which chip, how many GPUs,
 what parallelism and engine settings -- is neither a fact nor a coefficient, so it lives in
 the scenario a run names, not in the catalog or registry. Data the kernel reads is never
-copied into this repo: adding a model or chip is a commit to blis-catalog, refitting a
-coefficient is a commit to blis-registry. How a scenario reaches the kernel:
+copied into this repo: adding a model or chip is a commit to blis-substrate's `catalog/`,
+refitting a coefficient is a commit to its `registry/`. A build embeds both at the pinned
+version. How a scenario reaches the kernel:
 [Latency Models](../guide/latency-models.md).
 
 ## Overview
@@ -97,7 +98,8 @@ The cluster simulator maintains a single global clock shared across all instance
 - Cluster events at time T are processed before instance events at time T (cluster-first priority)
 - When multiple instances have events at the same time, the instance with the lowest index goes first
 - Router callbacks run at `PriorityGatewayRequest` (after the arrival, before P/D transfer and autoscaling); its background work runs at `PriorityGatewayBackground`, after every other cluster event at the timestamp
-- Within a single instance, events are ordered by `(timestamp, priority, seqID)` — the same three-key scheme used at the cluster level
+- Cluster events are ordered by `(time, class, sender, sender's own count)` (DEV-2); each class's position and reason are listed in `sim/cluster/cluster_event.go`
+- Within a single instance, events are ordered by `(timestamp, priority, seqID)`; the instance is the one sender, so its seqID is its own count of events sent
 
 The simulation terminates when the clock exceeds the configured horizon or only daemon events remain. While the router holds requests and nothing but its timers can happen, the run continues for at most one simulated hour (`gatewayStallLimitUs`) before it ends with a warning.
 
@@ -107,8 +109,7 @@ The cluster talks to the router through the `Gateway` interface (`sim/cluster/ga
 The cluster hands it each arrival (`OnArrival`) and reports what happens to a dispatched
 request (`OnDispatched`, `OnFirstToken`, `OnDone`) and to instances (`OnInstanceChange`). The
 gateway acts on the cluster only through `GatewayHost`: it reads the clock and the instances,
-schedules events, and calls `Dispatch` or `Reject`. `sim/llmd.Gateway` is the production
-implementation; `sim/cluster` unit tests use a small round-robin fake.
+schedules events, and calls `Dispatch` or `Reject`. The production implementation is in `sim/llmd/gateway.go`; `sim/cluster` unit tests use a small round-robin fake.
 
 ## Request Path
 
@@ -234,8 +235,5 @@ with identical flags (including `--horizon`) yields equal `metrics`, `requests` 
 header records the router inputs (EPP flags with the configuration inlined, manifests, pod
 labels, gateway latency, scrape jitter, KV-event delay), so a replay rebuilds the same router; a replay whose
 scenario `router:` block, pool labels or router environment flags state a different router is
-refused.
-`blis observe` and `blis calibrate` are deprecated
-([#1901](https://github.com/inference-sim/inference-sim/issues/1901)). See
-[Observe / Replay / Calibrate](../guide/observe-replay-calibrate.md) and the
+refused. See [Trace Replay](../guide/replay.md) and the
 [Configuration Reference](../reference/configuration.md).

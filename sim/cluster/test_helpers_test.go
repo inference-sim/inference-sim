@@ -11,19 +11,13 @@ import (
 )
 
 // testGenerateRequests replicates the exact algorithm from the old
-// generateRequestsFromDistribution using SubsystemWorkload RNG,
-// preserving byte-identical test request sequences during legacy retirement.
-//
-// INTENTIONAL DUPLICATION: an identical copy exists in sim/test_helpers_test.go.
-// Both use SubsystemWorkload (legacy) rather than SubsystemWorkloadGen (production).
-// This is deliberate: existing tests validate behavior against known sequences.
-// The RNG stream change is documented as a deviation in the PR description.
-// TODO: consolidate into sim/internal/testutil/ once golden dataset is regenerated.
+// generateRequestsFromDistribution, drawing everything from one math/rand stream seeded with the
+// test seed, so the golden dataset's request sequences stay byte-identical. It is test input,
+// not the workload generator: production draws come from named streams (sim.NewStream).
 func testGenerateRequests(seed, horizon int64, rate float64,
 	numReqs, prefix, pMean, pStd, pMin, pMax, oMean, oStd, oMin, oMax int,
 ) []*sim.Request {
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(seed))
-	workloadRNG := rng.ForSubsystem(sim.SubsystemWorkload)
+	workloadRNG := rand.New(rand.NewSource(seed))
 
 	var requests []*sim.Request
 	currentTime := int64(0)

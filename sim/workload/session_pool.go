@@ -16,11 +16,10 @@ import (
 // Determinism (INV-6): session order is the expansion order of BuildSessionPool
 // (corpus order, then round-robin clones); admission is strictly in that order.
 type SessionPoolDriver struct {
-	mgr          *SessionManager
-	queued       []*sim.Request // all total round-0 requests (originals + clones), in admission order
-	nextQueued   int            // index into queued of the next session to admit
-	totalStarted int            // sessions injected so far (initial pool + admitted); read by Unstarted()
-	totalCount   int            // total sessions in the pool (== len of all round-0 requests)
+	mgr        *SessionManager
+	queued     []*sim.Request // all total round-0 requests (originals + clones), in admission order
+	nextQueued int            // index into queued of the next session to admit
+	totalCount int            // total sessions in the pool (== len of all round-0 requests)
 }
 
 // cloneSampler returns a sampler independent of s for stateful sampler types.
@@ -41,12 +40,14 @@ func cloneSampler(s LengthSampler) LengthSampler {
 // cloneBlueprintForDup produces a duplicated blueprint + round-0 request with a
 // new unique SessionID and a cache-busting prefix token so the clone does not
 // share KV cache with its source. dupIdx is the global clone index (>=1).
-func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, rng *rand.Rand) (SessionBlueprint, *sim.Request) {
+// The clone's follow-up rounds and its cache-busting token draw from the clone's own session
+// streams (SessionStreams(seed, newID)).
+func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, seed int64) (SessionBlueprint, *sim.Request) {
 	newID := fmt.Sprintf("%s_dup%d", src.SessionID, dupIdx)
 	bp := src // shallow copy; stateful samplers are independently re-cloned below via cloneSampler
 	bp.SessionID = newID
-	// Fresh per-session RNG so token IDs differ deterministically from the source.
-	bp.RNG = rand.New(rand.NewSource(rng.Int63()))
+	// The clone's own streams, so its token IDs differ deterministically from the source's.
+	bp.Streams = SessionStreams(seed, newID)
 	// Give the clone independent sampler state. Interface fields copied by the
 	// shallow `bp := src` above still point at the SAME underlying sampler
 	// object as src for stateful types (e.g. *SequenceSampler's mutable index
@@ -67,7 +68,7 @@ func cloneBlueprintForDup(src SessionBlueprint, srcR0 *sim.Request, dupIdx int, 
 
 	// Cache-busting token prepended to the clone's round-0 input so the block
 	// hash chain diverges immediately from the source session (design §6).
-	buster := sim.GenerateRandomTokenIDs(bp.RNG, 1)
+	buster := tokens(roundStreams(bp.Streams, 0), purposeCacheBuster, 1)
 	newInput := make([]sim.TokenID, 0, len(srcR0.InputTokens)+1)
 	newInput = append(newInput, buster...)
 	newInput = append(newInput, srcR0.InputTokens...)
@@ -125,7 +126,6 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 		return nil, nil, fmt.Errorf("total (%d) must be >= concurrent (%d)", total, concurrent)
 	}
 
-	rng := rand.New(rand.NewSource(seed))
 	allBPs := make([]SessionBlueprint, 0, total)
 	allR0 := make([]*sim.Request, 0, total)
 	dupIdx := 0
@@ -136,7 +136,7 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 			allR0 = append(allR0, r0Requests[srcIdx])
 		} else {
 			dupIdx++
-			bp, r0 := cloneBlueprintForDup(blueprints[srcIdx], r0Requests[srcIdx], dupIdx, rng)
+			bp, r0 := cloneBlueprintForDup(blueprints[srcIdx], r0Requests[srcIdx], dupIdx, seed)
 			allBPs = append(allBPs, bp)
 			allR0 = append(allR0, r0)
 		}
@@ -153,7 +153,6 @@ func BuildSessionPool(blueprints []SessionBlueprint, r0Requests []*sim.Request, 
 	for i := 0; i < concurrent; i++ {
 		initial = append(initial, d.queued[d.nextQueued])
 		d.nextQueued++
-		d.totalStarted++
 	}
 	return d, initial, nil
 }
@@ -188,13 +187,12 @@ func (d *SessionPoolDriver) OnComplete(req *sim.Request, tick int64) []*sim.Requ
 		// stale past deadline on every wave-2+ session — instantly dropped on enqueue
 		// (simulator.go deadline guard), mass-cancelling the pool. Preserve the
 		// recorded deadline-relative-to-arrival gap by shifting the deadline by the
-		// same offset. (OTel corpora set no deadline; run/observe corpora do.)
+		// same offset. (OTel corpora set no deadline; run corpora do.)
 		if next.Deadline > 0 {
 			next.Deadline += tick - next.ArrivalTime
 		}
 		next.ArrivalTime = tick
 		d.nextQueued++
-		d.totalStarted++
 		return []*sim.Request{next}
 	}
 	return nil
@@ -224,17 +222,24 @@ func (d *SessionPoolDriver) TotalSessions() int { return d.totalCount }
 // unservable drop, delegating to the wrapped SessionManager (#2064, BC-5).
 func (d *SessionPoolDriver) CancelledSessions() int { return d.mgr.CancelledSessions() }
 
-// Unstarted returns the number of sessions never admitted. In the self-draining
-// configuration (no --horizon) it is 0: every session either completes or is cancelled,
-// and a cancellation refills the slot — pre-instance drops (routing rejection, gateway
-// client-deadline expiry / shed / evict) now terminate the session too, because the
-// cluster routes them through SessionPoolDriver.OnUnserved (wired as the unserved hook,
-// #2064). Unstarted() is nonzero only under a hard --horizon cap that ends the run with
-// sessions still queued (a refill pushed by a late termination can be discarded by the
-// cluster's horizon guard yet still counted as started — the known-limitation case
-// tracked in #1483). The caller logs a warning and reports this alongside totalStarted so
-// accounting stays closed: totalStarted + Unstarted() == TotalSessions() (INV-11 / INV-1).
-func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.totalStarted }
+// Unstarted is the number of pooled sessions the driver has not pushed. A session pushed and
+// then discarded by the horizon is pushed; ArrivedSessions counts what actually arrived.
+func (d *SessionPoolDriver) Unstarted() int { return d.totalCount - d.nextQueued }
+
+// ArrivedSessions is the number of pooled sessions whose round 0 arrived at the cluster: those
+// the driver pushed whose fate is not not_started. A refill pushed by a late termination and
+// discarded by the horizon was pushed but never arrived, so it is not counted (#1483).
+// TotalSessions minus this is the sessions that never started.
+func (d *SessionPoolDriver) ArrivedSessions(fates *sim.FateLedger) int {
+	n := 0
+	for _, r := range d.queued[:d.nextQueued] {
+		if f, ok := fates.Fate(r.ID); ok && f.Fate == sim.FateNotStarted {
+			continue
+		}
+		n++
+	}
+	return n
+}
 
 // hasUniqueSessionIDs is a test helper: true iff all pooled round-0 requests
 // carry distinct SessionIDs.

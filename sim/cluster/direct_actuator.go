@@ -112,9 +112,21 @@ func (a *DirectActuator) scaleUp(d ScaleDecision) error {
 // scaleDown drains existing instance(s) for the given decision. Returns error if
 // any iteration finds no active instance to drain.
 // TODO(1C-4b): cancel pending placements for the same model before draining (specs/010).
+//
+// The decision was computed from the cluster as it stood at its tick; with an HPA scrape delay
+// it is applied later, after other decisions computed from the same view may have drained
+// replicas already. So the actuator applies the minimum again, on the replicas still routable
+// now: it drains none that would leave the model below the analyzer's MinReplicas, and logs
+// each removal it declines (#2015).
 func (a *DirectActuator) scaleDown(d ScaleDecision) error {
+	minReplicas := effectiveAnalyzerConfig(a.cluster.config.AutoscalerAnalyzerConfig).MinReplicas
 	var lastErr error
 	for i := 0; i < -d.Delta; i++ {
+		if n := a.routableReplicas(d.ModelID); n <= minReplicas {
+			logrus.Warnf("[actuator] scale-down for model %q: %d of %d removals not applied; %d routable replica(s) "+
+				"remain and the minimum is %d (the decision predates earlier removals)", d.ModelID, -d.Delta-i, -d.Delta, n, minReplicas)
+			break
+		}
 		inst := a.findOldestActive(d.ModelID, d.Variant)
 		if inst == nil {
 			err := fmt.Errorf("scale-down for model %q variant %v: no active instance found", d.ModelID, d.Variant)
@@ -126,6 +138,17 @@ func (a *DirectActuator) scaleDown(d ScaleDecision) error {
 		logrus.Infof("[actuator] scale-down: draining instance %s for model %q", inst.ID(), d.ModelID)
 	}
 	return lastErr
+}
+
+// routableReplicas counts the model's instances the router can send requests to now.
+func (a *DirectActuator) routableReplicas(model string) int {
+	n := 0
+	for _, inst := range a.cluster.instances {
+		if inst.Model == model && inst.IsRoutable() {
+			n++
+		}
+	}
+	return n
 }
 
 // findOldestActive returns the first (oldest) active instance for the given model+variant.

@@ -3,7 +3,6 @@ package cluster
 import (
 	"bytes"
 	"math"
-	"math/rand"
 	"os"
 	"strings"
 	"testing"
@@ -215,7 +214,7 @@ func TestClusterSimulator_SessionUnserved_CancelsThroughHook(t *testing.T) {
 	bp := workload.SessionBlueprint{
 		SessionID: sessID, ClientID: "c", MaxRounds: 5, ThinkTimeUs: 1000,
 		Horizon: math.MaxInt64, InputSampler: inputSampler, OutputSampler: outputSampler,
-		RNG: rand.New(rand.NewSource(7)), Model: "test-model",
+		Streams: workload.SessionStreams(7, sessID), Model: "test-model",
 	}
 	seed := &sim.Request{
 		ID: sessID + "_r0", ArrivalTime: 0, State: sim.StateQueued,

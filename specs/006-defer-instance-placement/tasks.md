@@ -1,5 +1,7 @@
 # Tasks: Defer Instance Construction Until After Placement
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Input**: Design documents from `specs/006-defer-instance-placement/`
 **Branch**: `006-defer-instance-placement`
 
@@ -62,8 +64,8 @@
 
 **Independent Test**: `go test ./sim/cluster/... -run TestCachedSnapshotProvider_AddInstance` passes; a newly added instance appears in `Snapshot()` output.
 
-- [X] T014 [P] [US3] Write failing test `TestCachedSnapshotProvider_AddInstance` (GIVEN a provider with N instances, WHEN `AddInstance(newID, newInst)` is called, THEN `Snapshot(newID, clock)` returns a valid snapshot for the new instance; WHEN called again with the same ID, THEN it panics) in `sim/cluster/snapshot_test.go`
-- [X] T015 [P] [US3] Implement `AddInstance(id InstanceID, inst *InstanceSimulator)` on `CachedSnapshotProvider` in `sim/cluster/snapshot.go`: insert into `p.instances`, initialize `p.cache[id]` with `sim.NewRoutingSnapshot(string(id))`, initialize `p.lastRefresh[id]` with zero timestamps; panic if `id` already present (R1: no silent overwrite)
+- [X] T014 [P] [US3] Write failing test `TestCachedSnapshotProvider_AddInstance` (GIVEN a provider with N instances, WHEN `AddInstance(newID, newInst)` is called, THEN `Snapshot(newID, clock)` returns a valid snapshot for the new instance; WHEN called again with the same ID, THEN it panics) in the cluster package's snapshot test file
+- [X] T015 [P] [US3] Implement `AddInstance(id InstanceID, inst *InstanceSimulator)` on `CachedSnapshotProvider` in the cluster package's snapshot file: insert into `p.instances`, initialize `p.cache[id]` with `sim.NewRoutingSnapshot(string(id))`, initialize `p.lastRefresh[id]` with zero timestamps; panic if `id` already present (R1: no silent overwrite)
 
 **Checkpoint**: `go test ./sim/cluster/... -run TestCachedSnapshotProvider_AddInstance` passes. Dynamic registration works in isolation.
 

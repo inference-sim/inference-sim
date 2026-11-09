@@ -1,5 +1,7 @@
 # Tasks: Phase 1B-1a — Tier-Ordered Admission Shedding
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Input**: Design documents from `specs/003-tier-shed-admission/`
 **Branch**: `003-tier-shed-admission`
 **PR**: #809
@@ -17,7 +19,7 @@
 
 **Purpose**: Add the `SLOTierPriority()` helper and register the `"tier-shed"` policy name — both needed by all subsequent test and implementation tasks.
 
-- [X] T001 Add `SLOTierPriority(class string) int` function (exported; Critical=4 … Background=0; empty/unknown→3) to `sim/admission.go`
+- [X] T001 Add `SLOTierPriority(class string) int` function (exported; Critical=4 … Background=0; empty/unknown→3) to the simulator's admission file
 - [X] T002 Add `"tier-shed": true` to `validAdmissionPolicies` map in `sim/bundle.go` (validation only — no factory case)
 - [X] T003 [P] Add `TierShedThreshold int \`yaml:"tier_shed_threshold,omitempty"\`` and `TierShedMinPriority int \`yaml:"tier_shed_min_priority,omitempty"\`` fields to `DeploymentConfig` in `sim/cluster/deployment.go`
 - [X] T004 [P] Add `shedByTier map[string]int` field to `ClusterSimulator` struct and initialize to `make(map[string]int)` in `NewClusterSimulator()` in `sim/cluster/cluster.go`
@@ -42,17 +44,17 @@ No additional foundational work — T001–T004 are sufficient. User story phase
 
 > **Write these first — they MUST FAIL before T012 is implemented.**
 
-- [X] T005 [P] [US1] Table-driven unit tests for `SLOTierPriority()`: all 5 canonical classes + empty string + unknown string → `sim/admission_tier_test.go` (new file)
-- [X] T006 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for Critical and Standard under overload — `sim/admission_tier_test.go`
-- [X] T007 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(false, reason)` for Sheddable when maxLoad > OverloadThreshold — `sim/admission_tier_test.go`
-- [X] T008 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for all tiers when maxLoad ≤ OverloadThreshold — `sim/admission_tier_test.go`
-- [X] T009 [P] [US1] Behavior test: empty `state.Snapshots` → no panic, all requests admitted — `sim/admission_tier_test.go`
-- [X] T010 [P] [US1] Behavior test: empty `SLOClass` treated as Standard (priority 3), never shed below Standard — `sim/admission_tier_test.go`
-- [X] T011 [P] [US2] Behavior test: Batch and Background always return `(true,"")` from `TierShedAdmission` regardless of load — `sim/admission_tier_test.go`
+- [X] T005 [P] [US1] Table-driven unit tests for `SLOTierPriority()`: all 5 canonical classes + empty string + unknown string → the simulator's admission tier test file (new file)
+- [X] T006 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for Critical and Standard under overload — the simulator's admission tier test file
+- [X] T007 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(false, reason)` for Sheddable when maxLoad > OverloadThreshold — the simulator's admission tier test file
+- [X] T008 [P] [US1] Behavior test: `TierShedAdmission.Admit()` returns `(true,"")` for all tiers when maxLoad ≤ OverloadThreshold — the simulator's admission tier test file
+- [X] T009 [P] [US1] Behavior test: empty `state.Snapshots` → no panic, all requests admitted — the simulator's admission tier test file
+- [X] T010 [P] [US1] Behavior test: empty `SLOClass` treated as Standard (priority 3), never shed below Standard — the simulator's admission tier test file
+- [X] T011 [P] [US2] Behavior test: Batch and Background always return `(true,"")` from `TierShedAdmission` regardless of load — the simulator's admission tier test file
 
 ### Implementation for User Stories 1 & 2
 
-- [X] T012 [US1] Implement `TierShedAdmission` struct + `Admit()` method in `sim/admission.go` (depends on T001; T005–T011 must fail first)
+- [X] T012 [US1] Implement `TierShedAdmission` struct + `Admit()` method in the simulator's admission file (depends on T001; T005–T011 must fail first)
 - [X] T013 [US1] In `NewClusterSimulator()`, detect `config.AdmissionPolicy == "tier-shed"` and construct `&sim.TierShedAdmission{OverloadThreshold: config.TierShedThreshold, MinAdmitPriority: config.TierShedMinPriority}` directly (bypassing `NewAdmissionPolicy` factory) — `sim/cluster/cluster.go` (depends on T003, T004, T012)
 - [X] T014 [US1] In `AdmissionDecisionEvent.Execute()`, after `cs.rejectedRequests++`, increment `cs.shedByTier[tier]++` (normalize empty SLOClass to `"standard"`) — `sim/cluster/cluster_event.go` (depends on T004, T013)
 

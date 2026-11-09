@@ -80,7 +80,7 @@ kernel -- charged once each, in the right place.
 
 **Q8. Does BLIS need memory answers, and can the kernel give them consistently?**
 This is the one finding that changes the design. BLIS derives KV capacity through
-`latency.CalculateKVBlocks` (`sim/latency/kv_capacity.go:400`), called from `cmd/root.go`
+`latency.CalculateKVBlocks` (line 400 of `kv_capacity.go` in the former latency package), called from `cmd/root.go`
 and `cmd/replay.go` -- entirely OUTSIDE the `sim.LatencyModel` seam. So registering the
 adapter at that seam would leave step time priced by the kernel while KV capacity, and
 therefore the resident batch, was still decided by the legacy path. Since the resident batch
@@ -172,7 +172,7 @@ scenarios plus the two b300 ones. The other 34 either have small enough expert w
 WRONG BUT NON-NEGATIVE, which is worse, because they would have produced a plausible number.
 
 **Scope of the error.** It is confined to `FixedBytes`, so it does not affect the 13.67%
-shape result already reported: `cmd/shape` scores step time, and the step-time path divides
+shape result already reported: `blis-latency-kernel/cmd/shape` scores step time, and the step-time path divides
 correctly. It affects any memory or capacity answer, which is exactly what this experiment
 needs.
 

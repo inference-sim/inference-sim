@@ -3,7 +3,7 @@ package llmd
 import (
 	"fmt"
 
-	"github.com/inference-sim/blis-schemas/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 
 	"github.com/inference-sim/blis-vllm/compat/contract"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"

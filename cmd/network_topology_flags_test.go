@@ -34,7 +34,6 @@ func TestNetworkTopology_HasNoCLIFlag(t *testing.T) {
 	}{
 		{"run", runCmd},
 		{"replay", replayCmd},
-		{"observe", observeCmd},
 	} {
 		cmd.c.Flags().VisitAll(func(f *pflag.Flag) {
 			for _, bad := range forbidden {

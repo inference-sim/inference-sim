@@ -13,9 +13,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	blisschemas "github.com/inference-sim/blis-schemas"
-	"github.com/inference-sim/blis-schemas/spec/hardware"
-	schemamodel "github.com/inference-sim/blis-schemas/spec/model"
+	blisschemas "github.com/inference-sim/blis-substrate/contracts"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
+	schemamodel "github.com/inference-sim/blis-substrate/contracts/spec/model"
 )
 
 // This file implements the strict WHOLE-CATALOG load behind the R1/C6 acceptance gate
@@ -36,7 +36,7 @@ import (
 //     CI checks the pair — so it is not part of this gate.
 //
 //  2. The GATE is a test, not a subcommand: cmd/catalog_load_test.go drives loadCatalog
-//     against the committed fixture catalog (testdata/catalog) unconditionally, and
+//     against the pinned substrate's catalog unconditionally, and
 //     scripts/catalog-load-gate.sh drives it against a pinned blis-catalog checkout. The
 //     workflow job that calls that script is a PENDING HUMAN EDIT to
 //     .github/workflows/ci.yml — the delivery loop's token cannot push workflow files — and its
@@ -315,8 +315,8 @@ func readCatalogHardwareEntry(path string) (*hardware.Chip, error) {
 }
 
 // loadCatalogWorkloadEntries loads every workloads/<name>.yaml: a replay workload through
-// blis-schemas' LoadCatalogWorkload, and a preset through readCatalogPresetWorkload — the production reader shared by `blis run --workload`,
-// `blis observe --workload` and `blis convert preset --name` (#1769).
+// blis-schemas' LoadCatalogWorkload, and a preset through readCatalogPresetWorkload — the production reader shared by `blis run --workload`
+// and `blis convert preset --name` (#1769).
 func loadCatalogWorkloadEntries(root string) (int, []string) {
 	dir := filepath.Join(root, catalogWorkloadsSubdir)
 	paths, err := catalogYAMLFiles(dir)
@@ -349,8 +349,15 @@ func loadCatalogWorkloadEntries(root string) (int, []string) {
 			loaded++
 			continue
 		}
-		if _, err := readCatalogPresetWorkload(name, root); err != nil {
-			problems = append(problems, err.Error())
+		// A preset decodes through the contracts' strict loader (the same decoding blis-substrate's
+		// loader applies), then meets the bounds a run's sampler needs (presetBoundsError).
+		shape, err := blisschemas.LoadWorkload(path)
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("workload preset %q at %s is not a valid preset definition: %v", name, path, err))
+			continue
+		}
+		if err := presetBoundsError(name, presetFromShape(shape)); err != nil {
+			problems = append(problems, fmt.Sprintf("%s: %v", path, err))
 			continue
 		}
 		loaded++
@@ -388,7 +395,7 @@ func loadCatalogDeviceEntries(root string) (int, []string) {
 	if yamlErr := checkCatalogAuthoredYAML(path, data); yamlErr != nil {
 		return 0, []string{yamlErr.Error()}
 	}
-	devices, err := loadCatalogStorageDevices(root)
+	devices, err := blisschemas.ParseStorageDevices(path, data)
 	if err != nil {
 		return 0, []string{err.Error()}
 	}

@@ -3,6 +3,7 @@ package cluster
 import (
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"math"
+	"math/rand"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -51,7 +52,7 @@ func TestEvict_DisaggregatedAtEachStage(t *testing.T) {
 				}
 			}
 			for _, r := range reqs {
-				r.OutputTokens = sim.GenerateRandomTokenIDs(sim.NewPartitionedRNG(sim.NewSimulationKey(1)).ForSubsystem(sim.SubsystemWorkload), 20000)
+				r.OutputTokens = sim.GenerateRandomTokenIDs(rand.New(rand.NewSource(1)), 20000)
 				r.MaxOutputLen = len(r.OutputTokens)
 			}
 			gw := &fakeGateway{disaggregate: true, evictAfterUs: tc.after}

@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 	"sort"
 
@@ -100,8 +99,6 @@ type GatewayHost interface {
 	EndpointRanks(id InstanceID) []*InstanceSimulator
 	// Seed returns the run seed.
 	Seed() int64
-	// RNG returns the run's partitioned RNG.
-	RNG() *sim.PartitionedRNG
 	// BlockSizeTokens returns the KV block size of the deployment.
 	BlockSizeTokens() int64
 	// PoolRole returns an instance's P/D pool role, or 0 when the deployment is not
@@ -169,9 +166,6 @@ func (cs *ClusterSimulator) Now() int64 { return cs.clock }
 // Seed implements GatewayHost.
 func (cs *ClusterSimulator) Seed() int64 { return cs.config.Seed }
 
-// RNG implements GatewayHost.
-func (cs *ClusterSimulator) RNG() *sim.PartitionedRNG { return cs.rng }
-
 // BlockSizeTokens implements GatewayHost.
 func (cs *ClusterSimulator) BlockSizeTokens() int64 { return cs.config.BlockSizeTokens }
 
@@ -190,7 +184,7 @@ func (cs *ClusterSimulator) Schedule(at int64, priority int, daemon bool, fn fun
 	if daemon {
 		cs.daemonQueued++
 	}
-	heap.Push(&cs.clusterEvents, clusterEventEntry{event: ev, seqID: cs.nextSeqID()})
+	cs.schedule(ev, &cs.routerSender)
 	return func() { ev.cancelled = true }
 }
 
@@ -247,11 +241,13 @@ func (cs *ClusterSimulator) Reject(req *sim.Request, why Rejection, reason strin
 	default:
 		panic(fmt.Sprintf("ClusterSimulator.Reject: unknown rejection %d", why))
 	}
+	f, dropReason := rejectionFate(why)
+	cs.endRequest(req, f, dropReason, cs.clock)
 	cs.recordRejection(req, why, reason)
 	cs.recordUnserved(req) // measured failed_requests and closed-loop drivers (#1938, #1937)
 	if why == RejectedUnservable && cs.sessionCallback != nil {
 		for _, next := range cs.sessionCallback(req, cs.clock) {
-			cs.pushArrival(next, next.ArrivalTime)
+			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 	}
 }
@@ -270,6 +266,7 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 			return false
 		}
 		cs.gatewayEvicted++
+		cs.endRequest(req, sim.FateDropped, sim.DropGatewayEvicted, cs.clock)
 		cs.recordShed(req)
 		cs.recordUnserved(req)
 		cs.parentDone(parent, cs.clock, DoneEvicted)
@@ -281,6 +278,7 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 	}
 	cs.releaseInFlight(req.AssignedInstance)
 	cs.gatewayEvicted++
+	cs.endRequest(req, sim.FateDropped, sim.DropGatewayEvicted, cs.clock)
 	cs.recordShed(req)
 	cs.recordUnserved(req)
 	cs.gateway.OnDone(req, cs.clock, DoneEvicted)
@@ -289,7 +287,8 @@ func (cs *ClusterSimulator) Evict(req *sim.Request) bool {
 
 // evictParent stops a disaggregated request at its current stage, releasing what that stage
 // holds: the prefill sub-request on its prefill engine (no transfer starts); the decode KV
-// reserved for a transfer in flight (its completion then finds nothing to promote); or the decode
+// reserved for a transfer in flight (its completion then finds nothing to promote); the handoff
+// waiting on its decode engine for KV (its prefill KV is freed by the abort notice); or the decode
 // sub-request on its decode engine. It reports false when the request is between stages (on its
 // way to an engine, or in the step that computes its prefill, whose end starts the transfer) or
 // has finished; the gateway retries.
@@ -306,6 +305,20 @@ func (cs *ClusterSimulator) evictParent(parent *ParentRequest) bool {
 		}
 		delete(cs.pendingPrefillCompletions, parent.PrefillSubReqID)
 		cs.releaseInFlight(prefill.AssignedInstance)
+	case parent.DecodeWaiting != nil:
+		// Waiting for decode KV: the decode engine holds the handoff and has not started its pull
+		// (SIM-8). It aborts the request it had received, so the prefill side frees its held KV
+		// at once (NIXLDecodeRejected: the connector's abort notice), and no transfer exists to
+		// settle.
+		inst := cs.instanceByID(parent.DecodeInstanceID)
+		if inst == nil {
+			return false
+		}
+		inst.AbortReservedKV(parent.DecodeWaiting, cs.clock)
+		delete(cs.remotePulls, parent.DecodeSubReqID)
+		parent.DecodeWaiting = nil
+		cs.releasePrefillOnDrop(parent, NIXLDecodeRejected, cs.clock)
+		cs.pdEvictedAfterPrefill++
 	case decode == nil:
 		return false // its prefill is computing in the current step; its transfer starts at the step's end
 	case decode.State == sim.StateWaitingForRemoteKVs:
@@ -394,10 +407,7 @@ func (cs *ClusterSimulator) dispatchDisaggregated(req *sim.Request, p Placement)
 	}
 	parent.PrefillSubReq = prefillSubReq
 	cs.pendingPrefillCompletions[prefillSubReq.ID] = parent.ID
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &PrefillRoutingEvent{time: cs.clock, request: prefillSubReq, parentReq: parent},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&PrefillRoutingEvent{time: cs.clock, request: prefillSubReq, parentReq: parent}, &cs.routerSender)
 	cs.gateway.OnDispatched(req, cs.clock)
 }
 
@@ -415,7 +425,8 @@ func (cs *ClusterSimulator) parentOf(req *sim.Request) *ParentRequest {
 	return nil
 }
 
-// parentDone reports the end of a disaggregated request to the gateway.
+// parentDone reports the end of a disaggregated request to the gateway. Its caller has written
+// the request's fate first (endRequest).
 func (cs *ClusterSimulator) parentDone(parent *ParentRequest, at int64, outcome DoneOutcome) {
 	if parent == nil || parent.OriginalRequest == nil || parent.gatewayDone {
 		return

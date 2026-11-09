@@ -155,8 +155,8 @@ func TestConvertServeGen_AllChunksInactive(t *testing.T) {
 
 	// BC-13: All chunks filtered out or no chunks found
 	if !strings.Contains(err.Error(), "no valid chunks") &&
-	   !strings.Contains(err.Error(), "no chunk") &&
-	   !strings.Contains(err.Error(), "no active cohorts") {
+		!strings.Contains(err.Error(), "no chunk") &&
+		!strings.Contains(err.Error(), "no active cohorts") {
 		t.Logf("BC-13: got error (acceptable): %v", err)
 	}
 }

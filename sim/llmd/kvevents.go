@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"

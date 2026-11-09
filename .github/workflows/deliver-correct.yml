@@ -130,8 +130,10 @@ jobs:
             exit 1
           fi
           if (( current > 0 )); then
-            gh api -X DELETE "/repos/$REPO/issues/$PR/labels/deliver:round-${current}" >/dev/null \
-              || echo "::warning::could not remove deliver:round-${current}; the counter reads the maximum so this is cosmetic"
+            if ! gh api -X DELETE "/repos/$REPO/issues/$PR/labels/deliver:round-${current}" >/dev/null; then
+              echo "::warning::could not remove deliver:round-${current}; the counter reads the maximum so this is cosmetic"
+              echo "- could not remove deliver:round-${current}; the counter reads the maximum so this is cosmetic" >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
           echo "round=$next" >> "$GITHUB_OUTPUT"
 
@@ -141,7 +143,7 @@ jobs:
       # ref could carry a `.gate-trusted` symlink whose target actions/checkout would then prepare),
       # so the trusted checkout goes first and at root, and the delivery branch is checked out only
       # AFTER the gate passes.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           ref: ${{ github.event.repository.default_branch }}
@@ -168,6 +170,7 @@ jobs:
           # env, never interpolated into the script — an author login is data.
           PR_AUTHOR: ${{ steps.target.outputs.pr_author }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           block_reason=""
           probe_fail=""
@@ -187,7 +190,7 @@ jobs:
           }
           pr_author="$PR_AUTHOR"
           # The sub-issue author is resolved here (an `/issues/` read carries no PR-creation risk).
-          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null || echo "")
+          issue_author=$(gh api "/repos/$REPO/issues/$ISSUE_NUMBER" --jq '.user.login' 2>/dev/null) || { best_effort "could not read the sub-issue author"; issue_author=""; }
           check_author "delivery PR #$PR author" "$pr_author"
           check_author "sub-issue #$ISSUE_NUMBER author" "$issue_author"
           if [[ -z "$block_reason" && -z "$probe_fail" ]]; then
@@ -207,8 +210,8 @@ jobs:
           else
             echo "::warning::could not post the author-gate refusal on #$PR; the generic failure reporter will report instead"
           fi
-          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || best_effort "could not remove the ready-for-merge label from #$PR"
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null 2>&1 || best_effort "could not label #$PR needs-human"
           exit 1
 
       # #1806 — assemble the write-access-filtered comment digest HERE: from the TRUSTED default-branch
@@ -226,9 +229,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           scripts/deliver-trusted-comments.sh --pr "${{ inputs.pr_number }}" \
-            > "$RUNNER_TEMP/trusted-comments.md" || true
+            > "$RUNNER_TEMP/trusted-comments.md" || best_effort "could not read the trusted comments"
           if [[ ! -s "$RUNNER_TEMP/trusted-comments.md" ]]; then
             printf 'COMMENT-READ-FAILED\n\nThe comment filter produced no output at all.\n' \
               > "$RUNNER_TEMP/trusted-comments.md"
@@ -240,7 +244,7 @@ jobs:
       # ONLY AFTER the gate passes: check out the DELIVERY BRANCH the agent edits and pushes (this
       # phase is dispatched with `--ref deliver/issue-N`, so the implicit ref is that branch). It
       # overwrites the trusted checkout above at the workspace root.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         if: steps.paused.outputs.paused == 'false'
         with:
           fetch-depth: 0
@@ -280,7 +284,7 @@ jobs:
 
       - name: Correct the findings
         if: steps.paused.outputs.paused == 'false'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         env:
           ANTHROPIC_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
           CLAUDE_CODE_DISABLE_THINKING: "1"
@@ -489,6 +493,7 @@ jobs:
         env:
           SINCE: ${{ steps.since.outputs.at }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           # An empty SINCE would make `select(.created_at > "")` match every comment ever posted,
           # so `tail -n 1` could pick up a PREVIOUS round's count as this round's — including a
@@ -507,9 +512,9 @@ jobs:
                   | split(\"\n\")
                   | map(select(test(\"\\\\S\")))
                   | (last // \"\")
-                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null || true)
+                  | gsub(\"^\\\\s+|\\\\s+$\"; \"\")" 2>/dev/null) || best_effort "could not read the PR comments; no dismissal count will be found"
           count=$(grep -xE 'DELIVER-DISMISSALS: [0-9]+' <<< "$lastlines" \
-                  | tail -n 1 | sed 's/^DELIVER-DISMISSALS: //' || true)
+                  | tail -n 1 | sed 's/^DELIVER-DISMISSALS: //') || [[ $? -eq 1 ]]
 
           if [[ -z "$count" ]]; then
             echo "::warning::the correction posted no DELIVER-DISMISSALS marker; treating the dismissal state as outstanding so the gate cannot return ready"
@@ -573,6 +578,7 @@ jobs:
           UPDATE_STATE: ${{ steps.update.outputs.state }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           # The git half is scripts/deliver-conflict-check.sh (tested in
           # scripts/deliver_branch_update_test.go): it fetches both ends fresh into their
@@ -597,7 +603,9 @@ jobs:
             echo "::warning::deliver-conflict-check.sh produced no state; handing back to verify, which reads GitHub's own mergeable_state"
             exit 0
           fi
-          [[ "$state" == conflicting ]] || exit 0
+          if [[ "$state" != conflicting ]]; then
+            exit 0
+          fi
 
           echo "::error::#$PR still conflicts with main after correction round ${{ steps.round.outputs.round }}"
           {
@@ -636,7 +644,7 @@ jobs:
           published=true
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/conflict.md" \
             || { echo "::error::could not post the conflict-naming comment on #$PR"; published=false; }
-          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || best_effort "could not remove the ready-for-merge label from #$PR"
           gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null \
             || { echo "::error::could not apply needs-human to #$PR"; published=false; }
           if [[ "$published" == true ]]; then
@@ -683,6 +691,7 @@ jobs:
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          source scripts/lib-best-effort.sh
           set -uo pipefail
           {
             echo "## Delivery stopped — the correct phase failed or timed out"
@@ -696,6 +705,6 @@ jobs:
             echo
             echo "_[Failed run](${RUN_URL})_"
           } > "$RUNNER_TEMP/failure.md"
-          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || true
-          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || true
-          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || true
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/failure.md" || best_effort "could not post the failure comment on #$PR"
+          gh api -X DELETE "/repos/$REPO/issues/$PR/labels/ready-for-merge" >/dev/null 2>&1 || best_effort "could not remove the ready-for-merge label from #$PR"
+          gh api -X POST "/repos/$REPO/issues/$PR/labels" -f "labels[]=needs-human" >/dev/null || best_effort "could not label #$PR needs-human"

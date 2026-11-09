@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"fmt"
 	"math"
 	"testing"
 )
@@ -14,6 +15,7 @@ func TestV2SaturationAnalyzerAnalyze(t *testing.T) {
 		ScaleUpThreshold:  0.8, // RequiredCapacity when demand/supply > 1/0.8
 		ScaleDownBoundary: 0.4, // SpareCapacity when demand/supply < 0.4
 		AvgInputTokens:    512, // for queue-to-demand conversion
+		MinReplicas:       1,
 	}
 	analyzer := NewV2SaturationAnalyzer(cfg)
 
@@ -238,6 +240,7 @@ func TestV2SaturationAnalyzerK1K2(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    512,
+		MinReplicas:       1,
 	}
 	analyzer := NewV2SaturationAnalyzer(cfg)
 
@@ -293,6 +296,7 @@ func TestV2SaturationAnalyzerN1MixedVariants(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.4,
 		AvgInputTokens:    512,
+		MinReplicas:       1,
 	}
 	analyzer := NewV2SaturationAnalyzer(cfg)
 
@@ -347,6 +351,7 @@ func TestV2SaturationAnalyzer_PendingSupply_LoadingOnlyModel(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	}
 	a := NewV2SaturationAnalyzer(cfg)
 
@@ -399,6 +404,7 @@ func TestV2SaturationAnalyzer_PendingSupply_ThresholdApplied(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	}
 	a := NewV2SaturationAnalyzer(cfg)
 
@@ -438,6 +444,7 @@ func TestV2SaturationAnalyzer_PendingSupply_SuppressesScaleUp(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	}
 	a := NewV2SaturationAnalyzer(cfg)
 
@@ -480,6 +487,7 @@ func TestV2SaturationAnalyzer_PendingSupply_ZeroCapacityLoading(t *testing.T) {
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	}
 	a := NewV2SaturationAnalyzer(cfg)
 
@@ -517,6 +525,7 @@ func TestV2SaturationAnalyzer_PendingSupply_StillScalesUpForDelta(t *testing.T) 
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	}
 	a := NewV2SaturationAnalyzer(cfg)
 
@@ -559,6 +568,7 @@ func TestV2SaturationAnalyzer_PendingSupply_DoesNotAffectScaleDown(t *testing.T)
 		ScaleUpThreshold:  0.8,
 		ScaleDownBoundary: 0.3,
 		AvgInputTokens:    100,
+		MinReplicas:       1,
 	}
 	a := NewV2SaturationAnalyzer(cfg)
 
@@ -607,12 +617,13 @@ func TestV2SaturationAnalyzerConfigValidation(t *testing.T) {
 		name string
 		cfg  V2SaturationAnalyzerConfig
 	}{
-		{"zero KvCacheThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
-		{"KvCacheThreshold > 1.0", V2SaturationAnalyzerConfig{KvCacheThreshold: 1.5, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
-		{"negative ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: -1, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
-		{"NaN ScaleDownBoundary", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: math.NaN(), AvgInputTokens: 512}},
-		{"zero AvgInputTokens", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 0}},
-		{"ScaleDownBoundary >= ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.4, ScaleDownBoundary: 0.8, AvgInputTokens: 512}},
+		{"zero KvCacheThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: 1}},
+		{"KvCacheThreshold > 1.0", V2SaturationAnalyzerConfig{KvCacheThreshold: 1.5, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: 1}},
+		{"negative ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: -1, ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: 1}},
+		{"NaN ScaleDownBoundary", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: math.NaN(), AvgInputTokens: 512, MinReplicas: 1}},
+		{"zero AvgInputTokens", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 0, MinReplicas: 1}},
+		{"ScaleDownBoundary >= ScaleUpThreshold", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.4, ScaleDownBoundary: 0.8, AvgInputTokens: 512, MinReplicas: 1}},
+		{"zero MinReplicas", V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8, ScaleDownBoundary: 0.4, AvgInputTokens: 512}},
 	}
 
 	for _, tc := range tests {
@@ -623,6 +634,49 @@ func TestV2SaturationAnalyzerConfigValidation(t *testing.T) {
 				}
 			}()
 			NewV2SaturationAnalyzer(tc.cfg)
+		})
+	}
+}
+
+// TestV2SaturationAnalyzer_SafeRemovals pins the count the scale-down check proves (#2015):
+// the replicas that can go, one at a time, while the supply left stays above
+// demand/ScaleDownBoundary and MinReplicas remain.
+func TestV2SaturationAnalyzer_SafeRemovals(t *testing.T) {
+	replicas := func(n int, inUse int64) []ReplicaMetrics {
+		out := make([]ReplicaMetrics, n)
+		for i := range out {
+			out[i] = ReplicaMetrics{InstanceID: fmt.Sprintf("i%d", i), Variant: NewVariantSpec("A100", 1),
+				TotalKvCapacityTokens: 10000, KvTokensInUse: inUse, CostPerHour: 10}
+		}
+		return out
+	}
+	tests := []struct {
+		name        string
+		replicas    []ReplicaMetrics
+		minReplicas int
+		want        int
+	}{
+		// Each replica's supply is 8000 (10000 x 0.8). Idle: every removal passes the supply
+		// test, so the minimum alone bounds the count.
+		{"idle start keeps one replica", replicas(4, 0), 1, 3},
+		{"idle start keeps the configured minimum", replicas(4, 0), 3, 1},
+		{"minimum equal to the replica count removes none", replicas(4, 0), 4, 0},
+		// Demand 4 x 1000 = 4000 needs 4000/0.4 = 10000 of supply: two replicas (16000) cover it,
+		// one (8000) does not, so two of four can go.
+		{"demand bounds the count", replicas(4, 1000), 1, 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := NewV2SaturationAnalyzer(V2SaturationAnalyzerConfig{KvCacheThreshold: 0.8, ScaleUpThreshold: 0.8,
+				ScaleDownBoundary: 0.4, AvgInputTokens: 512, MinReplicas: tc.minReplicas})
+			r := a.Analyze(ModelSignals{ModelID: "m1", Replicas: tc.replicas})
+			if r.SafeRemovals != tc.want {
+				t.Errorf("SafeRemovals = %d, want %d", r.SafeRemovals, tc.want)
+			}
+			if (r.SpareCapacity > 0) != (r.SafeRemovals > 0) {
+				t.Errorf("SpareCapacity = %g with SafeRemovals = %d: one is positive exactly when the other is",
+					r.SpareCapacity, r.SafeRemovals)
+			}
 		})
 	}
 }

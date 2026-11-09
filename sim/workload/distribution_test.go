@@ -685,7 +685,7 @@ func TestParseThinkTimeDist_Lognormal_INV10_SessionCausality(t *testing.T) {
 		SessionID:        "inv10-test",
 		MaxRounds:        3,
 		ThinkTimeSampler: s,
-		RNG:              rand.New(rand.NewSource(42)),
+		Streams:          SessionStreams(42, "inv10-test"),
 		InputSampler:     &constantSampler{value: 10},
 		OutputSampler:    &constantSampler{value: 5},
 		Horizon:          1_000_000_000,

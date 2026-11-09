@@ -1,0 +1,15 @@
+# The byte gate's cases (design SIM-4, internal/bytegate). One per line: a name, a colon, and
+# the arguments of one blis invocation. The gate adds --scenarios testdata/bytegate/scenarios,
+# --catalog and --registry (the selected substrate's), and compares standard output with
+# golden/<name>.json. Each case states its seed, so no default seed is part of the record.
+#
+# The scenarios are fixed copies: a scenario elsewhere in the repository may change for its own
+# reasons, and the gate must not move with it. They cover a colocated MoE deployment, one
+# instance and a cluster through the router, a speculative deployment with expert parallelism,
+# and a disaggregated (P/D) deployment, under the open-loop and the closed-loop clients.
+moe-single: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --rate 8 --num-requests 40 --seed 3
+moe-cluster: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 4 --rate 30 --num-requests 120 --seed 5
+moe-closed-loop: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 2 --concurrency 16 --num-requests 64 --seed 11
+moe-prefix: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 2 --rate 20 --num-requests 80 --prefix-tokens 2048 --seed 13
+spec-ep: run --scenario muse-h200-ib-tep8-dspark.yaml --rate 4 --num-requests 30 --seed 2
+pd: run --scenario glm-5-h200-3p1d-ib.yaml --num-instances 4 --prefill-instances 3 --decode-instances 1 --rate 4 --num-requests 30 --seed 2

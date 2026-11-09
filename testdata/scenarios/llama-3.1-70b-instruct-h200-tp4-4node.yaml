@@ -4,7 +4,7 @@
 # a multi-node cluster must name its fabric.
 kind: Scenario
 name: llama-3.1-70b-instruct-h200-tp4-4node
-engine_version: "0.29.0"
+engine_version: "0.32.0"
 
 model: llama-3.1-70b-instruct
 coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]

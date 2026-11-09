@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ import (
 	"github.com/inference-sim/inference-sim/sim"
 )
 
-// clusterLedgerTerms lists INV-1's eleven cluster-level bucket names in the order
+// clusterLedgerTerms lists INV-1's ten cluster-level bucket names in the order
 // the registry states them. TestINV1_HelperMatchesRegistry asserts this equals the
 // terms parsed out of docs/contributing/standards/invariants.md, so the helper
 // cannot drift from the statement it claims to enforce.
@@ -29,24 +30,22 @@ var clusterLedgerTerms = []string{
 	"gateway_queue_rejected",
 	"gateway_evicted",
 	"gateway_expired",
-	"encode_routing_rejections",
 }
 
-// clusterLedger holds the eleven terminal buckets of INV-1's canonical
+// clusterLedger holds the ten terminal buckets of INV-1's canonical
 // cluster-level equation. It is a plain struct so the equation can be unit-tested
 // and diffed against the registry without running a simulation.
 type clusterLedger struct {
-	completedRequests       int
-	stillQueued             int
-	stillRunning            int
-	droppedUnservable       int
-	timedOut                int
-	routingRejections       int
-	gatewayQueueDepth       int
-	gatewayQueueRejected    int
-	gatewayEvicted          int
-	gatewayExpired          int
-	encodeRoutingRejections int
+	completedRequests    int
+	stillQueued          int
+	stillRunning         int
+	droppedUnservable    int
+	timedOut             int
+	routingRejections    int
+	gatewayQueueDepth    int
+	gatewayQueueRejected int
+	gatewayEvicted       int
+	gatewayExpired       int
 }
 
 // terms returns the bucket values in clusterLedgerTerms order. accounted() and
@@ -65,7 +64,6 @@ func (l clusterLedger) terms() []int {
 		l.gatewayQueueRejected,
 		l.gatewayEvicted,
 		l.gatewayExpired,
-		l.encodeRoutingRejections,
 	}
 }
 
@@ -94,17 +92,16 @@ func (l clusterLedger) String() string {
 func newClusterLedger(cs *ClusterSimulator) clusterLedger {
 	m := cs.AggregatedMetrics()
 	return clusterLedger{
-		completedRequests:       m.CompletedRequests,
-		stillQueued:             m.StillQueued,
-		stillRunning:            m.StillRunning,
-		droppedUnservable:       m.DroppedUnservable,
-		timedOut:                m.TimedOutRequests,
-		routingRejections:       cs.RoutingRejections(),
-		gatewayQueueDepth:       cs.GatewayQueueDepth(),
-		gatewayQueueRejected:    cs.GatewayQueueRejected(),
-		gatewayEvicted:          cs.GatewayEvicted(),
-		gatewayExpired:          cs.GatewayExpired(),
-		encodeRoutingRejections: cs.EncodeRoutingRejections(),
+		completedRequests:    m.CompletedRequests,
+		stillQueued:          m.StillQueued,
+		stillRunning:         m.StillRunning,
+		droppedUnservable:    m.DroppedUnservable,
+		timedOut:             m.TimedOutRequests,
+		routingRejections:    cs.RoutingRejections(),
+		gatewayQueueDepth:    cs.GatewayQueueDepth(),
+		gatewayQueueRejected: cs.GatewayQueueRejected(),
+		gatewayEvicted:       cs.GatewayEvicted(),
+		gatewayExpired:       cs.GatewayExpired(),
 	}
 }
 
@@ -114,10 +111,10 @@ func newClusterLedger(cs *ClusterSimulator) clusterLedger {
 // pre-#1720 sums did implicitly by comparing against a bare fixture count.
 const noRejections = 0
 
-// assertClusterINV1Conservation asserts INV-1's canonical eleven-term equation at
+// assertClusterINV1Conservation asserts INV-1's canonical ten-term equation at
 // cluster level:
 //
-//	total - rejected == <the eleven buckets>
+//	total - rejected == <the ten buckets>
 //
 // rejected is taken separately from total rather than pre-subtracted by the caller,
 // so a fixture that must not reject anything can pass noRejections and have a
@@ -167,7 +164,7 @@ func instanceAccounted(m *sim.Metrics) int {
 
 // assertInstanceINV1Conservation asserts the five-term single-instance
 // specialisation of INV-1. Valid only against per-instance metrics: a cluster has
-// a router, a gateway queue and possibly an encode pool, whose six buckets this
+// a router and a gateway queue, whose five buckets this
 // equation omits. Cluster-level callers must use assertClusterINV1Conservation,
 // and TestINV1_NoInlineClusterConservationSums flags calls made against a cluster
 // aggregate.
@@ -198,7 +195,7 @@ func sortedStringKeys[V any](m map[string]V) []string {
 const invariantsRegistryPath = "../../docs/contributing/standards/invariants.md"
 
 // parseINV1RegistryEquations returns the term lists of INV-1's two stated forms as
-// written in the registry: the canonical eleven-term cluster equation first, then
+// written in the registry: the canonical ten-term cluster equation first, then
 // the five-term single-instance specialisation.
 //
 // Both are whole-line backticked expressions whose left-hand side is
@@ -238,7 +235,7 @@ func parseINV1RegistryEquations(t *testing.T, path string) [][]string {
 		found = append(found, terms)
 	}
 	if len(found) != 2 {
-		t.Fatalf("expected exactly 2 `injected_requests == ...` equations in %s (the eleven-term cluster form and the five-term single-instance form), found %d — the registry was restructured, so this test and the helpers need re-checking against it",
+		t.Fatalf("expected exactly 2 `injected_requests == ...` equations in %s (the ten-term cluster form and the five-term single-instance form), found %d — the registry was restructured, so this test and the helpers need re-checking against it",
 			path, len(found))
 	}
 	// Select by term count rather than document order, so reordering the two
@@ -249,7 +246,7 @@ func parseINV1RegistryEquations(t *testing.T, path string) [][]string {
 
 // TestINV1_HelperMatchesRegistry asserts the helper's term list is the registry's
 // term list. The registry says a shared conservation helper "should be generated
-// from the eleven-term list above"; nothing enforced that, so a bucket added to the
+// from the ten-term list above"; nothing enforced that, so a bucket added to the
 // statement could sit there for months with no test asserting it — which is how
 // issue #1720's findings arose in the first place.
 func TestINV1_HelperMatchesRegistry(t *testing.T) {
@@ -260,7 +257,7 @@ func TestINV1_HelperMatchesRegistry(t *testing.T) {
 		registry []string
 		helper   []string
 	}{
-		{"eleven-term cluster equation", eqs[0], clusterLedgerTerms},
+		{"ten-term cluster equation", eqs[0], clusterLedgerTerms},
 		{"five-term single-instance specialisation", eqs[1], instanceLedgerTerms},
 	} {
 		inRegistry := make(map[string]bool, len(tc.registry))
@@ -367,7 +364,7 @@ func isAggregateMetricsCall(e ast.Expr) bool {
 // TestINV1_NoInstanceHelperOnClusterMetrics stops the five-term specialisation from
 // becoming a sanctioned weak cluster assertion. The AST guard above only sees
 // inline sums, so a cluster test that called assertInstanceINV1Conservation with
-// cs.AggregatedMetrics() would assert five of eleven terms with nothing
+// cs.AggregatedMetrics() would assert five of ten terms with nothing
 // complaining — the same gap in a new shape.
 func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 	entries, err := os.ReadDir(".")
@@ -408,7 +405,7 @@ func TestINV1_NoInstanceHelperOnClusterMetrics(t *testing.T) {
 					clusterAggregate = true
 				}
 				if clusterAggregate {
-					t.Errorf("%s:%d: assertInstanceINV1Conservation applied to a cluster aggregate — use assertClusterINV1Conservation, which checks all eleven buckets",
+					t.Errorf("%s:%d: assertInstanceINV1Conservation applied to a cluster aggregate — use assertClusterINV1Conservation, which checks all ten buckets",
 						name, fset.Position(call.Pos()).Line)
 				}
 			}
@@ -470,17 +467,16 @@ func f() {
 // invisible to any assertion over totals, because two buckets that are zero together
 // in every fixture would still balance.
 var ledgerFieldSources = map[string]string{
-	"completedRequests":       "CompletedRequests",
-	"stillQueued":             "StillQueued",
-	"stillRunning":            "StillRunning",
-	"droppedUnservable":       "DroppedUnservable",
-	"timedOut":                "TimedOutRequests",
-	"routingRejections":       "RoutingRejections",
-	"gatewayQueueDepth":       "GatewayQueueDepth",
-	"gatewayQueueRejected":    "GatewayQueueRejected",
-	"gatewayEvicted":          "GatewayEvicted",
-	"gatewayExpired":          "GatewayExpired",
-	"encodeRoutingRejections": "EncodeRoutingRejections",
+	"completedRequests":    "CompletedRequests",
+	"stillQueued":          "StillQueued",
+	"stillRunning":         "StillRunning",
+	"droppedUnservable":    "DroppedUnservable",
+	"timedOut":             "TimedOutRequests",
+	"routingRejections":    "RoutingRejections",
+	"gatewayQueueDepth":    "GatewayQueueDepth",
+	"gatewayQueueRejected": "GatewayQueueRejected",
+	"gatewayEvicted":       "GatewayEvicted",
+	"gatewayExpired":       "GatewayExpired",
 }
 
 // TestNewClusterLedger_FieldSources pins each ledger field to the metric it reads.
@@ -558,20 +554,19 @@ func TestClusterLedger_TermsMatchNames(t *testing.T) {
 // Distinct powers of two make a dropped term identifiable from the sum alone.
 func TestClusterLedger_Accounted(t *testing.T) {
 	l := clusterLedger{
-		completedRequests:       1,
-		stillQueued:             2,
-		stillRunning:            4,
-		droppedUnservable:       8,
-		timedOut:                16,
-		routingRejections:       32,
-		gatewayQueueDepth:       64,
-		gatewayQueueRejected:    128,
-		gatewayEvicted:          256,
-		gatewayExpired:          512,
-		encodeRoutingRejections: 1024,
+		completedRequests:    1,
+		stillQueued:          2,
+		stillRunning:         4,
+		droppedUnservable:    8,
+		timedOut:             16,
+		routingRejections:    32,
+		gatewayQueueDepth:    64,
+		gatewayQueueRejected: 128,
+		gatewayEvicted:       256,
+		gatewayExpired:       512,
 	}
-	if got, want := l.accounted(), 2047; got != want {
-		t.Errorf("accounted() = %d, want %d — a bucket is missing from the sum (got bits: %011b)", got, want, got)
+	if got, want := l.accounted(), 1023; got != want {
+		t.Errorf("accounted() = %d, want %d — a bucket is missing from the sum (got bits: %010b)", got, want, got)
 	}
 	for i, v := range l.terms() {
 		if v == 0 {
@@ -581,7 +576,7 @@ func TestClusterLedger_Accounted(t *testing.T) {
 }
 
 // TestClusterLedger_StringNamesEveryTerm verifies the failure message carries all
-// eleven buckets, so a violation is diagnosable without re-running under a
+// ten buckets, so a violation is diagnosable without re-running under a
 // debugger.
 func TestClusterLedger_StringNamesEveryTerm(t *testing.T) {
 	s := clusterLedger{gatewayExpired: 7}.String()
@@ -606,5 +601,29 @@ func TestInstanceAccounted(t *testing.T) {
 	}
 	if got, want := instanceAccounted(m), 31; got != want {
 		t.Errorf("instanceAccounted() = %d, want %d (got bits: %05b)", got, want, got)
+	}
+}
+
+// #2006: INV-1 has no encode-stage bucket. Nothing in the repository writes one, and the
+// router treats the encode stage as optional, so the registry and the ledger carry
+// the ten terms the implementation can observe. This fails while a dead encode bucket remains.
+func TestINV1_NoEncodeRoutingBucket(t *testing.T) {
+	for _, term := range clusterLedgerTerms {
+		if strings.Contains(term, "encode") {
+			t.Errorf("clusterLedgerTerms names %q: no code path increments an encode bucket (#2006)", term)
+		}
+	}
+	if _, ok := reflect.TypeOf(RawMetrics{}).FieldByName("EncodeRoutingRejections"); ok {
+		t.Error("RawMetrics.EncodeRoutingRejections exists: a permanently-zero field (#2006)")
+	}
+	if _, ok := reflect.TypeOf(&ClusterSimulator{}).MethodByName("EncodeRoutingRejections"); ok {
+		t.Error("ClusterSimulator.EncodeRoutingRejections exists: a permanently-zero accessor (#2006)")
+	}
+	doc, err := os.ReadFile(invariantsRegistryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(doc), "`encode_routing_rejections`") {
+		t.Error("the INV-1 registry still states an encode_routing_rejections term (#2006)")
 	}
 }

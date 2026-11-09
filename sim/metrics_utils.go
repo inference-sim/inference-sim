@@ -36,9 +36,14 @@ type RequestMetrics struct {
 	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
 	OutputTokens int `json:"output_tokens,omitempty"`
 
+	// CachedLocalTokens and CachedExternalTokens are the prompt tokens the device prefix cache and
+	// the KV offload tier supplied at the request's first admission (its Result row's
+	// cached_local_tokens and cached_external_tokens). Not part of the legacy file.
+	CachedLocalTokens    int `json:"-"`
+	CachedExternalTokens int `json:"-"`
+
 	// CompletionIndex is this request's 1-based position in the run's completion order,
-	// or 0 for a request that never completed (#1902). Assigned by EmitOutput, so it exists
-	// only in the --metrics-path file (Requests[] never reaches stdout). A consumer that
+	// or 0 for a request that never completed (#1902). Assigned by RequestRows. A consumer that
 	// discards a leading warm-up phase by completion -- the accuracy harness does -- needs
 	// the order the simulator completed requests in, which neither arrival order nor
 	// ArrivedAt+E2E recovers.
@@ -58,6 +63,21 @@ type RequestMetrics struct {
 	// projection (WithCompletionOf) like the completion stamp.
 	completionOverheadTicks int64
 	timedOut                bool
+	// emittedTokens is the number of output tokens the engine had emitted for the request when
+	// the run last stepped it. It is set whether or not the request completed, so a request cut
+	// off by its client deadline or by the horizon still states the tokens it produced (the
+	// Result's request_rows). OutputTokens, which the aggregates read, stays a completed
+	// request's count. Unexported, so never serialized.
+	emittedTokens int
+}
+
+// EmittedOutputTokens is the number of output tokens the request produced, whether or not it
+// finished: its final count when it completed, else the tokens the engine had emitted for it.
+func (rm RequestMetrics) EmittedOutputTokens() int {
+	if rm.OutputTokens > rm.emittedTokens {
+		return rm.OutputTokens
+	}
+	return rm.emittedTokens
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.
@@ -89,37 +109,31 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 
 // MetricsOutput defines the JSON structure for the saved metrics
 type MetricsOutput struct {
-	InstanceID           string  `json:"instance_id"`
-	CompletedRequests    int     `json:"completed_requests"`
-	StillQueued          int     `json:"still_queued"`
-	StillRunning         int     `json:"still_running"`
-	InjectedRequests     int     `json:"injected_requests"`
-	TotalInputTokens     int     `json:"total_input_tokens"`
-	TotalOutputTokens    int     `json:"total_output_tokens"`
-	VllmDurationSec      float64 `json:"vllm_estimated_duration_s"`
-	ResponsesPerSec      float64 `json:"responses_per_sec"`
-	TokensPerSec         float64 `json:"tokens_per_sec"`
-	E2EMeanMs            float64 `json:"e2e_mean_ms"`
-	E2EP90Ms             float64 `json:"e2e_p90_ms"`
-	E2EP95Ms             float64 `json:"e2e_p95_ms"`
-	E2EP99Ms             float64 `json:"e2e_p99_ms"`
-	TTFTMeanMs           float64 `json:"ttft_mean_ms"`
-	TTFTP90Ms            float64 `json:"ttft_p90_ms"`
-	TTFTP95Ms            float64 `json:"ttft_p95_ms"`
-	TTFTP99Ms            float64 `json:"ttft_p99_ms"`
-	ITLMeanMs            float64 `json:"itl_mean_ms"`
-	ITLP90Ms             float64 `json:"itl_p90_ms"`
-	ITLP95Ms             float64 `json:"itl_p95_ms"`
-	ITLP99Ms             float64 `json:"itl_p99_ms"`
-	SchedulingDelayP99Ms float64 `json:"scheduling_delay_p99_ms"`
-	KVAllocationFailures int64   `json:"kv_allocation_failures,omitempty"`
-	PreemptionCount      int64   `json:"preemption_count"`
-	// CacheHitRate is the aggregate KV-cache hit rate (a fraction in [0,1]) at
-	// finalization (#1583). It is populated only in the --metrics-path file
-	// (WriteMetricsFile), alongside Requests[]; the printed JSON (EmitOutput's stdout half,
-	// which blis observe uses) omits it. `blis calibrate --sim-metrics` reads it as the
-	// simulator's hit-rate for the real-vs-sim comparison.
-	CacheHitRate         *float64         `json:"cache_hit_rate,omitempty"`
+	InstanceID           string           `json:"instance_id"`
+	CompletedRequests    int              `json:"completed_requests"`
+	StillQueued          int              `json:"still_queued"`
+	StillRunning         int              `json:"still_running"`
+	InjectedRequests     int              `json:"injected_requests"`
+	TotalInputTokens     int              `json:"total_input_tokens"`
+	TotalOutputTokens    int              `json:"total_output_tokens"`
+	VllmDurationSec      float64          `json:"vllm_estimated_duration_s"`
+	ResponsesPerSec      float64          `json:"responses_per_sec"`
+	TokensPerSec         float64          `json:"tokens_per_sec"`
+	E2EMeanMs            float64          `json:"e2e_mean_ms"`
+	E2EP90Ms             float64          `json:"e2e_p90_ms"`
+	E2EP95Ms             float64          `json:"e2e_p95_ms"`
+	E2EP99Ms             float64          `json:"e2e_p99_ms"`
+	TTFTMeanMs           float64          `json:"ttft_mean_ms"`
+	TTFTP90Ms            float64          `json:"ttft_p90_ms"`
+	TTFTP95Ms            float64          `json:"ttft_p95_ms"`
+	TTFTP99Ms            float64          `json:"ttft_p99_ms"`
+	ITLMeanMs            float64          `json:"itl_mean_ms"`
+	ITLP90Ms             float64          `json:"itl_p90_ms"`
+	ITLP95Ms             float64          `json:"itl_p95_ms"`
+	ITLP99Ms             float64          `json:"itl_p99_ms"`
+	SchedulingDelayP99Ms float64          `json:"scheduling_delay_p99_ms"`
+	KVAllocationFailures int64            `json:"kv_allocation_failures,omitempty"`
+	PreemptionCount      int64            `json:"preemption_count"`
 	DroppedUnservable    int              `json:"dropped_unservable"`
 	LengthCappedRequests int              `json:"length_capped_requests"`
 	TimedOutRequests     int              `json:"timed_out_requests"`
@@ -140,62 +154,6 @@ type MetricsOutput struct {
 	// adapter-blind run adds no stdout fields (INV-6, SC-001). encoding/json emits
 	// map string keys in sorted order, giving deterministic output (R2).
 	Adapters map[string]AdapterMetrics `json:"adapters,omitempty"`
-
-	// Catalog records WHICH model catalog produced this result (#1732, R1/S5).
-	// Populated ONLY into the --metrics-path file, via EmitOutput's
-	// WithCatalogProvenance option — never onto stdout, exactly like CacheHitRate
-	// above (#1583). Catalog git state legitimately varies between two otherwise
-	// identical runs, so it must not enter the byte-identical stdout channel INV-6
-	// protects. A nil pointer (the default, and every non-file emit) is dropped by
-	// omitempty, so a results file written without the option is byte-identical to
-	// a pre-feature build.
-	Catalog *CatalogProvenance `json:"catalog,omitempty"`
-
-	// Overrides lists every setting this run simulated differently from its scenario -- an
-	// explicit flag or policy bundle chose another value than the scenario's deployment
-	// states -- so a results file always says when it does not reproduce its scenario.
-	// File-only, like Catalog (WithScenarioOverrides); omitted when the run follows its
-	// scenario exactly.
-
-	Overrides []ScenarioOverride `json:"overrides,omitempty"`
-
-	// Agentic is an agentic replay's own counts (#1937; workload.AgentXSummary, held as
-	// any to avoid an import cycle). File-only (WithAgentic); absent for other workloads.
-	Agentic any `json:"agentic,omitempty"`
-
-	// PD is the P/D block (PDOutput), file-only; absent for a colocated run.
-	PD *PDOutput `json:"pd,omitempty"`
-
-	// ServerSeries is the per-engine vLLM /metrics time series (--server-series-interval-s),
-	// file-only (WithServerSeries); absent when off.
-	ServerSeries *ServerSeriesOutput `json:"server_series,omitempty"`
-
-	// MeasuredMetrics are the aiperf-defined measured-window aggregates (#1938), flattened
-	// into the top level. File-only, like CacheHitRate: WriteMetricsFile sets it, and the nil
-	// pointer drops every key from the printed JSON.
-	*MeasuredMetrics
-
-	// WholeRun keeps the whole-run values of the keys the file restates over the measured
-	// window (ttft_*, e2e_*, cache_hit_rate). File-only.
-	WholeRun *WholeRunLatency `json:"whole_run,omitempty"`
-
-	// KernelProvenance is blis-latency-kernel's per-pool evidence, keyed by pool role
-	// (#1942), {} when no kernel priced the run. File-only (WithKernelProvenance); a pointer
-	// so stdout omits it while the file can state an empty map.
-	KernelProvenance *map[string]KernelPoolProvenance `json:"kernel_provenance,omitempty"`
-
-	// BuildVersions pins the build that produced the file. File-only (WithBuildVersions).
-	*BuildVersions
-
-	// Acceptance records the speculative acceptance the run advanced requests by and where it
-	// came from (#1939). File-only, like Catalog (WithAcceptance); omitted when the run does
-	// not speculate.
-	Acceptance *AcceptanceRecord `json:"acceptance,omitempty"`
-
-	// PrefixCache records, per pool role, how prefix hits were cut: the model runner vLLM
-	// v0.31.0 resolves, DeepSeek-V4.1's SWA bounded replay and the KV group layout. File-only
-	// (WithPrefixCache).
-	PrefixCache map[string]PrefixCacheRecord `json:"prefix_cache,omitempty"`
 }
 
 // PrefixCacheRecord is one pool's prefix-hit resolution.
@@ -275,28 +233,15 @@ type ScenarioOverride struct {
 	Source   string `json:"source"`   // what chose it, e.g. "--scheduler" or "--policy-config"
 }
 
-// CatalogProvenance attributes a results file to the model catalog that produced it
-// (#1732, R1/S5). Once the catalog is a versioned directory (#1731 + blis-catalog), a
-// result must be attributable, and an EXPERIMENT (uncommitted edits to a config.json)
-// must be distinguishable from a REPRODUCIBLE run — which is what Dirty answers.
-//
-// Revision is the catalog's git commit, or UnknownCatalogRevision when the catalog is
-// not a git checkout (or git could not be consulted): a non-git catalog degrades to
-// "path recorded, revision unknown", never to a plausible-but-wrong revision. Dirty is
-// meaningful only alongside a known revision — it is false whenever Revision is
-// UnknownCatalogRevision, since there is no committed state to differ from.
+// CatalogProvenance attributes a --metrics-path file to the catalog that produced it (#1732).
+// Path is the catalog directory a path named, or "embedded" for the copy compiled into the
+// pinned blis-substrate release; Revision is the catalog's combined content hash (design §3.3);
+// Dirty is true when an overlay changed the catalog.
 type CatalogProvenance struct {
 	Path     string `json:"path"`
 	Revision string `json:"revision"`
 	Dirty    bool   `json:"dirty"`
 }
-
-// UnknownCatalogRevision is the CatalogProvenance.Revision value recorded when the
-// catalog's git revision could not be determined — an absent directory, a directory
-// outside any git checkout, a repository with no commits, or no usable git binary. It
-// is a recorded sentinel rather than an empty string so a reader can distinguish
-// "asked, and the answer is unknown" from "never populated".
-const UnknownCatalogRevision = "unknown"
 
 // AdapterMetrics is the per-adapter aggregate section
 // (specs/007-lora-control-plane/contracts/metrics.md). TTFT
@@ -322,7 +267,10 @@ func CalculatePercentile[T IntOrFloat64](data []T, p float64) float64 {
 		return 0
 	}
 
-	rank := p / 100.0 * float64(n-1)
+	// float64(...) rounds the product before rank is used, so no platform fuses it into the
+	// subtraction below: arm64 fused p/100*(n-1) - lowerIdx into one FNMSUBD and amd64 did not,
+	// which moved the last bit of a percentile between platforms (design X6).
+	rank := float64(p / 100.0 * float64(n-1))
 	lowerIdx := int(math.Floor(rank))
 	upperIdx := int(math.Ceil(rank))
 

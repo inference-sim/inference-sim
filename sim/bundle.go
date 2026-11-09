@@ -67,6 +67,8 @@ type AnalyzerBundleConfig struct {
 	ScaleUpThreshold  float64 `yaml:"scale_up_threshold"`
 	ScaleDownBoundary float64 `yaml:"scale_down_boundary"`
 	AvgInputTokens    float64 `yaml:"avg_input_tokens"`
+	// MinReplicas is the fewest ready replicas scale-down leaves a model; 0 means the default, 1.
+	MinReplicas int `yaml:"min_replicas"`
 }
 
 // InstanceLifecycleBundleConfig holds instance lifecycle timing for YAML loading.
@@ -177,6 +179,9 @@ func (b *PolicyBundle) Validate() error {
 	}
 	if a.AvgInputTokens != 0 && (a.AvgInputTokens <= 0 || math.IsNaN(a.AvgInputTokens) || math.IsInf(a.AvgInputTokens, 0)) {
 		return fmt.Errorf("autoscaler.analyzer.avg_input_tokens must be > 0, got %v", a.AvgInputTokens)
+	}
+	if a.MinReplicas < 0 {
+		return fmt.Errorf("autoscaler.analyzer.min_replicas must be >= 1 (0 or absent = 1; scale-to-zero is not modelled, #909), got %d", a.MinReplicas)
 	}
 	// Cross-check scale_down_boundary < scale_up_threshold using effective (post-default) values.
 	// A one-sided override (e.g. scale_down_boundary: 0.9, scale_up_threshold unset → default 0.8)

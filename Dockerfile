@@ -1,8 +1,11 @@
 # syntax=docker/dockerfile:1
 
 # ── Build stage ────────────────────────────────────────────────────────────────
-# Keep base image Go version in sync with the 'go' directive in go.mod.
-FROM golang:1.27.2-alpine AS builder
+# The Go version is not written here: every caller passes the 'go' directive of go.mod,
+# for example --build-arg GO_VERSION="$(sed -n 's/^go //p' go.mod)". There is no default,
+# so a build that omits it fails instead of using a stale toolchain.
+ARG GO_VERSION
+FROM golang:${GO_VERSION}-alpine AS builder
 
 # TARGETOS/TARGETARCH are injected by Buildx for each platform in a multi-arch
 # build (e.g. linux/amd64, linux/arm64). Declaring them as ARGs makes them

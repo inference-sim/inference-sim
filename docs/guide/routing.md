@@ -18,13 +18,11 @@ For instance-level request ordering (the engine's own scheduler), see
 
 ```bash
 # The router's built-in configuration over four instances (the scenario states no router)
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios --num-instances 4 --rate 100 --num-requests 500
 
 # A real deployment's router configuration, unchanged, named by the scenario's router block
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-inferencepool.yaml \
-  --scenarios examples/llm-d/scenarios \
-  --registry $PWD/blis-registry --num-instances 4 --rate 100 --num-requests 500
+  --scenarios examples/llm-d/scenarios --num-instances 4 --rate 100 --num-requests 500
 ```
 
 ## The router's inputs
@@ -189,7 +187,9 @@ Everything the router reads comes from the simulated engines, with real engine s
 
 For a kernel-backed scenario without `node_pools`, each synthetic Pod gets the
 host of its engine rank from the same placement used to price P/D KV transfer.
-If `cluster.gpus_per_rack` is declared, it gets that rack too. The real router's
+If the cluster has racks, it gets that rack too. A rack is an NVLink domain that spans
+nodes, which only a chip's catalog entry states (GB200 NVL72's 72 GPUs); the scenario may
+omit `gpus_per_rack` or restate the entry's value, and any other value is refused. The real router's
 `topology-extractor`, `topology-affinity-filter` and
 `topology-affinity-scorer` read those labels through their normal Pod
 reconciler. Pass `--allow-experimental-plugins` for these alpha plugins.

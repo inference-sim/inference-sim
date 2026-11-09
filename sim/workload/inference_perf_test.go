@@ -1772,10 +1772,10 @@ func TestDistributeRequestsEvenly_ExactTotal(t *testing.T) {
 		{total: 100, n: 3, want: []int{34, 33, 33}}, // 34+33+33=100
 		{total: 10, n: 10, want: []int{1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
 		{total: 44, n: 7, want: []int{7, 7, 6, 6, 6, 6, 6}}, // 2x7 + 5x6 = 44
-		{total: 3000, n: 44, want: nil},                       // Just verify sum=3000
-		{total: 6000, n: 44, want: nil},                       // Issue #978 example
-		{total: 0, n: 5, want: []int{0, 0, 0, 0, 0}},         // Edge: zero requests
-		{total: 7, n: 1, want: []int{7}},                      // Edge: single client
+		{total: 3000, n: 44, want: nil},                     // Just verify sum=3000
+		{total: 6000, n: 44, want: nil},                     // Issue #978 example
+		{total: 0, n: 5, want: []int{0, 0, 0, 0, 0}},        // Edge: zero requests
+		{total: 7, n: 1, want: []int{7}},                    // Edge: single client
 	}
 	for _, tt := range tests {
 		dist, err := distributeRequestsEvenly(tt.total, tt.n)
@@ -1914,8 +1914,8 @@ func TestExpandInferencePerfSpec_ZeroRequestsError(t *testing.T) {
 		{
 			name: "multi-stage multi-turn (stage 1 has zero)",
 			stages: []StageSpec{
-				{Rate: 10.0, Duration: 60},   // OK: 600 requests
-				{Rate: 0.001, Duration: 1},   // Zero requests
+				{Rate: 10.0, Duration: 60}, // OK: 600 requests
+				{Rate: 0.001, Duration: 1}, // Zero requests
 			},
 			enableMultiTurn:  true,
 			expectedErrorMsg: "stages[1]: rate 0.0010 × duration 1 produces 0 requests",

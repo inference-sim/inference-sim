@@ -3,7 +3,7 @@ package sim
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 )
 
 // HeadIsNoop is true exactly when the next event is one ProcessNextEvent drops without running

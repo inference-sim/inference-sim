@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"slices"
 	"strconv"
 	"testing"
@@ -127,16 +128,16 @@ func TestAReplayedPointIsTheBenchmarksMainPhase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.CompletedRequests != 10*conc || len(out.Requests) != 10*conc {
-		t.Fatalf("completed %d with %d request records, want %d", out.CompletedRequests, len(out.Requests), 10*conc)
+	if out.Requests.Completed != 10*conc || len(out.RequestRows) != 10*conc {
+		t.Fatalf("completed %d with %d request rows, want %d", out.Requests.Completed, len(out.RequestRows), 10*conc)
 	}
 	arrival := make([]float64, 10*conc)
-	for _, r := range out.Requests {
+	for _, r := range out.RequestRows {
 		i, err := requestIndex(r.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		arrival[i] = r.ArrivedAt
+		arrival[i] = float64(r.ArrivalUs) / 1e6
 	}
 	for i, a := range arrival {
 		switch {
@@ -148,7 +149,7 @@ func TestAReplayedPointIsTheBenchmarksMainPhase(t *testing.T) {
 			t.Errorf("request %d arrived at %v s, before request %d at %v s: trace order lost", i, a, i-1, arrival[i-1])
 		}
 	}
-	if _, err := summarize(out.Requests, pl, nil); err != nil {
+	if _, err := summarize(out.RequestRows, pl, nil); err != nil {
 		t.Errorf("summarize: %v", err)
 	}
 }
@@ -312,10 +313,10 @@ func TestThePrimedMainPhaseDoesNotDependOnHowManyCopiesRan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%d copies: %v", copies, err)
 		}
-		if err := checkPrimed(out.Requests, len(pl.InputLens)); err != nil {
+		if err := checkPrimed(out.RequestRows, len(pl.InputLens)); err != nil {
 			t.Fatalf("%d copies: %v", copies, err)
 		}
-		o, err := summarize(out.Requests, pl, ignore)
+		o, err := summarize(out.RequestRows, pl, ignore)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -371,87 +372,26 @@ func TestADrainedCopyLeavesOnlyRequestZerosPromptReadable(t *testing.T) {
 // the main phase, or a holder round entering the engine before the main phase has finished.
 func TestCheckPrimedRefusesAnUndrainedWarmup(t *testing.T) {
 	const n = 2
-	T := float64(primeMainStartUs) / 1e6 // seconds, as arrived_at is reported
-	good := []sim.RequestMetrics{
-		{ID: "request_2", ArrivedAt: 0, E2E: 5000},                                     // the copy: ends at 5 s
-		{ID: "request_0", ArrivedAt: T, E2E: 3000},                                     // main 0
-		{ID: "request_1", ArrivedAt: T, E2E: 4000},                                     // main 1
-		{ID: "session_warmup-0_round_1_1", ArrivedAt: T + 3600, E2E: 1, RoundIndex: 1}, // holder
+	T := int64(primeMainStartUs) // microseconds, as the rows state them
+	e2e := func(v int64) *int64 { return &v }
+	good := []result.RequestRow{
+		{ID: "request_2", ArrivalUs: 0, E2EUs: e2e(5_000_000)},                          // the copy: ends at 5 s
+		{ID: "request_0", ArrivalUs: T, E2EUs: e2e(3_000_000)},                          // main 0
+		{ID: "request_1", ArrivalUs: T, E2EUs: e2e(4_000_000)},                          // main 1
+		{ID: "session_warmup-0_round_1_1", ArrivalUs: T + 3_600_000_000, E2EUs: e2e(1)}, // holder
 	}
 	if err := checkPrimed(good, n); err != nil {
 		t.Fatalf("a drained warm-up is refused: %v", err)
 	}
-	for name, mutate := range map[string]func([]sim.RequestMetrics){
-		"a copy still running at the main-phase start": func(r []sim.RequestMetrics) { r[0].E2E = T*1e3 + 1 },
-		"main request 0 starting late":                 func(r []sim.RequestMetrics) { r[1].ArrivedAt = T + 1 },
-		"a holder round inside the main phase":         func(r []sim.RequestMetrics) { r[3].ArrivedAt = T + 2 },
+	for name, mutate := range map[string]func([]result.RequestRow){
+		"a copy still running at the main-phase start": func(r []result.RequestRow) { r[0].E2EUs = e2e(T + 1) },
+		"main request 0 starting late":                 func(r []result.RequestRow) { r[1].ArrivalUs = T + 1_000_000 },
+		"a holder round inside the main phase":         func(r []result.RequestRow) { r[3].ArrivalUs = T + 2 },
 	} {
-		r := append([]sim.RequestMetrics(nil), good...)
+		r := append([]result.RequestRow(nil), good...)
 		mutate(r)
 		if checkPrimed(r, n) == nil {
 			t.Errorf("checkPrimed accepted %s", name)
-		}
-	}
-}
-
-// On a data-parallel point (dp=2) the harness's router places like vLLM's DP balancer: the
-// prefix-caching warm-up leaves request 0's prompt on every replica (Run checks it is served
-// from the cache), the main phase spreads across the replicas instead of herding onto one, and
-// the score is deterministic.
-func TestADataParallelPointPlacesLikeVLLMsBalancer(t *testing.T) {
-	const scenario = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
-	enabled := true
-	sw := Sweep{Scenario: scenario, Label: "1k1k", Workload: "1024:1024", Framework: "vllm", Serving: "aggregated",
-		SpecMethod: "none", Points: []Point{{Concurrency: 8}}}
-	set := &EngineSettingSet{Settings: []SweepSettings{{Scenario: scenario, Label: sw.Label,
-		ByConcurrency: map[string]*PointSettings{"8": {Passed: PassedSettings{EnablePrefixCaching: &enabled}}}}}}
-	cfg := Config{Repos: testRepos(), Blis: testBlis(t), Seed: 42, EngineSettings: set}
-
-	m, err := kernelmodel.Open(scenario, cfg.Repos)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if m.Deployment().DP != 2 {
-		t.Fatalf("%s: dp=%d, want 2", scenario, m.Deployment().DP)
-	}
-	a, err := Run(sw, 8, cfg)
-	if err != nil {
-		t.Fatal(err) // includes checkPrimed: request 0 must be served from its cached prompt
-	}
-	b, err := Run(sw, 8, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !a.Primed || a.Completed != 80 || a != b {
-		t.Fatalf("primed=%v completed=%d, repeat equal=%v", a.Primed, a.Completed, a == b)
-	}
-
-	ws, err := cfg.workloads()
-	if err != nil {
-		t.Fatal(err)
-	}
-	pl, err := ws.At(1024, 1024, 8)
-	if err != nil {
-		t.Fatal(err)
-	}
-	eng, err := build.StatedRunSettings(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := runBlis(cfg, scenario, resolveAdmission(sw, 8, eng, m.Deployment(), cfg.EngineSettings), mainPhase(pl))
-	if err != nil {
-		t.Fatal(err)
-	}
-	per := map[string]int{}
-	for _, r := range out.Requests {
-		per[r.HandledBy]++
-	}
-	if len(per) != 2 {
-		t.Fatalf("main phase used replicas %v, want both", per)
-	}
-	for id, n := range per {
-		if n < 30 || n > 50 {
-			t.Errorf("replica %s served %d of 80 requests; balancing by requests in flight keeps them near 40 (%v)", id, n, per)
 		}
 	}
 }

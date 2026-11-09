@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -142,28 +143,17 @@ func TestNetworksFabric_NoConfigKeyBindsPDTransferBaseLatency(t *testing.T) {
 func productionGoSources(t *testing.T) []string {
 	t.Helper()
 	var files []string
-	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	for _, rel := range repoFiles(t, "..") {
+		if !strings.HasSuffix(rel, ".go") || strings.HasSuffix(rel, "_test.go") {
+			continue
 		}
-		rel, relErr := filepath.Rel("..", path)
-		if relErr != nil {
-			return relErr
+		// Fixtures and vendored code are not the repository's own sources.
+		if skipped := strings.Split(rel, "/"); slices.ContainsFunc(skipped[:len(skipped)-1], func(d string) bool {
+			return d == "testdata" || d == "vendor" || d == "node_modules"
+		}) {
+			continue
 		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", ".worktrees", "testdata", "vendor", "node_modules":
-				return fs.SkipDir
-			}
-			return nil
-		}
-		if strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, "_test.go") {
-			files = append(files, filepath.ToSlash(rel))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("walk repository for Go sources: %v", err)
+		files = append(files, rel)
 	}
 	return files
 }

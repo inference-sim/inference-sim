@@ -1,7 +1,9 @@
 # Contract: TierShedAdmission
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Package**: `sim`
-**File**: `sim/admission.go`
+**File**: the simulator's admission file
 **Interface**: `sim.AdmissionPolicy`
 **Method**: `Admit(req *Request, state *RouterState) (admitted bool, reason string)`
 

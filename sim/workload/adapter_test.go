@@ -88,24 +88,6 @@ func TestGenerateRequests_ThreadsCohortAdapter(t *testing.T) {
 	}
 }
 
-// TestSpecHasAdapterFields verifies the detection helper used by unsupported paths
-// (blis observe) to warn about adapter fields they cannot honor.
-func TestSpecHasAdapterFields(t *testing.T) {
-	if SpecHasAdapterFields(nil) {
-		t.Error("nil spec has no adapter fields")
-	}
-	if SpecHasAdapterFields(adapterTestSpec("m", "")) {
-		t.Error("adapter-free client spec should report false")
-	}
-	if !SpecHasAdapterFields(adapterTestSpec("m", "adapter_0")) {
-		t.Error("client with adapter should report true")
-	}
-	cohortSpec := &WorkloadSpec{Cohorts: []CohortSpec{{ID: "h", Adapter: "adapter_1"}}}
-	if !SpecHasAdapterFields(cohortSpec) {
-		t.Error("cohort with adapter should report true")
-	}
-}
-
 // mustRegistry builds a lora.Registry (an AdapterRegistry) for validation tests.
 func mustRegistry(t *testing.T, specs ...cengine.AdapterSpec) AdapterRegistry {
 	t.Helper()

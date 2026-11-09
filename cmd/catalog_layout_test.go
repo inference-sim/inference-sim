@@ -93,8 +93,7 @@ func catalogLayoutSubprocess() bool {
 	catalog := os.Getenv(catalogLayoutCatalogEnv)
 	tracePrefix := os.Getenv(catalogLayoutTraceEnv)
 
-	repos := kernelmodel.DefaultRepos()
-	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", repos.Scenarios, "--registry", repos.Registry}
+	scenario := []string{"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", testRegistryDir()}
 	var args []string
 	switch leg {
 	case "run", "run-export":
@@ -192,14 +191,15 @@ func TestRunCmd_CatalogCloneRootLayout_UncataloguedModelStillRefused(t *testing.
 	if err := os.RemoveAll(entry); err != nil {
 		t.Fatal(err)
 	}
-	_, err := kernelmodel.Open(kernelTestScenario, kernelmodel.Repos{
-		Scenarios: scenarios, Catalog: root, Registry: registry,
-	})
+	_, err := kernelmodel.Open(kernelTestScenario, reposOf(scenarios, root, registry))
 	if err == nil {
 		t.Fatal("expected refusal for a model absent from the catalog")
 	}
-	if want := filepath.Join(entry, catalogModelGraphFile); !strings.Contains(err.Error(), want) {
-		t.Errorf("refusal must name the canonical clone-root path (%s), got: %v", want, err)
+	// The loader names the entry relative to the catalog it was refused in, and the catalog itself.
+	for _, want := range []string{root, filepath.Join(catalogModelsSubdir, "gpt-oss-120b", catalogModelGraphFile)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal must name %q, got: %v", want, err)
+		}
 	}
 	// And nothing may be created under the catalog root by the attempt.
 	if _, statErr := os.Stat(entry); !os.IsNotExist(statErr) {

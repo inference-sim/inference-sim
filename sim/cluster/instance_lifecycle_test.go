@@ -169,6 +169,7 @@ func TestInstanceLifecycle_RedirectDrainPreservesConservation(t *testing.T) {
 	// waiting queue before any step runs (the instance's queued events, run before its first step).
 	for _, req := range seeded {
 		req.ArrivalTime = 0
+		admitToLedger(t, cs, req) // as the request's arrival at the cluster would
 		inst0.InjectRequestOnline(req, 0)
 		cs.inFlightRequests[string(inst0.ID())]++
 	}

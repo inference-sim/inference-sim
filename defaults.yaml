@@ -8,8 +8,8 @@
 #
 # There is no `workloads:` block any more (#1769). The named workload presets (chatbot,
 # summarization, contentgen, multidoc) live in the catalog, at
-# <catalog>/workloads/<name>.yaml — one copy, read by `blis run --workload`,
-# `blis convert preset --name` and `blis observe --workload` alike. They used to be
+# <catalog>/workloads/<name>.yaml — one copy, read by `blis run --workload` and
+# `blis convert preset --name` alike. They used to be
 # duplicated here as well, with nothing keeping the two copies in sync. A `workloads:` key
 # left in a hand-maintained copy of this file is now rejected by strict parsing (R10) —
 # delete the block and point --catalog / BLIS_CATALOG at a catalog that defines the preset.

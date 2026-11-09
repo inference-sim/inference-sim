@@ -14,16 +14,16 @@ inference-sim/
 │   ├── router.go              # The llm-d router's inputs: the scenario's router block and pool labels, plus --gateway-latency, --epp-scrape-jitter, --kv-event-delay on run and replay; records them in the TraceV2 header and rebuilds them on replay (INV-13); builds the sim/llmd gateway
 │   ├── engine_build.go        # The one place cmd builds blis-vllm (#2021): hands the scenario and the engine flags, unread, to blis-vllm compat/build, which opens, checks and prices the pools, resolves the KV offload (scenario block + --kv-offload-config), the engine knobs, routing imbalance and speculative acceptance, and reads the catalog's storage-device table
 │   ├── kv_offload.go          # --kv-offload-config flag and the KV-offload trace-header round trip for replay (the resolution itself is blis-vllm compat/build's, via engine_build.go)
-│   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --results-path writes []workload.SimResult (integer request_id, ttft_us/e2e_us in µs); SimResult type lives in sim/workload/calibrate.go
+│   ├── replay.go              # `blis replay` command: replays TraceV2 file through DES; flags: --trace-header, --trace-data (required), all sim config flags (including --scenario/--scenarios/--registry) shared via registerSimConfigFlags(); --from-result reproduces a Result from its embedded input
 │   ├── network_topology.go    # crossNodeSpanForTrace: normalizes a cluster's widest instance node span for the TraceV2 header (#1530). A span of 0 (no node pools) or 1 (every instance on one node) records nothing, so a run without multi-node placement writes a byte-identical header; only a real multi-node fleet is recorded, and only that makes `blis replay` refuse the trace.
-│   ├── calibrate.go           # `blis calibrate` command (deprecated, #1901): compares real observed latencies (TraceV2 from blis observe) against sim predictions ([]SimResult JSON from blis replay --results-path); flags: --trace-header, --trace-data, --sim-results, --report (required), --warmup-requests (default: from header, sentinel -1), --network-rtt-us (default: from header, sentinel -1), --network-bandwidth-mbps; writes CalibrationReport JSON with MAPE/PearsonR/percentiles per metric
-│   ├── observe.go             # Real mode HTTP client (RealClient with functional options: WithAPIFormat for completions/chat, stream_options for streaming usage, finish_reason extraction, configurable max_tokens); Recorder for TraceV2 output
-│   ├── observe_cmd.go         # `blis observe` command (deprecated, #1901): flags --server-url, --model, --api-format (completions/chat), --unconstrained-output, --rtt-ms, --workload-spec/--rate; prefix string generation (buildPrefixStrings with FNV-seeded vocabulary); dispatch orchestrator with session support
+│   ├── result_rows.go         # The Result's request_rows: one row per generated request from the fate ledger, the facts noted at creation (RequestFact) and the engine's per-request metrics
+│   ├── from_result.go         # `--from-result` on run and replay: rebuilds the invocation from a Result's embedded scenario, deployment, policy and input.options, checks file options by sha256, and sets rerun_of and revision_changes
 │   ├── convert.go             # `blis convert` subcommands (servegen, preset, inference-perf)
+│   ├── convert_trace.go       # `blis convert trace`: a trace format version 3 (or 2) trace to version 4
 │   ├── compose.go             # `blis compose` for merging v2 specs
-│   ├── catalog_root.go        # Catalog LOCATION (--catalog / BLIS_CATALOG, no default and no search path — #1731); a run reads a model's `models/<name>/graph.yaml` within it
-│   ├── catalog_provenance.go  # Catalog provenance for the results file (#1732): captures the resolved catalog path, its git revision (`rev-parse HEAD`) and a dirty flag (`status --porcelain` scoped to the catalog subtree), degrading to revision "unknown" for a non-git or absent catalog. resultsFileEmitOptions is the single helper both `blis run` and `blis replay` pass to the `--metrics-path` writer (INV-13); the Result records the revision under `revisions.catalog`
-│   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload`, `blis convert preset` and `blis observe --workload`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
+│   ├── catalog_root.go        # The run's data: the catalog and registry embedded in the pinned blis-substrate, replaced by --catalog / BLIS_CATALOG or --registry / BLIS_REGISTRY, with --catalog-overlay / --registry-overlay; runData opens them once
+│   ├── catalog_provenance.go  # Build pins and each opened pool's kernel evidence (kernelProvenance, buildVersions), the Result's reports.kernel and revisions
+│   ├── catalog_workloads.go   # Named workload presets read from the catalog: <catalog>/workloads/<name>.yaml (#1769). The single reader and PresetConfig construction site behind `blis run --workload` and `blis convert preset`; strict KnownFields parsing (R10), refusals name the path and list the presets the catalog defines
 │   ├── catalog_load.go        # Strict WHOLE-catalog load behind the R1/C6 CI gate (#1750): loads every entry through the code path a run uses (models, presets via readCatalogPresetWorkload, devices via loadCatalogStorageDevices), plus strict readers for the two namespaces no run reads yet (`models/*/model.yaml`, `hardware/*.yaml`). Requires both halves of a model entry, refuses a GPU/tensor-parallel key in any catalog-authored YAML, accumulates and sorts problems (INV-6). Driven by scripts/catalog-load-gate.sh; there is deliberately NO validate subcommand
 │   └── default_config.go      # defaults.yaml loading: the LoRA cost coefficients (and `version`) only
 ├── internal/                  # Repo-root internal packages (test tooling; not importable outside this module)
@@ -45,7 +45,6 @@ inference-sim/
 │   ├── bundle.go              # PolicyBundle YAML loading (priority, scheduler, preemption, node_pools, autoscaler, instance_lifecycle), LoadPolicyBundle, Validate
 │   ├── metrics.go             # TTFT, TPOT, E2E collection and SaveResults()
 │   ├── metrics_utils.go       # Percentile/mean calculation, MetricsOutput JSON struct, NewRequestMetrics canonical constructor
-│   ├── vendored/              # Names this repository as the kernel adapter's vendoring root (testdata/catalog, testdata/registry)
 │   └── internal/              # Shared internal packages
 │       └── testutil/          # Shared test infrastructure (golden dataset loading, the fake latency model)
 │                              # (The engine itself -- request scheduling, batch formation, the KV cache,
@@ -71,20 +70,20 @@ inference-sim/
 │   └── node_topology.go       # zone/region from explicit Node manifests, overlaid on the simulated placement
 │   └── support.go             # BLIS's signal policy (embed.Config.Allow) and the checks of the router's Requirements against what the simulated engines produce
 ├── sim/workload/              # ServeGen-informed workload generation
-│   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, v1→v2 auto-upgrade (UpgradeV1ToV2), IsValidSLOClass accessor
+│   ├── spec.go                # WorkloadSpec v2, ClientSpec (with Model field), ArrivalSpec, DistSpec, YAML loading, version 1 read as version 2 (UpgradeV1ToV2; the v1 SLO class names were removed in v0.16.0), IsValidSLOClass accessor
 │   ├── arrival.go             # ArrivalSampler: Poisson, Gamma (Marsaglia-Tsang), Weibull (bisection), Constant (fixed-interval)
 │   ├── distribution.go        # LengthSampler: Gaussian, Exponential, ParetoLogNormal, EmpiricalPDF, Constant
 │   ├── client.go              # Rate normalization, prefix group management
 │   ├── generator.go           # GenerateRequests pipeline with client decomposition
 │   ├── servegen.go            # Native ServeGen data file loading (chunk-*-trace.csv + dataset.json)
-│   ├── tracev2.go             # Trace v2 format (YAML header + CSV data); 27-column schema including finish_reason (backward-compat with 26-column pre-finish_reason traces)
+│   ├── tracev2.go             # Trace format version 4 (YAML header + CSV data, contracts/spec/trace); columns read by name
+│   ├── trace_v3.go            # Trace format version 3, read only to convert it (ConvertTraceV3)
+│   ├── trace_mode.go          # The header modes (generated, replayed, converted), their check at load, and RecordsDeployment (#2067)
 │   ├── replay.go              # Trace v2 → sim.Request with synthetic token IDs
 │   ├── reexport.go            # ReExportClosedLoopRecords: faithful closed-loop/pool --trace-output re-export (#1630) — captures all rounds, re-derives accumulate deltas+resets, propagates think/prefix
-│   ├── calibrate.go           # CalibrationReport, PrepareCalibrationPairs, MAPE/Pearson r
 │   ├── multimodal.go          # Multimodal token generation (text+image+audio+video)
 │   ├── reasoning.go           # Reasoning multi-turn with context accumulation
 │   ├── session.go             # SessionManager: closed-loop session tracking, follow-up round generation on completion
-│   ├── network.go             # Client-perspective latency (RTT + bandwidth)
 │   ├── inference_perf.go      # inference-perf format: InferencePerfSpec, expansion, validation
 │   ├── scenarios.go           # Built-in presets (bursty, unfair, prefix-heavy, mixed-slo)
 │   ├── convert.go             # Format converters: ConvertServeGen, ConvertPreset, ComposeSpecs
@@ -94,22 +93,22 @@ inference-sim/
 │   ├── trace.go               # TraceLevel, TraceConfig, SimulationTrace, NewSimulationTrace, recording methods
 │   ├── record.go              # AdmissionRecord, RoutingRecord, CandidateScore, P/D and KV-transfer records (pure data types, no sim/ dependency)
 │   └── summary.go             # TraceSummary, Summarize()
-│                               # (The model catalog is NOT in this repo: it is the external blis-catalog
-│                               #  repository, located at run time via --catalog / BLIS_CATALOG (#1731, #1771).
+│                               # (The model catalog is NOT in this repo: it is blis-substrate's catalog/,
+│                               #  embedded in the pinned module and replaced by --catalog / BLIS_CATALOG.
 │                               #  It holds model graphs, chips, fabrics, storage devices and workload
-│                               #  presets. A verbatim
-│                               #  subset of a tagged release is vendored at testdata/catalog/ for tests,
-│                               #  blis-registry's coefficient sets at testdata/registry/, and this repo's
-│                               #  own scenario fixtures (P/D, MTP) at testdata/scenarios/.)
+│                               #  presets. Tests read the catalog/ and registry/ of the blis-substrate
+│                               #  module go.mod selects (internal/substratedata); this repo's own
+│                               #  scenario fixtures (P/D, MTP) are at testdata/scenarios/.)
 ├── tools/                     # Offline scoring tools, outside the simulator (sim/, cmd/ link blis-vllm only through cmd/engine_build.go)
 │   ├── harness/               # Closed-loop runs against the AISimulate accuracy corpus (the blis-latency-kernel adapter itself is blis-vllm compat/kernelmodel)
+│   │   ├── corpora/           # The scorers' default roots: substrate data and the measurement corpora (BLIS_MEASUREMENTS)
 │   │   └── internal/artifacts/ # Gates the harness tests on the kernel artifact roots; the measurement-corpus tests run under -tags scoring
 │   ├── metricscore/           # The scorer behind the evaluation tables: every estimator on every metric, on three tiers of points
 │   ├── kernelscore/           # Scores the concurrency-response shape against the AISimulate snapshot
 │   ├── sensitivity/           # How much each assumed engine setting (and the length draw) moves the score
 │   ├── signedprobe/           # One CSV row per direct-corpus point, to find where the error is one-sided (temporary)
 │   └── validation/            # render_docs.py: renders docs/validation/ from the validation results
-├── defaults.yaml              # LoRA cost coefficients only (latency coefficients live in blis-registry)
+├── defaults.yaml              # LoRA cost coefficients only (latency coefficients live in blis-substrate's registry/)
 ├── examples/                  # Example configuration files
 ├── testdata/goldendataset.json # Golden dataset for regression tests
 ├── docs/

@@ -86,18 +86,15 @@ func TestResolveKVOffloadDevices_ReadsCatalogLocatedByFlagAndEnv(t *testing.T) {
 		t.Errorf("flag+env: --catalog must win, got %+v", devices["nvme_gen4"])
 	}
 
-	// Neither: a device_class cannot be resolved, and the refusal names both forms and
-	// the file it was going to read.
+	// Neither: the device class resolves from the embedded catalog's table (SIM-6).
 	catalogPath = ""
 	t.Setenv(catalogEnvVar, "")
-	if _, err = resolveKVOffloadDevices(validBlock()); err == nil {
-		t.Fatal("a device_class with no catalog located must be refused")
-	} else {
-		for _, frag := range []string{"--catalog", catalogEnvVar, catalogStorageDevicesRelPath} {
-			if !strings.Contains(err.Error(), frag) {
-				t.Errorf("refusal must name %q, got: %v", frag, err)
-			}
-		}
+	devices, err = resolveKVOffloadDevices(validBlock())
+	if err != nil {
+		t.Fatalf("neither: the embedded catalog must resolve the class: %v", err)
+	}
+	if devices["nvme_gen4"].ReadBandwidth == 1.0 || devices["nvme_gen4"].ReadBandwidth == 9.0 {
+		t.Errorf("neither: read a test catalog instead of the embedded one: %+v", devices["nvme_gen4"])
 	}
 }
 
@@ -179,16 +176,16 @@ func TestKVOffloadDevicesBlockRemoved_StaleBlockIsRefused(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestResolveKVOffloadDevices_NoDeviceClassReadsNoCatalog: an offload config whose tiers
-// all carry an explicit read/write/base triple must resolve with NO catalog devices table
+// all carry an explicit read/write/base triple resolves with NO catalog devices table
 // — that class of run never consulted the table before the cutover either, and making it
 // suddenly require a catalog file would be a regression dressed up as a refactor.
 //
-// The check is strong because no catalog is located at all: --catalog is empty and
-// BLIS_CATALOG is cleared, so ANY attempt to resolve the catalog would error.
+// The check is strong because the catalog named is not a catalog: --catalog names an empty
+// directory, so ANY attempt to open the data would error.
 func TestResolveKVOffloadDevices_NoDeviceClassReadsNoCatalog(t *testing.T) {
 	origFlag := catalogPath
 	t.Cleanup(func() { catalogPath = origFlag })
-	catalogPath = ""
+	catalogPath = t.TempDir()
 	t.Setenv(catalogEnvVar, "")
 
 	explicit := &build.KVOffloadBlock{
@@ -220,13 +217,14 @@ func TestResolveKVOffloadDevices_NoDeviceClassReadsNoCatalog(t *testing.T) {
 		t.Errorf("explicit triple wrong: %+v", tr)
 	}
 
-	// Non-vacuity: the SAME block with a device_class added does need the catalog, so the
-	// pass above is the laziness and not an accidentally-optional dependency.
+	// Non-vacuity: the SAME block with a device_class added does need the catalog, so it is
+	// refused against the empty directory, and the pass above is the laziness and not an
+	// accidentally-optional dependency.
 	withClass := *explicit
 	withClass.SecondaryTiers = append([]build.KVOffloadTierBlock(nil), explicit.SecondaryTiers...)
 	withClass.SecondaryTiers[0].DeviceClass = strp("nvme_gen4")
 	if _, err := resolveKVOffloadDevices(&withClass); err == nil {
-		t.Error("non-vacuity: a device_class with no catalog located must be refused")
+		t.Error("non-vacuity: a device_class against a directory that is not a catalog must be refused")
 	}
 }
 

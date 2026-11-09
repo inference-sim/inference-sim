@@ -36,9 +36,9 @@ func writeMinimalTrace(t *testing.T, dir, extraHeaderLine string) (headerPath, d
 	t.Helper()
 	headerPath = filepath.Join(dir, "trace.yaml")
 	dataPath = filepath.Join(dir, "trace.csv")
-	header := "trace_version: 3\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\n" + extraHeaderLine
-	data := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,server_input_tokens,arrival_time_us,send_time_us,first_chunk_time_us,last_chunk_time_us,num_chunks,status,error_message,finish_reason\n" +
-		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,0,0,0,ok,,\n"
+	header := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n" + extraHeaderLine
+	data := "request_id,client_id,tenant_id,slo_class,session_id,round_index,prefix_group,prefix_length,streaming,input_tokens,output_tokens,text_tokens,image_tokens,audio_tokens,video_tokens,reason_ratio,model,deadline_us,arrival_time_us,first_chunk_time_us,last_chunk_time_us,status\n" +
+		"0,c1,t1,standard,s1,0,,0,false,10,5,10,0,0,0,0.0,,0,0,0,0,ok\n"
 	if err := os.WriteFile(headerPath, []byte(header), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,6 @@ func runReplayInSubprocess(t *testing.T, extraHeaderLine string) {
 		os.Exit(2) // distinct from logrus.Fatalf exit code (1)
 	}
 	replaySessionMode = "fixed"
-	resultsPath = ""
 	replayTraceOutput = ""
 	policyConfigPath = ""
 	replayCmd.Run(testCmd, nil) // must Fatalf before here for the spanning case
@@ -131,21 +130,23 @@ func TestReplayCmd_SingleNodeTraceAccepted(t *testing.T) {
 	}
 }
 
-// TestReplayCmd_SingleNodeSpanTraceAccepted verifies the boundary value: a header
-// recording a span of exactly 1 (every instance on one node) is not a cross-node fleet
-// and must replay normally.
-func TestReplayCmd_SingleNodeSpanTraceAccepted(t *testing.T) {
+// TestReplayCmd_SingleNodeSpanTraceRefused: a header recording a span of exactly 1 (every
+// instance on one node) is refused by the trace format (contracts/spec/trace, version 4): an
+// instance on one node spans none, so the key is omitted, and the writer never writes a 1
+// (cmd.crossNodeSpanForTrace normalises it to 0). A hand-written header that states one is
+// refused naming the key, not replayed as a cross-node fleet.
+func TestReplayCmd_SingleNodeSpanTraceRefused(t *testing.T) {
 	if os.Getenv("BLIS_TEST_SUBPROCESS") == "1" {
 		runReplayInSubprocess(t, "max_nodes_spanned: 1\n")
 		return
 	}
-	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_SingleNodeSpanTraceAccepted", "-test.v")
+	cmd := exec.Command(os.Args[0], "-test.run=TestReplayCmd_SingleNodeSpanTraceRefused", "-test.v")
 	cmd.Env = append(os.Environ(), "BLIS_TEST_SUBPROCESS=1")
 	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("a span of 1 is not a cross-node fleet and must replay normally, got %v; output:\n%s", err, out)
+	if err == nil {
+		t.Fatalf("a span of 1 must be refused; output:\n%s", out)
 	}
-	if strings.Contains(string(out), "max_nodes_spanned") {
-		t.Errorf("the cross-node fence must stay silent for a span of 1; output:\n%s", out)
+	if !strings.Contains(string(out), "max_nodes_spanned: is 1") {
+		t.Errorf("the refusal must name max_nodes_spanned and the value 1; output:\n%s", out)
 	}
 }

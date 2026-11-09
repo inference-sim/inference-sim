@@ -110,8 +110,7 @@ nav:
       - Workload Specifications: guide/workloads.md
       - Cluster Simulation: guide/cluster.md
       - Metrics & Results: guide/results.md
-      - Observe / Replay / Calibrate: guide/observe-replay-calibrate.md
-      - KV Hit-Rate Calibration: guide/kv-offload-calibration.md
+      - Trace Replay: guide/replay.md
       - Archon PR Review: guide/archon-pr-review.md
       - Skills & Plugins: guide/skills-and-plugins.md
   - Validation:
@@ -120,6 +119,9 @@ nav:
       - "InferenceX Single-Turn": validation/inferencex-single-turn.md
       - "Internal llm-d Deployments": validation/internal-deployments.md
       - "llm-d Prism": validation/llm-d-prism.md
+  - Change evidence:
+      - "Price-change report (vLLM 0.32.0 fixtures)": evidence/price-change-report.md
+      - "Golden equivalence (Result schema 2)": evidence/golden-equivalence.md
   - Reference:
       - reference/index.md
       - Project Structure: reference/project-structure.md

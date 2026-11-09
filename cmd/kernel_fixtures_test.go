@@ -1,11 +1,15 @@
 package cmd
 
 import (
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-vllm/compat/contract"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
@@ -24,17 +28,17 @@ const kernelTestScenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
 func setupKernelTestFixtures(t *testing.T) (catalogDir string) {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
-	savedScenario, savedDir, savedRegistry, savedOpened := kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened
+	savedScenario, savedDir, savedRegistry, savedOpened := kernelScenario, kernelScenarioDir, registryPath, kernelOpened
 	savedExperts, savedTopK := kernelDeploymentExperts, kernelDeploymentTopK
 	savedDP, savedEP, savedSpec, savedSpecMethod := dataParallelism, enableExpertParallel, numSpeculativeTokens, speculativeMethod
 	savedPrefix := noEnablePrefixCaching
 	t.Cleanup(func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = savedScenario, savedDir, savedRegistry, savedOpened
+		kernelScenario, kernelScenarioDir, registryPath, kernelOpened = savedScenario, savedDir, savedRegistry, savedOpened
 		kernelDeploymentExperts, kernelDeploymentTopK = savedExperts, savedTopK
 		dataParallelism, enableExpertParallel, numSpeculativeTokens, speculativeMethod = savedDP, savedEP, savedSpec, savedSpecMethod
 		noEnablePrefixCaching = savedPrefix
 	})
-	kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened = kernelTestScenario, scenarios, registry, (*kernelmodel.Model)(nil)
+	kernelScenario, kernelScenarioDir, registryPath, kernelOpened = kernelTestScenario, scenarios, registry, (*kernelmodel.Model)(nil)
 	return catalog
 }
 
@@ -88,7 +92,7 @@ type kernelDeployment struct {
 func newKernelDeployment(t *testing.T, seed int64, kvOpts []cengine.KVCacheOption, batchOpts ...cengine.BatchOption) kernelDeployment {
 	t.Helper()
 	scenarios, catalog, registry := kernelRepos(t)
-	m, err := kernelmodel.Open(kernelTestScenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(kernelTestScenario, reposOf(scenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,11 +121,10 @@ func newKernelDeployment(t *testing.T, seed int64, kvOpts []cengine.KVCacheOptio
 }
 
 // deploymentOf is a one-instance cluster configuration whose engine is the compatibility engine
-// behind the contract, built from ec as `blis run` builds a 0.29/0.31 instance's
-// (compatContractFactory).
+// behind the contract, built from ec (compatEngineFactory).
 func deploymentOf(ec engineConfig) cluster.DeploymentConfig {
 	return cluster.DeploymentConfig{InstanceConfig: instanceConfigOf(ec), NumInstances: 1,
-		NewEngine: compatEngineFactory(ec, 0, dpPlacementPlan{})}
+		NewEngine: compatEngineFactory(0)}
 }
 
 // newRoutedCluster builds a cluster over reqs, with the instance engine configuration ec, routed
@@ -133,4 +136,29 @@ func newRoutedCluster(ec engineConfig, reqs []*sim.Request) *cluster.ClusterSimu
 	cs := cluster.NewClusterSimulator(cfg, cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(newGateway(routerInputs{EPPFlags: append([]string(nil), llmd.DefaultEPPFlags()...)}, cfg.Model))
 	return cs
+}
+
+// compatEngineFactory builds each instance's compatibility engine behind engine.Engine (blis-vllm
+// compat/contract) from its configuration, driven by a sim.EngineDriver. No run builds this
+// engine since engine selection refuses vLLM 0.29.0 and 0.31.0 (LIF-6); the library-level tests
+// in this package still drive the host through it, until they move onto the v0.32.0 engine
+// (blis-vllm deletes compat/ in M4, release plan §3.3).
+func compatEngineFactory(acceptance float64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	// Each instance's engine is built from its own configuration, resolved for its pool role (a
+	// P/D prefill or decode pool's overrides), as the compatibility engine's own host loop builds
+	// it (sim.NewEngine).
+	driver := func(eng engine.Engine, cfg engineConfig) (*sim.EngineDriver, error) {
+		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, Acceptance: acceptance, ResumeGapFromLastToken: true,
+			ScrapeEngineMetrics: true, ApplyAtStepStart: true}
+		hostOverheads(&dcfg, cfg.LatencyModel)
+		return sim.NewEngineDriverWithFrontend(eng, dcfg, frontendOf(cfg.Frontend))
+	}
+	return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
+		cfg := engineConfigIn(ic)
+		eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
+		if err != nil {
+			return nil, err
+		}
+		return driver(eng, cfg)
+	}
 }

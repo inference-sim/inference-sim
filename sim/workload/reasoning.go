@@ -3,7 +3,6 @@ package workload
 import (
 	"fmt"
 	"math"
-	"math/rand"
 
 	"github.com/inference-sim/inference-sim/sim"
 )
@@ -13,17 +12,23 @@ import (
 // increasing input lengths if context_growth == "accumulate".
 //
 // When prefix is non-empty it is prepended to every round's InputTokens
-// (req.PrefixLength is set to len(prefix)). Under accumulate, prefix becomes
+// (req.PrefixLength is set to len(prefix) and req.PrefixGroup to prefixGroup, the group the
+// prefix belongs to, so a trace export can state it). Under accumulate, prefix becomes
 // the first chunk in the shared session buffer so all rounds share the same
 // prefix bytes — eliminating the legacy O(P) prefix-copy per round
 // (O(R·P) total) on top of the dominant O(R²) accumulated-context copy
 // (#1445).
+//
+// Every round draws from its own streams in the session's family (SessionStreams(seed,
+// sessionID)), so round r's lengths and tokens do not depend on the rounds before it.
 func GenerateReasoningRequests(
-	rng *rand.Rand,
+	seed int64,
+	sessionID string,
 	spec *ReasoningSpec,
 	inputSampler, outputSampler LengthSampler,
 	startTime int64,
 	clientID, tenantID, sloClass, model, adapter string,
+	prefixGroup string,
 	prefix []sim.TokenID,
 ) ([]*sim.Request, error) {
 	if spec == nil || spec.MultiTurn == nil {
@@ -44,7 +49,7 @@ func GenerateReasoningRequests(
 		}
 	}
 
-	sessionID := fmt.Sprintf("sess_%d", rng.Int63())
+	session := SessionStreams(seed, sessionID)
 	var requests []*sim.Request
 	currentTime := startTime
 	// Shared session token buffer (#1445). Replaces the prior O(R²) eager copy
@@ -64,8 +69,9 @@ func GenerateReasoningRequests(
 	prefixLen := int64(len(prefix))
 
 	// Pre-sample round 0 to size the buffer; these values feed round 0 below.
-	round0Input := inputSampler.Sample(rng)
-	round0Output := outputSampler.Sample(rng)
+	r0 := roundStreams(session, 0)
+	round0Input := inputSampler.Sample(r0.Stream(purposeInputLength))
+	round0Output := outputSampler.Sample(r0.Stream(purposeOutputLength))
 
 	if mt.ContextGrowth == "accumulate" {
 		estCap := prefixLen + int64(mt.MaxRounds)*int64(round0Input+round0Output)
@@ -76,17 +82,18 @@ func GenerateReasoningRequests(
 	}
 
 	for round := 0; round < mt.MaxRounds; round++ {
+		rs := roundStreams(session, round)
 		var inputLen, outputLen int
 		if round == 0 {
 			inputLen, outputLen = round0Input, round0Output
 		} else {
-			inputLen = inputSampler.Sample(rng)
-			outputLen = outputSampler.Sample(rng)
+			inputLen = inputSampler.Sample(rs.Stream(purposeInputLength))
+			outputLen = outputSampler.Sample(rs.Stream(purposeOutputLength))
 		}
 
 		// Generate this round's new tokens
-		newInputTokens := sim.GenerateRandomTokenIDs(rng, inputLen)
-		outputTokens := sim.GenerateRandomTokenIDs(rng, outputLen)
+		newInputTokens := tokens(rs, purposeInputTokens, inputLen)
+		outputTokens := tokens(rs, purposeOutputTokens, outputLen)
 
 		// Build input.
 		// - Accumulate: route through the shared buffer (prefix already seeded
@@ -110,7 +117,7 @@ func GenerateReasoningRequests(
 		reasonRatio := 0.0
 		if reasonRatioSampler != nil {
 			// Sample as integer percentage then convert
-			pct := reasonRatioSampler.Sample(rng)
+			pct := reasonRatioSampler.Sample(rs.Stream(purposeReasonRatio))
 			reasonRatio = math.Min(1.0, math.Max(0.0, float64(pct)/100.0))
 		}
 
@@ -129,6 +136,7 @@ func GenerateReasoningRequests(
 			SessionID:    sessionID,
 			RoundIndex:   round,
 			ReasonRatio:  reasonRatio,
+			PrefixGroup:  prefixGroup,
 			PrefixLength: int(prefixLen),
 		}
 		requests = append(requests, req)

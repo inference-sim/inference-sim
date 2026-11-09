@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"math"
+	"os"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -86,7 +88,7 @@ var convertPresetCmd = &cobra.Command{
 		}
 		// #1769: presets come from the catalog (<catalog>/workloads/<name>.yaml), not from
 		// the bundled defaults.yaml, so --name resolves identically here and under
-		// `blis run --workload` / `blis observe --workload`.
+		// `blis run --workload`.
 		wl, err := loadPresetWorkload(presetName)
 		if err != nil {
 			logrus.Fatalf("--name %q: %v", presetName, err)
@@ -150,14 +152,25 @@ func filterCohortsByPeriod(spec *workload.WorkloadSpec, period string) *workload
 
 // writeSpecToStdout validates and marshals a WorkloadSpec to YAML on stdout.
 func writeSpecToStdout(spec *workload.WorkloadSpec) {
+	if err := writeSpec(os.Stdout, spec); err != nil {
+		logrus.Fatalf("%v", err)
+	}
+}
+
+// writeSpec validates spec and writes it to w as YAML. It returns the write's error, so a
+// converted spec that did not reach its reader in full is a failed conversion (SIM-2, #661).
+func writeSpec(w io.Writer, spec *workload.WorkloadSpec) error {
 	if err := spec.Validate(); err != nil {
-		logrus.Fatalf("generated spec is invalid: %v", err)
+		return fmt.Errorf("generated spec is invalid: %w", err)
 	}
 	data, err := yaml.Marshal(spec)
 	if err != nil {
-		logrus.Fatalf("YAML marshal failed: %v", err)
+		return fmt.Errorf("YAML marshal failed: %w", err)
 	}
-	fmt.Print(string(data))
+	if _, err := w.Write(data); err != nil {
+		return fmt.Errorf("writing the workload spec: %w", err)
+	}
+	return nil
 }
 
 func init() {

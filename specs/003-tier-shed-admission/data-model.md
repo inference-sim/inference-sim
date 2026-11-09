@@ -1,8 +1,10 @@
 # Data Model: Phase 1B-1a — Tier-Ordered Admission Shedding
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 ## Entities
 
-### SLO Tier Priority (new helper, `sim/admission.go`)
+### SLO Tier Priority (new helper, the simulator's admission file)
 
 A pure function mapping `Request.SLOClass` string to an integer priority rank. Exported so `sim/cluster/` can call it without a circular import.
 
@@ -22,7 +24,7 @@ A pure function mapping `Request.SLOClass` string to an integer priority rank. E
 
 ---
 
-### TierShedAdmission (new struct, `sim/admission.go`)
+### TierShedAdmission (new struct, the simulator's admission file)
 
 An `AdmissionPolicy` implementation that gates requests by tier priority under overload.
 

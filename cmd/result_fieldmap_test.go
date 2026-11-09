@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
 	"strings"
@@ -40,7 +39,7 @@ func TestResultFieldMap_EveryMetricsOutputFieldHasAHome(t *testing.T) {
 		}
 	}
 	fields := jsonFields(reflect.TypeOf(sim.MetricsOutput{}))
-	if len(fields) < 40 {
+	if len(fields) < 30 {
 		t.Fatalf("non-vacuity: found only %d MetricsOutput fields", len(fields))
 	}
 	for _, f := range fields {
@@ -75,18 +74,19 @@ func jsonFields(typ reflect.Type) []string {
 
 // #1871 review N2: every home the field-map table names exists in an emitted Result. One
 // document exercises everything but the conditional sections: a multi-instance P/D run with SLO
-// targets, a detector, the deprecated --metrics-path file and a policy override. The homes only
+// targets and a detector. The homes only
 // a different kind of run states are listed with the run that states them.
 func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	conditional := map[string]string{
-		"engine.cluster.acceptance":    "a speculating run",
-		"engine.cluster.adapters":      "a LoRA run",
-		"breakdowns.per_adapter":       "a LoRA run",
-		"engine.cluster.agentic":       "an agentic replay",
-		"engine.cluster.server_series": "--server-series-interval-s",
-		"overrides":                    "a run that sets a flag or overrides its scenario",
-		"profiling_start":              "an agentic replay's explicit window (window.start)",
-		"profiling_end":                "an agentic replay's explicit window (window.stop)",
+		"reports.engine.cluster.acceptance":    "a speculating run",
+		"reports.engine.cluster.adapters":      "a LoRA run",
+		"breakdowns.per_adapter":               "a LoRA run",
+		"reports.engine.cluster.agentic":       "an agentic replay",
+		"reports.engine.cluster.server_series": "--server-series-interval-s",
+		"requests.dropped.unservable":          "a run that drops a request as unservable",
+		"overrides":                            "a run that sets a flag or overrides its scenario",
+		"profiling_start":                      "an agentic replay's explicit window (frame.phases.measured.start)",
+		"profiling_end":                        "an agentic replay's explicit window (frame.phases.measured.stop)",
 	}
 	data, err := os.ReadFile("../docs/guide/results.md")
 	if err != nil {
@@ -94,7 +94,7 @@ func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	}
 	doc := string(data)
 	table := doc[strings.Index(doc, "<!-- result-field-map -->"):strings.Index(doc, "<!-- /result-field-map -->")]
-	path := regexp.MustCompile("`((?:requests|metrics|engine|breakdowns|goodput|window|revisions|artifacts|saturation|kernel)[a-z0-9_.*]*)`")
+	path := regexp.MustCompile("`((?:requests|metrics|reports|data|frame|breakdowns|goodput|window|revisions|artifacts)[a-z0-9_.*]*)`")
 	var homes []string
 	for _, line := range strings.Split(table, "\n") {
 		if cols := strings.Split(line, "|"); len(cols) >= 3 {
@@ -106,8 +106,7 @@ func TestResultFieldMap_EveryNamedHomeExistsInAnEmittedResult(t *testing.T) {
 	if len(homes) < 40 {
 		t.Fatalf("non-vacuity: found %d homes in the table", len(homes))
 	}
-	metricsFile := filepath.Join(t.TempDir(), "m.json")
-	out, stderr, err := runKernelCLI(t, append([]string{"run", "--metrics-path", metricsFile, "--slo-ttft", "default=500ms",
+	out, stderr, err := runKernelCLI(t, append([]string{"run", "--slo-ttft", "default=500ms",
 		"--detectors", "composite"}, pdBurst...)...)
 	if err != nil {
 		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))

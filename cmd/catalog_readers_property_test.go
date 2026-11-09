@@ -5,7 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	schemaworkload "github.com/inference-sim/blis-schemas/spec/workload"
+	schemaworkload "github.com/inference-sim/blis-substrate/contracts/spec/workload"
+	"github.com/inference-sim/blis-vllm/compat/build"
 	"pgregory.net/rapid"
 )
 
@@ -46,8 +47,13 @@ func TestPresetReader_AcceptsWhatTheFlagsAndTheSchemaAcceptAndLosesNothing(t *te
 			OutputTokensMin:   tokenCount(rt, "outputMin"),
 			OutputTokensMax:   tokenCount(rt, "outputMax"),
 		}
-		catalog := writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(want)})
-		got, err := readCatalogPresetWorkload("chatbot", catalog)
+		// The preset reaches the reader through the loader, as a run's does: the loader's strict
+		// decoding and the schema's validation first, then the reader's bounds.
+		data, err := dataWithCatalogOverlay(writeTestPresetCatalog(t, map[string]string{"chatbot": presetYAML(want)}))
+		var got *presetWorkload
+		if err == nil {
+			got, err = readCatalogPresetWorkload("chatbot", data)
+		}
 
 		flagsAccept := want.PromptTokensMean > 0 && want.OutputTokensMean > 0 &&
 			validateDistributionParams(
@@ -94,8 +100,11 @@ func TestStorageDeviceReader_PassesFiguresThroughAndRefusesNonPositive(t *testin
 		for i, k := range keys {
 			fields[i] = fmt.Sprintf("%s: %v", k, figures[i])
 		}
-		catalog := writeCatalogStorageDevices(t, "tier: {"+strings.Join(fields, ", ")+"}\n")
-		devices, err := loadCatalogStorageDevices(catalog)
+		data, err := dataFromCatalog(writeCatalogStorageDevices(t, "tier: {"+strings.Join(fields, ", ")+"}\n"))
+		var devices map[string]build.KVOffloadDevice
+		if err == nil {
+			devices, err = loadCatalogStorageDevices(data)
+		}
 
 		if bad >= 0 {
 			if err == nil || !strings.Contains(err.Error(), keys[bad]) {

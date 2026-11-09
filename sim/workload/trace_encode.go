@@ -1,5 +1,7 @@
 package workload
 
+import "github.com/inference-sim/blis-substrate/contracts/spec/trace"
+
 // NormalizedRound is one LLM call in a captured agentic session, in the
 // source-agnostic form the shared TraceV2 encoder consumes. Per-format readers
 // (OTel `convert otel` #1479; Weka `convert weka` #1604) parse their own format
@@ -7,11 +9,11 @@ package workload
 // TraceRecords. Readers supply the ABSOLUTE per-round input count — the encoder
 // computes the per-round delta — so no reader duplicates the delta law.
 type NormalizedRound struct {
-	InputTokensAbs int    // absolute recorded prompt tokens for this round
-	OutputTokens   int    // recorded output tokens
-	ArrivalUs      int64  // arrival time (µs), relative to session start
-	ThinkUs        *int64 // recorded pure client think time (µs); nil = not recorded, &0 = recorded zero (#1608)
-	Status         string // "ok" or "error"
+	InputTokensAbs int          // absolute recorded prompt tokens for this round
+	OutputTokens   int          // recorded output tokens
+	ArrivalUs      int64        // arrival time (µs), relative to session start
+	ThinkUs        *int64       // recorded pure client think time (µs); nil = not recorded, &0 = recorded zero (#1608)
+	Status         trace.Status // "ok" or "error"
 }
 
 // EncodeSessionToTraceRecords converts one session's ordered NormalizedRounds

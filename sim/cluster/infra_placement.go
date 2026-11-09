@@ -478,7 +478,7 @@ func (pm *PlacementManager) ReleaseInstance(id InstanceID) error {
 	}
 
 	// Drain completion check per touched node, in sorted ID order for determinism
-	// (R2): each fired callback schedules a NodeDrainedEvent (and consumes a seqID),
+	// (R2): each fired callback schedules a NodeDrainedEvent (and advances its sender's count),
 	// so the firing order must be deterministic. For a node that is Draining and now
 	// fully free, fire and clear its callback (each node owns a distinct callback, so
 	// this cannot double-fire any single node).

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
@@ -27,8 +27,8 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 	// Subprocess leg: emit the metrics stdout for the variant named by the env var.
 	if v := os.Getenv("BLIS_SAT_VARIANT"); v != "" {
 		args := []string{
-			"run", "--scenario", kernelTestScenario, "--scenarios", kernelmodel.DefaultScenarios(), "--registry", kernelmodel.DefaultRegistry(), "--seed", "42",
-			"--catalog", "../testdata/catalog",
+			"run", "--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", substratedata.MustRegistry(), "--seed", "42",
+			"--catalog", substratedata.MustCatalog(),
 			"--num-requests", "50",
 			"--defaults-filepath", "../defaults.yaml",
 		}
@@ -74,12 +74,12 @@ func TestSaturationStdout_FinalLabelShape(t *testing.T) {
 	parseSaturation := func(t *testing.T, stdout string) (map[string]string, bool) {
 		t.Helper()
 		r := parseResult(t, stdout)
-		if r.Saturation == nil {
+		if r.Reports.Saturation == nil {
 			return nil, false
 		}
-		final, ok := r.Saturation["final"].(map[string]any)
+		final, ok := r.Reports.Saturation["final"].(map[string]any)
 		if !ok {
-			t.Fatalf("the Result's saturation has no final labels: %v", r.Saturation)
+			t.Fatalf("the Result's saturation has no final labels: %v", r.Reports.Saturation)
 		}
 		out := make(map[string]string, len(final))
 		for d, l := range final {

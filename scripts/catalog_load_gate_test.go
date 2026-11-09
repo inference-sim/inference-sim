@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 )
 
 // catalog-load-gate.sh is the R1/C6 acceptance gate (#1750): it loads every entry in the
@@ -146,8 +148,8 @@ func newCatalogFixtureRepo(t *testing.T, stateDeploymentFact bool) (string, stri
 	t.Helper()
 	repo := t.TempDir()
 
-	// Every file is copied from the committed fixture catalog -- a verbatim subset of a tagged
-	// blis-catalog release -- because the gate parses each through the production readers,
+	// Every file is copied from the catalog of the blis-substrate module go.mod selects,
+	// because the gate parses each through the production readers,
 	// and a hand-written copy of a file's shape would drift from the format the release
 	// publishes.
 	for _, rel := range []string{
@@ -158,7 +160,7 @@ func newCatalogFixtureRepo(t *testing.T, stateDeploymentFact bool) (string, stri
 		filepath.Join("devices", "storage.yaml"),
 		filepath.Join("hardware", "h100.yaml"),
 	} {
-		body, err := os.ReadFile(filepath.Join("..", "testdata", "catalog", rel))
+		body, err := os.ReadFile(filepath.Join(substratedata.MustCatalog(), rel))
 		if err != nil {
 			t.Fatalf("read fixture %s: %v", rel, err)
 		}

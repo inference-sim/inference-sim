@@ -98,10 +98,12 @@ schedulingProfiles:
 // TestLoRAAffinity_FewerColdLoadsThanLoadOnly: under a skewed adapter popularity, llm-d's
 // lora-affinity-scorer, reading the adapter sets the engines publish in vllm:lora_requests_info,
 // keeps requests on instances that already hold their adapter, so the cluster loads adapters
-// markedly fewer times than with a load-only configuration on the same workload.
+// markedly fewer times than with a load-only configuration on the same workload. The router's
+// tie-breaks draw from its own random streams, so one router seed is one sample: the claim is
+// checked on the total over several router seeds, each pair sharing the workload.
 func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 	adapters := []string{"a0", "a1", "a2", "a3", "a4", "a5"}
-	loads := func(config string) int64 {
+	loads := func(config string, routerSeed int64) int64 {
 		reqs := testRequests(300, 13, 3000, 0)
 		z := rand.NewZipf(rand.New(rand.NewSource(7)), 1.3, 1.0, uint64(len(adapters)-1))
 		for _, r := range reqs {
@@ -118,7 +120,7 @@ func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 				LoadBandwidthBytesUs: &bw, FootprintBytesPerRank: &fp, Adapters: specs}
 		})
 		cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
-		cs.SetGateway(New(Options{Model: "test-model", EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
+		cs.SetGateway(New(Options{Model: "test-model", Seed: &routerSeed, EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 		if err := cs.Run(); err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -132,8 +134,12 @@ func TestLoRAAffinity_FewerColdLoadsThanLoadOnly(t *testing.T) {
 		}
 		return sum
 	}
-	base, affinity := loads(loadOnlyConfig), loads(loraAffinityConfig)
-	t.Logf("adapter loads: load-only %d, lora-affinity %d", base, affinity)
+	var base, affinity int64
+	for routerSeed := int64(1); routerSeed <= 6; routerSeed++ {
+		base += loads(loadOnlyConfig, routerSeed)
+		affinity += loads(loraAffinityConfig, routerSeed)
+	}
+	t.Logf("adapter loads over 6 router seeds: load-only %d, lora-affinity %d", base, affinity)
 	if base == 0 || float64(affinity) > 0.7*float64(base) {
 		t.Errorf("lora-affinity loaded adapters %d times, load-only %d: want at least 30%% fewer", affinity, base)
 	}

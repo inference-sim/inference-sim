@@ -5,7 +5,7 @@
 !!! info "BLIS binaries these results describe"
     - `(devel)+9e3c509c8788fe0743605a8f06e0bf5c1c39ac1f`, binary sha256 `29fb09054a10ee51dc104f491cb09337e0ba527055b85653d281f23230451dff`
 
-Public llm-d benchmark results ([llm-d-prism](https://github.com/llm-d/llm-d-prism) and the `gs://llm-d-benchmarks` bucket) for models in blis-catalog, replayed by BLIS.
+Public llm-d benchmark results ([llm-d-prism](https://github.com/llm-d/llm-d-prism) and the `gs://llm-d-benchmarks` bucket) for models in blis-substrate's catalog, replayed by BLIS.
 
 Signed error `100 * (BLIS / measured - 1)`: positive means BLIS is higher (slower latency, or more throughput). Geo-mean bias is `100 * (exp(mean log ratio) - 1)`.
 

@@ -293,6 +293,8 @@ func TestPolicyBundle_Validate_AnalyzerThresholds(t *testing.T) {
 		{"scale_down_boundary above default scale_up_threshold (one-sided)", AnalyzerBundleConfig{ScaleDownBoundary: 0.9}, true},
 		{"scale_up_threshold below default scale_down_boundary (one-sided)", AnalyzerBundleConfig{ScaleUpThreshold: 0.3}, true},
 		{"kv_cache_threshold > 1", AnalyzerBundleConfig{KVCacheThreshold: 1.5}, true},
+		{"min_replicas 1", AnalyzerBundleConfig{MinReplicas: 1}, false},
+		{"negative min_replicas", AnalyzerBundleConfig{MinReplicas: -1}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

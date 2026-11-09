@@ -19,7 +19,7 @@ func makeTestBlueprint(sessionID string, maxRounds int, thinkTime int64, context
 		Horizon:       horizon,
 		InputSampler:  &constantSampler{value: 10},
 		OutputSampler: &constantSampler{value: 5},
-		RNG:           rand.New(rand.NewSource(42)),
+		Streams:       SessionStreams(42, sessionID),
 		TenantID:      "test-tenant",
 		SLOClass:      "standard",
 		Model:         "test-model",
@@ -219,7 +219,7 @@ func TestSession_AccumulateDeterminism_ClosedLoop(t *testing.T) {
 	// and return the input/output token sequence for every follow-up round.
 	driveSession := func() (inputs, outputs [][]sim.TokenID, arrivals []int64) {
 		bp := makeTestBlueprint("sess-determinism", rounds+1, 1000, "accumulate", 1_000_000)
-		bp.RNG = rand.New(rand.NewSource(seed))
+		bp.Streams = SessionStreams(seed, bp.SessionID)
 		sm := NewSessionManager([]SessionBlueprint{bp})
 
 		// Round 0: seeded externally. Use a fixed RNG for inputR0/outputR0 so
@@ -1078,7 +1078,7 @@ func TestSession_UnlimitedRounds_AllowsZeroMaxRounds(t *testing.T) {
 		Horizon:         1_000_000,
 		InputSampler:    &constantSampler{value: 10},
 		OutputSampler:   &constantSampler{value: 5},
-		RNG:             rand.New(rand.NewSource(42)),
+		Streams:         SessionStreams(42, "sess-zero"),
 		TenantID:        "test-tenant",
 		SLOClass:        "standard",
 		Model:           "test-model",
@@ -1260,5 +1260,42 @@ func TestSession_OnUnserved_NonSessionAndNil(t *testing.T) {
 	}
 	if got := sm.OnUnserved(&sim.Request{ID: "x", SessionID: ""}, 0); got != nil {
 		t.Errorf("OnUnserved(non-session) = %v, want nil", got)
+	}
+}
+
+// #1905: follow-up rounds of open-loop multi-turn clients count against num_requests.
+func TestGenerateWorkload_OpenLoopMultiTurnFollowUpsAreBudgeted(t *testing.T) {
+	spec := &WorkloadSpec{Version: "2", Seed: 42, Category: "reasoning", AggregateRate: 2, NumRequests: 100,
+		Clients: []ClientSpec{{ID: "agent", RateFraction: 1, Arrival: ArrivalSpec{Process: "poisson"},
+			InputDist:  DistSpec{Type: "constant", Params: map[string]float64{"value": 512}},
+			OutputDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 64}},
+			Reasoning: &ReasoningSpec{ReasonRatioDist: DistSpec{Type: "constant", Params: map[string]float64{"value": 0}},
+				MultiTurn: &MultiTurnSpec{MaxRounds: 4, ThinkTimeUs: 1_000_000, ContextGrowth: "accumulate"}}}}}
+	wl, err := GenerateWorkload(spec, 3_600_000_000, spec.NumRequests)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wl.Sessions) == 0 {
+		t.Fatal("non-vacuity: no session blueprints")
+	}
+	if want := spec.NumRequests - int64(len(wl.Requests)); wl.FollowUpBudget != want {
+		t.Errorf("follow-up budget %d, want num_requests minus the %d round-0 requests = %d", wl.FollowUpBudget, len(wl.Requests), want)
+	}
+	// Drive every session to completion: the injected total may not pass the cap.
+	sm := NewSessionManager(wl.Sessions)
+	sm.SetFollowUpBudget(wl.FollowUpBudget)
+	total := int64(len(wl.Requests))
+	queue := append([]*sim.Request{}, wl.Requests...)
+	for len(queue) > 0 {
+		r := queue[0]
+		queue = queue[1:]
+		r.State = sim.StateCompleted
+		r.ProgressIndex = r.InputLen() + int64(len(r.OutputTokens))
+		fu := sm.OnComplete(r, r.ArrivalTime+1000)
+		total += int64(len(fu))
+		queue = append(queue, fu...)
+	}
+	if total > spec.NumRequests {
+		t.Errorf("injected %d requests, num_requests is %d", total, spec.NumRequests)
 	}
 }

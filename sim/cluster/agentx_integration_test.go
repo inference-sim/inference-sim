@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"encoding/json"
 	"fmt"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
@@ -213,7 +212,7 @@ func (e *drainAt) Timestamp() int64 { return e.at }
 func (e *drainAt) Priority() int    { return 9 }
 func (e *drainAt) Execute(cs *ClusterSimulator) {
 	if cs.instances[e.inst].QueueDepth() == 0 {
-		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &drainAt{at: e.at + 1000, inst: e.inst}, seqID: cs.nextSeqID()})
+		cs.scheduleTestEvent(&drainAt{at: e.at + 1000, inst: e.inst})
 		return
 	}
 	NewDrainPolicy(DrainPolicyRedirect).Drain(cs.instances[e.inst], cs)
@@ -225,7 +224,7 @@ func TestAgentXThroughRedirectDrain(t *testing.T) {
 	editEngine(&cfg, func(c *simConfig) { c.BatchConfig = cengine.NewBatchConfig(1, 2048, 0) }) // one running request: the rest queue
 	redirected := 0
 	r := runAgentXOn(t, cfg, 8, func(cs *ClusterSimulator) {
-		heap.Push(&cs.clusterEvents, clusterEventEntry{event: &drainAt{at: 0, inst: 0}, seqID: cs.nextSeqID()})
+		cs.scheduleTestEvent(&drainAt{at: 0, inst: 0})
 	})
 	for _, req := range r.sent {
 		if req.Redirected {

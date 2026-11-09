@@ -149,7 +149,7 @@ A good hypothesis is an intuitive claim about system behavior: "burst smoothing 
 
 Reading the code before hypothesizing is like writing structural tests — you end up testing the implementation, not the behavior. The value of hypothesis-driven experimentation is that *conceptual claims failing against the implementation* surfaces design limitations that code-aware experiments would avoid.
 
-Evidence: If H5 had read the token-bucket admission code (`sim/admission.go:45` at the time) before hypothesizing, the experimenter would have designed a "correct" experiment with cap=100K, confirmed a tiny effect, and **missed the discovery** that the per-input-token cost model makes burst smoothing structurally impossible at practical parameters. The conceptual hypothesis exposed a design limitation that a code-grounded hypothesis would have sidestepped.
+Evidence: If H5 had read the token-bucket admission code (line 45 of the admission file of the time, since removed with BLIS's own admission) before hypothesizing, the experimenter would have designed a "correct" experiment with cap=100K, confirmed a tiny effect, and **missed the discovery** that the per-input-token cost model makes burst smoothing structurally impossible at practical parameters. The conceptual hypothesis exposed a design limitation that a code-grounded hypothesis would have sidestepped.
 
 ### "Mechanism not plausible" is a valid resolution
 
@@ -272,13 +272,13 @@ A root cause analysis that says "the tiered cache increases total capacity" with
 - Does the claimed mechanism actually change the measured metric?
 - **Tracing depth**: The citation must trace to the code that *directly modifies the measured metric*, not just to the constructor or factory that creates the relevant object. Citing `NewKVStore` and claiming "this creates a tiered cache with more capacity" is insufficient — you must verify that the GPU block count actually changes in the created object.
 
-Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` preserving prefix hashes (`sim/kv/tiered.go`, now blis-vllm `compat/kv/tiered.go`).
+Evidence: H10 claimed "CPU tier increases total effective capacity" — but `NewKVStore` (`kv_store.go:31-36`) does not change GPU block count. The actual mechanism was `maybeOffload` preserving prefix hashes (then in the simulator's KV package, now blis-vllm `compat/kv/tiered.go`).
 
 ### RCV-2: Every "surprise" must have a first-principles calculation
 
 Before labeling a result as "surprising," compute the expected value from the system's parameters. If the result matches the calculation, it is not a surprise — it is the expected outcome of a mechanism you didn't initially consider.
 
-Evidence: H5 labeled 96% rejection as a "surprise." But the token-bucket admission (`sim/admission.go:45` at the time) charged `len(req.InputTokens)` per request (mean=512). Token demand (1,024,000 tokens/s) exceeds supply (400 tokens/s) by 2,560x. The 96% rejection is the mathematically inevitable steady state.
+Evidence: H5 labeled 96% rejection as a "surprise." But the token-bucket admission (line 45 of the admission file of the time, since removed with BLIS's own admission) charged `len(req.InputTokens)` per request (mean=512). Token demand (1,024,000 tokens/s) exceeds supply (400 tokens/s) by 2,560x. The 96% rejection is the mathematically inevitable steady state.
 
 ### RCV-3: Check the mechanism, not just the direction
 

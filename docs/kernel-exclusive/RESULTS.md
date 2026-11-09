@@ -2,9 +2,9 @@
 
 Worktree-scoped experiment. In the headline comparison latency comes exclusively from
 `blis-latency-kernel`. BLIS's roofline and trained-physics backends were, when these runs were
-made, constructed only by `cmd/estimatorscore`, which scored them as additional columns on the
+made, constructed only by the `estimatorscore` command, which scored them as additional columns on the
 subset they are calibrated for; they supply nothing to the figures below. Both backends and
-`cmd/estimatorscore` have since been removed, so those columns are historical.
+the `estimatorscore` command have since been removed, so those columns are historical.
 
 > **Reading order.** This document is chronological: it records what was measured when, including
 > figures that a later measurement superseded. The live numbers are under
@@ -721,7 +721,7 @@ Since 98.33% of steps are pure decode, that is where essentially all of the 10.4
 ## Four estimators on the Hopper subset
 
 The comparison above asks how this kernel compares with NVIDIA's simulator. It does not ask what
-the kernel earned over what BLIS shipped before. `cmd/estimatorscore` answers that by scoring four
+the kernel earned over what BLIS shipped before. The `estimatorscore` command answered that by scoring four
 estimators on one subset, with everything except the forward-pass model held fixed.
 
 24 sweeps, 104 points, framework vLLM, chips h100 and h200:

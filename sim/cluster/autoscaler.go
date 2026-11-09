@@ -4,7 +4,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 	"math"
 	"math/rand"
@@ -84,12 +83,16 @@ type VariantCapacity struct {
 // Mutual exclusivity: RequiredCapacity > 0 implies SpareCapacity == 0 and vice versa.
 // Utilization guard: when TotalSupply == 0, Utilization = 0 (no division).
 type AnalyzerResult struct {
-	ModelID           string
-	TotalSupply       float64           // aggregate serving capacity (model-level)
-	TotalDemand       float64           // aggregate load (model-level)
-	Utilization       float64           // TotalDemand / TotalSupply; 0 when TotalSupply == 0
-	RequiredCapacity  float64           // scale-up signal: capacity needed beyond current supply
-	SpareCapacity     float64           // scale-down signal: capacity safely removable
+	ModelID          string
+	TotalSupply      float64 // aggregate serving capacity (model-level)
+	TotalDemand      float64 // aggregate load (model-level)
+	Utilization      float64 // TotalDemand / TotalSupply; 0 when TotalSupply == 0
+	RequiredCapacity float64 // scale-up signal: capacity needed beyond current supply
+	SpareCapacity    float64 // scale-down signal: capacity safely removable
+	// SafeRemovals is how many replicas the Analyzer's check proves can be removed: the supply
+	// left stays above the scale-down boundary and the model keeps its minimum replicas. Positive
+	// exactly when SpareCapacity is; an Engine removes no more than this.
+	SafeRemovals      int
 	VariantCapacities []VariantCapacity // sorted by CostPerReplica ascending for determinism (R2)
 }
 
@@ -343,10 +346,7 @@ func (p *autoscalerPipeline) tick(cs *ClusterSimulator, nowUs int64) {
 			logrus.Errorf("[autoscaler] HPAScrapeDelay.Stddev=%g but rng is nil — using Mean only; set subsystemAutoscaler in constructor", cs.config.HPAScrapeDelay.Stddev)
 		}
 		actuationAt := nowUs + cs.config.HPAScrapeDelay.Sample(p.rng)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &ScaleActuationEvent{At: actuationAt, Decisions: filtered},
-			seqID: cs.nextSeqID(),
-		})
+		cs.schedule(&ScaleActuationEvent{At: actuationAt, Decisions: filtered}, &cs.autoscalerSender)
 	}
 
 	// Stage 6: Schedule next ScalingTickEvent.
@@ -371,10 +371,7 @@ func (p *autoscalerPipeline) scheduleNextTick(cs *ClusterSimulator, nowUs int64)
 		}
 	}
 	nextAt := nowUs + int64(cs.config.ModelAutoscalerIntervalUs)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &ScalingTickEvent{At: nextAt},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&ScalingTickEvent{At: nextAt}, &cs.autoscalerSender)
 }
 
 // actuate calls Actuator.Apply() with decisions from a ScaleActuationEvent. No-ops when actuator is nil.

@@ -82,7 +82,7 @@ type Result struct {
 // stream: Observe folds one event into internal state and Detect returns the
 // current verdict. Reset returns the detector to its initial state so it can be
 // reused across replay legs. The batch Classify path was removed in #1516 once
-// its last callers (run/replay's BuildOutput and observe) stopped emitting a
+// its last callers (run/replay's BuildOutput) stopped emitting a
 // stdout saturation field.
 type Detector interface {
 	Name() string

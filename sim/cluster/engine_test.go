@@ -46,7 +46,7 @@ func TestUnlimitedEngineOptimize(t *testing.T) {
 			results: []AnalyzerResult{
 				{
 					ModelID:       "m1",
-					SpareCapacity: 50,
+					SpareCapacity: 50, SafeRemovals: 10,
 					VariantCapacities: []VariantCapacity{
 						{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10.0, ReplicaCount: 2},
 						{Variant: NewVariantSpec("H100", 2), CostPerReplica: 20.0, ReplicaCount: 1},
@@ -63,7 +63,7 @@ func TestUnlimitedEngineOptimize(t *testing.T) {
 			results: []AnalyzerResult{
 				{
 					ModelID:       "m1",
-					SpareCapacity: 50,
+					SpareCapacity: 50, SafeRemovals: 10,
 					VariantCapacities: []VariantCapacity{
 						{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10.0, ReplicaCount: 2},
 						{Variant: NewVariantSpec("H100", 2), CostPerReplica: 20.0, ReplicaCount: 0},
@@ -87,7 +87,7 @@ func TestUnlimitedEngineOptimize(t *testing.T) {
 				},
 				{
 					ModelID:       "m2",
-					SpareCapacity: 50,
+					SpareCapacity: 50, SafeRemovals: 10,
 					VariantCapacities: []VariantCapacity{
 						{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10.0, ReplicaCount: 2},
 					},
@@ -146,7 +146,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 			name: "scale-down exact N=2",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
-				SpareCapacity: 25, // floor(25/10) = 2
+				SpareCapacity: 25, SafeRemovals: 10, // floor(25/10) = 2
 				VariantCapacities: []VariantCapacity{
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
 				},
@@ -158,13 +158,38 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 			name: "scale-down clamped to replicaCount when floor would exceed it",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
-				SpareCapacity: 100, // floor(100/10)=10, clamped to replicaCount=3
+				SpareCapacity: 100, SafeRemovals: 10, // floor(100/10)=10, clamped to replicaCount=3
 				VariantCapacities: []VariantCapacity{
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
 				},
 			}},
 			wantLen:   1,
 			wantDelta: -3,
+		},
+		{
+			// #2015: an idle start. Zero demand makes the spare capacity the whole supply, so
+			// floor(spare/prc) is every replica; the analyzer's check proved two removals safe.
+			name: "scale-down bounded by the removals the analyzer proved safe",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 30, SafeRemovals: 2,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
+				},
+			}},
+			wantLen:   1,
+			wantDelta: -2,
+		},
+		{
+			name: "scale-down with no removal proved safe → no decision",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 30,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
+				},
+			}},
+			wantLen: 0, // Delta=0 would break INV-19
 		},
 		{
 			name: "scale-up falls back to Delta=1 when no active replicas",
@@ -182,7 +207,7 @@ func TestUnlimitedEngineExactN(t *testing.T) {
 			name: "scale-down with no active replicas → no decision",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
-				SpareCapacity: 50,
+				SpareCapacity: 50, SafeRemovals: 10,
 				VariantCapacities: []VariantCapacity{
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 0, ReplicaCount: 0},
 				},
@@ -282,7 +307,7 @@ func TestGreedyEngineOptimize(t *testing.T) {
 			name: "scale down: exact N from most expensive active variant",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
-				SpareCapacity: 20,
+				SpareCapacity: 20, SafeRemovals: 10,
 				VariantCapacities: []VariantCapacity{
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
 					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 30, ReplicaCount: 3},
@@ -297,10 +322,24 @@ func TestGreedyEngineOptimize(t *testing.T) {
 			wantGPU:   "H100",
 		},
 		{
+			name: "scale down: bounded by the removals the analyzer proved safe",
+			results: []AnalyzerResult{{
+				ModelID:       "m1",
+				SpareCapacity: 30, SafeRemovals: 1,
+				VariantCapacities: []VariantCapacity{
+					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 30, ReplicaCount: 3},
+				},
+			}},
+			inventory: newTestGPUInventory(map[VariantSpec]int{}),
+			wantLen:   1,
+			wantDelta: -1,
+			wantGPU:   "A100",
+		},
+		{
 			name: "scale down: no active replicas anywhere → no decision",
 			results: []AnalyzerResult{{
 				ModelID:       "m1",
-				SpareCapacity: 20,
+				SpareCapacity: 20, SafeRemovals: 10,
 				VariantCapacities: []VariantCapacity{
 					{Variant: NewVariantSpec("A100", 1), CostPerReplica: 10, Supply: 0, ReplicaCount: 0},
 					{Variant: NewVariantSpec("H100", 1), CostPerReplica: 20, Supply: 0, ReplicaCount: 0},
@@ -394,7 +433,7 @@ func TestScaleDownNFloorToZero(t *testing.T) {
 		Supply:       100,
 		ReplicaCount: 10,
 	}
-	n := scaleDownN(1, vc)
+	n := scaleDownN(1, vc, vc.ReplicaCount)
 	if n != 1 {
 		t.Errorf("scaleDownN: want 1 (clamped from floor=0), got %d", n)
 	}

@@ -18,6 +18,9 @@ type V2SaturationAnalyzerConfig struct {
 	ScaleUpThreshold  float64 // Utilization fraction triggering scale-up; RequiredCapacity = max(0, totalDemand/this - (totalReadySupply + pendingSupply)) where pendingSupply = PendingTotalKvCapacityTokens * KvCacheThreshold
 	ScaleDownBoundary float64 // Utilization fraction below which scale-down is safe; SpareCapacity = max(0, totalSupply - totalDemand/this)
 	AvgInputTokens    float64 // Average input tokens per request; used to convert queue depth to token demand
+	// MinReplicas is the fewest ready replicas a model keeps; scale-down never goes below it.
+	// It is at least 1: scale-to-zero is a separate, opt-in drain (#909).
+	MinReplicas int
 }
 
 // V2SaturationAnalyzer implements the Analyzer interface using WVA V2's
@@ -41,6 +44,9 @@ func NewV2SaturationAnalyzer(cfg V2SaturationAnalyzerConfig) *V2SaturationAnalyz
 	}
 	if cfg.AvgInputTokens <= 0 || math.IsNaN(cfg.AvgInputTokens) || math.IsInf(cfg.AvgInputTokens, 0) {
 		panic(fmt.Sprintf("NewV2SaturationAnalyzer: AvgInputTokens must be > 0, got %f", cfg.AvgInputTokens))
+	}
+	if cfg.MinReplicas < 1 {
+		panic(fmt.Sprintf("NewV2SaturationAnalyzer: MinReplicas must be >= 1, got %d", cfg.MinReplicas))
 	}
 	if cfg.ScaleDownBoundary >= cfg.ScaleUpThreshold {
 		panic(fmt.Sprintf("NewV2SaturationAnalyzer: ScaleDownBoundary (%f) must be < ScaleUpThreshold (%f)",
@@ -163,40 +169,36 @@ func (a *V2SaturationAnalyzer) Analyze(metrics ModelSignals) AnalyzerResult {
 			metrics.ModelID, result.TotalSupply, pendingSupply, result.TotalDemand)
 	}
 
-	// Scale-down signal with N-1 redistribution check:
-	// Can only scale down if we have > 1 initialized replica AND redistributing load
-	// across N-1 replicas still leaves supply above demand/ScaleDownBoundary.
-	// Count only replicas that contributed to supply (TotalKvCapacityTokens > 0).
-	initReplicas := 0
-	for _, vc := range vcs {
-		initReplicas += vc.ReplicaCount
-	}
-	if initReplicas <= 1 {
-		return result
-	}
-
-	spareCapacity := result.TotalSupply - (result.TotalDemand / a.config.ScaleDownBoundary)
+	// Scale-down signal. The check proves how many replicas can go: it removes replicas one at
+	// a time, the one with the highest per-replica capacity first (the conservative order, since
+	// the Engine may remove any variant), and counts a removal as safe only while the supply left
+	// stays above TotalDemand/ScaleDownBoundary and at least MinReplicas ready replicas remain.
+	// SafeRemovals is that count; the Engine removes no more (#2015). At zero demand every
+	// removal passes the supply test, so MinReplicas alone bounds the count.
+	need := result.TotalDemand / a.config.ScaleDownBoundary
+	spareCapacity := result.TotalSupply - need
 	if spareCapacity <= 0 {
 		return result
 	}
-
-	// N-1 redistribution check: simulate removing the replica with the highest
-	// per-replica capacity (conservative). This matches UnlimitedEngine's scale-down
-	// behavior which targets the most expensive variant — typically the highest-capacity one.
-	// Using max ensures the safety check holds regardless of which variant the Engine removes.
-	maxPerReplicaSupply := 0.0
+	perReplica := make([]float64, 0, len(metrics.Replicas))
 	for _, vc := range vcs {
-		if vc.ReplicaCount > 0 {
-			perReplica := vc.Supply / float64(vc.ReplicaCount)
-			if perReplica > maxPerReplicaSupply {
-				maxPerReplicaSupply = perReplica
-			}
+		for i := 0; i < vc.ReplicaCount; i++ {
+			perReplica = append(perReplica, vc.Supply/float64(vc.ReplicaCount))
 		}
 	}
-
-	supplyAfterRemoval := result.TotalSupply - maxPerReplicaSupply
-	if supplyAfterRemoval > (result.TotalDemand / a.config.ScaleDownBoundary) {
+	sort.SliceStable(perReplica, func(i, j int) bool { return perReplica[i] > perReplica[j] })
+	remaining := result.TotalSupply
+	safe := 0
+	for _, c := range perReplica {
+		if len(perReplica)-safe <= a.config.MinReplicas || remaining-c <= need {
+			break
+		}
+		remaining -= c
+		safe++
+	}
+	if safe > 0 {
 		result.SpareCapacity = spareCapacity
+		result.SafeRemovals = safe
 	}
 
 	return result

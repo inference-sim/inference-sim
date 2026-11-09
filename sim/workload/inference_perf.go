@@ -257,9 +257,9 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 						clientIdx++
 
 						clients = append(clients, ClientSpec{
-							ID:                  clientID,
-							TenantID:            prefixGroup,
-							SLOClass:            "standard",
+							ID:                   clientID,
+							TenantID:             prefixGroup,
+							SLOClass:             "standard",
 							RateFraction:         1.0,
 							Arrival:              ArrivalSpec{Process: "poisson"},
 							CustomSamplerFactory: factory,
@@ -279,9 +279,9 @@ func ExpandInferencePerfSpec(spec *InferencePerfSpec, seed int64) (*WorkloadSpec
 					for u := 0; u < sp.NumUsersPerSystemPrompt; u++ {
 						clientID := fmt.Sprintf("stage-%d-prompt-%d-user-%d", s, p, u)
 						clients = append(clients, ClientSpec{
-							ID:                  clientID,
-							TenantID:            prefixGroup,
-							SLOClass:            "standard",
+							ID:                   clientID,
+							TenantID:             prefixGroup,
+							SLOClass:             "standard",
 							RateFraction:         1.0,
 							Arrival:              ArrivalSpec{Process: "poisson"},
 							CustomSamplerFactory: factory,

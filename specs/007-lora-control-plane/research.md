@@ -1,5 +1,7 @@
 # Phase 0 Research: LoRA Control-Plane Subsystem
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Feature**: `007-lora-control-plane` | **Date**: 2026-07-15
 
 All code citations were read in the worktree on 2026-07-15. The spec's three
@@ -25,9 +27,9 @@ adapter loads at a time per instance (serialized); further cold loads queue behi
 - It mirrors the Digital Twin's blocking model (`Lat_load(S_A)`, testbed §"Performance
   model"), our only calibrated reference for the adapter axes.
 - The latency *shape* reuses the tiered-KV transfer formula
-  `baseLatency + ceil(size/bw)` (`sim/kv/tiered.go:319`), keeping one cost idiom.
+  `baseLatency + ceil(size/bw)` (the simulator's tiered KV store, line 319 at the time), keeping one cost idiom.
 - Gating **before** batch entry (rather than a per-step stall via
-  `ConsumePendingTransferLatency`, `sim/simulator.go:636`) avoids interaction with
+  `ConsumePendingTransferLatency`, the simulator's host file (line 636 at the time)) avoids interaction with
   preemption and Phase-1 batch completeness (INV-12) that the source doc §9 flagged,
   and keeps INV-8 (work-conserving) intact: the load event is itself scheduled work,
   so the simulator is not idle.
@@ -51,7 +53,7 @@ timestamp ≥ now). No `OutputTokens` read (INV-9).
 ## R2. Adapter memory: static vs dynamic
 
 **Decision**: **Static** per-adapter subtraction from the KV budget in
-`CalculateKVBlocks` (`sim/latency/kv_capacity.go`), beside model weights. The reserved
+`CalculateKVBlocks` (the latency package's KV-capacity file), beside model weights. The reserved
 amount is **fixed at startup** as `configured adapter capacity × per-slot footprint`
 (the per-slot footprint sized from the **max declared rank**, derived from rank per R3),
 so the KV block count is fixed once (matching how BLIS sets the block count today). It is
@@ -85,7 +87,7 @@ an equality with a constant `adapter-reserved` term.
   `bytes = perRankByteCost · rank` is acceptable for the first cut and matches the DT's
   size-indexed table granularity; the exact formula is preferred where the model config
   (`sim.ModelConfig`) already exposes `HiddenDim`/`NumLayers` (as `computeModelWeightBytes`
-  does, `sim/latency/kv_capacity.go:256`).
+  does, the latency package's KV-capacity file (line 256 at the time)).
 - **Cold-load latency** = `baseLatency + ceil(footprintBytes / loadBandwidth)`, the
   tiered-KV transfer shape. Rank enters through `footprintBytes`.
 
@@ -138,11 +140,11 @@ construction for any fitted `K7`** (no-op default → INV-6 byte-identity), not 
 
 **Rationale**:
 - `LatencyModel.StepTime(batch []*Request)` already receives the batch
-  (`sim/latency_model.go`), so reading each request's `Adapter` is the "one net-new
+  (the simulator's latency-model file), so reading each request's `Adapter` is the "one net-new
   per-request read" the source doc anticipated — **no interface change** (R13).
 - **Rank plumbing**: `Adapter` on the request is an id only (clarification), so rank
   reaches `StepTime` via an **adapter-cost accessor supplied at model construction**
-  (threaded from `sim/lora` through `NewLatencyModelFunc`), not a per-request field.
+  (threaded from the lora package through `NewLatencyModelFunc`), not a per-request field.
   This keeps the `StepTime(batch []*Request)` signature unchanged (R13) and preserves
   the id-only request; a nil accessor ⇒ `factor = 1.0` (INV-6). Both backends get the
   same accessor (R23). See task T030a.
@@ -163,7 +165,7 @@ construction for any fitted `K7`** (no-op default → INV-6 byte-identity), not 
 ## R6. LoRA-aware scorer & snapshot freshness
 
 **Decision**: Add a `scorerFunc` named `lora-affinity` to the switch in
-`sim/routing_scorers.go` and register it in `validScorerNames` (R8). It reads a new
+the simulator's routing-scorers file and register it in `validScorerNames` (R8). It reads a new
 `RoutingSnapshot.ResidentAdapters` field (set of resident adapter ids) and scores an
 instance higher when it already holds the request's adapter (warm placement),
 min-max normalized like `precise-prefix-cache`. It composes into the weighted routing

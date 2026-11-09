@@ -4,28 +4,6 @@ import (
 	"fmt"
 )
 
-// SpecHasAdapterFields reports whether any client or cohort in the spec declares a
-// non-empty adapter id. Used by paths that do NOT support the LoRA control plane
-// (e.g. `blis observe`, which dispatches to a real server that manages its own
-// adapter loading) to detect and warn about adapter fields that would otherwise be
-// silently threaded onto requests without any registry to validate against (#1464).
-func SpecHasAdapterFields(spec *WorkloadSpec) bool {
-	if spec == nil {
-		return false
-	}
-	for i := range spec.Clients {
-		if spec.Clients[i].Adapter != "" {
-			return true
-		}
-	}
-	for i := range spec.Cohorts {
-		if spec.Cohorts[i].Adapter != "" {
-			return true
-		}
-	}
-	return false
-}
-
 // AdapterRegistry is what the workload checks of a run's declared LoRA adapters: whether an id
 // is declared, and its declared base model. The run's adapter registry, which the engine owns,
 // satisfies it.

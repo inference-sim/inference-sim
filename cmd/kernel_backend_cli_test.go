@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/kernel"
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/compat/build"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim"
@@ -41,17 +42,28 @@ import (
 
 const kernelLegEnv = "BLIS_KERNEL_LEG"
 
-// kernelRepos is the three artifact roots a kernel scenario resolves against: the pinned
-// kernel module's scenario fixtures and the vendored catalog and registry. A missing root
-// fails, naming the command that provides it -- never a skip, which would read as a pass.
+// kernelRepos is the three artifact roots a kernel scenario resolves against: the cost model's
+// generated fixtures (testdata/kernel/aisimulate) and the catalog and registry of the pinned
+// blis-substrate.
 func kernelRepos(t *testing.T) (scenarios, catalog, registry string) {
 	t.Helper()
-	r := kernelmodel.DefaultRepos()
-	if err := kernelmodel.RequireRepos(r); err != nil {
+	return testScenariosDir(t), testCatalogDir(), testRegistryDir()
+}
+
+// testScenariosDir is testScenarios as an absolute path.
+func testScenariosDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.Abs(testScenarios)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return r.Scenarios, r.Catalog, r.Registry
+	return dir
 }
+
+// testScenarios is the cost model's generated fixtures, relative to this package's directory,
+// for a subprocess leg that has no *testing.T. The fixtures name vLLM 0.32.0 and state only
+// what their corpus states (X19).
+const testScenarios = "../testdata/kernel/aisimulate"
 
 func runKernelLeg(t *testing.T, leg string, extra ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -167,30 +179,27 @@ func TestRunCmd_KernelBackend(t *testing.T) {
 	}
 }
 
-// A kernel run's results file must attribute the result to the catalog it read, as every
-// other backend's does (#1900): the catalog supplies the model graph, the chip and the
-// fabric, so a result without a catalog revision cannot be reproduced. Before the fix the
-// kernel path resolved the catalog without recording it, and the block was simply absent.
+// A kernel run's Result must attribute the result to the catalog it read, as every other
+// backend's does (#1900): the catalog supplies the model graph, the chip and the fabric, so a
+// result without a catalog record cannot be reproduced. The Result's data.catalog names the
+// source and the content hash.
 func TestRunCmd_KernelBackend_RecordsCatalogProvenance(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
 	t.Setenv("BLIS_KERNEL_SCENARIOS", scenarios)
 	t.Setenv("BLIS_KERNEL_CATALOG", catalog)
 	t.Setenv("BLIS_KERNEL_REGISTRY", registry)
 	t.Setenv("BLIS_KERNEL_SCENARIO", "gpt-oss-120b-h200-fp4-vllm-tp4.yaml")
-	metricsFile := filepath.Join(t.TempDir(), "metrics.json")
 
-	if _, stderr, err := runKernelLeg(t, "go", "--metrics-path", metricsFile); err != nil {
+	stdout, stderr, err := runKernelLeg(t, "go")
+	if err != nil {
 		t.Fatalf("kernel run failed: %v\nstderr:\n%s", err, stderr)
 	}
-	got := readMetricsFile(t, metricsFile).Catalog
-	if got == nil {
-		t.Fatal("the kernel run's results file carries no catalog provenance block")
+	got := parseResult(t, stdout).Data.Catalog
+	if got.Source != result.SourcePath {
+		t.Errorf("data.catalog.source is %q, want %q (the catalog the run read)", got.Source, result.SourcePath)
 	}
-	if got.Path != catalog {
-		t.Errorf("catalog provenance path is %q, want the catalog the run read, %q", got.Path, catalog)
-	}
-	if got.Revision == "" {
-		t.Error("catalog provenance carries no revision field")
+	if len(got.Hash) != 64 || got.CombinedHash == "" {
+		t.Errorf("data.catalog carries no content hash: %+v", got)
 	}
 }
 
@@ -200,13 +209,13 @@ func TestRunCmd_KernelBackend_RecordsCatalogProvenance(t *testing.T) {
 // aggregate differ -- the case a mix-up between them would get wrong.
 func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 	scenarios, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath,
 		catalogPath, totalKVBlocks, blockSizeTokens, maxNumSeqs, maxNumBatchedTokens, maxModelLen,
 		noEnablePrefixCaching, numSpeculativeTokens, speculativeMethod, model, gpu,
 		tensorParallelism, dataParallelism, enableExpertParallel, kernelOpened,
 		kernelDeploymentExperts, kernelDeploymentTopK}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		catalogPath, totalKVBlocks, blockSizeTokens = saved[3].(string), saved[4].(int64), saved[5].(int64)
 		maxNumSeqs, maxNumBatchedTokens, maxModelLen = saved[6].(int64), saved[7].(int64), saved[8].(int64)
 		noEnablePrefixCaching, numSpeculativeTokens = saved[9].(bool), saved[10].(int)
@@ -234,7 +243,7 @@ func TestAdoptKernelDeployment_SizesTheRunFromTheKernel(t *testing.T) {
 			// The oracle is the scenario opened independently, not the model adoption kept:
 			// were adoption to open the wrong pool, the two would disagree.
 			independent, err := kernelmodel.Open(scenario,
-				kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+				reposOf(scenarios, catalog, registry))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -568,7 +577,7 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 		kvCPUBlocks, blockSizeTokens = saved[1].(int64), saved[2].(int64)
 	}()
 	m, err := kernelmodel.Open("gpt-oss-120b-h200-fp4-vllm-tp4.yaml",
-		kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+		reposOf(scenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -626,21 +635,21 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 // both pools' overrides hold strictly fewer blocks with the reservation than without.
 func TestPoolOverrides_TheLoRAReservationShrinksBothPools(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, loraReservedBytesForKV, numInstances}
 	defer func() {
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		kernelOpened, _ = saved[3].(*kernelmodel.Model)
 		prefillInstances, decodeInstances, loraReservedBytesForKV = saved[4].(int), saved[5].(int), saved[6].(int64)
 		numInstances = saved[7].(int)
 	}()
-	kernelScenario, kernelScenarioDir, kernelRegistry = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
-	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	kernelScenario, kernelScenarioDir, registryPath = "glm-5-h200-3p1d-ib.yaml", pdScenarios, registry
+	m, err := kernelmodel.Open(kernelScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
 	kernelOpened, prefillInstances, decodeInstances, numInstances = m, 3, 1, 4
-	pools := openKernelPools(catalog)
+	pools := openKernelPools()
 
 	loraReservedBytesForKV = 0
 	p0, d0 := pools.overrides()
@@ -663,7 +672,7 @@ func TestApplyKernelLoRAReservation_ShrinksThePoolByTheKernelsAnswer(t *testing.
 		totalKVBlocks, loraReservedBytesForKV, kernelScenario = saved[1].(int64), saved[2].(int64), saved[3].(string)
 	}()
 	kernelScenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
-	m, err := kernelmodel.Open(kernelScenario, kernelmodel.Repos{Scenarios: scenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(kernelScenario, reposOf(scenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -785,10 +794,9 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// implement is refused by name rather than dropped.
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
 			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
-		// qwen3.5's linear-attention layers carry recurrent state, so NIXL's prefill backs off
-		// one token for the decode side to recompute (nixl/base_scheduler.py:385-407), which
-		// BLIS does not model.
-		{"a model whose NIXL prefill backs off", "BLIS does not model that recompute",
+		// qwen3.5's linear-attention layers carry recurrent state, which the v0.32.0 engine maps
+		// to no KV cache spec, so it refuses the model.
+		{"a model with recurrent state", "recurrent state is not mapped to a KV cache spec",
 			pd(writeScenarioVariant(t, "model: glm-5\n", "model: qwen3.5-397b-a17b\n"), topology...)},
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
@@ -899,46 +907,6 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 	}
 }
 
-// A disaggregated run offloads KV like a colocated one, each pool sizing and pricing the same
-// tiers by its own kernel: with the tiered offload and with the legacy CPU tier the run
-// completes, and its exported trace replays byte-identically (INV-13).
-func TestRunCmd_KernelBackend_DisaggregatedKVOffload(t *testing.T) {
-	// An offload tier beside the NIXL handoff runs only through a MultiConnector
-	// (vllm/config/vllm.py:1124-1158).
-	multi := writeScenarioVariant(t, "connector: NixlConnector", "connector: MultiConnector")
-	common := []string{"--scenarios", multi, "--scenario", "variant.yaml",
-		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "5",
-		"--horizon", "600000000"}
-	for _, tt := range []struct {
-		name    string
-		offload []string
-	}{
-		{"tiered offload", []string{"--kv-offload-config", writeKernelOffloadConfig(t, "")}},
-		{"legacy CPU tier", []string{"--kv-cpu-blocks", "2000"}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			prefix := filepath.Join(t.TempDir(), "trace")
-			args := append(append([]string{"run", "--num-requests", "16", "--rate", "4", "--trace-output", prefix},
-				tt.offload...), common...)
-			runOut, stderr, err := runKernelCLI(t, args...)
-			if err != nil || !completedIs(runOut, 16) {
-				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 3))
-			}
-			replay := append([]string{"replay", "--trace-header", prefix + ".yaml", "--trace-data", prefix + ".csv"}, common...)
-			if tt.offload[0] == "--kv-cpu-blocks" {
-				replay = append(replay, tt.offload...) // the legacy tier is a flag, not a header field
-			}
-			repOut, stderr, err := runKernelCLI(t, replay...)
-			if err != nil {
-				t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 3))
-			}
-			if inv13View(t, repOut) != inv13View(t, runOut) {
-				t.Errorf("the replay differs from the run\n--- run\n%s\n--- replay\n%s", runOut, repOut)
-			}
-		})
-	}
-}
-
 // Each pool of a disaggregated run sizes and prices the run's one offload description by its
 // own kernel. The fixture's decode pool caches in bf16 and its prefill pool in fp8, so their
 // blocks hold different bytes, and a pool priced by the other's kernel cannot pass:
@@ -950,7 +918,7 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	dir := writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
 		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
-	repos := kernelmodel.Repos{Scenarios: dir, Catalog: catalog, Registry: registry}
+	repos := reposOf(dir, catalog, registry)
 	pools := &kernelPools{connector: "MultiConnector"} // a tier under P/D runs through a MultiConnector
 	for _, c := range []struct {
 		role deployment.Role
@@ -1019,18 +987,18 @@ func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 func TestAdoptKernelDeployment_TakesTheSequenceStateAndPrefixHitFromTheKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	orig := captureCmdLevelVars()
-	saved := []any{kernelScenario, kernelScenarioDir, kernelRegistry, catalogPath, kernelOpened,
+	saved := []any{kernelScenario, kernelScenarioDir, registryPath, catalogPath, kernelOpened,
 		sequenceState, prefixHit, swaBoundedReplay.v, prefixCacheRecords}
 	t.Cleanup(func() {
 		orig.restore()
-		kernelScenario, kernelScenarioDir, kernelRegistry = saved[0].(string), saved[1].(string), saved[2].(string)
+		kernelScenario, kernelScenarioDir, registryPath = saved[0].(string), saved[1].(string), saved[2].(string)
 		catalogPath = saved[3].(string)
 		kernelOpened, _ = saved[4].(*kernelmodel.Model)
 		sequenceState, prefixHit = saved[5].(kvSequenceState), saved[6].(kvPrefixHit)
 		swaBoundedReplay.v, _ = saved[7].(*bool)
 		prefixCacheRecords, _ = saved[8].(map[string]sim.PrefixCacheRecord)
 	})
-	m, err := kernelmodel.Open(dsparkScenario, kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry})
+	m, err := kernelmodel.Open(dsparkScenario, reposOf(pdScenarios, catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}

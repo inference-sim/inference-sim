@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 )
 
 // OTelConvertOptions configures OTel-trace → TraceRecord conversion.
@@ -176,9 +178,9 @@ func ConvertOTelTrace(raw []byte, opts OTelConvertOptions) ([]TraceRecord, error
 				arrival = prevArrival + opts.MaxThinkTimeUs
 			}
 		}
-		status := "ok"
+		status := trace.StatusOK
 		if sp.isError {
-			status = "error"
+			status = trace.StatusError
 		}
 		rounds = append(rounds, NormalizedRound{
 			InputTokensAbs: sp.in,

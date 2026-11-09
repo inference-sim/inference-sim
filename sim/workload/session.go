@@ -6,7 +6,6 @@ package workload
 
 import (
 	"fmt"
-	"math/rand"
 
 	"github.com/sirupsen/logrus"
 
@@ -55,14 +54,17 @@ type SessionBlueprint struct {
 	// path is byte-identical to pre-#2064 (INV-6). An explicit Timeout takes precedence
 	// over this sampler (set by `blis replay --timeout`); see followUpDeadline.
 	DeadlineOffsetSampler LengthSampler
-	RNG                   *rand.Rand    // per-session, seeded deterministically from client RNG
-	ThinkTimeSampler      LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
-	Prefix                []sim.TokenID // shared system prompt tokens
-	TenantID              string
-	SLOClass              string
-	Model                 string
-	Adapter               string // LoRA adapter id (registry key; #1464). "" = base-model-only.
-	SLOTargetUs           int64  // per-request SLO TTFT target in µs; 0 = no target
+	// Streams is the session's family of named random streams (SessionStreams): follow-up
+	// round r draws its think time, lengths and tokens from its own child, roundStreams(Streams,
+	// r), so a round's random inputs do not depend on when earlier rounds completed (DEV-6).
+	Streams          sim.Streams
+	ThinkTimeSampler LengthSampler // optional: per-round think time in µs; nil = use constant ThinkTimeUs
+	Prefix           []sim.TokenID // shared system prompt tokens
+	TenantID         string
+	SLOClass         string
+	Model            string
+	Adapter          string // LoRA adapter id (registry key; #1464). "" = base-model-only.
+	SLOTargetUs      int64  // per-request SLO TTFT target in µs; 0 = no target
 }
 
 // activeSession tracks mutable per-session lifecycle state.
@@ -185,11 +187,13 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 
 	bp := sess.blueprint
+	// The streams of the round this call generates.
+	rs := roundStreams(bp.Streams, sess.currentRound+1)
 
 	// Horizon guard (BC-19): don't generate follow-ups past horizon
 	var thinkTime int64
 	if bp.ThinkTimeSampler != nil {
-		thinkTime = int64(bp.ThinkTimeSampler.Sample(bp.RNG))
+		thinkTime = int64(bp.ThinkTimeSampler.Sample(rs.Stream(purposeThinkTime)))
 	} else {
 		thinkTime = bp.ThinkTimeUs
 	}
@@ -200,27 +204,26 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 	}
 
 	// Generate round N+1
-	inputLen := bp.InputSampler.Sample(bp.RNG)
-	outputLen := bp.OutputSampler.Sample(bp.RNG)
+	inputLen := bp.InputSampler.Sample(rs.Stream(purposeInputLength))
+	outputLen := bp.OutputSampler.Sample(rs.Stream(purposeOutputLength))
 	// Per-round client-deadline offset (#2064): drawn UNCONDITIONALLY, in lockstep
 	// with the input/output samplers, so its SequenceSampler index stays aligned with
 	// rounds 1..N even on rounds that carry no deadline (offset -1). SequenceSampler.Sample
-	// ignores the RNG, so this consumes no randomness and cannot perturb byte-identity of
-	// the run path (INV-6). nil sampler => -1 (no per-round offset; followUpDeadline falls
+	// ignores the RNG, so this consumes no randomness. nil sampler => -1 (no per-round offset; followUpDeadline falls
 	// back to computeDeadline). See SessionBlueprint.DeadlineOffsetSampler.
 	deadlineOffset := -1
 	if bp.DeadlineOffsetSampler != nil {
-		deadlineOffset = bp.DeadlineOffsetSampler.Sample(bp.RNG)
+		deadlineOffset = bp.DeadlineOffsetSampler.Sample(rs.Stream(purposeDeadlineOffset))
 	}
 	// Context-compaction reset target for this round (#1609): accumulate mode only,
 	// -1 = no reset. SequenceSampler.Sample ignores the RNG, so sampling it consumes
 	// no randomness and cannot perturb byte-identity of the non-compaction path (INV-6).
 	resetTarget := -1
 	if bp.ContextGrowth == "accumulate" && bp.InputResetSampler != nil {
-		resetTarget = bp.InputResetSampler.Sample(bp.RNG)
+		resetTarget = bp.InputResetSampler.Sample(rs.Stream(purposeInputReset))
 	}
-	newInputTokens := sim.GenerateRandomTokenIDs(bp.RNG, inputLen)
-	outputTokens := sim.GenerateRandomTokenIDs(bp.RNG, outputLen)
+	newInputTokens := tokens(rs, purposeInputTokens, inputLen)
+	outputTokens := tokens(rs, purposeOutputTokens, outputLen)
 
 	// Context accumulation (BC-8): use ACTUAL generated output, not oracle OutputTokens.
 	// For length-capped requests, ProgressIndex - len(InputTokens) gives actual output count.
@@ -297,7 +300,7 @@ func (sm *SessionManager) OnComplete(req *sim.Request, tick int64) []*sim.Reques
 			// len(OutputTokens) => cancel session) is deliberately bypassed here: the reset
 			// discards the completed round's output entirely (it was folded into the recorded
 			// in_N), so ProgressIndex/actualOutputLen drift cannot propagate into the buffer.
-			resetToks := sim.GenerateRandomTokenIDs(bp.RNG, resetTarget)
+			resetToks := tokens(rs, purposeResetTokens, resetTarget)
 			_, inputEnd := sess.buf.Reset(resetToks)
 			inputTokens = sess.buf.Slice(0, inputEnd)
 		} else {

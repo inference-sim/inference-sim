@@ -60,7 +60,7 @@ Before including a component in BLIS, evaluate it against these six criteria:
 
 1. Will including it significantly affect the accuracy of results for the target analysis questions?
 2. What level of accuracy is actually required for the analysis to be useful?
-3. Can the component's data requirements be satisfied (a blis-registry coefficient set, a catalog hardware/device entry, workload traces)?
+3. Can the component's data requirements be satisfied (a coefficient set in blis-substrate's registry, a catalog hardware/device entry, workload traces)?
 4. What is the cost of inclusion — code complexity, maintenance burden, configuration surface?
 5. What breaks if we omit it? (Sensitivity analysis — if removing it changes results by <5%, defer it)
 6. What is the simplest version that answers the same questions? (Start coarse, refine only with evidence)
@@ -88,7 +88,7 @@ These criteria operationalize "YAGNI" for simulation design. Example: the PR12 p
 
 ### 2.5 Randomness as First-Class Concern
 
-- All randomness flows through `PartitionedRNG` with named subsystems.
+- Every random draw comes from a named substream (`sim.NewStream`): component, purpose and entity, seeded from the SHA-256 of the scenario seed and the name (DEV-6).
 - New modules that introduce randomness must declare their subsystem name and justify that their random draws don't interfere with existing streams.
 - Design docs should consider whether the feature enables **common random numbers** experiments (paired comparison of two configurations using the same random stream).
 
@@ -106,7 +106,7 @@ Every BLIS design doc must answer these questions:
 | What new metrics are derived? Collected incrementally or on demand? | State/statistics separation |
 | How will correctness be verified? (Which invariants?) | Verification |
 | How will fidelity be validated? (Against what data?) | Validation |
-| Does this introduce new randomness? Which PartitionedRNG subsystem? | Randomness |
+| Does this introduce new randomness? Which named stream (component, purpose, entity)? | Randomness |
 | What is the simplest version that answers the same questions? | Model scoping |
 
 ---
@@ -186,7 +186,7 @@ BLIS is organized as two layers:
 **Layer 1: Simulation Kernel** — domain-agnostic DES infrastructure
 - Event queue (min-heap with deterministic tie-breaking)
 - Clock management (next-event time advance)
-- Randomness (PartitionedRNG with named subsystems)
+- Randomness (named substreams, `sim.NewStream`)
 - Statistics collection (accumulators decoupled from state)
 - Experiment control (seed, horizon, configuration)
 
@@ -423,7 +423,7 @@ Before submitting a design doc for any extension, verify:
 - [ ] Parallel development path described (what can proceed independently after interface freeze?)
 - [ ] Touch-point count specified for adding one more variant
 - [ ] DES checklist from Section 2.6 completed
-- [ ] New randomness declared (PartitionedRNG subsystem name)
+- [ ] New randomness declared (its stream name: component, purpose, entity)
 - [ ] Event priority constants assigned (if new events introduced)
 
 ---
@@ -456,7 +456,7 @@ Every anti-pattern in this section traces to a real bug, a real friction point, 
 | Anti-Pattern | What Happened | Lesson |
 |---|---|---|
 | **Golden Tests Without Invariant Tests** | The golden dataset test for codellama expected 499 completions. The code silently dropped one request on KV allocation failure (#183). The golden test encoded the bug as the expected value for months. | Golden tests answer "did the output change?" Invariant tests answer "is the output correct?" Both are needed (Banks et al.: verification ≠ validation). |
-| **Non-Deterministic Map Iteration** | Five sites iterated Go maps to accumulate floats or determine output ordering. Go map iteration is randomized, violating the determinism invariant. | All randomness must flow through PartitionedRNG. Map iteration is a hidden source of non-determinism. Sort keys before any iteration that affects output. |
+| **Non-Deterministic Map Iteration** | Five sites iterated Go maps to accumulate floats or determine output ordering. Go map iteration is randomized, violating the determinism invariant. | All randomness must come from named streams (`sim.NewStream`). Map iteration is a hidden source of non-determinism. Sort keys before any iteration that affects output. |
 | **Mixing Exogenous and Endogenous** | The cluster workload generator (exogenous) was tightly coupled to the cluster simulator (endogenous). Impossible to replay the same workload through different configurations without re-generating. PR10 decoupled them. | Exogenous inputs must be separable from endogenous logic. This enables the fundamental simulation experiment: same input, different configuration, compare results. |
 
 ### 6.4 The Meta-Lesson
@@ -474,5 +474,5 @@ If a design doc follows this principle, its content stays durable, its modules s
 1. Banks, J., Carson, J. S., Nelson, B. L., & Nicol, D. M. *Discrete-Event System Simulation* (5th ed.). Pearson. — Foundational text on DES methodology, model scoping, input modeling, output analysis, V&V.
 2. Misra, J. "Distributed Discrete-Event Simulation." *Computing Surveys*, Vol. 18, No. 1, March 1986. — Formal correctness proofs for DES, causal ordering, simulation as formal property.
 3. BLIS Issue #183 — Golden dataset encoded a silently-dropped request. Conservation invariant test would have caught it on day one.
-4. BLIS PR12 Pre-Design (`docs/plans/archive/pr12-architectural-predesign.md`) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
-5. BLIS Hardening Design (`docs/plans/archive/2026-02-18-hardening-antipattern-refactoring-design.md`) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.
+4. BLIS PR12 Pre-Design (archived design document, no longer in the tree) — Gold standard for decision records: 9 decisions, each with trade-off analysis.
+5. BLIS Hardening Design (archived design document of 2026-02-18, no longer in the tree) — Extension scenario analysis identifying friction points for autoscaling, LMCache, heterogeneous HW, new engines.

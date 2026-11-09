@@ -6,7 +6,7 @@ Complete YAML schema reference for BLIS workload specifications (`--workload-spe
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `version` | string | No | Schema version (`"2"` recommended; `"1"` auto-upgraded) |
+| `version` | string | No | Schema version (`"2"` recommended; `"1"` is read as `"2"`). The v1 SLO class names `realtime` and `interactive` were removed in v0.16.0 and are refused. |
 | `seed` | int64 | No | RNG seed (overridden by CLI `--seed` if set) |
 | `category` | string | No | `language`, `multimodal`, `reasoning`, or empty |
 | `aggregate_rate` | float64 | **Yes** | Total arrival rate in requests/second |
@@ -194,9 +194,10 @@ Native ServeGen data file loading (used in the `servegen_data` top-level field):
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `path` | string | **Yes** | Path to ServeGen data directory (containing `chunk-*-trace.csv` and `dataset.json`) |
-| `time_window` | string | No | Temporal snapshot extraction: `midnight` (0:00-0:30), `morning` (8:00-8:30), or `afternoon` (14:00-14:30). Filters chunks to the specified 30-minute window. |
-| `span_start` | int64 | No | Trace span start filter (microseconds) |
-| `span_end` | int64 | No | Trace span end filter (microseconds) |
+| `window_duration_secs` | int | No | Duration of each of the three periods (midnight, morning, afternoon) in seconds (default 600) |
+| `drain_timeout_secs` | int | No | Gap between periods in seconds (0 = no gap; a negative value is read as 180) |
+
+The single-period `time_window` (and its `span_start`/`span_end`) was removed in v0.16.0; strict parsing refuses it. Every conversion is multi-period.
 
 ## InferencePerf Specification
 

@@ -2,7 +2,12 @@
 
 ## Prerequisites
 
-- **Go 1.27.2+** (the embedded llm-d router requires it) — [Download Go](https://go.dev/dl/)
+- **Go** ([Download Go](https://go.dev/dl/)):
+
+<!-- BEGIN GENERATED from stack.json: toolchain -->
+Requires Go 1.27.2, the toolchain blis-substrate's contracts/toolchain names at the pinned release.
+<!-- END GENERATED -->
+
 - **Git** — for cloning the repository
 
 ## Build from Source
@@ -15,7 +20,7 @@ go build -o blis main.go
 
 ## Environment Setup
 
-BLIS reads model architecture configs from a local catalog checkout and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set `HF_TOKEN` only when downloading a new model's `config.json` by hand to add a catalog entry, e.g. for a gated model such as [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf):
+BLIS reads model architecture configs from the catalog it carries and makes no HuggingFace requests, so running a simulation needs no token and no network access. Set `HF_TOKEN` only when downloading a new model's `config.json` by hand to add a catalog entry, e.g. for a gated model such as [Llama-2](https://huggingface.co/meta-llama/Llama-2-7b-hf):
 
 ```bash
 export HF_TOKEN=your_token_here
@@ -24,61 +29,65 @@ export HF_TOKEN=your_token_here
 Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens](https://huggingface.co/docs/hub/en/security-tokens) to create a token.
 
 !!! note "Air-gapped / offline environments"
-    Nothing to do — BLIS never reaches the network to run a simulation. Every model's `config.json` comes from your local catalog checkout, and a model with no catalog entry is refused rather than fetched.
+    Nothing to do — BLIS never reaches the network to run a simulation. Every model's architecture comes from the catalog in use (the embedded copy, or the directory `--catalog` / `BLIS_CATALOG` names), and a model with no catalog entry is refused rather than fetched.
 
-    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then commit it at `<catalog>/models/<model>/config.json` — where `<catalog>` is whatever directory you point `--catalog` / `BLIS_CATALOG` at.
+    To simulate a model that is not yet catalogued, obtain its `config.json` on a machine with internet access, then commit it at `<catalog>/models/<model>/config.json` in a catalog directory of your own, and point `--catalog` / `BLIS_CATALOG` at that directory.
 
-## Locate the Model Catalog
+## The Model Catalog and Registry
 
-`blis run` and `blis replay` must be told where the model catalog is — there is no default
-and no search path, so a run with neither `--catalog` nor `BLIS_CATALOG` is refused naming
-both forms. Clone the authoritative [`blis-catalog`](https://github.com/inference-sim/blis-catalog)
-repository **at the pinned release tag** (see [Catalog compatibility](#catalog-compatibility)
-below) and point BLIS at the clone root:
+`blis run`, `blis replay`, `blis convert preset` and `blis catalog resolve` read the catalog
+and the registry embedded in the blis-substrate module this build pins. No flag and no
+environment variable is needed.
 
+`blis schema <document>` prints the JSON Schema of a document that crosses a repository
+boundary, and `blis schema validate <document> <file>` runs the Go validators on a file: exit 0
+when valid, 1 when the document is refused, 2 when the command could not run. Both read only the
+release this build pins.
+
+`--catalog <dir>` (or `BLIS_CATALOG`) names a directory with the layout of blis-substrate's
+`catalog/` that replaces the embedded catalog whole. `--registry <dir>` (or `BLIS_REGISTRY`)
+does the same for the registry. The flag wins over the environment variable, and the choice is
+announced on stderr. `--catalog-overlay <dir>` and `--registry-overlay <dir>` (repeatable) add
+or replace entries by identity on top of the catalog or registry in use. The run opens its data once, overlays included,
+and every engine it builds reads that Data. BLIS never fetches or writes a catalog file (NS-6).
+The Result records the data the run read under `data.catalog` and `data.registry`.
+
+To read a checkout of blis-substrate instead of the embedded copy, check it out at the commit
+this build pins (see [Data compatibility](#catalog-compatibility) below) and point BLIS at its
+directories:
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every command
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout v0.13.0
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
+<!-- END GENERATED -->
 
-## Catalog compatibility
+## Data compatibility { #catalog-compatibility }
 
-`blis-catalog` versions independently of BLIS and keeps releasing, so the documented clone
-names an explicit tag rather than whatever `main` happens to be. This is the one place the
-compatible version is stated; every other page's clone command pins the same tag.
+The catalog, the registry and the cost model are one module, blis-substrate, and a build of
+BLIS selects exactly one version of it. `stack.json` at the repository root records that
+version and every other BLIS module and upstream release the build runs (design SIM-3); the
+table below is rendered from it (`go run ./internal/stack/cmd/versions-doc`), and CI fails if
+it is stale.
 
-<!-- Canonical declaration. cmd.TestDocExamplesPinTheCatalogVersion reads the tag from the
-     line below and requires every documented blis-catalog clone to pin exactly it, so keep
-     the `**Compatible blis-catalog release: `<tag>`**` shape intact when bumping. -->
+<!-- BEGIN GENERATED from stack.json: versions -->
+| Component | Version | Commit |
+|---|---|---|
+| `github.com/inference-sim/blis-substrate` | `v0.13.0` |  |
+| `github.com/inference-sim/blis-vllm` | `v0.32.0-blis.2` |  |
+| `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.3` |  |
+| vllm (engine) | `0.32.0` | `5df63a7203cd` |
+| llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
+| llm-d guides | | `4427f55cb626` |
+| Go toolchain | `go1.27.2` | |
+<!-- END GENERATED -->
 
-**Compatible blis-catalog release: `0.3.0`** — [release notes](https://github.com/inference-sim/blis-catalog/releases/tag/0.3.0).
-
-Why pin at all: BLIS parses every catalog file strictly (`KnownFields(true)`), and strict
-parsing is one-way — an added or renamed key in a future catalog schema is a **hard load
-error**, not a silently ignored field. An unpinned clone therefore lets a catalog release
-turn a `blis run` that worked yesterday into a startup failure with no change to BLIS
-itself. Pinning also makes results attributable: two people running the documented commands
-months apart read the same catalog. (`blis run --metrics-path` records the catalog's git
-revision and whether it was dirty — see [Results](../guide/results.md); a `--depth 1`
-tag clone still carries the revision, so that provenance is unaffected.)
-
-BLIS prices every run with `blis-latency-kernel`, which additionally reads a [`blis-registry`](https://github.com/inference-sim/blis-registry)
-clone for its fitted coefficients (`--registry`, required). **Compatible blis-registry release:
-`v0.2.0`**, the release blis-latency-kernel is tested against (`go.mod` pins the kernel and
-blis-schemas, whose deployment `router:` block configures the llm-d router; while #2021's
-changes are unmerged these are TEMPORARY pushed-head pins, released before merge); that pair is
-recorded in the kernel's own `testdata/upstream.lock`, and this
-repository's test suite holds its vendored catalog and registry to it.
-
-```bash
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-```
-
-**Upgrading to a newer catalog release** is deliberately opt-in: clone the newer tag, run
-your workload against it, and if it works, bump the tag on the line above — the guard test
-then requires every documented clone command to match, so no page is left behind. Nothing
-stops you pointing `--catalog` at a `main` checkout or a scratch clone of your own; the pin
-is what the *documentation* promises, not a restriction the binary enforces.
+Every loader parses its files strictly, so data from another substrate version can be refused
+at load. The embedded catalog and registry are those of the substrate module `go.mod` selects,
+and the test suite reads them, so they and the checkout above are the data the build is tested
+with. A directory of your own works as long as the substrate's validators accept it.
 
 ## Scenarios
 
@@ -91,7 +100,8 @@ parallelism and engine settings. `--scenarios <dir>` is any directory of scenari
 `examplescenarios/` (speculative ones pin their acceptance, so no `--speculative-*` flag is
 needed): `deepseek-v4.1-flash-h100-tp8-dspark5.yaml` (the quickstart), an MoE
 `gpt-oss-120b-h100-fp4-vllm-tp2.yaml`, a `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml`, a P/D
-`glm-5-h200-3p1d-ib.yaml`, and a multi-node `kimi-k3-h200-tp8dp4ep32-balanced.yaml`. See
+`glm-5-h200-3p1d-ib.yaml`. Kimi-K3 has none: its linear-attention (KDA) layers have no KV mapping
+in the engine yet, so a Kimi-K3 scenario is refused at startup. See
 [`examplescenarios/README.md`](https://github.com/inference-sim/inference-sim/tree/main/examplescenarios)
 for details.
 
@@ -99,9 +109,7 @@ for details.
 
 ```bash
 ./blis run --scenarios examplescenarios \
-  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-registry --catalog $PWD/blis-catalog \
-  --num-requests 10
+  --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml --num-requests 10
 ```
 
 `blis` carries the repository's `defaults.yaml` (the LoRA cost constants) compiled in, so it runs

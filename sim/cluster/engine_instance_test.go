@@ -3,7 +3,7 @@ package cluster
 import (
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/engine/enginetest"
+	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 
 	"github.com/inference-sim/inference-sim/sim"
 )

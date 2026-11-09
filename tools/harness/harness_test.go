@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
@@ -13,7 +13,7 @@ func corpusPath(t testing.TB) string { return artifacts.Measurement(t, "aisimula
 
 func cfg(t testing.TB) Config {
 	return Config{
-		Repos: kernelmodel.DefaultRepos(),
+		Repos: corpora.DefaultRepos(),
 		Blis:  testBlis(t),
 		Seed:  42,
 	}
