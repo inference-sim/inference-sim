@@ -20,8 +20,9 @@ import (
 // step of this check and not a dependency: no package under contracts/ imports it and go.mod
 // does not require it.
 
-// apidiffRef is the pinned apidiff. It requires Go 1.26 or later; contracts/toolchain names a
-// newer Go, which every CI job installs, so go run needs no other toolchain (LIF-2).
+// apidiffRef is the pinned apidiff. It requires a newer Go than some developer machines have;
+// every CI job installs the Go that contracts/toolchain names, which is newer, so go run needs
+// no other toolchain there (LIF-2).
 const apidiffRef = "golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba"
 
 var (

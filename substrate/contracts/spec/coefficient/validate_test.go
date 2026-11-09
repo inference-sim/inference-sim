@@ -333,7 +333,7 @@ coefficients:
 
 func calibratedEntry() Entry {
 	return Entry{Name: "host_launch_eager_per_kernel", Value: 4.2,
-		Units: vocab.UnitMicrosecondsPerLayer, Method: vocab.MethodCalibrated, Fitted: true,
+		Units: vocab.UnitMicrosecondsPerXfer, Method: vocab.MethodCalibrated, Fitted: true,
 		Scope:     Scope{Hardware: []string{"h100"}, Model: []string{"gpt-oss-120b"}},
 		Rationale: "fitted on output throughput; holdout grouped by model x hardware x source",
 		Sources: []Source{{Kind: vocab.SourceMeasuredCase,
