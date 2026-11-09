@@ -18,12 +18,11 @@
 //	prcheck issues -repo <owner/name> [-closes <body file>] [-resolve]
 //	    X28: the issues cited as reasons for a refusal or gap. With -closes, fail if the
 //	    body closes a cited issue; with -resolve, fail on any cited issue that is closed.
-//	prcheck versions [-baseline .github/version-literals.txt]
-//	    X23: version literals outside the sources of versions.
-//	prcheck docrefs [-doc-baseline .github/doc-references.txt]
-//	    X26: paths, line ranges and table rows in Markdown documents. Findings listed in
-//	    the baseline (without their line numbers) are reported as known; the baseline only
-//	    shrinks.
+//	prcheck versions
+//	    X23: version literals outside the sources of versions, and outside records under specs/.
+//	prcheck docrefs
+//	    X26: paths, line ranges and table rows in Markdown documents. Every finding fails; no
+//	    list of known findings hides one.
 //	prcheck skips -results <file> [-python-package <dir>] [-min <n>]
 //	    X16, X22: a skipped test not on the quarantine list fails, and so does a go test
 //	    run with fewer than -min results.
@@ -105,8 +104,6 @@ func run(args []string, w io.Writer) error {
 	repo := fs.String("repo", "", "owner/name")
 	closes := fs.String("closes", "", "pull-request body file whose Closes lines are checked")
 	resolve := fs.Bool("resolve", false, "resolve each cited issue through the GitHub API")
-	baseline := fs.String("baseline", ".github/version-literals.txt", "version-literal baseline")
-	docBaseline := fs.String("doc-baseline", ".github/doc-references.txt", "documentation-reference baseline")
 	list := fs.String("list", ".github/quarantine.yaml", "quarantine list")
 	skipPkg := fs.String("skip-pattern", "", "print the go test -skip pattern for this package")
 	repoName := fs.String("repo-name", "blis-substrate", "the repository's BLIS name")
@@ -251,13 +248,7 @@ func run(args []string, w io.Writer) error {
 			}
 			found = append(found, VersionFindings(f, src)...)
 		}
-		bl := map[string]bool{}
-		if raw, err := os.ReadFile(*baseline); err == nil {
-			bl = ParseBaseline(string(raw))
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return report(w, "version-literals", CheckVersions(found, bl))
+		return report(w, "version-literals", CheckVersions(found))
 	case "docrefs":
 		files, err := trackedFiles()
 		if err != nil {
@@ -282,13 +273,7 @@ func run(args []string, w io.Writer) error {
 			bad = append(bad, DocFindings(f, src, tree, roots)...)
 		}
 		fmt.Fprintf(w, "docrefs: %d documents checked\n", n)
-		bl := map[string]bool{}
-		if raw, err := os.ReadFile(*docBaseline); err == nil {
-			bl = ParseBaseline(string(raw))
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		return report(w, "doc-references", CheckBaseline(bad, bl, "X26"))
+		return report(w, "doc-references", bad)
 	case "skips":
 		// prcheck skips -results <file> [-python-package <dir>]: fail on any skipped test
 		// the quarantine list does not cover (X16), and on fewer than -min results (X22).

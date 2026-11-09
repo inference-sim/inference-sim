@@ -165,8 +165,8 @@ func TestGateDeclaresItsPaths(t *testing.T) {
 	has(t, got, "declares its trigger paths")
 }
 
-// This repository passes its own checks, so a change that breaks one, or that fixes a
-// baselined finding without shrinking the baseline, fails go test as well as CI.
+// This repository passes its own checks, so a change that breaks one fails go test as well
+// as CI.
 func TestThisRepositoryPassesItsOwnChecks(t *testing.T) {
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -254,10 +254,20 @@ func TestVersionLiterals(t *testing.T) {
 	if f := VersionFindings("docs/x.md", []byte("<!-- BEGIN GENERATED -->go1.27.2")); len(f) != 0 {
 		t.Errorf("a generated file is exempt: %v", f)
 	}
-	found := []string{"docs/a.md: Go 1.27"}
-	has(t, CheckVersions(found, map[string]bool{}), "is a version literal outside")
-	none(t, CheckVersions(found, map[string]bool{"docs/a.md: Go 1.27": true}))
-	has(t, CheckVersions(nil, map[string]bool{"docs/a.md: Go 1.27": true}), "no longer occurs")
+	// A record under specs/ is exempt (design 13.1); the same text outside it is a finding.
+	if f := VersionFindings("specs/old/plan.md", []byte("Go 1.27")); len(f) != 0 {
+		t.Errorf("a specs/ record is exempt: %v", f)
+	}
+	if f := VersionFindings("docs/plan.md", []byte("Go 1.27")); len(f) != 1 {
+		t.Errorf("the same text outside specs/ is a finding: %v", f)
+	}
+	// A workflow reads the Go version from go.mod, so a literal one is a finding.
+	wf := "      - uses: actions/setup-go@x\n        with:\n          go-version: '1.27'\n"
+	has(t, VersionFindings(".github/workflows/ci.yml", []byte(wf)), "go-version: '1.27")
+	none(t, VersionFindings(".github/workflows/ci.yml", []byte("          go-version-file: go.mod\n")))
+	// No list of known findings hides one.
+	has(t, CheckVersions([]string{"docs/a.md: Go 1.27"}), "is a version literal outside")
+	none(t, CheckVersions(nil))
 }
 
 type fakeTree map[string]int
@@ -276,8 +286,6 @@ func TestDocReferences(t *testing.T) {
 	has(t, DocFindings("docs/a.md", []byte("| x | y |\n|---|---|\n| 1 | 2 |\n| 1 | 2 |\n"), tree, roots), "is repeated")
 	none(t, DocFindings("docs/a.md", []byte("```\n`kernel/old.go`\n```\nprose `config.json`\n"), tree, roots))
 	none(t, DocFindings("docs/a.md", []byte("[m](catalog/reference/models/x.md) [t]([[catalog.tree]]/a.go)\n"), tree, roots))
-	has(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{}, "X26"), "docs/a.md:3: x")
-	none(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{"docs/a.md: x (X26)": true}, "X26"))
 }
 
 // X14: an abbreviated hash is refused in any phrasing, and ordinary hex-looking text is not.

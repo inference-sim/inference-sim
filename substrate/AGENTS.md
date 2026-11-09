@@ -14,7 +14,7 @@ engine repository.
 - The cost model resolves nothing: every default, backend choice, padding and capture decision
   arrives in the plan or the step shape (SUB-6).
 - The catalog holds declared facts, each with a citation. A fitted or assumed value is a
-  coefficient, and belongs in the registry (SUB-3, SUB-18).
+  coefficient, and belongs in the coefficient registry (SUB-3, SUB-18).
 - Every coefficient is written by its family's writer script, never by hand (SUB-4).
 - Packages under `contracts/` import only the Go standard library, the YAML parser and each
   other, and change only compatibly (SUB-1).
@@ -31,6 +31,10 @@ go run ./validate/cmd/validate-registry registry
 (cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 (cd registry && python3 -m pytest validator -q)
 DOCS_RELEASE=main mkdocs build --strict
+go run ./tools/invariants render -check
+go run ./tools/prcheck workflows
+go run ./tools/prcheck versions
+go run ./tools/prcheck docrefs
 ```
 
 - Every behaviour change has a test that fails without it (X13).
@@ -38,13 +42,31 @@ DOCS_RELEASE=main mkdocs build --strict
   be wrong, and regenerated reference documentation: `go run ./tools/docgen` (SUB-2).
 - Never commit third-party data; a derived value cites its source by URL and commit or hash
   (X12). Never write a private name in a file, commit or pull request (X12).
-- A commit written with an agent's help says so in one `Assisted-by:` line. The person who takes
-  responsibility for it adds the DCO `Signed-off-by:` line; an agent never signs off (X20).
+
+## A change here must also update
+
+- The documentation that describes what the change removes, renames or alters. A path, symbol,
+  issue reference or supported-feature statement in a page is generated or checked (X26).
+- The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
+  changes; and the record itself, when a check is added or a status moves (design §13.1).
+- The reference pages, with `go run ./tools/docgen`, when a schema or data field changes.
+- The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
+  the change that removes its last citation (X28).
 
 ## Agents may not
 
 Edit a generated file by hand; weaken, skip or delete a check; change a success criterion after
-reading held-out data; answer a review question; approve a merge; cut a release (design §13.7).
+reading held-out data, or the ledger's cut-points or partition version; approve a merge; cut a
+release; review a change they wrote themselves (design §13.7). An agent may act as the review
+agent: it answers each review question below in a review comment, with the files and lines that
+support the answer.
+
+## Where to look next
+
+The design is the target this repository implements; each rule above names its invariant
+identifier, which the invariant registry (`contracts/invariants`) and the appendix at
+`docs/contracts/invariants` define. Contributor guides are under `docs/contributing` and
+`docs/contracts/contributing`.
 
 <!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->
 ## Invariants checked in blis-substrate
