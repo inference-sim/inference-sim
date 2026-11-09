@@ -1545,10 +1545,10 @@ func TestReplayCmd_SessionPool_Deterministic(t *testing.T) {
 }
 
 // TestReplayCmd_SessionPool_SelfDrainsAllWaves proves the pool drains all
-// `--total-sessions` with --horizon UNSET — i.e. the self-drain horizon
-// override (Task 4, Step 5) is not truncated to the first wave by the 600s
-// auto-fallback (computeHorizonFromMaxArrival returns 600s when every
-// injected arrival is at t=0, which every OTel-derived corpus is). Uses a
+// `--total-sessions` with --horizon UNSET — i.e. the replay is not truncated
+// to the first wave by a horizon derived from the last arrival (a 600s
+// fallback when every injected arrival is at t=0, which every OTel-derived
+// corpus is; the replay's horizon is unlimited now, #1615). Uses a
 // 2-session corpus of single-round sessions and --total-sessions 8 (4 waves
 // at --concurrent-sessions 2): total sessions == total rounds == total
 // completed requests, so completed_requests in the metrics JSON must be 8.
@@ -1676,9 +1676,9 @@ func TestReplayCmd_Pool_TimeoutOverride_ReachesClones(t *testing.T) {
 // the wiring end-to-end but never actually approaches a 600s wall-clock, so it
 // cannot by itself distinguish "override applied" from "override no-op").
 //
-// One 2-round session, round-0 arriving at t=0 (so the un-overridden auto
-// horizon — computeHorizonFromMaxArrival(0) — is exactly 600s, matching every
-// OTel-derived corpus where every round-0 arrival is 0). --think-time-ms
+// One 2-round session, round-0 arriving at t=0 (so a horizon derived from the
+// last arrival would be exactly 600s, matching every OTel-derived corpus where
+// every round-0 arrival is 0). --think-time-ms
 // forces the round-1 -> round-2 think-time gap to 700s, past that 600s
 // auto-horizon. Per session.go's BC-19 guard (arrivalTime > bp.Horizon), round
 // 2 is silently dropped (session state -> horizon_interrupted) unless

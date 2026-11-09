@@ -240,18 +240,12 @@ Example:
 			requests = agxInitial
 		case "closed-loop":
 			// Closed-loop: inject only round-0 requests; SessionManager drives follow-ups.
-			// Compute the preliminary horizon from trace records directly (O(n)) so we can
-			// call LoadTraceV2SessionBlueprints exactly once with correct parameters.
-			replayHorizonPrelim := computeHorizonFromMaxArrival(workload.MaxNormalizedInjectionTimeUs(traceData))
-			if cmd.Flags().Changed("horizon") {
-				replayHorizonPrelim = simulationHorizon
-			}
-			// Pool mode drains on session count, not wall-clock. Unless the user set an
-			// explicit --horizon cap, run the blueprints with an unbounded horizon so no
-			// session is horizon-interrupted mid-drain (INV-11 / conservation).
-			if replayConcurrentSessions > 0 && !cmd.Flags().Changed("horizon") {
-				replayHorizonPrelim = math.MaxInt64
-			}
+			// The blueprints get the horizon the simulation runs to (#1615, INV-13): unlimited
+			// with no --horizon, so no follow-up round is cut off by a bound the run did not
+			// have (a twice-the-last-arrival cap issued 97 of a run's 200 requests), and the
+			// user's --horizon otherwise. Pool mode drains on session count, not wall-clock
+			// (INV-11 / conservation), and is unbounded the same way.
+			replayHorizonPrelim := replayHorizonFor(cmd)
 			r0Requests, blueprints, bErr := workload.LoadTraceV2SessionBlueprints(traceData, seed, thinkTimeSampler, replayHorizonPrelim)
 			if bErr != nil {
 				logrus.Fatalf("Failed to build session blueprints from trace: %v", bErr)
@@ -348,10 +342,7 @@ Example:
 		// Compute horizon (BC-3)
 		// #1615 (INV-13): with no --horizon the replay runs until the requests drain, as a run
 		// with no horizon does; the former twice-the-last-arrival default truncated the tail.
-		replayHorizon := int64(math.MaxInt64)
-		if cmd.Flags().Changed("horizon") {
-			replayHorizon = simulationHorizon
-		}
+		replayHorizon := replayHorizonFor(cmd)
 		logrus.Infof("Simulation horizon: %d ticks", replayHorizon)
 
 		// LoRA control-plane (#1464): resolve ONCE (R4) so the kernel's KV sizing
@@ -759,26 +750,14 @@ func applyReplayTimeout(requests []*sim.Request, blueprints []workload.SessionBl
 	}
 }
 
-// computeHorizonFromMaxArrival maps a maximum injection time to a simulation
-// horizon. The argument is the largest injected-request tick on the sim clock:
-// the max ArrivalTime for fixed mode (computeReplayHorizon) or the normalized
-// injection for closed-loop mode (workload.MaxNormalizedInjectionTimeUs) — both
-// already re-based onto the arrival origin (#1606). (The parameter is named
-// maxArrival for historical reasons; it is generic over any int64 tick.)
-// - maxArrival > MaxInt64/2 → math.MaxInt64 (overflow guard for 2×)
-// - maxArrival <= 0 (all at t=0) → 600,000,000 µs (10 min buffer; MaxInt64 would hang)
-// - Otherwise → maxArrival * 2 (generous buffer for last request to complete)
-// Used by both the blueprint horizon (closed-loop path) and the simulation horizon so they
-// always apply identical logic.
-func computeHorizonFromMaxArrival(maxArrival int64) int64 {
-	switch {
-	case maxArrival > math.MaxInt64/2:
-		return math.MaxInt64
-	case maxArrival <= 0:
-		return 600_000_000
-	default:
-		return maxArrival * 2
+// replayHorizonFor is the horizon a replay runs to, which its session blueprints are built with
+// as well: the user's --horizon when given, else unlimited, as the run it replays had no horizon
+// (#1615, INV-13). One function, so the blueprints and the simulation cannot disagree.
+func replayHorizonFor(cmd *cobra.Command) int64 {
+	if cmd.Flags().Changed("horizon") {
+		return simulationHorizon
 	}
+	return math.MaxInt64
 }
 
 // replayFrameGenerator is what a replay tells the experimental frame about its requests: the
