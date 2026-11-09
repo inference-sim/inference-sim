@@ -1451,6 +1451,12 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		//
 		// This line IS INV-PD-6b (parent completion includes post-decode overhead).
 		parent.CompletionTime = parent.DecodeSubReq.DepartureTime + inst.PostDecodeFixedOverhead()
+		// The E2E the request reports also carries each token's output-processing time,
+		// which the sub-request's last step does not. A follow-up round is released when
+		// the client has the response, so it waits for the later of the two.
+		if e2e, ok := pdReportedE2E(inst.Metrics(), subReqID, parent); ok {
+			parent.CompletionTime = max(parent.CompletionTime, parent.ArrivalTime+int64(e2e))
+		}
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
 		c.endRequest(parent.OriginalRequest, sim.FateCompleted, "", parent.CompletionTime)
@@ -1514,6 +1520,22 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			}
 		}
 	}
+}
+
+// pdReportedE2E is the arrival-to-last-token span projectPDMetrics reports for a completed
+// P/D parent, read from the decode sub-request's own measurements. The decode instance
+// measures it from the decode schedule instant, unless a preemption re-prefilled the
+// sub-request, which makes it arrival-relative already.
+func pdReportedE2E(m *sim.Metrics, dec string, parent *ParentRequest) (float64, bool) {
+	own, okOwn := m.RequestE2Es[dec]
+	delay, okDelay := m.RequestSchedulingDelays[dec]
+	if !okOwn || !okDelay || parent.DecodeSubReq == nil {
+		return 0, false
+	}
+	if parent.DecodeSubReq.FirstTokenTime == 0 {
+		own += float64(delay)
+	}
+	return own, own >= 0
 }
 
 // Clock returns the cluster's current simulation clock.
