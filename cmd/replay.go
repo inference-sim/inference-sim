@@ -547,7 +547,10 @@ Example:
 				return followUps
 			}
 		}
-		cs := cluster.NewClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
+		cs, csErr := cluster.BuildClusterSimulator(config, cluster.NewSliceRequestSource(requests), onRequestDone)
+		if csErr != nil {
+			logrus.Fatalf("%v", csErr)
+		}
 		// INV-13: the router the trace was recorded with, unless the command line names one.
 		router := reconcileReplayRouter(cmd, traceData.Header.Router)
 		gw := newGateway(router, model)

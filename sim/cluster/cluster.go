@@ -230,6 +230,19 @@ func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyze
 //
 // Panics if config.NumInstances < 1 or if requestSource is nil.
 func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) *ClusterSimulator {
+	cs, err := BuildClusterSimulator(config, requestSource, onRequestDone)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
+	return cs
+}
+
+// BuildClusterSimulator is NewClusterSimulator for a caller that reports a refusal to its user:
+// it returns the error when an instance's engine cannot be built from the scenario (a combination
+// the engine refuses, such as KV transfer with data parallelism), and still panics on a
+// programmer error (a nil source, an invalid pool topology). The engines are built at startup,
+// before any event runs, so the error is a startup refusal and no simulation has begun.
+func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) (*ClusterSimulator, error) {
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
@@ -412,7 +425,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			}
 			// Record how many nodes this instance spans, for the trace header (#1530).
 			cs.recordNodeSpan(gpuIDs)
-			inst := cs.buildInstance(idx, id, simCfg)
+			inst, err := cs.buildInstance(idx, id, simCfg)
+			if err != nil {
+				return nil, err
+			}
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
@@ -442,7 +458,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		} else {
 			// No NodePools: the CLI --gpu flag (config.GPU) is the authoritative source
 			// (backward-compat); resolveConfigForRole keeps it for the default role.
-			inst := cs.buildInstance(idx, id, simCfg)
+			inst, err := cs.buildInstance(idx, id, simCfg)
+			if err != nil {
+				return nil, err
+			}
 			inst.Model = config.Model
 			if config.ScenarioEndpointTopology != nil {
 				inst.endpointTopology = config.ScenarioEndpointTopology(id)
@@ -517,7 +536,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	for _, inst := range cs.instances {
 		cs.wireInstance(inst)
 	}
-	return cs
+	return cs, nil
 }
 
 // buildInstance builds instance id's engine through the deployment's engine factory
@@ -525,15 +544,15 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 // in the cluster's instance. Every instance's engine is built this way, at startup and when the
 // autoscaler or a node coming up adds one; index is its position among the deployment's
 // instances, which the factory may group by (a data-parallel replica's ranks).
-func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.InstanceConfig) *InstanceSimulator {
+func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.InstanceConfig) (*InstanceSimulator, error) {
 	if cs.config.NewEngine == nil {
 		panic(fmt.Sprintf("ClusterSimulator: instance %s: DeploymentConfig.NewEngine is nil, and every instance's engine is built through it", id))
 	}
 	drv, err := cs.config.NewEngine(index, cfg)
 	if err != nil {
-		panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", id, err))
+		return nil, fmt.Errorf("instance %s: %w", id, err)
 	}
-	return NewEngineInstance(id, cfg, drv)
+	return NewEngineInstance(id, cfg, drv), nil
 }
 
 // wireInstance connects an instance's request lifecycle to the gateway and to session
@@ -1291,7 +1310,12 @@ func (cs *ClusterSimulator) addLiveInstance(
 	// A live instance's engine is built as a startup one's is, at the next index past every
 	// instance the cluster has built.
 	cs.liveBuilt++
-	inst := cs.buildInstance(cs.config.NumInstances+cs.liveBuilt-1, id, simCfg)
+	inst, err := cs.buildInstance(cs.config.NumInstances+cs.liveBuilt-1, id, simCfg)
+	if err != nil {
+		// A scale-up at run time: the startup build of the same pool succeeded, so a refusal here
+		// is an invariant break and not a scenario the user can fix.
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
 	inst.Model = model
 	inst.nodeID = nodeID
 	inst.allocatedGPUIDs = gpuIDs

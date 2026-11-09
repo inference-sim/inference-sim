@@ -1160,7 +1160,11 @@ var runCmd = &cobra.Command{
 		} else {
 			clusterRequestSource = cluster.NewSliceRequestSource(preGeneratedRequests)
 		}
-		cs := cluster.NewClusterSimulator(config, clusterRequestSource, onRequestDone)
+		cs, csErr := cluster.BuildClusterSimulator(config, clusterRequestSource, onRequestDone)
+		if csErr != nil {
+			// A startup refusal: the scenario names a combination the engine does not build.
+			logrus.Fatalf("%v", csErr)
+		}
 		if unservedHook != nil {
 			cs.SetUnservedHook(unservedHook)
 		}
