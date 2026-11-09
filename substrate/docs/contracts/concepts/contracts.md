@@ -72,7 +72,14 @@ rules pack checks them, not the schema. See [Validation](validation.md#rule-prob
 
 Every floating-point value must be finite. A `NaN` compares false to every bound and
 `+Inf` looks positive, so either would pass a range check and corrupt every calculation
-that used it. Validators reject both before they check a range.
+that used it. The loaders reject both before a range is checked, and `-Inf` with them.
+
+One kind of field is the exception: a number whose meaning includes "no limit". Such a field
+says so in its Go type with the struct tag `infinity:"allowed"`, and holds `+Inf`, written
+`.inf` in YAML. Today that is `grace_period_s` alone, where `.inf` waits indefinitely. `NaN`
+and `-Inf` are refused in it as everywhere. A JSON Result has no infinity, so it writes the
+string `"inf"` for such a field and reads it back; the string is that field's infinity and
+nothing else's.
 
 ## Zero means unset, except in tri-state keys
 

@@ -187,8 +187,9 @@ type ReplayDefinition struct {
 	// GracePeriodS is how long requests in flight at the end of the window may finish
 	// before they are cancelled without a record. Omitted, it is aiperf's
 	// --benchmark-grace-period default, 30 s (config/flags/cli_config.py:1937-1949);
-	// .inf waits indefinitely.
-	GracePeriodS *float64 `yaml:"grace_period_s,omitempty"`
+	// .inf waits indefinitely. It is the one field of a Result that holds infinity, and says
+	// so with the infinity tag the strict loader reads (check.InfinityTag, SUB-12).
+	GracePeriodS *float64 `yaml:"grace_period_s,omitempty" infinity:"allowed"`
 	// MaxContextLength drops every trace whose recorded peak prompt plus output exceeds
 	// it, at load time. Omitted, no trace is dropped.
 	MaxContextLength ContextLimit `yaml:"max_context_length,omitempty"`

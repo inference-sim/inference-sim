@@ -196,8 +196,10 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A ratchet on the not-yet-priced list, which may only shrink (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
 - **SUB-12** (partial; target ci by M2) Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases.
   - `ci`, pull_request: Each loader refuses unknown keys (`contracts: TestLoadRejectsUnknownFields`)
-  - `new`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader
-  - `new`, pull_request: A test that every declared field is read
+  - `ci`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader (`contracts: TestEveryLoaderRefusesTheMalformedSet`)
+  - `ci`, pull_request: A test that every declared field is read (`contracts: TestEveryLoaderReadsEveryFieldItsExampleStates`)
+  - `ci`, pull_request: Non-finite numbers are refused in every field, except +infinity in a field that names itself with the infinity tag, and a test names each such field (`contracts/check: TestAFieldThatOptsInHoldsPlusInfinity`)
+  - `ci`, pull_request: A write-then-read test of every field a Result writer can emit, in both encodings, filled from the type so a new field is covered (`contracts/spec/result: TestEveryFieldAWriterCanEmitRoundTripsInBothEncodings`)
 - **SUB-13** (ci; target reached) blis-substrate is one Go module: no go.mod exists below the repository root, and the files in the module zip that Go fetches total under 100 MB uncompressed (Go's limit is 500 MB).
   - `ci`, pull_request: A check that fails on any nested go.mod (`TestNoNestedModule`)
   - `ci`, pull_request: A check of that uncompressed total (`TestModuleZipIsUnder100MB`)

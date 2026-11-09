@@ -442,7 +442,7 @@ A replay is invalid if
 - `scenario` or `harness_version` is empty or not transcribed, or `concurrency` is less
   than 1;
 - `benchmark_duration_s` is not finite, negative, or below 900;
-- `grace_period_s` is negative or NaN;
+- `grace_period_s` is negative or NaN (`.inf` is allowed: it waits indefinitely);
 - `cache_bust` is other than `first_turn_prefix`, or `system_idle_gap_cap_s` other than 10;
 - a `trajectory_start` bound lies outside [0, 1], or `min_ratio` exceeds `max_ratio`;
 - `warmup.mode` is unknown; a `cache_pressure` warmup does not state exactly one of

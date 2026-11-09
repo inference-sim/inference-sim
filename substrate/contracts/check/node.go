@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/big"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -18,7 +19,9 @@ import (
 //
 //   - a fraction in an integer field is truncated (seed: 1.5 loads as 1);
 //   - an integer too large for a float64 field to hold exactly is rounded;
-//   - .inf and .nan load as non-finite numbers;
+//   - .inf and .nan load as non-finite numbers (a field whose meaning includes "no limit"
+//     opts in to .inf with the struct tag infinity:"allowed"; .nan and -.inf are refused
+//     everywhere);
 //   - a key repeated inside a block held as a node (an engine block) is kept until someone
 //     decodes the block;
 //   - an anchor whose value contains an alias to itself makes a node tree a graph, and a
@@ -66,7 +69,7 @@ func CheckNode(n *yaml.Node, target reflect.Type) error {
 	if target == nil {
 		return checkFinite(n, "")
 	}
-	return checkNumbers(n, target, "", 0)
+	return checkNumbers(n, target, "", 0, false)
 }
 
 // checkFinite refuses a non-finite number anywhere in n. YAML spells them .inf, -.inf and
@@ -79,8 +82,7 @@ func checkFinite(n *yaml.Node, at string) error {
 		return nil
 	}
 	if n.Kind == yaml.ScalarNode {
-		if v := strings.ToLower(strings.TrimLeft(n.Value, "+-")); n.ShortTag() == "!!float" &&
-			(v == ".inf" || v == ".nan") {
+		if nonFinite(n) != "" {
 			return fmt.Errorf("line %d: %s: %s is not a finite number", n.Line, name(at), n.Value)
 		}
 		return nil
@@ -100,6 +102,140 @@ func checkFinite(n *yaml.Node, at string) error {
 		}
 	}
 	return nil
+}
+
+// nonFinite reports which non-finite number a scalar spells: "+inf", "-inf" or "nan", and ""
+// for any other scalar. YAML spells them .inf, -.inf and .nan, in any case.
+func nonFinite(n *yaml.Node) string {
+	if n.Kind != yaml.ScalarNode || n.ShortTag() != "!!float" {
+		return ""
+	}
+	v := strings.ToLower(n.Value)
+	neg := strings.HasPrefix(v, "-")
+	v = strings.TrimLeft(v, "+-")
+	switch v {
+	case ".inf":
+		if neg {
+			return "-inf"
+		}
+		return "+inf"
+	case ".nan":
+		return "nan"
+	}
+	return ""
+}
+
+// InfinityTag is the struct tag that lets a float field hold +infinity: infinity:"allowed".
+// It is for a field whose meaning includes "no limit", such as a grace period that waits
+// indefinitely. It admits .inf and +.inf and nothing else: -.inf and .nan stay refused (SUB-12).
+const InfinityTag = "infinity"
+
+// InfinityAllowed is the value of InfinityTag that opts a field in.
+const InfinityAllowed = "allowed"
+
+// AllowsInfinity reports whether a struct field opts in to +infinity.
+func AllowsInfinity(f reflect.StructField) bool { return f.Tag.Get(InfinityTag) == InfinityAllowed }
+
+// InfinityNodes returns the scalar nodes of n that sit under a float field opting in to
+// +infinity (AllowsInfinity), found by descending as the decoder does with the type t n will
+// be decoded into. A writer uses it to spell those values for an encoding that has no
+// infinity, and a reader to turn that spelling back; both then agree with the strict loader
+// on which fields hold one.
+func InfinityNodes(n *yaml.Node, t reflect.Type) []*yaml.Node {
+	var out []*yaml.Node
+	collectInfinity(n, t, false, 0, &out)
+	return out
+}
+
+func collectInfinity(n *yaml.Node, t reflect.Type, inf bool, depth int, out *[]*yaml.Node) {
+	if depth > MaxDepth {
+		return
+	}
+	n = resolve(n)
+	if n != nil && n.Kind == yaml.DocumentNode && len(n.Content) == 1 {
+		n = resolve(n.Content[0])
+	}
+	if n == nil {
+		return
+	}
+	for t.Kind() == reflect.Pointer {
+		if depth > 0 && (t.Implements(unmarshaler) || t.Elem().Implements(unmarshaler)) {
+			return
+		}
+		t = t.Elem()
+	}
+	if depth > 0 && (t.Implements(unmarshaler) || reflect.PointerTo(t).Implements(unmarshaler)) {
+		return
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		if n.Kind != yaml.MappingNode {
+			return
+		}
+		fields := yamlFields(t)
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			if k.Value == "<<" {
+				members := []*yaml.Node{v}
+				if m := resolve(v); m != nil && m.Kind == yaml.SequenceNode {
+					members = m.Content
+				}
+				for _, m := range members {
+					collectInfinity(m, t, inf, depth+1, out)
+				}
+				continue
+			}
+			if ft, ok := fields[k.Value]; ok {
+				collectInfinity(v, ft.typ, ft.inf, depth+1, out)
+			}
+		}
+	case reflect.Map:
+		if n.Kind == yaml.MappingNode {
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				collectInfinity(n.Content[i+1], t.Elem(), inf, depth+1, out)
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		if n.Kind == yaml.SequenceNode {
+			for _, c := range n.Content {
+				collectInfinity(c, t.Elem(), inf, depth+1, out)
+			}
+		}
+	case reflect.Float32, reflect.Float64:
+		if inf && n.Kind == yaml.ScalarNode {
+			*out = append(*out, n)
+		}
+	}
+}
+
+// InfinityFields lists the fields of t, and of the types it holds, that opt in to +infinity,
+// as "Type.Field". A test names each one, so a field cannot opt in unnoticed.
+func InfinityFields(t reflect.Type) []string {
+	seen := map[reflect.Type]bool{}
+	var out []string
+	var walk func(t reflect.Type)
+	walk = func(t reflect.Type) {
+		for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map {
+			t = t.Elem()
+		}
+		if t.Kind() != reflect.Struct || seen[t] {
+			return
+		}
+		seen[t] = true
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if f.PkgPath != "" && !f.Anonymous || f.Tag.Get("yaml") == "-" {
+				continue
+			}
+			if AllowsInfinity(f) {
+				out = append(out, t.Name()+"."+f.Name)
+			}
+			walk(f.Type)
+		}
+	}
+	walk(t)
+	sort.Strings(out)
+	return out
 }
 
 // DecodeNode is node.Decode after CheckNode. A custom UnmarshalYAML calls it for the
@@ -185,8 +321,9 @@ var unmarshaler = reflect.TypeOf((*yaml.Unmarshaler)(nil)).Elem()
 
 // checkNumbers applies the number rules that depend on the field type, descending as the
 // decoder does. Aliases are followed; checkShape has already refused a recursive one, so
-// the descent ends, and a document deeper than MaxDepth is refused.
-func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
+// the descent ends, and a document deeper than MaxDepth is refused. inf is true below a field
+// that opts in to +infinity (AllowsInfinity); it applies to the floats that field holds.
+func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int, inf bool) error {
 	if depth > MaxDepth {
 		return fmt.Errorf("line %d: %s: the document nests deeper than %d levels (MaxDepth); "+
 			"its numbers below this point cannot be checked", lineOf(n), name(at), MaxDepth)
@@ -218,7 +355,7 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 		if n.Kind != yaml.MappingNode {
 			return nil
 		}
-		fields := yamlFieldTypes(t)
+		fields := yamlFields(t)
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			k, v := n.Content[i], n.Content[i+1]
 			if k.Value == "<<" {
@@ -229,14 +366,14 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 					members = m.Content
 				}
 				for _, m := range members {
-					if err := checkNumbers(m, t, at, depth+1); err != nil {
+					if err := checkNumbers(m, t, at, depth+1, inf); err != nil {
 						return err
 					}
 				}
 				continue
 			}
 			if ft, ok := fields[k.Value]; ok {
-				if err := checkNumbers(v, ft, join(at, k.Value), depth+1); err != nil {
+				if err := checkNumbers(v, ft.typ, join(at, k.Value), depth+1, ft.inf); err != nil {
 					return err
 				}
 			}
@@ -244,7 +381,7 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 	case reflect.Map:
 		if n.Kind == yaml.MappingNode {
 			for i := 0; i+1 < len(n.Content); i += 2 {
-				if err := checkNumbers(n.Content[i+1], t.Elem(), join(at, n.Content[i].Value), depth+1); err != nil {
+				if err := checkNumbers(n.Content[i+1], t.Elem(), join(at, n.Content[i].Value), depth+1, inf); err != nil {
 					return err
 				}
 			}
@@ -252,7 +389,7 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 	case reflect.Slice, reflect.Array:
 		if n.Kind == yaml.SequenceNode {
 			for i, c := range n.Content {
-				if err := checkNumbers(c, t.Elem(), fmt.Sprintf("%s[%d]", at, i), depth+1); err != nil {
+				if err := checkNumbers(c, t.Elem(), fmt.Sprintf("%s[%d]", at, i), depth+1, inf); err != nil {
 					return err
 				}
 			}
@@ -268,8 +405,15 @@ func checkNumbers(n *yaml.Node, t reflect.Type, at string, depth int) error {
 			return nil
 		}
 		bits := t.Bits()
-		if err := checkFinite(n, at); err != nil {
-			return err
+		switch nf := nonFinite(n); {
+		case nf == "+inf" && inf:
+			return nil
+		case nf == "+inf":
+			return fmt.Errorf("line %d: %s: %s is not a finite number; the field does not allow infinity "+
+				"(a field opts in with the struct tag infinity:%q)", n.Line, name(at), n.Value, InfinityAllowed)
+		case nf != "":
+			// -.inf and .nan: no field holds either, whatever it opts in to.
+			return fmt.Errorf("line %d: %s: %s is not a finite number, and no field holds it", n.Line, name(at), n.Value)
 		}
 		switch n.ShortTag() {
 		case "!!int":
@@ -306,10 +450,17 @@ func exactInt(n *yaml.Node, bits int) bool {
 	return acc == big.Exact
 }
 
-// yamlFieldTypes maps the keys a struct decodes to their field types, merging inline
-// structs.
-func yamlFieldTypes(t reflect.Type) map[string]reflect.Type {
-	out := map[string]reflect.Type{}
+// yamlField is what a struct key decodes into: the field's type, and whether it opts in to
+// +infinity.
+type yamlField struct {
+	typ reflect.Type
+	inf bool
+}
+
+// yamlFields maps the keys a struct decodes to their field types and infinity opt-ins,
+// merging inline structs.
+func yamlFields(t reflect.Type) map[string]yamlField {
+	out := map[string]yamlField{}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.PkgPath != "" && !f.Anonymous {
@@ -326,7 +477,7 @@ func yamlFieldTypes(t reflect.Type) map[string]reflect.Type {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {
-				for k, v := range yamlFieldTypes(ft) {
+				for k, v := range yamlFields(ft) {
 					out[k] = v
 				}
 			}
@@ -335,7 +486,7 @@ func yamlFieldTypes(t reflect.Type) map[string]reflect.Type {
 		if key == "" {
 			key = strings.ToLower(f.Name)
 		}
-		out[key] = f.Type
+		out[key] = yamlField{typ: f.Type, inf: AllowsInfinity(f)}
 	}
 	return out
 }

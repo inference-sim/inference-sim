@@ -329,6 +329,8 @@
     never dropped.
   scope:
   - blis-substrate
+  - blis-vllm
+  - inference-sim
   checks:
   - repo: blis-substrate
     check: Each loader refuses unknown keys
@@ -339,9 +341,37 @@
     check: >-
       A shared set of malformed documents in contracts/conformance, run against every loader
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts: TestEveryLoaderRefusesTheMalformedSet'
+    known_bad: 'contracts: TestEveryLoaderRefusesTheMalformedSet'
   - repo: blis-substrate
     check: A test that every declared field is read
+    runs: pull_request
+    status: ci
+    test: 'contracts: TestEveryLoaderReadsEveryFieldItsExampleStates'
+    known_bad: 'contracts: TestEveryLoaderReadsEveryFieldItsExampleStates'
+  - repo: blis-substrate
+    check: >-
+      Non-finite numbers are refused in every field, except +infinity in a field that names itself
+      with the infinity tag, and a test names each such field
+    runs: pull_request
+    status: ci
+    test: 'contracts/check: TestAFieldThatOptsInHoldsPlusInfinity'
+    known_bad: 'contracts/check: TestNoFieldHoldsNaNOrMinusInfinity'
+  - repo: blis-substrate
+    check: >-
+      A write-then-read test of every field a Result writer can emit, in both encodings, filled from
+      the type so a new field is covered
+    runs: pull_request
+    status: ci
+    test: 'contracts/spec/result: TestEveryFieldAWriterCanEmitRoundTripsInBothEncodings'
+    known_bad: 'contracts/spec/result: TestTheFieldsThatHoldInfinityAreNamed'
+  - repo: blis-vllm
+    check: The shared set of malformed documents, run against the repository's loaders
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The shared set of malformed documents, run against the repository's loaders
     runs: pull_request
     status: new
   review: null
