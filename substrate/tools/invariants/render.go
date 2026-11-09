@@ -277,12 +277,6 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 
 <!-- What remains, and why. -->
 
-## Review questions
-
-<!-- CI lists here each review question whose paths this pull request changes. A question
-is guidance for the review agent (design §13.2); no check waits on it and no person has to
-answer it. -->
-
 ## Checklist
 
 `)

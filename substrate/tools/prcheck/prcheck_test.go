@@ -488,34 +488,6 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 	}
 }
 
-// The review-question automation keeps answers and reports open questions.
-func TestMergeQuestions(t *testing.T) {
-	body := "## Summary\n\nx\n\n## Review questions\n\nold text\n\n## Checklist\n\n- [ ] X13\n"
-	qs := "- [ ] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: \n"
-	nb, open := MergeQuestions(body, qs)
-	if len(open) != 1 || !strings.Contains(nb, "- [ ] **X2** Does this hide policy?") || strings.Contains(nb, "old text") || !strings.Contains(nb, "## Checklist\n\n- [ ] X13") {
-		t.Fatalf("first pass: open=%v\n%s", open, nb)
-	}
-	answered := strings.Replace(nb, "- [ ] **X2**", "- [x] **X2**", 1)
-	answered = strings.Replace(answered, "Answer: \n", "Answer: no, the threshold is the chip's datasheet figure\n", 1)
-	// A later push changes the changed-path note; the answer stays.
-	qs2 := strings.Replace(qs, "kernel/a.go", "kernel/b.go", 1)
-	nb2, open2 := MergeQuestions(answered, qs2)
-	if len(open2) != 0 || !strings.Contains(nb2, "- [x] **X2**") || !strings.Contains(nb2, "kernel/b.go") || !strings.Contains(nb2, "Answer: no, the threshold") {
-		t.Fatalf("second pass: open=%v\n%s", open2, nb2)
-	}
-	// Known-bad: ticked without a yes or no.
-	bad := strings.Replace(answered, "Answer: no, the threshold is the chip's datasheet figure", "Answer: looks fine", 1)
-	if _, open3 := MergeQuestions(bad, qs); len(open3) != 1 {
-		t.Fatalf("an answer without yes or no was accepted")
-	}
-	// A body with no section gets one at the end.
-	nb4, _ := MergeQuestions("## Summary\n\nx", qs)
-	if !strings.HasSuffix(nb4, "Answer: \n") || !strings.Contains(nb4, "x\n\n## Review questions") {
-		t.Fatalf("appended section:\n%s", nb4)
-	}
-}
-
 func TestTags(t *testing.T) {
 	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	lock := "# recorded tags\nv0.11.0 " + a + "\n"
@@ -797,21 +769,6 @@ func TestPathPatterns(t *testing.T) {
 		if got := pathPattern(c.pat).MatchString(c.path); got != c.want {
 			t.Errorf("%q against %q = %v, want %v", c.pat, c.path, got, c.want)
 		}
-	}
-}
-
-// A body written before the reviewer wording carries the old automation comment. The parser
-// reads items only, so it keeps the answers and rewrites the comment to the current text.
-func TestMergeQuestionsAcceptsOldComment(t *testing.T) {
-	old := "## Review questions\n\n<!-- Added by the review-question automation (design §13.2). A code owner ticks each item and writes yes or no with a one-line reason after \"Answer:\". -->\n\n" +
-		"- [x] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: no, it is the datasheet figure\n"
-	qs := "- [ ] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: \n"
-	nb, open := MergeQuestions(old, qs)
-	if len(open) != 0 {
-		t.Fatalf("an answered item under the old comment was reopened: %v\n%s", open, nb)
-	}
-	if !strings.Contains(nb, "Answer: no, it is the datasheet figure") || strings.Contains(nb, "code owner") || !strings.Contains(nb, "guidance for the review agent") {
-		t.Fatalf("the answer was lost or the comment not rewritten:\n%s", nb)
 	}
 }
 

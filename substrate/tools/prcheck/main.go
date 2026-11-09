@@ -27,9 +27,6 @@
 //	prcheck skips -results <file> [-python-package <dir>] [-min <n>]
 //	    X16, X22: a skipped test not on the quarantine list fails, and so does a go test
 //	    run with fewer than -min results.
-//	prcheck questions -body <file> -questions <file> -out <file> -unanswered <file>
-//	    Design §13.2: put the matching review questions in the body's "## Review
-//	    questions" section, keep given answers, and list those still unanswered.
 //	prcheck tags [-lock .github/tags.lock]
 //	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
@@ -117,9 +114,7 @@ func run(args []string, w io.Writer) error {
 	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
 	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
-	questionsFile := fs.String("questions", "", "the questions invariants questions printed")
-	outFile := fs.String("out", "", "where to write the new body")
-	unanswered := fs.String("unanswered", "", "where to list the unanswered questions")
+	outFile := fs.String("out", "", "status: where to write the status page")
 	results := fs.String("results", "", "go test -json or pytest -rs output")
 	pyPkg := fs.String("python-package", "", "the directory pytest ran in, for its results")
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
@@ -316,20 +311,6 @@ func run(args []string, w io.Writer) error {
 		bad = append(bad, CheckSkips(skips, entries)...)
 		fmt.Fprintf(w, "skips: %d skipped\n", len(skips))
 		return report(w, "skips", bad)
-	case "questions":
-		raw, err := os.ReadFile(*body)
-		if err != nil {
-			return err
-		}
-		qs, err := os.ReadFile(*questionsFile)
-		if err != nil {
-			return err
-		}
-		nb, open := MergeQuestions(string(raw), string(qs))
-		if err := os.WriteFile(*outFile, []byte(nb), 0o644); err != nil {
-			return err
-		}
-		return os.WriteFile(*unanswered, []byte(strings.Join(open, "\n")), 0o644)
 	case "tags":
 		raw, err := os.ReadFile(*lockFile)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {

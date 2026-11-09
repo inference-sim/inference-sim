@@ -112,7 +112,7 @@
  {
   "ID": "X23",
   "Title": "",
-  "Statement": "A version is written in one place. stack.json, each repository's go.mod, contracts/toolchain, and each application's or harness pin file are the only files that state a version; every other file that mentions one (Dockerfiles, workflow files, documentation) is generated from them."
+  "Statement": "A version is written in one place. stack.json, each repository's go.mod, contracts/toolchain, and each application's or harness pin file are the only files that state a version; every other file that mentions one (Dockerfiles, workflow files, documentation) is generated from them. Documentation does not repeat a version those files state: it says “the pinned release” and links to the file that states it. A page names an upstream release only when the page is about that release, or where a citation needs it (vllm/<path>:<lines>@<commit8>), because a line number means nothing without its release. A workflow reads the Go version from go.mod. A draft specification under specs/ is a record of what was planned and is exempt."
  },
  {
   "ID": "X24",
@@ -127,7 +127,7 @@
  {
   "ID": "X26",
   "Title": "",
-  "Statement": "In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree. A pull request carries the documentation change that its own change needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A repository that adopts the check clears the findings it already has in the pull request that first requires the check, so the check is green from then on and every later finding is a pull request’s own. No finding is hidden from the check by a list of known ones."
+  "Statement": "In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree. A pull request carries the documentation change that its own change needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A repository that adopts the check clears the findings it already has in the pull request that first requires the check, so the check is green from then on and every later finding is a pull request’s own. No finding is hidden from the check by a list of known ones. Documentation is written for a reader who is an agent as often as a person: it is short, it says where a rule, a file or a command lives and links to it, and it leaves out anything that can drift without a check noticing, such as a version, a count, a line number or a list of what is supported at the moment of writing."
  },
  {
   "ID": "X27",
