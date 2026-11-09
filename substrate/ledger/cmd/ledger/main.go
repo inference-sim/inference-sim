@@ -28,6 +28,9 @@
 //	ledger aggregate -job J -role R -predictions P -candidate SHA -measured M -out FILE LEDGER  (seed-holding)
 //	    Reduce a candidate's predictions on the units of role R to aggregates (D7).
 //
+//	ledger method-error [-registry DIR] [-candidate SHA -out FILE] [-table FILE] [-check FILE]
+//	    VAL-5: the typical error of each method, leaving one chip out, per primitive family.
+//
 // Exit 0 when everything passes, 1 when a check fails, 2 on misuse.
 package main
 
@@ -65,7 +68,7 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
@@ -82,6 +85,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		"candidate-units":     cmdCandidateUnits,
 		"measured-inferencex": cmdMeasuredInferenceX,
 		"aggregate":           cmdAggregate,
+		"method-error":        cmdMethodError,
 	}
 	f, ok := cmds[args[0]]
 	if !ok {

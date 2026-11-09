@@ -7,6 +7,7 @@ name: nightly
 #              shown as failing, and every invariant with a check here (X16)
 #   known-bad  every check's known-bad input, run by its test, which fails if the check
 #              stopped refusing it (X18)
+#   method-error  the typical error of each method, leaving one chip out (VAL-5)
 #
 
 on:
@@ -46,3 +47,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/go-toolchain
       - run: go run ./tools/prcheck knownbad
+
+  method-error:
+    name: method error, one chip left out (VAL-5)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      # The page of figures is committed and generated; a figure that disagrees with the registry
+      # fails here. The report holds aggregates only, each over at least 10 points (D7).
+      - name: The committed page equals the registry's figures
+        run: go run ./ledger/cmd/ledger method-error -check docs/registry/reference/method-error.md
+      - name: The report
+        run: go run ./ledger/cmd/ledger method-error -candidate "${{ github.sha }}" -out "$RUNNER_TEMP/method-error.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: method-error
+          path: ${{ runner.temp }}/method-error.json

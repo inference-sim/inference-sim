@@ -226,6 +226,7 @@ nav:
       - cost-model-host-overheads: registry/reference/sets/cost-model-host-overheads.md
       - cost-model-memory: registry/reference/sets/cost-model-memory.md
     - Acceptance profiles: registry/reference/acceptance.md
+    - Typical error of each method: registry/reference/method-error.md
     - File format: registry/reference/format.md
     - Validation: registry/reference/validation.md
   - Methodology:

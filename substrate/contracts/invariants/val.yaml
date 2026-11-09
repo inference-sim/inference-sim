@@ -112,7 +112,17 @@
   - blis-substrate
   checks:
   - repo: blis-substrate
-    check: Nightly job
+    check: >-
+      Nightly job: leave one chip out and compare each method's estimate with the chip's measured
+      value, per primitive family, over the registry's measured coefficients
+    runs: nightly
+    status: new
+    test: 'nightly.yml job method-error: ledger method-error'
+    known_bad: 'ledger: TestSameGenerationLeavesOneChipOut'
+  - repo: blis-substrate
+    check: >-
+      The same comparison over data units with role validate, which the AISimulate and forward-pass
+      sources do not list yet
     runs: nightly
     status: new
   review: null
@@ -120,6 +130,11 @@
   target:
     status: ci
     milestone: 2
+  note: >-
+    the leave-one-chip-out error is measured and published per family over the registry's measured
+    coefficients, for the same-generation and global-median methods; it does not yet read validate
+    units (the AISimulate and forward-pass sources list none), and the roofline and vendor-spec
+    methods have no estimator that reads a datasheet
 - id: VAL-6
   section: §9.4
   statement: >-
