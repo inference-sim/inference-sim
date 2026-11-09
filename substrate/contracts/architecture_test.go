@@ -22,7 +22,7 @@ func TestSpecDoesNotDependOnRules(t *testing.T) {
 		"./spec/evaluation", "./spec/acceptance", "./spec/routing", "./spec/measurement", "./spec/router",
 		"./spec/connector",
 		"./spec/result", "./spec/trace", "./spec/pointrecord", "./metrics", "./spec/fields",
-		"./vocab", "./check",
+		"./vocab", "./check", "./units", "./engine/plan", "./engine/env",
 	} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {
@@ -173,5 +173,32 @@ func TestInvariantsImportOnlyTheStandardLibraryAndYAML(t *testing.T) {
 			continue
 		}
 		t.Errorf("contracts/invariants depends on %s; it may use only the standard library and gopkg.in/yaml.v3 (SUB-1)", dep)
+	}
+}
+
+// The boundary types import only the units package, so a plan names no document type, no rules
+// pack and no engine (X2, SUB-16); the Environment interface adds only the catalog and cost
+// model types it returns, and the reference implementation adds nothing else.
+func TestPlanPackagesStayInTheirLane(t *testing.T) {
+	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	for pkg, allowed := range map[string][]string{
+		"./units":       {"units"},
+		"./engine/plan": {"units", "engine/plan"},
+		"./engine/env": {"units", "engine/plan", "engine/env", "kernel", "check", "vocab",
+			"spec/deployment", "spec/model", "spec/hardware", "spec/acceptance"},
+	} {
+		out, err := exec.Command("go", "list", "-deps", pkg).Output()
+		if err != nil {
+			t.Fatalf("go list -deps %s: %v", pkg, err)
+		}
+		ok := map[string]bool{}
+		for _, a := range allowed {
+			ok[a] = true
+		}
+		for _, dep := range strings.Split(string(out), "\n") {
+			if rel, in := strings.CutPrefix(dep, mod); in && !ok[rel] {
+				t.Errorf("%s depends on %s; it may import only %v", pkg, rel, allowed)
+			}
+		}
 	}
 }

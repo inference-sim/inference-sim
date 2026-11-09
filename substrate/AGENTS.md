@@ -191,8 +191,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-10** (new; target ci by M2) contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all.
   - `new`, pull_request: The conformance suite, run in blis-substrate, blis-vllm and blis-sglang
 - **SUB-11** (new; target ci by M2) Every field of PoolPlan, StepShape and Transfer, and every coefficient family, changes some price when it is changed, or is listed as not yet priced with an issue.
-  - `new`, pull_request: A perturbation test in kernel/
-  - `new`, pull_request: A ratchet on the not-yet-priced list, which may only shrink
+  - `new`, pull_request: A perturbation test in kernel/ (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
+  - `new`, pull_request: A perturbation test over every field of PoolPlan, StepShape and Transfer (`contracts/engine/plan: TestEveryPlanFieldIsPricedOrListed`)
+  - `new`, pull_request: A ratchet on the not-yet-priced list, which may only shrink (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
 - **SUB-12** (partial; target ci by M2) Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases.
   - `ci`, pull_request: Each loader refuses unknown keys (`contracts: TestLoadRejectsUnknownFields`)
   - `new`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader
@@ -206,8 +207,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A test that rederives every graph field from those inputs
   - `new`, pull_request: A check that graph vocabulary has no emit conditions. The deriver records each header's SHA-256 and the revision, under the same licence rule as config.json (X12)
 - **SUB-16** (new; target ci by M2) Quantities carry units as types.
-  - `new`, pull_request: The compiler
-  - `new`, pull_request: A load-time unit check in the cost model
+  - `new`, pull_request: The compiler (`contracts/units: TestMixedUnitsDoNotCompile`)
+  - `new`, pull_request: A load-time unit check in the cost model (`contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused`)
   - `new`, pull_request: Validator rules that catalog peaks are dense figures and that their ratios between data types match the datasheet. The bounds on rates are SUB-5's
 - **SUB-17** (new; target ci by M3) A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier.
   - `new`, pull_request: A property test over random placements, in blis-substrate

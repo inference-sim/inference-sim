@@ -305,10 +305,17 @@
     check: A perturbation test in kernel/
     runs: pull_request
     status: new
+    test: 'kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed'
+  - repo: blis-substrate
+    check: A perturbation test over every field of PoolPlan, StepShape and Transfer
+    runs: pull_request
+    status: new
+    test: 'contracts/engine/plan: TestEveryPlanFieldIsPricedOrListed'
   - repo: blis-substrate
     check: A ratchet on the not-yet-priced list, which may only shrink
     runs: pull_request
     status: new
+    test: 'kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed'
   review: null
   status: new
   target:
@@ -459,10 +466,14 @@
     check: The compiler
     runs: pull_request
     status: new
+    test: 'contracts/units: TestMixedUnitsDoNotCompile'
+    known_bad: 'contracts/units: TestMixedUnitsDoNotCompile'
   - repo: blis-substrate
     check: A load-time unit check in the cost model
     runs: pull_request
     status: new
+    test: 'contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused'
+    known_bad: 'contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused'
   - repo: blis-substrate
     check: >-
       Validator rules that catalog peaks are dense figures and that their ratios between data types

@@ -1,6 +1,7 @@
 package units
 
 import (
+	"encoding/json"
 	"math"
 	"os"
 	"os/exec"
@@ -152,3 +153,23 @@ func typeCheck(t *testing.T, pkgDir, src string) error {
 type compileError struct{ out string }
 
 func (e *compileError) Error() string { return e.out }
+
+func TestBasisTypesSerialiseAsTheirAmount(t *testing.T) {
+	b, err := json.Marshal(struct {
+		A PerRank[Bytes]
+		B []PerNode[Tokens]
+	}{Rank(Bytes(7)), []PerNode[Tokens]{Node(Tokens(3))}})
+	if err != nil || string(b) != `{"A":7,"B":[3]}` {
+		t.Fatalf("%s, %v", b, err)
+	}
+	var back struct {
+		A PerRank[Bytes]
+		B []PerNode[Tokens]
+	}
+	if err := json.Unmarshal(b, &back); err != nil || back.A.Value() != 7 || back.B[0].Value() != 3 {
+		t.Fatalf("%+v, %v", back, err)
+	}
+	if err := json.Unmarshal([]byte(`{"A":"x"}`), &back); err == nil {
+		t.Error("a string was read as a byte count")
+	}
+}

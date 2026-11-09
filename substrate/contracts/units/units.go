@@ -12,6 +12,7 @@
 package units
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -140,3 +141,25 @@ func (a PerNode[T]) OnNodes(nodes int) (PerGroup[T], error) {
 	}
 	return PerGroup[T]{a.v * T(nodes)}, nil
 }
+
+// The basis types serialise as the amount they hold: a recorded plan (inference-sim records
+// each pool's PoolPlan in the Result) reads as plain numbers, and the basis is the field's.
+// Decoding therefore cannot tell a per-rank number from a per-group one; the field's type does.
+
+// MarshalJSON implements json.Marshaler.
+func (a PerRank[T]) MarshalJSON() ([]byte, error) { return json.Marshal(a.v) }
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (a *PerRank[T]) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &a.v) }
+
+// MarshalJSON implements json.Marshaler.
+func (a PerNode[T]) MarshalJSON() ([]byte, error) { return json.Marshal(a.v) }
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (a *PerNode[T]) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &a.v) }
+
+// MarshalJSON implements json.Marshaler.
+func (a PerGroup[T]) MarshalJSON() ([]byte, error) { return json.Marshal(a.v) }
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (a *PerGroup[T]) UnmarshalJSON(b []byte) error { return json.Unmarshal(b, &a.v) }
