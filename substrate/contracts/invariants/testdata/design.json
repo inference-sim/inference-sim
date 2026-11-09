@@ -97,7 +97,7 @@
  {
   "ID": "X20",
   "Title": "",
-  "Statement": "Every commit written for BLIS is signed. Every commit that contains work by a person or an agent carries a DCO Signed-off-by line from the person who takes responsibility for it. An agent never signs off in its own name, since only a person can certify the DCO; an agent that pushes commits for a person, on that person’s instruction and with that person’s key, signs and signs off in that person’s name, and the person is responsible for them. A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies to every commit not reachable from the upstream tag being merged; upstream history is kept as upstream wrote it."
+  "Statement": "A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. An agent never signs off in its own name, since only a person can certify the DCO. Signing a commit and adding a DCO Signed-off-by line are encouraged for the person who takes responsibility for it, and an agent that pushes commits for a person, on that person’s instruction and with that person’s key, may sign and sign off in that person’s name; no check requires either until the closing step after M4. Release-bot commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies to every commit not reachable from the upstream tag being merged; upstream history is kept as upstream wrote it."
  },
  {
   "ID": "X21",

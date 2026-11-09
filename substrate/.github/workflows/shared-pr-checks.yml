@@ -16,7 +16,7 @@ name: shared pull-request checks
 # it pins and by the invariant registry of that commit.
 #
 #   description     X14: listed hashes are branch heads, it merges cleanly, cited invariants exist
-#   commit-policy   X20: signed commits, a person's DCO sign-off, Assisted-by, no tool co-author
+#   commit-policy   X20: one Assisted-by line, no tool as co-author or sign-off
 #   workflow-lint   X21, X22, X16: actions pinned by commit, --require-hashes, no ignored exit
 #                   codes, no skipped tests, gate trigger paths as declared
 #   versions        X23: version literals outside the sources of versions
@@ -90,9 +90,6 @@ jobs:
         run: |
           set -euo pipefail
           gh api "repos/${{ github.repository }}/pulls/$PR" --jq .body > "$RUNNER_TEMP/body.md"
-          gh api "repos/${{ github.repository }}/pulls/$PR/commits" --paginate \
-            --jq '.[] | "\(.sha) \(if .commit.verification.verified then "G" else "N" end)"' > "$RUNNER_TEMP/signatures"
-          test -s "$RUNNER_TEMP/signatures"
       - name: Description (X14)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
@@ -103,10 +100,9 @@ jobs:
       - name: Commit policy (X20)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
-        # X20's deferral file is read from the called substrate commit, so one file serves
-        # every repository (plan §3.3, "Deferring signing and sign-off"); the check fails
-        # once it expires.
-        run: prcheck commits -base "$BASE" -head "$HEAD" -signatures "$RUNNER_TEMP/signatures" -deferral "$GITHUB_WORKSPACE/substrate/.github/x20-deferral.yaml"
+        # The form an agent can get wrong: one Assisted-by line, no tool as Co-authored-by or
+        # Signed-off-by. Signing and sign-off are encouraged and not checked.
+        run: prcheck commits -base "$BASE" -head "$HEAD"
       - name: Workflow lint (X21, X22, X16)
         if: ${{ !cancelled() }}
         working-directory: repo

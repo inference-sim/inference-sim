@@ -3,7 +3,7 @@
 //
 // The records live in this directory, one YAML file per family (x.yaml holds X1 to X28,
 // sub.yaml holds SUB-1 to SUB-20, and so on), and are compiled into the package with
-// go:embed, so every repository reads the invariant registry of the substrate version it pins
+// the embed directive, so every repository reads the invariant registry of the substrate version it pins
 // (design §13.2). Embedded returns that copy; Load reads a directory of the same layout.
 //
 // A record has these fields:

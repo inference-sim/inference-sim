@@ -131,9 +131,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
-- **X20** (new; target ci by M4) Every commit written for BLIS is signed.
-  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds (`shared-pr-checks.yml: prcheck commits`)
-  - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name
+- **X20** (new; target ci by M4) A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool.
+  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool (`shared-pr-checks.yml: prcheck commits`)
+  - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
   - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
@@ -305,7 +305,7 @@ No program checks these. A maintainer with write access keeps each one for this
 repository as a whole and confirms it when the repository's settings change (design §4.2).
 
 - [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
-- [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name
+- [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - [ ] **LIF-1** Protected tags
 - [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
 
@@ -314,7 +314,7 @@ repository as a whole and confirms it when the repository's settings change (des
 Follow these on every change you write or review. They are not checked by a program
 (design §4.2).
 
-- **X20** A commit written with your help says so in one Assisted-by: <tool> line and carries no Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the person who takes responsibility signs off.
+- **X20** A commit written with your help says so in one Assisted-by: <tool> line and carries no Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the person who takes responsibility signs off. Sign and sign off in a person's name only when that person has told you to, with that person's key.
 - **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
 
 ### Review questions

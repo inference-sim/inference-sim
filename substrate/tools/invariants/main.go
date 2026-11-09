@@ -302,7 +302,7 @@ func questions(reg *invariants.Registry, repo, changedPath string, stdout io.Wri
 			more = fmt.Sprintf(" and %d more", len(hit)-3)
 			hit = hit[:3]
 		}
-		fmt.Fprintf(stdout, "- [ ] **%s** %s Expertise: %s. (changed: `%s`%s) Answer: \n", q.ID, q.Question, q.Expertise, strings.Join(hit, "`, `"), more)
+		_, _ = fmt.Fprintf(stdout, "- [ ] **%s** %s Expertise: %s. (changed: `%s`%s) Answer: \n", q.ID, q.Question, q.Expertise, strings.Join(hit, "`, `"), more)
 	}
 	return nil
 }

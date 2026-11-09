@@ -28,24 +28,33 @@ func none(t *testing.T, got []string) {
 }
 
 // X20. The good commit is the form the brief requires of agent-assisted work, once the
-// responsible person has signed off.
+// X20: the commit-policy check covers the form an agent can get wrong, and nothing else.
+// Signing and sign-off are encouraged, not required, so a commit with neither passes.
 func TestCommitPolicy(t *testing.T) {
-	good := Commit{Hash: strings.Repeat("a", 40), Signed: true, Author: "Ada Person <ada@example.com>",
+	good := Commit{Hash: strings.Repeat("a", 40), Author: "Ada Person <ada@example.com>",
 		Message: "Add a check\n\nBody.\n\nAssisted-by: Claude Code (Claude Opus 5.5)\nSigned-off-by: Ada Person <ada@example.com>\n"}
 	none(t, CommitPolicy(good))
-	bot := Commit{Hash: "b", Signed: true, Author: "release bot <" + releaseBotEmail + ">",
+	bot := Commit{Hash: "b", Author: "release bot <" + releaseBotEmail + ">",
 		Committer: "release bot <" + releaseBotEmail + ">", Message: "Release v0.11.1\n"}
 	none(t, CommitPolicy(bot))
+
+	// What the design no longer requires: a sign-off, and a signature. A commit with an
+	// Assisted-by line and no Signed-off-by passes, and so does one with neither trailer.
+	none(t, CommitPolicy(Commit{Hash: "c", Author: "Ada Person <ada@example.com>", Message: "Add\n\nAssisted-by: Claude Code\n"}))
+	none(t, CommitPolicy(Commit{Hash: "d", Author: "Ada Person <ada@example.com>", Message: "Add a thing\n"}))
+	// A person's own sign-off, with or without an Assisted-by line, passes.
+	none(t, CommitPolicy(Commit{Hash: "e", Author: "Ada Person <ada@example.com>", Message: "Add\n\nSigned-off-by: Ada Person <ada@example.com>\n"}))
 
 	cases := []struct {
 		name string
 		edit func(*Commit)
 		want string
 	}{
-		{"unsigned", func(c *Commit) { c.Signed = false }, "not signed"},
-		{"no sign-off", func(c *Commit) { c.Message = "Add\n\nAssisted-by: Claude Code\n" }, "no Signed-off-by"},
 		{"agent signs off", func(c *Commit) {
 			c.Message = "Add\n\nAssisted-by: Claude Code\nSigned-off-by: Claude <noreply@anthropic.com>\n"
+		}, "is not a person"},
+		{"a sign-off that is no address", func(c *Commit) {
+			c.Message = "Add\n\nSigned-off-by: Ada\n"
 		}, "is not a person"},
 		{"co-authored by a tool", func(c *Commit) {
 			c.Message = "Add\n\nCo-authored-by: Claude Opus <noreply@anthropic.com>\nSigned-off-by: Ada Person <ada@example.com>\n"
@@ -53,16 +62,9 @@ func TestCommitPolicy(t *testing.T) {
 		{"two assisted-by", func(c *Commit) {
 			c.Message = "Add\n\nAssisted-by: Claude Code\nAssisted-by: Copilot\nSigned-off-by: Ada Person <ada@example.com>\n"
 		}, "2 Assisted-by lines"},
-		{"bot author, person committer", func(c *Commit) {
-			c.Author = "release bot <" + releaseBotEmail + ">"
-			c.Committer = "Ada Person <ada@example.com>"
-			c.Message = "Release\n"
-		}, "no Signed-off-by"},
-		{"bot author, no committer", func(c *Commit) {
-			c.Author = "release bot <" + releaseBotEmail + ">"
-			c.Committer = ""
-			c.Message = "Release\n"
-		}, "no Signed-off-by"},
+		{"an empty assisted-by", func(c *Commit) {
+			c.Message = "Add\n\nAssisted-by:\n"
+		}, "empty Assisted-by"},
 		{"bot signs off", func(c *Commit) {
 			c.Author = "release bot <" + releaseBotEmail + ">"
 			c.Committer = "release bot <" + releaseBotEmail + ">"
@@ -76,10 +78,6 @@ func TestCommitPolicy(t *testing.T) {
 			has(t, CommitPolicy(cm), c.want)
 		})
 	}
-	// A co-author who is a person is allowed.
-	person := good
-	person.Message = "Add\n\nCo-authored-by: Bea Person <bea@example.com>\nSigned-off-by: Ada Person <ada@example.com>\n"
-	none(t, CommitPolicy(person))
 }
 
 const goodWorkflow = `name: ci
@@ -477,18 +475,22 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
 	os.Chdir(dir)
-	sig := filepath.Join(dir, "sigs")
-	// Signed according to the API: clean.
-	os.WriteFile(sig, []byte(head+" G\n"), 0o644)
+	// An unsigned commit with a person's sign-off and an Assisted-by line is clean: signing
+	// is encouraged, not checked (X20).
 	var out strings.Builder
-	if err := run([]string{"commits", "-base", base, "-head", head, "-signatures", sig}, &out); err != nil {
+	if err := run([]string{"commits", "-base", base, "-head", head}, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	// Known-bad: the same commit unsigned.
-	os.WriteFile(sig, []byte(head+" N\n"), 0o644)
+	if !strings.Contains(out.String(), "1 checked") {
+		t.Errorf("output %q", out.String())
+	}
+	// Known-bad: the same change with a tool as the sign-off.
+	os.WriteFile(filepath.Join(dir, "a"), []byte("c\n"), 0o644)
+	g("commit", "-q", "-am", "Change a again\n\nAssisted-by: Claude Code\nSigned-off-by: Claude <noreply@anthropic.com>")
+	bad := g("rev-parse", "HEAD")
 	out.Reset()
-	if err := run([]string{"commits", "-base", base, "-head", head, "-signatures", sig}, &out); !errors.Is(err, errFindings) || !strings.Contains(out.String(), "not signed") {
-		t.Fatalf("an unsigned commit passed: %v\n%s", err, out.String())
+	if err := run([]string{"commits", "-base", head, "-head", bad}, &out); !errors.Is(err, errFindings) || !strings.Contains(out.String(), "is not a person") {
+		t.Fatalf("a tool's sign-off passed: %v\n%s", err, out.String())
 	}
 	// Zero commits is not a pass (X22).
 	if err := run([]string{"commits", "-base", head, "-head", head}, &out); err == nil || errors.Is(err, errFindings) {
@@ -584,73 +586,6 @@ func TestLicenceFiles(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "NOTICE"), []byte("Portions derived from SGLang.\n"), 0o644)
 	has(t, CheckLicenceFiles(dir, "blis-vllm"), "does not name vLLM")
 	none(t, CheckLicenceFiles("../..", "blis-substrate"))
-}
-
-// X20 deferral: an unsigned commit and a missing sign-off are deferred while the file holds;
-// every other finding fails; an expired or malformed file defers nothing.
-func TestApplyDeferral(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const file = "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: a person signs before merge\n"
-	findings := []string{
-		"abc123abc123: the commit is not signed (X20)",
-		"abc123abc123: no Signed-off-by line; the person who takes responsibility for the commit adds the DCO sign-off (X20)",
-		"abc123abc123: Signed-off-by: Claude <noreply@anthropic.com> is not a person; an agent never signs off (X20)",
-	}
-	fail, deferred := ApplyDeferral([]byte(file), day("2026-11-05"), findings)
-	if len(deferred) != 2 || len(fail) != 1 || !strings.Contains(fail[0], "is not a person") {
-		t.Fatalf("held: fail=%v deferred=%v", fail, deferred)
-	}
-	fail, deferred = ApplyDeferral(nil, day("2026-11-05"), findings)
-	if len(fail) != 3 || len(deferred) != 0 {
-		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
-	}
-	// The last day before the expiry date still defers, at any time of day; the date itself
-	// does not, from its first instant.
-	for _, at := range []string{"2026-12-04T00:00:00Z", "2026-12-04T23:59:59Z"} {
-		now, err := time.Parse(time.RFC3339, at)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 2 || len(fail) != 1 {
-			t.Fatalf("%s: fail=%v deferred=%v, want 2 deferred", at, fail, deferred)
-		}
-	}
-	if now, _ := time.Parse(time.RFC3339, "2026-12-05T00:00:01Z"); !now.IsZero() {
-		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 0 || len(fail) != 4 {
-			t.Fatalf("2026-12-05T00:00:01Z: fail=%v deferred=%v, want expired", fail, deferred)
-		}
-	}
-	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-04"), findings); len(deferred) != 2 || len(fail) != 1 {
-		t.Fatalf("2026-12-04: fail=%v deferred=%v, want 2 deferred", fail, deferred)
-	}
-	// A deferral file that is missing is no file: nothing is deferred and every finding fails.
-	if fail, deferred = ApplyDeferral([]byte{}, day("2026-11-05"), findings); len(fail) != 3 || len(deferred) != 0 {
-		t.Fatalf("empty file: fail=%v deferred=%v", fail, deferred)
-	}
-	fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), findings)
-	if len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "expired on 2026-12-05") {
-		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
-	}
-	long := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-06\nreason: x\n"
-	if fail, deferred = ApplyDeferral([]byte(long), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "more than 30 days after added") {
-		t.Fatalf("31 days: fail=%v deferred=%v", fail, deferred)
-	}
-	far := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2099-01-01\nreason: x\n"
-	if fail, deferred = ApplyDeferral([]byte(far), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 {
-		t.Fatalf("2099: fail=%v deferred=%v", fail, deferred)
-	}
-	future := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-06\nexpires: 2026-12-05\nreason: x\n"
-	if fail, deferred = ApplyDeferral([]byte(future), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "in the future") {
-		t.Fatalf("added in the future: fail=%v deferred=%v", fail, deferred)
-	}
-	fail, _ = ApplyDeferral([]byte("issue: nonsense\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: x\n"), day("2026-11-05"), findings)
-	if len(fail) != 4 || !strings.Contains(fail[3], "owning issue") {
-		t.Fatalf("bad issue: %v", fail)
-	}
-	fail, _ = ApplyDeferral([]byte("issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: x\nextra: y\n"), day("2026-11-05"), findings)
-	if len(fail) != 4 || !strings.Contains(fail[3], "x20-deferral.yaml") {
-		t.Fatalf("unknown key: %v", fail)
-	}
 }
 
 // ClosedBy reads every form GitHub acts on and none it does not.

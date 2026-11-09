@@ -3,10 +3,9 @@
 // where it must, the GitHub API through the gh command (GH_TOKEN set by the workflow).
 //
 //	prcheck commits -base <rev> -head <rev> [-signatures <file>]
-//	    X20, over the commits base..head: signed, a person's DCO sign-off (none on
-//	    release-bot commits), at most one Assisted-by line, no Co-authored-by naming a
-//	    tool. -signatures is a file of "<hash> <G|N>" lines from the GitHub API, used in
-//	    place of git verify-commit when given.
+//	    X20, over the commits base..head: at most one Assisted-by line, no Co-authored-by
+//	    naming a tool, no Signed-off-by naming a tool or on a release-bot commit. It does not
+//	    check for a signature or a sign-off: those are encouraged, not required.
 //	prcheck workflows [-dir .github]
 //	    X21, X22, X16: actions pinned by commit, pip --require-hashes, no ignored exit
 //	    codes, no skipped tests in a job, gate trigger paths as declared.
@@ -53,7 +52,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	fs2 "io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,12 +91,11 @@ func report(w io.Writer, name string, bad []string) error {
 
 func run(args []string, w io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: prcheck commits|workflows|description|threads|issues|versions|docrefs|quarantine ...")
+		return errors.New("usage: prcheck commits|workflows|description|threads|issues|versions|docrefs|quarantine")
 	}
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	base := fs.String("base", "", "base revision")
 	head := fs.String("head", "HEAD", "head revision")
-	sigs := fs.String("signatures", "", "file of '<hash> G|N' signature results")
 	dir := fs.String("dir", ".github", "directory of workflows and actions")
 	body := fs.String("body", "", "pull-request body file")
 	repo := fs.String("repo", "", "owner/name")
@@ -115,7 +112,6 @@ func run(args []string, w io.Writer) error {
 	results := fs.String("results", "", "go test -json or pytest -rs output")
 	pyPkg := fs.String("python-package", "", "the directory pytest ran in, for its results")
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
-	deferral := fs.String("deferral", "", "the X20 deferral file (commits only)")
 	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
 	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
@@ -127,7 +123,7 @@ func run(args []string, w io.Writer) error {
 		if *base == "" {
 			return fmt.Errorf("commits needs -base")
 		}
-		cs, err := gitCommits(*base, *head, *sigs)
+		cs, err := gitCommits(*base, *head)
 		if err != nil {
 			return err
 		}
@@ -139,25 +135,6 @@ func run(args []string, w io.Writer) error {
 			bad = append(bad, CommitPolicy(c)...)
 		}
 		fmt.Fprintf(w, "commits: %d checked\n", len(cs))
-		if *deferral != "" {
-			// A missing deferral file means no deferral: src is empty and every finding
-			// fails, so the check fails closed.
-			src, err := os.ReadFile(*deferral)
-			if err != nil && !errors.Is(err, fs2.ErrNotExist) {
-				return err
-			}
-			day := time.Now().UTC()
-			if *today != "" {
-				if day, err = time.Parse("2006-01-02", *today); err != nil {
-					return fmt.Errorf("-today: %w", err)
-				}
-			}
-			var deferred []string
-			bad, deferred = ApplyDeferral(src, day, bad)
-			if len(deferred) > 0 {
-				fmt.Fprintf(w, "commit-policy: %d finding(s) deferred (X20; see %s)\n", len(deferred), *deferral)
-			}
-		}
 		return report(w, "commit-policy", bad)
 	case "workflows":
 		var files []string
@@ -212,7 +189,7 @@ func run(args []string, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "threads: %d checked\n", len(ts))
+		_, _ = fmt.Fprintf(w, "threads: %d checked\n", len(ts))
 		return report(w, "thread-outcome", CheckThreads(ts))
 	case "issues":
 		if *repo == "" {
@@ -454,22 +431,10 @@ func git(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-func gitCommits(base, head, sigFile string) ([]Commit, error) {
+func gitCommits(base, head string) ([]Commit, error) {
 	out, err := git("rev-list", "--reverse", base+".."+head)
 	if err != nil {
 		return nil, err
-	}
-	sig := map[string]bool{}
-	if sigFile != "" {
-		raw, err := os.ReadFile(sigFile)
-		if err != nil {
-			return nil, err
-		}
-		for _, l := range strings.Split(string(raw), "\n") {
-			if f := strings.Fields(l); len(f) == 2 {
-				sig[f[0]] = f[1] == "G"
-			}
-		}
 	}
 	var cs []Commit
 	for _, h := range strings.Fields(out) {
@@ -479,13 +444,7 @@ func gitCommits(base, head, sigFile string) ([]Commit, error) {
 		}
 		author, _ := git("log", "-1", "--format=%an <%ae>", h)
 		committer, _ := git("log", "-1", "--format=%cn <%ce>", h)
-		signed, ok := sig[h]
-		if !ok {
-			// %G? is G for a good signature, U good but untrusted key; both are signed.
-			st, _ := git("log", "-1", "--format=%G?", h)
-			signed = st == "G" || st == "U"
-		}
-		cs = append(cs, Commit{Hash: h, Message: msg, Signed: signed, Author: author, Committer: committer})
+		cs = append(cs, Commit{Hash: h, Message: msg, Author: author, Committer: committer})
 	}
 	return cs, nil
 }

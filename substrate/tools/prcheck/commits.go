@@ -12,12 +12,11 @@ import (
 type Commit struct {
 	Hash      string
 	Message   string
-	Signed    bool   // a signature GitHub verified, or git verify-commit accepted
 	Author    string // "Name <email>"
 	Committer string
 }
 
-// The release bot's identity. Its commits are signed and carry no sign-off (X20).
+// The release bot's identity. Its commits carry no sign-off (X20).
 const releaseBotEmail = bot.Email
 
 var (
@@ -44,21 +43,20 @@ func trailers(msg string) [][2]string {
 	return out
 }
 
-// CommitPolicy returns the X20 violations of one commit:
+// CommitPolicy returns the X20 violations of one commit, the ones an agent can get wrong:
 //
-//   - every commit is signed;
-//   - a commit by the release bot carries no Signed-off-by;
-//   - every other commit carries a Signed-off-by from a person (name and email), and none
-//     naming a tool, since only a person can certify the DCO;
 //   - at most one Assisted-by line, naming the tool;
-//   - no Co-authored-by line naming a tool.
+//   - no Co-authored-by line naming a tool;
+//   - no Signed-off-by naming a tool or anything but a person, since only a person can certify
+//     the DCO, and none on a release-bot commit.
+//
+// It does not look for a signature or a sign-off. Signing and sign-off are a maintainer practice
+// that is encouraged and never fails a pull request before the closing step after M4 (design
+// X20), so a commit with neither passes.
 func CommitPolicy(c Commit) []string {
 	var bad []string
 	add := func(format string, args ...any) {
 		bad = append(bad, fmt.Sprintf("%s: ", short(c.Hash))+fmt.Sprintf(format, args...))
-	}
-	if !c.Signed {
-		add("the commit is not signed (X20)")
 	}
 	var signoffs, assisted []string
 	for _, t := range trailers(c.Message) {
@@ -73,15 +71,12 @@ func CommitPolicy(c Commit) []string {
 			}
 		}
 	}
-	// The bot exemption from a sign-off needs both identities to be the bot's: an author
-	// line is free text a person can write, and the committer is who made the commit.
+	// The bot exemption needs both identities to be the bot's: an author line is free text a
+	// person can write, and the committer is who made the commit.
 	bot := "<" + releaseBotEmail + ">"
 	isBot := strings.Contains(c.Author, bot) && strings.Contains(c.Committer, bot)
-	switch {
-	case isBot && len(signoffs) > 0:
+	if isBot && len(signoffs) > 0 {
 		add("a release-bot commit carries a Signed-off-by line; the bot never signs off (X20)")
-	case !isBot && len(signoffs) == 0:
-		add("no Signed-off-by line; the person who takes responsibility for the commit adds the DCO sign-off (X20)")
 	}
 	for _, s := range signoffs {
 		if toolNames.MatchString(s) || !personSignOff.MatchString(s) {

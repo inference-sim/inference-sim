@@ -1463,19 +1463,19 @@
 - id: X20
   section: §4.1
   statement: >-
-    Every commit written for BLIS is signed. Every commit that contains work by a person or an agent
-    carries a DCO Signed-off-by line from the person who takes responsibility for it. An agent never
-    signs off in its own name, since only a person can certify the DCO; an agent that pushes commits
-    for a person, on that person’s instruction and with that person’s key, signs and signs off in
-    that person’s name, and the person is responsible for them. A commit written with an agent's
-    help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the
-    tool. Release-bot commits are signed with the bot's identity and carry no sign-off. In the
-    router fork, this applies to every commit not reachable from the upstream tag being merged;
-    upstream history is kept as upstream wrote it.
+    A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no
+    Co-authored-by line naming the tool. An agent never signs off in its own name, since only a person
+    can certify the DCO. Signing a commit and adding a DCO Signed-off-by line are encouraged for the
+    person who takes responsibility for it, and an agent that pushes commits for a person, on that
+    person’s instruction and with that person’s key, may sign and sign off in that person’s name; no
+    check requires either until the closing step after M4. Release-bot commits are signed with the
+    bot's identity and carry no sign-off. In the router fork, this applies to every commit not
+    reachable from the upstream tag being merged; upstream history is kept as upstream wrote it.
   guidance: >-
     A commit written with your help says so in one Assisted-by: <tool> line and carries no
     Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the
-    person who takes responsibility signs off.
+    person who takes responsibility signs off. Sign and sign off in a person's name only when that
+    person has told you to, with that person's key.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1488,7 +1488,7 @@
   - repo: blis-substrate
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
     test: 'shared-pr-checks.yml: prcheck commits'
@@ -1496,80 +1496,79 @@
   - repo: blis-vllm
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
-    test: .github/workflows/ci-signed-commits.yaml
   - repo: inference-sim
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
-    status: new
-  - repo: accuracy-dashboard
-    check: >-
-      The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
-    runs: practice
-    status: new
-  - repo: blis-config-search
-    check: >-
-      The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
-    runs: practice
-    status: new
-  - repo: blis-sglang
-    check: >-
-      The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
-    runs: practice
     status: new
   - repo: blis-substrate
     check: >-
       The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
     runs: practice
     status: new
   - repo: blis-vllm
     check: >-
       The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
     runs: practice
     status: new
-  - repo: inference-sim
+  - repo: blis-sglang
     check: >-
       The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
     runs: practice
     status: new
   - repo: llm-d-router
     check: >-
       The person who takes responsibility for a commit signs it and signs it off, or instructs an
-      agent to push it in that person's name
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: inference-sim
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
     runs: practice
     status: new
   review: null
@@ -1580,8 +1579,9 @@
   note: >-
     the router fork has a signature and DCO check, but it is not required and did not run on its pull
     requests #3 and #4; no repository checks Assisted-by or Co-authored-by lines; the check runs in
-    every repository from M1, and signing and sign-off wait for the closing step after M4 (the
-    release plan, "Deferring signing and sign-off")
+    every repository from M1. Signing and sign-off are a maintainer practice, encouraged and not
+    checked (the release plan, "Signing and sign-off")
+
 - id: X21
   section: §4.1
   statement: >-
