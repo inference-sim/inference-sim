@@ -14,7 +14,8 @@
 #   export AISIMULATE_ALLREDUCE_DATA=<aisimulate @7980e95>/.../systems/data  # relane_allreduce_vllm.py
 #   python -I scripts/fetch_cited_inferencex.py <dir>
 #   export COLLECTIVEX_DATA=<dir>                       # test_deepep_ll_graph.py
-#   export OPERATORX_DATA=<dir of moe_<Model>.json>     # test_operatorx.py; quarantined, optional
+#   export OPERATORX_DATA=<dir>                         # test_operatorx.py; the same dir: the fetcher
+#                                                       # writes moe_MiniMax-M3.json there too
 #   export INFERENCEX_GOLDEN=<inferencex>/inferencex-e2e/infx/golden_al_distribution  # optional
 #   scripts/rederive.sh
 #

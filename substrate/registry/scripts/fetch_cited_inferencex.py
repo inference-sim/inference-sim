@@ -21,9 +21,10 @@ WHICH ARE NOT HERE. fit_deepep_ll_graph.py and fit_host_link.py cite runs the AP
 serves (33356406487, 36334392363, 36367074689, 36402856875, and the swap_blocks bodies sha256
 26cad6ccbdaa): each answers 404. Those writers then refuse (exit 3), their tests skip, and the
 skips are on .github/quarantine.yaml (X16, X25) under inference-sim/blis-registry#57 until the
-bodies are restored or the entries are re-cited through a reviewed refit. Nor is the OperatorX
-response fit_marlin_nvfp4_grouped_ramp.py cites (sha256 ea8fb4078168): the URL now serves a
-different response, so $OPERATORX_DATA is left unset and that test is quarantined too.
+bodies are restored or the entries are re-cited through a reviewed refit. The OperatorX
+response fit_marlin_nvfp4_grouped_ramp.py cites is served and is fetched here too, as
+moe_MiniMax-M3.json, checked against a digest of the rows that fit reads (operatorx_points.py):
+its bytes changed by 2026-11-05 and its rows did not (inference-sim/blis-substrate#11).
 
 The API keeps a bounded window of recent runs, so a body below can stop being served. Then
 this fails, naming it, and the gate fails rather than skips: restore the body, or quarantine
@@ -43,8 +44,15 @@ _spec = importlib.util.spec_from_file_location(
     "collectivex_points", Path(__file__).resolve().parent / "collectivex_points.py")
 cpts = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cpts)
+_ospec = importlib.util.spec_from_file_location(
+    "operatorx_points", Path(__file__).resolve().parent / "operatorx_points.py")
+opx = importlib.util.module_from_spec(_ospec)
+_ospec.loader.exec_module(opx)
 
 URL = "https://inferencex.semianalysis.com/api/v1/collectivex/runs/{run}?version=1"
+OPERATORX_URL = ("https://inferencex.semianalysis.com/api/v1/operatorx/compare"
+                 "?op=moe&workload=moe:MiniMax-M3")
+OPERATORX_ROWS = "82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf"
 
 # run id -> sha256 of the points of its body (collectivex_points.digest), as served on 2026-11-09.
 BODIES = {
@@ -66,8 +74,8 @@ BODIES = {
 ATTEMPTS = 4
 
 
-def fetch(run: str) -> bytes:
-    req = urllib.request.Request(URL.format(run=run), headers={"User-Agent": "blis-rederive"})
+def fetch(run: str, url: str = URL) -> bytes:
+    req = urllib.request.Request(url.format(run=run), headers={"User-Agent": "blis-rederive"})
     for attempt in range(1, ATTEMPTS + 1):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
@@ -98,6 +106,13 @@ def main(argv: list[str]) -> int:
             continue
         (out / f"cx_run_{run}.body").write_bytes(body)
         print(f"run {run}: {len(body)} bytes, points sha256 {got[:12]} ok")
+    body = fetch("operatorx", OPERATORX_URL)
+    got = opx.digest_bytes(body)
+    if got != OPERATORX_ROWS:
+        bad.append(f"OperatorX MoE MiniMax-M3: rows sha256 {got}, not the pinned {OPERATORX_ROWS}")
+    else:
+        (out / "moe_MiniMax-M3.json").write_bytes(body)
+        print(f"OperatorX MoE MiniMax-M3: {len(body)} bytes, rows sha256 {got[:12]} ok")
     if bad:
         print("\n".join(bad), file=sys.stderr)
         return 1

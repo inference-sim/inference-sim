@@ -15,7 +15,7 @@ of its own price NVFP4 Marlin better?
 
 THE DATA. InferenceX OperatorX, op moe, workload MiniMax-M3:
 https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3
-(response sha256 in SOURCE_SHA below; runs 36292796863 on h100 and 36292840239 on h200,
+(rows sha256 in SOURCE_SHA below, the digest operatorx_points.py takes of the rows this fit reads; runs 36292796863 on h100 and 36292840239 on h200,
 InferenceX 8f03d279200eedfae08027615fdeca9f43b81cc1, image vllm/vllm-openai:nightly-cd10ed6f9f6b
 37a8ace9cf380007e66fe12ec0c3, experimental/operatorx/containers.toml). Rows: MarlinExperts,
 w1/w2 e2m1 with e4m3 scales per 16 (NVFP4), tp 1, hidden 6144, inter 3072, top-4 of 128, one
@@ -59,7 +59,6 @@ one aggregate: candidate A on the h200 graph rows, with the shared expert mispri
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import math
 import os
@@ -72,14 +71,14 @@ import yaml
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import coefficient_blocks as cb  # noqa: E402
+import operatorx_points as opx  # noqa: E402
 
 SET_PATH = HERE.parent / "coefficients" / "cost-model-primitives.yaml"
 CATALOG = Path(os.environ.get("BLIS_CATALOG") or HERE.parents[1] / "catalog")
 URL = "https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3"
-SOURCE_SHA = "ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89"
-RUNS = {"h100": "36292796863", "h200": "36292840239"}
-GEOM = (6144, 3072, 4, 128)          # hidden, inter, top_k, experts
-SHARED_INTER = 3072
+SOURCE_SHA = "82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf"
+RUNS = opx.RUNS
+GEOM, SHARED_INTER = opx.GEOM, opx.SHARED_INTER
 B_NVFP4, B_MXFP4, B_MXFP8 = 0.5 + 1 / 16, 0.5 + 1 / 32, 1 + 1 / 32
 NAMES = ("gemm_eps_max_w4a16_nvfp4_grouped", "gemm_m_half_w4a16_nvfp4_grouped")
 CONVENTION_BAND, LAND_MARGIN = 0.05, 0.02
@@ -97,26 +96,7 @@ def committed(name: str, chip: str) -> float:
 
 
 def rows(path: Path, chip: str) -> list[tuple[int, bool, float]]:
-    d = json.loads(path.read_text())
-    m = d["measurements"][chip]
-    out = []
-    for i, c in enumerate(d["cases"]):
-        k = json.loads(c["key"])
-        w, e = k["experts"]["w1"], k["experts"]
-        if m["status"][i] != "ok" or d["kernels"][m["kernel"][i]] != "MarlinExperts":
-            continue
-        if (w["dtype"], w["scale"]["dtype"], w["scale"]["group"][1]) != ("e2m1", "e4m3", 16):
-            continue
-        if k.get("parallel") or m["runId"][i] != RUNS[chip]:
-            continue
-        if (k["hidden"], e["inter"], e["top_k"], e["num"]) != GEOM:
-            raise SystemExit(f"{chip}: geometry moved: {k['hidden'], e['inter'], e['top_k'], e['num']}")
-        sh = k["shared"]
-        if (sh["count"], sh["inter"], sh["w1"]["dtype"], sh["w1"]["scale"]["dtype"]) != (
-                1, SHARED_INTER, "e4m3", "ue8m0"):
-            raise SystemExit(f"{chip}: shared expert moved: {sh}")
-        out.append((k["tokens"], bool(m["cudaGraph"][i]), m["latencyUs"][i] * 1e-6))
-    return sorted(out)
+    return opx.rows(json.loads(path.read_text()), chip)
 
 
 class Part:
@@ -208,7 +188,7 @@ def _s(x):
 
 def entry_lines(name, f):
     eps, mh = f["D_ramp"]
-    cite = (f"InferenceX OperatorX {URL} (response sha256 {SOURCE_SHA}), run {RUNS[f['chip']]}, "
+    cite = (f"InferenceX OperatorX {URL} (rows sha256 {SOURCE_SHA}), run {RUNS[f['chip']]}, "
             f"MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 "
             f"inter 3072 top-4 of 128 with one MXFP8 shared expert, {f['n']} token counts")
     if name.startswith("gemm_eps_max"):
@@ -248,8 +228,8 @@ def main(argv):
         print("no OperatorX data: pass --data or set OPERATORX_DATA", file=sys.stderr)
         return 2
     path = Path(args.data) / "moe_MiniMax-M3.json"
-    if hashlib.sha256(path.read_bytes()).hexdigest() != SOURCE_SHA:
-        print(f"refusing: {path} is not the cited response (sha256 {SOURCE_SHA[:12]})",
+    if opx.digest_bytes(path.read_bytes()) != SOURCE_SHA:
+        print(f"refusing: {path} does not hold the cited rows (sha256 {SOURCE_SHA[:12]})",
               file=sys.stderr)
         return 3
     fits = {c: run_part(path, c, not args.no_refit) for c in ("h100", "h200")}

@@ -9,8 +9,9 @@ name: rederive
 # at the commit every committed value re-derives at and runs the whole suite
 # (scripts/rederive.sh), so a value that its own fitter no longer produces fails.
 #
-# The InferenceX CollectiveX run bodies the GB200 / H200-EP16 DeepEP entries cite are fetched
-# from the public API and checked against pinned sha256s (scripts/fetch_cited_inferencex.py);
+# The InferenceX CollectiveX run bodies the GB200 / H200-EP16 DeepEP entries cite, and the
+# OperatorX response the Marlin NVFP4 entries cite, are fetched from the public API and checked
+# against pinned digests of the points the fits read (scripts/fetch_cited_inferencex.py);
 # they are third-party data, so they are fetched, never committed (X12, D6). The tests whose
 # cited bodies the API no longer serves skip, and are on .github/quarantine.yaml with an
 # owning issue and an expiry; rederive.sh fails on any other skip (X16, X25).
@@ -122,7 +123,7 @@ jobs:
       - uses: ./.github/actions/go-toolchain
 
       # Fails, naming the run, if a pinned body is no longer served or differs from its hash.
-      - name: Fetch the cited CollectiveX run bodies (sha256-pinned)
+      - name: Fetch the cited CollectiveX run bodies and the OperatorX response (digest-pinned)
         working-directory: registry
         run: python -I scripts/fetch_cited_inferencex.py "$RUNNER_TEMP/collectivex"
 
@@ -133,5 +134,6 @@ jobs:
           AISIMULATE_ALLREDUCE_DATA: ${{ github.workspace }}/aisimulate-allreduce/python/aisimulate/src/aisimulate_core/systems/data
           INFERENCEX_GOLDEN: ${{ github.workspace }}/inferencex/inferencex-e2e/infx/golden_al_distribution
           COLLECTIVEX_DATA: ${{ runner.temp }}/collectivex
+          OPERATORX_DATA: ${{ runner.temp }}/collectivex
         working-directory: registry
         run: scripts/rederive.sh

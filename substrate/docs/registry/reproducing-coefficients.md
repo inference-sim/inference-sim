@@ -284,12 +284,14 @@ https://inferencex.semianalysis.com/api/v1/collectivex/runs/<run_id>?version=1
 and save each body as `cx_run_<run_id>.body`. The query must be the bare integer
 `version=1`: without it, or with `v1`, the API answers `{"error":"Unknown version"}`.
 `scripts/fetch_cited_inferencex.py <dir>` does this for the bodies the committed entries
-cite that the API still serves, and fails unless each matches its pinned sha256; the
-`rederive` workflow runs it. The bodies are third-party data and are not committed.
+cite that the API still serves, and fails unless the points of each match the pinned
+digest; the `rederive` workflow runs it. The bodies are third-party data and are not committed.
 
 The API keeps a bounded window of recent runs, so a cited run can stop being fetchable.
-Each writer checks that the bodies its committed entries cite are present and hash to the
-cited sha256. If they are not, it exits 3 rather than re-fit and re-cite the entries on
+The DeepEP writer checks that the bodies its committed entries cite are present and that
+their points hash to the cited digest (`scripts/collectivex_points.py`: the series, point
+and p50 the fit reads, not the body's bytes, which the API changed on 2026-11-07 without
+changing a point). If they are not, it exits 3 rather than re-fit and re-cite the entries on
 other runs, and `validator/test_deepep_ll_graph.py` skips with "the cited CollectiveX
 bodies are not present". The entries `fit_deepep_ll_graph.py` and `fit_host_link.py` wrote
 cite runs the API no longer serves (33356406487, 36334392363, 36367074689, 36402856875, and
@@ -299,9 +301,12 @@ committed, and cannot be re-derived from public data. Their two tests are on
 and fails when the entries expire, until the bodies are restored or the entries are
 re-cited through a reviewed refit.
 
-The OperatorX response `fit_marlin_nvfp4_grouped_ramp.py` cites (sha256 `ea8fb4078168`) is
-no longer what its URL serves, so `validator/test_operatorx.py` is quarantined the same
-way.
+The OperatorX response `fit_marlin_nvfp4_grouped_ramp.py` cites is cited by the digest of
+the rows that fit reads (`scripts/operatorx_points.py`), not by its bytes: the URL served a
+different response by 2026-11-05, with the same rows and so the same values (h100 0.237 and
+24, h200 0.230 and 61). `fetch_cited_inferencex.py` fetches it with the run bodies, and
+`validator/test_operatorx.py` runs in the gate and is no longer quarantined
+(inference-sim/blis-substrate#11).
 
 ### Data freshness, checked 2026-10-30
 

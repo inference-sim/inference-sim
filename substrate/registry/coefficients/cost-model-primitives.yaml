@@ -732,7 +732,7 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (rows sha256 82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
       rationale: >
         Asymptotic fraction of the dense BF16 peak vLLM's Marlin NVFP4 W4A16 grouped GEMM reaches on this part (FP8 E4M3 scales per 16, 0.5625 stored B/weight). Fitted with gemm_m_half_w4a16_nvfp4_grouped through the kernel's MoE composition: a shared expert priced as a dense max(SM, HBM) on gemm_*_w8a16_mxfp8 at 1.03125 B/weight plus the routed SM + HBM sum, on every second token count; held out on the rest: median 4.8%, signed +4.4%, max 24.6% (n 16), against the MXFP4 ramp the kernel otherwise falls back to (0.282 / 15) at median 11.1%, signed -3.3%, max 18.7% (n 16). The vLLM nightly cd10ed6 these rows ran has v0.31.0's Marlin MoE kernel byte for byte (scripts/fit_marlin_nvfp4_grouped_ramp.py states the diff). One geometry, natural routing, priced at imbalance 1. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
   - gemm_m_half_w4a16_nvfp4_grouped:
@@ -742,7 +742,7 @@ coefficients:
       fitted: true
       scope: {hardware: [h100]}
       sources:
-        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (rows sha256 82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf), run 36292796863, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
       rationale: >
         The token count at which the Marlin NVFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_nvfp4_grouped. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
   - moe_routing_imbalance_median:
@@ -936,7 +936,7 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (rows sha256 82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
       rationale: >
         Asymptotic fraction of the dense BF16 peak vLLM's Marlin NVFP4 W4A16 grouped GEMM reaches on this part (FP8 E4M3 scales per 16, 0.5625 stored B/weight). Fitted with gemm_m_half_w4a16_nvfp4_grouped through the kernel's MoE composition: a shared expert priced as a dense max(SM, HBM) on gemm_*_w8a16_mxfp8 at 1.03125 B/weight plus the routed SM + HBM sum, on every second token count; held out on the rest: median 3.5%, signed -1.1%, max 37.3% (n 16), against the MXFP4 ramp the kernel otherwise falls back to (0.245 / 26) at median 9.3%, signed -9.3%, max 21.1% (n 16). The vLLM nightly cd10ed6 these rows ran has v0.31.0's Marlin MoE kernel byte for byte (scripts/fit_marlin_nvfp4_grouped_ramp.py states the diff). One geometry, natural routing, priced at imbalance 1. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
   - gemm_m_half_w4a16_nvfp4_grouped:
@@ -946,7 +946,7 @@ coefficients:
       fitted: true
       scope: {hardware: [h200]}
       sources:
-        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (response sha256 ea8fb4078168319c05f347e89a646ced9b7c879f276f8b5b9936066f0b097d89), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
+        - {kind: model, cite: "InferenceX OperatorX https://inferencex.semianalysis.com/api/v1/operatorx/compare?op=moe&workload=moe:MiniMax-M3 (rows sha256 82c64246b4135bbf66348411c6732e46d5e12be02979ec6b580100a375450eaf), run 36292840239, MarlinExperts NVFP4 (e2m1, e4m3 scale per 16), tp 1, MiniMax-M3 block hidden 6144 inter 3072 top-4 of 128 with one MXFP8 shared expert, 32 token counts", role: primary}
       rationale: >
         The token count at which the Marlin NVFP4 W4A16 grouped ramp reaches half its asymptote, fitted jointly with gemm_eps_max_w4a16_nvfp4_grouped. Reproduce with scripts/fit_marlin_nvfp4_grouped_ramp.py.
   - moe_routing_imbalance_median:

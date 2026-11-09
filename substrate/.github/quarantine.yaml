@@ -3,7 +3,7 @@
 # 30 days after that day, both as YYYY-MM-DD. A listed test's skip does not fail its gate (X16) until the entry expires; then CI fails. The
 # format is in tools/prcheck/quarantine.go. A gate reads this list through `prcheck skips`.
 #
-# The three entries below are re-derivation gates (registry/scripts/rederive.sh) whose cited
+# The two entries below are re-derivation gates (registry/scripts/rederive.sh) whose cited
 # InferenceX bodies the API no longer serves. Each writer refuses (exit 3) rather than re-fit
 # and re-cite its entries on other runs, so the test skips; the committed values stay as
 # fitted, and cannot be re-derived from public data until the bodies are restored or the
@@ -24,11 +24,3 @@
   reason: >-
     fit_host_link.py refuses; the CollectiveX swap_blocks bodies its entries cite (sha256
     26cad6ccbdaa) answer 404
-- test: test_marlin_nvfp4_grouped_ramp_reproduces_from_operatorx
-  package: registry/validator/test_operatorx.py
-  issue: inference-sim/blis-substrate#11
-  added: 2026-11-05
-  expires: 2026-12-05
-  reason: >-
-    fit_marlin_nvfp4_grouped_ramp.py refuses; the OperatorX MoE MiniMax-M3 response its
-    entries cite (sha256 ea8fb4078168) is no longer served
