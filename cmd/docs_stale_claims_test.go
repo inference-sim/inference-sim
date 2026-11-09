@@ -142,46 +142,31 @@ func TestDefaultsSchemaDocMatchesConfigStruct(t *testing.T) {
 	}
 }
 
-// TestMetricsPathDocumentedOnRunAndReplay pairs a behavioral anchor with a doc check, so the
-// doc claim cannot be "corrected" into a second falsehood if the flag registration changes.
-//
-// Retired claim: `--metrics-path` is "blis run only — blis replay uses --results-path
-// instead". #1583 put --metrics-path on replay (that is how `blis calibrate --sim-metrics`
-// gets a replayed cache_hit_rate); --results-path is the replay-only PER-REQUEST path, a
-// complement rather than a substitute.
-func TestMetricsPathDocumentedOnRunAndReplay(t *testing.T) {
-	// Behavioral anchor: the documented shape is the real one.
-	if runCmd.Flags().Lookup("metrics-path") == nil {
-		t.Fatal("blis run must register --metrics-path")
+// TestRemovedOutputFlagsAreNotDocumentedAsLive: --metrics-path and --results-path are gone
+// (#2071): the Result on stdout, or --output, carries the aggregates and the per-request rows.
+// A behavioral anchor (neither command registers them) pairs with the docs that describe the
+// commands: the flag reference and the guides name the flags only as removed.
+func TestRemovedOutputFlagsAreNotDocumentedAsLive(t *testing.T) {
+	for _, cmd := range []string{"run", "replay"} {
+		c := map[string]*cobra.Command{"run": runCmd, "replay": replayCmd}[cmd]
+		for _, f := range []string{"metrics-path", "results-path"} {
+			if c.Flags().Lookup(f) != nil {
+				t.Errorf("blis %s registers --%s", cmd, f)
+			}
+		}
 	}
-	if replayCmd.Flags().Lookup("metrics-path") == nil {
-		t.Fatal("blis replay must register --metrics-path (#1583)")
-	}
-	if runCmd.Flags().Lookup("results-path") != nil {
-		t.Error("blis run must NOT register --results-path; the docs describe it as replay-only")
-	}
-	if replayCmd.Flags().Lookup("results-path") == nil {
-		t.Fatal("blis replay must register --results-path")
-	}
-
-	src, err := os.ReadFile(configurationDoc)
-	if err != nil {
-		t.Fatalf("read %s: %v", configurationDoc, err)
-	}
-	text := string(src)
-
-	runOnly := []*regexp.Regexp{
-		// Stays on one line but crosses `|` freely: in the flag table the name and the
-		// description are in DIFFERENT cells, so a class excluding the pipe could never see
-		// the retired "blis run only" claim at all. Backticks optional — "`blis run` only"
-		// is the same claim.
-		regexp.MustCompile("(?i)--metrics-path[^\n]{0,200}`?blis run`? only"),
-		regexp.MustCompile("(?i)--metrics-path`?\\s*\\(run only\\)"),
-	}
-	for _, re := range runOnly {
-		if loc := re.FindStringIndex(text); loc != nil {
-			t.Errorf("%s describes --metrics-path as run-only (%q), but blis replay registers it too "+
-				"(#1583)", configurationDoc, text[loc[0]:loc[1]])
+	for _, path := range []string{configurationDoc, "../docs/guide/replay.md", "../docs/guide/results.md",
+		"../docs/reference/project-structure.md"} {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for n, line := range strings.Split(string(src), "\n") {
+			if strings.Contains(line, "metrics-path") || strings.Contains(line, "results-path") {
+				if !strings.Contains(strings.ToLower(line), "removed") {
+					t.Errorf("%s:%d names a removed flag without saying so: %s", path, n+1, strings.TrimSpace(line))
+				}
+			}
 		}
 	}
 }
@@ -219,15 +204,14 @@ func TestModelsDocScopeClaimIsBounded(t *testing.T) {
 }
 
 // TestResolveLatencyConfigSideEffects: resolveLatencyConfig's doc comment names the
-// package-level vars it mutates, and a caller relies on them afterwards -- resolvedCatalogRoot
-// is read back at the EmitOutput sites as catalog provenance (#1732). Checked as behavior (the
-// var really is set to the catalog the run read) and as documentation (the comment names it).
+// package-level vars it mutates, and a caller relies on them afterwards. Checked as behavior
+// and as documentation (the comment names them).
 func TestResolveLatencyConfigSideEffects(t *testing.T) {
 	catalogDir := setupKernelTestFixtures(t)
 	orig := captureCmdLevelVars()
-	savedResolved := resolvedCatalogRoot
-	t.Cleanup(func() { orig.restore(); resolvedCatalogRoot = savedResolved })
-	catalogPath, resolvedCatalogRoot = catalogDir, ""
+	savedData := openedData
+	t.Cleanup(func() { orig.restore(); openedData = savedData })
+	catalogPath, openedData = catalogDir, nil
 
 	cmd := &cobra.Command{}
 	adoptKernelDeployment(cmd)
@@ -235,9 +219,8 @@ func TestResolveLatencyConfigSideEffects(t *testing.T) {
 	if lr.KernelModel == nil {
 		t.Fatal("non-vacuity: resolveLatencyConfig returned no kernel latency model")
 	}
-	if resolvedCatalogRoot != catalogDir {
-		t.Errorf("resolvedCatalogRoot = %q after resolveLatencyConfig, want the catalog it read, %q",
-			resolvedCatalogRoot, catalogDir)
+	if openedData == nil || openedData.Catalog.Path != catalogDir {
+		t.Errorf("the run's data after resolveLatencyConfig is not the catalog it named, %q", catalogDir)
 	}
 	if model == "" || model != strings.ToLower(model) {
 		t.Errorf("model %q must be the scenario's model, normalized to lower case", model)
@@ -253,8 +236,7 @@ func TestResolveLatencyConfigSideEffects(t *testing.T) {
 		t.Fatal("root.go declares no resolveLatencyConfig")
 	}
 	doc := text[strings.LastIndex(text[:end], "\n\n"):end]
-	if !strings.Contains(doc, "Side effects:") || !strings.Contains(doc, "resolvedCatalogRoot") {
-		t.Errorf("resolveLatencyConfig's doc comment must name its side effects, resolvedCatalogRoot "+
-			"among them:\n%s", doc)
+	if !strings.Contains(doc, "Side effects:") || !strings.Contains(doc, "model") {
+		t.Errorf("resolveLatencyConfig's doc comment must name its side effects, model among them:\n%s", doc)
 	}
 }

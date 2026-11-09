@@ -21,7 +21,7 @@ it. Line numbers are at `08d7a9cd` (2026-06-11), and `d053ae24` and HEAD (`9fa76
 |---|---|
 | seed | `benchmark_serving.py:808-809@08d7a9cd`: `random.seed(args.seed); np.random.seed(args.seed)`; `:1058`: `--seed` default `0` |
 | the launcher passes no `--seed`, `--random-prefix-len` or `--use-chat-template` for these recipes | `benchmarks/benchmark_lib.sh:352-371@f4a002ef`. The recipes (`gptoss_fp4_h200.sh`, `minimaxm2.5_fp8_h200.sh`, `kimik2.5_fp4_b200.sh`, `dsv4_fp4_b300_vllm.sh`, ...) pass `--backend vllm`, `--random-range-ratio "$RANDOM_RANGE_RATIO"`, `--num-prompts $((CONC*10))` and `--max-concurrency "$CONC"` |
-| range ratio | `RANDOM_RANGE_RATIO: 0.8` in the `.github/workflows/benchmark-tmpl.yml` job env at every run date (`:67@f267602f` ... `:153@8d7c906a`) |
+| range ratio | `RANDOM_RANGE_RATIO: 0.8` in the `benchmark-tmpl.yml` workflow's job env in InferenceX at every run date (`:67@f267602f` ... `:153@8d7c906a`) |
 | one process per point | the workflow runs one job per `conc` (`benchmark-tmpl.yml`, `CONC: ${{ inputs.conc }}`), and each job runs the client once |
 | prefix draw | `benchmark_serving.py:217@08d7a9cd`: `np.random.randint(0, vocab_size, size=prefix_len)`, with `prefix_len` defaulting to 0 |
 | length draws | `:228-235@08d7a9cd`: `lower = int(seq_len * range_ratio)`, then `np.random.randint(lower, upper+1, size=num_prompts)`; `input_lens` first, then `output_lens` |
@@ -250,7 +250,7 @@ settings that keep each out of STRICT, and the figures; `RESULTS.md` records the
 
 ## The error definition
 
-Shape error is AISimulate's own definition (`scripts/build_e2e_accuracy_overview.py:150-181`): each
+Shape error is AISimulate's own definition (`build_e2e_accuracy_overview.py:150-181` in AISimulate's scripts directory): each
 side is divided by its own value at the sweep's lowest concurrency, that anchor is excluded, and
 the errors are pooled over sweeps. Applied to AISimulate's own per-point data over the whole
 1,137-point snapshot, it returns the 10.05% `tpot_shape_error_pct` that AISimulate publishes; the

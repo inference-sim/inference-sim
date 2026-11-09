@@ -1,6 +1,8 @@
 package harness
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,14 +13,14 @@ import (
 	"github.com/inference-sim/inference-sim/tools/harness/internal/artifacts"
 )
 
-// testRepos is the artifact roots the harness tests run against: the pinned kernel module's
-// scenarios and the vendored catalog and registry.
+// testRepos is the artifact roots the harness tests run against: this repository's
+// testdata/kernel/aisimulate and the catalog and registry embedded in the pinned blis-substrate.
 func testRepos() kernelmodel.Repos {
-	return kernelmodel.Repos{
-		Scenarios: kernelmodel.DefaultScenarios(),
-		Catalog:   kernelmodel.DefaultCatalog(),
-		Registry:  kernelmodel.DefaultRegistry(),
+	r, err := OpenRepos(testScenarios(), "", "")
+	if err != nil {
+		panic(err)
 	}
+	return r
 }
 
 var (
@@ -43,7 +45,9 @@ func testBlis(t testing.TB) string {
 			blisErr = err
 			return
 		}
-		dir := filepath.Join(cache, "inference-sim", "harness-test")
+		// Keyed by checkout: two checkouts testing at once must not replace each other's binary.
+		sum := sha256.Sum256([]byte(root))
+		dir := filepath.Join(cache, "inference-sim", "harness-test", hex.EncodeToString(sum[:6]))
 		if blisErr = os.MkdirAll(dir, 0o755); blisErr != nil {
 			return
 		}
@@ -94,3 +98,6 @@ func testSweep(t *testing.T) Sweep {
 	t.Fatal("gpt-oss-120b-h200-fp4-vllm-tp4 not in the corpus")
 	return Sweep{}
 }
+
+// testScenarios is the cost model's generated fixtures, testdata/kernel/aisimulate.
+func testScenarios() string { return filepath.Join(repoRoot(), "testdata", "kernel", "aisimulate") }

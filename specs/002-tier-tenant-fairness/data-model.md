@@ -1,10 +1,12 @@
 # Data Model: Phase 1B — Service Tiers & Tenant Fairness
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 ## Entities
 
 ### SLO Tier Priority (existing, extended)
 
-Canonical mapping from `Request.SLOClass` string to integer priority. Defined as `SLOTierPriority(class string) int` (exported) in `sim/admission.go` so `sim/cluster/` can call it without a circular import.
+Canonical mapping from `Request.SLOClass` string to integer priority. Defined as `SLOTierPriority(class string) int` (exported) in the simulator's admission file so `sim/cluster/` can call it without a circular import.
 
 | SLOClass string | Priority int | Admission behavior |
 |----------------|-------------|-------------------|
@@ -21,7 +23,7 @@ Canonical mapping from `Request.SLOClass` string to integer priority. Defined as
 
 ---
 
-### TierShedAdmission (new struct, `sim/admission.go`)
+### TierShedAdmission (new struct, the simulator's admission file)
 
 An `AdmissionPolicy` that gates requests by tier priority under overload.
 
@@ -60,7 +62,7 @@ DeferredQueue → [horizon reached] → DeferredHorizonInterrupted (INV-1)
 
 ---
 
-### TenantTracker (new struct, `sim/cluster/tenant.go`)
+### TenantTracker (new struct, the cluster package's tenant-tracker file)
 
 Tracks per-tenant in-flight request counts for fair-share enforcement.
 

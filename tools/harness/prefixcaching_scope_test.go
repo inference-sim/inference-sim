@@ -13,12 +13,7 @@ import (
 // pins the first three, where a silent break would leave every unit test passing.
 func TestScenarioPrefixCachingReachesTheDeployment(t *testing.T) {
 	const scenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
-	committed := kernelmodel.Repos{
-		Scenarios: kernelmodel.DefaultScenarios(),
-		Catalog:   kernelmodel.DefaultCatalog(),
-		Registry:  kernelmodel.DefaultRegistry(),
-	}
-	m, err := kernelmodel.Open(scenario, committed)
+	m, err := kernelmodel.Open(scenario, testRepos())
 	if err != nil {
 		t.Fatalf("Open(%s): %v", scenario, err)
 	}

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"pgregory.net/rapid"
 )
 
@@ -39,7 +38,7 @@ func committedSweep(framework string) Sweep {
 // scenario the sweep names -- not from a list of known-missing models.
 func TestAModelMissingFromTheCatalogIsAGapOwnedByTheCatalog(t *testing.T) {
 	const name = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
-	raw, err := os.ReadFile(filepath.Join(kernelmodel.DefaultScenarios(), name))
+	raw, err := os.ReadFile(filepath.Join(testScenarios(), name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +50,7 @@ func TestAModelMissingFromTheCatalogIsAGapOwnedByTheCatalog(t *testing.T) {
 	r := testRepos()
 	r.Scenarios = dir
 	gaps := gapsFor(t, committedSweep("vllm"), Config{Repos: r})
-	if !hasGap(gaps, OwnerCatalog, "model not in blis-catalog") {
+	if !hasGap(gaps, OwnerCatalog, "model not in the catalog") {
 		t.Errorf("gaps %+v lack the missing model", gaps)
 	}
 	for _, g := range gaps {

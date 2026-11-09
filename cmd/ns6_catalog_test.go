@@ -32,8 +32,7 @@ import (
 //
 //  1. Package-wide: no production source may name a removed fetch symbol, nor carry a
 //     huggingface.co STRING LITERAL — the outbound host. (Prose mentioning HuggingFace is
-//     fine; only a literal could become a URL. `net/http` itself cannot be banned
-//     package-wide because `blis observe` legitimately dispatches to a real server.)
+//     fine; only a literal could become a URL.)
 //  2. At the resolution boundary (cmd/catalog_root.go, the file that locates the catalog):
 //     no network import and no file-creating call, so that file cannot write a catalog entry
 //     however it is edited.
@@ -125,30 +124,6 @@ func TestNS6_NoRuntimeFetch_StaticGuard(t *testing.T) {
 	}
 	if !sawResolver {
 		t.Fatalf("non-vacuity: %s was not scanned — the resolver checks did not run", resolverFile)
-	}
-}
-
-// TestNS6_ObserveTakesNoDeploymentFlags pins the boundary that makes BC-3 hold for
-// `blis observe` by construction: observe is a black-box dispatcher against a real
-// server, so it places no instances and takes no deployment -- no --scenario, and none of the
-// retired --hardware/--tp. Were someone to give it registerSimConfigFlags, it would inherit
-// the scenario requirement silently; this test says that has to be a deliberate decision.
-//
-// #1769 narrowed this: observe DOES now declare --catalog, because the named workload
-// presets moved into the catalog and observe resolves one for --workload. It still resolves
-// no MODEL config, which is what the deployment flags are about, so the deployment flags stay
-// banned here, and TestCatalogPresets_CatalogFlagOnEveryConsumer owns the positive --catalog
-// claim.
-func TestNS6_ObserveTakesNoDeploymentFlags(t *testing.T) {
-	for _, flag := range []string{"scenario", "hardware", "tp"} {
-		if f := observeCmd.Flags().Lookup(flag); f != nil {
-			t.Errorf("`blis observe` must not declare --%s: it resolves no model config and "+
-				"places no instances, so a deployment flag there would be inert", flag)
-		}
-	}
-	// Non-vacuity: observe does declare its own flags, so Lookup works.
-	if observeCmd.Flags().Lookup("server-url") == nil {
-		t.Fatal("non-vacuity: expected `blis observe` to declare --server-url")
 	}
 }
 

@@ -1,10 +1,7 @@
 package cluster
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"testing"
 
@@ -37,7 +34,7 @@ func recordCompletions(cs *ClusterSimulator) *[]completionEvent {
 	return &seen
 }
 
-// completionIndexOf writes the run's metrics file and returns each request's completion_index.
+// completionIndexOf returns each request's completion_index.
 func completionIndexOf(t *testing.T, cs *ClusterSimulator) map[string]int {
 	t.Helper()
 	idx := map[string]int{}
@@ -47,32 +44,10 @@ func completionIndexOf(t *testing.T, cs *ClusterSimulator) map[string]int {
 	return idx
 }
 
-// requestRowsOf writes the run's metrics file and returns its per-request rows.
+// requestRowsOf returns the run's per-request rows, as the Result's rows are built from them.
 func requestRowsOf(t *testing.T, cs *ClusterSimulator) []sim.RequestMetrics {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "metrics.json")
-	m := cs.AggregatedMetrics()
-	devnull, err := os.Open(os.DevNull)
-	if err != nil {
-		t.Fatal(err)
-	}
-	orig := os.Stdout
-	os.Stdout = devnull
-	emitErr := m.EmitOutput(m.BuildOutput("cluster"), path)
-	os.Stdout = orig
-	_ = devnull.Close()
-	if emitErr != nil {
-		t.Fatal(emitErr)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var out sim.MetricsOutput
-	if err := json.Unmarshal(raw, &out); err != nil {
-		t.Fatal(err)
-	}
-	return out.Requests
+	return cs.AggregatedMetrics().RequestRows()
 }
 
 // sameShapeRequests is n requests arriving together in waves of three, with IDs that sort

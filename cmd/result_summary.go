@@ -11,7 +11,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/inference-sim/blis-schemas/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"github.com/inference-sim/inference-sim/sim/trace"
@@ -67,7 +67,7 @@ func renderSummary(w io.Writer, r *result.Result, v *summaryView) {
 func printAnomalyCounters(w io.Writer, raw *cluster.RawMetrics) {
 	if raw.PriorityInversions == 0 && raw.HOLBlockingEvents == 0 && raw.RejectedRequests == 0 && raw.RoutingRejections == 0 &&
 		raw.DroppedUnservable == 0 && raw.LengthCappedRequests == 0 && raw.GatewayQueueDepth == 0 && raw.GatewayQueueRejected == 0 &&
-		raw.GatewayEvicted == 0 && raw.GatewayExpired == 0 && raw.EncodeRoutingRejections == 0 && raw.TimedOutRequests == 0 {
+		raw.GatewayEvicted == 0 && raw.GatewayExpired == 0 && raw.TimedOutRequests == 0 {
 		return
 	}
 	_, _ = fmt.Fprintln(w, "=== Anomaly Counters ===")
@@ -96,7 +96,6 @@ func printAnomalyCounters(w io.Writer, raw *cluster.RawMetrics) {
 		{"Gateway Queue Rejected", raw.GatewayQueueRejected},
 		{"Gateway Evicted (in-flight)", raw.GatewayEvicted},
 		{"Gateway Expired (TTL)", raw.GatewayExpired},
-		{"Encode Routing Rejections", raw.EncodeRoutingRejections},
 	} {
 		if c.n > 0 {
 			_, _ = fmt.Fprintf(w, "%s: %d\n", c.label, c.n)

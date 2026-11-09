@@ -9,7 +9,7 @@ import (
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 
-	"github.com/inference-sim/blis-schemas/embed"
+	"github.com/inference-sim/blis-substrate/contracts/embed"
 
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -112,7 +112,7 @@ func assertConservation(t *testing.T, res runResult, total int) {
 	m := res.metrics
 	sum := m.CompletedRequests + m.StillQueued + m.StillRunning + m.DroppedUnservable + m.TimedOutRequests +
 		res.cs.RejectedRequests() + res.cs.RoutingRejections() + res.cs.GatewayQueueDepth() +
-		res.cs.GatewayQueueRejected() + res.cs.GatewayEvicted() + res.cs.GatewayExpired() + res.cs.EncodeRoutingRejections()
+		res.cs.GatewayQueueRejected() + res.cs.GatewayEvicted() + res.cs.GatewayExpired()
 	if sum != total {
 		t.Errorf("INV-1: %d requests injected, %d accounted for (completed %d, queued %d, running %d, dropped %d, timed out %d, "+
 			"rejected %d, routing-rejected %d, in gateway %d, gateway-rejected %d, evicted %d, expired %d)",

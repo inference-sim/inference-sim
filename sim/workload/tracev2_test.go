@@ -3,17 +3,16 @@ package workload
 import (
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
 func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 	header := &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated",
-		WarmUpRequests: 5, WorkloadSpec: "test.yaml",
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 		GoodputSLOTargets: map[string]SLODimTargets{
 			"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
 			"batch":    {E2EMs: 120000},
@@ -25,8 +24,8 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 			Status: "ok"},
 		{RequestID: 1, ClientID: "c2", TenantID: "t2", SLOClass: "critical",
 			InputTokens: 256, OutputTokens: 64, ArrivalTimeUs: 100000,
-			SendTimeUs: 100010, FirstChunkTimeUs: 100800, LastChunkTimeUs: 101500,
-			NumChunks: 5, Streaming: true, Status: "ok"},
+			FirstChunkTimeUs: 100800, LastChunkTimeUs: 101500,
+			Streaming: true, Status: "ok"},
 	}
 
 	dir := t.TempDir()
@@ -40,11 +39,8 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if loaded.Header.Version != 3 {
-		t.Errorf("version = %d, want 3", loaded.Header.Version)
-	}
-	if loaded.Header.WarmUpRequests != 5 {
-		t.Errorf("warm_up = %d, want 5", loaded.Header.WarmUpRequests)
+	if loaded.Header.Version != TraceVersion {
+		t.Errorf("version = %d, want %d", loaded.Header.Version, TraceVersion)
 	}
 	// BC-8: GoodputSLOTargets round-trips per (class, dimension).
 	if got := loaded.Header.GoodputSLOTargets["critical"].TTFTMs; got != 100 {
@@ -79,27 +75,18 @@ func TestTraceV2_RoundTrip_PreservesAllFields(t *testing.T) {
 	if r1.ArrivalTimeUs != 100000 {
 		t.Errorf("record 1 arrival = %d, want 100000", r1.ArrivalTimeUs)
 	}
-	if r1.SendTimeUs != 100010 {
-		t.Errorf("record 1 send = %d, want 100010", r1.SendTimeUs)
-	}
 	if r1.FirstChunkTimeUs != 100800 {
 		t.Errorf("record 1 first_chunk = %d, want 100800", r1.FirstChunkTimeUs)
 	}
 	if !r1.Streaming {
 		t.Error("record 1 should be streaming")
 	}
-	if r1.NumChunks != 5 {
-		t.Errorf("record 1 chunks = %d, want 5", r1.NumChunks)
-	}
 }
 
-// TestTraceV2_LoadHeader_UnknownField_ReturnsError verifies BC-N3: KnownFields(true)
-// causes an old binary reading a header with an unknown field (e.g. a future
-// schema addition past v3) to hard-fail rather than silently dropping the field.
-// Strict parsing is enforced at sim/workload/tracev2.go:223; the trace Version
-// field is the schema-change signal.
+// TestTraceV2_LoadHeader_UnknownField_ReturnsError verifies BC-N3: an unknown header key is
+// refused rather than silently dropped.
 func TestTraceV2_LoadHeader_UnknownField_ReturnsError(t *testing.T) {
-	yamlText := []byte("trace_version: 99\ntime_unit: microseconds\nmode: generated\nwarm_up_requests: 0\nbogus_unknown_field: 42\n")
+	yamlText := []byte("trace_version: 4\ntime_unit: microseconds\nmode: generated\nbogus_unknown_field: 42\n")
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	if err := os.WriteFile(headerPath, yamlText, 0o644); err != nil {
@@ -115,75 +102,39 @@ func TestTraceV2_LoadHeader_UnknownField_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestTraceV2_RoundTrip_WithServerConfig(t *testing.T) {
-	header := &TraceHeader{
-		Version: 2, TimeUnit: "microseconds", Mode: "real",
-		Server: &TraceServerConfig{
-			Type: "vllm", Model: "llama-8b", TensorParallel: 1,
-			MaxNumSeqs: 256, BlockSize: 16,
-		},
-		Network: &TraceNetworkConfig{MeasuredRTTMs: 2.5},
-	}
-
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	dataPath := filepath.Join(dir, "data.csv")
-	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if loaded.Header.Server == nil {
-		t.Fatal("server config should be present")
-	}
-	if loaded.Header.Server.MaxNumSeqs != 256 {
-		t.Errorf("max_num_seqs = %d, want 256", loaded.Header.Server.MaxNumSeqs)
-	}
-	if loaded.Header.Network == nil || loaded.Header.Network.MeasuredRTTMs != 2.5 {
-		t.Error("network config mismatch")
-	}
-}
-
 // TestTraceV2_RoundTrip_NewFields verifies BC-1 and BC-2: all three new
 // schema fields survive export → load with correct values.
 func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{
-			RequestID:         0,
-			Model:             "meta-llama/Llama-3.1-8B-Instruct",
-			DeadlineUs:        5000000,
-			ServerInputTokens: 512,
-			InputTokens:       256,
-			OutputTokens:      64,
-			ArrivalTimeUs:     1000,
-			SendTimeUs:        1010,
-			FirstChunkTimeUs:  1800,
-			LastChunkTimeUs:   2500,
-			Status:            "ok",
+			RequestID:        0,
+			Model:            "meta-llama/Llama-3.1-8B-Instruct",
+			DeadlineUs:       5000000,
+			InputTokens:      256,
+			OutputTokens:     64,
+			ArrivalTimeUs:    1000,
+			FirstChunkTimeUs: 1800,
+			LastChunkTimeUs:  2500,
+			Status:           "ok",
 		},
 		{
-			RequestID:         1,
-			Model:             "", // zero value: default model
-			DeadlineUs:        0,  // zero value: no timeout
-			ServerInputTokens: 0,  // zero value: not recorded
-			InputTokens:       128,
-			OutputTokens:      32,
-			ArrivalTimeUs:     5000,
-			Status:            "ok",
+			RequestID:     1,
+			Model:         "", // zero value: default model
+			DeadlineUs:    0,  // zero value: no timeout
+			InputTokens:   128,
+			OutputTokens:  32,
+			ArrivalTimeUs: 5000,
+			Status:        "ok",
 		},
 		{
-			RequestID:         2,
-			Model:             "org/model,with-comma", // CSV-special: encoding/csv quotes automatically
-			DeadlineUs:        9000,                   // > ArrivalTimeUs (6000) — valid per cross-field invariant
-			ServerInputTokens: 0,
-			InputTokens:       64,
-			OutputTokens:      16,
-			ArrivalTimeUs:     6000,
-			Status:            "ok",
+			RequestID:     2,
+			Model:         "org/model,with-comma", // CSV-special: encoding/csv quotes automatically
+			DeadlineUs:    9000,                   // > ArrivalTimeUs (6000) — valid per cross-field invariant
+			InputTokens:   64,
+			OutputTokens:  16,
+			ArrivalTimeUs: 6000,
+			Status:        "ok",
 		},
 	}
 
@@ -209,15 +160,9 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 	if r0.DeadlineUs != 5000000 {
 		t.Errorf("record 0 deadline_us = %d, want 5000000", r0.DeadlineUs)
 	}
-	if r0.ServerInputTokens != 512 {
-		t.Errorf("record 0 server_input_tokens = %d, want 512", r0.ServerInputTokens)
-	}
 	// BC-2: existing timing fields unaffected by index shift
 	if r0.ArrivalTimeUs != 1000 {
 		t.Errorf("record 0 arrival_time_us = %d, want 1000", r0.ArrivalTimeUs)
-	}
-	if r0.SendTimeUs != 1010 {
-		t.Errorf("record 0 send_time_us = %d, want 1010", r0.SendTimeUs)
 	}
 	if r0.FirstChunkTimeUs != 1800 {
 		t.Errorf("record 0 first_chunk_time_us = %d, want 1800", r0.FirstChunkTimeUs)
@@ -234,9 +179,6 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 	if r1.DeadlineUs != 0 {
 		t.Errorf("record 1 deadline_us = %d, want 0", r1.DeadlineUs)
 	}
-	if r1.ServerInputTokens != 0 {
-		t.Errorf("record 1 server_input_tokens = %d, want 0", r1.ServerInputTokens)
-	}
 
 	r2 := loaded.Records[2]
 	// CSV-special chars: encoding/csv quotes fields containing commas automatically
@@ -250,11 +192,11 @@ func TestTraceV2_RoundTrip_NewFields(t *testing.T) {
 
 func TestTraceV2_IntegerTimestamps_Preserved(t *testing.T) {
 	// Large timestamp values should not lose precision
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
 		{RequestID: 0, ArrivalTimeUs: 1708100000000000, // epoch-like value
-			SendTimeUs: 1708100000000010, FirstChunkTimeUs: 1708100000045200,
-			LastChunkTimeUs: 1708100001590300, Status: "ok"},
+			FirstChunkTimeUs: 1708100000045200,
+			LastChunkTimeUs:  1708100001590300, Status: "ok"},
 	}
 
 	dir := t.TempDir()
@@ -272,8 +214,8 @@ func TestTraceV2_IntegerTimestamps_Preserved(t *testing.T) {
 	if r.ArrivalTimeUs != 1708100000000000 {
 		t.Errorf("arrival = %d, want 1708100000000000 (precision lost)", r.ArrivalTimeUs)
 	}
-	if r.SendTimeUs != 1708100000000010 {
-		t.Errorf("send = %d, want 1708100000000010", r.SendTimeUs)
+	if r.LastChunkTimeUs != 1708100001590300 {
+		t.Errorf("last chunk = %d, want 1708100001590300", r.LastChunkTimeUs)
 	}
 }
 
@@ -284,7 +226,7 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 	dataPath := filepath.Join(dir, "data.csv")
 
 	// GIVEN a header with a typo
-	if err := os.WriteFile(headerPath, []byte("tme_unit: microseconds\ntrace_version: 2\n"), 0644); err != nil {
+	if err := os.WriteFile(headerPath, []byte("tme_unit: microseconds\ntrace_version: 4\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(dataPath, []byte("request_id\n1\n"), 0644); err != nil {
@@ -306,14 +248,10 @@ func TestLoadTraceV2_UnknownYAMLField_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_InvalidInteger_ReturnsError verifies BC-12: CSV error propagation.
 func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 	// GIVEN a row with a non-numeric request_id
-	row := make([]string, 27) // must match current column count
-	row[0] = "abc"            // request_id should be integer
-	for i := 1; i < len(row); i++ {
-		row[i] = "0"
-	}
+	row, at := zeroRow(map[string]string{"request_id": "abc"})
 
 	// WHEN parsing
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	// THEN error about invalid value
 	if err == nil {
@@ -326,13 +264,9 @@ func TestParseTraceRecord_InvalidInteger_ReturnsError(t *testing.T) {
 
 // TestParseTraceRecord_InvalidDeadlineUs_ReturnsError verifies BC-9.
 func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[17] = "not_a_number" // deadline_us column (shifted +1 by prefix_length)
+	row, at := zeroRow(map[string]string{"deadline_us": "not_a_number"})
 
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for non-numeric deadline_us, got nil")
@@ -342,78 +276,11 @@ func TestParseTraceRecord_InvalidDeadlineUs_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseTraceRecord_InvalidServerInputTokens_ReturnsError verifies BC-10.
-func TestParseTraceRecord_InvalidServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[18] = "not_a_number" // server_input_tokens column (shifted +1)
-
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
-
-	if err == nil {
-		t.Fatal("expected error for non-numeric server_input_tokens, got nil")
-	}
-	if !strings.Contains(err.Error(), "server_input_tokens") {
-		t.Errorf("error should mention 'server_input_tokens', got: %s", err.Error())
-	}
-}
-
-// TestParseTraceRecord_InvalidVLLMPriority_ReturnsError verifies that non-numeric vllm_priority values are rejected.
-func TestParseTraceRecord_InvalidVLLMPriority_ReturnsError(t *testing.T) {
-	// GIVEN a row with vllm_priority column present and set to non-numeric value
-	row := make([]string, 28) // 28 columns when vllm_priority is present
-	for i := range row {
-		row[i] = "0"
-	}
-	row[4] = "not_a_number" // vllm_priority column (index 4)
-
-	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true, false, -1, -1, -1, -1)
-
-	// THEN error about invalid value
-	if err == nil {
-		t.Fatal("expected error for non-numeric vllm_priority, got nil")
-	}
-	if !strings.Contains(err.Error(), "vllm_priority") {
-		t.Errorf("error should mention 'vllm_priority', got: %s", err.Error())
-	}
-}
-
-// TestParseTraceRecord_NegativeVLLMPriority_ReturnsError verifies that negative vllm_priority values are rejected.
-func TestParseTraceRecord_NegativeVLLMPriority_ReturnsError(t *testing.T) {
-	// GIVEN a row with vllm_priority column present and set to negative value
-	row := make([]string, 28) // 28 columns when vllm_priority is present
-	for i := range row {
-		row[i] = "0"
-	}
-	row[4] = "-1" // negative vllm_priority
-
-	// WHEN parsing with hasVLLMPriority=true
-	_, err := parseTraceRecord(row, true, false, -1, -1, -1, -1)
-
-	// THEN error about negative value
-	if err == nil {
-		t.Fatal("expected error for negative vllm_priority, got nil")
-	}
-	if !strings.Contains(err.Error(), "vllm_priority") {
-		t.Errorf("error should mention 'vllm_priority', got: %s", err.Error())
-	}
-	if !strings.Contains(err.Error(), "negative") {
-		t.Errorf("error should mention 'negative', got: %s", err.Error())
-	}
-}
-
 // TestParseTraceRecord_NegativeDeadlineUs_ReturnsError verifies R3 validation.
 func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[17] = "-1" // negative deadline_us (shifted +1)
+	row, at := zeroRow(map[string]string{"deadline_us": "-1"})
 
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative deadline_us, got nil")
@@ -426,16 +293,11 @@ func TestParseTraceRecord_NegativeDeadlineUs_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError verifies the #1606
 // hardening: arrival_time_us is the injection-origin anchor, so a negative value
 // (which would yield a negative DES injection tick, violating INV-3) is rejected
-// loudly, matching the other time/count fields (R1). send_time_us stays exempt
-// (injectionTime falls back to arrival when send <= 0).
+// loudly, matching the other time/count fields (R1).
 func TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[19] = "-1" // arrival_time_us column (offset 0 when vllm_priority absent)
+	row, at := zeroRow(map[string]string{"arrival_time_us": "-1"})
 
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative arrival_time_us, got nil")
@@ -448,36 +310,12 @@ func TestParseTraceRecord_NegativeArrivalTimeUs_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseTraceRecord_NegativeSendTimeUs_Tolerated verifies the deliberate
-// asymmetry (#1606): a negative send_time_us is NOT rejected — injectionTime
-// falls back to arrival_time_us for send <= 0, so a corrupt/absent send column
-// must not fail trace loading.
-func TestParseTraceRecord_NegativeSendTimeUs_Tolerated(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[20] = "-100" // send_time_us column; must be tolerated
-
-	rec, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
-	if err != nil {
-		t.Fatalf("negative send_time_us must be tolerated (falls back to arrival), got error: %v", err)
-	}
-	if rec.SendTimeUs != -100 {
-		t.Errorf("send_time_us = %d, want -100 (preserved verbatim; fallback happens at injection)", rec.SendTimeUs)
-	}
-}
-
 // TestParseTraceRecord_NegativeInputTokens_ReturnsError verifies R3 for
 // input_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[9] = "-1" // input_tokens column (shifted +1)
+	row, at := zeroRow(map[string]string{"input_tokens": "-1"})
 
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative input_tokens, got nil")
@@ -490,13 +328,9 @@ func TestParseTraceRecord_NegativeInputTokens_ReturnsError(t *testing.T) {
 // TestParseTraceRecord_NegativeOutputTokens_ReturnsError verifies R3 for
 // output_tokens (prevents make([]sim.TokenID, negative) panic in replay).
 func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[10] = "-1" // output_tokens column (shifted +1)
+	row, at := zeroRow(map[string]string{"output_tokens": "-1"})
 
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for negative output_tokens, got nil")
@@ -506,36 +340,12 @@ func TestParseTraceRecord_NegativeOutputTokens_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestParseTraceRecord_NegativeServerInputTokens_ReturnsError verifies R3
-// for server_input_tokens (consistent validation for all token count fields).
-func TestParseTraceRecord_NegativeServerInputTokens_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[18] = "-1" // server_input_tokens column (shifted +1)
-
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
-
-	if err == nil {
-		t.Fatal("expected error for negative server_input_tokens, got nil")
-	}
-	if !strings.Contains(err.Error(), "server_input_tokens") {
-		t.Errorf("error should mention 'server_input_tokens', got: %s", err.Error())
-	}
-}
-
 // TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError verifies cross-field
 // validation: deadline_us must not precede arrival_time_us when both are nonzero.
 func TestParseTraceRecord_DeadlineBeforeArrival_ReturnsError(t *testing.T) {
-	row := make([]string, 27)
-	for i := range row {
-		row[i] = "0"
-	}
-	row[17] = "1000" // deadline_us = 1000 (shifted +1)
-	row[19] = "5000" // arrival_time_us = 5000 (shifted +1)
+	row, at := zeroRow(map[string]string{"deadline_us": "1000", "arrival_time_us": "5000"})
 
-	_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+	_, err := parseTraceRecord(row, at)
 
 	if err == nil {
 		t.Fatal("expected error for deadline before arrival, got nil")
@@ -558,13 +368,9 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 		{"1.5"},
 	}
 	for _, tc := range cases {
-		row := make([]string, 27)
-		for i := range row {
-			row[i] = "0"
-		}
-		row[15] = tc.value // reason_ratio column (shifted +1)
+		row, at := zeroRow(map[string]string{"reason_ratio": tc.value})
 
-		_, err := parseTraceRecord(row, false, false, -1, -1, -1, -1)
+		_, err := parseTraceRecord(row, at)
 
 		if err == nil {
 			t.Errorf("reason_ratio=%q: expected error, got nil", tc.value)
@@ -576,40 +382,10 @@ func TestParseTraceRecord_InvalidReasonRatio_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestTraceV2_FinishReason_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 1, TimeUnit: "us", Mode: "real"}
-	records := []TraceRecord{{
-		RequestID:     1,
-		InputTokens:   10,
-		OutputTokens:  5,
-		ArrivalTimeUs: 1000,
-		SendTimeUs:    2000,
-		Status:        "ok",
-		FinishReason:  "stop",
-	}}
-
-	headerPath := filepath.Join(t.TempDir(), "h.yaml")
-	dataPath := filepath.Join(t.TempDir(), "d.csv")
-	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-
-	tv2, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tv2.Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(tv2.Records))
-	}
-	if tv2.Records[0].FinishReason != "stop" {
-		t.Errorf("FinishReason: got %q, want %q", tv2.Records[0].FinishReason, "stop")
-	}
-}
-
 func TestTraceV2_PrefixGroup_RoundTrip(t *testing.T) {
 	// BC-1: PrefixGroup and PrefixLength survive export → load
 	seed := int64(42)
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: &seed}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", WorkloadSeed: &seed}
 	records := []TraceRecord{
 		{RequestID: 0, PrefixGroup: "group-a", PrefixLength: 128,
 			InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 0, Status: "ok"},
@@ -769,9 +545,6 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 	if r.ArrivalTimeUs != 10000 {
 		t.Errorf("ArrivalTimeUs: got %d, want 10000", r.ArrivalTimeUs)
 	}
-	if r.SendTimeUs != 10000 {
-		t.Errorf("SendTimeUs: got %d, want 10000 (= ArrivalTime)", r.SendTimeUs)
-	}
 	// FirstChunkTimeUs = ArrivalTime + FirstTokenTime = 10000 + 5000 = 15000
 	if r.FirstChunkTimeUs != 15000 {
 		t.Errorf("FirstChunkTimeUs: got %d, want 15000", r.FirstChunkTimeUs)
@@ -795,7 +568,7 @@ func TestRequestsToTraceRecords_FieldMapping(t *testing.T) {
 func TestRequestsToTraceRecords_StatusMapping(t *testing.T) {
 	cases := []struct {
 		state sim.RequestState
-		want  string
+		want  trace.Status
 	}{
 		{sim.StateCompleted, "ok"},
 		{sim.StateTimedOut, "timeout"},
@@ -917,7 +690,7 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 	dataPath := filepath.Join(dir, "data.csv")
 
 	header := &TraceHeader{
-		Version:  2,
+		Version:  TraceVersion,
 		TimeUnit: "microseconds",
 		Mode:     "generated",
 	}
@@ -974,49 +747,6 @@ func TestRequestsToTraceRecords_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestRequestsToTraceRecords_VLLMPriority_AlwaysZero verifies that VLLMPriority
-// is always 0 in simulation-generated records (simulation isolation boundary).
-func TestRequestsToTraceRecords_VLLMPriority_AlwaysZero(t *testing.T) {
-	// GIVEN sim.Request instances (simulation-generated, no vLLM priority computed)
-	reqs := []*sim.Request{
-		{
-			ID:            "req1",
-			State:         sim.StateCompleted,
-			SLOClass:      "critical",
-			InputTokens:   make([]sim.TokenID, 10),
-			OutputTokens:  make([]sim.TokenID, 5),
-			ProgressIndex: 15,
-		},
-		{
-			ID:            "req2",
-			State:         sim.StateCompleted,
-			SLOClass:      "batch",
-			InputTokens:   make([]sim.TokenID, 20),
-			OutputTokens:  make([]sim.TokenID, 10),
-			ProgressIndex: 30,
-		},
-		{
-			ID:            "req3",
-			State:         sim.StateCompleted,
-			SLOClass:      "", // no SLO class
-			InputTokens:   make([]sim.TokenID, 5),
-			OutputTokens:  make([]sim.TokenID, 2),
-			ProgressIndex: 7,
-		},
-	}
-
-	// WHEN converting to TraceRecords
-	records := RequestsToTraceRecords(reqs)
-
-	// THEN all VLLMPriority values should be 0 (never computed during simulation)
-	for i, rec := range records {
-		if rec.VLLMPriority != 0 {
-			t.Errorf("record[%d].VLLMPriority: got %d, want 0 (simulation isolation)",
-				i, rec.VLLMPriority)
-		}
-	}
-}
-
 // TestTraceV2_Adapter_RoundTrip verifies that LoRA adapter identity survives the
 // full run→trace→replay round-trip (#1464 F1). A request carrying a non-empty
 // Adapter must be reconstructed by LoadTraceV2Requests with the same Adapter, and
@@ -1051,7 +781,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "header.yaml")
 		dataPath := filepath.Join(dir, "data.csv")
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		header := &TraceHeader{Version: TraceVersion, TimeUnit: "us", Mode: "generated"}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1094,7 +824,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "header.yaml")
 		dataPath := filepath.Join(dir, "data.csv")
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		header := &TraceHeader{Version: TraceVersion, TimeUnit: "us", Mode: "generated"}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1133,7 +863,7 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		headerPath := filepath.Join(dir, "header.yaml")
 		dataPath := filepath.Join(dir, "data.csv")
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "generated"}
+		header := &TraceHeader{Version: TraceVersion, TimeUnit: "us", Mode: "generated"}
 		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1149,33 +879,8 @@ func TestTraceV2_Adapter_RoundTrip(t *testing.T) {
 	})
 }
 
-func TestTraceRecord_VLLMPriority_FieldExists(t *testing.T) {
-	// GIVEN a TraceRecord with VLLMPriority set to a non-zero value
-	rec := TraceRecord{
-		RequestID:    1,
-		SLOClass:     "batch",
-		VLLMPriority: 5, // batch → 5 in vLLM convention
-	}
-
-	// THEN the field is accessible and has the expected value
-	if rec.VLLMPriority != 5 {
-		t.Errorf("Expected VLLMPriority=5, got %d", rec.VLLMPriority)
-	}
-
-	// WHEN SLOClass is empty
-	rec2 := TraceRecord{
-		RequestID: 2,
-		SLOClass:  "",
-	}
-
-	// THEN VLLMPriority defaults to 0 (not set)
-	if rec2.VLLMPriority != 0 {
-		t.Errorf("Expected default VLLMPriority=0, got %d", rec2.VLLMPriority)
-	}
-}
-
 func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 
 	t.Run("present: value round-trips and column is emitted", func(t *testing.T) {
 		dir := t.TempDir()
@@ -1286,7 +991,7 @@ func TestTraceV2_ThinkTimeUs_RoundTrip(t *testing.T) {
 }
 
 func TestTraceV2_InputTokensReset_RoundTrip(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	i64 := func(v int64) *int64 { return &v }
 
 	t.Run("present: marker round-trips and column is emitted", func(t *testing.T) {
@@ -1373,7 +1078,7 @@ func TestParseTraceRecord_NegativeInputTokensReset_Errors(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 	i64 := func(v int64) *int64 { return &v }
 	records := []TraceRecord{
 		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50},
@@ -1398,7 +1103,7 @@ func TestParseTraceRecord_NegativeThinkTime_Errors(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, ThinkTimeUs: i64p(5000)},
 	}
@@ -1420,7 +1125,7 @@ func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		hp := filepath.Join(dir, "h.yaml")
 		dp := filepath.Join(dir, "d.csv")
-		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
+		h := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated", SessionContextGrowth: "accumulate"}
 		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1436,7 +1141,7 @@ func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
 		dir := t.TempDir()
 		hp := filepath.Join(dir, "h.yaml")
 		dp := filepath.Join(dir, "d.csv")
-		h := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+		h := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 		if err := ExportTraceV2(h, nil, hp, dp); err != nil {
 			t.Fatalf("ExportTraceV2: %v", err)
 		}
@@ -1450,17 +1155,17 @@ func TestTraceV2_SessionContextGrowth_HeaderRoundTrip(t *testing.T) {
 	})
 }
 
-func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapterAndXRequestID(t *testing.T) {
-	// think_time_us is appended after the adapter and x_request_id trailing columns;
-	// verify all three optional trailing columns round-trip together with correct
-	// values (guards the column-ordering / index math when they coexist).
+func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapter(t *testing.T) {
+	// think_time_us is appended after the adapter trailing column; verify both optional
+	// trailing columns round-trip together with correct values (guards the
+	// column-ordering / index math when they coexist).
 	dir := t.TempDir()
 	hp := filepath.Join(dir, "h.yaml")
 	dp := filepath.Join(dir, "d.csv")
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"} // real → x_request_id emitted
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "converted"}
 	records := []TraceRecord{
-		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", XRequestID: "uuid-0", ThinkTimeUs: i64p(0)},
-		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", XRequestID: "uuid-1", ThinkTimeUs: i64p(7000)},
+		{RequestID: 0, SessionID: "A", RoundIndex: 0, InputTokens: 100, OutputTokens: 50, Adapter: "sql-lora", ThinkTimeUs: i64p(0)},
+		{RequestID: 1, SessionID: "A", RoundIndex: 1, InputTokens: 60, OutputTokens: 40, Adapter: "sql-lora", ThinkTimeUs: i64p(7000)},
 	}
 	if err := ExportTraceV2(header, records, hp, dp); err != nil {
 		t.Fatalf("ExportTraceV2: %v", err)
@@ -1470,311 +1175,11 @@ func TestExportTraceV2_ThinkTimeUs_CoexistsWithAdapterAndXRequestID(t *testing.T
 		t.Fatalf("LoadTraceV2: %v", err)
 	}
 	r := loaded.Records[1]
-	if r.Adapter != "sql-lora" || r.XRequestID != "uuid-1" || r.ThinkTimeUs == nil || *r.ThinkTimeUs != 7000 {
-		t.Errorf("coexistence round-trip: adapter=%q xreq=%q think=%v; want sql-lora/uuid-1/&7000", r.Adapter, r.XRequestID, r.ThinkTimeUs)
+	if r.Adapter != "sql-lora" || r.ThinkTimeUs == nil || *r.ThinkTimeUs != 7000 {
+		t.Errorf("coexistence round-trip: adapter=%q think=%v; want sql-lora/&7000", r.Adapter, r.ThinkTimeUs)
 	}
 	if loaded.Records[0].ThinkTimeUs == nil || *loaded.Records[0].ThinkTimeUs != 0 {
 		t.Errorf("record 0 think_time_us = %v, want &0 (recorded zero, non-nil)", loaded.Records[0].ThinkTimeUs)
-	}
-}
-
-func TestExportTraceV2_VLLMPriority_ConditionalColumn(t *testing.T) {
-	// BC-3: vllm_priority column included only when priority was actually computed.
-	// Distinguishes between:
-	// - observe with critical (SLOClass="critical", Mode="real", VLLMPriority=0) → column present
-	// - simulation with SLOClass (Mode="synthetic", VLLMPriority=0) → column absent
-
-	dir := t.TempDir()
-
-	t.Run("simulation with SLOClass → no column (Mode=synthetic, all priority=0)", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "synthetic"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
-			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 0, Status: "ok"},
-		}
-
-		headerPath := filepath.Join(dir, "sim_header.yaml")
-		dataPath := filepath.Join(dir, "sim_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read CSV header row
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(data), "\n")
-		if len(lines) < 1 {
-			t.Fatal("CSV file is empty")
-		}
-		headerRow := lines[0]
-
-		// THEN vllm_priority should NOT be in the header
-		if strings.Contains(headerRow, "vllm_priority") {
-			t.Errorf("vllm_priority column should not be present in simulation (Mode=synthetic, all priority=0)")
-		}
-	})
-
-	t.Run("observe all-critical → column present (Mode=real, SLOClass set, priority=0)", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
-			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
-		}
-
-		headerPath := filepath.Join(dir, "critical_header.yaml")
-		dataPath := filepath.Join(dir, "critical_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read CSV header row
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(data), "\n")
-		if len(lines) < 1 {
-			t.Fatal("CSV file is empty")
-		}
-		headerRow := lines[0]
-
-		// THEN vllm_priority SHOULD be in the header (critical=0 is a real priority)
-		if !strings.Contains(headerRow, "vllm_priority") {
-			t.Errorf("vllm_priority column should be present for observe with critical (Mode=real, SLOClass set)")
-		}
-
-		// Verify all values are 0 (critical priority)
-		if len(lines) < 3 {
-			t.Fatal("Expected at least 2 data rows")
-		}
-		row1 := strings.Split(lines[1], ",")
-		row2 := strings.Split(lines[2], ",")
-
-		// Find vllm_priority column index
-		cols := strings.Split(headerRow, ",")
-		vllmIdx := -1
-		for i, col := range cols {
-			if col == "vllm_priority" {
-				vllmIdx = i
-				break
-			}
-		}
-		if vllmIdx == -1 {
-			t.Fatal("vllm_priority column not found")
-		}
-
-		if row1[vllmIdx] != "0" {
-			t.Errorf("Row 1 vllm_priority: got %q, want \"0\" (critical)", row1[vllmIdx])
-		}
-		if row2[vllmIdx] != "0" {
-			t.Errorf("Row 2 vllm_priority: got %q, want \"0\" (critical)", row2[vllmIdx])
-		}
-	})
-
-	t.Run("any VLLMPriority!=0 → column included (observe mixed)", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "critical", VLLMPriority: 0, Status: "ok"},
-			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "batch", VLLMPriority: 5, Status: "ok"},
-		}
-
-		headerPath := filepath.Join(dir, "observe_header.yaml")
-		dataPath := filepath.Join(dir, "observe_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read CSV header row
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(data), "\n")
-		if len(lines) < 1 {
-			t.Fatal("CSV file is empty")
-		}
-		headerRow := lines[0]
-
-		// THEN vllm_priority should be in the header
-		if !strings.Contains(headerRow, "vllm_priority") {
-			t.Errorf("vllm_priority column should be present when any record has VLLMPriority!=0")
-		}
-
-		// AND it should appear after slo_class
-		columns := strings.Split(headerRow, ",")
-		sloIdx := -1
-		vllmIdx := -1
-		for i, col := range columns {
-			if col == "slo_class" {
-				sloIdx = i
-			}
-			if col == "vllm_priority" {
-				vllmIdx = i
-			}
-		}
-		if sloIdx == -1 {
-			t.Fatal("slo_class column not found")
-		}
-		if vllmIdx == -1 {
-			t.Fatal("vllm_priority column not found")
-		}
-		if vllmIdx != sloIdx+1 {
-			t.Errorf("vllm_priority should appear immediately after slo_class, got indices slo=%d vllm=%d", sloIdx, vllmIdx)
-		}
-
-		// BC-4: Priority values preserved in round-trip
-		// Verify data rows contain correct priority values
-		if len(lines) < 3 {
-			t.Fatal("Expected at least 3 lines (header + 2 data rows)")
-		}
-		row1 := strings.Split(lines[1], ",")
-		row2 := strings.Split(lines[2], ",")
-
-		if row1[vllmIdx] != "0" {
-			t.Errorf("Row 1 vllm_priority: got %q, want \"0\"", row1[vllmIdx])
-		}
-		if row2[vllmIdx] != "5" {
-			t.Errorf("Row 2 vllm_priority: got %q, want \"5\"", row2[vllmIdx])
-		}
-	})
-
-	t.Run("observe without SLOClass → no column (Mode=real, no SLOClass, priority=0)", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
-			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
-		}
-
-		headerPath := filepath.Join(dir, "no_slo_header.yaml")
-		dataPath := filepath.Join(dir, "no_slo_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read CSV header row
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(data), "\n")
-		headerRow := lines[0]
-
-		// THEN vllm_priority should NOT be in the header
-		if strings.Contains(headerRow, "vllm_priority") {
-			t.Errorf("vllm_priority column should not be present when observe has no SLOClass")
-		}
-	})
-
-	t.Run("mixed: observe with some non-zero priorities", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, SLOClass: "", VLLMPriority: 0, Status: "ok"},
-			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, SLOClass: "standard", VLLMPriority: 1, Status: "ok"},
-		}
-
-		headerPath := filepath.Join(dir, "mixed_header.yaml")
-		dataPath := filepath.Join(dir, "mixed_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-
-		// Read CSV header row
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(data), "\n")
-		headerRow := lines[0]
-
-		// THEN vllm_priority should be in the header (at least one record has VLLMPriority!=0)
-		if !strings.Contains(headerRow, "vllm_priority") {
-			t.Errorf("vllm_priority column should be present when at least one record has VLLMPriority!=0")
-		}
-	})
-}
-
-func TestLoadTraceV2Requests_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
-	// BC-5: LoadTraceV2Requests must NOT read VLLMPriority into Request.Priority
-	// This is a simulation isolation requirement — observability metadata must
-	// not affect simulation behavior.
-
-	trace := &TraceV2{
-		Header: TraceHeader{Version: 2, TimeUnit: "us"},
-		Records: []TraceRecord{
-			{RequestID: 1, SLOClass: "critical", VLLMPriority: 0, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000},
-			{RequestID: 2, SLOClass: "batch", VLLMPriority: 5, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000},
-		},
-	}
-
-	requests, err := LoadTraceV2Requests(trace, 42)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(requests) != 2 {
-		t.Fatalf("len(requests)=%d, want 2", len(requests))
-	}
-
-	// THEN Request.Priority must remain 0 (default) regardless of VLLMPriority
-	if requests[0].Priority != 0 {
-		t.Errorf("Request 0 Priority=%f, want 0 (must not read VLLMPriority)", requests[0].Priority)
-	}
-	if requests[1].Priority != 0 {
-		t.Errorf("Request 1 Priority=%f, want 0 (must not read VLLMPriority)", requests[1].Priority)
-	}
-
-	// AND SLOClass should be preserved for admission/routing decisions
-	if requests[0].SLOClass != "critical" {
-		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
-	}
-	if requests[1].SLOClass != "batch" {
-		t.Errorf("Request 1 SLOClass=%q, want %q", requests[1].SLOClass, "batch")
-	}
-}
-
-func TestLoadTraceV2SessionBlueprints_IgnoresVLLMPriority_SimulationIsolation(t *testing.T) {
-	// BC-6: LoadTraceV2SessionBlueprints must NOT read VLLMPriority
-	// Same simulation isolation requirement as BC-5, but for session blueprints.
-
-	trace := &TraceV2{
-		Header: TraceHeader{Version: 2, TimeUnit: "us"},
-		Records: []TraceRecord{
-			{RequestID: 1, SessionID: "s1", RoundIndex: 0, SLOClass: "critical", VLLMPriority: 0,
-				InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000,
-				FirstChunkTimeUs: 1500, LastChunkTimeUs: 2000},
-			{RequestID: 2, SessionID: "s1", RoundIndex: 1, SLOClass: "batch", VLLMPriority: 5,
-				InputTokens: 50, OutputTokens: 25, ArrivalTimeUs: 3000,
-				FirstChunkTimeUs: 3500, LastChunkTimeUs: 4000},
-		},
-	}
-
-	requests, blueprints, err := LoadTraceV2SessionBlueprints(trace, 42, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Session rounds are grouped into one blueprint, not separate requests
-	if len(requests) != 1 {
-		t.Fatalf("len(requests)=%d, want 1 (session grouped)", len(requests))
-	}
-	if len(blueprints) != 1 {
-		t.Fatalf("len(blueprints)=%d, want 1", len(blueprints))
-	}
-
-	// THEN returned request must NOT have Priority set from VLLMPriority
-	if requests[0].Priority != 0 {
-		t.Errorf("Request 0 Priority=%f, want 0 (must not read VLLMPriority)", requests[0].Priority)
-	}
-
-	// AND SLOClass should be preserved in blueprint for admission decisions
-	// (uses first round's SLOClass)
-	if blueprints[0].SLOClass != "critical" {
-		t.Errorf("Blueprint SLOClass=%q, want %q", blueprints[0].SLOClass, "critical")
-	}
-
-	// AND request should have SLOClass preserved
-	if requests[0].SLOClass != "critical" {
-		t.Errorf("Request 0 SLOClass=%q, want %q", requests[0].SLOClass, "critical")
 	}
 }
 
@@ -1783,7 +1188,7 @@ func TestTraceV2_SLOTargetUs_RoundTrip(t *testing.T) {
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
 
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, SLOTargetUs: 200000, DeadlineUs: 500000, ArrivalTimeUs: 100, Status: "ok"},
 		{RequestID: 1, SLOTargetUs: 0, DeadlineUs: 300000, ArrivalTimeUs: 200, Status: "ok"},
@@ -1820,7 +1225,7 @@ func TestTraceV2_SLOTargetUs_AllZero_ColumnOmitted(t *testing.T) {
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
 
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{RequestID: 0, SLOTargetUs: 0, ArrivalTimeUs: 100, Status: "ok"},
 	}
@@ -1845,19 +1250,21 @@ func TestTraceV2_SLOTargetUs_AllZero_ColumnOmitted(t *testing.T) {
 	}
 }
 
-func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
+// TestTraceV2_SLOTargetUs_ShiftsLaterColumns verifies that slo_target_us, an optional column,
+// leaves every other column read by name.
+func TestTraceV2_SLOTargetUs_ShiftsLaterColumns(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "h.yaml")
 	dataPath := filepath.Join(dir, "d.csv")
 
-	header := &TraceHeader{Version: 2, TimeUnit: "microseconds", Mode: "real"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	records := []TraceRecord{
 		{
-			RequestID: 0, SLOClass: "critical", VLLMPriority: 4,
+			RequestID: 0, SLOClass: "critical",
 			SLOTargetUs: 150000, DeadlineUs: 400000,
-			ArrivalTimeUs: 1000, SendTimeUs: 1100,
+			ArrivalTimeUs:    1000,
 			FirstChunkTimeUs: 2000, LastChunkTimeUs: 3000,
-			NumChunks: 5, Status: "ok",
+			Status: "ok",
 		},
 	}
 
@@ -1870,9 +1277,6 @@ func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	r := loaded.Records[0]
-	if r.VLLMPriority != 4 {
-		t.Errorf("VLLMPriority=%d, want 4", r.VLLMPriority)
-	}
 	if r.SLOTargetUs != 150000 {
 		t.Errorf("SLOTargetUs=%d, want 150000", r.SLOTargetUs)
 	}
@@ -1880,408 +1284,10 @@ func TestTraceV2_SLOTargetUs_WithVLLMPriority_DoubleOffset(t *testing.T) {
 		t.Errorf("DeadlineUs=%d, want 400000", r.DeadlineUs)
 	}
 	if r.ArrivalTimeUs != 1000 {
-		t.Errorf("ArrivalTimeUs=%d, want 1000 (double-offset corruption)", r.ArrivalTimeUs)
+		t.Errorf("ArrivalTimeUs=%d, want 1000 (offset corruption)", r.ArrivalTimeUs)
 	}
-	if r.SendTimeUs != 1100 {
-		t.Errorf("SendTimeUs=%d, want 1100 (double-offset corruption)", r.SendTimeUs)
-	}
-	if r.NumChunks != 5 {
-		t.Errorf("NumChunks=%d, want 5 (double-offset corruption)", r.NumChunks)
-	}
-}
-
-func TestTraceRecordsToRequestMetrics_UnitsAndFiltering(t *testing.T) {
-	records := []TraceRecord{
-		{
-			RequestID:       1,
-			Status:          "ok",
-			ArrivalTimeUs:   1000000, // 1 second in microseconds
-			SendTimeUs:      1000000,
-			LastChunkTimeUs: 1150000, // E2E = 150ms
-		},
-		{
-			RequestID:       2,
-			Status:          "timeout",
-			ArrivalTimeUs:   2000000,
-			SendTimeUs:      2000000,
-			LastChunkTimeUs: 2100000,
-		},
-		{
-			RequestID:       3,
-			Status:          "ok",
-			ArrivalTimeUs:   3000000, // 3 seconds in microseconds
-			SendTimeUs:      3000000,
-			LastChunkTimeUs: 3200000, // E2E = 200ms
-		},
-		{
-			RequestID:       4,
-			Status:          "error",
-			ArrivalTimeUs:   4000000,
-			SendTimeUs:      4000000,
-			LastChunkTimeUs: 4050000,
-		},
-		{
-			RequestID:       5,
-			Status:          "ok",
-			ArrivalTimeUs:   5000000,
-			SendTimeUs:      5000000,
-			LastChunkTimeUs: 5000000, // E2E = 0 (clock skew or malformed)
-		},
-		{
-			RequestID:       6,
-			Status:          "ok",
-			ArrivalTimeUs:   6000000,
-			SendTimeUs:      6100000,
-			LastChunkTimeUs: 6050000, // E2E < 0 (clock skew)
-		},
-	}
-
-	metrics := TraceRecordsToRequestMetrics(records)
-
-	// BC-4: Only "ok" records with valid E2E > 0 should be converted
-	// Records 1 and 3 are ok with valid E2E, records 5 and 6 have E2E <= 0
-	if len(metrics) != 2 {
-		t.Fatalf("got %d metrics, want 2 (only 'ok' records with E2E > 0)", len(metrics))
-	}
-
-	// Verify first metric (RequestID 1)
-	m0 := metrics[0]
-	// CRITICAL: ArrivedAt must be in SECONDS (not milliseconds)
-	// 1000000 µs / 1e6 = 1.0 seconds
-	if m0.ArrivedAt != 1.0 {
-		t.Errorf("metrics[0].ArrivedAt = %f, want 1.0 seconds", m0.ArrivedAt)
-	}
-	// E2E must be in milliseconds
-	// (1150000 - 1000000) µs / 1000 = 150.0 ms
-	if m0.E2E != 150.0 {
-		t.Errorf("metrics[0].E2E = %f ms, want 150.0 ms", m0.E2E)
-	}
-
-	// Verify second metric (RequestID 3)
-	m1 := metrics[1]
-	// 3000000 µs / 1e6 = 3.0 seconds
-	if m1.ArrivedAt != 3.0 {
-		t.Errorf("metrics[1].ArrivedAt = %f, want 3.0 seconds", m1.ArrivedAt)
-	}
-	// (3200000 - 3000000) µs / 1000 = 200.0 ms
-	if m1.E2E != 200.0 {
-		t.Errorf("metrics[1].E2E = %f ms, want 200.0 ms", m1.E2E)
-	}
-}
-
-func TestTraceRecordsToRequestMetrics_RateDeficitSemantics(t *testing.T) {
-	// BC-4: Document the calling convention for saturation detectors.
-	// The composite detector computes rate_deficit = 1 - (completions / totalArrivals).
-	// When 2 out of 4 requests complete:
-	//   - Correct: totalArrivals=4 → rate_deficit=0.5 (50% dropped)
-	//   - Wrong:   totalArrivals=2 → rate_deficit=0.0 (0% dropped, hides the 2 timeouts)
-	//
-	// This test verifies the conversion function produces the correct inputs:
-	//   - metrics contains only "ok" records (for E2E latency calculation)
-	//   - caller must pass len(records) as totalArrivals (not len(metrics))
-	records := []TraceRecord{
-		{RequestID: 1, Status: "ok", ArrivalTimeUs: 1000000, SendTimeUs: 1000000, LastChunkTimeUs: 1050000},
-		{RequestID: 2, Status: "timeout", ArrivalTimeUs: 2000000, SendTimeUs: 2000000, LastChunkTimeUs: 2100000},
-		{RequestID: 3, Status: "error", ArrivalTimeUs: 3000000, SendTimeUs: 3000000, LastChunkTimeUs: 3050000},
-		{RequestID: 4, Status: "ok", ArrivalTimeUs: 4000000, SendTimeUs: 4000000, LastChunkTimeUs: 4050000},
-	}
-
-	// Convert: only "ok" records included
-	metrics := TraceRecordsToRequestMetrics(records)
-	if len(metrics) != 2 {
-		t.Fatalf("got %d metrics, want 2 (only 'ok' records)", len(metrics))
-	}
-
-	// Verify calling convention
-	totalArrivals := len(records) // CORRECT: 4 (all arrivals including timeouts/errors)
-	if totalArrivals != 4 {
-		t.Errorf("totalArrivals = %d, want 4", totalArrivals)
-	}
-
-	// Verify that len(metrics) != len(records) when there are non-ok records
-	// This ensures the conversion function filtered correctly
-	if len(metrics) == len(records) {
-		t.Errorf("len(metrics) should not equal len(records) when there are timeouts/errors")
-	}
-
-	// The rate_deficit formula depends on this distinction:
-	// rate_deficit = 1 - (completions / totalArrivals)
-	// If caller passes len(metrics) instead of len(records), the deficit is understated.
-	completions := len(metrics)          // 2
-	totalArrivalsCorrect := len(records) // 4
-	totalArrivalsWrong := len(metrics)   // 2
-
-	rateDeficitCorrect := 1.0 - float64(completions)/float64(totalArrivalsCorrect) // 1 - 2/4 = 0.5
-	rateDeficitWrong := 1.0 - float64(completions)/float64(totalArrivalsWrong)     // 1 - 2/2 = 0.0
-
-	if rateDeficitCorrect != 0.5 {
-		t.Errorf("With totalArrivals=4: rate_deficit = %f, want 0.5", rateDeficitCorrect)
-	}
-	if rateDeficitWrong != 0.0 {
-		t.Errorf("With totalArrivals=2 (WRONG): rate_deficit = %f, want 0.0", rateDeficitWrong)
-	}
-	if rateDeficitCorrect == rateDeficitWrong {
-		t.Errorf("Correct and wrong totalArrivals should produce different rate_deficit values")
-	}
-}
-
-// TestExtractorParity_BuildOutputVsTraceRecords verifies the #1516 cross-command
-// parity requirement: the two saturation input adapters produce identical
-// (ArrivedAt, E2E, ID) triples for the same completed requests. run/replay derive
-// the triples from Metrics.CompletedRequestMetrics(); observe derives them from
-// TraceRecordsToRequestMetrics(RequestsToTraceRecords(...)). If they disagreed,
-// observe→replay traces would diverge (INV-13). The round-trip must preserve the
-// triple with the same rounding (ticks→ms via /1e3 vs (last-send)/1000) and the
-// same request-id form (request_<i>).
-func TestExtractorParity_BuildOutputVsTraceRecords(t *testing.T) {
-	// Build a set of completed requests with integer-millisecond E2Es so the two
-	// rounding paths (Metrics stores ticks; trace stores absolute µs timestamps)
-	// land on identical values. E2E in µs is a multiple of 1000.
-	type reqSpec struct {
-		id        int
-		arrivalUs int64
-		e2eUs     int64
-	}
-	specs := []reqSpec{
-		{0, 1_000_000, 150_000}, // arrive 1s, E2E 150ms
-		{1, 2_500_000, 300_000}, // arrive 2.5s, E2E 300ms
-		{2, 500_000, 50_000},    // arrive 0.5s, E2E 50ms (out of arrival order to exercise sort)
-	}
-
-	// --- run/replay side: build a sim.Metrics as the simulator would ---
-	m := &sim.Metrics{
-		Requests:     make(map[string]sim.RequestMetrics),
-		RequestE2Es:  make(map[string]float64),
-		RequestTTFTs: make(map[string]float64),
-	}
-	// --- observe side: build the equivalent completed sim.Requests for trace export ---
-	simReqs := make([]*sim.Request, 0, len(specs))
-	for _, s := range specs {
-		id := "request_" + strconv.Itoa(s.id)
-		m.CompletedRequests++
-		m.Requests[id] = sim.RequestMetrics{ID: id, ArrivedAt: float64(s.arrivalUs) / 1e6}
-		m.RequestE2Es[id] = float64(s.e2eUs) // ticks (µs); CompletedRequestMetrics divides by 1e3 → ms
-		m.RequestTTFTs[id] = 0
-
-		// A completed request whose full E2E lands in FirstTokenTime, so
-		// RequestsToTraceRecords computes LastChunkTimeUs = arrival + e2e and
-		// SendTimeUs = arrival (send time defaults to arrival in generated traces).
-		simReqs = append(simReqs, &sim.Request{
-			ID:             id,
-			ArrivalTime:    s.arrivalUs,
-			TTFTSet:        true,
-			FirstTokenTime: s.e2eUs,
-			ITL:            []int64{},
-			State:          sim.StateCompleted,
-		})
-	}
-
-	runSide := m.CompletedRequestMetrics()
-
-	records := RequestsToTraceRecords(simReqs)
-	// RequestsToTraceRecords sets SendTimeUs from arrival? Confirm the E2E it yields
-	// matches: observe computes E2E = (LastChunkTimeUs - SendTimeUs)/1000. For the
-	// parity to hold, SendTimeUs must equal ArrivalTimeUs for these generated
-	// records (no network send offset).
-	observeSide := TraceRecordsToRequestMetrics(records)
-
-	if len(runSide) != len(observeSide) {
-		t.Fatalf("triple count mismatch: run=%d observe=%d", len(runSide), len(observeSide))
-	}
-
-	// Index observe side by ID for order-independent comparison (run side is
-	// sorted by id; observe side follows trace-record order).
-	byID := make(map[string]sim.RequestMetrics, len(observeSide))
-	for _, o := range observeSide {
-		byID[o.ID] = o
-	}
-
-	for _, r := range runSide {
-		o, ok := byID[r.ID]
-		if !ok {
-			t.Errorf("run-side id %q missing from observe side", r.ID)
-			continue
-		}
-		if r.ArrivedAt != o.ArrivedAt {
-			t.Errorf("id %q: ArrivedAt run=%v observe=%v", r.ID, r.ArrivedAt, o.ArrivedAt)
-		}
-		if r.E2E != o.E2E {
-			t.Errorf("id %q: E2E run=%v observe=%v", r.ID, r.E2E, o.E2E)
-		}
-	}
-}
-
-// TestExportTraceV2_XRequestID_RoundTrip verifies issue #1428: x_request_id
-// is preserved through export/load when present, and absent when no record
-// carries a UUID.
-func TestExportTraceV2_XRequestID_RoundTrip(t *testing.T) {
-	dir := t.TempDir()
-
-	t.Run("real mode with UUIDs → column present, values round-trip", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, Status: "ok", XRequestID: "uuid-aaa"},
-			{RequestID: 2, InputTokens: 200, OutputTokens: 100, ArrivalTimeUs: 2000, Status: "ok", XRequestID: "uuid-bbb"},
-		}
-
-		headerPath := filepath.Join(dir, "real_header.yaml")
-		dataPath := filepath.Join(dir, "real_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines := strings.Split(string(data), "\n")
-		if !strings.Contains(lines[0], "x_request_id") {
-			t.Fatalf("expected x_request_id in CSV header, got: %s", lines[0])
-		}
-
-		loaded, err := LoadTraceV2(headerPath, dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(loaded.Records) != 2 {
-			t.Fatalf("expected 2 records, got %d", len(loaded.Records))
-		}
-		if loaded.Records[0].XRequestID != "uuid-aaa" {
-			t.Errorf("record 0 XRequestID: got %q, want %q", loaded.Records[0].XRequestID, "uuid-aaa")
-		}
-		if loaded.Records[1].XRequestID != "uuid-bbb" {
-			t.Errorf("record 1 XRequestID: got %q, want %q", loaded.Records[1].XRequestID, "uuid-bbb")
-		}
-	})
-
-	t.Run("real mode with no UUIDs → column absent", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, Status: "ok"},
-		}
-
-		headerPath := filepath.Join(dir, "noid_header.yaml")
-		dataPath := filepath.Join(dir, "noid_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(data), "x_request_id") {
-			t.Errorf("x_request_id should be absent when no record has a UUID")
-		}
-	})
-
-	t.Run("replayed mode with UUIDs → column omitted (mode gate, AC#5)", func(t *testing.T) {
-		// Replay re-export must drop x_request_id even if records carry UUIDs:
-		// the UUIDs would no longer correspond to real EPP routing decisions.
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "replayed"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, Status: "ok", XRequestID: "uuid-aaa"},
-		}
-
-		headerPath := filepath.Join(dir, "replayed_header.yaml")
-		dataPath := filepath.Join(dir, "replayed_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(data), "x_request_id") {
-			t.Errorf("x_request_id must not appear in replayed-mode export, got: %s", string(data))
-		}
-	})
-
-	t.Run("synthetic mode with UUIDs → column omitted (mode gate)", func(t *testing.T) {
-		header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "synthetic"}
-		records := []TraceRecord{
-			{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, Status: "ok", XRequestID: "uuid-aaa"},
-		}
-
-		headerPath := filepath.Join(dir, "syn_header.yaml")
-		dataPath := filepath.Join(dir, "syn_data.csv")
-		if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-			t.Fatal(err)
-		}
-		data, err := os.ReadFile(dataPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(data), "x_request_id") {
-			t.Errorf("x_request_id must not appear in non-real-mode export")
-		}
-	})
-}
-
-// TestLoadTraceV2_BackwardCompat_NoXRequestIDColumn verifies issue #1428 AC#4:
-// older traces without the column load unchanged; XRequestID is empty on records.
-func TestLoadTraceV2_BackwardCompat_NoXRequestIDColumn(t *testing.T) {
-	dir := t.TempDir()
-
-	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-	records := []TraceRecord{
-		{RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000, Status: "ok"},
-	}
-
-	headerPath := filepath.Join(dir, "old_header.yaml")
-	dataPath := filepath.Join(dir, "old_data.csv")
-	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatalf("loading trace without x_request_id should succeed, got: %v", err)
-	}
-	if len(loaded.Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(loaded.Records))
-	}
-	if loaded.Records[0].XRequestID != "" {
-		t.Errorf("record XRequestID: got %q, want empty", loaded.Records[0].XRequestID)
-	}
-}
-
-// TestExportTraceV2_XRequestID_CoexistsWithOtherOptionalColumns verifies that
-// x_request_id at trailing position does not interfere with vllm_priority and
-// slo_target_us positional parsing (issue #1428).
-func TestExportTraceV2_XRequestID_CoexistsWithOtherOptionalColumns(t *testing.T) {
-	dir := t.TempDir()
-
-	header := &TraceHeader{Version: 2, TimeUnit: "us", Mode: "real"}
-	records := []TraceRecord{
-		{
-			RequestID: 1, InputTokens: 100, OutputTokens: 50, ArrivalTimeUs: 1000,
-			Status: "ok", SLOClass: "batch", VLLMPriority: 5, SLOTargetUs: 100000,
-			XRequestID: "uuid-zzz",
-		},
-	}
-
-	headerPath := filepath.Join(dir, "all_header.yaml")
-	dataPath := filepath.Join(dir, "all_data.csv")
-	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(loaded.Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(loaded.Records))
-	}
-	got := loaded.Records[0]
-	if got.VLLMPriority != 5 {
-		t.Errorf("VLLMPriority: got %d, want 5", got.VLLMPriority)
-	}
-	if got.SLOTargetUs != 100000 {
-		t.Errorf("SLOTargetUs: got %d, want 100000", got.SLOTargetUs)
-	}
-	if got.XRequestID != "uuid-zzz" {
-		t.Errorf("XRequestID: got %q, want %q", got.XRequestID, "uuid-zzz")
+	if r.FirstChunkTimeUs != 2000 || r.LastChunkTimeUs != 3000 || r.Status != "ok" {
+		t.Errorf("record %+v: offset corruption", r)
 	}
 }
 
@@ -2290,7 +1296,7 @@ func TestExportTraceV2_XRequestID_CoexistsWithOtherOptionalColumns(t *testing.T)
 // without offload omits the key (BC-G5).
 func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
 	header := &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "generated",
+		Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated",
 		KVOffload: &TraceKVOffloadConfig{
 			CPUBytesToUse:          17179869184,
 			BlockSize:              16,
@@ -2339,116 +1345,10 @@ func TestTraceV2_RoundTrip_WithKVOffload(t *testing.T) {
 	}
 }
 
-// TestTraceV2_RoundTrip_WithObservedKVMetrics verifies the observed KV hit-rate
-// block (#1583, BC-3) survives export→load with all fields intact.
-func TestTraceV2_RoundTrip_WithObservedKVMetrics(t *testing.T) {
-	header := &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "real",
-		ObservedKVMetrics: &TraceObservedKVMetrics{
-			Source:         "tiered",
-			HitRate:        0.734,
-			BlockHits:      7340,
-			BlockQueries:   10000,
-			ReadTimeTotal:  12.5,
-			WriteTimeTotal: 3.25,
-			VLLMCommit:     "63a9a5010a6d1539c52957646ef9d6bbcf7a4deb",
-		},
-	}
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	dataPath := filepath.Join(dir, "data.csv")
-	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := loaded.Header.ObservedKVMetrics
-	if got == nil {
-		t.Fatal("observed_kv_metrics should round-trip, got nil")
-	}
-	if got.Source != "tiered" || got.HitRate != 0.734 || got.BlockHits != 7340 ||
-		got.BlockQueries != 10000 || got.ReadTimeTotal != 12.5 || got.WriteTimeTotal != 3.25 ||
-		got.VLLMCommit != "63a9a5010a6d1539c52957646ef9d6bbcf7a4deb" {
-		t.Errorf("observed_kv_metrics mismatch after round-trip: %+v", got)
-	}
-}
-
-// TestTraceV2_ObservedKVMetrics_ZeroHitRate verifies an observed hit-rate of exactly
-// 0 (a valid observation: zero cache hits) is preserved, not dropped by omitempty.
-func TestTraceV2_ObservedKVMetrics_ZeroHitRate(t *testing.T) {
-	header := &TraceHeader{
-		Version: 3, TimeUnit: "microseconds", Mode: "real",
-		ObservedKVMetrics: &TraceObservedKVMetrics{
-			Source: "gpu-prefix-cache-fallback", HitRate: 0, BlockHits: 0, BlockQueries: 500,
-		},
-	}
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	dataPath := filepath.Join(dir, "data.csv")
-	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(headerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "hit_rate: 0") {
-		t.Errorf("zero hit_rate must serialize explicitly, header:\n%s", data)
-	}
-	loaded, err := LoadTraceV2(headerPath, dataPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Header.ObservedKVMetrics == nil || loaded.Header.ObservedKVMetrics.BlockQueries != 500 {
-		t.Errorf("zero-hit observation should round-trip: %+v", loaded.Header.ObservedKVMetrics)
-	}
-}
-
-// TestTraceV2_ObservedKVMetrics_UnknownSubKey verifies strict parsing rejects an
-// unknown sub-key inside the observed_kv_metrics block (BC-3, R10).
-func TestTraceV2_ObservedKVMetrics_UnknownSubKey(t *testing.T) {
-	yamlText := []byte("trace_version: 3\ntime_unit: microseconds\nmode: real\nwarm_up_requests: 0\n" +
-		"observed_kv_metrics:\n  source: tiered\n  hit_rate: 0.5\n  block_hits: 5\n  block_queries: 10\n  bogus_key: 1\n")
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	if err := os.WriteFile(headerPath, yamlText, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	dataPath := filepath.Join(dir, "data.csv")
-	if err := os.WriteFile(dataPath, []byte("request_id\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadTraceV2(headerPath, dataPath); err == nil ||
-		!strings.Contains(err.Error(), "field") {
-		t.Errorf("expected unknown-field error for observed_kv_metrics sub-key, got %v", err)
-	}
-}
-
-// TestTraceV2_NoObservedKVMetrics_OmitsKey verifies a header without a scraped
-// observation writes no observed_kv_metrics key (BC-8 byte-identity for default observe).
-func TestTraceV2_NoObservedKVMetrics_OmitsKey(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "real"}
-	dir := t.TempDir()
-	headerPath := filepath.Join(dir, "header.yaml")
-	dataPath := filepath.Join(dir, "data.csv")
-	if err := ExportTraceV2(header, nil, headerPath, dataPath); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(headerPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "observed_kv_metrics") {
-		t.Errorf("header without a scrape must not contain observed_kv_metrics:\n%s", data)
-	}
-}
-
 // TestTraceV2_NoKVOffload_OmitsKey verifies a header without offload writes no
 // kv_offload key (BC-G5 byte-identity for the disabled case).
 func TestTraceV2_NoKVOffload_OmitsKey(t *testing.T) {
-	header := &TraceHeader{Version: 3, TimeUnit: "microseconds", Mode: "generated"}
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	dataPath := filepath.Join(dir, "data.csv")
@@ -2478,8 +1378,8 @@ func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
 	dir := t.TempDir()
 	headerPath := filepath.Join(dir, "header.yaml")
 	dataPath := filepath.Join(dir, "data.csv")
-	yaml := "trace_version: 3\ntime_unit: microseconds\nmode: generated\n" +
-		"warm_up_requests: 0\nkv_offload:\n  cpu_bytes_to_use: 1\n  future_knob: 42\n"
+	yaml := "trace_version: 4\ntime_unit: microseconds\nmode: generated\n" +
+		"kv_offload:\n  cpu_bytes_to_use: 1\n  future_knob: 42\n"
 	if err := os.WriteFile(headerPath, []byte(yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -2488,5 +1388,58 @@ func TestTraceV2_KVOffload_UnknownSubKey_Errors(t *testing.T) {
 	}
 	if _, err := LoadTraceV2(headerPath, dataPath); err == nil {
 		t.Fatal("expected strict-parse error for unknown kv_offload sub-key, got nil")
+	}
+}
+
+// zeroRow is a data row of the required columns, every cell "0" except the values set, and
+// the column index the parser reads it by.
+func zeroRow(set map[string]string) ([]string, map[string]int) {
+	at := make(map[string]int, len(traceColumns))
+	row := make([]string, len(traceColumns))
+	for i, c := range traceColumns {
+		at[c] = i
+		row[i] = "0"
+		if c == "streaming" {
+			row[i] = "false"
+		}
+		if v, ok := set[c]; ok {
+			row[i] = v
+		}
+	}
+	return row, at
+}
+
+// TestTraceV2_SLOTargetUs_KeepsTheColumnsBeforeIt: slo_target_us sits after deadline_us, so the
+// columns before it are read where they are. A record with a target keeps its session_id,
+// prefix_group and model through a round trip, and so does a record without one in the same
+// file (the column is in every row once one row carries it). The version 3 loader read those
+// three one column to the right (fixed in the commit before trace format version 4); version 4
+// reads every column by name.
+func TestTraceV2_SLOTargetUs_KeepsTheColumnsBeforeIt(t *testing.T) {
+	dir := t.TempDir()
+	headerPath, dataPath := filepath.Join(dir, "h.yaml"), filepath.Join(dir, "d.csv")
+	header := &TraceHeader{Version: TraceVersion, TimeUnit: "microseconds", Mode: "generated"}
+	records := []TraceRecord{
+		{RequestID: 0, ClientID: "c", TenantID: "t", SLOClass: "critical", SessionID: "s0", PrefixGroup: "g",
+			PrefixLength: 16, Model: "m", DeadlineUs: 900000, SLOTargetUs: 150000, InputTokens: 30, OutputTokens: 5,
+			ArrivalTimeUs: 1000, Status: "ok"},
+		{RequestID: 1, ClientID: "c", TenantID: "t", SLOClass: "standard", SessionID: "s1", PrefixGroup: "",
+			Model: "", InputTokens: 31, OutputTokens: 6, ArrivalTimeUs: 2000, Status: "ok"},
+	}
+	if err := ExportTraceV2(header, records, headerPath, dataPath); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	loaded, err := LoadTraceV2(headerPath, dataPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	for i, want := range records {
+		got := loaded.Records[i]
+		if got.SessionID != want.SessionID || got.PrefixGroup != want.PrefixGroup || got.Model != want.Model ||
+			got.SLOTargetUs != want.SLOTargetUs || got.DeadlineUs != want.DeadlineUs || got.Status != want.Status {
+			t.Errorf("record %d: session %q prefix %q model %q slo %d deadline %d status %q; want %q %q %q %d %d %q", i,
+				got.SessionID, got.PrefixGroup, got.Model, got.SLOTargetUs, got.DeadlineUs, got.Status,
+				want.SessionID, want.PrefixGroup, want.Model, want.SLOTargetUs, want.DeadlineUs, want.Status)
+		}
 	}
 }

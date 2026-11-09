@@ -34,38 +34,34 @@ Examples:
 
 ## Adding Fields to TraceV2 Format
 
-To add a new field to TraceV2 CSV output (e.g., observability metadata like `vllm_priority`):
+To add a new field to TraceV2 CSV output (e.g., a per-round value a converter records, like `think_time_us`):
 
 1. **Add field to `TraceRecord`** in `sim/workload/tracev2.go` (place logically near related fields)
-2. **Add field to `RequestRecord`** in `cmd/observe.go` (if captured during observation)
-3. **Capture the value** in `RealClient.Send()` in `cmd/observe.go` (set field on `RequestRecord`)
-4. **Wire through Recorder** in `cmd/observe.go`: Update `RecordRequest()` to copy field from `RequestRecord` to `TraceRecord`
-5. **Update ExportTraceV2** in `sim/workload/tracev2.go`:
+2. **Set it where records are built**: `RequestsToTraceRecords` (run's export), `ReExportClosedLoopRecords` (replay's re-export) or the converter that records it
+3. **Update ExportTraceV2** in `sim/workload/tracev2.go`:
    - For **optional columns**: scan records to determine if column is needed, conditionally add to header, conditionally write values
    - For **always-present columns**: add to `traceV2Columns` slice and write in row construction
-6. **Update LoadTraceV2/parseTraceRecord** in `sim/workload/tracev2.go`:
-   - For **optional columns**: detect column presence from CSV header, apply offset to subsequent column indices
+4. **Update LoadTraceV2/parseTraceRecord** in `sim/workload/tracev2.go`:
+   - For **optional columns**: append them after the fixed columns and look them up by header position, so no later index moves
    - For **always-present columns**: parse at fixed index, update all downstream indices
-7. **Enforce simulation isolation** (if observability-only): Verify `LoadTraceV2Requests` and `LoadTraceV2SessionBlueprints` do NOT read the field into `sim.Request` — add tests for this
-8. **Add behavioral tests** covering round-trip, conditional logic, and simulation isolation
+5. **Enforce simulation isolation** (if observability-only): Verify `LoadTraceV2Requests` and `LoadTraceV2SessionBlueprints` do NOT read the field into `sim.Request` — add tests for this
+6. **Add behavioral tests** covering round-trip, conditional logic, and simulation isolation
 
 **Column position guidelines:**
-- Observability metadata: place near related fields (e.g., `vllm_priority` after `slo_class`)
 - Timing data: group with other timestamps
 - Optional columns: prefer conditional inclusion over always-writing zero values
 
 Examples:
-- See PR #1220 (`VLLMPriority`) — optional column, simulation-isolated, conditional on SLOClass presence
-- See `FinishReason`/`ErrorMessage` fields — always-present optional strings (empty when not set)
-- See `ServerInputTokens` field — observability metadata that differs from `InputTokens`
+- See `Adapter` — an optional trailing column, written only when some record names an adapter
+- See `ThinkTimeUs` — an optional presence-signalled column (empty cell = not recorded)
 
 ## Extending Latency Pricing
 
 Latency pricing is not extended in this repository. BLIS takes every step time, memory figure, P/D transfer time, offload tier transfer time and host overhead from `blis-latency-kernel` (adapter blis-vllm `compat/kernelmodel`); there is no `LatencyModel` factory or backend flag to add a case to.
 
 - **A new pricing term, engine feature or model shape** → change `blis-latency-kernel`, release it, and bump the pinned module version in `go.mod`.
-- **New or refitted coefficients** → publish them in `blis-registry` and name the coefficient sets in the scenario's `coefficients:` list.
-- **A new model, chip, fabric or storage device** → add it to `blis-catalog`.
+- **New or refitted coefficients** → publish them in blis-substrate's `registry/` and name the coefficient sets in the scenario's `coefficients:` list.
+- **A new model, chip, fabric or storage device** → add it to blis-substrate's `catalog/`.
 - **A new scenario or engine-setting field** → change the format in `blis-schemas` first.
 
 On the BLIS side, a new kernel capability usually needs only the adapter in blis-vllm `compat/kernelmodel` and the scenario-to-`SimConfig` wiring (blis-vllm `compat/build`, called from `cmd/engine_build.go`). See [Latency models](../guide/latency-models.md).
@@ -90,7 +86,7 @@ To add a new autoscaler `Engine` implementation (e.g., a cost-minimizing MIP sol
 
 2. **Reuse the shared helpers** when appropriate:
    - `scaleUpN(requiredCapacity float64, vcs []VariantCapacity) int` — exact replica count via `ceil(requiredCapacity / prc)`; fallback to 1 when `prc == 0`.
-   - `scaleDownN(spareCapacity float64, vc VariantCapacity) int` — exact replica count via `floor(spareCapacity / prc)`, clamped to `[1, ReplicaCount]`; fallback to 1.
+   - `scaleDownN(spareCapacity float64, vc VariantCapacity, safeRemovals int) int` — exact replica count via `floor(spareCapacity / prc)`, clamped to `[1, ReplicaCount]` and to `safeRemovals`, the count the analyzer's check proved safe (`AnalyzerResult.SafeRemovals`); fallback to 1. Returns 0 when no removal is proved safe; emit no decision then (INV-19).
    - `sortedByAscCost`, `sortedByDescCost` — deterministic variant sort (R2: copy-and-sort to avoid mutating caller data).
    - Pass only the selected variant to `scaleUpN` (`vcs[0:1]`, not the full slice) so `perReplicaCapacityForScaleUp` uses the chosen variant's own capacity — not a different active variant's.
 
@@ -110,14 +106,14 @@ Examples:
 
 ## Adding New Per-Request Metric Fields
 
-To add a new field to per-request JSON output (appears in `--metrics-path` output):
+To add a new field to the per-request rows of the Result (`request_rows`):
 
 1. **Add field to `Request`** in blis-vllm `compat/engine/request.go` (runtime state, zero-value safe; `sim.Request` is an alias of it). When constructing `Request` structs, use `RequestState` typed constants (`StateQueued`, `StateRunning`, `StateCompleted`) — never bare strings.
-2. **Add field to `RequestMetrics`** in `sim/metrics_utils.go` (JSON output struct, use `omitempty` for backward compatibility)
-3. **Update `NewRequestMetrics()` constructor** in `sim/metrics_utils.go` to propagate the new field from `Request` to `RequestMetrics`
-4. **Set the field** at the appropriate point (e.g., dispatch in `sim/cluster/gateway.go` for cluster-level, or completion for computed metrics)
+2. **Record it**: a tag known when the request is created goes in `RequestFact` (`sim/cluster/fates.go`, set by `noteFacts`); a value the engine produces goes in `RequestMetrics` (`sim/metrics_utils.go`, propagated by `NewRequestMetrics()` or set where the engine records it).
+3. **State it in the row**: `requestRows` (`cmd/result_rows.go`) copies it onto the `result.RequestRow`. A member the row does not have is a blis-substrate change (`contracts/spec/result`), released and repinned in `go.mod`.
+4. **Document it** in the Per-Request Rows table of `docs/guide/results.md`.
 5. **Add behavioral tests** covering multi-instance, single-instance, and standalone boundaries
 
 Examples:
-- See `HandledBy` (#181) — derived from the instance a request was dispatched to, zero-value outside the cluster pipeline (suppressed from JSON via `omitempty`)
-- See `SLOClass`/`TenantID` (PR10) — set during workload generation, propagated at injection
+- See `Instance` (the engine instance that served the request) — taken from `RequestMetrics.HandledBy`, empty outside the cluster pipeline (omitted from the row)
+- See `SLOClass`/`TenantID` — set during workload generation, noted in `RequestFact` when the request is created

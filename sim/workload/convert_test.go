@@ -1,7 +1,10 @@
 package workload
 
 import (
+	"os"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestConvertPreset_ValidParams_ProducesV2Spec(t *testing.T) {
@@ -60,7 +63,7 @@ func TestComposeSpecs_TwoSpecs_MergesClients(t *testing.T) {
 		AggregateRate: 10.0,
 		Clients: []ClientSpec{
 			{ID: "a", RateFraction: 1.0, Arrival: ArrivalSpec{Process: "poisson"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 50, "std_dev": 5, "min": 1, "max": 100}}},
 		},
 	}
@@ -69,7 +72,7 @@ func TestComposeSpecs_TwoSpecs_MergesClients(t *testing.T) {
 		AggregateRate: 5.0,
 		Clients: []ClientSpec{
 			{ID: "b", RateFraction: 1.0, Arrival: ArrivalSpec{Process: "constant"},
-				InputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 20, "min": 1, "max": 400}},
+				InputDist:  DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 200, "std_dev": 20, "min": 1, "max": 400}},
 				OutputDist: DistSpec{Type: "gaussian", Params: map[string]float64{"mean": 100, "std_dev": 10, "min": 1, "max": 200}}},
 		},
 	}
@@ -164,5 +167,102 @@ func TestConvertInferencePerf_EmptyPath_ReturnsError(t *testing.T) {
 	_, err := ConvertInferencePerf("")
 	if err == nil {
 		t.Fatal("expected error for empty path")
+	}
+}
+
+// #1915 (DEV-7): a converted multi-stage inference-perf spec offers each stage its own rate,
+// as the native expansion does. The old conversion gave every stage the summed rate.
+func TestConvertInferencePerf_KeepsEachStagesRate(t *testing.T) {
+	path := t.TempDir() + "/ip.yaml"
+	src := `version: "1"
+seed: 42
+inference_perf:
+  stages:
+    - rate: 8.0
+      duration: 20
+    - rate: 20.0
+      duration: 20
+  shared_prefix:
+    num_unique_system_prompts: 3
+    num_users_per_system_prompt: 2
+    system_prompt_len: 10
+    question_len: 50
+    output_len: 20
+`
+	if err := os.WriteFile(path, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	native, err := LoadWorkloadSpec(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeSpec, err := ExpandInferencePerfSpec(native.InferencePerf, native.Seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := ConvertInferencePerf(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The converted spec survives serialisation: no in-memory sampler is needed.
+	data, err := yaml.Marshal(conv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var round WorkloadSpec
+	if err := yaml.Unmarshal(data, &round); err != nil {
+		t.Fatal(err)
+	}
+	perStage := func(s *WorkloadSpec) [2]int {
+		reqs, err := GenerateRequests(s, 40_000_000, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var n [2]int
+		for _, r := range reqs {
+			if r.ArrivalTime < 20_000_000 {
+				n[0]++
+			} else {
+				n[1]++
+			}
+		}
+		return n
+	}
+	want, got := perStage(nativeSpec), perStage(&round)
+	for i := range want {
+		if d := float64(got[i]-want[i]) / float64(want[i]); d > 0.1 || d < -0.1 {
+			t.Errorf("stage %d: converted spec offers %d requests, native %d (rates 8 and 20 req/s over 20 s)", i, got[i], want[i])
+		}
+	}
+	if want[0] < 100 || want[1] < 300 {
+		t.Fatalf("non-vacuity: native stage counts %v", want)
+	}
+}
+
+// #1906: composing keeps what the inputs bound.
+func TestComposeSpecs_KeepsNumRequestsHorizonAndSeed(t *testing.T) {
+	mk := func(seed, n, h int64) *WorkloadSpec {
+		return &WorkloadSpec{Version: "2", Seed: seed, NumRequests: n, Horizon: h, AggregateRate: 2,
+			Clients: []ClientSpec{{ID: "c", RateFraction: 1}}}
+	}
+	m, err := ComposeSpecs([]*WorkloadSpec{mk(7, 200, 5), mk(7, 100, 9)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.NumRequests != 300 || m.Horizon != 9 || m.Seed != 7 {
+		t.Errorf("composed num_requests %d horizon %d seed %d, want 300, 9, 7", m.NumRequests, m.Horizon, m.Seed)
+	}
+	one, err := ComposeSpecs([]*WorkloadSpec{mk(7, 200, 5)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.NumRequests != 200 || one.Horizon != 5 || one.Seed != 7 {
+		t.Errorf("identity law: composing one spec changed it: %+v", one)
+	}
+	if _, err := ComposeSpecs([]*WorkloadSpec{mk(7, 200, 5), mk(8, 100, 5)}); err == nil {
+		t.Error("two seeds were merged without error")
+	}
+	if _, err := ComposeSpecs([]*WorkloadSpec{mk(7, 200, 5), mk(7, 0, 5)}); err == nil {
+		t.Error("a capped and an uncapped spec were merged without error")
 	}
 }

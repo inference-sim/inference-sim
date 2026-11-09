@@ -14,7 +14,7 @@
 #   # Prefix-cache scorer dominant (requests cluster onto cached instances)
 #   ./blis run \
 #    --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
-#    --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+#    --scenarios examples/llm-d/scenarios \
 #     --num-instances 4 \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace
@@ -22,7 +22,7 @@
 #   # Load-only (no prefix awareness; requests spread across instances)
 #   ./blis run \
 #    --scenario llama-3.1-70b-instruct-h200-tp4-4node-load-only.yaml \
-#    --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+#    --scenarios examples/llm-d/scenarios \
 #     --num-instances 4 \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace
@@ -30,7 +30,7 @@
 #   # The router's built-in default configuration (the scenario states no router)
 #   ./blis run \
 #     --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml \
-#     --scenarios testdata/scenarios --registry $PWD/blis-registry \
+#     --scenarios testdata/scenarios \
 #     --num-instances 4 \
 #     --workload-spec examples/prefix-affinity-demo.yaml \
 #     --trace-level decisions --summarize-trace

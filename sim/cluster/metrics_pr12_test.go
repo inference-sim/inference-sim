@@ -20,7 +20,7 @@ func TestCollectRawMetrics_IncludesPreemptionRate(t *testing.T) {
 	aggregated.SimEndedTime = 1000000
 
 	// WHEN collecting raw metrics
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m1, m2}, 0, "", 0, 0, nil)
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m1, m2}, 0, "", 0, nil)
 
 	// THEN PreemptionRate = 4/20 = 0.2
 	expected := 4.0 / 20.0
@@ -45,7 +45,7 @@ func TestCollectRawMetrics_IncludesCacheHitRate(t *testing.T) {
 	aggregated.CacheHitRate = 0.75
 
 	// WHEN collecting raw metrics
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m1, m2}, 0, "", 0, 0, nil)
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m1, m2}, 0, "", 0, nil)
 
 	// THEN the aggregate's weighted rate is reported, not the unweighted instance mean (#1904)
 	if raw.CacheHitRate != 0.75 {

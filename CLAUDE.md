@@ -11,9 +11,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by `blis-latency-kernel` (the only latency backend; adapter blis-vllm `compat/kernelmodel`).
+BLIS (Blackbox Inference Simulator) is a discrete-event simulator for LLM inference serving systems. It models multi-instance clusters with configurable admission control, request routing, KV-cache dynamics (including tiered GPU+CPU offloading), scheduling policies, and token generation. Every step time and memory figure is priced by blis-substrate's cost model (`kernel/`, the only latency backend; adapter blis-vllm `compat/kernelmodel`).
 
-This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-schemas' `engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-schemas ← blis-latency-kernel ← blis-vllm ← inference-sim. Every scenario states `engine_version: "0.32.0"` (no default), which runs blis-vllm's translated vLLM v0.32.0 engine.
+This repo holds no vLLM code: it keeps the clock, event loop, cluster, router, workloads and reports, and drives every engine through blis-substrate's `contracts/engine.Engine` interface (`sim.EngineDriver`, `sim/engine_driver.go`). The engine is **blis-vllm** (`github.com/inference-sim/blis-vllm`), which non-test code under `sim/` and `cmd/` imports at one build site, `cmd/engine_build.go`. Dependencies run one way: blis-substrate ← blis-vllm and the router fork ← inference-sim; the exact versions are in `stack.json`. Every scenario states `engine_version: "0.32.0"` (no default), which runs blis-vllm's translated vLLM v0.32.0 engine.
 
 The simulator is CPU-only, deterministic, and designed for capacity planning, policy optimization research, and performance prediction across deployments without requiring real GPUs.
 
@@ -21,14 +21,18 @@ The simulator is CPU-only, deterministic, and designed for capacity planning, po
 
 Every `blis run` / `blis replay` obeys these; see `docs/getting-started/` and `docs/reference/configuration.md` for detail.
 
-1. **Locate the catalog** with `--catalog <path>` or the `BLIS_CATALOG` env var — no default, no search path, no remote fetch (`--catalog` wins, announced on stderr; neither is refused). Both name the catalog **clone root**. Clone `blis-catalog` at its pinned release tag and export it once (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
-   ```bash
-   git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-   export BLIS_CATALOG=$PWD/blis-catalog
-   ```
-2. **A model runs iff it is in the catalog.** Its config is read from `<catalog>/models/<short-name>/config.json`; an absent entry is refused naming that path. No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by committing its config to `blis-catalog`.
-3. **A scenario and the registry are required** on both `run` and `replay`: `--scenario <file> --scenarios <dir> --registry <blis-registry clone root>`. The scenario (a blis-schemas Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
-4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload`, `observe --workload`, and `convert preset --name` (all take `--catalog`/`BLIS_CATALOG`).
+1. **The data in use.** A run reads the catalog and registry embedded in the blis-substrate module `stack.json` pins; no flag or env var is needed, and nothing is fetched. `--catalog <dir>` (or `BLIS_CATALOG`) and `--registry <dir>` (or `BLIS_REGISTRY`) name a directory with the layout of blis-substrate's `catalog/` or `registry/` that replaces that embedded copy whole; the flag wins, announced on stderr. `--catalog-overlay`/`--registry-overlay` add entries by identity (the run opens its data once, overlays included, and every engine reads that Data). The Result records the data under `data`. To use a checkout (`docs/getting-started/installation.md#catalog-compatibility` is canonical):
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout v0.13.0
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
+```
+<!-- END GENERATED -->
+2. **A model runs iff it is in the catalog.** It is resolved from its derived graph, `<catalog>/models/<short-name>/graph.yaml`, never from `config.json`; an absent entry is refused naming that path (NS-6). No run-time HuggingFace fetch; no command creates or modifies a catalog file. Add a model by adding its catalog entry to blis-substrate's `catalog/`.
+3. **A scenario is required** on both `run` and `replay`: `--scenario <file> --scenarios <dir>`. The scenario (a blis-substrate contracts Scenario + Deployment YAML) fixes model, hardware, parallelism and engine settings; there are no `--model`/`--hardware`/`--tp` flags. Pinned releases: `docs/getting-started/installation.md`.
+4. **Named workload presets** come from `<catalog>/workloads/<name>.yaml` — used by `run --workload` and `convert preset --name` (both read the catalog in use).
 
 ## Build and Run Commands
 
@@ -36,8 +40,8 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 
 - routing, admission, flow control: the embedded llm-d router (the scenario's `router:` block) → `docs/guide/routing.md`, `docs/guide/admission.md`; the router fork → `docs/contributing/llm-d-router-fork.md`
 - the latency kernel, scenarios, P/D, DP/EP, speculative decoding → `docs/guide/latency-models.md` (+ `docs/reference/models.md`)
-- KV-offload (`--kv-offload-config`) → `docs/guide/kv-offload-calibration.md`
-- closed-loop/corpus sessions, `replay` (`observe`/`calibrate` are deprecated, #1901) → `docs/guide/observe-replay-calibrate.md`
+- KV-offload (`--kv-offload-config`) → `docs/guide/kv-cache.md`
+- `replay`, trace header modes, closed-loop/corpus sessions → `docs/guide/replay.md`
 - workloads & `convert` → `docs/guide/workloads.md`
 - saturation detectors → `docs/contributing/saturation-analyzer-extension.md`
 
@@ -45,15 +49,15 @@ One canonical form per command. `--help` and the guides carry the full flag surf
 # Build
 go build -o blis main.go
 
-# Run. Scenario + registry required; catalog located via BLIS_CATALOG.
+# Run. Scenario required; catalog and registry default to the embedded copies.
 ./blis run --scenario llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml \
-  --scenarios <dir of scenario files> --registry $PWD/blis-registry --rate 10 --num-requests 100
+  --scenarios testdata/kernel/aisimulate --rate 10 --num-requests 100
 
 # Run and export the workload as a TraceV2 (prefix auto-appends .yaml/.csv)
-./blis run --scenario <file> --scenarios <dir> --registry <root> --trace-output traces/run1
+./blis run --scenario <file> --scenarios <dir> --trace-output traces/run1
 
 # Replay a captured TraceV2 through the DES (identical flags reproduce run metrics — INV-13)
-./blis replay --trace-header t.yaml --trace-data d.csv --scenario <file> --scenarios <dir> --registry <root>
+./blis replay --trace-header t.yaml --trace-data d.csv --scenario <file> --scenarios <dir>
 
 # Convert a workload/agentic trace to a TraceV2 (preset | servegen | inference-perf | otel | weka)
 ./blis convert preset --name chatbot --rate 10 --num-requests 100
@@ -93,7 +97,7 @@ BLIS follows a layered design-document hierarchy (read the design guidelines fir
 
 Full registry (19 core invariants INV-1…INV-19 plus INV-A, the LoRA/PD/pool families, and NS-6), with verification strategies: **`docs/contributing/standards/invariants.md`** — the canonical source; every `INV-*` cited in `sim/`/`cmd/` resolves there. The ones you touch most:
 
-- **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (eleven-term cluster form; five-term single-instance form).
+- **INV-1 Request conservation** — injected == completed + all still-in-flight/dropped/rejected terms at end (ten-term cluster form; five-term single-instance form).
 - **INV-6 Determinism** — same resolved input at the same revisions ⇒ byte-identical `Result` (stdout) outside `runtime`; wall-clock timing goes to stderr.
 - **INV-13 Run/Replay parity** — a trace exported by `run` and replayed with identical flags (including `--horizon`) yields equal `metrics`, `requests` and `breakdowns`; unsupported replay features `logrus.Fatalf` at startup.
 - **NS-6 Catalog is authoritative and read-only** — see *Catalog and deployment rules* above; binds the CLI only.
@@ -105,8 +109,8 @@ Every cluster run routes with the real llm-d router (EPP) embedded in-process (`
 ### Code Style
 
 - Composition over inheritance (e.g. `InstanceSimulator` wraps a `sim.EngineDriver`).
-- Timestamp-based event ordering via min-heap; cluster and per-instance queues use `(timestamp, priority, seqID)`; cluster ties broken by lowest instance index.
-- Partitioned RNG per subsystem to isolate randomness.
+- Timestamp-based event ordering via min-heap; the cluster queue uses `(time, class, sender, sender's count)` (DEV-2, `sim/cluster/cluster_event.go`), each instance's queue `(timestamp, priority, seqID)`; cluster ties broken by lowest instance index.
+- Every random draw comes from a named stream, `sim.NewStream` (DEV-6).
 
 ### CI/CD
 
@@ -117,7 +121,7 @@ GitHub Actions run on all PRs to main:
 
 ## Cross-Repository Changes (BLIS repositories)
 
-A change that also touches blis-schemas, blis-catalog, blis-registry, blis-latency-kernel or blis-vllm follows the canonical process in blis-schemas (`docs/contributing/cross-repo-changes.md`); this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `docs/contributing/llm-d-router-fork.md`), and push schemas -> catalog/registry/kernel -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (schemas validators, snapshot pin check, push gate, `git merge-tree --write-tree origin/main HEAD`).
+A change that also touches blis-substrate, blis-vllm or the llm-d router fork is one review set, released bottom-up; this repo's steps: `docs/contributing/cross-repo-changes.md`. Rules an agent must follow: never write internal project, customer or colleague names in public artifacts (run the name scan before a push); never commit third-party data, and give derived values their source URL plus commit or sha256; pin dependencies by release tag or exact pushed head, never a `go.mod` `replace` (sole exception: the llm-d router fork, see `docs/contributing/llm-d-router-fork.md`), and push blis-substrate -> blis-vllm and the router fork -> inference-sim; compare the same quantity on the same points, with gates declared before the data and held-out evidence from a script; mutation-check every behaviour-change test; use the shared tooling (the substrate's validators, push gate, `git merge-tree --write-tree origin/main HEAD`).
 
 ## Agent Behavioral Instructions
 
@@ -151,11 +155,11 @@ Pick the template that matches your situation, reproduce its structure, and appl
 
 ## Latency Estimation
 
-`blis-latency-kernel` (Go module `github.com/inference-sim/blis-latency-kernel`, adapter blis-vllm `compat/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from `blis-registry`. There is no `--latency-model` flag. Detail: `docs/guide/latency-models.md`.
+The cost model (blis-substrate `kernel/`, adapter blis-vllm `compat/kernelmodel`) is the only backend: it prices step time, KV/fixed memory, P/D transfer, offload tier transfer and host overheads; coefficients come from blis-substrate's `registry/`. There is no `--latency-model` flag. Detail: `docs/guide/latency-models.md`.
 
 ## Post-Hoc Saturation Detection
 
-Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run`, `replay`, `observe`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
+Analyzes completed runs (distinct from the real-time flow-control detector). Package `sim/saturation/`; streaming detectors `composite`, `threshold`, `backlog-drift`, `peak-rate`, each with a false-alarm calibration knob. CLI (on `run` and `replay`): `--detectors <name|comma-list|all>`, `--saturation-config <yaml>`, `--saturation-report <path>` (writes `{"final":{...},"trace":[...]}`), `--saturation-final-window <duration>`. run→replay is byte-identical (INV-13). Full mechanism, tuning knobs, and migration from the pre-#1516 flags: `docs/contributing/saturation-analyzer-extension.md`.
 
 ## File Organization
 
@@ -184,13 +188,13 @@ Request pipeline: Arrival → Admission → Routing → WaitQueue → Batch Form
 ### Templates & Plans
 
 - `docs/contributing/templates/design-guidelines.md` — start here when designing anything new.
-- Active plans: `docs/plans/` (gitignored). Archived design docs: `docs/plans/archive/`.
+- Active plans: `docs/plans/` (gitignored). Archived design docs are gone.
 
 ## Active Technologies
 
-- Go 1.27.2+ (the llm-d router requires it) with `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`.
+- Go, at the toolchain `stack.json` names, with `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`.
 - In-memory node/GPU inventory maps; no external storage.
 
 ## Change History
 
-See `git log --oneline main` for the definitive commit history. Durable cross-cutting facts live in the standards docs and topic guides (admission, routing, scheduling, observe-replay-calibrate, workloads, latency models, KV offload, saturation, configuration reference).
+See `git log --oneline main` for the definitive commit history. Durable cross-cutting facts live in the standards docs and topic guides (admission, routing, scheduling, replay, workloads, latency models, KV offload, saturation, configuration reference).

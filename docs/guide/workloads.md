@@ -5,7 +5,6 @@ This guide covers how to define the traffic patterns BLIS simulates — from sim
 ```bash
 # Quick example: workload-spec YAML
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --num-instances 4 --workload-spec examples/multiturn-chat-demo.yaml
 ```
 
@@ -18,6 +17,13 @@ BLIS supports three modes, in order of precedence:
 | **Workload-spec YAML** | `--workload-spec <path>` | Multi-client workloads with custom distributions |
 | **CLI distribution** | `--rate`, `--num-requests`, `--prompt-tokens` | Quick single-client experiments |
 | **Named presets** | `--workload chatbot` | Standard workload profiles |
+
+Whichever mode states the workload, `blis run` streams its requests: each client's generator
+produces the next request when the simulation reaches it, so memory holds the requests in flight
+rather than the whole workload. This is the default since v0.16.0 (#1449). The older eager
+generator, which builds every request before the run starts, produces the same requests (INV-6)
+and is selected with `--lazy-generation=false`, deprecated in v0.16.0 and removed in v0.19.0
+(#1451).
 
 !!! note "Migration: `--workload traces` removed"
     The `--workload traces` and `--workload-traces-filepath` flags have been removed. They performed lossy statistical approximation (averaged token lengths, constant arrival) rather than faithful replay. For trace replay, use `--workload-spec` with a [TraceV2 YAML file](../reference/workload-spec.md) instead. To export simulation results as TraceV2, use `--trace-output <prefix>`.
@@ -62,7 +68,6 @@ follow-up turns tend to land on the instance that already caches the conversatio
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --num-instances 4 --workload-spec chat.yaml
 ```
 
@@ -100,7 +105,7 @@ Run with a prefix-aware router configuration to maximize cache reuse:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node-prefix-affinity.yaml \
-  --scenarios examples/llm-d/scenarios --registry $PWD/blis-registry \
+  --scenarios examples/llm-d/scenarios \
   --num-instances 4 --workload-spec rag.yaml
 ```
 
@@ -214,7 +219,6 @@ The simplest way to generate traffic:
 
 ```bash
 ./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry \
   --rate 100 --num-requests 500 \
   --prompt-tokens 512 --prompt-tokens-stdev 256 \
   --output-tokens 256 --output-tokens-stdev 128
@@ -561,28 +565,19 @@ Client TTFT = server TTFT + RTT + upload delay. Client E2E = server E2E + RTT + 
 ### Named Presets from the catalog
 
 BLIS resolves preset workload profiles from the catalog, at `<catalog>/workloads/<name>.yaml` —
-the sibling of the `models/` namespace. Locate the catalog once with `--catalog` or
-`export BLIS_CATALOG=$PWD/blis-catalog`; all three preset consumers read the same file, so a
+the sibling of the `models/` namespace. The catalog is the embedded copy unless `--catalog` or
+`BLIS_CATALOG` names a directory that replaces it; both preset consumers read the same file, so a
 preset cannot mean different things per command (#1769; before that, the copy in
 `defaults.yaml` was the one that moved output while the catalog copy was read by nothing).
-Use them with `blis run`, `blis observe` (deprecated, #1901), or the convert command:
+Use them with `blis run` or the convert command:
 
 ```bash
 # Run simulation with a named preset
-./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios \
-  --registry $PWD/blis-registry --workload chatbot --rate 10
-
-# Observe a real server with the same preset (identical token distributions as run;
-# blis observe is deprecated, #1901)
-./blis observe --server-url http://localhost:8000 --model qwen/qwen3-14b \
-  --workload chatbot --rate 10 --num-requests 100 \
-  --trace-header trace.yaml --trace-data trace.csv
+./blis run --scenario llama-3.1-70b-instruct-h200-tp4-4node.yaml --scenarios testdata/scenarios --workload chatbot --rate 10
 
 # Convert a preset to a v2 WorkloadSpec YAML for customization
 ./blis convert preset --name chatbot --rate 10 --num-requests 100 > chatbot.yaml
 ```
-
-Using the same preset for both `run` and `observe` ensures the observe→replay→calibrate pipeline compares identical workload shapes — eliminating workload skew as a calibration variable.
 
 Available presets in the catalog (`<catalog>/workloads/`):
 

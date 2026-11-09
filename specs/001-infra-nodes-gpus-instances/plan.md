@@ -1,5 +1,7 @@
 # Implementation Plan: Phase 1A — Infrastructure: Nodes, GPUs, Instances
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `001-infra-nodes-gpus-instances` | **Date**: 2026-03-13 | **Spec**: [spec.md](./spec.md)
 **Input**: Feature specification from `/specs/001-infra-nodes-gpus-instances/spec.md`
 
@@ -13,7 +15,7 @@ Phase 1A introduces three first-class infrastructure entities — `NodePool`, `N
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+
+**Language/Version**: the pinned Go release (go.mod)
 **Primary Dependencies**: `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`
 **Storage**: In-memory node/GPU inventory maps; no external storage
 **Testing**: `go test ./...` — table-driven, BDD-style; total suite under 60 seconds
@@ -163,7 +165,7 @@ sim/cluster/metrics_test.go     # Add per-model metrics test cases
 ```
 
 **No changes to:**
-- `sim/kv/`, `sim/latency/`, `sim/workload/`, `sim/trace/`
+- the simulator's KV package, the simulator's latency package, `sim/workload/`, `sim/trace/`
 - `cmd/` (no new CLI flags in Phase 1A; cluster config passed via `--cluster-config`)
 
 **Structure Decision**: Single project layout (`sim/cluster/` extension). All new types are in `sim/cluster/` per existing convention. No new sub-packages. Six new files + nine modified files.

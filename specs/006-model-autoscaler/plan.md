@@ -1,7 +1,9 @@
 # Implementation Plan: Phase 1C Model Autoscaler
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `006-model-autoscaler` | **Date**: 2026-04-01 | **Spec**: [spec.md](./spec.md)  
-**Design Doc**: [docs/plans/2026-04-01-phase1c-autoscaling-design.md](../../docs/plans/2026-04-01-phase1c-autoscaling-design.md)  
+**Design Doc**: the Phase 1C autoscaling design document of 2026-04-01 (kept in the untracked docs/plans directory, not in the tree)  
 **Tracking Issue**: [#696](https://github.com/inference-sim/inference-sim/issues/696)
 
 ## Summary
@@ -10,7 +12,7 @@ Add a model-level autoscaling pipeline to BLIS's cluster simulator, mirroring th
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+  
+**Language/Version**: the pinned Go release (go.mod)  
 **Primary Dependencies**: No new external dependencies. All work is within `sim/cluster/` and `sim/` (existing packages).  
 **Storage**: N/A (in-memory simulation state)  
 **Testing**: `go test ./...` with table-driven tests; `golangci-lint run ./...` (zero tolerance)  

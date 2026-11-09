@@ -4,6 +4,7 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 
 	"github.com/inference-sim/inference-sim/sim"
@@ -19,7 +20,6 @@ type ClusterSimulator struct {
 	abortErr          error
 	config            DeploymentConfig
 	instances         []*InstanceSimulator
-	rng               *sim.PartitionedRNG
 	clock             int64
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
@@ -33,8 +33,25 @@ type ClusterSimulator struct {
 	maxNodesSpanned int
 
 	// Request pipeline: arrivals go to the gateway, which dispatches or rejects them.
-	clusterEvents     ClusterEventQueue
-	seqCounter        int64
+	clusterEvents ClusterEventQueue
+	// queuedKeys holds the key of every queued cluster event, so schedule can refuse a
+	// second event with the same key (DEV-2).
+	queuedKeys map[eventKey]struct{}
+	// The cluster's senders of events (eventKey): each counts only the events it sent.
+	lifecycleSender   eventSender
+	workloadSender    eventSender
+	routerSender      eventSender
+	kvConnectorSender eventSender
+	autoscalerSender  eventSender
+	instanceSenders   map[InstanceID]*eventSender
+	// testSender is the sender of events tests schedule by hand (senderTest).
+	testSender *eventSender
+	// permuteSchedule, set only by the permutation test, gives every queued event a random
+	// salt that orders events of equal key (eventKey). Equal keys never occur, so a run's
+	// Result must not depend on it.
+	permuteSchedule *rand.Rand
+	// observePop, set only by tests, sees the key of every event the loop takes.
+	observePop        func(eventKey)
 	gateway           Gateway
 	daemonQueued      int            // daemon gateway callbacks in clusterEvents (they do not keep the run alive)
 	ffStack           []int          // nextRequestWork's scratch stack of heap indices
@@ -49,7 +66,16 @@ type ClusterSimulator struct {
 	// arrival gate), each once: a drain redirect re-arrives a request and is not counted again.
 	// It is observed independently of INV-1's terminal buckets, so generated == arrivals and
 	// injected == arrivals - rejected can be checked against their sum (#1871).
-	arrivals         int
+	arrivals int
+	// fates is the run's fate ledger (DEV-9, SIM-8): every request created, and the one fate
+	// each ends with. liveRequests are the requests that have arrived and have no fate yet, by
+	// ID; fateErr is the first ledger error, which fails the run.
+	fates *sim.FateLedger
+	// requestFacts are what a request row states that no metric keeps: each created request's
+	// arrival, prompt length and tags, by ID (RequestFacts).
+	requestFacts     map[string]RequestFact
+	liveRequests     map[string]*sim.Request
+	fateErr          error
 	trace            *trace.SimulationTrace // nil when trace-level is "none" (BC-1: zero overhead)
 	requestSource    RequestSource          // Source of requests to inject as arrival events. Drained once by Run().
 	inFlightRequests map[string]int         // instance ID → dispatched-but-not-completed count (#463)
@@ -107,8 +133,6 @@ type ClusterSimulator struct {
 	// remotePulls are the handoffs an engine driven through engine.Engine holds before it starts
 	// their pull, by decode sub-request ID (startPull).
 	remotePulls map[string]*ParentRequest
-
-	encodeRoutingRejections int // INV-1 term: requests rejected at encode routing (empty encode pool)
 
 	// Phase 1A: node/GPU placement manager. Nil when NodePools is empty (backward-compat).
 	placement *PlacementManager
@@ -189,6 +213,9 @@ func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyze
 	if cfg.AvgInputTokens == 0 {
 		cfg.AvgInputTokens = 512
 	}
+	if cfg.MinReplicas == 0 {
+		cfg.MinReplicas = 1
+	}
 	return cfg
 }
 
@@ -203,6 +230,19 @@ func effectiveAnalyzerConfig(cfg V2SaturationAnalyzerConfig) V2SaturationAnalyze
 //
 // Panics if config.NumInstances < 1 or if requestSource is nil.
 func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) *ClusterSimulator {
+	cs, err := BuildClusterSimulator(config, requestSource, onRequestDone)
+	if err != nil {
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
+	return cs
+}
+
+// BuildClusterSimulator is NewClusterSimulator for a caller that reports a refusal to its user:
+// it returns the error when an instance's engine cannot be built from the scenario (a combination
+// the engine refuses, such as KV transfer with data parallelism), and still panics on a
+// programmer error (a nil source, an invalid pool topology). The engines are built at startup,
+// before any event runs, so the error is a startup refusal and no simulation has begun.
+func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource, onRequestDone func(*sim.Request, int64) []*sim.Request) (*ClusterSimulator, error) {
 	if config.NumInstances < 1 {
 		panic("ClusterSimulator: NumInstances must be >= 1")
 	}
@@ -261,20 +301,23 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		})
 	}
 
-	// The cluster's PartitionedRNG. The embedded router draws from its own "epp" partition
-	// (sim/llmd/runtime.go); give each other consumer its own subsystem so draws never interleave.
-	rng := sim.NewPartitionedRNG(sim.NewSimulationKey(config.Seed))
-
 	cs := &ClusterSimulator{
-		config:           config,
-		instances:        make([]*InstanceSimulator, 0, config.NumInstances),
-		rng:              rng,
-		requestSource:    requestSource,
-		clusterEvents:    make(ClusterEventQueue, 0),
-		trace:            simTrace,
-		inFlightRequests: make(map[string]int, config.NumInstances),
-		shedByTier:       make(map[string]int),
-		injectedByClass:  make(map[string]int64),
+		config:            config,
+		instances:         make([]*InstanceSimulator, 0, config.NumInstances),
+		requestSource:     requestSource,
+		clusterEvents:     make(ClusterEventQueue, 0),
+		lifecycleSender:   eventSender{id: senderLifecycle},
+		workloadSender:    eventSender{id: senderWorkload},
+		routerSender:      eventSender{id: senderRouter},
+		kvConnectorSender: eventSender{id: senderKVConnector},
+		autoscalerSender:  eventSender{id: senderAutoscaler},
+		trace:             simTrace,
+		inFlightRequests:  make(map[string]int, config.NumInstances),
+		shedByTier:        make(map[string]int),
+		injectedByClass:   make(map[string]int64),
+		fates:             sim.NewFateLedger(),
+		requestFacts:      make(map[string]RequestFact),
+		liveRequests:      make(map[string]*sim.Request),
 	}
 
 	// PD disaggregation: set pool membership (topology already validated above). The gateway
@@ -324,8 +367,8 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 					ov.name, ov.cfg.TP, config.TP))
 			}
 		}
-		provisionRng := rng.ForSubsystem(subsystemNodeProvisioning)
-		loadingRng := rng.ForSubsystem(subsystemInstanceLoading)
+		provisionRng := sim.NewStream(config.Seed, streamNodeProvisioning)
+		loadingRng := sim.NewStream(config.Seed, streamInstanceLoading)
 		cs.placement = NewPlacementManager(config.NodePools, provisionRng, loadingRng, 0)
 	}
 
@@ -382,7 +425,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			}
 			// Record how many nodes this instance spans, for the trace header (#1530).
 			cs.recordNodeSpan(gpuIDs)
-			inst := cs.buildInstance(idx, id, simCfg)
+			inst, err := cs.buildInstance(idx, id, simCfg)
+			if err != nil {
+				return nil, err
+			}
 			inst.Model = config.Model
 			inst.nodeID = nodeID
 			inst.allocatedGPUIDs = gpuIDs
@@ -412,7 +458,10 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 		} else {
 			// No NodePools: the CLI --gpu flag (config.GPU) is the authoritative source
 			// (backward-compat); resolveConfigForRole keeps it for the default role.
-			inst := cs.buildInstance(idx, id, simCfg)
+			inst, err := cs.buildInstance(idx, id, simCfg)
+			if err != nil {
+				return nil, err
+			}
 			inst.Model = config.Model
 			if config.ScenarioEndpointTopology != nil {
 				inst.endpointTopology = config.ScenarioEndpointTopology(id)
@@ -477,7 +526,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 			NewV2SaturationAnalyzer(analyzerCfg),
 			&UnlimitedEngine{},
 			NewDirectActuator(cs),
-			rng.ForSubsystem(subsystemAutoscaler),
+			sim.NewStream(config.Seed, streamAutoscaler),
 		)
 	}
 
@@ -487,7 +536,7 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 	for _, inst := range cs.instances {
 		cs.wireInstance(inst)
 	}
-	return cs
+	return cs, nil
 }
 
 // buildInstance builds instance id's engine through the deployment's engine factory
@@ -495,15 +544,15 @@ func NewClusterSimulator(config DeploymentConfig, requestSource RequestSource, o
 // in the cluster's instance. Every instance's engine is built this way, at startup and when the
 // autoscaler or a node coming up adds one; index is its position among the deployment's
 // instances, which the factory may group by (a data-parallel replica's ranks).
-func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.InstanceConfig) *InstanceSimulator {
+func (cs *ClusterSimulator) buildInstance(index int, id InstanceID, cfg sim.InstanceConfig) (*InstanceSimulator, error) {
 	if cs.config.NewEngine == nil {
 		panic(fmt.Sprintf("ClusterSimulator: instance %s: DeploymentConfig.NewEngine is nil, and every instance's engine is built through it", id))
 	}
 	drv, err := cs.config.NewEngine(index, cfg)
 	if err != nil {
-		panic(fmt.Sprintf("ClusterSimulator: instance %s: %v", id, err))
+		return nil, fmt.Errorf("instance %s: %w", id, err)
 	}
-	return NewEngineInstance(id, cfg, drv)
+	return NewEngineInstance(id, cfg, drv), nil
 }
 
 // wireInstance connects an instance's request lifecycle to the gateway and to session
@@ -523,17 +572,30 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		if parent := cs.parentOf(req); parent != nil {
 			// Decode completions report in detectDecodeCompletions, at parent granularity; a
 			// prefill that does not complete ends its parent here.
-			if !req.IsDecodeSubRequest && req.State != sim.StateCompleted {
+			switch {
+			case !req.IsDecodeSubRequest && req.State != sim.StateCompleted:
+				// Its prefill engine timed it out or could not serve it.
+				cs.endByOutcome(parent.OriginalRequest, doneOutcome(req), sim.DropUnservable, tick)
 				cs.parentDone(parent, tick, doneOutcome(req))
+			case req.IsDecodeSubRequest && doneOutcome(req) == DoneDropped:
+				// Its decode engine failed it before it emitted anything (the decode instance
+				// counts it dropped_unservable); no detector below reports it.
+				cs.endByOutcome(parent.OriginalRequest, DoneDropped, sim.DropUnservable, tick)
+				cs.parentDone(parent, tick, DoneDropped)
 			}
 		} else {
-			cs.gateway.OnDone(req, doneTime(inst, req, tick), doneOutcome(req))
+			at := doneTime(inst, req, tick)
+			cs.endByOutcome(req, doneOutcome(req), sim.DropUnservable, at)
+			cs.gateway.OnDone(req, at, doneOutcome(req))
 		}
 		if cs.sessionCallback == nil {
 			return nil
 		}
-		for _, next := range cs.sessionCallback(req, tick) {
-			cs.pushArrival(next, next.ArrivalTime)
+		// The next round follows the response the client has received in full: a completed
+		// request's last chunk reaches it after the post-decode overhead, the same instant the
+		// P/D path releases from (parent.CompletionTime), so think time counts from there (#1913).
+		for _, next := range cs.sessionCallback(req, doneTime(inst, req, tick)) {
+			cs.pushArrival(next, next.ArrivalTime, &cs.workloadSender)
 		}
 		return nil // don't inject locally — route through cluster pipeline
 	}
@@ -579,11 +641,11 @@ func doneOutcome(req *sim.Request) DoneOutcome {
 // OnRequestDone hooks that generate follow-ups should return them to the
 // coordinator rather than calling pushArrival directly, preserving this method
 // as the single enforcement point. See also issue #1041.
-func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64) {
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &ClusterArrivalEvent{time: timeUs, request: req},
-		seqID: cs.nextSeqID(),
-	})
+// from is the arrival's sender: the workload generator (workloadSender) for a request the
+// workload produced, or the drained instance for a request a drain redirects.
+func (cs *ClusterSimulator) pushArrival(req *sim.Request, timeUs int64, from *eventSender) {
+	cs.createRequest(req)
+	cs.schedule(&ClusterArrivalEvent{time: timeUs, request: req}, from)
 	cs.pendingArrivals++
 }
 
@@ -683,10 +745,7 @@ func (c *ClusterSimulator) Run() error {
 	// The autoscaler is enabled when ModelAutoscalerIntervalUs > 0 AND cs.autoscaler is non-nil.
 	// Zero-interval guard: no tick is ever scheduled when interval is 0 (INV-6).
 	if c.autoscaler != nil && c.config.ModelAutoscalerIntervalUs > 0 {
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &ScalingTickEvent{At: c.clock},
-			seqID: c.nextSeqID(),
-		})
+		c.schedule(&ScalingTickEvent{At: c.clock}, &c.autoscalerSender)
 	}
 
 	// 2. Drain the request source to schedule arrival events. The source is
@@ -702,7 +761,7 @@ func (c *ClusterSimulator) Run() error {
 		if req == nil {
 			panic("ClusterSimulator: RequestSource.Next() returned (nil, true) — implementation contract violation (Next must never return ok=true with a nil request)")
 		}
-		c.pushArrival(req, req.ArrivalTime)
+		c.pushArrival(req, req.ArrivalTime, &c.workloadSender)
 		arrivalCount++
 	}
 	if arrivalCount == 0 {
@@ -711,6 +770,7 @@ func (c *ClusterSimulator) Run() error {
 
 	// 3. Shared-clock event loop (BC-4: cluster events before instance events)
 	var lastProgress int64
+	stoppedAtHorizon := false
 	for {
 		// Find earliest cluster event time
 		clusterTime := int64(math.MaxInt64)
@@ -766,9 +826,10 @@ func (c *ClusterSimulator) Run() error {
 			return fmt.Errorf("gateway: %w", c.abortErr)
 		}
 		if clusterTime <= instanceTime {
-			entry := heap.Pop(&c.clusterEvents).(clusterEventEntry)
+			entry := c.popEvent()
 			c.clock = entry.event.Timestamp()
 			if c.clock > c.config.Horizon {
+				stoppedAtHorizon = true
 				break
 			}
 			if cb, ok := entry.event.(*CallbackEvent); !ok || !cb.daemon {
@@ -779,6 +840,7 @@ func (c *ClusterSimulator) Run() error {
 			prevClusterClock := c.clock
 			c.clock = instanceTime
 			if c.clock > c.config.Horizon {
+				stoppedAtHorizon = true
 				break
 			}
 			inst := c.instances[instanceIdx]
@@ -804,6 +866,9 @@ func (c *ClusterSimulator) Run() error {
 
 			for i, m := range members {
 				c.afterInstanceEvent(m, before[i])
+				if err := m.StallErr(); err != nil {
+					return fmt.Errorf("instance %s: %w", m.ID(), err)
+				}
 			}
 		}
 
@@ -890,6 +955,18 @@ func (c *ClusterSimulator) Run() error {
 	// user-facing distributions reflect the full request lifecycle.
 	c.projectPDMetrics()
 
+	// DEV-9: the requests the horizon caught take their fate from where they are, and the fates
+	// must account for every request created, in agreement with INV-1's buckets. A run that
+	// drained without reaching its horizon leaves no request without a fate.
+	if stoppedAtHorizon {
+		c.endAtHorizon()
+	} else if err := c.stalled(); err != nil {
+		return err
+	}
+	if err := c.checkFates(); err != nil {
+		return err
+	}
+
 	if n := c.GatewayQueueDepth(); n > 0 {
 		logrus.Warnf("[cluster] %d requests remain in the gateway at simulation end", n)
 	}
@@ -909,7 +986,7 @@ func (c *ClusterSimulator) Run() error {
 		// (e.g. one timeout + one request still held in the gateway) would be mislabeled.
 		// `total` spans the full canonical ledger: every arrival is either admission-
 		// rejected or injected, and every injected request ends in one of INV-1's ten
-		// non-completion terminal buckets (the eleven-term form minus `completed`; see
+		// non-completion terminal buckets (the ten-term form minus `completed`; see
 		// sim/cluster/metrics.go and docs/contributing/standards/invariants.md). Keep this
 		// in sync with that ledger — a missing term silently makes the absolute claim
 		// over-fire (#2064 review). gatewayTimedOut is already folded into TimedOutRequests
@@ -921,7 +998,6 @@ func (c *ClusterSimulator) Run() error {
 			c.aggregatedMetrics.StillQueued +
 			c.aggregatedMetrics.StillRunning +
 			c.routingRejections +
-			c.encodeRoutingRejections +
 			c.gatewayRejected +
 			c.gatewayExpired +
 			c.gatewayEvicted +
@@ -1076,13 +1152,6 @@ func (c *ClusterSimulator) gatewayHeldUntil(since int64) int64 {
 // gatewayStallLimitUs bounds how long a run continues on router timers alone while the gateway
 // holds requests and nothing else can happen: one simulated hour.
 const gatewayStallLimitUs = int64(3600 * 1e6)
-
-// nextSeqID returns the next monotonically increasing sequence ID for event ordering.
-func (c *ClusterSimulator) nextSeqID() int64 {
-	id := c.seqCounter
-	c.seqCounter++
-	return id
-}
 
 // SetProgressHook registers an optional hook that receives periodic state
 // snapshots during cluster simulation execution. Must be called before Run().
@@ -1241,7 +1310,12 @@ func (cs *ClusterSimulator) addLiveInstance(
 	// A live instance's engine is built as a startup one's is, at the next index past every
 	// instance the cluster has built.
 	cs.liveBuilt++
-	inst := cs.buildInstance(cs.config.NumInstances+cs.liveBuilt-1, id, simCfg)
+	inst, err := cs.buildInstance(cs.config.NumInstances+cs.liveBuilt-1, id, simCfg)
+	if err != nil {
+		// A scale-up at run time: the startup build of the same pool succeeded, so a refusal here
+		// is an invariant break and not a scenario the user can fix.
+		panic(fmt.Sprintf("ClusterSimulator: %v", err))
+	}
 	inst.Model = model
 	inst.nodeID = nodeID
 	inst.allocatedGPUIDs = gpuIDs
@@ -1308,7 +1382,7 @@ func (c *ClusterSimulator) ParentRequests() []*ParentRequest {
 // detectPrefillCompletions checks for newly completed prefill sub-requests on the given instance
 // and schedules KV transfer events for each.
 // R2/INV-6: Collects completed IDs into a sorted slice before processing to ensure
-// deterministic nextSeqID() assignment regardless of Go's random map iteration order.
+// a deterministic order of the KV connector's sends regardless of Go's random map iteration order.
 func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 	instID := string(inst.ID())
 	// Phase 1: collect completed sub-request IDs (sorted for determinism)
@@ -1337,14 +1411,9 @@ func (c *ClusterSimulator) detectPrefillCompletions(inst *InstanceSimulator) {
 		c.pdPrefillOutputTokens += parent.PrefillSubReq.GeneratedTokens
 		c.startPrefillHold(parent)
 
-		// Schedule KV transfer
-		heap.Push(&c.clusterEvents, clusterEventEntry{
-			event: &KVTransferStartedEvent{
-				time:      parent.PrefillCompleteTime,
-				parentReq: parent,
-			},
-			seqID: c.nextSeqID(),
-		})
+		// Schedule the KV transfer. The KV connector sends it: it starts every handoff, in the
+		// order the prefills that need one were detected.
+		c.schedule(&KVTransferStartedEvent{time: parent.PrefillCompleteTime, parentReq: parent}, &c.kvConnectorSender)
 	}
 }
 
@@ -1382,8 +1451,15 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		//
 		// This line IS INV-PD-6b (parent completion includes post-decode overhead).
 		parent.CompletionTime = parent.DecodeSubReq.DepartureTime + inst.PostDecodeFixedOverhead()
+		// The E2E the request reports also carries each token's output-processing time,
+		// which the sub-request's last step does not. A follow-up round is released when
+		// the client has the response, so it waits for the later of the two.
+		if e2e, ok := pdReportedE2E(inst.Metrics(), subReqID, parent); ok {
+			parent.CompletionTime = max(parent.CompletionTime, parent.ArrivalTime+int64(e2e))
+		}
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeCompletedCount++
+		c.endRequest(parent.OriginalRequest, sim.FateCompleted, "", parent.CompletionTime)
 		c.parentDone(parent, parent.CompletionTime, DoneCompleted)
 
 		// Issue #884: trigger session follow-up for the original (parent) request.
@@ -1403,7 +1479,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
-				c.pushArrival(next, next.ArrivalTime)
+				c.pushArrival(next, next.ArrivalTime, &c.workloadSender)
 			}
 		}
 	}
@@ -1429,6 +1505,7 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 		parent.CompletionTime = c.clock
 		delete(c.pendingDecodeCompletions, subReqID)
 		c.pdDecodeTimedOutCount++
+		c.endRequest(parent.OriginalRequest, sim.FateTimedOut, "", c.clock)
 		c.parentDone(parent, c.clock, DoneTimedOut)
 
 		if c.sessionCallback != nil {
@@ -1439,10 +1516,26 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// No follow-ups expected, but handle defensively.
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
 			for _, next := range nextReqs {
-				c.pushArrival(next, next.ArrivalTime)
+				c.pushArrival(next, next.ArrivalTime, &c.workloadSender)
 			}
 		}
 	}
+}
+
+// pdReportedE2E is the arrival-to-last-token span projectPDMetrics reports for a completed
+// P/D parent, read from the decode sub-request's own measurements. The decode instance
+// measures it from the decode schedule instant, unless a preemption re-prefilled the
+// sub-request, which makes it arrival-relative already.
+func pdReportedE2E(m *sim.Metrics, dec string, parent *ParentRequest) (float64, bool) {
+	own, okOwn := m.RequestE2Es[dec]
+	delay, okDelay := m.RequestSchedulingDelays[dec]
+	if !okOwn || !okDelay || parent.DecodeSubReq == nil {
+		return 0, false
+	}
+	if parent.DecodeSubReq.FirstTokenTime == 0 {
+		own += float64(delay)
+	}
+	return own, own >= 0
 }
 
 // Clock returns the cluster's current simulation clock.
@@ -1466,7 +1559,7 @@ func (c *ClusterSimulator) AggregatedMetrics() *sim.Metrics {
 
 // Arrivals returns the number of requests that arrived at the cluster, each counted once
 // (a drain redirect is not a new arrival). Every arrival is either rejected at admission
-// (RejectedRequests) or injected, and every injected request ends in one of INV-1's eleven
+// (RejectedRequests) or injected, and every injected request ends in one of INV-1's ten
 // terminal buckets. Panics if called before Run() completes.
 func (c *ClusterSimulator) Arrivals() int {
 	if !c.hasRun {
@@ -1486,13 +1579,6 @@ func (c *ClusterSimulator) RejectedRequests() int {
 // routable instances were available (I13). Distinct from admission rejections.
 func (c *ClusterSimulator) RoutingRejections() int {
 	return c.routingRejections
-}
-
-// EncodeRoutingRejections returns the count of requests rejected at the encode
-// routing stage because the encode pool has zero routable instances (GAP-4,
-// issue #1264). Always zero when --encode-instances 0.
-func (c *ClusterSimulator) EncodeRoutingRejections() int {
-	return c.encodeRoutingRejections
 }
 
 // ShedByTier returns a copy of per-SLOClass rejection counts recorded during admission.
@@ -1712,7 +1798,6 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.TotalInputTokens += m.TotalInputTokens
 		merged.EngineAccepted += m.EngineAccepted
 		merged.TotalOutputTokens += m.TotalOutputTokens
-		merged.TTFTSum += m.TTFTSum
 		merged.ITLSum += m.ITLSum
 		if m.SimEndedTime > merged.SimEndedTime {
 			merged.SimEndedTime = m.SimEndedTime
@@ -1802,9 +1887,6 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 						if math.IsInf(newTTFT, 0) {
 							continue
 						}
-						// I1: Keep TTFTSum consistent with per-request TTFT adjustments.
-						// Convert the TTFT delta (microseconds) to int64 ticks for TTFTSum.
-						merged.TTFTSum += int64(newTTFT - ttft)
 						merged.RequestTTFTs[reqID] = newTTFT
 					}
 				}
@@ -1982,12 +2064,9 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// structurally identical to the non-PD TTFT (scheduling_delay + first-token step).
 		//
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
-		// prefillTTFT is retained as the TTFTSum baseline: on the normal path pre-projection
-		// TTFTSum holds exactly prefillTTFT for this parent (a normal decode sub-request never
-		// sets FirstTokenTime, so it contributes 0). A preempted-and-re-prefilled decode
-		// sub-request is the exception — it re-stamps FirstTokenTime and adds a decode term to
-		// TTFTSum that this projection does not roll back; that pre-existing PD TTFTSum residual
-		// is tracked in #1628 and is out of scope for the #1511 no-token fix here.
+		// Every TTFT sample is the fate-derived RequestTTFTs entry (DEV-9): there is no
+		// separate aggregate to keep in step, so a decode sub-request that was preempted and
+		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (#1628).
 		// decodeDelay/hasDecodeDelay were read
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.
@@ -2019,40 +2098,21 @@ func (c *ClusterSimulator) projectPDMetrics() {
 					// silently reporting a negative value.
 					logrus.Errorf("[cluster] projectPDMetrics: negative TTFT for %s (decodeDelay=%d firstDecodeStep=%.0f); using prefill TTFT",
 						pid, decodeDelay, firstDecodeStep)
-					m.RequestTTFTs[pid] = prefillTTFT // delta 0 vs baseline: TTFTSum untouched
+					m.RequestTTFTs[pid] = prefillTTFT
 				} else {
 					m.RequestTTFTs[pid] = newTTFT
-					// BC-3: Keep TTFTSum consistent with the TTFT adjustment. The baseline
-					// prefillTTFT is replaced by newTTFT for this parent.
-					m.TTFTSum += int64(newTTFT - prefillTTFT)
 				}
 			} else if hasPrefillTTFT {
 				// Defensive fallback: served a token but the decode scheduling delay is
-				// unavailable; use the prefill-only TTFT. TTFTSum unchanged (projected
-				// value equals the baseline).
+				// unavailable; use the prefill-only TTFT.
 				m.RequestTTFTs[pid] = prefillTTFT
 				logrus.Warnf("[cluster] projectPDMetrics: parent %s served a token but is missing its decode scheduling delay; using prefill TTFT", pid)
 			} else {
 				logrus.Warnf("[cluster] projectPDMetrics: served parent %s has no prefill TTFT (key %s)", pid, pfx)
 			}
-		} else if completed && hasPrefillTTFT {
-			// Terminal-but-no-token parent (decode-side drop / timeout-while-queued /
-			// preempted-then-timed-out, #1511): it has no surviving first token, so it
-			// contributes NO parent TTFT. The prefill sub-request's TTFT key was deleted
-			// above, but its value is still summed into the aggregate TTFTSum; roll the
-			// PREFILL term back so the reported mean TTFT (TTFTSum / n) does not count a
-			// request that produced no token.
-			//
-			// Scope: this rolls back the prefill term only, which is exactly what the three
-			// no-token outcomes this fix restores require. A decode sub-request that emitted a
-			// token, was preempted (re-stamping FirstTokenTime and adding a decode term to
-			// TTFTSum, simulator.go), then timed out while re-queued also leaves that decode
-			// term in TTFTSum, which neither this rollback nor the unconditional
-			// delete(RequestTTFTs, dec) removes — a pre-existing PD TTFTSum residual tracked in
-			// #1628, not introduced here. So TTFTSum == Σ RequestTTFTs holds for the no-token
-			// terminal outcomes but is NOT a general PD law (see #1628).
-			m.TTFTSum -= int64(prefillTTFT)
 		}
+		// A terminal parent with no token contributes no TTFT sample: its prefill entry was
+		// deleted above, and nothing else holds its value (#1511).
 
 		// Scheduling delay = prefill sub-request's delay
 		// (the real user-facing delay, not the decode pipeline cumulative latency).
@@ -2069,7 +2129,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Gated on `served`: a no-token terminal parent (drop/timeout) contributes no
 		// entry (INV-PD-6); it is represented by the drop/timeout counters (#1511).
 		decodeEntry := m.Requests[dec]
-		_, prefillRow := m.Requests[pfx]
+		prefillEntry, prefillRow := m.Requests[pfx]
 		_, decodeRow := m.Requests[dec]
 		delete(m.Requests, pfx)
 		delete(m.Requests, dec)
@@ -2087,6 +2147,8 @@ func (c *ClusterSimulator) projectPDMetrics() {
 			}
 			rm := sim.NewRequestMetrics(parent.OriginalRequest, float64(parent.ArrivalTime)/1e6)
 			rm.HandledBy = string(parent.DecodeInstanceID)
+			// The prompt's cache hit is the prefill instance's lookup.
+			rm.CachedLocalTokens, rm.CachedExternalTokens = prefillEntry.CachedLocalTokens, prefillEntry.CachedExternalTokens
 			// The parent completes when its decode sub-request does, on the decode instance,
 			// so it takes that completion's place in the completion order.
 			m.Requests[pid] = rm.WithCompletionOf(decodeEntry)

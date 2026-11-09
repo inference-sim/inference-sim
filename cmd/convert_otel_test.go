@@ -32,6 +32,10 @@ func TestConvertOtel_SingleFileEndToEnd(t *testing.T) {
 	if trace.Header.SessionContextGrowth != "accumulate" {
 		t.Errorf("header growth = %q, want accumulate", trace.Header.SessionContextGrowth)
 	}
+	// A converted trace records no BLIS deployment (#2067).
+	if trace.Header.Mode != workload.TraceModeConverted {
+		t.Errorf("header mode = %q, want %q", trace.Header.Mode, workload.TraceModeConverted)
+	}
 	if len(trace.Records) != 2 {
 		t.Fatalf("records = %d, want 2", len(trace.Records))
 	}

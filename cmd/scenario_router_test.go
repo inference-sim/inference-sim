@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/inference-sim/blis-schemas/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
@@ -148,7 +148,7 @@ func TestScenarioRouterInputs_PoolLabelsReachEachPod(t *testing.T) {
 // Pods must expose the distinct hosts the kernel uses to price a P/D handoff.
 func TestScenarioRouterInputs_KernelPlacementReachesPodsWithoutNodePools(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	repos := kernelmodel.Repos{Scenarios: pdScenarios, Catalog: catalog, Registry: registry}
+	repos := reposOf(pdScenarios, catalog, registry)
 	const scenario = "glm-5-h200-3p1d-ib.yaml"
 	prefill, err := kernelmodel.OpenRole(scenario, repos, deployment.RolePrefill)
 	if err != nil {
@@ -171,105 +171,6 @@ func TestScenarioRouterInputs_KernelPlacementReachesPodsWithoutNodePools(t *test
 	}
 }
 
-// The declared GB200 rack boundary places decode rank 0 with both prefiller
-// ranks and decode rank 1 across the boundary. The real EPP must choose the
-// in-rack decoder; otherwise the scenario's transfer price and routing see
-// different locations.
-func TestScenarioRouter_KernelRackTopologyAffectsDecode(t *testing.T) {
-	const epp = `apiVersion: llm-d.ai/v1
-kind: EndpointPickerConfig
-plugins:
-- type: prefill-filter
-- type: decode-filter
-- type: max-score-picker
-- type: topology-extractor
-- type: topology-affinity-filter
-  parameters:
-    minAffinity: rack
-- type: disagg-profile-handler
-  parameters:
-    stageOrder: prefill-first
-schedulingProfiles:
-- name: prefill
-  plugins:
-  - pluginRef: prefill-filter
-  - pluginRef: max-score-picker
-- name: decode
-  plugins:
-  - pluginRef: decode-filter
-  - pluginRef: topology-affinity-filter
-  - pluginRef: max-score-picker
-`
-	config := writeRouterFile(t, "topology.yaml", epp)
-	zoneConfig := writeRouterFile(t, "zone-affinity.yaml", strings.Replace(epp, "minAffinity: rack", "minAffinity: zone", 1))
-	withoutAffinity := strings.Replace(epp, "  - pluginRef: topology-affinity-filter\n", "", 1)
-	plainConfig := writeRouterFile(t, "no-affinity.yaml", withoutAffinity)
-	run := func(rackGPUs, trace, configFile string) (string, []string) {
-		t.Helper()
-		edits := []string{"router:\n  endpoint_picker_config: router/pd-always.yaml\n", ""}
-		if rackGPUs == "none" {
-			edits = append(edits, "  gpus_per_rack: 12\n", "")
-		} else if rackGPUs != "12" {
-			edits = append(edits, "  gpus_per_rack: 12\n", "  gpus_per_rack: "+rackGPUs+"\n")
-		}
-		dir := routerVariant(t, filepath.Join(pdScenarios, pdDPScenario),
-			"router:\n  epp_flags:\n  - --endpoint-selector=llm-d.ai/inference-serving=true\n  - --endpoint-target-ports=8000\n  - --allow-experimental-plugins\n  endpoint_picker_config: topology.yaml\n",
-			map[string]string{"topology.yaml": configFile}, edits...)
-		common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
-			"--prefill-instances", "1", "--decode-instances", "1", "--seed", "7", "--horizon", "600000000"}
-		args := append([]string{"run", "--num-requests", "8", "--rate", "4"}, common...)
-		if trace != "" {
-			args = append(args, "--trace-output", trace)
-		}
-		out, stderr, err := runKernelCLI(t, args...)
-		if err != nil {
-			t.Fatalf("topology-aware run: %v\n%s", err, lastLines(stderr, 12))
-		}
-		return out, common
-	}
-	trace := filepath.Join(t.TempDir(), "trace")
-	boundary, common := run("12", trace, config)
-	allSameRack, _ := run("16", "", config)
-	undeclaredRack, _ := run("none", "", config)
-	zoneFloor, _ := run("12", "", zoneConfig)
-	withoutFilter, _ := run("12", "", plainConfig)
-	for _, tc := range []struct {
-		name, output     string
-		decode2, decode3 int
-	}{
-		{"one in-rack decoder", boundary, 8, 0},
-		{"both decoders in-rack", allSameRack, 4, 4},
-		{"no rack declared: real filter fails open", undeclaredRack, 4, 4},
-		{"zone floor uses tighter rack match", zoneFloor, 8, 0},
-		{"declared rack but no affinity filter", withoutFilter, 4, 4},
-	} {
-		got2 := instanceMetricInt(t, tc.output, "instance_2", "completed_requests")
-		got3 := instanceMetricInt(t, tc.output, "instance_3", "completed_requests")
-		if got2 != tc.decode2 || got3 != tc.decode3 {
-			t.Errorf("%s: decode counts 2=%d 3=%d, want 2=%d 3=%d", tc.name, got2, got3, tc.decode2, tc.decode3)
-		}
-	}
-	if near, far := transferMeanUs(t, boundary), transferMeanUs(t, withoutFilter); near >= far {
-		t.Errorf("in-rack routing mean KV transfer %.1f us, want less than mixed-rack %.1f us", near, far)
-	}
-	replayed, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", trace + ".yaml", "--trace-data", trace + ".csv"}, common...)...)
-	if err != nil {
-		t.Fatalf("replay with kernel topology: %v\n%s", err, lastLines(stderr, 8))
-	}
-	if inv13View(t, replayed) != inv13View(t, boundary) {
-		t.Errorf("kernel topology changed the run/replay output")
-	}
-}
-
-func transferMeanUs(t *testing.T, stdout string) float64 {
-	t.Helper()
-	ms, ok := pdFigure(t, stdout, "kv_transfer_mean_ms")
-	if !ok {
-		t.Fatal("no KV-transfer duration in the Result")
-	}
-	return ms * 1e3
-}
-
 // Keep a copy of the pinned router fork's stock P/D topology config in
 // cmd/testdata/epp. Its decode-first filter and scorer must actually start
 // against scenario-derived Pod labels, even though this 3P1D fixture has no
@@ -288,19 +189,6 @@ func TestScenarioRouter_UpstreamTopologySampleStarts(t *testing.T) {
 	if got := clusterMetricInt(t, out, "completed_requests"); got != 8 {
 		t.Errorf("completed %d of 8 virtual requests", got)
 	}
-}
-
-func instanceMetricInt(t *testing.T, stdout, id, field string) int {
-	t.Helper()
-	inst, ok := instanceFigures(t, stdout)[id]
-	if !ok {
-		t.Fatalf("no %s figures in the Result", id)
-	}
-	value, ok := inst[field].(float64)
-	if !ok {
-		t.Fatalf("%s metrics have no numeric %s", id, field)
-	}
-	return int(value)
 }
 
 // A router block naming a file that does not exist, or naming the configuration twice, is an
@@ -483,94 +371,5 @@ func TestExampleRouterScenariosRun(t *testing.T) {
 	}
 	if n < 5 {
 		t.Fatalf("non-vacuity: found %d example scenarios", n)
-	}
-}
-
-// Explicit simulated Node manifests give each kernel-placed Pod geography
-// without guessing it from network bandwidth. The same declared topology is
-// read by both run and replay, and the real EPP chooses the in-zone decoder.
-func TestScenarioRouter_DeclaredZoneRunReplayParity(t *testing.T) {
-	const epp = `apiVersion: llm-d.ai/v1
-kind: EndpointPickerConfig
-plugins:
-- type: prefill-filter
-- type: decode-filter
-- type: max-score-picker
-- type: topology-extractor
-- type: topology-affinity-filter
-  parameters:
-    minAffinity: zone
-- type: disagg-profile-handler
-  parameters:
-    stageOrder: prefill-first
-schedulingProfiles:
-- name: prefill
-  plugins:
-  - pluginRef: prefill-filter
-  - pluginRef: max-score-picker
-- name: decode
-  plugins:
-  - pluginRef: decode-filter
-  - pluginRef: topology-affinity-filter
-  - pluginRef: max-score-picker
-`
-	config := writeRouterFile(t, "zone-epp.yaml", epp)
-	const nodes = `apiVersion: v1
-kind: Node
-metadata:
-  name: blis-node-0
-  labels:
-    topology.kubernetes.io/zone: zone-a
-    topology.kubernetes.io/region: region-1
----
-apiVersion: v1
-kind: Node
-metadata:
-  name: blis-node-1
-  labels:
-    topology.kubernetes.io/zone: zone-a
-    topology.kubernetes.io/region: region-1
----
-apiVersion: v1
-kind: Node
-metadata:
-  name: blis-node-2
-  labels:
-    topology.kubernetes.io/zone: zone-a
-    topology.kubernetes.io/region: region-1
----
-apiVersion: v1
-kind: Node
-metadata:
-  name: blis-node-3
-  labels:
-    topology.kubernetes.io/zone: zone-b
-    topology.kubernetes.io/region: region-1
-`
-	nodeFile := writeRouterFile(t, "nodes.yaml", nodes)
-	dir := routerVariant(t, filepath.Join(pdScenarios, pdDPScenario),
-		"router:\n  epp_flags:\n  - --endpoint-selector=llm-d.ai/inference-serving=true\n  - --endpoint-target-ports=8000\n  - --allow-experimental-plugins\n  endpoint_picker_config: zone-epp.yaml\n  manifests:\n  - nodes.yaml\n",
-		map[string]string{"zone-epp.yaml": config, "nodes.yaml": nodeFile},
-		"router:\n  endpoint_picker_config: router/pd-always.yaml\n", "",
-		"  gpus_per_rack: 12\n", "  gpus_per_rack: 4\n")
-	common := []string{"--scenarios", dir, "--scenario", "variant.yaml", "--num-instances", "2",
-		"--prefill-instances", "1", "--decode-instances", "1", "--seed", "7", "--horizon", "600000000"}
-	trace := filepath.Join(t.TempDir(), "trace")
-	out, stderr, err := runKernelCLI(t, append([]string{"run", "--num-requests", "8", "--rate", "4", "--trace-output", trace}, common...)...)
-	if err != nil {
-		t.Fatalf("zone topology run: %v\n%s", err, lastLines(stderr, 12))
-	}
-	if got := instanceMetricInt(t, out, "instance_2", "completed_requests"); got != 8 {
-		t.Fatalf("in-zone decoder completed %d of 8 requests", got)
-	}
-	if got := instanceMetricInt(t, out, "instance_3", "completed_requests"); got != 0 {
-		t.Fatalf("out-of-zone decoder completed %d of 8 requests", got)
-	}
-	replayed, stderr, err := runKernelCLI(t, append([]string{"replay", "--trace-header", trace + ".yaml", "--trace-data", trace + ".csv"}, common...)...)
-	if err != nil {
-		t.Fatalf("zone topology replay: %v\n%s", err, lastLines(stderr, 12))
-	}
-	if inv13View(t, replayed) != inv13View(t, out) {
-		t.Error("declared zone topology changed run/replay output")
 	}
 }

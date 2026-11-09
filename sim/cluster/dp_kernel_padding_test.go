@@ -2,11 +2,18 @@ package cluster
 
 import (
 	"fmt"
-	"github.com/inference-sim/blis-vllm/compat/dplb"
-	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/load"
+
+	"github.com/inference-sim/blis-vllm/compat/dplb"
+	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/kernelfixtures"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -18,8 +25,31 @@ type plainLatency struct{ cengine.LatencyModel }
 // long-context decode on one rank, stepping beside short prefills on the other, costs the
 // padded token count, so it finishes later than the same run priced without padding -- and
 // never sooner, since padding only adds work.
+//
+// Padding applies when the step runs under a CUDA graph on every rank, so the test states the
+// graph mode it needs. The fixture states none (it states only what its corpus states, X19),
+// and vLLM 0.32.0 then resolves decode steps to FULL graphs, under which this batch is not
+// padded: the long request finishes at the same time padded and unpadded. Under PIECEWISE,
+// which the earlier fixture stated, padding adds 0.13% to the long request's E2E.
 func TestDPLockstep_KernelPaddingReachesTheCluster(t *testing.T) {
-	m, err := kernelmodel.Open("minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml", kernelmodel.DefaultRepos())
+	data, err := kernelmodel.OpenData(load.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fixture = "minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml"
+	raw, err := os.ReadFile(filepath.Join(kernelfixtures.AISimulate(), fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scenario := strings.Replace(string(raw), "      max_model_len:", "      cudagraph_mode: PIECEWISE\n      max_model_len:", 1)
+	if scenario == string(raw) {
+		t.Fatalf("%s has no max_model_len line to put cudagraph_mode before", fixture)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, fixture), []byte(scenario), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := kernelmodel.Open(fixture, kernelmodel.Repos{Scenarios: dir, Data: data})
 	if err != nil {
 		t.Fatal(err)
 	}

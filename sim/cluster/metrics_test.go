@@ -93,7 +93,7 @@ func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
 	m.SimEndedTime = 1_000_000 // 1 second
 
 	// WHEN collecting RawMetrics
-	raw := CollectRawMetrics(m, nil, 0, "", 0, 0, nil)
+	raw := CollectRawMetrics(m, nil, 0, "", 0, nil)
 
 	// THEN TTFT distribution should be populated
 	if raw.TTFT.Count != 3 {
@@ -117,7 +117,7 @@ func TestCollectRawMetrics_BasicAggregation(t *testing.T) {
 // TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions verifies edge case.
 func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T) {
 	m := sim.NewMetrics()
-	raw := CollectRawMetrics(m, nil, 0, "", 0, 0, nil)
+	raw := CollectRawMetrics(m, nil, 0, "", 0, nil)
 	if raw.TTFT.Count != 0 {
 		t.Errorf("TTFT.Count: got %d, want 0", raw.TTFT.Count)
 	}
@@ -129,7 +129,7 @@ func TestCollectRawMetrics_ZeroCompleted_ReturnsEmptyDistributions(t *testing.T)
 // TestCollectRawMetrics_RejectedRequests verifies rejected count is captured.
 func TestCollectRawMetrics_RejectedRequests(t *testing.T) {
 	m := sim.NewMetrics()
-	raw := CollectRawMetrics(m, nil, 42, "", 0, 0, nil)
+	raw := CollectRawMetrics(m, nil, 42, "", 0, nil)
 	if raw.RejectedRequests != 42 {
 		t.Errorf("RejectedRequests: got %d, want 42", raw.RejectedRequests)
 	}
@@ -142,7 +142,7 @@ func TestCollectRawMetrics_DroppedUnservable(t *testing.T) {
 	m.DroppedUnservable = 3
 
 	// WHEN collecting raw metrics
-	raw := CollectRawMetrics(m, nil, 0, "", 0, 0, nil)
+	raw := CollectRawMetrics(m, nil, 0, "", 0, nil)
 
 	// THEN DroppedUnservable is captured
 	if raw.DroppedUnservable != 3 {
@@ -347,7 +347,7 @@ func TestCollectRawMetrics_FCFSScheduler_SuppressesInversions(t *testing.T) {
 	aggregated.SimEndedTime = 1_000_000
 
 	// WHEN collecting with constant priority policy
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "", 0, 0, nil)
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "", 0, nil)
 
 	// THEN priority inversions should be suppressed
 	if raw.PriorityInversions != 0 {
@@ -370,7 +370,7 @@ func TestCollectRawMetrics_PriorityScheduler_DetectsInversions(t *testing.T) {
 	aggregated.SimEndedTime = 1_000_000
 
 	// WHEN collecting with priority-fcfs scheduler
-	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "priority-fcfs", 0, 0, nil)
+	raw := CollectRawMetrics(aggregated, []*sim.Metrics{m}, 0, "priority-fcfs", 0, nil)
 
 	// THEN priority inversions should be detected
 	if raw.PriorityInversions == 0 {
@@ -573,7 +573,7 @@ func TestPathological_RejectAll_AllRejected(t *testing.T) {
 		t.Fatalf("cs.Run: %v", err)
 	}
 
-	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "", 0, 0, nil)
+	raw := CollectRawMetrics(cs.AggregatedMetrics(), cs.PerInstanceMetrics(), cs.RejectedRequests(), "", 0, nil)
 
 	// ALL requests should be rejected
 	if raw.RejectedRequests == 0 {
@@ -652,3 +652,21 @@ func TestAggregatedMetrics_CarriesTheMeasuredWindowInputs(t *testing.T) {
 		t.Errorf("kv_capacity_tokens_per_replica = %d, want %d", agg.KVCapacityTokensPerReplica, want)
 	}
 }
+
+// TestPercentile_RoundsTheRankOnEveryPlatform pins the last bit of a percentile that arm64's
+// compiler moved by fusing a multiply and an add or subtract (design X6). The samples are
+// {0, 1.5, 1.5 + 66/7} at p90; the expected bits are the unfused result, which every platform must
+// give. Without the rounding, arm64 gives other bits; amd64 passes either way, which is why the
+// byte gate also runs on an arm64 runner.
+func TestPercentile_RoundsTheRankOnEveryPlatform(t *testing.T) {
+	got := percentile(roundingSamples(66), roundingP90)
+	if want := math.Float64frombits(0x402215f15f15f160); got != want {
+		t.Errorf("p90 = %v (%#x), want %v (%#x)", got, math.Float64bits(got), want, math.Float64bits(want))
+	}
+}
+
+// roundingP90 and roundingSamples keep the test's inputs out of the compiler's reach: a constant
+// p would be folded into the rank, and the arithmetic the test is about would never run.
+var roundingP90 = 90.0
+
+func roundingSamples(d int) []float64 { return []float64{0, 1.5, 1.5 + float64(d)/7} }

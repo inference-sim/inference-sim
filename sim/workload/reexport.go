@@ -6,6 +6,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -128,12 +129,23 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 				// Emit the ORACLE MaxOutputLen in the OutputTokens column (the delta was
 				// computed from actualOutputLen above): re-replay's OutputSampler yields this
 				// as MaxOutputLen, reproducing the same completion → same actualOutput → the
-				// abs sequence reconstructs exactly. Then decorate with SendTimeUs +
-				// sim-computed chunk timing (RequestsToTraceRecords parity, for calibrate) and
+				// abs sequence reconstructs exactly. Then decorate with the
+				// sim-computed chunk timing (RequestsToTraceRecords parity) and
 				// copy the surviving per-request metadata (SLO/deadline/model/adapter/…).
 				recs[i].OutputTokens = len(g.reqs[i].OutputTokens)
 				decorateReExportTiming(&recs[i], g.reqs[i])
 				copyReExportMetadata(&recs[i], g.reqs[i])
+			}
+			// Round 0 keeps the session's shared prefix: the loader builds round 0 as the
+			// group's prefix tokens followed by InputTokens fresh ones, so the record states the
+			// group and its length and only the suffix as its input. Without it every replayed
+			// session draws its own random prefix, and the cache the group shared (round-0 hits
+			// of 31744 tokens in the run, 0 in the replay) is gone (INV-13). A follow-up is a
+			// delta of the accumulated buffer, which already holds the prefix, so it carries none.
+			if r0 := g.reqs[0]; r0.PrefixGroup != "" && r0.PrefixLength > 0 && int(r0.InputLen()) >= r0.PrefixLength {
+				recs[0].InputTokens -= r0.PrefixLength
+				recs[0].PrefixGroup = r0.PrefixGroup
+				recs[0].PrefixLength = r0.PrefixLength
 			}
 			records = append(records, recs...)
 		}
@@ -224,9 +236,9 @@ func accumulatedOutputLen(req *sim.Request) int {
 // client deadline, SLO class, model, or modality-token split would silently vanish on
 // re-replay.
 //
-// PrefixGroup/PrefixLength are deliberately NOT copied: accumulate folds the prefix into
-// round-0's absolute input and drops the group (a prefix_length on a delta-encoded record
-// would double-count on re-replay). Model IS copied — unlike the converter (which sets
+// PrefixGroup/PrefixLength are not copied here: only round 0 of a session carries them, set
+// by the caller with the prefix taken out of its input (a follow-up is a delta of a buffer that
+// holds the prefix already, so a prefix_length on it would double-count). Model IS copied — unlike the converter (which sets
 // Model="" so no phantom per-model metrics appear), req.Model here came from the original
 // trace and already keyed this replay's per-model metrics, so preserving it keeps the
 // re-replay's per-model block consistent (it is empty for converter corpora).
@@ -249,7 +261,7 @@ func copyReExportMetadata(rec *TraceRecord, req *sim.Request) {
 // reexportStatus maps a replayed request's terminal state to the trace Status string,
 // mirroring RequestsToTraceRecords (the sibling re-export). Status is informational —
 // the replay loader does not read it — but keeping it faithful aids downstream analysis.
-func reexportStatus(state sim.RequestState) string {
+func reexportStatus(state sim.RequestState) trace.Status {
 	switch state {
 	case sim.StateCompleted:
 		return "ok"
@@ -260,14 +272,11 @@ func reexportStatus(state sim.RequestState) string {
 	}
 }
 
-// decorateReExportTiming sets the send + client-observable chunk timestamps on an
+// decorateReExportTiming sets the client-observable chunk timestamps on an
 // accumulate-branch record from the replayed request, using the same formula as
 // RequestsToTraceRecords (LastChunkTimeUs = ArrivalTime + FirstTokenTime + sum(ITL),
-// guarded by TTFTSet). SendTimeUs == ArrivalTimeUs (no network send in simulation), so
-// the re-export's injection origin shift is 0 on re-replay (#1606), byte-identical to a
-// generated trace's injection semantics.
+// guarded by TTFTSet).
 func decorateReExportTiming(rec *TraceRecord, req *sim.Request) {
-	rec.SendTimeUs = req.ArrivalTime
 	if req.TTFTSet {
 		rec.FirstChunkTimeUs = req.ArrivalTime + req.FirstTokenTime
 		e2e := req.FirstTokenTime

@@ -186,130 +186,6 @@ func TestEmitGoodput_OneClassE2EOnly(t *testing.T) {
 	}
 }
 
-// TestEmitObserveGoodput_OkErrorTimeoutDenominator verifies BC-2 on observe path:
-// error and timeout records count in the denominator but never count toward goodput;
-// only ok records can contribute to the numerator.
-func TestEmitObserveGoodput_OkErrorTimeoutDenominator(t *testing.T) {
-	records := []workload.TraceRecord{
-		// "ok" with E2E 1s — meets 5s threshold (numerator)
-		{RequestID: 1, SLOClass: "default", Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 1_000_000},
-		// "ok" with E2E 10s — fails 5s threshold
-		{RequestID: 2, SLOClass: "default", Status: "ok", SendTimeUs: 0, FirstChunkTimeUs: 100_000, LastChunkTimeUs: 10_000_000},
-		// "error" — denominator only, never numerator
-		{RequestID: 3, SLOClass: "default", Status: "error"},
-		// "timeout" — denominator only
-		{RequestID: 4, SLOClass: "default", Status: "timeout"},
-		// "incomplete" — neither denominator nor numerator (workload still in flight)
-		{RequestID: 5, SLOClass: "default", Status: "incomplete"},
-	}
-	targets := map[string]workload.SLODimTargets{"default": {E2EMs: 5000}}
-
-	out := sim.MetricsOutput{}
-	emitObserveGoodput(&out, records, nil, 10.0, targets)
-
-	if out.SLOAttainment != 0.25 {
-		t.Errorf("SLOAttainment: got %v, want 0.25 (1 ok-met out of 4 dispatched: ok+ok+error+timeout)", out.SLOAttainment)
-	}
-	per, ok := out.PerClass.(map[string]map[string]any)
-	if !ok {
-		t.Fatalf("PerClass type: got %T", out.PerClass)
-	}
-	def := per["default"]
-	if def["count"] != int64(4) {
-		t.Errorf("count: got %v, want 4 (denominator excludes incomplete)", def["count"])
-	}
-	if def["slo_attainment"] != 0.25 {
-		t.Errorf("default slo_attainment: got %v, want 0.25", def["slo_attainment"])
-	}
-	// goodput_rps: 1 good / 10s
-	if def["goodput_rps"] != 0.1 {
-		t.Errorf("goodput_rps: got %v, want 0.1", def["goodput_rps"])
-	}
-}
-
-// TestStripITLForObserveFallback_StripsAndSignals verifies BC-6: when
-// --record-itl is false and any class carries an ITL threshold, the helper
-// returns a fresh map with ITL zeroed and signals the strip so the caller can
-// emit the warning. The TTFT/E2E thresholds on the same class must be preserved.
-func TestStripITLForObserveFallback_StripsAndSignals(t *testing.T) {
-	in := map[string]workload.SLODimTargets{
-		"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
-		"batch":    {E2EMs: 60000}, // no ITL configured for this class
-	}
-	got, stripped := stripITLForObserveFallback(in, false /* recordITL */)
-	if !stripped {
-		t.Fatalf("expected stripped=true when at least one class has ITL configured")
-	}
-	if got["critical"].ITLMs != 0 {
-		t.Errorf("critical ITLMs: got %v, want 0 (stripped)", got["critical"].ITLMs)
-	}
-	if got["critical"].TTFTMs != 100 {
-		t.Errorf("critical TTFTMs: got %v, want 100 (preserved)", got["critical"].TTFTMs)
-	}
-	if got["critical"].E2EMs != 5000 {
-		t.Errorf("critical E2EMs: got %v, want 5000 (preserved)", got["critical"].E2EMs)
-	}
-	if got["batch"].E2EMs != 60000 {
-		t.Errorf("batch E2EMs: got %v, want 60000 (preserved)", got["batch"].E2EMs)
-	}
-	// Critical: input map must NOT be mutated (header still carries original ITL).
-	if in["critical"].ITLMs != 50 {
-		t.Errorf("input map mutated: in[critical].ITLMs = %v, want 50", in["critical"].ITLMs)
-	}
-}
-
-// TestStripITLForObserveFallback_NoOpWhenRecordITL verifies BC-6: with
-// --record-itl true, targets pass through unchanged and stripped=false.
-func TestStripITLForObserveFallback_NoOpWhenRecordITL(t *testing.T) {
-	in := map[string]workload.SLODimTargets{
-		"critical": {TTFTMs: 100, ITLMs: 50, E2EMs: 5000},
-	}
-	got, stripped := stripITLForObserveFallback(in, true /* recordITL */)
-	if stripped {
-		t.Errorf("expected stripped=false when recordITL is true")
-	}
-	if got["critical"].ITLMs != 50 {
-		t.Errorf("ITLMs should pass through when recordITL is true; got %v, want 50", got["critical"].ITLMs)
-	}
-}
-
-// TestStripITLForObserveFallback_NoOpWhenNoITLConfigured verifies BC-6: when
-// targets exist but no class has an ITL threshold, the helper returns the
-// original map (no copy) and stripped=false (no warning needed).
-func TestStripITLForObserveFallback_NoOpWhenNoITLConfigured(t *testing.T) {
-	in := map[string]workload.SLODimTargets{
-		"default": {E2EMs: 5000}, // no ITLMs
-	}
-	got, stripped := stripITLForObserveFallback(in, false)
-	if stripped {
-		t.Errorf("expected stripped=false when no class has ITL configured")
-	}
-	if got["default"].E2EMs != 5000 {
-		t.Errorf("default E2EMs: got %v, want 5000", got["default"].E2EMs)
-	}
-}
-
-// TestStripITLForObserveFallback_EmptyTargetsNoOp verifies the empty-input edge case.
-func TestStripITLForObserveFallback_EmptyTargetsNoOp(t *testing.T) {
-	got, stripped := stripITLForObserveFallback(nil, false)
-	if stripped || got != nil {
-		t.Errorf("nil input: expected (nil, false), got (%v, %v)", got, stripped)
-	}
-	_, stripped = stripITLForObserveFallback(map[string]workload.SLODimTargets{}, false)
-	if stripped {
-		t.Errorf("empty input: expected stripped=false, got true")
-	}
-}
-
-// TestEmitObserveGoodput_NoOpWhenTargetsEmpty verifies BC-3 on observe path.
-func TestEmitObserveGoodput_NoOpWhenTargetsEmpty(t *testing.T) {
-	out := sim.MetricsOutput{}
-	emitObserveGoodput(&out, nil, nil, 1.0, nil)
-	if out.GoodputRPS != 0 || out.SLOAttainment != 0 || out.PerClass != nil {
-		t.Errorf("expected zero goodput fields, got %+v", out)
-	}
-}
-
 // TestRunReplayParity_SameTargets_SameOutput verifies BC-4 (INV-13): identical
 // metrics + identical resolved targets produce identical goodput numbers
 // regardless of whether the targets came from CLI or trace header.
@@ -341,34 +217,31 @@ func TestRunReplayParity_SameTargets_SameOutput(t *testing.T) {
 	}
 }
 
-// TestGoodputTargets_ObserveExportReplayLoad_RoundTrip verifies BC-7 end-to-end:
-// CLI flags → merger → exported TraceHeader (via observe path) → loaded TraceHeader
-// (via replay path) → merger again. The downstream merger sees the same per-class
-// thresholds without requiring CLI flags on the replay side.
-//
-// This is the contract that makes a captured-real-server trace replayable for
-// goodput measurement out-of-the-box: the observe-side intent is preserved.
-func TestGoodputTargets_ObserveExportReplayLoad_RoundTrip(t *testing.T) {
-	// Step 1: simulate the observe-side merger from CLI flags + (no) workload spec.
+// TestGoodputTargets_RunExportReplayLoad_RoundTrip verifies BC-7 end-to-end:
+// CLI flags → merger → exported TraceHeader (via the run export path) → loaded
+// TraceHeader (via the replay path) → merger again. The downstream merger sees the
+// same per-class thresholds without requiring CLI flags on the replay side.
+func TestGoodputTargets_RunExportReplayLoad_RoundTrip(t *testing.T) {
+	// Step 1: simulate the run-side merger from CLI flags + (no) workload spec.
 	cliTTFT := map[string]time.Duration{"critical": 100 * time.Millisecond, "standard": 500 * time.Millisecond}
 	cliE2E := map[string]time.Duration{"critical": 5 * time.Second}
-	observeMerged := mergeGoodputTargets(cliTTFT, nil, cliE2E, nil, nil)
+	runMerged := mergeGoodputTargets(cliTTFT, nil, cliE2E, nil, nil)
 
-	// Step 2: write a TraceV2 carrying these targets in its header (observe export path).
+	// Step 2: write a TraceV2 carrying these targets in its header (run export path).
 	tmp := t.TempDir()
 	headerPath := filepath.Join(tmp, "trace.yaml")
 	dataPath := filepath.Join(tmp, "trace.csv")
 	exportHeader := &workload.TraceHeader{
-		Version:           3,
+		Version:           workload.TraceVersion,
 		TimeUnit:          "us",
-		Mode:              "real",
-		GoodputSLOTargets: observeMerged,
+		Mode:              "generated",
+		GoodputSLOTargets: runMerged,
 	}
 	if err := workload.ExportTraceV2(exportHeader, []workload.TraceRecord{}, headerPath, dataPath); err != nil {
 		t.Fatalf("ExportTraceV2: %v", err)
 	}
 
-	// Step 3: load the trace as replay/calibrate would.
+	// Step 3: load the trace as replay would.
 	loaded, err := workload.LoadTraceV2(headerPath, dataPath)
 	if err != nil {
 		t.Fatalf("LoadTraceV2: %v", err)
@@ -376,8 +249,8 @@ func TestGoodputTargets_ObserveExportReplayLoad_RoundTrip(t *testing.T) {
 
 	// Step 4: replay-side merger (no CLI overrides) — header must be the only source.
 	replayMerged := mergeGoodputTargets(nil, nil, nil, loaded.Header.GoodputSLOTargets, nil)
-	if !reflect.DeepEqual(replayMerged, observeMerged) {
-		t.Fatalf("BC-7 round-trip drift:\n  observe-side: %#v\n  replay-side:  %#v", observeMerged, replayMerged)
+	if !reflect.DeepEqual(replayMerged, runMerged) {
+		t.Fatalf("BC-7 round-trip drift:\n  run-side:    %#v\n  replay-side: %#v", runMerged, replayMerged)
 	}
 
 	// Spot-check: per-class per-dimension values match the original CLI input

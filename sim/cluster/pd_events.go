@@ -1,7 +1,6 @@
 package cluster
 
 import (
-	"container/heap"
 	"fmt"
 
 	"github.com/sirupsen/logrus"
@@ -147,6 +146,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		cs.remotePulls = make(map[string]*ParentRequest)
 	}
 	cs.remotePulls[decodeSubReq.ID] = e.parentReq
+	e.parentReq.DecodeWaiting = decodeSubReq
 	decodeInst.AddRemote(decodeSubReq, e.time)
 }
 
@@ -159,6 +159,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64)
 		panic(fmt.Sprintf("startPull: %s is not a handoff waiting for its pull", req.ID))
 	}
 	delete(cs.remotePulls, req.ID)
+	parent.DecodeWaiting = nil
 	if inst := cs.instanceByID(parent.DecodeInstanceID); inst != nil && !inst.IsRoutable() {
 		// A decode instance that went unroutable (drained) while the handoff waited drops its
 		// waiters rather than starting their pulls: its engine had the request, so the prefill
@@ -196,18 +197,13 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64)
 func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, outcome NIXLOutcome) {
 	cs.releasePrefillOnDrop(e.parentReq, outcome, e.time)
 	cs.droppedAtDecodeKV++
+	cs.endRequest(e.parentReq.OriginalRequest, sim.FateDropped, sim.DropDecodeKV, e.time)
 	cs.recordUnserved(e.parentReq.OriginalRequest)
 	cs.parentDone(e.parentReq, e.time, DoneDropped)
 	cs.transfersInitiated++
 	e.parentReq.TransferStartTime = e.time
 	e.parentReq.CompletionTime = e.time
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &KVTransferCompletedEvent{
-			time:      e.time,
-			parentReq: e.parentReq,
-		},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: e.parentReq}, &cs.kvConnectorSender)
 }
 
 // scheduleTransferCompletion performs the duration calculation and
@@ -245,10 +241,7 @@ func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, 
 	}
 	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
 		parentReq.ID, numBlocks, duration)
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq}, &cs.kvConnectorSender)
 }
 
 // scheduleLinkWake schedules the link arbiter's next drain or completion, superseding any wake
@@ -259,10 +252,7 @@ func (cs *ClusterSimulator) scheduleLinkWake() {
 		return
 	}
 	cs.pdLinkWakeGen++
-	heap.Push(&cs.clusterEvents, clusterEventEntry{
-		event: &PDLinkWakeEvent{time: at, gen: cs.pdLinkWakeGen},
-		seqID: cs.nextSeqID(),
-	})
+	cs.schedule(&PDLinkWakeEvent{time: at, gen: cs.pdLinkWakeGen}, &cs.kvConnectorSender)
 }
 
 // PDLinkWakeEvent advances the link arbiter to its next drain or completion and completes the
@@ -285,10 +275,7 @@ func (e *PDLinkWakeEvent) Execute(cs *ClusterSimulator) {
 	for _, id := range cs.pdLinks.Advance(e.time) {
 		parent := cs.pdLinkFlows[id]
 		delete(cs.pdLinkFlows, id)
-		heap.Push(&cs.clusterEvents, clusterEventEntry{
-			event: &KVTransferCompletedEvent{time: e.time, parentReq: parent},
-			seqID: cs.nextSeqID(),
-		})
+		cs.schedule(&KVTransferCompletedEvent{time: e.time, parentReq: parent}, &cs.kvConnectorSender)
 	}
 	cs.scheduleLinkWake()
 }
@@ -365,6 +352,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 		logrus.Errorf("[cluster] decode instance %q for %s not found in cs.instances at transfer complete — routing invariant violated; KV cannot be released",
 			decodeInstID, e.parentReq.ID)
 		cs.droppedAtDecodeKV++
+		cs.endRequest(e.parentReq.OriginalRequest, sim.FateDropped, sim.DropDecodeKV, e.time)
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time
@@ -379,6 +367,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 			decodeInstID, e.parentReq.ID)
 		decodeInst.ReleaseReservedKV(decodeSubReq, e.time)
 		cs.droppedAtDecodeKV++
+		cs.endRequest(e.parentReq.OriginalRequest, sim.FateDropped, sim.DropDecodeKV, e.time)
 		cs.recordUnserved(e.parentReq.OriginalRequest)
 		cs.parentDone(e.parentReq, e.time, DoneDropped)
 		e.parentReq.CompletionTime = e.time

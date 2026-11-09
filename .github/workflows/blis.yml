@@ -1,0 +1,43 @@
+name: blis
+
+# The shared BLIS checks (design §13.2, §13.4), called from blis-substrate by commit (X21):
+# the pull-request checks (description, review questions, commit policy, workflow lint,
+# version literals, documentation references, cited issues, quarantine, the generated
+# AGENTS.md section and pull-request template, the selected-version lint), and the nightly
+# checks (cited issues stay open, X28).
+#
+# The commit is the blis-substrate release v0.13.0 (fe6eab1); it moves to
+# a substrate release tag's commit when that release is cut.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pr:
+    if: github.event_name == 'pull_request'
+    uses: inference-sim/blis-substrate/.github/workflows/shared-pr-checks.yml@fe6eab10b9795933de38122ba55e5299dcb20b5e
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    with:
+      repo: inference-sim
+      substrate-ref: fe6eab10b9795933de38122ba55e5299dcb20b5e
+
+  nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    uses: inference-sim/blis-substrate/.github/workflows/shared-nightly.yml@fe6eab10b9795933de38122ba55e5299dcb20b5e
+    permissions:
+      contents: read
+      issues: read
+    with:
+      substrate-ref: fe6eab10b9795933de38122ba55e5299dcb20b5e
+    secrets:
+      INTERNAL_NAME_PATTERNS: ${{ secrets.INTERNAL_NAME_PATTERNS }}

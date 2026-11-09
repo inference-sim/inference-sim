@@ -29,91 +29,70 @@ mkdocs serve
 
 ## Your First Contribution
 
-This walkthrough adds a trivial admission policy — the lightest extension type (~3 files). Follow it step-by-step to learn the patterns, then apply them to your own contribution.
+This walkthrough adds a test, the lightest kind of contribution, and shows you where a request's value reaches the Result document. Follow it step by step to learn the patterns, then apply them to your own contribution.
 
-**What we'll build:** A `CountingAdmit` admission policy that admits the first N requests and rejects the rest. We'll use test-driven development, starting with a test for the feature we want to implement.
+**What we'll build:** a test that every row of the Result's `request_rows` carries the `slo_class` its workload client declared. We use test-driven development: we write the test, break the code it guards to watch it fail, and restore the code.
 
 ### Step 1: Create a branch
 
 ```bash
-git checkout -b feature/counting-admit
+git checkout -b feature/row-slo-class-test
 ```
 
-### Step 2: Write the failing test
+### Step 2: Find where the value is recorded
 
-Add a test to `sim/admission_test.go`:
+Each row member is filled from one of three records, read together in `requestRows` (`cmd/result_rows.go`): the fate ledger (`sim/fate.go`: fate and drop reason), the facts the cluster notes when a request is created (`RequestFact`, set by `noteFacts` in `sim/cluster/fates.go`: arrival, prompt length, tags), and the engine's per-request metrics (`RequestMetrics` in `sim/metrics_utils.go`: latencies, token counts, cache hits). A tag the workload sets on a request, such as its SLO class, reaches the row through `RequestFact`.
+
+### Step 3: Write the test
+
+Add to `cmd/result_output_test.go`. It runs a workload spec with two clients, one per class, and checks each row against the class of its client:
 
 ```go
-func TestCountingAdmit_RejectsAfterLimit(t *testing.T) {
-	// GIVEN a CountingAdmit policy with limit=2
-	policy := &CountingAdmit{Limit: 2}
-	req := &Request{ID: "test", InputTokens: make([]int, 3)}
-	state := &RouterState{Clock: 0}
-
-	// WHEN 3 requests arrive
-	r1, _ := policy.Admit(req, state)
-	r2, _ := policy.Admit(req, state)
-	r3, reason := policy.Admit(req, state)
-
-	// THEN the first 2 are admitted and the 3rd is rejected
-	if !r1 {
-		t.Error("first request should be admitted")
+func TestResult_RowSLOClassIsItsClientsClass(t *testing.T) {
+	// GIVEN a workload spec whose clients declare slo_class "critical" and "batch"
+	spec := filepath.Join(t.TempDir(), "spec.yaml")
+	body := `version: "2"
+seed: 5
+category: language
+aggregate_rate: 10
+num_requests: 20
+clients:
+  - {id: a, slo_class: critical, rate_fraction: 0.5, arrival: {process: poisson},
+     input_distribution: {type: constant, params: {value: 64}},
+     output_distribution: {type: constant, params: {value: 8}}}
+  - {id: b, slo_class: batch, rate_fraction: 0.5, arrival: {process: poisson},
+     input_distribution: {type: constant, params: {value: 64}},
+     output_distribution: {type: constant, params: {value: 8}}}
+`
+	if err := os.WriteFile(spec, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !r2 {
-		t.Error("second request should be admitted")
+	// WHEN it runs
+	out, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--workload-spec", spec)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
 	}
-	if r3 {
-		t.Errorf("third request should be rejected, got reason: %s", reason)
+	// THEN both classes appear on rows, and every row has one
+	seen := map[string]int{}
+	for _, row := range parseResult(t, out).RequestRows {
+		seen[row.SLOClass]++
+	}
+	if seen["critical"] == 0 || seen["batch"] == 0 || len(seen) != 2 {
+		t.Errorf("rows by slo_class: %v, want both classes and no other", seen)
 	}
 }
 ```
 
-Run: `go test ./sim/... -run TestCountingAdmit -v`
-Expected: **FAIL** (type `CountingAdmit` does not exist yet)
+Run: `go test ./cmd -run TestResult_RowSLOClass -v`. It passes, so prove it can fail: comment out the `SLOClass: req.SLOClass` line in `noteFacts` (`sim/cluster/fates.go`), run it again and watch it fail, then restore the line. A test you have not seen fail may not test anything.
 
-### Step 3: Implement the policy
+### Step 4: Add a member of your own
 
-In `sim/admission.go`, add after the existing policies:
+To state a new value on every row, follow the same path: set the field on the request, copy it into `RequestFact` in `noteFacts`, state it in `requestRows`, and add the member to `RequestRow` in blis-substrate `contracts/spec/result`. The last is a substrate change, released and repinned in `go.mod` ([cross-repo changes](docs/contributing/cross-repo-changes.md)).
 
-```go
-// CountingAdmit admits the first Limit requests, then rejects all subsequent ones.
-type CountingAdmit struct {
-	Limit int
-	count int
-}
-
-func (c *CountingAdmit) Admit(_ *Request, _ *RouterState) (bool, string) {
-	c.count++
-	if c.count <= c.Limit {
-		return true, ""
-	}
-	return false, "counting-admit limit exceeded"
-}
-```
-
-### Step 4: Register in the factory
-
-Two files need changes:
-
-In `sim/bundle.go`, add `"counting-admit"` to the `validAdmissionPolicies` map:
-
-```go
-validAdmissionPolicies = map[string]bool{"": true, "always-admit": true, "token-bucket": true, "reject-all": true, "counting-admit": true}
-```
-
-In `sim/admission.go`, add a case to the `NewAdmissionPolicy` factory switch:
-
-```go
-case "counting-admit":
-    return &CountingAdmit{Limit: 100} // hardcoded for tutorial simplicity
-```
-
-> **Note:** In a real policy, you would wire the limit through the factory parameters (e.g., `Limit: int(capacity)`) or via `PolicyBundle` YAML config. Hardcoded defaults would fail code review — see how `token-bucket` uses `capacity` and `refillRate`.
-
-### Step 5: Verify tests pass
+### Step 5: Verify
 
 ```bash
-go test ./sim/... -run TestCountingAdmit -v   # Your new test
+go test ./cmd -run TestResult_RowSLOClass -v   # Your new test
 go test ./...                                    # All tests still pass
 golangci-lint run ./...                          # No lint issues
 ```
@@ -121,18 +100,15 @@ golangci-lint run ./...                          # No lint issues
 ### Step 6: Commit and open a PR
 
 ```bash
-git add sim/admission.go sim/admission_test.go sim/bundle.go
-git commit -m "feat(sim): add counting-admit admission policy
-
-- Admits first N requests, rejects the rest
-- Registered in factory with default limit=100"
-git push -u origin feature/counting-admit
-gh pr create --title "feat: add counting-admit admission policy" --body "My first BLIS contribution!"
+git add cmd/result_output_test.go
+git commit -m "test(cmd): a Result row's slo_class is its client's class"
+git push -u origin feature/row-slo-class-test
+gh pr create --title "test: a Result row's slo_class is its client's class" --body "My first BLIS contribution!"
 ```
 
-**That's it!** You've added a complete, tested, registered policy. Real contributions follow the same pattern — just with more contracts and a formal implementation plan.
+**That's it!** Real contributions follow the same pattern, with more contracts and a formal implementation plan.
 
-> **Important:** This example is for learning only. Do **not** submit this as a real PR — `CountingAdmit` is a toy policy with no practical use. For your actual first contribution, check [open issues](https://github.com/inference-sim/inference-sim/issues) for tasks labeled `good first issue`.
+> **Important:** This example is for learning only; the test it adds may already exist by the time you read this. For your actual first contribution, check [open issues](https://github.com/inference-sim/inference-sim/issues) for tasks labeled `good first issue`.
 
 ## Contributing with Claude Code
 
@@ -187,7 +163,7 @@ The full pipeline for features that introduce new module boundaries, new interfa
 
 **Phase 2 — Plan** (after agreement):
 4. **Encode .archon plan** — following [`docs/contributing/templates/rfc-to-plan.md`](docs/contributing/templates/rfc-to-plan.md) (Claude encodes, creates sub-issues)
-5. **PR0** — create `feature/<name>` branch, persist plan to `specs/NNN-feature/`, push
+5. **PR0** — create `feature/<name>` branch, persist plan to a new `specs/<NNN>-<feature>/` directory, push
 
 **Phase 3 — Deliver** (repeat for each sub-issue, PRs target the feature branch):
 6. **Follow the Bug Fix journey** (steps 1–8) for each hole
@@ -285,7 +261,7 @@ a scenario that deploys it.
 
 ### Policy Template (lightest — ~3 files)
 
-1. Implement the interface in the corresponding file (`sim/admission.go`, `sim/routing.go`, `sim/priority.go`, `sim/scheduler.go`)
+1. Implement the interface in the repository that owns the policy (see [extension recipes](docs/contributing/extension-recipes.md)): admission and routing in llm-d-router, the instance scheduler and its priority in blis-vllm (`core/sched`)
 2. Register in `sim/bundle.go` (valid names map + `IsValid*` function)
 3. Add `case` to factory function
 4. Add behavioral tests (`TestMyPolicy_Scenario_Behavior`)

@@ -138,6 +138,10 @@ func (i *InstanceSimulator) ProcessNextEvent() sim.Event {
 	return i.drv.ProcessNextEvent()
 }
 
+// StallErr is the progress watchdog's error for this instance's engine, nil while it makes
+// progress (sim.EngineDriver.StallErr, SIM-7).
+func (i *InstanceSimulator) StallErr() error { return i.drv.StallErr() }
+
 // Finalize sets SimEndedTime, captures KV metrics, and logs completion.
 func (i *InstanceSimulator) Finalize() {
 	i.drv.Finalize()
@@ -277,13 +281,16 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 		reqIDs = append(reqIDs, id)
 	}
 	sort.Strings(reqIDs)
-	var itlSum float64
+	// TTFT is derived from the same per-request samples (DEV-9): each completed request's
+	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#1628).
+	var itlSum, ttftSum float64
 	for _, id := range reqIDs {
 		itlSum += m.RequestITLs[id]
+		ttftSum += m.RequestTTFTs[id]
 	}
 
 	return InstanceLatencyStats{
-		TTFT:         float64(m.TTFTSum) / n,
+		TTFT:         ttftSum / n,
 		ITL:          itlSum / n,
 		DispatchRate: dispatchRate,
 		AvgInTokens:  float64(m.TotalInputTokens) / n,

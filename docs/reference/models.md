@@ -2,28 +2,30 @@
 
 A model runs in BLIS when three things exist for it:
 
-1. **A catalog entry** in [`blis-catalog`](https://github.com/inference-sim/blis-catalog) at
+1. **A catalog entry** in the catalog in use (blis-substrate's
+   [`catalog/`](https://github.com/inference-sim/blis-substrate/tree/main/catalog), embedded by default) at
    `<catalog>/models/<name>/`: the vendor's HuggingFace `config.json` (committed verbatim),
    `model.yaml` (identity and provenance), and `graph.yaml`, the model graph
    blis-latency-kernel prices.
 2. **A scenario** naming the model, a catalog chip (`cluster.hardware`) and, when a handoff
    crosses nodes, a catalog fabric, plus the coefficient sets it needs.
-3. **Those coefficient sets** in [`blis-registry`](https://github.com/inference-sim/blis-registry).
+3. **Those coefficient sets** in the registry in use (blis-substrate's
+   [`registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry), embedded by default).
 
 Anything else is refused at startup, naming what is missing. BLIS never fetches a model at
-run time, and adding a model, chip or fabric is a commit to blis-catalog (and, when new
-coefficients are needed, to blis-registry), not a change to this repo. How the kernel prices
+run time, and adding a model, chip or fabric is a commit to blis-substrate's `catalog/` (and, when new
+coefficients are needed, to its `registry/`), not a change to this repo. How the kernel prices
 a model is described in [Latency Models](../guide/latency-models.md).
 
-The catalog is located by `--catalog <path>` or the `BLIS_CATALOG` environment variable;
-there is no default and no search path, so a run with neither is refused naming both forms
-(#1731). See [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)
+A run reads the catalog embedded in the blis-substrate release this build pins.
+`--catalog <dir>` or the `BLIS_CATALOG` environment variable names a directory with the layout
+of blis-substrate's `catalog/` that replaces it; the flag wins. See [Catalog compatibility](../getting-started/installation.md#catalog-compatibility)
 for the pinned release.
 
 ## Scored deployments
 
 blis-latency-kernel `v0.3.0` ships the scenarios it was scored on in
-`testdata/aisimulate` of its module, covering deepseek-v3, deepseek-v4-pro, glm-5,
+`blis-latency-kernel/testdata/aisimulate`, covering deepseek-v3, deepseek-v4-pro, glm-5,
 gpt-oss-120b, kimi-k2.5, llama-3.1-70b-instruct, minimax-m2.5, minimax-m3 and
 qwen3.5-397b-a17b on H100, H200, B200 and B300 under several TP degrees and precisions. The
 accuracy figures are in [Latency Models](../guide/latency-models.md#the-published-accuracy-figures).
@@ -37,8 +39,8 @@ deliberately no `blis validate` subcommand, because a separate validator would b
 accept a catalog a run rejects. The catalog is kept loadable by a whole-catalog load through
 the same code path a run uses (#1750), in two layers:
 
-- **Unconditional** -- `go test ./cmd/...` loads the committed fixture catalog
-  (`testdata/catalog`, a vendored subset of blis-catalog `0.3.0`) on every test run.
+- **Unconditional** -- `go test ./cmd/...` loads the catalog of the blis-substrate module
+  `go.mod` selects on every test run.
 - **Against the authoritative catalog** -- `scripts/catalog-load-gate.sh` clones
   `blis-catalog` at a pinned revision and runs the same load over every entry. Wiring it into
   CI as a `catalog-load` job is a pending human step, tracked by

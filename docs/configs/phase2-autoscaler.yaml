@@ -48,3 +48,4 @@ autoscaler:
     scale_up_threshold: 0.8
     scale_down_boundary: 0.4
     avg_input_tokens: 512.0
+    min_replicas: 1          # fewest ready replicas scale-down leaves a model (default 1)

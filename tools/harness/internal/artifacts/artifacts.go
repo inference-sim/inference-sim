@@ -16,17 +16,14 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
-	"github.com/inference-sim/inference-sim/sim/vendored"
+	"github.com/inference-sim/inference-sim/tools/harness/corpora"
 )
-
-// The kernel adapter's defaults are this repository's vendored catalog, registry and pinned
-// kernel (sim/vendored).
-func init() { kernelmodel.SetVendoredRoot(vendored.Root()) }
 
 // Main runs a package's tests only when every artifact root resolves.
 func Main(m *testing.M) {
-	if err := kernelmodel.RequireRepos(kernelmodel.DefaultRepos()); err != nil {
+	if _, err := kernelmodel.OpenData(load.Options{}); err != nil {
 		fmt.Fprintf(os.Stderr, "kernel artifact roots are not available:\n%v\n", err)
 		os.Exit(1)
 	}
@@ -36,8 +33,8 @@ func Main(m *testing.M) {
 // Measurement is the path of one measurement corpus.
 func Measurement(t testing.TB, name string) string {
 	t.Helper()
-	dir := kernelmodel.DefaultMeasurements()
-	if err := kernelmodel.RequireMeasurements(dir); err != nil {
+	dir := corpora.DefaultMeasurements()
+	if err := corpora.RequireMeasurements(dir); err != nil {
 		if !scoring {
 			t.Skipf("reads the measurement corpora: run with -tags scoring and "+
 				"BLIS_MEASUREMENTS set (%s)", name)

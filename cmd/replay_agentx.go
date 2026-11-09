@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
-	"github.com/inference-sim/blis-schemas/spec/workload"
+	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 
 	sim "github.com/inference-sim/inference-sim/sim"
 	simworkload "github.com/inference-sim/inference-sim/sim/workload"
@@ -276,16 +276,15 @@ func agxWarmupRequestsPerLane(spec *workload.Replay) int {
 	return 0
 }
 
-// emitOptions are the agentic replay's additions to the results file: the measured-window
-// hook (#1938: the profiling phase's start and completion) and the agentic block. Nil for
-// any other replay.
-func (a *agentXRun) emitOptions(m *sim.Metrics) []sim.EmitOption {
+// setMeasuredWindow sets the agentic replay's measured window on the aggregate (#1938: the
+// profiling phase's start and completion), before the Result is computed from it. It does
+// nothing for any other replay.
+func (a *agentXRun) setMeasuredWindow(m *sim.Metrics) {
 	if a == nil {
-		return nil
+		return
 	}
 	ps, pe := a.driver.Window()
 	m.MeasuredWindow = &sim.MeasuredWindow{StartUs: ps, EndUs: pe}
-	return []sim.EmitOption{sim.WithAgentic(a.summary())}
 }
 
 // agentXBuildKey identifies this build for the corpus cache: the digest of the running

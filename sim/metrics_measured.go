@@ -120,28 +120,14 @@ type measuredLatencies struct {
 	// itlCount and perUserCount are the samples behind request_itl_* and
 	// output_tok_per_user_mean, so a reader can tell a zero from no sample.
 	itlCount, perUserCount int
+	// stepCount is the number of step intervals behind the step-interval series.
+	stepCount int
 	// startUs and endUs bound the window the aggregates were computed over (0, 0 when it
 	// is empty).
 	startUs, endUs int64
 }
 
-// WholeRunLatency keeps, in the --metrics-path file, the whole-run figures stdout prints for
-// the keys the file restates over the measured window, for a consumer of the old meaning
-// (blis calibrate compares whole-run TTFT and throughput).
-type WholeRunLatency struct {
-	TTFTMeanMs   float64 `json:"ttft_mean_ms"`
-	TTFTP90Ms    float64 `json:"ttft_p90_ms"`
-	TTFTP95Ms    float64 `json:"ttft_p95_ms"`
-	TTFTP99Ms    float64 `json:"ttft_p99_ms"`
-	E2EMeanMs    float64 `json:"e2e_mean_ms"`
-	E2EP90Ms     float64 `json:"e2e_p90_ms"`
-	E2EP95Ms     float64 `json:"e2e_p95_ms"`
-	E2EP99Ms     float64 `json:"e2e_p99_ms"`
-	CacheHitRate float64 `json:"cache_hit_rate"`
-}
-
-// Measured returns the measured-window aggregates EmitOutput writes into the --metrics-path
-// file, for a caller that reads them without writing the file.
+// Measured returns the measured-window aggregates, keyed as the file once was.
 func (m *Metrics) Measured() MeasuredMetrics {
 	out, _ := m.buildMeasured()
 	return out
@@ -163,6 +149,8 @@ type MeasuredSummary struct {
 	// RequestITLCount is the number of requests behind request_itl_* (output of two or more
 	// tokens), and PerUserCount those behind output_tok_per_user_mean (a positive ITL).
 	RequestITLCount, PerUserCount int
+	// StepIntervalCount is the number of step intervals behind the step-interval figures.
+	StepIntervalCount int
 	// WindowStartUs and WindowEndUs bound the window; both 0 when it is empty.
 	WindowStartUs, WindowEndUs int64
 }
@@ -202,9 +190,29 @@ func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 		E2EMeanMs: lat.e2eMean, E2EP90Ms: lat.e2eP90, E2EP95Ms: lat.e2eP95, E2EP99Ms: lat.e2eP99,
 		CacheHitRate:      lat.cacheHitRate,
 		StepIntervalP50Ms: lat.stepP50, StepIntervalP95Ms: lat.stepP95,
-		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount,
+		RequestITLCount: lat.itlCount, PerUserCount: lat.perUserCount, StepIntervalCount: lat.stepCount,
 		WindowStartUs: lat.startUs, WindowEndUs: lat.endUs,
 	}
+}
+
+// ClientLatencyTicks is a request's latency as the benchmark client measures it: the engine's E2E
+// without the completion overhead, which follows the last content chunk (aiperf
+// metrics/types/request_latency_metric.py:38-49). The measured-window aggregate and the Result's
+// per-request rows both state E2E through this, so a mean of the rows is the aggregate.
+func (rm RequestMetrics) ClientLatencyTicks(e2eTicks float64) float64 {
+	return e2eTicks - float64(rm.completionOverheadTicks)
+}
+
+// TimePerOutputTokenTicks is a request's time per output token, (latency - TTFT) / (OSL - 1)
+// with latency as ClientLatencyTicks states it (aiperf inter_token_latency_metric.py:48-55),
+// and ok false for a request with fewer than two output tokens, which has none. The aggregate
+// and the Result's rows state it through this one function, for a disaggregated request as for a
+// colocated one: it is a property of the request's whole latency, not of its decode leg.
+func (rm RequestMetrics) TimePerOutputTokenTicks(ttftTicks, e2eTicks float64) (float64, bool) {
+	if rm.OutputTokens < 2 {
+		return 0, false
+	}
+	return (rm.ClientLatencyTicks(e2eTicks) - ttftTicks) / float64(rm.OutputTokens-1), true
 }
 
 // buildMeasured computes the measured-window aggregates from m.
@@ -253,7 +261,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		// before the usage chunk and [DONE] (:891, :931). The completion overhead E2E carries
 		// (the kernel's host_completion: finish bookkeeping, serialization, teardown) follows
 		// the last chunk, so it is left out.
-		latency := e2e - float64(rm.completionOverheadTicks)
+		latency := rm.ClientLatencyTicks(e2e)
 		ttfts = append(ttfts, ttft)
 		e2es = append(e2es, latency)
 		gateway = append(gateway, rm.GatewayQueueDelay*1e3) // ms -> ticks, as the helpers expect
@@ -265,8 +273,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 			endUs = max(endUs, completionUs)
 		}
 		// aiperf inter_token_latency_metric.py:48-55: (latency - TTFT) / (OSL - 1), OSL >= 2.
-		if rm.OutputTokens >= 2 {
-			itl := (latency - ttft) / float64(rm.OutputTokens-1)
+		if itl, ok := rm.TimePerOutputTokenTicks(ttft, e2e); ok {
 			itls = append(itls, itl)
 			// aiperf output_token_throughput_metrics.py:74-77 raises NoMetricValue for ITL == 0,
 			// so such a record has no per-user value: it leaves the sum and the count.
@@ -314,6 +321,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out.StepIntervalMeanMs = CalculateMean(steps)
 	out.StepIntervalP90Ms = CalculatePercentile(steps, 90)
 	out.StepIntervalP99Ms = CalculatePercentile(steps, 99)
+	lat.stepCount = len(steps)
 	lat.stepP50 = CalculatePercentile(steps, 50)
 	lat.stepP95 = CalculatePercentile(steps, 95)
 
@@ -333,20 +341,6 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	}
 	out.KVCapacityTokensPerReplica = m.KVCapacityTokensPerReplica
 	return out, lat
-}
-
-// applyMeasured writes the measured-window values into the keys MetricsOutput already
-// carries, for the --metrics-path file, keeping the whole-run values under whole_run.
-// cacheHitRate is the whole run's prompt-lookup rate.
-func (o *MetricsOutput) applyMeasured(lat measuredLatencies, cacheHitRate float64) {
-	o.WholeRun = &WholeRunLatency{
-		TTFTMeanMs: o.TTFTMeanMs, TTFTP90Ms: o.TTFTP90Ms, TTFTP95Ms: o.TTFTP95Ms, TTFTP99Ms: o.TTFTP99Ms,
-		E2EMeanMs: o.E2EMeanMs, E2EP90Ms: o.E2EP90Ms, E2EP95Ms: o.E2EP95Ms, E2EP99Ms: o.E2EP99Ms,
-		CacheHitRate: cacheHitRate,
-	}
-	o.TTFTMeanMs, o.TTFTP90Ms, o.TTFTP95Ms, o.TTFTP99Ms = lat.ttftMean, lat.ttftP90, lat.ttftP95, lat.ttftP99
-	o.E2EMeanMs, o.E2EP90Ms, o.E2EP95Ms, o.E2EP99Ms = lat.e2eMean, lat.e2eP90, lat.e2eP95, lat.e2eP99
-	o.CacheHitRate = &lat.cacheHitRate
 }
 
 // reciprocalPerSecond is 1000 / ms, the rate of one event every ms milliseconds, or 0 for a

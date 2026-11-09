@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/inference-sim/internal/substratedata"
 	"github.com/inference-sim/inference-sim/sim/saturation"
 )
 
@@ -15,14 +15,10 @@ import (
 // `blis replay` over that exported trace, and requires the two saturation reports to
 // be byte-identical.
 //
-// This is deliberately stronger than the in-process parity test
-// (TestSaturationKnobs_RunReplayReportsAreByteIdentical), which drives
-// resolveSaturation and saturationTracer.run directly. That test proves the shared
-// downstream pipeline is deterministic given equivalent inputs; it cannot prove that
-// the run and replay COMMANDS assemble equivalent inputs in the first place. Only
-// executing both commands does, because everything upstream of the shared tracer --
-// flag registration, trace export, trace parsing, the completed-request extractor on
-// each side -- differs between them.
+// It executes both commands because everything upstream of the shared tracer -- flag
+// registration, trace export, trace parsing, the completed-request extractor on each
+// side -- differs between them, so only the commands themselves show that they
+// assemble equivalent inputs.
 //
 // Each leg runs in a re-exec subprocess so the real cobra tree executes, following
 // the harness established by TestSaturationStdout_FinalLabelShape.
@@ -30,8 +26,8 @@ func TestSaturationCLI_RunReplayParity(t *testing.T) {
 	// Subprocess leg: execute the command named by the env var.
 	if leg := os.Getenv("BLIS_PARITY_LEG"); leg != "" {
 		common := []string{
-			"--scenario", kernelTestScenario, "--scenarios", kernelmodel.DefaultScenarios(), "--registry", kernelmodel.DefaultRegistry(),
-			"--catalog", "../testdata/catalog",
+			"--scenario", kernelTestScenario, "--scenarios", testScenarios, "--registry", substratedata.MustRegistry(),
+			"--catalog", substratedata.MustCatalog(),
 			"--defaults-filepath", "../defaults.yaml",
 			"--detectors", os.Getenv("BLIS_PARITY_DETECTORS"),
 			"--saturation-config", os.Getenv("BLIS_PARITY_CONFIG"),

@@ -66,6 +66,7 @@ type victim struct {
 	// its pull starts), or it is a finished prefill whose KV is held for the pull. scheduled is
 	// the first alone, the state in which it pins its LoRA adapter.
 	running, scheduled  bool
+	waiting             bool  // a handoff waiting on its decode engine for KV: no pull started
 	blocksBefore, after int64 // the engine's used KV blocks
 	pinsBefore, pins    int   // its engine's pins on its adapter
 	revoked             int
@@ -95,6 +96,7 @@ type evictionSetup struct {
 	// spacing (default 40, 1 ms apart).
 	sheddable      int
 	sheddableGapUs int64
+	maxSeqs        int // the engines' batch limit (8 when zero)
 }
 
 // runEviction runs long sheddable requests that saturate the pool, then a burst of critical ones.
@@ -139,7 +141,7 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			return l
 		}
 	}
-	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(8, 2048, 0) })
+	editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(int64(max(s.maxSeqs, 8)), 2048, 0) })
 	if s.kvBound {
 		editEngine(&dep, func(c *cengine.SimConfig) { c.BatchConfig = cengine.NewBatchConfig(64, 8192, 0) })
 		editEngine(&dep, func(c *cengine.SimConfig) { c.KVCacheConfig = cengine.NewKVCacheConfig(800, 16, 0, 0, 0, 0) })
@@ -220,6 +222,12 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 			v.scheduled = r.State == sim.StateRunning
 			v.running = v.scheduled || r.State == sim.StateWaitingForRemoteKVs ||
 				r.State == sim.StateCompleted && r.RetainKVOnFinish
+			// A handoff waiting on its decode engine for KV holds none there (SIM-8, #2005).
+			for _, p := range cs.ParentRequests() {
+				if p.ID == id && p.DecodeWaiting != nil {
+					v.waiting = true
+				}
+			}
 			if inst != nil {
 				v.blocksBefore = inst.UsedKVBlocks()
 				v.pinsBefore = inst.AdapterPins()[r.Adapter]
@@ -281,7 +289,7 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 	if len(victims) != res.cs.GatewayEvicted() {
 		t.Errorf("%d requests revoked, %d counted gateway-evicted", len(victims), res.cs.GatewayEvicted())
 	}
-	running := 0
+	running, waiting := 0, 0
 	for _, r := range res.reqs {
 		v := victims[r.ID]
 		if v == nil {
@@ -289,6 +297,9 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 		}
 		if v.revoked != 1 || r.SLOClass != "sheddable" {
 			t.Errorf("%s (class %s) revoked %d times; want each victim a sheddable request, once", r.ID, r.SLOClass, v.revoked)
+		}
+		if v.waiting {
+			waiting++
 		}
 		if v.running {
 			running++
@@ -302,7 +313,7 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 				r.ID, s.adapter, v.pinsBefore, v.pins)
 		}
 	}
-	if running == 0 {
+	if running+waiting == 0 {
 		t.Error("no running victim was evicted; the check of released resources would be vacuous")
 	}
 	for _, inst := range res.cs.Instances() {
@@ -346,7 +357,7 @@ func checkEviction(t *testing.T, s evictionSetup) map[string]*victim {
 			t.Fatalf("%s: placed differently in two identical runs", res.reqs[i].ID)
 		}
 	}
-	t.Logf("evicted %d sheddable requests in flight (%d running); completed %d", len(victims), running, res.metrics.CompletedRequests)
+	t.Logf("evicted %d sheddable requests in flight (%d running, %d waiting for decode KV); completed %d", len(victims), running, waiting, res.metrics.CompletedRequests)
 	return victims
 }
 
@@ -377,9 +388,10 @@ func TestFlowControl_InFlightEvictionDisaggregatedPrecise(t *testing.T) {
 func TestFlowControl_InFlightEvictionDisaggregatedSharedPrefix(t *testing.T) {
 	// 120 sheddable requests 2 ms apart, 100 ms transfers, the critical burst at 200 ms: the
 	// earliest transfers have completed (their decode engines cache the prefix), later ones are
-	// still pending when they are revoked.
+	// still pending when they are revoked. The engines take 64 sequences so that no handoff waits
+	// for decode KV: a waiting one is evicted before it reserves anything (SIM-8, #2005).
 	victims := checkEviction(t, evictionSetup{config: pdPreciseEvictionConfig, pd: true, sharedPrefix: 256,
-		transferUs: 100_000, criticalAt: 200_000, sheddable: 120, sheddableGapUs: 2000})
+		transferUs: 100_000, criticalAt: 200_000, sheddable: 120, sheddableGapUs: 2000, maxSeqs: 24})
 	duplicates := 0
 	for id, v := range victims {
 		if !v.pending || !v.heldEngine || !v.heldRouter {

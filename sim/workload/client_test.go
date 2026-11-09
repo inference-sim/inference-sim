@@ -7,7 +7,7 @@ import (
 
 func TestNormalizeRateFractions(t *testing.T) {
 	const aggregateRate = 100.0 // 100 req/s
-	const toReqPerUs = 1e6     // multiply rate (req/µs) to get req/s
+	const toReqPerUs = 1e6      // multiply rate (req/µs) to get req/s
 
 	tests := []struct {
 		name    string

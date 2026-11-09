@@ -35,10 +35,9 @@ type CombinedReport struct {
 // Each request contributes two events — an Arrival at its arrival time and a
 // Completion at arrival+E2E — ordered deterministically by
 // (timestamp, event-type, request-id). The detector is Reset() first so a
-// detector reused across the run/observe legs starts from a clean state.
+// detector reused across calls starts from a clean state.
 //
-// Input adapters (run/replay from the sim, observe from the real server) all
-// feed this same loop; the only difference is the []sim.RequestMetrics source.
+// run and replay both feed this loop the simulation's completed requests.
 // Zero requests produce zero events and thus an empty (but valid) trace.
 func ReplayOneDetector(detector Detector, requests []sim.RequestMetrics, sink TraceSink) {
 	detector.Reset()

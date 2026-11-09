@@ -1,5 +1,7 @@
 # Implementation Plan: Phase 1B-1a — Tier-Ordered Admission Shedding
 
+> History note: the file and package names in this record are those of the simulator when it was written. Since then the engine (scheduling, KV, LoRA and config) moved to blis-vllm, the latency model to blis-substrate and blis-latency-kernel, and routing and admission to llm-d-router; the record is kept as it was planned.
+
 **Branch**: `003-tier-shed-admission` | **Date**: 2026-03-25 | **Spec**: [spec.md](spec.md)
 **Tracking issue**: #696 | **Sub-issue**: #809
 
@@ -9,7 +11,7 @@ Wire the 5 existing SLO priority tiers into the admission path so that under ove
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+
+**Language/Version**: the pinned Go release (go.mod)
 **Primary Dependencies**: `gopkg.in/yaml.v3` (strict YAML), `github.com/sirupsen/logrus`
 **Storage**: N/A (in-memory simulation)
 **Testing**: `go test ./...`, table-driven BDD/TDD per `docs/contributing/standards/principles.md`
@@ -76,7 +78,7 @@ sim/cluster/
 
 ### Changes
 
-#### `sim/admission.go` (~35 lines added)
+#### the simulator's admission file (~35 lines added)
 
 ```go
 // SLOTierPriority maps SLOClass string to an integer priority.
@@ -187,7 +189,7 @@ if cs.shedByTier != nil {
 
 ### Tests (BDD/TDD — write first, must FAIL before implementation)
 
-#### `sim/admission_tier_test.go` (new file)
+#### the simulator's admission tier test file (new file)
 
 | Test | Type | Scenario |
 |------|------|----------|

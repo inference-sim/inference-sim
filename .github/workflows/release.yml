@@ -16,18 +16,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # QEMU is required to emulate non-native architectures (e.g. arm64 on the
       # amd64 GHA runner) for the multi-platform build declared in 'platforms' below.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -35,7 +35,7 @@ jobs:
 
       - name: Extract image metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           # Image lives under the repo owner namespace on GHCR.
           # Uses github.repository_owner so the reference stays correct after an org rename.
@@ -47,12 +47,19 @@ jobs:
             # such as -rc.1, -alpha, -beta). Pre-release tags produce version/minor tags only.
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
+      # The Dockerfile has no Go version of its own: it takes the one go.mod names.
+      - name: Read the Go version from go.mod
+        id: gomod
+        run: echo "version=$(sed -n 's/^go //p' go.mod)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            GO_VERSION=${{ steps.gomod.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

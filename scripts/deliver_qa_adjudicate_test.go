@@ -653,6 +653,7 @@ func TestQAAdjudicationStepReachesSkipWhenTheAdjudicatorFails(t *testing.T) {
 	// Match GitHub's `bash -e {0}` for a `run:` step; the body's own `set -uo pipefail` adds -u, so
 	// every referenced variable must be set.
 	cmd := exec.Command("bash", "-e", "-c", body)
+	cmd.Dir = ".." // the step runs at the checkout root, where it sources scripts/lib-best-effort.sh
 	cmd.Env = append(os.Environ(),
 		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"RUNNER_TEMP="+runnerTemp,

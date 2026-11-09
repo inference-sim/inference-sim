@@ -18,20 +18,30 @@ deterministic: the same seed produces byte-identical results, and no GPU is need
 git clone https://github.com/inference-sim/inference-sim.git
 cd inference-sim
 go build -o blis main.go
-git clone --branch 0.3.0 --depth 1 https://github.com/inference-sim/blis-catalog.git
-git clone --branch v0.2.0 --depth 1 https://github.com/inference-sim/blis-registry.git
-export BLIS_CATALOG=$PWD/blis-catalog   # or pass --catalog on every run/replay
+```
+
+```bash
 ./blis run --scenarios examplescenarios \
   --scenario deepseek-v4.1-flash-h100-tp8-dspark5.yaml \
-  --registry $PWD/blis-registry \
   --rate 10 --num-requests 100
 ```
 
-`blis run` and `blis replay` need a catalog (`--catalog` or `BLIS_CATALOG`, no default), a
-registry (`--registry`), a scenario directory (`--scenarios`, any directory of scenario YAMLs)
-and a scenario file name within it (`--scenario`). This repository ships ready-to-run scenarios
-in `examplescenarios/`. The clones pin the releases BLIS is tested against — see
-[Catalog compatibility](getting-started/installation.md#catalog-compatibility).
+`blis run` and `blis replay` need a scenario directory (`--scenarios`, any directory of
+scenario YAMLs) and a scenario file name within it (`--scenario`). This repository ships
+ready-to-run scenarios in `examplescenarios/`. The catalog and registry default to the copies
+embedded in the blis-substrate module this build pins
+([Data compatibility](getting-started/installation.md#catalog-compatibility)).
+`--catalog <dir>` (or `BLIS_CATALOG`) replaces the embedded catalog, and `--registry <dir>`
+(or `BLIS_REGISTRY`) replaces the embedded registry; the flag wins over the environment
+variable. To use a checkout of blis-substrate's own `catalog/`:
+
+<!-- BEGIN GENERATED from stack.json: data-checkout -->
+```bash
+git clone https://github.com/inference-sim/blis-substrate.git
+git -C blis-substrate checkout v0.13.0
+export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
+```
+<!-- END GENERATED -->
 
 ---
 
@@ -41,8 +51,8 @@ in `examplescenarios/`. The clones pin the releases BLIS is tested against — s
 |---|---|---|
 | **inference-sim** | *simulates* | Arrivals, the embedded llm-d router (admission, flow control, routing), scheduling, KV block accounting, placement, metrics. |
 | [`blis-latency-kernel`](https://github.com/inference-sim/blis-latency-kernel) | *prices* | Step time, KV and fixed memory, P/D KV transfer, offload tier transfer, host overheads. |
-| [`blis-catalog`](https://github.com/inference-sim/blis-catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets. |
-| [`blis-registry`](https://github.com/inference-sim/blis-registry) | *holds the fitted numbers* | The coefficient sets the kernel prices with. |
+| [`blis-substrate` `catalog/`](https://github.com/inference-sim/blis-substrate/tree/main/catalog) | *states the facts* | Model graphs, chips, fabrics, storage devices, workload presets. |
+| [`blis-substrate` `registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry) | *holds the fitted numbers* | The coefficient sets the kernel prices with. |
 | [`blis-schemas`](https://github.com/inference-sim/blis-schemas) | *defines the formats* | Scenario, deployment, engine and catalog file formats. |
 
 A **scenario** names a catalog model and chip, registry coefficient sets, and the deployment
@@ -73,7 +83,7 @@ directly to WaitQueue. See [Architecture](concepts/architecture.md).
 | P/D disaggregation | Prefill and decode pools, KV handoff priced over the scenario's fabric. | [Cluster](guide/cluster.md) |
 | KV caching and offload | Prefix caching and tiered offload over catalog storage devices. | [KV cache](guide/kv-cache.md) |
 | Autoscaling | Node pools with provisioning delays (`--policy-config`). | [Cluster](guide/cluster.md) |
-| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/observe-replay-calibrate.md) |
+| Trace replay | Any TraceV2 through the same deployment path; run/replay byte-identical. | [Replay](guide/replay.md) |
 | Results and analysis | TTFT/ITL/E2E, saturation detectors, decision traces, fitness. | [Results](guide/results.md) |
 
 ---
