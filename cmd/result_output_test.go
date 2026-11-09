@@ -946,3 +946,57 @@ clients:
 		t.Errorf("rows by slo_class: %v, want both classes and no other", seen)
 	}
 }
+
+// The Result's per-request rows state the figures the measured-window aggregate averages
+// (DEV-9, #2071): a harness that scores from the rows computes the aggregate the Result reports.
+// Recomputed here from the rows for a colocated run and for a disaggregated one, where a request's
+// time per output token is its own latency over its tokens and not the decode leg's step interval.
+func TestResult_RowsRecomputeTheAggregatesTheyComeFrom(t *testing.T) {
+	cases := map[string][]string{
+		"colocated": {"run", "--scenario", kernelTestScenario, "--seed", "7", "--num-requests", "80", "--rate", "50"},
+		"disaggregated": append([]string{"run"}, append(append([]string{}, pdTopology...),
+			"--num-requests", "40", "--rate", "5")...),
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, stderr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+			}
+			r := parseResult(t, out)
+			var e2e, tpot float64
+			var nE2E, nTPOT int
+			for _, row := range r.RequestRows {
+				if row.Fate != result.FateCompleted {
+					continue
+				}
+				if row.E2EUs != nil {
+					e2e += float64(*row.E2EUs) / 1e3
+					nE2E++
+				}
+				if row.TPOTUs != nil {
+					tpot += *row.TPOTUs / 1e3
+					nTPOT++
+				}
+			}
+			if nE2E < 20 || nTPOT < 20 {
+				t.Fatalf("non-vacuity: %d rows state E2E and %d state TPOT", nE2E, nTPOT)
+			}
+			for _, c := range []struct {
+				id        string
+				got       float64
+				n         int
+				tolerance float64
+			}{
+				// Rows state integer microseconds, so the means agree to well under a microsecond.
+				{"e2e_mean_ms", e2e / float64(nE2E), nE2E, 1e-3},
+				{"tpot_mean_ms", tpot / float64(nTPOT), nTPOT, 1e-3},
+			} {
+				want := r.Metrics[c.id].Value
+				if math.Abs(c.got-want) > c.tolerance {
+					t.Errorf("%s: the mean of the %d rows is %.6f, the aggregate %.6f", c.id, c.n, c.got, want)
+				}
+			}
+		})
+	}
+}

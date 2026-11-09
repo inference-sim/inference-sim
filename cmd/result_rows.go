@@ -99,11 +99,14 @@ func fillCompleted(row *result.RequestRow, rm sim.RequestMetrics, m *sim.Metrics
 	if rm.OutputTokens < 1 {
 		return
 	}
-	ttft := int64(m.RequestTTFTs[rm.ID])
-	e2e := int64(m.RequestE2Es[rm.ID])
+	// The row states the figures the measured-window aggregate averages, through the same
+	// functions (sim.RequestMetrics.ClientLatencyTicks, TimePerOutputTokenTicks), so a mean of
+	// the rows equals the aggregate: E2E without the completion overhead, and the request's own
+	// time per output token, not the per-step interval of the engine that served its last leg.
+	ttftTicks, e2eTicks := m.RequestTTFTs[rm.ID], m.RequestE2Es[rm.ID]
+	ttft, e2e := int64(ttftTicks), int64(rm.ClientLatencyTicks(e2eTicks))
 	row.TTFTUs, row.E2EUs = &ttft, &e2e
-	if rm.OutputTokens >= 2 {
-		tpot := m.RequestITLs[rm.ID] // the per-request time per output token, in ticks
+	if tpot, ok := rm.TimePerOutputTokenTicks(ttftTicks, e2eTicks); ok {
 		row.TPOTUs = &tpot
 	}
 }

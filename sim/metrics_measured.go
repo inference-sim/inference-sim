@@ -195,6 +195,26 @@ func summaryOf(out MeasuredMetrics, lat measuredLatencies) MeasuredSummary {
 	}
 }
 
+// ClientLatencyTicks is a request's latency as the benchmark client measures it: the engine's E2E
+// without the completion overhead, which follows the last content chunk (aiperf
+// metrics/types/request_latency_metric.py:38-49). The measured-window aggregate and the Result's
+// per-request rows both state E2E through this, so a mean of the rows is the aggregate.
+func (rm RequestMetrics) ClientLatencyTicks(e2eTicks float64) float64 {
+	return e2eTicks - float64(rm.completionOverheadTicks)
+}
+
+// TimePerOutputTokenTicks is a request's time per output token, (latency - TTFT) / (OSL - 1)
+// with latency as ClientLatencyTicks states it (aiperf inter_token_latency_metric.py:48-55),
+// and ok false for a request with fewer than two output tokens, which has none. The aggregate
+// and the Result's rows state it through this one function, for a disaggregated request as for a
+// colocated one: it is a property of the request's whole latency, not of its decode leg.
+func (rm RequestMetrics) TimePerOutputTokenTicks(ttftTicks, e2eTicks float64) (float64, bool) {
+	if rm.OutputTokens < 2 {
+		return 0, false
+	}
+	return (rm.ClientLatencyTicks(e2eTicks) - ttftTicks) / float64(rm.OutputTokens-1), true
+}
+
 // buildMeasured computes the measured-window aggregates from m.
 func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	out := MeasuredMetrics{PercentileMethod: PercentileMethodNumpyLinear}
@@ -241,7 +261,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		// before the usage chunk and [DONE] (:891, :931). The completion overhead E2E carries
 		// (the kernel's host_completion: finish bookkeeping, serialization, teardown) follows
 		// the last chunk, so it is left out.
-		latency := e2e - float64(rm.completionOverheadTicks)
+		latency := rm.ClientLatencyTicks(e2e)
 		ttfts = append(ttfts, ttft)
 		e2es = append(e2es, latency)
 		gateway = append(gateway, rm.GatewayQueueDelay*1e3) // ms -> ticks, as the helpers expect
@@ -253,8 +273,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 			endUs = max(endUs, completionUs)
 		}
 		// aiperf inter_token_latency_metric.py:48-55: (latency - TTFT) / (OSL - 1), OSL >= 2.
-		if rm.OutputTokens >= 2 {
-			itl := (latency - ttft) / float64(rm.OutputTokens-1)
+		if itl, ok := rm.TimePerOutputTokenTicks(ttft, e2e); ok {
 			itls = append(itls, itl)
 			// aiperf output_token_throughput_metrics.py:74-77 raises NoMetricValue for ITL == 0,
 			// so such a record has no per-user value: it leaves the sum and the count.
