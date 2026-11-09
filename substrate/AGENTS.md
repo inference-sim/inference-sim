@@ -161,7 +161,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
 - **SUB-1** (partial; target ci by M2) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
   - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)
-  - `new`, pull_request: API-compatibility check of the contracts/ packages against the last substrate tag
+  - `new`, pull_request: API-compatibility check of the contracts/ packages against the last substrate tag (`ci.yml job contracts: prcheck contracts-apidiff`)
 - **SUB-2** (ci; target reached) Every new or changed data field ships with its validator, a failing example for each way it can be wrong, and regenerated reference documentation.
   - `ci`, pull_request: Documentation-matches-types test (`contracts: TestDocFieldTablesMatchTypes`)
   - `ci`, pull_request: Strict loaders (`contracts: TestLoadRejectsUnknownFields`)

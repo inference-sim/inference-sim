@@ -29,6 +29,8 @@
       API-compatibility check of the contracts/ packages against the last substrate tag
     runs: pull_request
     status: new
+    test: 'ci.yml job contracts: prcheck contracts-apidiff'
+    known_bad: 'tools/prcheck: TestContractsAPI'
   review: null
   status: partial
   target:

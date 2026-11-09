@@ -130,6 +130,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       # The source-comparison tests re-derive constants from the upstream code they cite.
       # Each checkout is pinned to the commit of the release the test names, and the
       # *_SOURCE_REQUIRED variables make a missing checkout a failure, not a skip (X16).
@@ -174,6 +176,17 @@ jobs:
       # invariant registry (design §13.1). The test above also checks this; the step names
       # the command that fixes it.
       - run: go run ./tools/invariants render -check
+      # The contracts/ packages change only compatibly since the last release tag (SUB-1,
+      # design 12.8). apidiff runs through go run at the version the check pins; it is a step
+      # here and not a dependency. A contract-change review set names its issue in
+      # .github/contract-review-set, which accepts and prints the incompatible changes; the
+      # file is removed once the release that carries the set is tagged.
+      - name: API compatibility of contracts/ against the last tag (SUB-1)
+        run: |
+          set -euo pipefail
+          set=""
+          if [ -f .github/contract-review-set ]; then set=$(tr -d '[:space:]' < .github/contract-review-set); fi
+          go run ./tools/prcheck contracts-apidiff ${set:+-accept-break "$set"}
 
   kernel:
     name: cost model
