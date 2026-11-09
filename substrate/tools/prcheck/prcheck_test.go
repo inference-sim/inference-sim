@@ -485,7 +485,9 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 		t.Errorf("output %q", out.String())
 	}
 	// Known-bad: the same change with a tool as the sign-off.
-	os.WriteFile(filepath.Join(dir, "a"), []byte("c\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dir, "a"), []byte("c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	g("commit", "-q", "-am", "Change a again\n\nAssisted-by: Claude Code\nSigned-off-by: Claude <noreply@anthropic.com>")
 	bad := g("rev-parse", "HEAD")
 	out.Reset()
