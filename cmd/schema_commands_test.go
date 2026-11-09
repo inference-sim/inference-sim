@@ -100,3 +100,11 @@ func TestEveryValidatedDocumentHasASchema(t *testing.T) {
 		}
 	}
 }
+
+// --json is accepted by schema, so a caller can pass it to every command alike, and the
+// output is unchanged.
+func TestSchemaAcceptsTheJSONFlag(t *testing.T) {
+	if schemaCmd.Flags().Lookup("json") == nil {
+		t.Fatal("schema must accept --json")
+	}
+}

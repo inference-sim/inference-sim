@@ -160,6 +160,8 @@ func validateDocument(document, path string) error {
 }
 
 func init() {
+	// A schema is JSON; the flag is accepted so a caller can pass --json to every command alike.
+	schemaCmd.Flags().Bool("json", true, "accepted for uniformity with the other commands; a schema is always JSON")
 	schemaCmd.AddCommand(schemaValidateCmd)
 	rootCmd.AddCommand(schemaCmd)
 }
