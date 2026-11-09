@@ -846,7 +846,7 @@ func TestMergeQuestionsAcceptsOldComment(t *testing.T) {
 	if len(open) != 0 {
 		t.Fatalf("an answered item under the old comment was reopened: %v\n%s", open, nb)
 	}
-	if !strings.Contains(nb, "Answer: no, it is the datasheet figure") || strings.Contains(nb, "code owner") || !strings.Contains(nb, "A reviewer ticks each item") {
+	if !strings.Contains(nb, "Answer: no, it is the datasheet figure") || strings.Contains(nb, "code owner") || !strings.Contains(nb, "guidance for the review agent") {
 		t.Fatalf("the answer was lost or the comment not rewritten:\n%s", nb)
 	}
 }

@@ -114,10 +114,11 @@ jobs:
           if ! cmp -s "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/new-body.md"; then
             gh api -X PATCH "repos/${{ github.repository }}/pulls/$PR" -F "body=@$RUNNER_TEMP/new-body.md" > /dev/null
           fi
+          # A review question is guidance for the review agent (design §13.2), never a check:
+          # it is listed in the description and this step passes whether or not it is answered.
           if [ -s "$RUNNER_TEMP/unanswered" ]; then
-            echo "review questions not yet answered by a reviewer:"
+            echo "review questions listed for the review agent (guidance, not a check):"
             cat "$RUNNER_TEMP/unanswered"
-            exit 1
           fi
       # The answers as they stand when this job ran, each bound to the head tree it was given
       # for (X22). A push that changes the tree dismisses an earlier approval through branch

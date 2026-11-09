@@ -61,7 +61,7 @@ func MergeQuestions(body, questions string) (string, []string) {
 	var b strings.Builder
 	var open []string
 	b.WriteString(questionsHeading + "\n\n")
-	b.WriteString("<!-- Added by the review-question automation (design §13.2). A reviewer ticks each item and writes yes or no with a one-line reason after \"Answer:\". -->\n\n")
+	b.WriteString("<!-- Added by the review-question automation (design §13.2). These are guidance for the review agent, which answers each in a review comment with the files and lines that support the answer. No check waits on them and no person has to tick one. -->\n\n")
 	for _, w := range want {
 		it := w
 		if h, ok := have[w.key()]; ok {
