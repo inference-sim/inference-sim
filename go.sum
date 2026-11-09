@@ -131,8 +131,8 @@ github.com/inference-sim/blis-substrate v0.13.0 h1:v/Sj0kTCtIia5hszWfLYaRdDswmDw
 github.com/inference-sim/blis-substrate v0.13.0/go.mod h1:vZYEOia6TQOW+HZYbvJXCMDXus85dBj6vAyPr9rJF3A=
 github.com/inference-sim/blis-vllm v0.32.0-blis.2 h1:S9qCFFCL6NBX+zzfIRxKgd+He9IY00LywDbbVuXlXEo=
 github.com/inference-sim/blis-vllm v0.32.0-blis.2/go.mod h1:Qm7ScnFmHodzwJi2AK4DUwRLYyLiH0aX7OgIHCfQ9Jw=
-github.com/inference-sim/llm-d-router v1.0.0-blis.2.0.20261108053706-99efaccac54b h1:45g7Did0azg/8wYzQoFxoyJOVZIo40wbjPIkbs0fDFM=
-github.com/inference-sim/llm-d-router v1.0.0-blis.2.0.20261108053706-99efaccac54b/go.mod h1:n9l+VpJBrJ6h7NaFI7IwPlKZ+dX73t976AtiWI77Hbk=
+github.com/inference-sim/llm-d-router v1.0.0-blis.3 h1:yJ9EZmzMfb/eLv8VEK7nD6XWWRAEC9zyRbNjj6fvZ+8=
+github.com/inference-sim/llm-d-router v1.0.0-blis.3/go.mod h1:n9l+VpJBrJ6h7NaFI7IwPlKZ+dX73t976AtiWI77Hbk=
 github.com/jellydator/ttlcache/v3 v3.4.1 h1:bOdXmXiycyK6E6Qjyuj5vl+/vU3SCOoDs8a86NbHjAQ=
 github.com/jellydator/ttlcache/v3 v3.4.1/go.mod h1:j7LO12PNghFg5+0v9budMAT4rDK4JY969jb9vOdOBBk=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=

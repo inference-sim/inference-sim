@@ -128,8 +128,8 @@ require (
 
 // The one permitted replace (design X11): the llm-d router fork keeps upstream's module path, so
 // a replace is the only way to substitute it (docs/contributing/llm-d-router-fork.md). A release
-// names a -blis.N tag; this draft names the fork's m1/substrate commit 99efacca (llm-d-router pull request #5).
-replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.2.0.20261108053706-99efaccac54b
+// names a -blis.N tag, and this one does: v1.0.0-blis.3, released from llm-d-router pull request #5.
+replace github.com/llm-d/llm-d-router => github.com/inference-sim/llm-d-router v1.0.0-blis.3
 
 // blis-vllm's plain tag v0.32.0 predates the -blis.N rule (design §14.1) and would outrank every
 // -blis.N tag in version selection; the main module's exclude keeps any requirement from
