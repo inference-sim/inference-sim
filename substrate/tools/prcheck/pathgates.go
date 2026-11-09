@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 
@@ -180,61 +179,6 @@ func CheckGates(gates []PathGate, changed []string, runs map[string]GateRun) []s
 				bad = append(bad, fmt.Sprintf("%s: check run %q has not completed (X16, X17)", filepath.Base(g.File), j))
 			case r.Conclusion != "success":
 				bad = append(bad, fmt.Sprintf("%s: check run %q concluded %s (X16, X17)", filepath.Base(g.File), j, r.Conclusion))
-			}
-		}
-	}
-	return bad
-}
-
-// ChangesSuffix ends the check-run name of the cheap first job every gate workflow has
-// ("rederive changes"; a bare "changes" would collide with ci.yml's job of that name). On a merge_group
-// event GitHub does not apply a trigger's paths, so the workflow starts for every queue entry;
-// the changes job compares the merge group's base_sha..head_sha with the workflow's own
-// pull_request paths (prcheck gate-changed), and the heavy jobs are skipped when none changed.
-const ChangesSuffix = " changes"
-
-func isChangesJob(name string) bool { return strings.HasSuffix(name, ChangesSuffix) }
-
-// QueuePending lists the check runs of every gate that have not completed, on the
-// merge-queue commit, where each gate workflow runs for every entry.
-func QueuePending(gates []PathGate, runs map[string]GateRun) []string {
-	var out []string
-	for _, g := range gates {
-		for _, j := range g.Jobs {
-			if r, ok := runs[j]; !ok || !r.Done {
-				out = append(out, j)
-			}
-		}
-	}
-	return out
-}
-
-// CheckQueueGates judges the gates on the merge-queue commit (X17, X22), where CI must have run
-// on the tree being merged. Every gate workflow must have run there, always: the changes job
-// must have succeeded. When the change touches the gate's paths (changed is the diff of the
-// queue entry against its base), every job must have succeeded; when it does not, the heavy
-// jobs must have succeeded or been skipped by the changes job. A job that failed, was
-// cancelled or never started is a finding either way.
-func CheckQueueGates(gates []PathGate, changed []string, runs map[string]GateRun) []string {
-	var bad []string
-	for _, g := range gates {
-		name := filepath.Base(g.File)
-		touched := g.Triggered(changed)
-		if !slices.ContainsFunc(g.Jobs, isChangesJob) {
-			bad = append(bad, fmt.Sprintf("%s: a gate workflow has no job named \"<workflow> changes\", so it cannot run on the merge queue (X17)", name))
-			continue
-		}
-		for _, j := range g.Jobs {
-			r, ok := runs[j]
-			switch {
-			case !ok:
-				bad = append(bad, fmt.Sprintf("%s: no check run %q exists on the merge-queue commit (X17, X22)", name, j))
-			case !r.Done:
-				bad = append(bad, fmt.Sprintf("%s: check run %q has not completed (X17, X22)", name, j))
-			case r.Conclusion == "success":
-			case r.Conclusion == "skipped" && !touched && !isChangesJob(j):
-			default:
-				bad = append(bad, fmt.Sprintf("%s: check run %q concluded %s on the merge-queue commit (X17, X22)", name, j, r.Conclusion))
 			}
 		}
 	}

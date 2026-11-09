@@ -107,7 +107,7 @@
  {
   "ID": "X22",
   "Title": "",
-  "Statement": "Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull request. An agent's or person's verdict is on the head tree, and is given again after a push. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states the minimum number of items it must process, and fails below it. No step in a required job ignores an exit code."
+  "Statement": "Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull request. The review agent’s verdict is on the head tree, and is given again after a push. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states the minimum number of items it must process, and fails below it. No step in a required job ignores an exit code."
  },
  {
   "ID": "X23",
@@ -127,7 +127,7 @@
  {
   "ID": "X26",
   "Title": "",
-  "Statement": "In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree."
+  "Statement": "In documentation, every source path, symbol, issue or pull-request reference, and every statement that a feature is supported, is either generated (from surface.json, stack.json or the code) or checked against the pinned tree. A pull request carries the documentation change that its own change needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A repository that adopts the check clears the findings it already has in the pull request that first requires the check, so the check is green from then on and every later finding is a pull request’s own. No finding is hidden from the check by a list of known ones."
  },
  {
   "ID": "X27",
@@ -572,7 +572,7 @@
  {
   "ID": "VAL-4",
   "Title": "",
-  "Statement": "Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it. Where several entries of one rank match a lookup at different scopes, one written order of precedence over every scope dimension (chip, model, layout widths, node) picks one, whatever order the entries were loaded in. Two matching entries that the precedence does not order are refused at load, and a price's provenance names every matching entry it displaced. A more trusted entry is removed only with a supersedes: record citing a defect issue, which a person must approve."
+  "Statement": "Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it. Where several entries of one rank match a lookup at different scopes, one written order of precedence over every scope dimension (chip, model, layout widths, node) picks one, whatever order the entries were loaded in. Two matching entries that the precedence does not order are refused at load, and a price's provenance names every matching entry it displaced. A more trusted entry is removed only with a supersedes: record citing a defect issue, in a pull request that the reviewer with write access approves."
  },
  {
   "ID": "VAL-5",

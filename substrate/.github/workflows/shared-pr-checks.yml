@@ -23,7 +23,8 @@ name: shared pull-request checks
 #                   codes, no skipped tests, gate trigger paths as declared
 #   versions        X23: version literals outside the sources of versions
 #   doc-references  X26: paths, line ranges and repeated table rows in documentation
-#   cited-issues    X28: no change closes an issue the merge tree still cites
+#   threads         X24: every review thread is resolved and states an outcome
+#   cited-issues    X28: no change closes an issue the tree still cites
 #   quarantine      X25: every quarantined test has an issue and an unexpired date
 #   licence-files   X21: LICENSE, and an engine repository's NOTICE naming its upstream
 #   generated       design §13.1: AGENTS.md and the pull-request template match the registry
@@ -57,13 +58,13 @@ env:
 jobs:
   checks:
     name: blis checks
-    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target' || github.event_name == 'merge_group'
+    if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       PR: ${{ github.event.pull_request.number }}
-      BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-      HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Check out the pull request
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -118,9 +119,9 @@ jobs:
             cat "$RUNNER_TEMP/unanswered"
             exit 1
           fi
-      # The answers as they stand when this job ran. The merge check compares the body at
-      # merge time with the record in force when the latest approving review was submitted, so
-      # an approval covers the text that was recorded then and a later edit voids it (X22).
+      # The answers as they stand when this job ran, each bound to the head tree it was given
+      # for (X22). A push that changes the tree dismisses an earlier approval through branch
+      # protection, so the next approver reads the answers again.
       - name: Record the review answers (X22)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
@@ -152,6 +153,10 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck docrefs
+      - name: Review threads (X24)
+        if: ${{ !cancelled() && (env.PR != '') }}
+        working-directory: repo
+        run: prcheck threads -repo "${{ github.repository }}" -pr "$PR"
       - name: Cited issues (X28)
         if: ${{ !cancelled() }}
         working-directory: repo

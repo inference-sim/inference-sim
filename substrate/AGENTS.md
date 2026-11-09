@@ -116,14 +116,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
   - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
-- **X22** (partial; target ci by M4) Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged.
-  - `new`, pull_request: The shared merge check in blis-substrate/.github/workflows, called by every repository, which compares verdict tree hashes (`shared-merge-check.yml: prcheck merge`)
+- **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+  - `ci`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree (`shared-pr-checks.yml: prcheck answers-record`)
   - `new`, pull_request: A workflow lint that refuses ignored exit codes (`prcheck workflows`)
   - `ci`, pull_request: Each job's item count (`ci.yml job required`)
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
 - **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: The shared merge check, which refuses a merge while a review thread has no outcome (`shared-merge-check.yml: prcheck merge`)
+  - `new`, pull_request: A pull-request check that refuses a review thread with no outcome (`shared-pr-checks.yml: prcheck threads`)
   - `new`, nightly: A nightly job that reopens an issue closed any other way
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
@@ -135,7 +135,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, release: The release bot (`tools/release: CheckBugs`)
 - **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
-  - `new`, pull_request: A merge check that refuses a change closing an issue still cited elsewhere (`shared-merge-check.yml: prcheck issues -closes`)
+  - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
 - **SUB-1** (partial; target ci by M2) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
   - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)

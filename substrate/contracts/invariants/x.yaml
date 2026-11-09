@@ -1711,11 +1711,11 @@
 - id: X22
   section: §4.1
   statement: >-
-    Every verdict (a CI result, an agent's review, or a person's answer to a review question) names
-    the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull
-    request. An agent's or person's verdict is on the head tree, and is given again after a push.
-    BLIS repositories do not use a merge queue. Every job that scores, fits or checks data states
-    the minimum number of items it must process, and fails below it. No step in a required job
+    Every verdict (a CI result or the review agent's review, including its answers to review
+    questions) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree
+    of the pull request. The review agent’s verdict is on the head tree, and is given again after a
+    push. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data
+    states the minimum number of items it must process, and fails below it. No step in a required job
     ignores an exit code.
   scope:
   - accuracy-dashboard
@@ -1728,46 +1728,46 @@
   checks:
   - repo: blis-substrate
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
-    status: new
-    test: 'shared-merge-check.yml: prcheck merge'
-    known_bad: 'tools/prcheck: TestMergeCheck'
+    status: ci
+    test: 'shared-pr-checks.yml: prcheck answers-record'
+    known_bad: 'tools/prcheck: TestAnswerRecords'
   - repo: blis-vllm
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: inference-sim
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: blis-substrate
@@ -1920,39 +1920,39 @@
   checks:
   - repo: blis-substrate
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
-    test: 'shared-merge-check.yml: prcheck merge'
-    known_bad: 'tools/prcheck: TestMergeCheck'
+    test: 'shared-pr-checks.yml: prcheck threads'
+    known_bad: 'tools/prcheck: TestCheckThreads'
   - repo: blis-vllm
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: inference-sim
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: blis-substrate
@@ -2090,7 +2090,11 @@
   statement: >-
     In documentation, every source path, symbol, issue or pull-request reference, and every statement
     that a feature is supported, is either generated (from surface.json, stack.json or the code) or
-    checked against the pinned tree.
+    checked against the pinned tree. A pull request carries the documentation change that its own
+    change needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A
+    repository that adopts the check clears the findings it already has in the pull request that first
+    requires the check, so the check is green from then on and every later finding is a pull request’s
+    own. No finding is hidden from the check by a list of known ones.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -2208,33 +2212,33 @@
     runs: nightly
     status: new
   - repo: blis-substrate
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
-    test: 'shared-merge-check.yml: prcheck issues -closes'
+    test: 'shared-pr-checks.yml: prcheck issues -closes'
     known_bad: 'tools/prcheck: TestCitedIssues'
   - repo: blis-vllm
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: blis-sglang
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: llm-d-router
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: inference-sim
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: blis-config-search
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: blis-substrate

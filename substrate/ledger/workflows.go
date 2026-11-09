@@ -135,7 +135,7 @@ func lintWorkflow(path string) (int, error) {
 	}
 	name := filepath.Base(path)
 	triggers := triggerNames(&wf.On)
-	prStarted := triggers["pull_request"] || triggers["pull_request_target"] || triggers["push"] || triggers["merge_group"] || triggers["issue_comment"]
+	prStarted := triggers["pull_request"] || triggers["pull_request_target"] || triggers["push"] || triggers["issue_comment"]
 	var errs []error
 	seed := 0
 	for _, id := range sortedKeys(wf.Jobs) {

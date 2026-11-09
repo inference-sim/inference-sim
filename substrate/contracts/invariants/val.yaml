@@ -74,12 +74,13 @@
   section: §9.4
   statement: >-
     Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used;
-    flags do not change which entry is chosen, only how the price reports it. Where several entries
-    of one rank match a lookup at different scopes, one written order of precedence over every scope
-    dimension (chip, model, layout widths, node) picks one, whatever order the entries were loaded
-    in. Two matching entries that the precedence does not order are refused at load, and a price's
-    provenance names every matching entry it displaced. A more trusted entry is removed only with
-    a supersedes: record citing a defect issue, which a person must approve.
+    flags do not change which entry is chosen, only how the price reports it. Where several entries of
+    one rank match a lookup at different scopes, one written order of precedence over every scope
+    dimension (chip, model, layout widths, node) picks one, whatever order the entries were loaded in.
+    Two matching entries that the precedence does not order are refused at load, and a price's
+    provenance names every matching entry it displaced. A more trusted entry is removed only with a
+    supersedes: record citing a defect issue, in a pull request that the reviewer with write access
+    approves.
   scope:
   - blis-substrate
   checks:

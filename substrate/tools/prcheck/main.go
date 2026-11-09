@@ -12,10 +12,9 @@
 //	    codes, no skipped tests in a job, gate trigger paths as declared.
 //	prcheck description -body <file> -repo <owner/name> -head <rev> -base <rev>
 //	    X14: listed hashes are branch heads; the pull request merges cleanly.
-//	prcheck merge-collect -repo <o/n> -pr <n> -merge <sha> -head <sha> -base <sha> -required <a,b>
-//	    Print the merge check's input, from the GitHub API, as JSON.
-//	prcheck merge -input <file.json>
-//	    X22 and X24, over the verdicts and review threads the workflow collected.
+//	prcheck threads -repo <o/n> -pr <n>
+//	    X24: every review thread of the pull request is resolved and states an outcome
+//	    (fixed, filed <issue>, or rejected: <reason>).
 //	prcheck issues -repo <owner/name> [-closes <body file>] [-resolve]
 //	    X28: the issues cited as reasons for a refusal or gap. With -closes, fail if the
 //	    body closes a cited issue; with -resolve, fail on any cited issue that is closed.
@@ -33,8 +32,7 @@
 //	    questions" section, keep given answers, and list those still unanswered.
 //	prcheck answers-record -body <file> -changed <file> -repo-name <name> -head <sha>
 //	    X22: print the summary of the "review answers" check run: the head tree and the
-//	    SHA-256 of each answer the body holds, which the merge check compares with the
-//	    body at merge time.
+//	    SHA-256 of each answer the body holds.
 //	prcheck tags [-lock .github/tags.lock]
 //	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
@@ -44,14 +42,6 @@
 //	    X16, X17: the path-filtered workflows (read from the workflow files) whose paths the
 //	    change touched (git diff --name-only base head) must each have a successful check
 //	    run on -runs-sha (default -head); one the change did not touch counts as passed.
-//	    With -merge-queue, -head is the merge-queue commit and -base the merge group's
-//	    base_sha: every path-filtered workflow must have succeeded on -head whatever the
-//	    change touches (each runs a cheap changes job on every queue entry), and its heavy
-//	    jobs may be skipped only when the change touches none of its paths.
-//	prcheck gate-changed -workflow <file> -base <sha> -head <sha>
-//	    Print "run=true" or "run=false": whether git diff --name-only base head touches the
-//	    workflow's pull_request paths, read from the workflow itself. The changes job of a
-//	    gate workflow runs it on merge_group, where GitHub applies no paths filter.
 //	prcheck knownbad [-repo-name blis-substrate] [-list-only]
 //	    X18: run every known-bad test the registry names for this repository.
 //	prcheck licence-files [-repo-name <name>]
@@ -110,7 +100,7 @@ func report(w io.Writer, name string, bad []string) error {
 
 func run(args []string, w io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: prcheck commits|workflows|description|merge|issues|versions|docrefs|quarantine ...")
+		return fmt.Errorf("usage: prcheck commits|workflows|description|threads|issues|versions|docrefs|quarantine ...")
 	}
 	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
 	base := fs.String("base", "", "base revision")
@@ -119,7 +109,6 @@ func run(args []string, w io.Writer) error {
 	dir := fs.String("dir", ".github", "directory of workflows and actions")
 	body := fs.String("body", "", "pull-request body file")
 	repo := fs.String("repo", "", "owner/name")
-	input := fs.String("input", "", "merge-check input JSON")
 	closes := fs.String("closes", "", "pull-request body file whose Closes lines are checked")
 	resolve := fs.Bool("resolve", false, "resolve each cited issue through the GitHub API")
 	baseline := fs.String("baseline", ".github/version-literals.txt", "version-literal baseline")
@@ -131,8 +120,6 @@ func run(args []string, w io.Writer) error {
 	gatesFile := fs.String("gates", ".github/gates.yaml", "the gate list")
 	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
-	mergeSHA := fs.String("merge", "", "the merge-queue commit")
-	requiredList := fs.String("required", "", "comma-separated names of required checks")
 	questionsFile := fs.String("questions", "", "the questions invariants questions printed")
 	outFile := fs.String("out", "", "where to write the new body")
 	unanswered := fs.String("unanswered", "", "where to list the unanswered questions")
@@ -142,8 +129,6 @@ func run(args []string, w io.Writer) error {
 	deferral := fs.String("deferral", "", "the X20 deferral file (commits only)")
 	runsSHA := fs.String("runs-sha", "", "the commit whose check runs the path gates are read from; default -head")
 	wait := fs.Duration("wait", 45*time.Minute, "how long path-gates waits for a triggered gate to complete")
-	queue := fs.Bool("merge-queue", false, "path-gates: judge the merge-queue commit -head, where every gate workflow must have run")
-	workflow := fs.String("workflow", "", "gate-changed: the gate workflow file")
 	changed := fs.String("changed", "", "the changed paths, one per line")
 	today := fs.String("today", "", "the date to judge expiry on (YYYY-MM-DD); default today, UTC")
 	if err := fs.Parse(args[1:]); err != nil {
@@ -231,36 +216,16 @@ func run(args []string, w io.Writer) error {
 			Body: string(raw), Repo: *repo, Head: headSHA, Base: baseSHA,
 			Heads: ghPRHead, Merges: mergeErr == nil,
 		}))
-	case "merge-collect":
-		// prcheck merge-collect -repo o/n -pr N -merge <sha> -head <sha> -base <sha> -required a,b
-		if *repo == "" || *prNum == 0 || *mergeSHA == "" || *base == "" {
-			return fmt.Errorf("merge-collect needs -repo, -pr, -merge, -head and -base")
+	case "threads":
+		if *repo == "" || *prNum == 0 {
+			return fmt.Errorf("threads needs -repo and -pr")
 		}
-		var req []string
-		for _, r := range strings.Split(*requiredList, ",") {
-			if r = strings.TrimSpace(r); r != "" {
-				req = append(req, r)
-			}
-		}
-		in, err := collectMerge(*repo, *prNum, *mergeSHA, *head, *base, req)
+		ts, err := collectThreads(*repo, *prNum)
 		if err != nil {
 			return err
 		}
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", " ")
-		return enc.Encode(in)
-	case "merge":
-		raw, err := os.ReadFile(*input)
-		if err != nil {
-			return err
-		}
-		var in MergeInput
-		dec := json.NewDecoder(strings.NewReader(string(raw)))
-		dec.DisallowUnknownFields()
-		if err := dec.Decode(&in); err != nil {
-			return fmt.Errorf("%s: %w", *input, err)
-		}
-		return report(w, "merge-check", CheckMerge(in))
+		fmt.Fprintf(w, "threads: %d checked\n", len(ts))
+		return report(w, "thread-outcome", CheckThreads(ts))
 	case "issues":
 		if *repo == "" {
 			return fmt.Errorf("issues needs -repo")
@@ -401,9 +366,6 @@ func run(args []string, w io.Writer) error {
 		if sha == "" {
 			sha = *head
 		}
-		if *queue {
-			sha = *head
-		}
 		deadline := time.Now().Add(*wait)
 		var runs map[string]GateRun
 		for {
@@ -411,40 +373,13 @@ func run(args []string, w io.Writer) error {
 				return err
 			}
 			p := Pending(gates, changed, runs)
-			if *queue {
-				p = QueuePending(gates, runs)
-			}
 			if len(p) == 0 || !time.Now().Before(deadline) {
 				break
 			}
 			time.Sleep(15 * time.Second)
 		}
 		_, _ = fmt.Fprintf(w, "path-gates: %d path-filtered workflow(s), %d changed file(s)\n", len(gates), len(changed))
-		if *queue {
-			return report(w, "path-gates", CheckQueueGates(gates, changed, runs))
-		}
 		return report(w, "path-gates", CheckGates(gates, changed, runs))
-	case "gate-changed":
-		if *workflow == "" || *base == "" {
-			return fmt.Errorf("gate-changed needs -workflow, -base and -head")
-		}
-		src, err := os.ReadFile(*workflow)
-		if err != nil {
-			return err
-		}
-		g, ok, err := ParsePathGate(*workflow, src)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("%s: no pull_request paths to compare", *workflow)
-		}
-		out, err := git("diff", "--name-only", *base, *head)
-		if err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(w, "run=%t\n", g.Triggered(strings.Fields(out)))
-		return nil
 	case "answers-record":
 		if *body == "" || *changed == "" {
 			return fmt.Errorf("answers-record needs -body and -changed")
