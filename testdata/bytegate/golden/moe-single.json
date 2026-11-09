@@ -769,7 +769,7 @@
   "revisions": {
     "simulator": "(devel)",
     "substrate": "v0.13.0",
-    "router": "v1.0.0-blis.2.0.20261108053706-99efaccac54b",
+    "router": "v1.0.0-blis.3",
     "engine_module": "v0.32.0-blis.2"
   },
   "window": {
