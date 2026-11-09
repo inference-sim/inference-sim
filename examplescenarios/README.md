@@ -26,7 +26,6 @@ the file, so `blis run` needs no `--speculative-*` flag.
 | `gpt-oss-120b-h100-fp4-vllm-tp2-2node.yaml` | gpt-oss-120b (MoE), 2×H100, TP2 — cluster fixture (up to 8 instances) |
 | `glm-5-h200-3p1d-ib.yaml` | GLM-5, 4×H200, 3 prefill + 1 decode (P/D disaggregation) |
 | `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml` | DeepSeek-V4-Pro (MoE), 1×B300, TP4, nvfp4, MTP K=2 |
-| `kimi-k3-h200-tp8dp4ep32-balanced.yaml` | Kimi-K3 (MoE), 4×H200, TP8 DP4 EP32, MTP K=2 |
 
 Each file's header records where its deployment came from.
 

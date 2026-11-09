@@ -100,7 +100,8 @@ parallelism and engine settings. `--scenarios <dir>` is any directory of scenari
 `examplescenarios/` (speculative ones pin their acceptance, so no `--speculative-*` flag is
 needed): `deepseek-v4.1-flash-h100-tp8-dspark5.yaml` (the quickstart), an MoE
 `gpt-oss-120b-h100-fp4-vllm-tp2.yaml`, a `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml`, a P/D
-`glm-5-h200-3p1d-ib.yaml`, and a multi-node `kimi-k3-h200-tp8dp4ep32-balanced.yaml`. See
+`glm-5-h200-3p1d-ib.yaml`. Kimi-K3 has none: its linear-attention (KDA) layers have no KV mapping
+in the engine yet, so a Kimi-K3 scenario is refused at startup. See
 [`examplescenarios/README.md`](https://github.com/inference-sim/inference-sim/tree/main/examplescenarios)
 for details.
 

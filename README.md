@@ -114,8 +114,9 @@ and `max_num_batched_tokens`.
 
 The quickstart's `--rate 10 --num-requests 100` is a synthetic workload for a quick first run.
 [`examplescenarios/`](examplescenarios/) also ships MoE deployments to try the same commands
-against — `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml` (B300, MTP) and the multi-node
-`kimi-k3-h200-tp8dp4ep32-balanced.yaml`; each file's header records its provenance.
+against — `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml` (B300, MTP); each file's header
+records its provenance. Kimi-K3 is not among them: its linear-attention (KDA) layers have no KV
+mapping in the engine yet, so a Kimi-K3 scenario is refused at startup.
 
 The run prints one Result document on stdout (JSON; `--format yaml` for YAML, `--output` for a
 file): its input, metrics over the measured window (`ttft_p99_ms`, `itl_p99_ms` per token,
