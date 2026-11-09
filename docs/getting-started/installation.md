@@ -39,6 +39,11 @@ Public models (e.g., Qwen3) work without a token. See [HuggingFace access tokens
 and the registry embedded in the blis-substrate module this build pins. No flag and no
 environment variable is needed.
 
+`blis schema <document>` prints the JSON Schema of a document that crosses a repository
+boundary, and `blis schema validate <document> <file>` runs the Go validators on a file: exit 0
+when valid, 1 when the document is refused, 2 when the command could not run. Both read only the
+release this build pins.
+
 `--catalog <dir>` (or `BLIS_CATALOG`) names a directory with the layout of blis-substrate's
 `catalog/` that replaces the embedded catalog whole. `--registry <dir>` (or `BLIS_REGISTRY`)
 does the same for the registry. The flag wins over the environment variable, and the choice is

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1552,6 +1553,10 @@ func printPDMetrics(w io.Writer, pd *cluster.PDMetrics) {
 // Execute runs the CLI root command
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		var code exitCode
+		if errors.As(err, &code) {
+			os.Exit(int(code))
+		}
 		os.Exit(1)
 	}
 }

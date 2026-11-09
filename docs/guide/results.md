@@ -46,7 +46,7 @@ jq '.metrics.ttft_p99_ms.value' result.json
 
 ### Standard metrics
 
-Each identifier is a contracts/metrics registry entry (`blis metrics` lists the registry).
+Each identifier is a contracts/metrics registry entry in the pinned blis-substrate release.
 
 | Identifier | Definition |
 |---|---|
@@ -80,7 +80,7 @@ member has a schema 2 home, or is listed as dropped with the reason.
 
 | Schema 1 | Schema 2 |
 |---|---|
-| `metric_defs` | dropped: every metric is a contracts/metrics registry identifier, defined once there (`blis metrics`) |
+| `metric_defs` | dropped: every metric is a contracts/metrics registry identifier, defined once there |
 | `metrics.<id>` (a number) | `metrics.<id>.value`, with `metrics.<id>.samples` |
 | `metrics.itl_{mean,p50,p90,p99}_ms` | `metrics.tpot_*_ms` |
 | `engine.cluster.step_interval_*_ms` | `metrics.step_interval_*_ms`, and still in `reports.engine.cluster` |
