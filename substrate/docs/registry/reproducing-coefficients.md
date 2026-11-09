@@ -305,8 +305,7 @@ The OperatorX response `fit_marlin_nvfp4_grouped_ramp.py` cites is cited by the 
 the rows that fit reads (`scripts/operatorx_points.py`), not by its bytes: the URL served a
 different response by 2026-11-05, with the same rows and so the same values (h100 0.237 and
 24, h200 0.230 and 61). `fetch_cited_inferencex.py` fetches it with the run bodies, and
-`validator/test_operatorx.py` runs in the gate and is no longer quarantined
-(inference-sim/blis-substrate#11).
+`validator/test_operatorx.py` runs in the gate and is no longer quarantined.
 
 ### Data freshness, checked 2026-10-30
 

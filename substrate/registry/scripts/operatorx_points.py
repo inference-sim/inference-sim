@@ -4,7 +4,7 @@ digest of them.
 WHY NOT THE RESPONSE'S BYTES. The two entries once cited the sha256 of the response as served.
 By 2026-11-05 the same URL served a different response, and the fit read the same rows from it
 and gave the same values; the pin on bytes made the re-derivation unrunnable for a change that
-moved no value (inference-sim/blis-substrate#11). The entries now cite the digest of the rows
+moved no value. The entries now cite the digest of the rows
 the fit reads, so the gate fails when a measurement changes and not when the response grows a
 field or a case the fit ignores.
 

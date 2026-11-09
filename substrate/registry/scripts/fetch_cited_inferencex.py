@@ -24,7 +24,7 @@ skips are on .github/quarantine.yaml (X16, X25) under inference-sim/blis-registr
 bodies are restored or the entries are re-cited through a reviewed refit. The OperatorX
 response fit_marlin_nvfp4_grouped_ramp.py cites is served and is fetched here too, as
 moe_MiniMax-M3.json, checked against a digest of the rows that fit reads (operatorx_points.py):
-its bytes changed by 2026-11-05 and its rows did not (inference-sim/blis-substrate#11).
+its bytes changed by 2026-11-05 and its rows did not.
 
 The API keeps a bounded window of recent runs, so a body below can stop being served. Then
 this fails, naming it, and the gate fails rather than skips: restore the body, or quarantine

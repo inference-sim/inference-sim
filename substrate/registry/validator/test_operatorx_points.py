@@ -2,7 +2,7 @@
 
 The entries once cited the sha256 of the response's bytes. The URL then served a different
 response with the same rows, and the re-derivation test could not run for a change that moved no
-value (inference-sim/blis-substrate#11). These tests pin both halves of the replacement: a change
+value. These tests pin both halves of the replacement: a change
 the fit does not read leaves the digest alone, and a change to a row it reads moves it.
 """
 
