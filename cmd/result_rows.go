@@ -57,6 +57,8 @@ func requestRows(cs *cluster.ClusterSimulator, m *sim.Metrics) []result.RequestR
 			}
 			if rec.Fate == sim.FateCompleted {
 				fillCompleted(&row, rm, m)
+			} else {
+				fillUnfinished(&row, rm, m)
 			}
 		}
 		rows = append(rows, row)
@@ -88,6 +90,23 @@ func numberCompletions(rows []result.RequestRow, ends []int64) {
 	})
 	for rank, i := range idx {
 		rows[i].CompletionIndex = rank + 1
+	}
+}
+
+// fillUnfinished states what a request that did not complete produced before it was cut off,
+// whether by its client deadline or by the horizon: the output tokens the engine emitted for it,
+// and its time to first token when it got that far. It states no E2E, and no TPOT, since those
+// are samples only of a completed request (the contract's rule). A request that emitted nothing
+// states nothing, as before.
+func fillUnfinished(row *result.RequestRow, rm sim.RequestMetrics, m *sim.Metrics) {
+	n := rm.EmittedOutputTokens()
+	if n < 1 {
+		return
+	}
+	row.OutputTokens = n
+	if t, ok := m.RequestTTFTs[rm.ID]; ok {
+		ttft := int64(t)
+		row.TTFTUs = &ttft
 	}
 }
 

@@ -63,6 +63,21 @@ type RequestMetrics struct {
 	// projection (WithCompletionOf) like the completion stamp.
 	completionOverheadTicks int64
 	timedOut                bool
+	// emittedTokens is the number of output tokens the engine had emitted for the request when
+	// the run last stepped it. It is set whether or not the request completed, so a request cut
+	// off by its client deadline or by the horizon still states the tokens it produced (the
+	// Result's request_rows). OutputTokens, which the aggregates read, stays a completed
+	// request's count. Unexported, so never serialized.
+	emittedTokens int
+}
+
+// EmittedOutputTokens is the number of output tokens the request produced, whether or not it
+// finished: its final count when it completed, else the tokens the engine had emitted for it.
+func (rm RequestMetrics) EmittedOutputTokens() int {
+	if rm.OutputTokens > rm.emittedTokens {
+		return rm.OutputTokens
+	}
+	return rm.emittedTokens
 }
 
 // NewRequestMetrics creates a RequestMetrics from a Request and its arrival time.

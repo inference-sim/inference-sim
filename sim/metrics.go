@@ -127,7 +127,7 @@ func (m *Metrics) recordCompletionOrder(id string, clock int64, outputTokens int
 // another id -- a disaggregated parent completes when its decode sub-request does.
 func (rm RequestMetrics) WithCompletionOf(src RequestMetrics) RequestMetrics {
 	rm.completionSeq, rm.completionClock = src.completionSeq, src.completionClock
-	rm.OutputTokens = src.OutputTokens
+	rm.OutputTokens, rm.emittedTokens = src.OutputTokens, src.emittedTokens
 	rm.completionOverheadTicks, rm.timedOut = src.completionOverheadTicks, src.timedOut
 	return rm
 }

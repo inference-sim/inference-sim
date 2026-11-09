@@ -961,6 +961,12 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			r.lastEnd = end
 		}
 		r.emitted += res.Emitted[id]
+		if res.Emitted[id] > 0 {
+			if rm, ok := d.Metrics.Requests[id]; ok {
+				rm.emittedTokens = r.emitted
+				d.Metrics.Requests[id] = rm
+			}
+		}
 	}
 	for _, f := range res.Finished {
 		d.noteProgress()

@@ -1000,3 +1000,49 @@ func TestResult_RowsRecomputeTheAggregatesTheyComeFrom(t *testing.T) {
 		})
 	}
 }
+
+// An unfinished request states what it produced (the substrate's rule: only a request that emitted
+// no token has no TTFT). A request cut off by its client deadline or by the horizon after emitting
+// tokens states its output_tokens and its TTFT, and still no E2E or TPOT, which are samples only
+// of a completed request. A request that emitted nothing states none of the three.
+func TestResult_UnfinishedRowsStateTheTokensTheyProduced(t *testing.T) {
+	common := []string{"run", "--scenario", kernelTestScenario, "--seed", "7", "--num-requests", "30",
+		"--rate", "300", "--output-tokens", "400", "--output-tokens-stdev", "0", "--output-tokens-min", "400",
+		"--output-tokens-max", "400"}
+	cases := map[string][]string{
+		"timed out":      append(append([]string{}, common...), "--timeout", "1"),
+		"cut by horizon": append(append([]string{}, common...), "--horizon", "600000"),
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			out, stderr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+			}
+			r := parseResult(t, out)
+			var withTokens, without int
+			for _, row := range r.RequestRows {
+				if row.Fate == result.FateCompleted {
+					continue
+				}
+				if row.E2EUs != nil || row.TPOTUs != nil {
+					t.Errorf("%s (%s) states a completed-only sample", row.ID, row.Fate)
+				}
+				if row.OutputTokens > 0 {
+					withTokens++
+					if row.TTFTUs == nil {
+						t.Errorf("%s (%s) emitted %d tokens and states no time to first token", row.ID, row.Fate, row.OutputTokens)
+					}
+				} else {
+					without++
+					if row.TTFTUs != nil {
+						t.Errorf("%s (%s) emitted no token and states a time to first token", row.ID, row.Fate)
+					}
+				}
+			}
+			if withTokens == 0 {
+				t.Fatalf("non-vacuity: no unfinished request had emitted a token (%d without)", without)
+			}
+		})
+	}
+}
