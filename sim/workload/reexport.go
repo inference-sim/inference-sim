@@ -136,6 +136,17 @@ func ReExportClosedLoopRecords(reqs []*sim.Request, thinkUsByReqID map[string]in
 				decorateReExportTiming(&recs[i], g.reqs[i])
 				copyReExportMetadata(&recs[i], g.reqs[i])
 			}
+			// Round 0 keeps the session's shared prefix: the loader builds round 0 as the
+			// group's prefix tokens followed by InputTokens fresh ones, so the record states the
+			// group and its length and only the suffix as its input. Without it every replayed
+			// session draws its own random prefix, and the cache the group shared (round-0 hits
+			// of 31744 tokens in the run, 0 in the replay) is gone (INV-13). A follow-up is a
+			// delta of the accumulated buffer, which already holds the prefix, so it carries none.
+			if r0 := g.reqs[0]; r0.PrefixGroup != "" && r0.PrefixLength > 0 && int(r0.InputLen()) >= r0.PrefixLength {
+				recs[0].InputTokens -= r0.PrefixLength
+				recs[0].PrefixGroup = r0.PrefixGroup
+				recs[0].PrefixLength = r0.PrefixLength
+			}
 			records = append(records, recs...)
 		}
 		if len(nonSession) > 0 {
@@ -225,9 +236,9 @@ func accumulatedOutputLen(req *sim.Request) int {
 // client deadline, SLO class, model, or modality-token split would silently vanish on
 // re-replay.
 //
-// PrefixGroup/PrefixLength are deliberately NOT copied: accumulate folds the prefix into
-// round-0's absolute input and drops the group (a prefix_length on a delta-encoded record
-// would double-count on re-replay). Model IS copied — unlike the converter (which sets
+// PrefixGroup/PrefixLength are not copied here: only round 0 of a session carries them, set
+// by the caller with the prefix taken out of its input (a follow-up is a delta of a buffer that
+// holds the prefix already, so a prefix_length on it would double-count). Model IS copied — unlike the converter (which sets
 // Model="" so no phantom per-model metrics appear), req.Model here came from the original
 // trace and already keyed this replay's per-model metrics, so preserving it keeps the
 // re-replay's per-model block consistent (it is empty for converter corpora).

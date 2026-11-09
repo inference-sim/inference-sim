@@ -578,7 +578,7 @@ func (s *clientStreamState) buildSession(startTime int64) ([]*sim.Request, error
 		s.inputSampler, s.outputSampler,
 		startTime,
 		s.client.ID, s.client.TenantID, s.client.SLOClass, s.client.Model, s.client.Adapter,
-		s.prefix,
+		s.client.PrefixGroup, s.prefix,
 	)
 	if err != nil {
 		// spec.Validate() does NOT validate ReasoningSpec's distribution fields

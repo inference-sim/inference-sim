@@ -1046,3 +1046,103 @@ func TestResult_UnfinishedRowsStateTheTokensTheyProduced(t *testing.T) {
 		})
 	}
 }
+
+// #1615 (INV-13): a closed-loop replay with no --horizon issues every follow-up round of the run
+// it replays. The session blueprints used to be built with twice the last arrival as their horizon
+// while the simulation ran unbounded, so rounds 2 and 3 of sessions that started late were never
+// issued (131 of the 200 requests of this run) and the frame still reported a clean stop.
+func TestResult_ClosedLoopReplayWithoutAHorizonIssuesEveryRound(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "multi.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 5
+category: reasoning
+aggregate_rate: 40
+num_requests: 200
+clients:
+  - id: r
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    input_distribution: {type: gaussian, params: {mean: 200, std_dev: 20, min: 100, max: 300}}
+    output_distribution: {type: gaussian, params: {mean: 40, std_dev: 5, min: 20, max: 60}}
+    reasoning:
+      multi_turn: {max_rounds: 4, think_time_us: 300000, context_growth: accumulate}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(dir, "tr")
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "5",
+		"--workload-spec", spec, "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	repOut, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "5",
+		"--session-mode", "closed-loop", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	run, rep := parseResult(t, runOut), parseResult(t, repOut)
+	if run.Requests.Generated < 150 {
+		t.Fatalf("non-vacuity: the run generated %d requests", run.Requests.Generated)
+	}
+	if rep.Requests.Generated != run.Requests.Generated || rep.Requests.Completed != run.Requests.Completed {
+		t.Errorf("INV-13: the replay issued %d requests and completed %d, the run %d and %d",
+			rep.Requests.Generated, rep.Requests.Completed, run.Requests.Generated, run.Requests.Completed)
+	}
+}
+
+// #1914 (INV-13): a closed-loop accumulate session workload whose clients share a prefix replays
+// with the prefix cache the run had. The export used to fold the group's prefix into round 0's
+// input and drop the group, so each replayed session drew its own random prefix and round 0 hit
+// none of the cache the group shared (27648 cached tokens in the run, 0 in the replay).
+func TestResult_AccumulateSessionsKeepTheirSharedPrefixThroughTheTrace(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "pfx.yaml")
+	if err := os.WriteFile(spec, []byte(`version: "2"
+seed: 5
+category: reasoning
+aggregate_rate: 40
+num_requests: 120
+clients:
+  - id: r
+    rate_fraction: 1.0
+    arrival: {process: poisson}
+    prefix_group: sys
+    prefix_length: 512
+    input_distribution: {type: gaussian, params: {mean: 200, std_dev: 20, min: 100, max: 300}}
+    output_distribution: {type: gaussian, params: {mean: 40, std_dev: 5, min: 20, max: 60}}
+    reasoning:
+      multi_turn: {max_rounds: 3, think_time_us: 300000, context_growth: accumulate}
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(dir, "tr")
+	runOut, stderr, err := runKernelCLI(t, "run", "--scenario", kernelTestScenario, "--seed", "5",
+		"--workload-spec", spec, "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	repOut, stderr, err := runKernelCLI(t, "replay", "--scenario", kernelTestScenario, "--seed", "5",
+		"--session-mode", "closed-loop", "--trace-header", prefix+".yaml", "--trace-data", prefix+".csv")
+	if err != nil {
+		t.Fatalf("replay: %v\n%s", err, lastLines(stderr, 5))
+	}
+	run, rep := parseResult(t, runOut), parseResult(t, repOut)
+	round0Cached := func(r *result.Result) (n int) {
+		for _, row := range r.RequestRows {
+			if row.RoundIndex == 0 {
+				n += row.CachedLocalTokens
+			}
+		}
+		return n
+	}
+	if round0Cached(run) == 0 {
+		t.Fatalf("non-vacuity: the run's round-0 requests hit no shared prefix")
+	}
+	if got, want := round0Cached(rep), round0Cached(run); got != want {
+		t.Errorf("INV-13: the replay's round-0 requests hit %d cached tokens, the run's %d", got, want)
+	}
+	if a, b := run.Metrics["ttft_mean_ms"].Value, rep.Metrics["ttft_mean_ms"].Value; math.Abs(a-b) > 1e-9*a {
+		t.Errorf("INV-13: ttft_mean_ms is %v in the replay, %v in the run", b, a)
+	}
+}

@@ -128,7 +128,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					inputSampler, outputSampler,
 					startTime,
 					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
-					prefix,
+					client.PrefixGroup, prefix,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
@@ -181,7 +181,7 @@ func GenerateRequests(spec *WorkloadSpec, horizon int64, maxRequests int64) ([]*
 					inputSampler, outputSampler,
 					currentTime,
 					client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
-					prefix,
+					client.PrefixGroup, prefix,
 				)
 				if err != nil {
 					return nil, fmt.Errorf("client %q reasoning: %w", client.ID, err)
@@ -1028,7 +1028,7 @@ func generateRequestsForWindow(
 				inputSampler, outputSampler,
 				startTime,
 				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
-				prefix,
+				client.PrefixGroup, prefix,
 			)
 			if err != nil {
 				// BC-9: Propagate error with client ID context
@@ -1087,7 +1087,7 @@ func generateRequestsForWindow(
 				inputSampler, outputSampler,
 				currentTime,
 				client.ID, client.TenantID, client.SLOClass, client.Model, client.Adapter,
-				prefix,
+				client.PrefixGroup, prefix,
 			)
 			if err != nil {
 				// BC-9: Propagate error with client ID context

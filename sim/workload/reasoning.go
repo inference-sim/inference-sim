@@ -12,7 +12,8 @@ import (
 // increasing input lengths if context_growth == "accumulate".
 //
 // When prefix is non-empty it is prepended to every round's InputTokens
-// (req.PrefixLength is set to len(prefix)). Under accumulate, prefix becomes
+// (req.PrefixLength is set to len(prefix) and req.PrefixGroup to prefixGroup, the group the
+// prefix belongs to, so a trace export can state it). Under accumulate, prefix becomes
 // the first chunk in the shared session buffer so all rounds share the same
 // prefix bytes — eliminating the legacy O(P) prefix-copy per round
 // (O(R·P) total) on top of the dominant O(R²) accumulated-context copy
@@ -27,6 +28,7 @@ func GenerateReasoningRequests(
 	inputSampler, outputSampler LengthSampler,
 	startTime int64,
 	clientID, tenantID, sloClass, model, adapter string,
+	prefixGroup string,
 	prefix []sim.TokenID,
 ) ([]*sim.Request, error) {
 	if spec == nil || spec.MultiTurn == nil {
@@ -134,6 +136,7 @@ func GenerateReasoningRequests(
 			SessionID:    sessionID,
 			RoundIndex:   round,
 			ReasonRatio:  reasonRatio,
+			PrefixGroup:  prefixGroup,
 			PrefixLength: int(prefixLen),
 		}
 		requests = append(requests, req)
