@@ -800,42 +800,6 @@ func TestPathPatterns(t *testing.T) {
 	}
 }
 
-// The record names the head tree and one digest per answer, in identifier order, and a digest
-// depends on the question, the answer and the tree (X22).
-func TestAnswerRecords(t *testing.T) {
-	tree := strings.Repeat("b", 40)
-	d := map[string]string{"X2": AnswerDigest("X2", "yes, fine", tree), "SUB-1": AnswerDigest("SUB-1", "no, because", tree)}
-	want := "Tree: " + tree + "\nAnswer SUB-1: sha256:" + d["SUB-1"] + "\nAnswer X2: sha256:" + d["X2"] + "\n"
-	if got := FormatAnswerRecord(tree, d); got != want {
-		t.Fatalf("record:\n%s\nwant:\n%s", got, want)
-	}
-	if AnswerDigest("X2", "yes, fine", tree) == AnswerDigest("X2", "yes, fine", strings.Repeat("c", 40)) {
-		t.Error("the digest does not depend on the tree")
-	}
-	if AnswerDigest("X2", "yes", tree) == AnswerDigest("X3", "yes", tree) {
-		t.Error("the digest does not depend on the question")
-	}
-	if AnswerDigest("X2", "yes", tree) == AnswerDigest("X2", "no", tree) {
-		t.Error("the digest does not depend on the answer")
-	}
-	if got := FormatAnswerRecord(tree, nil); got != "Tree: "+tree+"\n" {
-		t.Errorf("a body with no answers: %q", got)
-	}
-}
-
-// The workflow writes the record.
-func TestThePullRequestCheckWritesTheAnswerRecord(t *testing.T) {
-	raw, err := os.ReadFile("../../.github/workflows/shared-pr-checks.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"prcheck answers-record", `name="` + AnswersCheck + `"`, "checks: write"} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("shared-pr-checks.yml does not contain %q", want)
-		}
-	}
-}
-
 // A body written before the reviewer wording carries the old automation comment. The parser
 // reads items only, so it keeps the answers and rewrites the comment to the current text.
 func TestMergeQuestionsAcceptsOldComment(t *testing.T) {
@@ -911,7 +875,6 @@ func TestThePullRequestCheckHoldsTheChecksOfTheRemovedMergeJob(t *testing.T) {
 	for _, want := range []string{
 		`prcheck threads -repo "${{ github.repository }}" -pr "$PR"`,
 		`prcheck issues -repo "${{ github.repository }}" -closes "$RUNNER_TEMP/body.md"`,
-		"prcheck answers-record",
 	} {
 		if !strings.Contains(pr, want) {
 			t.Errorf("shared-pr-checks.yml does not run %q", want)

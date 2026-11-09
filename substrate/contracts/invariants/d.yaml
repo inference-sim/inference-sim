@@ -24,9 +24,9 @@
     status: new
   review:
   - question: Was this value read from, or tuned against, any measurement?
-    reviewer: registry expertise
+    expertise: registry expertise
     when: an assumed entry is added or changed
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -217,9 +217,9 @@
     status: new
   review:
   - question: Was the new seed generated as the ledger records?
-    reviewer: ledger expertise
+    expertise: ledger expertise
     when: a seed is created or rotated
-    trigger:
+    applies_when:
       manual: true
   status: partial
   target:

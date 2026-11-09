@@ -165,11 +165,12 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 	qs := reg.Questions(repo)
 	if len(qs) > 0 {
 		b.WriteString("\n### Review questions\n\n")
-		b.WriteString("CI adds each question below to a pull request that changes one of its paths, as a\n")
-		b.WriteString("required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent\n")
-		b.WriteString("may propose an answer but never gives one (design §13.7).\n\n")
+		b.WriteString("CI lists each question below in the description of a pull request that changes one of\n")
+		b.WriteString("its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or\n")
+		b.WriteString("no in a review comment, with the files and lines that support the answer. No check waits\n")
+		b.WriteString("on a question.\n\n")
 		for _, q := range qs {
-			fmt.Fprintf(&b, "- **%s** %s Reviewer: %s. When: %s. %s\n", q.ID, q.Question, q.Reviewer, q.When, triggerText(q.ID, q.Trigger))
+			fmt.Fprintf(&b, "- **%s** %s Expertise: %s. Applies when: %s. %s\n", q.ID, q.Question, q.Expertise, q.When, triggerText(q.ID, q.AppliesWhen))
 		}
 	}
 	b.WriteString(endMarker + "\n")
@@ -278,9 +279,9 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 
 ## Review questions
 
-<!-- CI adds a required checklist item here for each review question whose paths this pull
-request changes (design §13.2). A reviewer with write access answers each one: tick it, and write "yes" or
-"no" with a one-line reason. -->
+<!-- CI lists here each review question whose paths this pull request changes. A question
+is guidance for the review agent (design §13.2); no check waits on it and no person has to
+answer it. -->
 
 ## Checklist
 

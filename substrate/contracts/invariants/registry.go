@@ -107,17 +107,19 @@ type Check struct {
 	KnownBad string `yaml:"known_bad,omitempty"`
 }
 
-// Review is a yes/no question a reviewer with write access answers on a pull request (design §13.2).
+// Review is a yes/no question that guides the review agent on a pull request (design §13.2).
+// No check waits on it. Expertise names who knows the answer, and When says in words when it
+// applies; AppliesWhen is the same condition as paths, which CI uses to list the question.
 type Review struct {
-	Question string  `yaml:"question"`
-	Reviewer string  `yaml:"reviewer"`
-	When     string  `yaml:"when"`
-	Trigger  Trigger `yaml:"trigger"`
+	Question    string  `yaml:"question"`
+	Expertise   string  `yaml:"expertise"`
+	When        string  `yaml:"when"`
+	AppliesWhen Trigger `yaml:"applies_when"`
 }
 
-// Trigger says when CI adds a review question to a pull request: when the pull request,
-// in one of Repos, changes a path that matches a glob in Paths and none in Exclude. A
-// manual trigger has no paths; a reviewer adds the question by label.
+// Trigger says when CI lists a review question in a pull request's description: when the
+// pull request, in one of Repos, changes a path that matches a glob in Paths and none in
+// Exclude. A manual trigger has no paths; a reviewer adds the question by label.
 type Trigger struct {
 	Manual  bool     `yaml:"manual,omitempty"`
 	Repos   []string `yaml:"repos,omitempty"`
@@ -344,10 +346,10 @@ func (inv Invariant) validate() []error {
 	}
 	for i, r := range inv.Review {
 		at := fmt.Sprintf("review[%d]", i)
-		if strings.TrimSpace(r.Question) == "" || strings.TrimSpace(r.Reviewer) == "" || strings.TrimSpace(r.When) == "" {
-			bad("%s needs question, reviewer and when", at)
+		if strings.TrimSpace(r.Question) == "" || strings.TrimSpace(r.Expertise) == "" || strings.TrimSpace(r.When) == "" {
+			bad("%s needs question, expertise and when", at)
 		}
-		errs = append(errs, r.Trigger.validate(at)...)
+		errs = append(errs, r.AppliesWhen.validate(at)...)
 	}
 	if inv.Target.Status != StatusCI {
 		bad("target.status %q: every invariant's target is ci", inv.Target.Status)
@@ -382,21 +384,21 @@ func (t Trigger) validate(at string) []error {
 	var errs []error
 	if t.Manual {
 		if len(t.Repos)+len(t.Paths)+len(t.Exclude) > 0 {
-			errs = append(errs, fmt.Errorf("%s.trigger is manual and must name no repos or paths", at))
+			errs = append(errs, fmt.Errorf("%s.applies_when is manual and must name no repos or paths", at))
 		}
 		return errs
 	}
 	if len(t.Repos) == 0 || len(t.Paths) == 0 {
-		errs = append(errs, fmt.Errorf("%s.trigger needs repos and paths, or manual: true", at))
+		errs = append(errs, fmt.Errorf("%s.applies_when needs repos and paths, or manual: true", at))
 	}
 	for _, r := range t.Repos {
 		if !isRepo(r) {
-			errs = append(errs, fmt.Errorf("%s.trigger.repos: %q is not a BLIS repository", at, r))
+			errs = append(errs, fmt.Errorf("%s.applies_when.repos: %q is not a BLIS repository", at, r))
 		}
 	}
 	for _, g := range append(append([]string{}, t.Paths...), t.Exclude...) {
 		if err := validGlob(g); err != nil {
-			errs = append(errs, fmt.Errorf("%s.trigger: %w", at, err))
+			errs = append(errs, fmt.Errorf("%s.applies_when: %w", at, err))
 		}
 	}
 	return errs
@@ -497,8 +499,8 @@ func (r *Registry) Questions(repo string) []Question {
 			inScope = inScope || s == repo
 		}
 		for _, q := range inv.Review {
-			in := q.Trigger.Manual && inScope
-			for _, tr := range q.Trigger.Repos {
+			in := q.AppliesWhen.Manual && inScope
+			for _, tr := range q.AppliesWhen.Repos {
 				in = in || tr == repo
 			}
 			if in {

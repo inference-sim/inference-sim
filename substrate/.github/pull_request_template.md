@@ -42,9 +42,9 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 
 ## Review questions
 
-<!-- CI adds a required checklist item here for each review question whose paths this pull
-request changes (design §13.2). A reviewer with write access answers each one: tick it, and write "yes" or
-"no" with a one-line reason. -->
+<!-- CI lists here each review question whose paths this pull request changes. A question
+is guidance for the review agent (design §13.2); no check waits on it and no person has to
+answer it. -->
 
 ## Checklist
 

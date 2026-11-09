@@ -30,11 +30,12 @@
 //	                        status is ci, except for a practice, which has none;
 //	             known_bad  the input, in repo, that must make the check fail (X18);
 //	                        optional until X18's target milestone; none for a practice.
-//	review     null, or a list of review questions, each with question, reviewer, when (the
-//	           design's words) and trigger. A trigger names the repositories and the path
-//	           globs whose change adds the question to a pull request, with optional
-//	           exclude globs; or it is {manual: true}, which a reviewer adds by label
-//	           (design §13.2).
+//	review     null, or a list of review questions, each with question, expertise, when (the
+//	           design's words) and applies_when. A review question is guidance for the review
+//	           agent (design §13.2); no check waits on it. Expertise says who knows the answer.
+//	           applies_when names the repositories and the path globs whose change lists the
+//	           question in a pull request's description, with optional exclude globs; or it is
+//	           {manual: true}, which a reviewer adds by label.
 //	guidance   optional: the part of the rule an agent follows on every change it writes or
 //	           reviews (design §4.2), in the design's words, such as how a commit message
 //	           names agent help. The generator renders it into AGENTS.md. A rule is automated

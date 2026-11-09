@@ -108,9 +108,9 @@
   - question: >-
       Does this new scenario field describe something the real system would observe, rather than a
       setting the upstream does not have?
-    reviewer: contracts expertise
+    expertise: contracts expertise
     when: a key is added to the environment list
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -118,9 +118,9 @@
   - question: >-
       Does this router flag only change how a deployed router is served or observed, with no effect
       on any routing, admission or flow-control decision?
-    reviewer: router fork expertise
+    expertise: router fork expertise
     when: a flag is added to the fork's list of flags that only matter in a cluster
-    trigger:
+    applies_when:
       repos:
       - llm-d-router
       paths:
@@ -180,9 +180,9 @@
   - question: >-
       Does this change hide one engine's policy (a default, threshold, backend choice or padding rule)
       behind a neutral name? Would the other engine need the same edit?
-    reviewer: expertise in the changed directory
+    expertise: expertise in the changed directory
     when: any non-test change under catalog/, registry/ or kernel/
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -255,9 +255,9 @@
   - question: >-
       Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator
       instead of an engine repository?
-    reviewer: inference-sim expertise
+    expertise: inference-sim expertise
     when: a change to the simulator's request-lifecycle or capacity code
-    trigger:
+    applies_when:
       repos:
       - inference-sim
       paths:
@@ -334,9 +334,9 @@
   - question: >-
       Does this change to how the router is hosted keep upstream behaviour on paths the recorded streams
       do not cover, such as errors, timeouts and cancellation?
-    reviewer: router fork expertise
+    expertise: router fork expertise
     when: a fork pull request converts a call site or updates the lint baseline
-    trigger:
+    applies_when:
       repos:
       - llm-d-router
       paths:
@@ -410,9 +410,9 @@
       Does this new replacement stand in only for the GPU, clock, transport, environment settings,
       the hardware platform or an outside service, and not for a decision? If it reproduces a decision,
       is it declared as a transcription?
-    reviewer: engine repository expertise
+    expertise: engine repository expertise
     when: the manifest changes
-    trigger:
+    applies_when:
       repos:
       - blis-vllm
       - blis-sglang
@@ -504,10 +504,10 @@
     status: new
   review:
   - question: Could this floating-point reduction give a different result on another platform?
-    reviewer: expertise in the changed repository
+    expertise: expertise in the changed repository
     when: >-
       a parallel or floating-point reduction is added, or the cross-platform check fails
-    trigger:
+    applies_when:
       manual: true
   status: partial
   target:
@@ -630,10 +630,10 @@
     status: new
   review:
   - question: Does this change give a second home to a fact another repository owns?
-    reviewer: expertise in the changed repository
+    expertise: expertise in the changed repository
     when: >-
       a pull request adds a literal list or table, or a constant that cites another repository
-    trigger:
+    applies_when:
       manual: true
   status: partial
   target:
@@ -734,9 +734,9 @@
   review:
   - question: >-
       Was this fitting method, gate or threshold chosen after seeing evaluation results?
-    reviewer: expertise in the repository landing the change
+    expertise: expertise in the repository landing the change
     when: a pull request changes a fitting method, gate or threshold
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -818,9 +818,9 @@
   - question: >-
       Is this "out of scope" reason one of the three allowed, with a citation that supports it, and
       does the llm-d stack never use the feature on the hardware BLIS targets?
-    reviewer: engine repository expertise
+    expertise: engine repository expertise
     when: an item is marked out of scope
-    trigger:
+    applies_when:
       repos:
       - blis-vllm
       - blis-sglang
@@ -1731,9 +1731,7 @@
       The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
       which records each review-agent answer with the head tree
     runs: pull_request
-    status: ci
-    test: 'shared-pr-checks.yml: prcheck answers-record'
-    known_bad: 'tools/prcheck: TestAnswerRecords'
+    status: new
   - repo: blis-vllm
     check: >-
       The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
@@ -1834,7 +1832,11 @@
   target:
     status: ci
     milestone: 4
-  note: some jobs fail on zero items; no verdict names its tree; the release plan schedules the check that refuses an answer edited after the latest write-access approval after M4 (Hardening beyond M4), and until then the pull-request check records each answer with the head tree
+  note: >-
+    some jobs fail on zero items; no verdict names its tree; the pull-request check no longer
+    records review answers, since a review question is guidance for the review agent (design
+    v51), so the check that records the review agent's answers with the head tree is not yet
+    built
 - id: X23
   section: §4.1
   statement: >-

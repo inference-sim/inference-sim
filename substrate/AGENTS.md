@@ -117,7 +117,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
 - **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
-  - `ci`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree (`shared-pr-checks.yml: prcheck answers-record`)
+  - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
   - `new`, pull_request: A workflow lint that refuses ignored exit codes (`prcheck workflows`)
   - `ci`, pull_request: Each job's item count (`ci.yml job required`)
 - **X23** (new; target ci by M1) A version is written in one place.
@@ -297,17 +297,18 @@ Follow these on every change you write or review. They are not checked by a prog
 
 ### Review questions
 
-CI adds each question below to a pull request that changes one of its paths, as a
-required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent
-may propose an answer but never gives one (design §13.7).
+CI lists each question below in the description of a pull request that changes one of
+its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or
+no in a review comment, with the files and lines that support the answer. No check waits
+on a question.
 
-- **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Reviewer: contracts expertise. When: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
-- **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Reviewer: expertise in the changed directory. When: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
-- **X6** Could this floating-point reduction give a different result on another platform? Reviewer: expertise in the changed repository. When: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Reviewer: expertise in the changed repository. When: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
-- **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Reviewer: expertise in the repository landing the change. When: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
-- **DEV-12** Does this change alter what is modelled? Reviewer: expertise in the changed directory. When: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
-- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Reviewer: expertise in the changed directory. When: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. Added by a reviewer with the label `review:VAL-11`.
-- **D1** Was this value read from, or tuned against, any measurement? Reviewer: registry expertise. When: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
-- **D7** Was the new seed generated as the ledger records? Reviewer: ledger expertise. When: a seed is created or rotated. Added by a reviewer with the label `review:D7`.
+- **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Expertise: contracts expertise. Applies when: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
+- **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Expertise: expertise in the changed directory. Applies when: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
+- **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Expertise: expertise in the repository landing the change. Applies when: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
+- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. Added by a reviewer with the label `review:VAL-11`.
+- **D1** Was this value read from, or tuned against, any measurement? Expertise: registry expertise. Applies when: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
+- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. Added by a reviewer with the label `review:D7`.
 <!-- END GENERATED: invariants -->

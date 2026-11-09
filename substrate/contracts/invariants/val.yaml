@@ -277,11 +277,11 @@
     status: new
   review:
   - question: Is this change kept or rejected because it offsets an error elsewhere?
-    reviewer: expertise in the changed directory
+    expertise: expertise in the changed directory
     when: >-
       a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level
       evidence
-    trigger:
+    applies_when:
       manual: true
   status: new
   target:

@@ -290,7 +290,7 @@ func questions(reg *invariants.Registry, repo, changedPath string, stdout io.Wri
 	for _, q := range reg.Questions(repo) {
 		var hit []string
 		for _, p := range paths {
-			if q.Trigger.Matches(repo, p) {
+			if q.AppliesWhen.Matches(repo, p) {
 				hit = append(hit, p)
 			}
 		}
@@ -302,7 +302,7 @@ func questions(reg *invariants.Registry, repo, changedPath string, stdout io.Wri
 			more = fmt.Sprintf(" and %d more", len(hit)-3)
 			hit = hit[:3]
 		}
-		fmt.Fprintf(stdout, "- [ ] **%s** %s Reviewer: %s. (changed: `%s`%s) Answer: \n", q.ID, q.Question, q.Reviewer, strings.Join(hit, "`, `"), more)
+		fmt.Fprintf(stdout, "- [ ] **%s** %s Expertise: %s. (changed: `%s`%s) Answer: \n", q.ID, q.Question, q.Expertise, strings.Join(hit, "`, `"), more)
 	}
 	return nil
 }

@@ -17,7 +17,7 @@ name: shared pull-request checks
 #
 #   description     X14: listed hashes are branch heads, it merges cleanly, cited invariants exist
 #   review          design §13.2: each review question whose paths the pull request changes,
-#                   added to the description as a required checklist item
+#                   listed in the description as guidance for the review agent
 #   commit-policy   X20: signed commits, a person's DCO sign-off, Assisted-by, no tool co-author
 #   workflow-lint   X21, X22, X16: actions pinned by commit, --require-hashes, no ignored exit
 #                   codes, no skipped tests, gate trigger paths as declared
@@ -120,21 +120,6 @@ jobs:
             echo "review questions listed for the review agent (guidance, not a check):"
             cat "$RUNNER_TEMP/unanswered"
           fi
-      # The answers as they stand when this job ran, each bound to the head tree it was given
-      # for (X22). A push that changes the tree dismisses an earlier approval through branch
-      # protection, so the next approver reads the answers again.
-      - name: Record the review answers (X22)
-        if: ${{ !cancelled() && (env.PR != '') }}
-        working-directory: repo
-        run: |
-          set -euo pipefail
-          git diff --name-only "$BASE...$HEAD" > "$RUNNER_TEMP/changed"
-          prcheck answers-record -body "$RUNNER_TEMP/body.md" -changed "$RUNNER_TEMP/changed" \
-            -repo-name "${{ inputs.repo }}" -head "$HEAD" > "$RUNNER_TEMP/answers-record"
-          gh api "repos/${{ github.repository }}/check-runs" -X POST \
-            -f name="review answers" -f head_sha="$HEAD" -f status=completed -f conclusion=neutral \
-            -f completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -f "output[title]=Review answers recorded" -F "output[summary]=@$RUNNER_TEMP/answers-record" > /dev/null
       - name: Commit policy (X20)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo

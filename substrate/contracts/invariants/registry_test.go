@@ -147,9 +147,9 @@ const goodRecord = `- id: X1
     - {repo: inference-sim, check: router flags reach the router, runs: pull_request, status: new}
   review:
     - question: Does this new field describe something the real system observes?
-      reviewer: contracts owners
+      expertise: contracts owners
       when: a key is added to the environment list
-      trigger: {repos: [blis-substrate], paths: [contracts/spec/scenario/**]}
+      applies_when: {repos: [blis-substrate], paths: [contracts/spec/scenario/**]}
   status: partial
   target: {status: ci, milestone: 4}
 `
@@ -197,10 +197,10 @@ func TestLoadRefusesMalformedRecords(t *testing.T) {
 		{"no checks", "  checks:\n    - {repo: blis-vllm, check: fields are classified, runs: pull_request, status: ci, test: TestA}\n    - {repo: inference-sim, check: router flags reach the router, runs: pull_request, status: new}\n", "  checks: []\n", "has no check"},
 		{"target already reached", "milestone: 4}", "milestone: null}", "target.milestone is null"},
 		{"bad section", "section: §4", "section: 4", "is not a design section"},
-		{"trigger without paths", "paths: [contracts/spec/scenario/**]", "paths: []", "trigger needs repos and paths"},
+		{"applies_when without paths", "paths: [contracts/spec/scenario/**]", "paths: []", "applies_when needs repos and paths"},
 		{"glob with a partial **", "contracts/spec/scenario/**", "contracts/spec/scen**", "** must be a whole path segment"},
 		{"absolute glob", "paths: [contracts/spec/scenario/**]", "paths: [/contracts]", "must be a relative path"},
-		{"review without a reviewer", "      reviewer: contracts owners\n", "", "needs question, reviewer and when"},
+		{"review without expertise", "      expertise: contracts owners\n", "", "needs question, expertise and when"},
 		{"duplicate record", "", "", "is defined again"},
 		{"carriage return", "  status: partial\n", "  status: partial\r\n", "carriage return"},
 	}
