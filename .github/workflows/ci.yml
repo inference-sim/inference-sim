@@ -126,7 +126,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # The module targets Go 1.27 (the llm-d router requires it). golangci-lint refuses a module
+      # The module targets the Go release that go.mod names (the llm-d router requires it). golangci-lint refuses a module
       # newer than the Go that built it and the published binaries are built with an older Go,
       # so the linter is built from source with the module's Go.
       - name: Setup Go

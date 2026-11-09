@@ -1,107 +1,66 @@
 package scripts_test
 
 import (
-	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 )
 
-// The Dockerfile builds the release image from a `golang:<version>-alpine` base, and go.mod pins
-// the toolchain the module requires. Go refuses to build a module whose `go` directive is newer
-// than the toolchain, so the two must name the SAME version: v0.12.0 and v0.13.0 were tagged with
-// a `golang:1.24-alpine` base while go.mod required 1.27.2, so `docker build` failed and no image
-// was ever published for those releases. Nothing in CI builds the image, so this guard is the only
-// thing that can catch the drift before a release tag is cut.
+// The Dockerfile does not state a Go version (X23). It takes the version as a required build
+// argument, `ARG GO_VERSION`, and every caller passes the version that go.mod names. Go refuses
+// to build a module whose `go` directive is newer than the toolchain, so a stale or missing
+// version must fail the build rather than select an old image: v0.12.0 and v0.13.0 were tagged
+// with a base image older than go.mod requires, and no image was published for them. Nothing in
+// CI builds the image, so these checks are what catch the drift before a release tag is cut.
 
-// golangBaseRe matches the builder base image, capturing the Go version.
-var golangBaseRe = regexp.MustCompile(`(?m)^FROM\s+golang:([0-9][^-\s]*)-alpine(?:\s|$)`)
+// goVersionArgRe matches the build argument declaration with no default value.
+var goVersionArgRe = regexp.MustCompile(`(?m)^ARG\s+GO_VERSION\s*$`)
 
-// goDirectiveRe matches go.mod's `go` directive, capturing the required version.
-var goDirectiveRe = regexp.MustCompile(`(?m)^go\s+(\S+)\s*$`)
+// golangBaseRe matches the builder base image and captures the version expression.
+var golangBaseRe = regexp.MustCompile(`(?m)^FROM\s+golang:([^-\s]+)-alpine(?:\s|$)`)
 
-// dockerfileGoVersion returns the Go version of the builder base image in dockerfile.
-func dockerfileGoVersion(dockerfile string) (string, error) {
-	m := golangBaseRe.FindStringSubmatch(dockerfile)
+// dockerfileTakesGoVersionArg reports whether dockerfile builds from golang:${GO_VERSION} with a
+// GO_VERSION argument declared (before that FROM) and no default.
+func dockerfileTakesGoVersionArg(dockerfile string) bool {
+	m := golangBaseRe.FindStringSubmatchIndex(dockerfile)
 	if m == nil {
-		return "", fmt.Errorf("no `FROM golang:<version>-alpine` builder stage found")
+		return false
 	}
-	return m[1], nil
+	if dockerfile[m[2]:m[3]] != "${GO_VERSION}" {
+		return false
+	}
+	return goVersionArgRe.MatchString(dockerfile[:m[0]])
 }
 
-// goModVersion returns the version named by go.mod's `go` directive.
-func goModVersion(gomod string) (string, error) {
-	m := goDirectiveRe.FindStringSubmatch(gomod)
-	if m == nil {
-		return "", fmt.Errorf("no `go <version>` directive found")
-	}
-	return m[1], nil
-}
-
-// The real files must agree. This is the regression guard: bump go.mod without bumping the
-// Dockerfile base image (or the reverse) and CI fails here instead of at release time.
-func TestDockerfileGoVersionMatchesGoMod(t *testing.T) {
-	want, err := goModVersion(readRepoFile(t, "go.mod"))
-	if err != nil {
-		t.Fatalf("go.mod: %v", err)
-	}
-	got, err := dockerfileGoVersion(readRepoFile(t, "Dockerfile"))
-	if err != nil {
-		t.Fatalf("Dockerfile: %v", err)
-	}
-
-	if got != want {
-		t.Errorf("Dockerfile builder uses golang:%s-alpine but go.mod requires go %s — "+
-			"bump the Dockerfile `FROM golang:<version>-alpine` line to match", got, want)
+func TestDockerfileTakesTheGoVersionAsABuildArgument(t *testing.T) {
+	if !dockerfileTakesGoVersionArg(readRepoFile(t, "Dockerfile")) {
+		t.Error("Dockerfile must declare `ARG GO_VERSION` (no default) and build `FROM golang:${GO_VERSION}-alpine`")
 	}
 }
 
-// The parser must read the version the way the release build does: patch versions included, and
-// only the builder stage (the runtime stage is plain alpine).
-func TestDockerfileGoVersionParsesTheBuilderStage(t *testing.T) {
-	const dockerfile = `# syntax=docker/dockerfile:1
-FROM golang:1.27.2-alpine AS builder
-RUN go build ./...
-FROM alpine:3.19
-`
-	got, err := dockerfileGoVersion(dockerfile)
-	if err != nil {
-		t.Fatalf("dockerfileGoVersion: %v", err)
+// The release workflow is the one place CI builds the image. It must read the version from go.mod
+// and pass it as the GO_VERSION build argument.
+func TestReleaseWorkflowPassesTheGoModVersion(t *testing.T) {
+	wf := readRepoFile(t, ".github", "workflows", "release.yml")
+	if !strings.Contains(wf, "s/^go //p' go.mod") {
+		t.Error("release.yml must read the Go version from the go directive of go.mod")
 	}
-	if got != "1.27.2" {
-		t.Errorf("dockerfileGoVersion = %q, want 1.27.2", got)
+	if !strings.Contains(wf, "GO_VERSION=${{ steps.gomod.outputs.version }}") {
+		t.Error("release.yml must pass GO_VERSION=<go.mod version> as a build-arg to the image build")
 	}
 }
 
-// A Dockerfile with no golang base is an error, not an empty string: silently returning "" would
-// make the guard pass whenever the builder stage was renamed or replaced.
-func TestDockerfileGoVersionRequiresAGolangBase(t *testing.T) {
-	if got, err := dockerfileGoVersion("FROM alpine:3.19\n"); err == nil {
-		t.Errorf("dockerfileGoVersion = %q, want an error for a Dockerfile with no golang base", got)
+func TestDockerfileGoVersionArgParser(t *testing.T) {
+	cases := map[string]bool{
+		"# syntax=docker/dockerfile:1\nARG GO_VERSION\nFROM golang:${GO_VERSION}-alpine AS builder\nFROM alpine:3.19\n": true,
+		"ARG GO_VERSION=1.20\nFROM golang:${GO_VERSION}-alpine AS builder\n":                                            false, // default hides a missing argument
+		"FROM golang:${GO_VERSION}-alpine AS builder\n":                                                                 false, // ARG not declared before FROM
+		"ARG GO_VERSION\nFROM golang:1.20-alpine AS builder\n":                                                          false, // literal version
+		"FROM alpine:3.19\n": false,
 	}
-}
-
-// go.mod's directive is what `go build` enforces; the parser must pick the version and not, say,
-// a comment or a require line that mentions a version.
-func TestGoModVersionParsesTheGoDirective(t *testing.T) {
-	const gomod = `module example.com/x
-
-go 1.27.2
-
-// toolchain notes for go1.99.0
-require example.com/y v1.0.0
-`
-	got, err := goModVersion(gomod)
-	if err != nil {
-		t.Fatalf("goModVersion: %v", err)
-	}
-	if got != "1.27.2" {
-		t.Errorf("goModVersion = %q, want 1.27.2", got)
-	}
-}
-
-// go.mod with no directive must be an error for the same reason as above.
-func TestGoModVersionRequiresTheDirective(t *testing.T) {
-	if got, err := goModVersion("module example.com/x\n"); err == nil {
-		t.Errorf("goModVersion = %q, want an error for go.mod with no go directive", got)
+	for in, want := range cases {
+		if got := dockerfileTakesGoVersionArg(in); got != want {
+			t.Errorf("dockerfileTakesGoVersionArg(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

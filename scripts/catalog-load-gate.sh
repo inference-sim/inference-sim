@@ -35,7 +35,7 @@
 #       - name: Setup Go
 #         uses: actions/setup-go@v5
 #         with:
-#           go-version: '1.21'
+#           go-version-file: go.mod
 #           cache: true
 #       - name: Load every catalog entry through the loader
 #         run: scripts/catalog-load-gate.sh
