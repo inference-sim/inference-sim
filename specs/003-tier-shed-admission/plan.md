@@ -9,7 +9,7 @@ Wire the 5 existing SLO priority tiers into the admission path so that under ove
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+
+**Language/Version**: the pinned Go release (go.mod)
 **Primary Dependencies**: `gopkg.in/yaml.v3` (strict YAML), `github.com/sirupsen/logrus`
 **Storage**: N/A (in-memory simulation)
 **Testing**: `go test ./...`, table-driven BDD/TDD per `docs/contributing/standards/principles.md`

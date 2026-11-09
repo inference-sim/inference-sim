@@ -9,7 +9,7 @@ When `NodePools` are configured, `NewClusterSimulator` currently constructs `Ins
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+
+**Language/Version**: the pinned Go release (go.mod)
 **Primary Dependencies**: `gopkg.in/yaml.v3`, `gonum`, `cobra`, `logrus` — no new dependencies
 **Storage**: N/A (in-memory simulation)
 **Testing**: `go test ./...` (table-driven, BDD/TDD); `golangci-lint run ./...` (v2.9.0, zero tolerance)

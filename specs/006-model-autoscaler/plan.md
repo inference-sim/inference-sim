@@ -10,7 +10,7 @@ Add a model-level autoscaling pipeline to BLIS's cluster simulator, mirroring th
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+  
+**Language/Version**: the pinned Go release (go.mod)  
 **Primary Dependencies**: No new external dependencies. All work is within `sim/cluster/` and `sim/` (existing packages).  
 **Storage**: N/A (in-memory simulation state)  
 **Testing**: `go test ./...` with table-driven tests; `golangci-lint run ./...` (zero tolerance)  

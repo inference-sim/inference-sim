@@ -27,7 +27,7 @@ the code as read on 2026-07-15:
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+ (single implementation language; no CGO, no Python — constitution tech-stack constraint)
+**Language/Version**: the pinned Go release (go.mod) (single implementation language; no CGO, no Python — constitution tech-stack constraint)
 **Primary Dependencies**: `cobra` (CLI), `logrus` (diagnostics→stderr), `gopkg.in/yaml.v3` (strict config), `gonum` (stats). **No new dependencies.**
 **Storage**: N/A — in-memory adapter registry and per-instance resident sets; no external storage.
 **Testing**: `go test ./...` (table-driven; every golden test paired with an invariant test per Principle IV), `golangci-lint run ./...` (v2.9.0, zero tolerance). Full suite MUST stay < 60s.

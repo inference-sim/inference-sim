@@ -13,7 +13,7 @@ Phase 1A introduces three first-class infrastructure entities — `NodePool`, `N
 
 ## Technical Context
 
-**Language/Version**: Go 1.22+
+**Language/Version**: the pinned Go release (go.mod)
 **Primary Dependencies**: `gopkg.in/yaml.v3` (strict parsing), `gonum` (stats), `cobra`, `logrus`
 **Storage**: In-memory node/GPU inventory maps; no external storage
 **Testing**: `go test ./...` — table-driven, BDD-style; total suite under 60 seconds
