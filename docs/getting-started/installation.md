@@ -72,7 +72,7 @@ it is stale.
 |---|---|---|
 | `github.com/inference-sim/blis-substrate` | `v0.13.0` |  |
 | `github.com/inference-sim/blis-vllm` | `v0.32.0-blis.2` |  |
-| `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.2.0.20261108053706-99efaccac54b` | `99efaccac54b` |
+| `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.3` |  |
 | vllm (engine) | `0.32.0` | `5df63a7203cd` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |
 | llm-d guides | | `4427f55cb626` |
