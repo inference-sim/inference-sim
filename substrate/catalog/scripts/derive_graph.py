@@ -4642,6 +4642,7 @@ def handler_muse_spark_dspark(cfg, raw, model):
 # the depth to each target's committed configuration.
 EAGLE3_TARGETS = {
     "minimax-m3-eagle3": {"targets": ["minimax-m3", "minimax-m3-mxfp8"], "layers": 60},
+    "minimax-m3-eagle3-gqa": {"targets": ["minimax-m3", "minimax-m3-mxfp8"], "layers": 60},
 }
 
 

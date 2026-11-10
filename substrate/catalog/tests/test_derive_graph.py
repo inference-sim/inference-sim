@@ -6102,11 +6102,16 @@ EAGLE3_CFG = {
 }
 
 
-def test_eagle3_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path):
-    """The graph's resident bytes (bf16) equal the 3,263,735,808 parameters the checkpoint's
-    safetensors metadata states: every tensor of the drafter is a node, none is missing and
-    none is counted twice."""
-    g = _derive_raw(EAGLE3_CFG, tmp_path, "minimax-m3-eagle3")
+@pytest.mark.parametrize("name,kv_heads,total", [
+    ("minimax-m3-eagle3", 64, 3_263_735_808),
+    ("minimax-m3-eagle3-gqa", 4, 3_074_992_128),
+])
+def test_eagle3_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path, name, kv_heads, total):
+    """The graph's resident bytes (bf16) equal the parameters the checkpoint's safetensors
+    metadata states (3,263,735,808 for the 64-KV-head drafter, 3,074,992,128 for the GQA one,
+    whose k_proj and v_proj are 512 x 12288): every tensor of the drafter is a node, none is
+    missing and none is counted twice."""
+    g = _derive_raw({**EAGLE3_CFG, "num_key_value_heads": kv_heads}, tmp_path, name)
     kinds = {k["id"]: k for k in g["layer_kinds"]}
     params = 0
     for n in kinds["eagle3_layer"]["nodes"] + kinds["eagle3_context"]["nodes"] + g["head"]:
@@ -6116,7 +6121,7 @@ def test_eagle3_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path):
     # RMSNorm vectors: input_layernorm, hidden_norm, post_attention_layernorm, norm, and one
     # fc_norm per captured state (3).
     params += 7 * 6144
-    assert params == 3_263_735_808
+    assert params == total
 
 
 def test_eagle3_layer_reads_the_embedding_and_the_state_side_by_side(tmp_path):
@@ -6138,15 +6143,16 @@ def test_eagle3_default_capture_layers_follow_the_targets_depth():
     must list the drafter."""
     sys.path.insert(0, str(DERIVER.parent))
     import derive_graph  # noqa: E402
-    t = derive_graph.EAGLE3_TARGETS["minimax-m3-eagle3"]
-    drafter = yaml.safe_load((MODELS / "minimax-m3-eagle3" / "model.yaml").read_text())
-    assert sorted(t["targets"]) == sorted(drafter["targets"])
-    for name in t["targets"]:
-        cfg = text_config(config_of(MODELS / name))
-        assert t["layers"] == cfg["num_hidden_layers"] == 60
-        assert cfg["hidden_size"] == EAGLE3_CFG["hidden_size"]
-        listed = yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
-        assert "minimax-m3-eagle3" in listed
+    for drafter_name in ("minimax-m3-eagle3", "minimax-m3-eagle3-gqa"):
+        t = derive_graph.EAGLE3_TARGETS[drafter_name]
+        drafter = yaml.safe_load((MODELS / drafter_name / "model.yaml").read_text())
+        assert sorted(t["targets"]) == sorted(drafter["targets"])
+        for name in t["targets"]:
+            cfg = text_config(config_of(MODELS / name))
+            assert t["layers"] == cfg["num_hidden_layers"] == 60
+            assert cfg["hidden_size"] == EAGLE3_CFG["hidden_size"]
+            listed = yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
+            assert drafter_name in listed
     assert derive_graph.eagle3_default_aux_layers(60) == [2, 30, 57]
 
 
