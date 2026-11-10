@@ -200,3 +200,47 @@ func StageGroupCopyBytes(layers []Layer, on []bool, o GroupOptions, blockSize in
 	}
 	return out, nil
 }
+
+// GroupPage is one KV cache group as a plan states it: the bytes one block of the group holds
+// across the group's layers, the tokens a block covers, and the group's window.
+type GroupPage struct {
+	// BytesPerBlock is the sum of the group's layers' pages, each padded to its stride alignment
+	// in a layer-outer layout (_get_layer_block_stride, kv_cache_utils.py:1516-1518@5df63a72), and
+	// unpadded in a block-outer one, where the pool rounds the widest group instead (BytesPerBlock).
+	BytesPerBlock int64
+	// BlockTokens is the group's own block size, or the engine's when it states none.
+	BlockTokens int
+	// Window is the sliding window in tokens, 0 for a group that attends to its whole context.
+	Window int
+}
+
+// GroupPages is the pages of the groups GroupLayers forms over the layers, in group order: what
+// a PoolPlan's KV groups state. The widest group's bytes are the pool's stride (PoolBytesPerBlock).
+func GroupPages(layers []Layer, o GroupOptions, blockSize int) ([]GroupPage, error) {
+	groups, members, err := groupLayers(layers, o)
+	if err != nil {
+		return nil, err
+	}
+	outer := deepseek(layers) && !o.DisableHybrid
+	out := make([]GroupPage, len(groups))
+	for i, m := range members {
+		var sum int64
+		for _, j := range m {
+			l := layers[j]
+			if l.BlockSize == 0 {
+				l.BlockSize = blockSize
+			}
+			if outer {
+				sum += int64(pageBytes(l))
+			} else {
+				sum += roundUp(int64(pageBytes(l)), int64(max(l.StrideAlignment, 1)))
+			}
+		}
+		bt := groups[i].BlockSize
+		if bt == 0 {
+			bt = blockSize
+		}
+		out[i] = GroupPage{BytesPerBlock: sum, BlockTokens: bt, Window: groups[i].Window}
+	}
+	return out, nil
+}
