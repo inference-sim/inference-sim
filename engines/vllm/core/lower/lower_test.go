@@ -134,6 +134,29 @@ type oracleFile struct {
 		} `json:"desc"`
 		ContextRows *int `json:"graph_context_rows"`
 	} `json:"drafter"`
+	DBO struct {
+		Split []struct {
+			Enable  bool `json:"enable_dbo"`
+			UBatch  int  `json:"ubatch_size"`
+			Decode  int  `json:"decode"`
+			Prefill int  `json:"prefill"`
+			Use     bool `json:"use"`
+			Num     int  `json:"num"`
+			Steps   []struct {
+				Tokens  int  `json:"tokens"`
+				Uniform bool `json:"uniform"`
+				Split   bool `json:"split"`
+			} `json:"steps"`
+		} `json:"split"`
+		Defaults []struct {
+			StatedBackend *string `json:"stated_backend"`
+			StatedQ       *bool   `json:"stated_q"`
+			ModelBackend  string  `json:"model_backend"`
+			ModelQ        bool    `json:"model_q"`
+			Backend       string  `json:"backend"`
+			Q             bool    `json:"q"`
+		} `json:"defaults"`
+	} `json:"dbo"`
 	Context []struct {
 		Steps        int `json:"steps"`
 		MaxNumTokens int `json:"max_num_tokens"`
@@ -699,5 +722,55 @@ func TestSyncDPRefusesAnIdleRankBesideBusyOnes(t *testing.T) {
 	}
 	if _, syncs, err := SyncDP(m, []RankBatch{busy}); err != nil || syncs != nil {
 		t.Errorf("one rank: syncs %v, err %v; vLLM returns no agreement at dp_size 1", syncs, err)
+	}
+}
+
+func TestDualBatchOverlapSplitsAsVLLMDoes(t *testing.T) {
+	o := loadOracle(t)
+	if len(o.DBO.Split) < 24 {
+		t.Fatalf("%d DBO cases", len(o.DBO.Split))
+	}
+	for _, c := range o.DBO.Split {
+		d := DBO{Enable: c.Enable, UBatchSize: c.UBatch, DecodeThreshold: c.Decode, PrefillThreshold: c.Prefill}
+		want := 1
+		if c.Use {
+			want = c.Num
+		}
+		if got := d.Ubatches(); got != want {
+			t.Errorf("%+v: %d ubatches; vLLM %d", c, got, want)
+		}
+		for _, st := range c.Steps {
+			if got := d.Splits(st.Tokens, st.Uniform); got != st.Split {
+				t.Errorf("enable %v ubatch %d thresholds %d/%d, %d tokens uniform %v: split %v; vLLM %v",
+					c.Enable, c.UBatch, c.Decode, c.Prefill, st.Tokens, st.Uniform, got, st.Split)
+			}
+		}
+	}
+}
+
+func TestDCPDefaultsAreVLLMs(t *testing.T) {
+	o := loadOracle(t)
+	if len(o.DBO.Defaults) < 36 {
+		t.Fatalf("%d DCP cases", len(o.DBO.Defaults))
+	}
+	for _, c := range o.DBO.Defaults {
+		sb := ""
+		if c.StatedBackend != nil {
+			sb = *c.StatedBackend
+		}
+		got, err := DCPResolve(sb, c.StatedQ, DCP{Backend: c.ModelBackend, QReplicate: c.ModelQ})
+		if err != nil || got.Backend != c.Backend || got.QReplicate != c.Q {
+			t.Errorf("%+v: %+v %v; vLLM %s %v", c, got, err, c.Backend, c.Q)
+		}
+	}
+	// The one v0.32.0 model that states a preference is GLM-MoE-DSA's, a2a with query replication.
+	if p := DCPModelPreference("GlmMoeDsaForCausalLM"); p != (DCP{Backend: "a2a", QReplicate: true}) {
+		t.Errorf("GLM-MoE-DSA preference %+v", p)
+	}
+	if p := DCPModelPreference("DeepseekV32ForCausalLM"); p != (DCP{Backend: "ag_rs"}) {
+		t.Errorf("stock preference %+v", p)
+	}
+	if _, err := DCPResolve("nccl", nil, DCP{Backend: "ag_rs"}); err == nil {
+		t.Error("a backend vLLM does not name was accepted")
 	}
 }

@@ -117,6 +117,17 @@ def load(root):
     ns["get_tensor_model_parallel_rank"] = lambda: ns["_cur"]["tp_rank"]
     ns["get_engram_dp_group"] = lambda: (None if ns["_cur"]["edp"] == 1 else types.SimpleNamespace(
         world_size=ns["_cur"]["edp"], rank_in_group=ns["_cur"]["dp_rank"]))
+    pc = parse(root, "vllm/config/parallel.py")
+    ns["DCPCommBackend"] = ns["ParallelConfig"] = str  # annotations, evaluated when the def runs
+    for name in ("set_dcp_defaults", "use_ubatching", "num_ubatches"):
+        fn = method(pc, "ParallelConfig", name)[0]
+        fn.decorator_list = []
+        run([fn], ns, "vllm/config/parallel.py")
+        ns["pc_" + name] = ns.pop(name)
+    ub = parse(root, "vllm/v1/worker/ubatch_utils.py")
+    run(pick(ub, "check_ubatch_thresholds", "is_last_ubatch_empty"), ns, "vllm/v1/worker/ubatch_utils.py")
+    ns["ub_check_ubatch_thresholds"] = ns.pop("check_ubatch_thresholds")
+    ns["ub_is_last_ubatch_empty"] = ns.pop("is_last_ubatch_empty")
     dp = parse(root, "vllm/v1/worker/gpu/dp_utils.py")
     # Type names the signatures mention; annotations are evaluated when the def runs.
     ns.update(CudaGraphManager=object, ParallelConfig=object)
@@ -451,6 +462,27 @@ def drafter_cases(ns):
     return out
 
 
+def dbo_cases(ns):
+    """Dual-batch overlap: whether a step splits, and into how many ubatches."""
+    out = {"split": [], "defaults": []}
+    for enable, ubatch_size, dec, pre in itertools.product((False, True), (0, 1, 3), (32, 0), (512, 100)):
+        cfg = types.SimpleNamespace(enable_dbo=enable, ubatch_size=ubatch_size, dbo_decode_token_threshold=dec,
+                                    dbo_prefill_token_threshold=pre)
+        use = ns["pc_use_ubatching"](cfg)
+        cfg.use_ubatching = use
+        row = {"enable_dbo": enable, "ubatch_size": ubatch_size, "decode": dec, "prefill": pre, "use": use,
+               "num": ns["pc_num_ubatches"](cfg), "steps": []}
+        for tokens, uniform in itertools.product((1, 31, 32, 33, 99, 100, 101, 511, 512, 513), (False, True)):
+            row["steps"].append({"tokens": tokens, "uniform": uniform, "split": ns["ub_check_ubatch_thresholds"](cfg, tokens, uniform)})
+        out["split"].append(row)
+    for stated_b, stated_q, mb, mq in itertools.product((None, "a2a", "ag_rs"), (None, True, False), ("ag_rs", "a2a"), (False, True)):
+        cfg = types.SimpleNamespace(dcp_comm_backend=stated_b, dcp_q_replicate=stated_q)
+        ns["pc_set_dcp_defaults"](cfg, comm_backend=mb, q_replicate=mq)
+        out["defaults"].append({"stated_backend": stated_b, "stated_q": stated_q, "model_backend": mb, "model_q": mq,
+                                "backend": cfg.dcp_comm_backend, "q": cfg.dcp_q_replicate})
+    return out
+
+
 def decode_len_cases(ns):
     out = []
     for spec, par, v2 in itertools.product([None, 0, 1, 3, 7], [False, True], [False, True]):
@@ -480,6 +512,7 @@ def build(root):
         "dp_sync": dp_cases(ns),
         "drafter": drafter_cases(ns),
         "engram": engram_cases(ns),
+        "dbo": dbo_cases(ns),
     }
 
 

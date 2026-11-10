@@ -77,15 +77,16 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 section 6): the CUDA-graph capture sizes, the graph a batch replays and the padded token count, the
 data-parallel padding, the decode threshold, a parallel-block drafter's padded rows, the KV
 groups' pages, the Engram host tables' sharing and shard, and the probabilistic draft sampler's
-logits buffer. `oracle/lower/extract.py` takes the release's own definitions out of their modules
+logits buffer, the dual-batch-overlap split rule and the decode-context-parallel defaults. `oracle/lower/extract.py` takes the release's own definitions out of their modules
 by syntax tree and runs them as written, with the data-parallel all-reduce supplied the ranks'
 votes; its answers are `core/lower/testdata/vllm_lower.json`, which CI regenerates and compares
 (`oracle-tier2`). The Go tests compare the port with those answers: 28 capture configurations
 (including FULL mode, a request count above the platform ceiling, the recoverSSM kernel and the
 start-up refusals), 2,545 dispatch probes around their sizes, 16 data-parallel cases (including FULL
 mode and varlen graphs under ranks that differ), 6 drafter passes through the target's agreement,
-16 Engram sharing cases that include the config's own validator, 50 Engram shard cases, and the
-threshold and context rules. The oracle file was regenerated with the oracle environment's torch
+16 Engram sharing cases that include the config's own validator, 50 Engram shard cases, 24
+dual-batch-overlap configurations with 20 step probes each, 36 decode-context-parallel default
+cases, and the threshold and context rules. The oracle file was regenerated with the oracle environment's torch
 (2.15.0 here; CI pins 2.13.0+cpu in `oracle/requirements.lock`; every answer is an integer or a
 string, so the two agree).
 
@@ -96,8 +97,9 @@ figures the source states, tested by arithmetic; and the drafter's eager context
 a method that needs a GPU, so its rule over the oracle's recorded graph rows is stated in
 `core/lower` and tested there. What the oracle replaces is in `oracle/lower/replacements.json`,
 which `check_replacements.py` checks against the extractor, including a constructor bypass. Two
-things have no oracle here: the microbatching path (dual batch overlap is not modelled) and dynamic
-speculative decoding, which the extractor refuses if a case reaches them.
+things have no oracle here: the microbatching path of a graph dispatch (a case that reaches it is an
+error; the split rule itself is run) and dynamic speculative decoding, which the extractor refuses
+if a case reaches them.
 
 The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `enginetest` checks the contract's laws on the v0.32.0 engine. A diff test drives tier-2 scenarios through `engine.Engine` (Add, then Schedule and Complete one batch at a time) and compares every step with vLLM's own Scheduler trace (`core/sched/testdata/golden`). Its mutants are in `oracle/mutate_e24.py`, which CI runs with the other sweeps. The factory builds one batch in flight only: with async scheduling or PP, vLLM's own loop decides which requests share a batch (`vllm/v1/engine/core.py:724-768@5df63a72`), and the adapter does not reproduce that loop yet, so it refuses those configurations (https://github.com/inference-sim/blis-vllm/issues/21). Tier 3 proves `core/engine`'s port of the loop, not the adapter.
 

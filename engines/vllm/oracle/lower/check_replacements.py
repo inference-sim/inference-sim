@@ -18,7 +18,7 @@ PLUMBING = {"__builtins__", "dataclass", "replace", "enum", "product", "groupby"
             "Any", "annotations", "torch", "nullcontext"}
 # Names the harness gives its own copies of the functions it runs, so the cases can call them: the
 # function bodies are vLLM's, taken from the source by `ast` and only renamed.
-RENAMED = {"_get_shard_info", "_set_cudagraph_sizes", "sync_cudagraph_and_dp_padding", "Manager"}
+RENAMED = {"pc_set_dcp_defaults", "pc_use_ubatching", "pc_num_ubatches", "ub_check_ubatch_thresholds", "ub_is_last_ubatch_empty", "DCPCommBackend", "_get_shard_info", "_set_cudagraph_sizes", "sync_cudagraph_and_dp_padding", "Manager"}
 # Type names a signature mentions; annotations are evaluated when the def runs.
 ANNOTATION_ONLY = {"CudaGraphManager", "ParallelConfig"}
 

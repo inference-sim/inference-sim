@@ -32031,6 +32031,2940 @@
   }
  ],
  "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "dbo": {
+  "defaults": [
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": false,
+    "stated_backend": null,
+    "stated_q": null
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": true,
+    "stated_backend": null,
+    "stated_q": null
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": false,
+    "stated_backend": null,
+    "stated_q": null
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": true,
+    "stated_backend": null,
+    "stated_q": null
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": true,
+    "stated_backend": null,
+    "stated_q": true
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": true,
+    "stated_backend": null,
+    "stated_q": true
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": true,
+    "stated_backend": null,
+    "stated_q": true
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": true,
+    "stated_backend": null,
+    "stated_q": true
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": false,
+    "stated_backend": null,
+    "stated_q": false
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": false,
+    "stated_backend": null,
+    "stated_q": false
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": false,
+    "stated_backend": null,
+    "stated_q": false
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": false,
+    "stated_backend": null,
+    "stated_q": false
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "a2a",
+    "stated_q": null
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "a2a",
+    "stated_q": null
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "a2a",
+    "stated_q": null
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "a2a",
+    "stated_q": null
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": true,
+    "stated_backend": "a2a",
+    "stated_q": true
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "a2a",
+    "stated_q": true
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": true,
+    "stated_backend": "a2a",
+    "stated_q": true
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "a2a",
+    "stated_q": true
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "a2a",
+    "stated_q": false
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": false,
+    "stated_backend": "a2a",
+    "stated_q": false
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "a2a",
+    "stated_q": false
+   },
+   {
+    "backend": "a2a",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": false,
+    "stated_backend": "a2a",
+    "stated_q": false
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "ag_rs",
+    "stated_q": null
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "ag_rs",
+    "stated_q": null
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "ag_rs",
+    "stated_q": null
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "ag_rs",
+    "stated_q": null
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": true,
+    "stated_backend": "ag_rs",
+    "stated_q": true
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "ag_rs",
+    "stated_q": true
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": true,
+    "stated_backend": "ag_rs",
+    "stated_q": true
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": true,
+    "stated_backend": "ag_rs",
+    "stated_q": true
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "ag_rs",
+    "stated_q": false
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "ag_rs",
+    "model_q": true,
+    "q": false,
+    "stated_backend": "ag_rs",
+    "stated_q": false
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "a2a",
+    "model_q": false,
+    "q": false,
+    "stated_backend": "ag_rs",
+    "stated_q": false
+   },
+   {
+    "backend": "ag_rs",
+    "model_backend": "a2a",
+    "model_q": true,
+    "q": false,
+    "stated_backend": "ag_rs",
+    "stated_q": false
+   }
+  ],
+  "split": [
+   {
+    "decode": 32,
+    "enable_dbo": false,
+    "num": 0,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": false
+   },
+   {
+    "decode": 32,
+    "enable_dbo": false,
+    "num": 0,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": false
+   },
+   {
+    "decode": 0,
+    "enable_dbo": false,
+    "num": 0,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": false
+   },
+   {
+    "decode": 0,
+    "enable_dbo": false,
+    "num": 0,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": false
+   },
+   {
+    "decode": 32,
+    "enable_dbo": false,
+    "num": 1,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": false
+   },
+   {
+    "decode": 32,
+    "enable_dbo": false,
+    "num": 1,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": false
+   },
+   {
+    "decode": 0,
+    "enable_dbo": false,
+    "num": 1,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": false
+   },
+   {
+    "decode": 0,
+    "enable_dbo": false,
+    "num": 1,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": false
+   },
+   {
+    "decode": 32,
+    "enable_dbo": false,
+    "num": 3,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": false,
+    "num": 3,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": false,
+    "num": 3,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": false,
+    "num": 3,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 0,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 1,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 32,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 512,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   },
+   {
+    "decode": 0,
+    "enable_dbo": true,
+    "num": 2,
+    "prefill": 100,
+    "steps": [
+     {
+      "split": false,
+      "tokens": 1,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 1,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 31,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 31,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 32,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 32,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 33,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 33,
+      "uniform": true
+     },
+     {
+      "split": false,
+      "tokens": 99,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 99,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 100,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 101,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 511,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 512,
+      "uniform": true
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": false
+     },
+     {
+      "split": true,
+      "tokens": 513,
+      "uniform": true
+     }
+    ],
+    "ubatch_size": 3,
+    "use": true
+   }
+  ]
+ },
  "dp_sync": [
   {
    "case": {
