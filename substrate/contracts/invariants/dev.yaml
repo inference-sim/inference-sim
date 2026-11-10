@@ -68,7 +68,7 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
   note: >-
     events are ordered by time, priority and a global insertion counter (sim/cluster/cluster_event.go)
 - id: DEV-3

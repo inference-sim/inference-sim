@@ -95,7 +95,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The module graph across all repositories follows Figure 1
   - `ci`, pull_request: Every generated file matches its generator's output (`tools/docgen: TestGeneratedDocsAreCurrent`)
-- **X8** (new; target ci by M1) Every number records the exact versions and data it came from, and can be regenerated from them.
+- **X8** (new; target ci by M2) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: No ledger unit is cited under two roles by any fit, gate or dashboard point
   - `new`, pull_request: Every data source is pinned to an exact revision
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
@@ -314,7 +314,6 @@ repository as a whole and confirms it when the repository's settings change (des
 Follow these on every change you write or review. They are not checked by a program
 (design §4.2).
 
-- **X20** A commit written with your help says so in one Assisted-by: <tool> line and carries no Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the person who takes responsibility signs off. Sign and sign off in a person's name only when that person has told you to, with that person's key.
 - **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
 
 ### Review questions

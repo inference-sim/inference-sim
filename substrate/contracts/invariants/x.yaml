@@ -517,12 +517,12 @@
   section: §4
   title: One owner for each fact; dependencies point one way.
   statement: >-
-    Contracts live in blis-substrate/contracts. A repository never imports one above it in Figure
-    1. A generated file is written only by its generator. Every copy of a fact is generated from its
-    owner or checked against it. The dashboard's scoring harness is the one thing a lower repository
-    uses from a repository above it: it runs the harness as a pinned, released tool, never imports
-    its code. A lower repository's candidate job may also build inference-sim through stack CI to
-    run that harness (§13.5).
+    Contracts live in blis-substrate/contracts. A repository never imports one above it in Figure 1. A
+    generated file is written only by its generator. Every copy of a fact is generated from its owner or
+    checked against it. The dashboard's scoring harness is the one thing a lower repository uses from a
+    repository above it: it runs the harness at a pinned release or commit, never imports its code. A
+    lower repository's candidate job may also build inference-sim through stack CI to run that harness
+    (§13.5).
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -745,7 +745,7 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
 - id: X9
   section: §4
   title: The upstream feature surface is fully accounted for.
@@ -1468,14 +1468,9 @@
     can certify the DCO. Signing a commit and adding a DCO Signed-off-by line are encouraged for the
     person who takes responsibility for it, and an agent that pushes commits for a person, on that
     person’s instruction and with that person’s key, may sign and sign off in that person’s name; no
-    check requires either until the closing step after M4. Release-bot commits are signed with the
-    bot's identity and carry no sign-off. In the router fork, this applies to every commit not
-    reachable from the upstream tag being merged; upstream history is kept as upstream wrote it.
-  guidance: >-
-    A commit written with your help says so in one Assisted-by: <tool> line and carries no
-    Co-authored-by line naming the tool. Never add a Signed-off-by line in your own name; only the
-    person who takes responsibility signs off. Sign and sign off in a person's name only when that
-    person has told you to, with that person's key.
+    check requires either. Release-bot commits are signed with the bot's identity and carry no sign-off.
+    In the router fork, this applies to every commit not reachable from the upstream tag being merged;
+    upstream history is kept as upstream wrote it.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -2097,14 +2092,23 @@
   statement: >-
     In documentation, every source path, symbol, issue or pull-request reference, and every statement
     that a feature is supported, is either generated (from surface.json, stack.json or the code) or
-    checked against the pinned tree. A pull request carries the documentation change that its own
-    change needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A
+    checked against the pinned tree. A pull request carries the documentation change that its own change
+    needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A
     repository that adopts the check clears the findings it already has in the pull request that first
     requires the check, so the check is green from then on and every later finding is a pull request’s
-    own. No finding is hidden from the check by a list of known ones. Documentation is written for a
-    reader who is an agent as often as a person: it is short, it says where a rule, a file or a
-    command lives and links to it, and it leaves out anything that can drift without a check noticing,
-    such as a version, a count, a line number or a list of what is supported at the moment of writing.
+    own. No finding is hidden from the check by a list of known ones. Documentation has two kinds of
+    reader and is written for each. A person needs the concept: the design, the invariants, the process
+    and why they are so, with no version, count or other detail that changes without the idea changing.
+    An agent needs pointers: where a rule, a file or a command lives, so it can change the code
+    correctly. Each page is for one of them, says which, and is no longer than that reader needs. A page
+    for people holds no path, symbol, version or count, so there is nothing in it for a check to fail
+    on; the reference check reads the pages for agents, and skips records such as specs/ and RFCs, which
+    say what was true when written. A check that fails a pull request for something it did not touch, or
+    for a detail that was never needed, is a defect in the check, and the fix is to narrow the check or
+    delete the detail, never to add a list of known findings. Documentation is short, it says where a
+    rule, a file or a command lives and links to it, and it leaves out anything that can drift without a
+    check noticing, such as a version, a count, a line number or a list of what is supported at the
+    moment of writing.
   scope:
   - accuracy-dashboard
   - blis-config-search

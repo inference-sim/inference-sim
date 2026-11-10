@@ -189,13 +189,17 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
 - id: SIM-9
   section: §5
   statement: >-
     Each refusal has two tests: the smallest configuration that triggers it, and the closest one that
     does not. The message names the field and the value that caused it. A feature or plugin is refused
-    only under the settings that actually reach the code BLIS does not model.
+    only under the settings that actually reach the code BLIS does not model. A configuration the
+    upstream refuses at start-up is refused at start-up, naming the upstream's own condition: BLIS never
+    simulates a deployment the upstream would not start, and a search never ranks one. A refusal states
+    what the user must change, and says that the deployment does not fit or is not supported when that
+    is the cause; it never reports a limit of the deployment as an error in the simulator.
   scope:
   - blis-sglang
   - blis-vllm

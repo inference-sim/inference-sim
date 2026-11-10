@@ -75,15 +75,20 @@ func TestEveryDesignInvariantAppearsExactlyOnce(t *testing.T) {
 }
 
 // The release plan's §3.2 table is generated from the registry, so their statuses and
-// milestones agree. testdata/plan-status.tsv is the table as published.
+// milestones agree. testdata/plan-status.tsv is the table as published. While the M2 substrate
+// stack is open, a layer holds only part of the registry's end state, so
+// testdata/stack-differences.tsv lists the rows allowed to differ; the test fails on a
+// difference not listed and on a listed row that no longer differs.
 func TestRegistryAgreesWithThePlan(t *testing.T) {
 	reg := mustEmbedded(t)
+	allowed := stackDifferences(t)
 	f, err := os.Open("testdata/plan-status.tsv")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	rows := 0
+	differs := map[string]bool{}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := sc.Text()
@@ -101,20 +106,56 @@ func TestRegistryAgreesWithThePlan(t *testing.T) {
 			t.Errorf("the plan lists %s; the registry has no such record", id)
 			continue
 		}
-		if inv.Status != status {
-			t.Errorf("%s: registry status %q, plan status %q", id, inv.Status, status)
-		}
 		got := MilestoneLabel(inv.Target.Milestone)
-		if got != by {
-			t.Errorf("%s: registry target milestone %s, plan In CI by %s", id, got, by)
+		if inv.Status == status && got == by {
+			continue
+		}
+		differs[id] = true
+		a, listed := allowed[id]
+		switch {
+		case !listed:
+			t.Errorf("%s: registry status %q and target %s; the plan has %q and %s (not in testdata/stack-differences.tsv)", id, inv.Status, got, status, by)
+		case a.status != inv.Status || a.by != got:
+			t.Errorf("%s: stack-differences.tsv says %q and %s; the registry has %q and %s", id, a.status, a.by, inv.Status, got)
 		}
 	}
 	if err := sc.Err(); err != nil {
 		t.Fatal(err)
 	}
+	for id := range allowed {
+		if !differs[id] {
+			t.Errorf("%s is listed in testdata/stack-differences.tsv but no longer differs from the plan; delete the row", id)
+		}
+	}
 	if rows != len(reg.Invariants) {
 		t.Errorf("the plan lists %d invariants, the registry %d", rows, len(reg.Invariants))
 	}
+}
+
+type stackDiff struct{ status, by string }
+
+// stackDifferences reads the rows allowed to differ from the plan while the stack is open.
+func stackDifferences(t *testing.T) map[string]stackDiff {
+	t.Helper()
+	raw, err := os.ReadFile("testdata/stack-differences.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]stackDiff{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
+			continue
+		}
+		cols := strings.Split(line, "\t")
+		if len(cols) != 4 {
+			t.Fatalf("stack-differences.tsv: %q has %d columns, want 4", line, len(cols))
+		}
+		if _, dup := out[cols[0]]; dup {
+			t.Fatalf("stack-differences.tsv lists %s twice", cols[0])
+		}
+		out[cols[0]] = stackDiff{cols[1], cols[2]}
+	}
+	return out
 }
 
 // Every record's fields hold together. This is what LoadFS checks; the committed registry

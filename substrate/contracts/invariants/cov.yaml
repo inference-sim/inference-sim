@@ -93,7 +93,7 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
 - id: COV-3
   section: §11.8
   statement: >-
@@ -225,7 +225,7 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
 - id: COV-10
   section: §11.8
   statement: >-
