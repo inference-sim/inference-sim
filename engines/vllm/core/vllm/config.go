@@ -111,7 +111,13 @@ func decodeConfig(node yaml.Node) (Config, error) {
 	if node.Kind == 0 {
 		return c, fmt.Errorf("vllm: the engine block is empty")
 	}
-	raw, err := yaml.Marshal(&node)
+	// The block is written in vLLM's own setting names (blis-vllm#93); Config decodes the Go-shaped
+	// block, with the factory's own extras beside it.
+	inner, err := engineconfig.FromVLLM(&node)
+	if err != nil {
+		return c, fmt.Errorf("vllm: engine block: %w", err)
+	}
+	raw, err := yaml.Marshal(inner)
 	if err != nil {
 		return c, fmt.Errorf("vllm: engine block: %w", err)
 	}
@@ -771,18 +777,18 @@ func checkAdaptiveVerification(e engineconfig.Engine, pp int, v2 bool) error {
 	}
 	switch {
 	case !v2:
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: adaptive draft verification runs only " +
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: adaptive draft verification runs only " +
 			"on the V2 model runner, and vLLM refuses it on V1 (vllm/config/vllm.py:2980-2981@5df63a72)")
 	case e.MaxLoRAs > 0:
 		// LoRAConfig exists whenever LoRA is enabled, which max_loras states here
 		// (vllm/engine/arg_utils.py:2650-2669@5df63a72).
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification is not currently " +
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: \"Adaptive verification is not currently " +
 			"compatible with LoRA\" (vllm/config/vllm.py:3005-3010@5df63a72)")
 	case !fullCUDAGraphs(e.CUDAGraphMode):
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification requires full CUDA "+
-			"graphs\", and cudagraph_mode %s captures none (vllm/config/vllm.py:3012-3017@5df63a72)", e.CUDAGraphMode)
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: \"Adaptive verification requires full CUDA "+
+			"graphs\", and compilation_config.cudagraph_mode %s captures none (vllm/config/vllm.py:3012-3017@5df63a72)", e.CUDAGraphMode)
 	case pp > 1:
-		return fmt.Errorf("vllm: speculative.enable_adaptive_verification: \"Adaptive verification is not currently " +
+		return fmt.Errorf("vllm: speculative_config.enable_adaptive_verification: \"Adaptive verification is not currently " +
 			"compatible with pipeline parallelism\" (vllm/config/vllm.py:3019-3028@5df63a72)")
 	}
 	return nil

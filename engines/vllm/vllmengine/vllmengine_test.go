@@ -208,7 +208,7 @@ func TestPrepareStatesTheMTPDrafterLayers(t *testing.T) {
 		t.Errorf("d001 (deepseek-v4-pro, mtp): mtp_nextn_predict_layers %q, want the graph's 1", v)
 	}
 	var own yaml.Node
-	if err := yaml.Unmarshal([]byte("speculative: {method: mtp, num_spec_tokens: 2}\nmtp_nextn_predict_layers: 3\n"), &own); err != nil {
+	if err := yaml.Unmarshal([]byte("speculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 3\n"), &own); err != nil {
 		t.Fatal(err)
 	}
 	if v := stated(d001.complete(own), "mtp_nextn_predict_layers"); v != "3" {

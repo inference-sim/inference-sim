@@ -65,7 +65,7 @@ func engineBlockOf(args map[string]any) string {
 		switch k {
 		case "speculative_config":
 			sc := v.(map[string]any)
-			b.WriteString("speculative: {method: " + sc["method"].(string) + ", num_spec_tokens: " + itoaAny(sc["num_speculative_tokens"]) + "}\n")
+			b.WriteString("speculative_config: {method: " + sc["method"].(string) + ", num_speculative_tokens: " + itoaAny(sc["num_speculative_tokens"]) + "}\n")
 		case "enable_lora":
 			// the engine block has max_loras alone
 		default:

@@ -114,21 +114,21 @@ var engineKeys = map[string][]string{
 // refused sets each refused field in the engine block, as YAML under pools[0].engine.
 var refused = map[string]string{
 	"kv_cache_memory_bytes":                                     "kv_cache_memory_bytes: 4294967296\n",
-	"attention_config.use_trtllm_attention":                     "use_trtllm_attention: true\n",
-	"attention_config.mla_prefill_backend":                      "mla_prefill_backend: FLASHINFER\n",
+	"attention_config.use_trtllm_attention":                     "attention_config: {use_trtllm_attention: true}\n",
+	"attention_config.mla_prefill_backend":                      "attention_config: {mla_prefill_backend: FLASHINFER}\n",
 	"kernel_config.linear_backend":                              "linear_backend: flashinfer\n",
 	"linear_backend":                                            "linear_backend: flashinfer\n",
-	"compilation_config.custom_ops":                             "custom_ops: ['+rms_norm']\n",
-	"compilation_config.decoder_replay_cudagraph_capture_sizes": "decoder_replay_cudagraph_capture_sizes: [1, 2]\n",
-	"speculative_config.kv_cache_dtype":                         "speculative: {method: eagle3, num_spec_tokens: 3, kv_cache_dtype: fp8}\n",
-	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: synthetic}\n",
-	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: \"null\"}\n",
-	"kv_events_config.topic":                                    "kv_events: {enable_kv_cache_events: true, topic: kv}\n",
+	"compilation_config.custom_ops":                             "compilation_config: {custom_ops: ['+rms_norm']}\n",
+	"compilation_config.decoder_replay_cudagraph_capture_sizes": "compilation_config: {decoder_replay_cudagraph_capture_sizes: [1, 2]}\n",
+	"speculative_config.kv_cache_dtype":                         "speculative_config: {method: eagle3, num_speculative_tokens: 3, kv_cache_dtype: fp8}\n",
+	"speculative_config.rejection_sample_method":                "speculative_config: {method: eagle3, num_speculative_tokens: 3, rejection_sample_method: synthetic}\n",
+	"kv_events_config.publisher":                                "kv_events_config: {enable_kv_cache_events: true, publisher: \"null\"}\n",
+	"kv_events_config.topic":                                    "kv_events_config: {enable_kv_cache_events: true, topic: kv}\n",
 	"mamba_ssm_cache_dtype":                                     "mamba_ssm_cache_dtype: float32\n",
-	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 64}\n",
-	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 1024}\n",
-	"eplb_config.window_size":                                   "eplb: {enable_eplb: true, window_size: 500}\n",
-	"eplb_config.step_interval":                                 "eplb: {enable_eplb: true, step_interval: 100}\n",
+	"dbo_decode_token_threshold":                                "enable_dbo: true\ndbo_decode_token_threshold: 64\n",
+	"dbo_prefill_token_threshold":                               "enable_dbo: true\ndbo_prefill_token_threshold: 1024\n",
+	"eplb_config.window_size":                                   "enable_eplb: true\neplb_config: {window_size: 500}\n",
+	"eplb_config.step_interval":                                 "enable_eplb: true\neplb_config: {step_interval: 100}\n",
 	"prefix_match_unit":                                         "prefix_match_unit: 8\n",
 	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 256\n",
 	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 4\n",
@@ -144,16 +144,16 @@ var refused = map[string]string{
 var atDefault = map[string]string{
 	"kernel_config.linear_backend":                              "linear_backend: auto\n",
 	"linear_backend":                                            "linear_backend: auto\n",
-	"compilation_config.custom_ops":                             "custom_ops: []\n",
-	"compilation_config.decoder_replay_cudagraph_capture_sizes": "decoder_replay_cudagraph_capture_sizes: []\n",
-	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: block}\n",
-	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: zmq}\n",
-	"kv_events_config.topic":                                    "kv_events: {enable_kv_cache_events: true, topic: \"\"}\n",
+	"compilation_config.custom_ops":                             "compilation_config: {custom_ops: []}\n",
+	"compilation_config.decoder_replay_cudagraph_capture_sizes": "compilation_config: {decoder_replay_cudagraph_capture_sizes: []}\n",
+	"speculative_config.rejection_sample_method":                "speculative_config: {method: eagle3, num_speculative_tokens: 3, rejection_sample_method: block}\n",
+	"kv_events_config.publisher":                                "kv_events_config: {enable_kv_cache_events: true, publisher: zmq}\n",
+	"kv_events_config.topic":                                    "kv_events_config: {enable_kv_cache_events: true, topic: \"\"}\n",
 	"mamba_ssm_cache_dtype":                                     "mamba_ssm_cache_dtype: auto\n",
-	"dbo_decode_token_threshold":                                "dbo: {enable_dbo: true, dbo_decode_token_threshold: 32}\n",
-	"dbo_prefill_token_threshold":                               "dbo: {enable_dbo: true, dbo_prefill_token_threshold: 512}\n",
-	"eplb_config.window_size":                                   "eplb: {enable_eplb: true, window_size: 1000}\n",
-	"eplb_config.step_interval":                                 "eplb: {enable_eplb: true, step_interval: 3000}\n",
+	"dbo_decode_token_threshold":                                "enable_dbo: true\ndbo_decode_token_threshold: 32\n",
+	"dbo_prefill_token_threshold":                               "enable_dbo: true\ndbo_prefill_token_threshold: 512\n",
+	"eplb_config.window_size":                                   "enable_eplb: true\neplb_config: {window_size: 1000}\n",
+	"eplb_config.step_interval":                                 "enable_eplb: true\neplb_config: {step_interval: 3000}\n",
 	"prefix_cache_retention_interval":                           "prefix_cache_retention_interval: 0\n",
 	"max_cpu_loras":                                             "max_loras: 2\nmax_cpu_loras: 2\n",
 	"mamba_cache_mode":                                          "mamba_cache_mode: none\n",
@@ -186,9 +186,9 @@ var pricedByTheKernel = map[string]string{
 	"moe_backend":                       "moe_backend: triton\n#77",
 	"kernel_config.moe_backend":         "moe_backend: triton\n#77",
 	"gpu_memory_utilization":            "gpu_memory_utilization: 0.8\n#73",
-	"enable_dbo":                        "dbo: {enable_dbo: true}\n#74",
-	"enable_eplb":                       "eplb: {enable_eplb: true}\n#76",
-	"eplb_config.num_redundant_experts": "eplb: {enable_eplb: true, num_redundant_experts: 8}\n#76",
+	"enable_dbo":                        "enable_dbo: true\n#74",
+	"enable_eplb":                       "enable_eplb: true\n#76",
+	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#76",
 	"engram_config.cpu_offload":         "engram_config: {cpu_offload: false}\n#78",
 	"engram_config.dp_shared_memory":    "engram_config: {dp_shared_memory: true}\n#78",
 	"engram_config.use_thp":             "engram_config: {use_thp: true}\n#78",
@@ -230,7 +230,20 @@ func withEngine(t *testing.T, extra string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := strings.Replace(string(raw), "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+indent(extra, "      "), 1)
+	body := string(raw)
+	// A config object the base fixture already states (compilation_config) takes the snippet's
+	// keys into its own mapping: vLLM's names allow the object once.
+	var rest []string
+	for _, line := range strings.SplitAfter(extra, "\n") {
+		g, inner, ok := strings.Cut(strings.TrimSuffix(line, "\n"), ": {")
+		if ok && strings.HasSuffix(inner, "}") && strings.Contains(body, "      "+g+": {") {
+			body = strings.Replace(body, "      "+g+": {", "      "+g+": {"+strings.TrimSuffix(inner, "}")+", ", 1)
+			continue
+		}
+		rest = append(rest, line)
+	}
+	extra = strings.Join(rest, "")
+	body = strings.Replace(body, "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+indent(extra, "      "), 1)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "v.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -311,8 +324,12 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 				continue // reachable only through Spec.Config: nothing to set in a deployment
 			}
 			// The latency kernel reads the key: stating it changes the settings it prices from.
-			var e engineconfig.Engine
-			if err := yaml.Unmarshal([]byte(strings.TrimSuffix(entry[:strings.LastIndex(entry, "#")], "\n")), &e); err != nil {
+			var n yaml.Node
+			if err := yaml.Unmarshal([]byte(strings.TrimSuffix(entry[:strings.LastIndex(entry, "#")], "\n")), &n); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			e, err := engineconfig.Decode(deployment.NewEngineBlock(n.Content[0]))
+			if err != nil {
 				t.Fatalf("%s: %v", name, err)
 			}
 			if reflect.DeepEqual(vllmsettings.Of(e), vllmsettings.Of(engineconfig.Engine{})) {
@@ -465,7 +482,7 @@ func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
 		{"block", ", synthetic_acceptance_length: 2.5", true},
 		{"", ", synthetic_acceptance_length: 2.5", true},
 	} {
-		extra := "speculative: {method: eagle3, num_spec_tokens: 3"
+		extra := "speculative_config: {method: eagle3, num_speculative_tokens: 3"
 		if c.method != "" {
 			extra += ", rejection_sample_method: " + c.method
 		}
@@ -489,7 +506,7 @@ func TestKVEventsPublisherDefaultFollowsEnableKVCacheEvents(t *testing.T) {
 	}{
 		{true, "zmq", false}, {true, "null", true}, {false, "null", false}, {false, "zmq", true},
 	} {
-		extra := fmt.Sprintf("kv_events: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
+		extra := fmt.Sprintf("kv_events_config: {enable_kv_cache_events: %t, publisher: %q}\n", c.enabled, c.publisher)
 		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
 			t.Errorf("events %t, publisher %s: err %v, want refused %t", c.enabled, c.publisher, err, c.refused)

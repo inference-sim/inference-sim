@@ -125,7 +125,7 @@ func driveBatchQueue(t *testing.T, sc t3Scenario) t3Golden {
 		c.BlockSize, c.MaxNumSeqs, c.MaxNumBatchedTokens, c.MaxModelLen, c.NumBlocks, c.UseV2ModelRunner,
 		c.AsyncScheduling, max(c.PipelineParallelSize, 1), policy, c.EnablePrefixCaching)
 	if sp := c.Speculative; sp != nil {
-		src += fmt.Sprintf("speculative: {method: %s, num_spec_tokens: %d}\n", sp.Method, sp.NumTokens)
+		src += fmt.Sprintf("speculative_config: {method: %s, num_speculative_tokens: %d}\n", sp.Method, sp.NumTokens)
 		if sp.Draft != "" {
 			var draft struct {
 				Layers int `json:"num_nextn_predict_layers"`

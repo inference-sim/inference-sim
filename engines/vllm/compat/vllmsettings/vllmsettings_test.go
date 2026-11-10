@@ -171,6 +171,7 @@ func TestOfSharesNoMemoryWithTheBlock(t *testing.T) {
 func TestOfPoolDecodesThePoolsBlock(t *testing.T) {
 	var e engineconfig.Engine
 	populate(t, reflect.ValueOf(&e).Elem(), "Engine")
+	e.Frontend = engineconfig.FrontendRust // the block carries it as VLLM_USE_RUST_FRONTEND, 1 or 0
 	block, err := engineconfig.Encode(e)
 	if err != nil {
 		t.Fatal(err)

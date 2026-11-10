@@ -130,7 +130,7 @@ type Model struct {
 
 	decodeThreshold int
 	smBudget        int
-	// specTokens is the pool's draft length (engine.speculative.num_spec_tokens), 0 when it
+	// specTokens is the pool's draft length (engine.speculative_config.num_speculative_tokens), 0 when it
 	// does not speculate. See batchOf.
 	specTokens int
 	// pad is how a lockstep data-parallel step pads this pool's ranks (#1909).
@@ -1034,10 +1034,10 @@ func unmodelledSettings(e engineconfig.Engine) []string {
 	// The compatibility engine models vLLM's default interval 0, which keeps only the semantic
 	// checkpoints (compat/kv/prefix_hit.go), so a stated 0 is what it runs.
 	add(e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0, "prefix_cache_retention_interval")
-	add(e.KVEvents != nil, "kv_events")
+	add(e.KVEvents != nil, "kv_events_config")
 	add(e.MaxLoRAs != 0, "max_loras")
 	add(e.MaxCPULoRAs != 0, "max_cpu_loras")
-	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative.draft_model")
+	add(e.Speculative != nil && e.Speculative.DraftModel != "", "speculative_config.model")
 	// engine.env: blis-schemas requires a consumer to refuse or disclose every key it cannot
 	// honour (spec/deployment/deployment.go Engine.Env), and the compatibility engine reads none,
 	// so each stated key is named.
@@ -1093,7 +1093,7 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 	return sh, nil
 }
 
-// checkSpeculativeMethod refuses a pool whose engine.speculative.method the scenario's engine
+// checkSpeculativeMethod refuses a pool whose engine.speculative_config.method the scenario's engine
 // release does not accept, read from that release's rules (rules.EngineRules
 // SpeculativeMethodAccepted), so the accepted set moves with engine_version: dspark is
 // accepted at vLLM 0.31.0 because that release ships it.
@@ -1110,11 +1110,11 @@ func checkSpeculativeMethod(in latencykernel.Inputs, engine engineconfig.Engine)
 		return nil
 	}
 	if in.Rules == nil {
-		return fmt.Errorf("engine.speculative.method %q cannot be checked: no engine rules for "+
+		return fmt.Errorf("engine.speculative_config.method %q cannot be checked: no engine rules for "+
 			"version %q", sp.Method, in.Scenario.EngineRelease())
 	}
 	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
-		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
+		return fmt.Errorf("engine.speculative_config.method %q is not accepted by engine %s; it accepts %s",
 			sp.Method, in.Rules.EngineVersion(), strings.Join(in.Rules.SpeculativeMethodNames(), ", "))
 	}
 	return nil

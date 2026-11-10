@@ -1,0 +1,85 @@
+{
+ "nested": {
+  "attention_config": {
+   "indexer_kv_dtype": true,
+   "mla_prefill_backend": true,
+   "use_trtllm_attention": true
+  },
+  "compilation_config": {
+   "cudagraph_mode": true,
+   "custom_ops": true,
+   "decoder_replay_cudagraph_capture_sizes": true
+  },
+  "eplb_config": {
+   "num_redundant_experts": true,
+   "step_interval": true,
+   "window_size": true
+  },
+  "kv_events_config": {
+   "enable_kv_cache_events": true,
+   "publisher": true,
+   "topic": true
+  },
+  "speculative_config": {
+   "draft_sample_method": true,
+   "enable_adaptive_verification": true,
+   "kv_cache_dtype": true,
+   "method": true,
+   "model": true,
+   "num_speculative_tokens": true,
+   "rejection_sample_method": true
+  }
+ },
+ "top": {
+  "all2all_backend": true,
+  "allreduce_backend": false,
+  "async_scheduling": true,
+  "attention_config": true,
+  "block_size": true,
+  "compilation_config": true,
+  "cp_kv_cache_interleave_size": true,
+  "cudagraph_capture_sizes": true,
+  "dbo_decode_token_threshold": true,
+  "dbo_prefill_token_threshold": true,
+  "dcp_comm_backend": true,
+  "dcp_q_replicate": true,
+  "disable_cascade_attn": true,
+  "disable_custom_all_reduce": true,
+  "disable_hybrid_kv_cache_manager": true,
+  "dp_sync_interval": true,
+  "enable_dbo": true,
+  "enable_eplb": true,
+  "enable_prefix_caching": true,
+  "engram_config": true,
+  "env": false,
+  "eplb_config": true,
+  "gpu_memory_utilization": true,
+  "kv_cache_dtype": true,
+  "kv_cache_memory_bytes": true,
+  "kv_events_config": true,
+  "linear_backend": true,
+  "long_prefill_token_threshold": true,
+  "long_prefill_token_threshold_adaptive": true,
+  "mamba_cache_dtype": true,
+  "mamba_cache_mode": true,
+  "mamba_ssm_cache_dtype": true,
+  "max_cpu_loras": true,
+  "max_cudagraph_capture_size": true,
+  "max_loras": true,
+  "max_model_len": true,
+  "max_num_active_seqs": true,
+  "max_num_batched_tokens": true,
+  "max_num_scheduled_tokens": true,
+  "max_num_seqs": true,
+  "moe_backend": true,
+  "prefill_schedule_interval": true,
+  "prefix_cache_retention_interval": true,
+  "prefix_match_unit": true,
+  "quantization": true,
+  "scheduling_policy": true,
+  "speculative_config": true,
+  "stream_interval": true,
+  "swa_bounded_replay": true,
+  "watermark": true
+ }
+}

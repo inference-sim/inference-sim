@@ -115,8 +115,8 @@ func TestTheTrailingDrafterGroupIsFlagged(t *testing.T) {
 		name, extra string
 		eagle       []bool
 	}{
-		{"mtp", "speculative: {method: mtp, num_spec_tokens: 1}\nmtp_nextn_predict_layers: 1\n", []bool{false, true, false}},
-		{"dspark", "speculative: {method: dspark, num_spec_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, true, false}},
+		{"mtp", "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 1\n", []bool{false, true, false}},
+		{"dspark", "speculative_config: {method: dspark, num_speculative_tokens: 2}\nuse_v2_model_runner: true\n", []bool{false, true, false}},
 		{"none", "", []bool{false, false, false}},
 	} {
 		t.Run(c.name, func(t *testing.T) {

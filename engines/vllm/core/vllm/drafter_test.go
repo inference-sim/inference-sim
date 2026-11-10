@@ -20,9 +20,9 @@ func TestFactoryBuildsMTPWithItsStatedLookahead(t *testing.T) {
 		name, extra   string
 		wantLookahead int
 	}{
-		{"one nextn layer", "speculative: {method: mtp, num_spec_tokens: 2}\nmtp_nextn_predict_layers: 1\n", 1},
-		{"three nextn layers", "speculative: {method: mtp, num_spec_tokens: 2}\nmtp_nextn_predict_layers: 3\n", 2},
-		{"three nextn layers, K 1", "speculative: {method: mtp, num_spec_tokens: 1}\nmtp_nextn_predict_layers: 3\n", 1},
+		{"one nextn layer", "speculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 1\n", 1},
+		{"three nextn layers", "speculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 3\n", 2},
+		{"three nextn layers, K 1", "speculative_config: {method: mtp, num_speculative_tokens: 1}\nmtp_nextn_predict_layers: 3\n", 1},
 	} {
 		st, err := resolve(mustConfig(t, c.extra))
 		if err != nil {
@@ -32,7 +32,7 @@ func TestFactoryBuildsMTPWithItsStatedLookahead(t *testing.T) {
 			t.Errorf("%s: prefill lookahead %d, want %d", c.name, got, c.wantLookahead)
 		}
 	}
-	_, err := build(t, "speculative: {method: mtp, num_spec_tokens: 2}\n")()
+	_, err := build(t, "speculative_config: {method: mtp, num_speculative_tokens: 2}\n")()
 	if err == nil || !strings.Contains(err.Error(), "mtp_nextn_predict_layers") {
 		t.Errorf("MTP without its layer count: err %v, want a refusal naming mtp_nextn_predict_layers", err)
 	}
@@ -43,8 +43,8 @@ func TestFactoryBuildsMTPWithItsStatedLookahead(t *testing.T) {
 // against vLLM's own EngineCore (core/engine/testdata/golden/t3-async-mtp*.json, t3-async-dspark.json).
 func TestFactoryBuildsAsyncDrafters(t *testing.T) {
 	for _, extra := range []string{
-		"async_scheduling: true\nspeculative: {method: mtp, num_spec_tokens: 2}\nmtp_nextn_predict_layers: 1\n",
-		"async_scheduling: true\nuse_v2_model_runner: true\nspeculative: {method: dspark, num_spec_tokens: 2}\n",
+		"async_scheduling: true\nspeculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 1\n",
+		"async_scheduling: true\nuse_v2_model_runner: true\nspeculative_config: {method: dspark, num_speculative_tokens: 2}\n",
 	} {
 		e, err := build(t, extra)()
 		if err != nil {
@@ -81,7 +81,7 @@ func mustConfig(t *testing.T, extra string) Config {
 // @5df63a72): when a batch completes, a decoding request's next drafts stay the AsyncScheduler's
 // -1 placeholders, set when the next batch was scheduled, which the worker fills itself.
 func TestAsyncCompleteKeepsThePlaceholderDrafts(t *testing.T) {
-	e, err := build(t, "async_scheduling: true\nspeculative: {method: mtp, num_spec_tokens: 2}\nmtp_nextn_predict_layers: 1\n")()
+	e, err := build(t, "async_scheduling: true\nspeculative_config: {method: mtp, num_speculative_tokens: 2}\nmtp_nextn_predict_layers: 1\n")()
 	if err != nil {
 		t.Fatal(err)
 	}

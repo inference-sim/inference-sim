@@ -37,7 +37,7 @@ func TestKVEventHashesFollowThePythonHashSeed(t *testing.T) {
 		if c.Name != "plain" {
 			continue
 		}
-		extra := "block_size: 16\nnum_gpu_blocks: 64\nmax_model_len: 256\nkv_events: {enable_kv_cache_events: true}\n"
+		extra := "block_size: 16\nnum_gpu_blocks: 64\nmax_model_len: 256\nkv_events_config: {enable_kv_cache_events: true}\n"
 		label := "unset"
 		if c.Seed != nil {
 			extra += "env: {PYTHONHASHSEED: " + strconv.Quote(*c.Seed) + "}\n"

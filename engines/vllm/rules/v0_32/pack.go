@@ -388,7 +388,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 					}
 					if !p.SpeculativeMethods[e.Speculative.Method] {
 						out.RuleErrorf("speculative-method-known",
-							"%s.engine.speculative.method: %q is not accepted by engine %s",
+							"%s.engine.speculative_config.method: %q is not accepted by engine %s",
 							at, e.Speculative.Method, p.Version)
 					}
 				})
@@ -735,7 +735,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 					} {
 						if f.v != nil && *f.v < microbatches {
 							out.RuleErrorf("dbo-thresholds-at-least-microbatches",
-								"%s.engine.dbo.%s: %d is below the %d microbatches dual-batch overlap splits into; engine %s refuses it at startup",
+								"%s.engine.%s: %d is below the %d microbatches dual-batch overlap splits into; engine %s refuses it at startup",
 								at, f.name, *f.v, microbatches, p.Version)
 						}
 					}
@@ -881,7 +881,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 				forEachEngine(in, func(at string, e engineconfig.Engine) {
 					if e.Speculative != nil && isMTP[e.Speculative.Method] {
 						out.RuleErrorf("deepseek-v41-refuses-mtp",
-							"%s.engine.speculative.method: %q on %s; engine %s refuses an MTP draft for it and serves dspark",
+							"%s.engine.speculative_config.method: %q on %s; engine %s refuses an MTP draft for it and serves dspark",
 							at, e.Speculative.Method, rules.ArchDeepseekV41, p.Version)
 					}
 				})

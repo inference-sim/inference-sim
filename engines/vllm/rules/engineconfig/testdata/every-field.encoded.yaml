@@ -1,25 +1,23 @@
 all2all_backend: deepep_low_latency
 disable_custom_all_reduce: true
 allreduce_backend: nccl
-cudagraph_mode: FULL_AND_PIECEWISE
+compilation_config:
+    cudagraph_mode: FULL_AND_PIECEWISE
+    decoder_replay_cudagraph_capture_sizes:
+        - 4
+    custom_ops:
+        - +rms_norm
 max_cudagraph_capture_size: 512
 cudagraph_capture_sizes:
     - 1
     - 8
     - 512
-decoder_replay_cudagraph_capture_sizes:
-    - 4
-custom_ops:
-    - +rms_norm
-use_trtllm_attention: false
-mla_prefill_backend: FLASHINFER
-indexer_kv_dtype: bf16
+attention_config:
+    use_trtllm_attention: false
+    mla_prefill_backend: FLASHINFER
+    indexer_kv_dtype: bf16
 linear_backend: cutlass
-env:
-    A_B: two
-    VLLM_X: "1"
 async_scheduling: true
-frontend: rust
 disable_cascade_attn: true
 enable_prefix_caching: false
 swa_bounded_replay: true
@@ -41,33 +39,32 @@ max_model_len: auto
 kv_cache_memory_bytes: 123456789
 prefix_match_unit: 16
 prefix_cache_retention_interval: 3
-kv_events:
+kv_events_config:
     enable_kv_cache_events: true
     publisher: zmq
     topic: kv
 max_loras: 2
 max_cpu_loras: 4
 quantization: fp8
-cache_dtype: fp8_e4m3
+kv_cache_dtype: fp8_e4m3
 mamba_cache_dtype: float32
 mamba_ssm_cache_dtype: float32
 moe_backend: deep_gemm
 mamba_cache_mode: all
 gpu_memory_utilization: 0.92
 scheduling_policy: priority
-dbo:
-    enable_dbo: true
-    dbo_decode_token_threshold: 32
-    dbo_prefill_token_threshold: 0
-eplb:
-    enable_eplb: true
+enable_dbo: true
+dbo_decode_token_threshold: 32
+dbo_prefill_token_threshold: 0
+enable_eplb: true
+eplb_config:
     num_redundant_experts: 32
     window_size: 1000
     step_interval: 3000
-speculative:
+speculative_config:
     method: mtp
-    num_spec_tokens: 3
-    draft_model: dsv4-mtp
+    num_speculative_tokens: 3
+    model: dsv4-mtp
     kv_cache_dtype: fp8
     draft_sample_method: greedy
     rejection_sample_method: standard
@@ -79,3 +76,7 @@ engram_config:
 dcp_comm_backend: ag_rs
 dcp_q_replicate: true
 cp_kv_cache_interleave_size: 2
+env:
+    A_B: two
+    VLLM_X: "1"
+    VLLM_USE_RUST_FRONTEND: "1"

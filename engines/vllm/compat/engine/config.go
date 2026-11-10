@@ -259,7 +259,7 @@ const MaxSpeculativeTokens = 1024
 type SpeculativeConfig struct {
 	K          int     // num_speculative_tokens: draft tokens proposed per decode step. 0 = off.
 	Acceptance float64 // α: mean fraction of the K drafts accepted, in [0,1]. Read only when K>0.
-	// Method is the scenario's engine.speculative.method, "" when off. It is provenance here:
+	// Method is the scenario's engine.speculative_config.method, "" when off. It is provenance here:
 	// cost and progress are driven by K and α. Which methods exist is a fact of the engine
 	// release, so the scenario's rules pack validates it where the scenario is opened
 	// (kernelmodel.OpenPool), not a list in this package.

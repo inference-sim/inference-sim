@@ -33,7 +33,10 @@ type Engine struct {
 	// AllReduceBackend records the resolved choice where a caller wants to state it
 	// directly rather than derive it. Values are "custom" and "nccl"; it is an
 	// override, and a deployment that states both this and DisableCustomAllReduce in
-	// conflict is rejected.
+	// conflict is rejected. It is the one key of the block with no vLLM name: the engine
+	// decides it from disable_custom_all_reduce and the layout, and EngineArgs has no such
+	// field. The rules packs read it (allreduce-backend-known, custom-allreduce-reachable), so
+	// it stays, and TestEveryBlockKeyIsAVLLMName lists it as the exception.
 	AllReduceBackend string `yaml:"allreduce_backend,omitempty"`
 	// CUDAGraphMode selects capture strategy, which sets the host launch term.
 	CUDAGraphMode string `yaml:"cudagraph_mode,omitempty"`

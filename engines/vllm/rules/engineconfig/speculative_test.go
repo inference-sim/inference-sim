@@ -25,12 +25,12 @@ func TestSpeculativeKnobs(t *testing.T) {
 	}{
 		{"none stated", Speculative{}, ""},
 		{"an external drafter", Speculative{DraftModel: "minimax-m3-eagle3-gqa"}, ""},
-		{"a blank drafter name", Speculative{DraftModel: "  "}, "speculative.draft_model"},
+		{"a blank drafter name", Speculative{DraftModel: "  "}, "speculative_config.model"},
 		{"drafter kv dtype", Speculative{KVCacheDType: "fp8"}, ""},
 		{"probabilistic drafting", Speculative{DraftSampleMethod: "probabilistic"}, ""},
-		{"an unknown draft sample method", Speculative{DraftSampleMethod: "beam"}, "speculative.draft_sample_method"},
+		{"an unknown draft sample method", Speculative{DraftSampleMethod: "beam"}, "speculative_config.draft_sample_method"},
 		{"block rejection sampling", Speculative{RejectionSampleMethod: "block"}, ""},
-		{"an unknown rejection sample method", Speculative{RejectionSampleMethod: "strict"}, "speculative.rejection_sample_method"},
+		{"an unknown rejection sample method", Speculative{RejectionSampleMethod: "strict"}, "speculative_config.rejection_sample_method"},
 		{"adaptive verification", Speculative{EnableAdaptiveVerification: ptrBool(true)}, ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {

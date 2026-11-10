@@ -405,7 +405,7 @@ func TestPoolsPriceOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	// Open the decode pool from a variant caching in bf16 (the handoff check is not in play:
 	// the pools are priced, not opened together).
 	bf16 := pdVariant(t, "", "")
-	raw := strings.Replace(readScenario(t, bf16), "      cache_dtype: fp8\n", "      cache_dtype: auto\n", 2)
+	raw := strings.Replace(readScenario(t, bf16), "      kv_cache_dtype: fp8\n", "      kv_cache_dtype: auto\n", 2)
 	writeScenario(t, bf16, raw)
 	dec, err := kernelmodel.OpenRole("variant.yaml", bf16, deployment.RoleDecode)
 	if err != nil {

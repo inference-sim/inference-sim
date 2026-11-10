@@ -135,7 +135,7 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 	}
 	r, err := resolveRequest(req)
 	if err != nil {
-		return nil, fmt.Errorf("speculative.enable_adaptive_verification sizes the verify budget from the run's "+
+		return nil, fmt.Errorf("speculative_config.enable_adaptive_verification sizes the verify budget from the run's "+
 			"acceptance, and it does not resolve: %w", err)
 	}
 	data.RecordAcceptance(&r)

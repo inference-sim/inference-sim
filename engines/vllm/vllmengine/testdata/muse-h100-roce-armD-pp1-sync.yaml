@@ -22,7 +22,7 @@ pools:
       max_model_len: 8192
       enable_prefix_caching: true
       gpu_memory_utilization: 0.9
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       async_scheduling: false
       moe_backend: marlin
 # Arm D on one node at PP1 x TP8, synchronous scheduling and no drafter: the one-batch twin of

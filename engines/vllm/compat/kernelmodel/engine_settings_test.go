@@ -440,7 +440,7 @@ func openGPTOSSWithSpeculation(t *testing.T, speculative string) (*Model, error)
 		t.Fatal(err)
 	}
 	body := regexp.MustCompile(`(?m)^\s*block_size:\s*\d+\s*\n`).ReplaceAllString(string(raw), "")
-	body = strings.Replace(body, "cache_dtype: fp8\n", "cache_dtype: auto\n"+speculative, 1)
+	body = strings.Replace(body, "kv_cache_dtype: fp8\n", "kv_cache_dtype: auto\n"+speculative, 1)
 	r := repos()
 	r.Scenarios = t.TempDir()
 	if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
@@ -456,7 +456,7 @@ func openGPTOSSWithSpeculation(t *testing.T, speculative string) (*Model, error)
 func TestAnUnstatedBlockSizeIsRefusedOnlyForSpeculationThatAddsLayers(t *testing.T) {
 	const ind = "      "
 	spec := func(method string, k int) string {
-		return fmt.Sprintf("%sspeculative:\n%s  method: %s\n%s  num_spec_tokens: %d\n", ind, ind, method, ind, k)
+		return fmt.Sprintf("%sspeculative_config:\n%s  method: %s\n%s  num_speculative_tokens: %d\n", ind, ind, method, ind, k)
 	}
 	for _, c := range []struct {
 		name, speculative string
@@ -513,7 +513,7 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		body := strings.Replace(string(raw), "      block_size:", "      indexer_kv_dtype: "+dtype+"\n      block_size:", 1)
+		body := strings.Replace(string(raw), "      block_size:", "      attention_config: {indexer_kv_dtype: "+dtype+"}\n      block_size:", 1)
 		if !strings.Contains(body, "indexer_kv_dtype") {
 			t.Fatalf("%s has no block_size line to put the key before", fixture)
 		}

@@ -23,7 +23,7 @@ func TestTheEngineReportsTheFieldListItPublishes(t *testing.T) {
 	for name, extra := range map[string]string{
 		"one engine":            "",
 		"a data-parallel group": "data_parallel_size: 2\n",
-		"a speculating engine":  "speculative: {method: eagle3, num_spec_tokens: 3}\n",
+		"a speculating engine":  "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			e, err := build(t, extra)()

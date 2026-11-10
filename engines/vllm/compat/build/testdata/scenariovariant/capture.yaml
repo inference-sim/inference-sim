@@ -25,7 +25,8 @@ pools:
       dp: 1
       enable_expert_parallel: false
     engine:
-      cudagraph_mode: PIECEWISE
+      compilation_config:
+        cudagraph_mode: PIECEWISE
       max_cudagraph_capture_size: 256
       enable_prefix_caching: true
       block_size: 16
@@ -33,5 +34,5 @@ pools:
       max_num_seqs: 1024
       max_model_len: 9472
       quantization: nvfp4
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       gpu_memory_utilization: 0.9

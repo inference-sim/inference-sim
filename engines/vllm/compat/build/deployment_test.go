@@ -274,8 +274,8 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		{"      enable_chunked_prefill: false\n", "enable_chunked_prefill"},
 		{"      enable_chunked_prefill: true\n", "enable_chunked_prefill"},
 		{"      prefix_cache_retention_interval: 16\n", "prefix_cache_retention_interval"},
-		{"      kv_events:\n        enable_kv_cache_events: true\n", "kv_events"},
-		{"      kv_events:\n        enable_kv_cache_events: false\n", "kv_events"},
+		{"      kv_events_config:\n        enable_kv_cache_events: true\n", "kv_events_config"},
+		{"      kv_events_config:\n        enable_kv_cache_events: false\n", "kv_events_config"},
 		{"      max_cpu_loras: 4\n", "max_cpu_loras"},
 		// engine.env: the compatibility engine reads no key, so any stated key is refused by name.
 		{"      env:\n        VLLM_USE_V2_MODEL_RUNNER: \"1\"\n", "env (VLLM_USE_V2_MODEL_RUNNER)"},
@@ -293,8 +293,8 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		}
 	}
 	// The drafter of a speculative block: speculative.draft_model.
-	body := strings.Replace(string(raw), "        num_spec_tokens: 3\n", "        num_spec_tokens: 3\n        draft_model: some-drafter\n", 1)
-	if !strings.Contains(body, "draft_model: some-drafter") {
+	body := strings.Replace(string(raw), "num_speculative_tokens: 3", "num_speculative_tokens: 3, model: some-drafter", 1)
+	if !strings.Contains(body, "model: some-drafter") {
 		t.Fatal("fixture has no speculative block to edit")
 	}
 	dir := t.TempDir()
@@ -302,8 +302,8 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		t.Fatal(err)
 	}
 	if _, err := Adopt(AdoptInputs{Scenario: "v.yaml", ScenariosDir: dir, Data: repos.Data}); err == nil ||
-		!strings.Contains(err.Error(), "engine.speculative.draft_model") {
-		t.Errorf("speculative.draft_model: %v, want a refusal naming it", err)
+		!strings.Contains(err.Error(), "engine.speculative_config.model") {
+		t.Errorf("speculative_config.model: %v, want a refusal naming it", err)
 	}
 }
 

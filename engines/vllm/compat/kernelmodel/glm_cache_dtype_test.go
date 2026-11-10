@@ -19,13 +19,13 @@ func openGLM(t *testing.T, fixture, hardware, line string) (*Model, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`(?m)^(\s*)cache_dtype:.*\n`)
+	re := regexp.MustCompile(`(?m)^(\s*)kv_cache_dtype:.*\n`)
 	if !re.Match(raw) {
-		t.Fatalf("%s states no cache_dtype", fixture)
+		t.Fatalf("%s states no kv_cache_dtype", fixture)
 	}
 	repl := ""
 	if line != "" {
-		repl = "${1}cache_dtype: " + line + "\n"
+		repl = "${1}kv_cache_dtype: " + line + "\n"
 	}
 	body := re.ReplaceAllString(string(raw), repl)
 	body = strings.Replace(body, "hardware: "+strings.Fields(regexp.MustCompile(`hardware: \S+`).FindString(body))[1], "hardware: "+hardware, 1)

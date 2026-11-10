@@ -73,9 +73,9 @@ func TestTheEngineExposesTheSpecDecodeCounters(t *testing.T) {
 		name, extra string
 		accept      int
 	}{
-		{"ngram, two accepted", "speculative: {method: ngram, num_spec_tokens: 3}\n", 2},
-		{"eagle3, none accepted", "speculative: {method: eagle3, num_spec_tokens: 3}\n", 0},
-		{"eagle3, all accepted", "speculative: {method: eagle3, num_spec_tokens: 3}\n", 3},
+		{"ngram, two accepted", "speculative_config: {method: ngram, num_speculative_tokens: 3}\n", 2},
+		{"eagle3, none accepted", "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n", 0},
+		{"eagle3, all accepted", "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n", 3},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m, verifies, drafts, accepted, perPos := runSpec(t, c.extra, c.accept)
@@ -114,7 +114,7 @@ func TestTheEngineExposesTheSpecDecodeCounters(t *testing.T) {
 
 // A data-parallel group exposes the counters too, summed over its ranks.
 func TestADataParallelGroupExposesTheSpecDecodeCounters(t *testing.T) {
-	g, err := build(t, "data_parallel_size: 2\nspeculative: {method: ngram, num_spec_tokens: 3}\n")()
+	g, err := build(t, "data_parallel_size: 2\nspeculative_config: {method: ngram, num_speculative_tokens: 3}\n")()
 	if err != nil {
 		t.Fatal(err)
 	}

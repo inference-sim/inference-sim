@@ -27,13 +27,10 @@ pools:
       max_model_len: 262144
       enable_prefix_caching: true
       gpu_memory_utilization: 0.9
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       async_scheduling: true
       moe_backend: marlin
-      speculative:
-        method: dspark
-        num_spec_tokens: 7
-        draft_model: muse-spark-open-dspark
+      speculative_config: {method: dspark, num_speculative_tokens: 7, model: muse-spark-open-dspark}
 # The OffloadingConnector's CPU tier, LRU: 512 GiB of host DRAM on each of the engine's two
 # nodes. A tier's bytes are the engine's cpu_bytes_to_use (vLLM divides it among the workers'
 # copies, vllm/v1/kv_offload/cpu/spec.py:103-121), so the PP2 x TP8 engine over two nodes states

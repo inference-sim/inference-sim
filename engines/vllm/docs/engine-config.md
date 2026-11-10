@@ -21,7 +21,7 @@ Communication:
 | `all2all_backend` | string | no | How a mixture-of-experts (MoE) layer sends tokens to their experts and back. |
 | `disable_custom_all_reduce` | boolean | no | Disable the custom all-reduce GPU kernel, which runs on the streaming multiprocessors (SMs) rather than the network. Omitted means false, so the kernel is used where the layout allows. |
 | `allreduce_backend` | string | no | `custom` or `nccl`, stated directly instead of through `disable_custom_all_reduce`. Must not contradict it. |
-| `dbo` | mapping | no | Dual-batch overlap, below. |
+| `enable_dbo`, `dbo_decode_token_threshold`, `dbo_prefill_token_threshold` | | no | Dual-batch overlap, below. |
 
 Scheduling and memory:
 
@@ -37,12 +37,12 @@ Scheduling and memory:
 | `gpu_memory_utilization` | number | no | Fraction of GPU memory the engine may use, in [0, 1]. Zero or unstated is vLLM's default, 0.92 in each release the engine models (`vllm/config/cache.py` at v0.29.0:111, v0.31.0:103, v0.32.0:102); `Model.EngineSources()` reports it. |
 | `scheduling_policy` | string | no | `fcfs` or `priority` in vLLM 0.29.0. |
 | `async_scheduling` | boolean | no | Omitted means the engine decides through its own disqualifying conditions. |
-| `frontend` | string | no | The API server that renders and tokenizes each prompt: `python` or `rust` (`engineconfig.Frontend`, rules/engineconfig/engine.go). Omitted, `python`. `rust` is vLLM's vllm-rs frontend, selected by the environment variable `VLLM_USE_RUST_FRONTEND=1`, not a flag. It changes how long a request waits for admission, per prompt token. |
-| `cudagraph_mode` | string | no | CUDA graph capture strategy. |
+| `env.VLLM_USE_RUST_FRONTEND` | string | no | The API server that renders and tokenizes each prompt: `python` or `rust` (`engineconfig.Frontend`, rules/engineconfig/engine.go). Omitted, `python`. `rust` is vLLM's vllm-rs frontend, selected by the environment variable `VLLM_USE_RUST_FRONTEND=1`, not a flag. It changes how long a request waits for admission, per prompt token. |
+| `compilation_config.cudagraph_mode` | string | no | CUDA graph capture strategy. |
 | `max_cudagraph_capture_size` | integer | no | `compilation_config.max_cudagraph_capture_size`: the largest step, in tokens, a CUDA graph is captured for; a larger step runs eager. At least 1. Omitted, the release default, min(`max_num_seqs` x decode query length x 2, 512), or 1024 on SM100. The engine caps it at `max_num_batched_tokens` and truncates it to the largest size it generates. `cudagraph_mode: NONE`, or `--enforce-eager`, which has no field here, captures nothing. |
 | `cudagraph_capture_sizes` | list of integers | no | `compilation_config.cudagraph_capture_sizes`: the exact step sizes to capture, each at least 1, not empty. Sizes above `max_num_batched_tokens` are dropped. With `max_cudagraph_capture_size` too, that must be the largest kept, or the engine refuses the pair. |
-| `decoder_replay_cudagraph_capture_sizes` | list of integers | no | `compilation_config.decoder_replay_cudagraph_capture_sizes`, the decoder-replay graph sizes of a YOCO model such as DeepSeek-V4.1 (new in vLLM 0.32.0). Each at least 1. Omitted, generated from the sliding window. |
-| `custom_ops` | list of strings | no | `compilation_config.custom_ops`: which ops run as custom kernels, `all`, `none`, or `+name` / `-name` entries. No entry may be empty. Omitted, the engine default. |
+| `compilation_config.decoder_replay_cudagraph_capture_sizes` | list of integers | no | `compilation_config.decoder_replay_cudagraph_capture_sizes`, the decoder-replay graph sizes of a YOCO model such as DeepSeek-V4.1 (new in vLLM 0.32.0). Each at least 1. Omitted, generated from the sliding window. |
+| `compilation_config.custom_ops` | list of strings | no | `compilation_config.custom_ops`: which ops run as custom kernels, `all`, `none`, or `+name` / `-name` entries. No entry may be empty. Omitted, the engine default. |
 | `long_prefill_token_threshold_adaptive` | boolean | no | Floor the `long_prefill_token_threshold` cap at a fair share of the token budget (`max_num_batched_tokens` over the queued and running requests). Omitted means false. |
 | `enable_chunked_prefill` | boolean | no | Let a prefill be split across steps. Off, a waiting request whose whole prompt does not fit the step's remaining token budget waits for a step that has room, and an unstated `max_num_batched_tokens` is raised to `max_model_len`. Omitted means true. vLLM refuses it off with `max_num_batched_tokens` below `max_model_len`, and with prefix caching on a Mamba model; the v0.32.0 engine also refuses it off beside speculative decoding, `max_loras`, a KV connector or offload tier, data or pipeline parallelism, hybrid KV cache groups, `long_prefill_token_threshold_adaptive`, `max_num_scheduled_tokens`, a nonzero `watermark` and `max_num_active_seqs`, because no oracle scenario runs them together (`core/vllm/chunked.go`). Prefix caching, KV events, preemption, a long-prefill cap, priority scheduling and async scheduling at one pipeline stage are recorded. |
 | `max_num_scheduled_tokens` | integer | no | The most tokens the scheduler issues in a step, where the model appends tokens to a batch, as speculative decoding does. Not negative; omitted or 0 uses `max_num_batched_tokens`. |
@@ -56,7 +56,7 @@ Scheduling and memory:
 | `kv_cache_memory_bytes` | integer | no | The KV cache's size per GPU in bytes, instead of deriving it from `gpu_memory_utilization`. Positive. |
 | `prefix_match_unit` | integer | no | The finest token boundary a prefix-cache hit lands on; may be finer than the block size where every group's block size divides by it. Not negative; omitted or 0 means the block size. |
 | `prefix_cache_retention_interval` | integer | no | Token interval between retained sliding-window and Mamba prefix-cache checkpoints; 0 keeps only semantic checkpoints. Not negative. |
-| `kv_events` | mapping | no | KV-event publishing, below. |
+| `kv_events_config` | mapping | no | KV-event publishing, below. |
 | `max_loras` | integer | no | The most distinct LoRA adapters in one batch; a request whose adapter does not fit waits for a later step while those behind it run. Not negative; omitted or 0 means 1. |
 | `max_cpu_loras` | integer | no | LoRA adapters kept loaded in CPU memory (an LRU set). Not below `max_loras`; omitted or 0 means `max_loras`. |
 
@@ -68,15 +68,15 @@ Weights and caches:
 |---|---|---|---|
 | `quantization` | string | no | Weight format the engine serves, where it differs from the checkpoint's. Omitted means the checkpoint's own format. |
 | `moe_backend` | string | no | The expert-kernel backend, `--moe-backend`. Omitted means `auto`. A mega-MoE backend is one of the conditions under which DeepSeek-V4.1 turns on its own sequence parallelism. |
-| `cache_dtype` | string | no | KV cache format. |
+| `kv_cache_dtype` | string | no | KV cache format. |
 | `enable_prefix_caching` | boolean | no | Omitted means true, vLLM's default. `false` describes a deployment without prefix caching. |
 | `swa_bounded_replay` | boolean | no | DeepSeek-V4.1 SWA bounded replay (`--swa-bounded-replay` / `--no-swa-bounded-replay`). `true` keeps the sliding-window cache out of prefix caching and recomputes a hit's last sliding window; `false` lets the window cache take part in prefix caching (retained window tails). Omitted, the engine's resolution: on in vLLM 0.31.0 under the V2 model runner, without prefill context parallelism and not on ROCm. Only DeepSeek-V4.1 reads it. |
 | `mamba_cache_dtype` | string | no | Format of a recurrent layer's state. |
 | `mamba_ssm_cache_dtype` | string | no | Format of the SSM state alone, where it differs. |
 | `mamba_cache_mode` | string | no | Whether recurrent state is fixed per sequence or grows with context. |
 | `disable_cascade_attn` | boolean | no | Cascade attention reads a prefix shared by a batch once rather than once per request. Omitted means `true`, so it is disabled unless this is set to `false`. |
-| `use_trtllm_attention` | boolean | no | `attention_config.use_trtllm_attention`: use or skip FlashInfer's TRT-LLM attention backend. Omitted auto-detects. |
-| `mla_prefill_backend` | string | no | `attention_config.mla_prefill_backend`: `FLASH_ATTN`, `FLASHINFER` or `TRTLLM_RAGGED` in vLLM 0.32.0. Omitted selects automatically. |
+| `attention_config.use_trtllm_attention` | boolean | no | `attention_config.use_trtllm_attention`: use or skip FlashInfer's TRT-LLM attention backend. Omitted auto-detects. |
+| `attention_config.mla_prefill_backend` | string | no | `attention_config.mla_prefill_backend`: `FLASH_ATTN`, `FLASHINFER` or `TRTLLM_RAGGED` in vLLM 0.32.0. Omitted selects automatically. |
 | `linear_backend` | string | no | `kernel_config.linear_backend`, the GEMM backend of linear layers. Omitted is `auto`. |
 | `env` | mapping | no | Engine environment variables the launch set that change what the engine runs, such as `VLLM_FLASHINFER_ALLREDUCE_BACKEND`, name to value. Each name must be an environment-variable name. A consumer refuses, or discloses as an assumption, every key it cannot honour. |
 
@@ -86,8 +86,8 @@ Speculation and experts:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `speculative` | mapping | no | Speculative decoding, below. |
-| `eplb` | mapping | no | Expert-parallel load balancing, below. |
+| `speculative_config` | mapping | no | Speculative decoding, below. |
+| `enable_eplb`, `eplb_config` | | no | Expert-parallel load balancing, below. |
 | `engram_config` | mapping | no | Where DeepSeek-V4.1's Engram tables live, below. Decides the residency of every model `Gather` whose `residency_control` is `engram_cpu_offload`. |
 
 Decode-context parallelism. These have no effect when `dcp` is 0 or 1:
@@ -100,7 +100,7 @@ Decode-context parallelism. These have no effect when `dcp` is 0 or 1:
 | `dcp_q_replicate` | boolean | no | Replicate the query projection of multi-head latent attention (MLA) on every rank, to skip a query all-gather. |
 | `cp_kv_cache_interleave_size` | integer | no | Consecutive tokens one rank holds before the next takes over. Zero means unstated, which is a different request from 1. |
 
-#### `engine.dbo`
+#### Dual-batch overlap (top-level keys)
 
 <!-- fields: deployment.DBO -->
 
@@ -110,7 +110,7 @@ Decode-context parallelism. These have no effect when `dcp` is 0 or 1:
 | `dbo_decode_token_threshold` | integer | no | Batch size in tokens at or above which a uniform-decode batch is split. Omitted takes the engine's default. With `enable_dbo` on, vLLM 0.31.0 refuses a stated value below the two microbatches, 0 or 1. Not negative. |
 | `dbo_prefill_token_threshold` | integer | no | Batch size in tokens at or above which any other batch is split. As for the decode threshold. |
 
-#### `engine.eplb`
+#### `eplb_config` (and `enable_eplb`)
 
 <!-- fields: deployment.EPLB -->
 
@@ -121,15 +121,15 @@ Decode-context parallelism. These have no effect when `dcp` is 0 or 1:
 | `window_size` | integer | no | Load-balancing window. |
 | `step_interval` | integer | no | Steps between rebalances. |
 
-#### `engine.speculative`
+#### `speculative_config`
 
 <!-- fields: deployment.Speculative -->
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `method` | string | yes | The draft method. Which names are valid depends on the engine release. |
-| `num_spec_tokens` | integer | yes | Draft tokens per step, at least 1. |
-| `draft_model` | string | no | The catalog model whose graph is the drafter, where the drafter is a separate checkpoint, as an EAGLE3 head is (vLLM's `speculative_config.model`). Omitted, the target graph's own speculator. Not blank. |
+| `num_speculative_tokens` | integer | yes | Draft tokens per step, at least 1. |
+| `model` | string | no | The catalog model whose graph is the drafter, where the drafter is a separate checkpoint, as an EAGLE3 head is (vLLM's `speculative_config.model`). Omitted, the target graph's own speculator. Not blank. |
 | `kv_cache_dtype` | string | no | The drafter's KV cache format where it differs from the target's. |
 | `draft_sample_method` | string | no | `greedy` or `probabilistic`. Recorded: acceptance is supplied, so it does not change which drafts are accepted. |
 | `rejection_sample_method` | string | no | `standard`, `synthetic` or `block`. Recorded, as `draft_sample_method`. |
@@ -162,3 +162,37 @@ its prefix cache can serve. A router's precise prefix-cache scorer consumes the 
 | `publisher` | string | no | `null` or `zmq`. Omitted, the engine's resolution: `zmq` when events are enabled. |
 | `topic` | string | no | The topic consumers subscribe to. |
 
+
+## Names: vLLM's own, and the migration
+
+The block takes vLLM's `EngineArgs` names (design X1: what you hand vLLM is what you hand BLIS), so a
+name in `fields.json` is a name in the block. A setting that vLLM keeps inside a config object is
+written inside it: `compilation_config: {cudagraph_mode: FULL}`, `attention_config: {...}`,
+`speculative_config: {...}`, `eplb_config: {...}`, `kv_events_config: {...}`; the dotted name in
+`fields.json` is the path. The block's own keys that are not `EngineArgs` names are `env` (a mapping
+of environment variables, named as vLLM reads them) and `allreduce_backend` (the resolved choice,
+which the engine derives and `EngineArgs` has no field for).
+
+A block written in the earlier names is refused, and the error names the key to use. These changed:
+
+| Earlier | Now |
+|---|---|
+| `cache_dtype` | `kv_cache_dtype` |
+| `cudagraph_mode`, `decoder_replay_cudagraph_capture_sizes`, `custom_ops` | the same keys inside `compilation_config` |
+| `use_trtllm_attention`, `mla_prefill_backend`, `indexer_kv_dtype` | the same keys inside `attention_config` |
+| `dbo: {enable_dbo, dbo_*_token_threshold}` | those keys at the top level |
+| `eplb: {enable_eplb, ...}` | `enable_eplb` at the top level; the rest inside `eplb_config` |
+| `kv_events: {...}` | `kv_events_config: {...}` |
+| `speculative: {num_spec_tokens, draft_model, ...}` | `speculative_config: {num_speculative_tokens, model, ...}` |
+| `frontend: rust` | `env: {VLLM_USE_RUST_FRONTEND: "1"}` |
+
+To rewrite a repository's YAML, run `python3 -I tools/migrateengineblock/migrate.py <file-or-dir>...`
+(`--check` writes nothing and exits 1 if a file would change). It edits only the lines of an
+`engine:` mapping, keeps comments and layout, and is safe to run twice. A value written as a block
+list (`custom_ops:` with `- x` lines) is refused; write it on one line and run again. For YAML held in
+Go test strings, `tools/migrateengineblock/migrate_go.py` does the same for string literals.
+
+A tool that writes the block from `fields.json` names (blis-config-search) needs only this rule:
+a config name `a.b` is the nested mapping `a: {b: ...}`, a name without a dot is a top-level key, and
+an environment variable is a key of `env`. `VLLMKeys` in `rules/engineconfig/names.go` lists the names the block
+takes.

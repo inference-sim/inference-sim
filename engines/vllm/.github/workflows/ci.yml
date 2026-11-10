@@ -383,6 +383,8 @@ jobs:
       # Each guard must fail on the violation it exists to catch (oracle/test_checks.py).
       - name: the oracle's guards catch what they guard
         run: python3 -I oracle/test_checks.py
+      - name: the engine-block migration rewrites what it says and refuses what it cannot
+        run: python3 -I tools/migrateengineblock/test_migrate.py
       - name: the block-size oracle's config.json fetch is verified
         run: python3 -I oracle/blocksize/test_modelconfig.py
 
@@ -532,6 +534,15 @@ jobs:
           mkdir -p oracle/out
           python -I oracle/run_engineargs.py vllm-source oracle/engineargs-cases.json > oracle/out/engineargs.json
           python3 -I oracle/compare_engineargs.py core/vllm/testdata/engineargs.json oracle/out/engineargs.json
+          # Every key the engine block takes is a name vLLM's EngineArgs takes (blis-vllm#93): ask the
+          # pinned vLLM about the keys the committed answer covers, and compare.
+          python3 -I - <<'PY' > oracle/out/block-keys.json
+          import json
+          t = json.load(open("rules/engineconfig/testdata/vllm_names.json"))
+          print(json.dumps({"top": sorted(t["top"]), "nested": {g: sorted(v) for g, v in t["nested"].items()}}))
+          PY
+          python -I oracle/run_engineargs.py --key-names vllm-source oracle/out/block-keys.json > oracle/out/vllm_names.json
+          python3 -I -c "import json,sys; a,b=(json.load(open(f)) for f in sys.argv[1:]); sys.exit(0 if a==b else 'the EngineArgs name answers differ from rules/engineconfig/testdata/vllm_names.json')" rules/engineconfig/testdata/vllm_names.json oracle/out/vllm_names.json
       # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
       # the generator exits non-zero if any differs from the committed file.
       - name: the block-hash fixture is vLLM's own hashes

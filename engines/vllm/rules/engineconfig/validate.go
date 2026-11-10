@@ -86,30 +86,30 @@ func validateEngine(p *rules.Problems, at string, e Engine) {
 			"dbo_prefill_token_threshold": e.DBO.PrefillTokenThreshold,
 		} {
 			if v != nil && *v < 0 {
-				p.Field(at+".engine.dbo."+field, "must not be negative")
+				p.Field(at+".engine."+field, "must not be negative")
 			}
 		}
 	}
 	if e.EPLB != nil && e.EPLB.Enabled && e.EPLB.NumRedundantExperts < 0 {
-		p.Field(at+".engine.eplb.num_redundant_experts", "must not be negative")
+		p.Field(at+".engine.eplb_config.num_redundant_experts", "must not be negative")
 	}
 	if e.Speculative != nil {
 		if e.Speculative.Method == "" {
-			p.Field(at+".engine.speculative.method", "required")
+			p.Field(at+".engine.speculative_config.method", "required")
 		}
 		if e.Speculative.NumSpecTokens < 1 {
-			p.Field(at+".engine.speculative.num_spec_tokens",
+			p.Field(at+".engine.speculative_config.num_speculative_tokens",
 				"must be at least 1; omit the block instead of declaring zero drafts")
 		}
 		sp := e.Speculative
 		if sp.DraftModel != "" && strings.TrimSpace(sp.DraftModel) == "" {
-			p.Field(at+".engine.speculative.draft_model", "must name a catalog model, not be blank")
+			p.Field(at+".engine.speculative_config.model", "must name a catalog model, not be blank")
 		}
 		if m := sp.DraftSampleMethod; m != "" && !draftSampleMethods[m] {
-			p.Field(at+".engine.speculative.draft_sample_method", "%q is not greedy or probabilistic", m)
+			p.Field(at+".engine.speculative_config.draft_sample_method", "%q is not greedy or probabilistic", m)
 		}
 		if m := sp.RejectionSampleMethod; m != "" && !rejectionSampleMethods[m] {
-			p.Field(at+".engine.speculative.rejection_sample_method", "%q is not standard, synthetic or block", m)
+			p.Field(at+".engine.speculative_config.rejection_sample_method", "%q is not standard, synthetic or block", m)
 		}
 		if l := sp.SyntheticAcceptanceLength; l != nil {
 			// SpeculativeConfig._resolve_synthetic_acceptance_rates and the check that follows it
