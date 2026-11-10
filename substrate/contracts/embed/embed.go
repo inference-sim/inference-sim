@@ -585,10 +585,13 @@ type BlockStored struct {
 	// name; "" for none. Emitted by vLLM and by SGLang (lora_name).
 	LoRAName string
 	// ExtraKeys are what the engine folded into each block's hash besides its tokens, one
-	// entry per block in Hashes, or nil for none: the adapter name (when LoRAName is set),
+	// entry per block in Hashes, or nil for none: the adapter (when LoRAName is set),
 	// multimodal identifiers, the cache salt, prompt-embedding digests. An entry is nil
-	// for a block with none; otherwise each element is a string or a 2-element []any of
-	// (string, int), published untagged as vLLM publishes them. Emitted by vLLM
+	// for a block with none; otherwise each element is a string, a 2-element []any of
+	// (string, int), or, for an adapter, vLLM v0.32.0's 3-element ("lora", name, path) of
+	// strings (_gen_lora_extra_hash_keys in vllm/v1/core/kv_cache_utils.py), published
+	// untagged as vLLM publishes them. The adapter's path enters the hash, so an engine
+	// that reproduces vLLM's hashes needs engine.Request.AdapterPath. Emitted by vLLM
 	// (extra_keys).
 	ExtraKeys [][]any
 	// CacheSalt is the salt of the request that stored the blocks; "" for none. Emitted by

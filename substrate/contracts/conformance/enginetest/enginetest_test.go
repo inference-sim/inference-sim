@@ -338,6 +338,84 @@ func (e preemptsTwice) Schedule(now engine.Time) (engine.Batch, error) {
 	return b, err
 }
 
+// skipsValidation is an engine that runs a request without applying Request.Validate: it drops
+// the adapter path, so the request passes as the base model.
+type skipsValidation struct{ *FIFO }
+
+func (e skipsValidation) Add(r engine.Request, now engine.Time) error {
+	r.AdapterPath = ""
+	return e.FIFO.Add(r, now)
+}
+
+// The conformance suite fails an engine whose Add does not apply Request.Validate.
+func TestProtocolErrorsFailAnEngineThatSkipsValidation(t *testing.T) {
+	cfg := fifoCfg()
+	cfg.InFlight, cfg.TokenBudget = 2, 4
+	newBad := func() (engine.Engine, error) {
+		f, err := NewFIFO(cfg)
+		return skipsValidation{f}, err
+	}
+	if err := CheckProtocolErrors(newBad, req("A", 4, 2), req("B", 4, 2)); err == nil ||
+		!strings.Contains(err.Error(), "Request.Validate") {
+		t.Fatalf("got %v, want a failure naming Request.Validate", err)
+	}
+}
+
+// wrongError is an engine that refuses a request that does not validate, but with an error
+// that is not the one Request.Validate returns.
+type wrongError struct{ *FIFO }
+
+func (e wrongError) Add(r engine.Request, now engine.Time) error {
+	if r.Validate() != nil {
+		return errors.New("fifo: request refused")
+	}
+	return e.FIFO.Add(r, now)
+}
+
+// keepsWhatItRefuses is an engine that stores a request that does not validate, with the
+// adapter path dropped so it can run as the base model, and then returns the right error.
+type keepsWhatItRefuses struct{ *FIFO }
+
+func (e keepsWhatItRefuses) Add(r engine.Request, now engine.Time) error {
+	invalid := r.Validate()
+	if invalid == nil {
+		return e.FIFO.Add(r, now)
+	}
+	r.AdapterPath = ""
+	_ = e.FIFO.Add(r, now)
+	return invalid
+}
+
+// The conformance suite fails an engine that refuses an invalid request with another error, or
+// that refuses it with the right error after keeping it, at limits of one and of two: with a
+// limit of one the old check returned before any later observation.
+func TestProtocolErrorsFailWrongErrorAndKeptRequest(t *testing.T) {
+	for _, limit := range []int{1, 2} {
+		cfg := fifoCfg()
+		cfg.InFlight, cfg.TokenBudget = limit, 4
+		for name, c := range map[string]struct {
+			wrap func(*FIFO) engine.Engine
+			want string
+		}{
+			"wrong error":        {func(f *FIFO) engine.Engine { return wrongError{f} }, "want the error of Request.Validate"},
+			"kept after refusal": {func(f *FIFO) engine.Engine { return keepsWhatItRefuses{f} }, "a refused Add must leave no trace"},
+		} {
+			bad := func() (engine.Engine, error) {
+				f, err := NewFIFO(cfg)
+				return c.wrap(f), err
+			}
+			err := CheckProtocolErrors(bad, req("A", 4, 2), req("B", 4, 2))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("limit %d, %s: got %v, want a failure containing %q", limit, name, err, c.want)
+			}
+		}
+		// The correct engine passes at the same limit.
+		if err := CheckProtocolErrors(newFIFO(cfg), req("A", 4, 2), req("B", 4, 2)); err != nil {
+			t.Errorf("limit %d: FIFO: %v", limit, err)
+		}
+	}
+}
+
 // preemptsAStrangerIdle reports a preemption of a request it was never given in a batch
 // that runs nothing, as vLLM's step does when it preempts every running request.
 type preemptsAStrangerIdle struct{ *FIFO }
