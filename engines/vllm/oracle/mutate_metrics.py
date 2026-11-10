@@ -37,6 +37,19 @@ MUTANTS = [
      "\t\tif v <= b {\n\t\t\th.counts[i]++", "\t\tif v < b {\n\t\t\th.counts[i]++"),
     ("X7", "the prefill KV computed is the prompt less its cached tokens", "core/metrics/metrics.go",
      "float64(f.PromptTokens-max(f.CachedTokens, 0))", "float64(f.PromptTokens)"),
+    # SpecDecodingStats.observe_draft and SpecDecodingProm (vllm/v1/spec_decode/metrics.py).
+    ("X8", "a draft is counted for each verifying request", "core/metrics/metrics.go",
+     "m.counters[\"vllm:spec_decode_num_drafts_total\"]++", "m.counters[\"vllm:spec_decode_num_drafts_total\"] += 2"),
+    ("X9", "the proposed draft tokens are the ones scheduled", "core/metrics/metrics.go",
+     "m.counters[\"vllm:spec_decode_num_draft_tokens_total\"] += float64(d.Proposed)",
+     "m.counters[\"vllm:spec_decode_num_draft_tokens_total\"] += float64(d.Proposed + 1)"),
+    ("X10", "the accepted tokens are the drafts the target accepted", "core/metrics/metrics.go",
+     "m.counters[\"vllm:spec_decode_num_accepted_tokens_total\"] += float64(d.Accepted)",
+     "m.counters[\"vllm:spec_decode_num_accepted_tokens_total\"] += float64(d.Proposed)"),
+    ("X11", "position i counts the requests that accepted more than i drafts", "core/metrics/metrics.go",
+     "for i := 0; i < d.Accepted && i < m.specTokens; i++ {", "for i := 0; i < d.Accepted-1 && i < m.specTokens; i++ {"),
+    ("X12", "one accepted-tokens counter is registered for every draft position", "core/metrics/metrics.go",
+     "for i := range numSpecTokens {", "for i := range numSpecTokens - 1 {"),
 ]
 
 # Not a mutant here: the deferred split of vllm:num_requests_waiting_by_reason. No committed

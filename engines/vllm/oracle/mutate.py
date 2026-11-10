@@ -162,6 +162,11 @@ MUTANTS = [
     # request whose tokens do not fit the remaining budget waits (scheduler.py:1161).
     ("M63", "enable_chunked_prefill off", "core/sched/scheduler.go",
      "if !s.cfg.EnableChunkedPrefill && numNew > room {", "if false && !s.cfg.EnableChunkedPrefill && numNew > room {"),
+    # n-gram is not an EAGLE-family method (spec-ngram, spec-ngram-prefix-hit).
+    ("M64", "n-gram keeps the last cached block (no EAGLE block drop)", "core/sched/spec.go",
+     "useEagle := o.Method == \"eagle\" ||", "useEagle := o.Method == \"ngram\" || o.Method == \"eagle\" ||"),
+    ("M65", "n-gram reserves no KV lookahead", "core/sched/spec.go",
+     "case useEagle || draftModel:\n\t\ts.Lookahead = k", "case useEagle || draftModel || o.Method == \"ngram\":\n\t\ts.Lookahead = k"),
 ]
 
 
