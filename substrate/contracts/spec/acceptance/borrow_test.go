@@ -358,6 +358,53 @@ func TestTheDrafterIsPartOfTheKey(t *testing.T) {
 	}
 }
 
+// A fallback category stands in only when the workload's own category supplies nothing: not
+// the exact key, and not any borrowing step. A coding request at K 3 with a coding curve at
+// K 2 borrows that curve; it does not take the exact chat profile.
+func TestFallbackWaitsForTheWorkloadsOwnCategory(t *testing.T) {
+	chat := func(p *Profile) { p.Category = "chat" }
+	coding2 := prof("m", "", "mtp", 2, 2.0)
+	chat3 := prof("m", "", "mtp", 3, 3.5, chat)
+	rq := req("m", "", "mtp", 3, set("s", coding2, chat3))
+	rq.FallbackCategory = "chat"
+	r, err := Resolve(rq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Step != StepOtherK || r.Profile.Category != "coding" || r.FallbackFrom != "" || r.FallbackLayer != "" ||
+		r.AcceptanceLength != 2.0 {
+		t.Errorf("own-category borrow: step %s category %q fallback_from %q layer %q AL %v; want same_drafter_other_k coding, no fallback, 2",
+			r.Step, r.Profile.Category, r.FallbackFrom, r.FallbackLayer, r.AcceptanceLength)
+	}
+	// The same holds for a scenario's fallback.
+	rq.FallbackCategory, rq.Scenario = "", &Pin{FallbackCategory: "chat"}
+	if r, err = Resolve(rq); err != nil || r.Step != StepOtherK || r.FallbackFrom != "" {
+		t.Errorf("scenario fallback: %+v %v", r, err)
+	}
+	// With the category supplying nothing, the fallback applies, and exact comes before
+	// borrowing under it.
+	rq = req("m", "", "mtp", 3, set("s", chat3, prof("m", "", "mtp", 5, 4.0, chat)))
+	rq.Workload.Category, rq.FallbackCategory = "coding", "chat"
+	r, err = Resolve(rq)
+	if err != nil || r.Step != StepExact || r.FallbackFrom != "coding" || r.FallbackLayer != LayerCLI {
+		t.Errorf("fallback exact: %+v %v", r, err)
+	}
+	// Under the fallback the borrowing steps run too.
+	rq = req("m", "", "mtp", 3, set("s", prof("m", "", "mtp", 5, 4.0, chat)))
+	rq.Workload.Category, rq.FallbackCategory = "coding", "chat"
+	r, err = Resolve(rq)
+	if err != nil || r.Step != StepOtherK || r.FallbackFrom != "coding" || r.Profile.Category != "chat" {
+		t.Errorf("fallback borrow: %+v %v", r, err)
+	}
+	// exact_only still takes the fallback's exact key, and never borrows in either category.
+	rq = req("m", "", "mtp", 3, set("s", coding2, chat3))
+	rq.Workload.Category, rq.FallbackCategory, rq.ExactOnly = "coding", "chat", true
+	r, err = Resolve(rq)
+	if err != nil || r.Step != StepExact || r.FallbackFrom != "coding" {
+		t.Errorf("exact_only with a fallback: %+v %v", r, err)
+	}
+}
+
 // Step 2 admits another drafter only. The same drafter under another method is not another
 // drafter, and no other step takes it (steps 1 and 3 keep the method), so the lookup refuses.
 func TestTheSameDrafterUnderAnotherMethodIsNotBorrowed(t *testing.T) {

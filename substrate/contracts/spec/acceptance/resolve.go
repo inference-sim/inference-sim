@@ -55,8 +55,8 @@ type Request struct {
 	ScenarioSet *ProfileSet
 	CLI         *Value
 	// FallbackCategory requests, from the command line, a category to substitute when the
-	// workload's has none. The scenario's own fallback_category, when set, takes
-	// precedence.
+	// workload's has none. It outranks the scenario's own fallback_category, as the command
+	// line outranks the scenario for every acceptance field.
 	FallbackCategory string
 }
 
@@ -78,6 +78,9 @@ type Resolution struct {
 	// replaced it, and empty otherwise. The workload stating no category is recorded as
 	// "(none)".
 	FallbackFrom string
+	// FallbackLayer is the layer that requested the fallback category, LayerCLI or
+	// LayerScenario, when FallbackFrom is set. It is empty when no fallback was applied.
+	FallbackLayer Layer
 	// MeasuredOn is the hardware a profile was measured on when it differs from the
 	// request's, and empty otherwise.
 	MeasuredOn string
@@ -119,13 +122,15 @@ func Resolve(req Request) (Resolution, error) {
 	if req.CLI != nil {
 		return fromValue(LayerCLI, req.CLI, k)
 	}
-	fallback := req.FallbackCategory
+	// The fallback category follows the same precedence as the value: the command line, then
+	// the scenario's pin.
+	fallback, fallbackLayer := req.FallbackCategory, LayerCLI
 	if pin := req.Scenario; pin != nil {
 		if p := pin.Validate(); !p.OK() {
 			return Resolution{}, fmt.Errorf("scenario acceptance: %s", p.Error())
 		}
-		if pin.FallbackCategory != "" {
-			fallback = pin.FallbackCategory
+		if fallback == "" && pin.FallbackCategory != "" {
+			fallback, fallbackLayer = pin.FallbackCategory, LayerScenario
 		}
 		if pin.Value != nil {
 			return fromValue(LayerScenario, pin.Value, k)
@@ -134,13 +139,13 @@ func Resolve(req Request) (Resolution, error) {
 			if req.ScenarioSet == nil || req.ScenarioSet.Name != pin.Profiles {
 				return Resolution{}, fmt.Errorf("the scenario names acceptance profile set %q, which was not supplied", pin.Profiles)
 			}
-			return lookup(LayerScenario, []*ProfileSet{req.ScenarioSet}, req, fallback)
+			return lookup(LayerScenario, []*ProfileSet{req.ScenarioSet}, req, fallback, fallbackLayer)
 		}
 	}
 	if req.Workload.Value != nil {
 		return fromValue(LayerWorkload, req.Workload.Value, k)
 	}
-	return lookup(LayerRegistry, req.Registry, req, fallback)
+	return lookup(LayerRegistry, req.Registry, req, fallback, fallbackLayer)
 }
 
 func fromValue(layer Layer, v *Value, k int) (Resolution, error) {
@@ -158,7 +163,7 @@ func fromValue(layer Layer, v *Value, k int) (Resolution, error) {
 		RatesDerived: derived, Layer: layer, Source: v.Source}, nil
 }
 
-func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string) (Resolution, error) {
+func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string, fallbackLayer Layer) (Resolution, error) {
 	if req.Model == "" || req.SpeculativeMethod == "" {
 		return Resolution{}, fmt.Errorf("%s acceptance: a profile lookup needs the model and the speculative method", layer)
 	}
@@ -172,45 +177,62 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string) (Reso
 	key := Key{Model: req.Model, Drafter: req.Drafter, SpeculativeMethod: req.SpeculativeMethod,
 		NumSpecTokens: req.NumSpecTokens, Thinking: req.Workload.Thinking,
 		Category: req.Workload.Category}
-	fallbackFrom := ""
-	set, prof, err := find(sets, key)
+	// The workload's own category comes first, exact key and then every borrowing step. The
+	// fallback category stands in only when that category supplies nothing at all, and then
+	// the same two attempts are made under it.
+	r, found, err := resolveKey(layer, sets, req, key)
 	if err != nil {
-		return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
+		return Resolution{}, err
 	}
-	if prof == nil && fallback != "" && fallback != key.Category {
-		fallbackFrom = key.Category
-		if fallbackFrom == "" {
-			fallbackFrom = "(none)"
+	if !found && fallback != "" && fallback != key.Category {
+		from := key.Category
+		if from == "" {
+			from = "(none)"
 		}
 		key.Category = fallback
-		if set, prof, err = find(sets, key); err != nil {
-			return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
-		}
-	}
-	if prof == nil && !exactOnly(req) {
-		// No measured profile has the run's exact key: borrow the closest one, in the order
-		// design D8 states. Every step keeps the category and thinking mode (the fallback
-		// category, when one was requested and applied, stands in for the category).
-		r, found, err := borrow(sets, req, key)
-		if err != nil {
-			return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
+		if r, found, err = resolveKey(layer, sets, req, key); err != nil {
+			return Resolution{}, err
 		}
 		if found {
-			r.Layer, r.FallbackFrom = layer, fallbackFrom
-			return r, nil
+			r.FallbackFrom, r.FallbackLayer = from, fallbackLayer
 		}
 	}
-	if prof == nil {
+	if !found {
 		return Resolution{}, fmt.Errorf("%s acceptance: no profile for %s in %s; %s",
 			layer, key, setNames(sets), missHint(req.Workload.Category, fallback)+exactHint(req))
 	}
+	return r, nil
+}
+
+// resolveKey looks for key's category in sets: the measured profile with the exact key, else,
+// unless the lookup is exact-only, the closest one in the order design D8 states. Every step
+// keeps the category and the thinking mode. It reports found false when the category supplies
+// nothing.
+func resolveKey(layer Layer, sets []*ProfileSet, req Request, key Key) (Resolution, bool, error) {
+	set, prof, err := find(sets, key)
+	if err != nil {
+		return Resolution{}, false, fmt.Errorf("%s acceptance: %w", layer, err)
+	}
+	if prof == nil {
+		if exactOnly(req) {
+			return Resolution{}, false, nil
+		}
+		r, found, err := borrow(sets, req, key)
+		if err != nil {
+			return Resolution{}, false, fmt.Errorf("%s acceptance: %w", layer, err)
+		}
+		if found {
+			r.Layer = layer
+		}
+		return r, found, nil
+	}
 	rates, derived, err := prof.Rates()
 	if err != nil {
-		return Resolution{}, fmt.Errorf("%s acceptance: profile %s: %w", layer, key, err)
+		return Resolution{}, false, fmt.Errorf("%s acceptance: profile %s: %w", layer, key, err)
 	}
 	r := Resolution{AcceptanceLength: prof.AcceptanceLength, PerPositionRates: rates,
 		RatesDerived: derived, Layer: layer, Set: set, Profile: prof,
-		FallbackFrom: fallbackFrom, Step: StepExact, Used: []Used{{Set: set, Profile: prof}}}
+		Step: StepExact, Used: []Used{{Set: set, Profile: prof}}}
 	if prof.Provenance != nil {
 		r.Source = prof.Provenance.Source
 		if req.Hardware != "" && prof.Provenance.Hardware != "" &&
@@ -218,7 +240,7 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string) (Reso
 			r.MeasuredOn = prof.Provenance.Hardware
 		}
 	}
-	return r, nil
+	return r, true, nil
 }
 
 func missHint(category, fallback string) string {

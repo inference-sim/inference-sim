@@ -154,7 +154,7 @@ acceptance:
 |---|---|---|---|
 | `profiles` | string | no | An acceptance-profile set under `acceptance/` in the registry, consulted in place of the default. Not with `value`. |
 | `value` | mapping | no | An inline value, above. |
-| `fallback_category` | string | no | The category to use when the workload's has no curve. The substitution is recorded. Not with `value`. |
+| `fallback_category` | string | no | The category to use when the workload's has no curve. The substitution is recorded. A fallback given on the command line outranks this one. Not with `value`. |
 | `exact_only` | boolean | no | Limits the profile lookup to a measured profile with the run's exact key; it never borrows. Not with `value`. |
 
 A pin must set at least one key.
@@ -195,7 +195,9 @@ one, in this order (design D8), and records that it did:
    profile must state its architecture, and the run's must be known.
 
 Every step keeps the category and the thinking mode, apart from a fallback category the user
-requested. Any remaining tie breaks in this order: the profile measured on the run's
+requested. The fallback category stands in only when the workload's own category supplies
+nothing: the lookup tries the exact key and all three steps in the workload's category first,
+and only then repeats them in the fallback category. Any remaining tie breaks in this order: the profile measured on the run's
 hardware, then the newest source (`provenance.date`), then the set name, then the key, so the
 choice is deterministic whatever order the sets are listed in. Two profiles that share a key
 but record different sampling or settings are not interchangeable, and an exact key found in

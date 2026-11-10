@@ -139,9 +139,13 @@ func TestResolveFallback(t *testing.T) {
 		{"fallback for no category is recorded", func(r *Request) {
 			r.Workload.Category, r.FallbackCategory = "", "coding"
 		}, "(none)", ""},
-		{"scenario fallback overrides the cli's", func(r *Request) {
+		{"the cli's fallback overrides the scenario's", func(r *Request) {
 			r.Workload.Category, r.FallbackCategory = "chat", "math"
 			r.Scenario = &Pin{FallbackCategory: "coding"}
+		}, "chat", `fallback category "math" has none`},
+		{"the cli's fallback is used over the scenario's", func(r *Request) {
+			r.Workload.Category, r.FallbackCategory = "chat", "coding"
+			r.Scenario = &Pin{FallbackCategory: "math"}
 		}, "chat", ""},
 		{"a fallback with no curve is refused", func(r *Request) {
 			r.Workload.Category, r.FallbackCategory = "chat", "math"
@@ -166,6 +170,50 @@ func TestResolveFallback(t *testing.T) {
 				t.Errorf("FallbackFrom = %q, want %q", got.FallbackFrom, c.from)
 			}
 		})
+	}
+}
+
+// The fallback category follows the precedence of every other acceptance field, and the
+// resolution says which layer supplied it.
+func TestFallbackCategoryPrecedence(t *testing.T) {
+	for _, c := range []struct {
+		name     string
+		cli, pin string
+		layer    Layer
+		from     string
+	}{
+		{"neither layer asks", "", "", "", ""},
+		{"the command line alone", "coding", "", LayerCLI, "chat"},
+		{"the scenario alone", "", "coding", LayerScenario, "chat"},
+		{"both ask, and the command line wins", "coding", "math", LayerCLI, "chat"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			req := baseRequest()
+			req.Workload.Category, req.FallbackCategory = "chat", c.cli
+			if c.pin != "" {
+				req.Scenario = &Pin{FallbackCategory: c.pin}
+			}
+			got, err := Resolve(req)
+			if c.layer == "" {
+				if err == nil {
+					t.Fatalf("no fallback was asked for, yet chat resolved to %+v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.FallbackLayer != c.layer || got.FallbackFrom != c.from {
+				t.Errorf("FallbackLayer %q FallbackFrom %q; want %q and %q",
+					got.FallbackLayer, got.FallbackFrom, c.layer, c.from)
+			}
+		})
+	}
+	// A covered category applies no fallback, so no layer is recorded.
+	req := baseRequest()
+	req.FallbackCategory = "coding"
+	if got, _ := Resolve(req); got.FallbackLayer != "" {
+		t.Errorf("FallbackLayer %q on a category that has a curve", got.FallbackLayer)
 	}
 }
 
