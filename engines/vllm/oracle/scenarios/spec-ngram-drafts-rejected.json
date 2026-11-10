@@ -1,5 +1,5 @@
 {
- "name": "spec-ngram-none-accepted",
+ "name": "spec-ngram-drafts-rejected",
  "description": "n-gram K=3 where the target accepts at most one draft: the counters of positions 1 and 2 stay registered at zero (SpecDecodingProm registers one for every position).",
  "config": {
   "max_num_seqs": 4,
