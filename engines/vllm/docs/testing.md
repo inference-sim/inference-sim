@@ -71,6 +71,22 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 | T4 Connectors and offload | connector scheduler-side state machines under virtual time and controlled transport | real connector scheduler classes, transports mocked | NIXL pull mode and `kv_load_failure_policy`: 36 scenarios + 3300 fuzz seeds at zero mismatches, at each scenario's own `max_model_len`. Of the seeds, 300 run into `max_model_len`. Seeds 20000-20999 add hybrid KV cache groups (full attention + sliding windows) and DSpark/MTP drafters, through vLLM's own spec classes and SpeculativeConfig. Seeds 30000-30999 add async scheduling and PP through vLLM's own EngineCore.step_with_batch_queue on tier 3's bare EngineCore, with the transport's report riding on the popped batch's output. All non-equivalent mutants are caught (`core/connector/nixl`, `oracle/run_connector.py`, `oracle/mutate_t4.py`); the connector registry (`registry/`): an entry is earned only by one of these diff tests, checked on its golden traces' content and provenance, mutants R1-R10 caught; the OffloadingConnector over its CPU tier with LRU (`core/connector/offloading`, `oracle/run_offloading.py`): 13 scenarios + 3600 fuzz seeds (beside sliding-window groups, 2-6 workers, the batch queue and DSpark/EAGLE-3 drafters) at zero mismatches, 31 mutants caught and 5 equivalent (`oracle/mutate_offloading.py`); the other connectors are follow-ups (see the feature matrix) |
 | T5 Metrics | names, labels, histogram buckets and enablement of every computable `vllm:*` family | the generated manifest and vLLM's Prometheus loggers | inventory done: `docs/metrics-manifest.json`, 130 families from the v0.32.0 source (45 exact, 52 derived, 33 unavailable), regenerated in CI; the 45 families vLLM's own logger registers on CPU agree in type and labels, and their 19 histograms' bucket bounds are recorded from the live objects (`docs/metrics-buckets.json`); values: the 23 scheduler-decided exact families match vLLM's own logger sample for sample after every step (the 14 scenarios' committed metric goldens, 9,906 samples; 4,000 fuzz scenarios in CI, 5,498,523 samples; 0 mismatches); the 22 connector/offload exact families wait on tier 4 |
 
+## The lowering
+
+`core/lower` is what the engine decides about a launch before the cost model prices it (design
+section 6): the CUDA-graph capture sizes, the graph a batch replays and the padded token count, the
+data-parallel padding, the decode threshold, a parallel-block drafter's padded rows, and the KV
+groups' pages. `oracle/lower/extract.py` takes the release's own definitions out of their modules
+by syntax tree and runs them as written, with the data-parallel all-reduce supplied the ranks'
+votes; its answers are `core/lower/testdata/vllm_lower.json`, which CI regenerates and compares
+(`oracle-tier2`). The Go tests compare the port with those answers: 19 capture configurations, 1,937
+dispatch probes around their sizes, 12 data-parallel cases and the threshold and context rules.
+What the oracle replaces is in `oracle/lower/replacements.json`, which `check_replacements.py`
+checks against the extractor. The KV group pages (`core/kv.GroupPages`) are checked against the
+pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from. Two things have no
+oracle here: the microbatching path (dual batch overlap is not modelled) and dynamic speculative
+decoding, which the extractor refuses if a case reaches them.
+
 The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `enginetest` checks the contract's laws on the v0.32.0 engine. A diff test drives tier-2 scenarios through `engine.Engine` (Add, then Schedule and Complete one batch at a time) and compares every step with vLLM's own Scheduler trace (`core/sched/testdata/golden`). Its mutants are in `oracle/mutate_e24.py`, which CI runs with the other sweeps. The factory builds one batch in flight only: with async scheduling or PP, vLLM's own loop decides which requests share a batch (`vllm/v1/engine/core.py:724-768@5df63a72`), and the adapter does not reproduce that loop yet, so it refuses those configurations (https://github.com/inference-sim/blis-vllm/issues/21). Tier 3 proves `core/engine`'s port of the loop, not the adapter.
 
 ## Kinds of test

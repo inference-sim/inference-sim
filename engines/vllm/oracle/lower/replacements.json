@@ -1,0 +1,25 @@
+{
+  "description": "Everything oracle/lower/extract.py replaces (design FID-1). It is a separate list from oracle/mocks.json on purpose: that list's digest is the version every golden trace records, so an entry added there would make every golden be refreshed. The lowering oracle records no trace; its answers are core/lower/testdata/vllm_lower.json, regenerated and compared in CI.",
+  "replacements": [
+    {
+      "symbol": "configuration objects the functions read; vllm.platforms.current_platform",
+      "kind": "environment",
+      "how": "VllmConfig, SchedulerConfig, CompilationConfig, SpeculativeConfig and the model config are small namespaces holding only the fields the extracted functions read, built from each case. current_platform answers is_device_capability_family(100) from the case. The functions' torch and CUDA imports are not executed: they are taken out of their modules by ast, as written."
+    },
+    {
+      "symbol": "vllm.v1.worker.gpu.dp_utils.dist.all_reduce",
+      "kind": "transport",
+      "how": "the data-parallel group's CPU all-reduce inside sync_cudagraph_and_dp_padding returns the tensor every rank would hold, built from each case's per-rank votes with the function's own six assignments. Everything the function decides after the collective runs unmodified, and each rank's vote is made by vLLM's own CudaGraphManager.dispatch."
+    },
+    {
+      "symbol": "get_num_ubatches, check_ubatch_thresholds, build_dynamic_sd_schedule_lookup",
+      "kind": "environment",
+      "how": "these raise: no case microbatches or uses dynamic speculative decoding, which are not modelled, so a case that reached one is an error in the case."
+    },
+    {
+      "symbol": "get_dp_group, should_skip_dp_coordination",
+      "kind": "environment",
+      "how": "get_dp_group returns an object holding the CPU group handle the all-reduce is given, which the replaced all-reduce ignores; should_skip_dp_coordination is False, as it is for a real multi-rank pool, so the function takes the all-reduce path."
+    }
+  ]
+}
