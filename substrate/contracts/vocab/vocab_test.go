@@ -145,3 +145,18 @@ func TestRankFollowsDesignSection92(t *testing.T) {
 		}
 	}
 }
+
+// A file's Provenance is what an omitted field inherits, so it must itself be a field source
+// (SUB-18): vendor_spec is the datasheet's figures, derived is not a source at all.
+func TestProvenanceAsAFieldSource(t *testing.T) {
+	got, err := ProvenanceVendorSpec.FieldSource()
+	if err != nil || got.Kind != FieldDatasheet || got.Device != "" {
+		t.Errorf("vendor_spec -> %+v, %v; want datasheet", got, err)
+	}
+	if _, err := ProvenanceDerived.FieldSource(); err == nil {
+		t.Error("derived was accepted as a source of a catalog fact")
+	}
+	if _, err := Provenance("rumour").FieldSource(); err == nil {
+		t.Error("an unrecognized provenance was accepted as a source")
+	}
+}

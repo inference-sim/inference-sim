@@ -558,9 +558,18 @@
   - repo: blis-substrate
     check: Validator rules on catalog provenance fields
     runs: pull_request
+    status: ci
+    test: 'contracts/spec/hardware: TestFieldProvenance; TestInheritedProvenanceObeysTheFieldSourceContract; TestCommittedChipsRecordTheirExceptions; TestLosingAnExceptionFailsTheCheck; TestEveryCommittedFactHasASource'
+    known_bad: 'contracts/spec/hardware: TestFieldProvenance'
+  - repo: blis-substrate
+    check: >-
+      No catalog field holds a fitted or assumed value: the storage tiers, which catalog/devices/storage.yaml
+      records as representative classes with no source, become datasheet or measured figures, or hardware-scoped
+      coefficients
+    runs: pull_request
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2

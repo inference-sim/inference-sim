@@ -71,6 +71,12 @@ type Chip struct {
 	// doc above, which the field previously contradicted by carrying `yaml:"name"` (#27).
 	Name       string           `yaml:"-"`
 	Provenance vocab.Provenance `yaml:"Provenance"`
+	// FieldProvenance records, per field, a source other than the file's Provenance (design
+	// SUB-18): "datasheet", "published", or "measured:<device>". A field it does not name has
+	// the file's Provenance, so a file of datasheet figures states only its exceptions. The key
+	// is the field's wire name. A fitted or assumed value is not a catalog fact; it is a
+	// coefficient and belongs in the coefficient registry.
+	FieldProvenance map[string]string `yaml:"FieldProvenance,omitempty"`
 
 	// Peak dense rates, in TFLOP/s. FP8Peak is zero on parts without native FP8.
 	BF16Peak float64 `yaml:"TFlopsPeak"`
@@ -122,6 +128,8 @@ type Fabric struct {
 	// field rather than a competing source of truth.
 	Name       string           `yaml:"-"`
 	Provenance vocab.Provenance `yaml:"Provenance"`
+	// FieldProvenance is the per-field source, as on Chip (design SUB-18).
+	FieldProvenance map[string]string `yaml:"FieldProvenance,omitempty"`
 
 	// InterNodeBwGBps is per-GPU unidirectional, and NOMINAL: a line rate divided
 	// by eight bits, not a measurement. The measured fraction of it is a

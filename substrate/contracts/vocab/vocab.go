@@ -9,7 +9,10 @@
 // words for it cannot be invented at the call site.
 package vocab
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Unit is the dimension of a coefficient's value. The set matches
 // blis-registry's schema, plus three members the cost model requires and the
@@ -175,6 +178,77 @@ var provenances = map[Provenance]bool{
 
 // Valid reports whether p is a recognized provenance.
 func (p Provenance) Valid() bool { return provenances[p] }
+
+// FieldSource says what one catalog field is (design SUB-18): a datasheet figure, a published
+// figure, or a measurement of one named device. Provenance is recorded per field, not per file.
+// A fitted or assumed value is not a catalog fact at all: it is a coefficient, and belongs in the
+// coefficient registry, where it carries a method and a scope.
+//
+// The wire form is "datasheet", "published", or "measured:<device>", the device being the part
+// the figure was read from, such as "NVIDIA B300 SXM6 AC".
+type FieldSource struct {
+	Kind FieldSourceKind
+	// Device names the measured part. It is set exactly when Kind is FieldMeasured.
+	Device string
+}
+
+// FieldSourceKind is the kind of a catalog field's source.
+type FieldSourceKind string
+
+const (
+	// FieldDatasheet is a figure the vendor's datasheet states.
+	FieldDatasheet FieldSourceKind = "datasheet"
+	// FieldPublished is a figure the vendor or another public source publishes outside a
+	// datasheet: a blog, a device-properties dump, a conference disclosure.
+	FieldPublished FieldSourceKind = "published"
+	// FieldMeasured is a figure read off one named device, such as a driver's reported total.
+	FieldMeasured FieldSourceKind = "measured"
+)
+
+// ParseFieldSource reads the wire form. A fitted or assumed value is refused with the reason,
+// because it is a coefficient and not a catalog fact.
+func ParseFieldSource(s string) (FieldSource, error) {
+	kind, device, hasDevice := strings.Cut(s, ":")
+	switch FieldSourceKind(kind) {
+	case FieldDatasheet, FieldPublished:
+		if hasDevice {
+			return FieldSource{}, fmt.Errorf("%q: only a measured figure names a device", s)
+		}
+		return FieldSource{Kind: FieldSourceKind(kind)}, nil
+	case FieldMeasured:
+		if strings.TrimSpace(device) == "" {
+			return FieldSource{}, fmt.Errorf("%q: a measured figure names the device it was read from, as measured:<device>", s)
+		}
+		return FieldSource{Kind: FieldMeasured, Device: strings.TrimSpace(device)}, nil
+	case "fitted", "assumed", "calibrated", "transferred", "roofline", "literature":
+		return FieldSource{}, fmt.Errorf("%q is a coefficient method, not a source of a catalog fact: a fitted or assumed value is a coefficient and belongs in the coefficient registry (SUB-18)", s)
+	}
+	return FieldSource{}, fmt.Errorf("%q is not datasheet, published or measured:<device>", s)
+}
+
+// String is the wire form.
+func (f FieldSource) String() string {
+	if f.Kind == FieldMeasured {
+		return "measured:" + f.Device
+	}
+	return string(f.Kind)
+}
+
+// FieldSource returns the source a field has when a file's FieldProvenance does not name it
+// (design SUB-18). A field's source is datasheet, published or measured:<device> and nothing
+// else, so the file-level word has to be one of those or it states no source at all:
+// vendor_spec is the vendor's datasheet figures, and derived says how a figure was obtained,
+// not where it was read, so a file that is derived states a source for each field itself.
+func (p Provenance) FieldSource() (FieldSource, error) {
+	switch p {
+	case ProvenanceVendorSpec:
+		return FieldSource{Kind: FieldDatasheet}, nil
+	case ProvenanceDerived:
+		return FieldSource{}, fmt.Errorf("the file's Provenance is %q, which says how a figure was obtained and not where it was read: "+
+			"state datasheet, published or measured:<device> for the field in FieldProvenance (SUB-18)", string(p))
+	}
+	return FieldSource{}, fmt.Errorf("the file's Provenance %q is not a recognized provenance", string(p))
+}
 
 // SourceKind and SourceRole describe one citation supporting a coefficient.
 type SourceKind string

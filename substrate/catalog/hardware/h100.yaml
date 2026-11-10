@@ -1,4 +1,6 @@
 Provenance: vendor_spec
+FieldProvenance:
+  MemoryGiB: "measured:H100 SXM5 80GB HBM3"
 TFlopsPeak: 989.5
 TFlopsFP8: 1979.0
 BwPeakTBs: 3.35

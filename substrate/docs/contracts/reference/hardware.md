@@ -23,6 +23,7 @@ A file under `hardware/`, named by its file.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `Provenance` | string | yes | Where the figures come from. One of the [provenances](vocabularies.md#provenances). |
+| `FieldProvenance` | map | no | The source of a field when it is not the file's `Provenance`, by field name: `datasheet`, `published`, or `measured:<device>`. A field it does not name has the file's. |
 | `TFlopsPeak` | number | yes | Dense BF16 peak, TFLOP/s. |
 | `TFlopsFP8` | number | no | Dense FP8 peak, TFLOP/s. Omit on parts without native FP8. If set, it must exceed `TFlopsPeak`. |
 | `TFlopsNVFP4` | number | no | Dense NVFP4 (NVIDIA's 4-bit float) peak, TFLOP/s. Omit where the format is emulated rather than native. |
@@ -49,6 +50,7 @@ InterNodeBwGBps: 50
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `Provenance` | string | yes | One of the [provenances](vocabularies.md#provenances). |
+| `FieldProvenance` | map | no | The source of a field when it is not the file's `Provenance`, as on a chip. |
 | `InterNodeBwGBps` | number | yes | Bandwidth per GPU, one direction, GB/s: the NIC's line rate in Gb/s divided by eight. Nominal, not measured. |
 | `RDMA` | boolean | no | Whether transfers bypass the CPU. |
 
@@ -87,10 +89,17 @@ Every number must be finite. Beyond that, a chip is invalid if
   datasheet's; the shipped parts run 2.0 to 3.11);
 - `GPUsPerRack` is not a multiple of `GPUsPerNode`, when both are set;
 - `IntraRackBwGBps` is set without `GPUsPerRack`;
-- `ComputeCapability` is set but is not `major.minor`.
+- `ComputeCapability` is set but is not `major.minor`;
+- `FieldProvenance` names a field the type does not have, or a source that is not `datasheet`,
+  `published` or `measured:<device>`. A fitted or assumed value is not a catalog fact: it is a
+  coefficient and belongs in the coefficient registry (design SUB-18);
+- a fact the file states has no source: the source of a fact `FieldProvenance` does not name is
+  the file's `Provenance`, which must itself be a source, so a file whose `Provenance` is `derived`
+  states a source for each fact it records; or `FieldProvenance` names a fact the file does not
+  state.
 
-A fabric is invalid if `Provenance` is not recognized or `InterNodeBwGBps` is not
-positive. A storage class is invalid if any of its three figures is not positive.
+A fabric is invalid if `Provenance` is not recognized, `FieldProvenance` is invalid as above, or
+`InterNodeBwGBps` is not positive. A storage class is invalid if any of its three figures is not positive.
 `devices/storage.yaml` fails to load if it declares no class or a class with no value.
 
 The catalog's convention that each `SMCount` cites a source in its `_comment_sm` prose is

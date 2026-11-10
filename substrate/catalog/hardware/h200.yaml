@@ -1,5 +1,7 @@
 _comment: "SXM H200 shares the H100 GH100 Hopper compute die (same SMs/Tensor Cores) => identical peak FLOPs; differs only in memory: 141 GiB HBM3e vs 80, 4.8 TB/s vs 3.35. FLOPs & bandwidth are the NVIDIA H200 datasheet spec (https://www.nvidia.com/en-us/data-center/h200/; dense BF16 989.5 TFLOPS, dense FP8 1979 TFLOPS). CAVEAT (memory unit): reading NVIDIA's advertised '141GB' as 141 GiB is a choice; the decimal-GB reading is 131.3 GiB, and that lower value reorders the top two placement topologies in capacity planning — so the GiB interpretation is not free of consequence."
 Provenance: vendor_spec
+FieldProvenance:
+  MemoryGiB: "measured:NVIDIA H200"
 TFlopsPeak: 989.5
 TFlopsFP8: 1979.0
 BwPeakTBs: 4.8
