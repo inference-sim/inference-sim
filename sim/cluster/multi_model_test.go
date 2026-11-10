@@ -37,8 +37,8 @@ func newModelRequest(id, model string, arrivalTime int64) *sim.Request {
 
 // ─── US5: Route Requests to Active Instances of the Correct Model ────────────
 
-// T045: llama request routes only to llama instances — qwen absent from RouterState.
-func TestMultiModel_BuildRouterState_FiltersbyModel(t *testing.T) {
+// T045: llama request routes only to llama instances — qwen absent from ClusterState.
+func TestMultiModel_BuildClusterState_FiltersbyModel(t *testing.T) {
 	// Create cluster with 2 "llama" instances and 2 "qwen" instances by
 	// creating a cluster where instances have Model set.
 	llamaCfg := newTestDeploymentConfigWithModel(2, "llama")
@@ -62,9 +62,9 @@ func TestMultiModel_BuildRouterState_FiltersbyModel(t *testing.T) {
 	}
 
 	llamaReq := newModelRequest("req-llama", "llama", 0)
-	state := buildRouterState(cs, llamaReq)
+	state := buildClusterState(cs, llamaReq)
 
-	t.Run("RouterState contains only llama snapshots", func(t *testing.T) {
+	t.Run("ClusterState contains only llama snapshots", func(t *testing.T) {
 		if len(state.Snapshots) != 2 {
 			t.Errorf("got %d snapshots for llama request, want 2 (only llama instances)", len(state.Snapshots))
 		}
@@ -76,8 +76,8 @@ func TestMultiModel_BuildRouterState_FiltersbyModel(t *testing.T) {
 	})
 }
 
-// T046: All instances of model M non-Active → empty RouterState.
-func TestMultiModel_BuildRouterState_EmptyWhenNonActive(t *testing.T) {
+// T046: All instances of model M non-Active → empty ClusterState.
+func TestMultiModel_BuildClusterState_EmptyWhenNonActive(t *testing.T) {
 	cfg := newTestDeploymentConfigWithModel(2, "model-m")
 	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 
@@ -88,9 +88,9 @@ func TestMultiModel_BuildRouterState_EmptyWhenNonActive(t *testing.T) {
 	}
 
 	req := newModelRequest("req-1", "model-m", 0)
-	state := buildRouterState(cs, req)
+	state := buildClusterState(cs, req)
 
-	t.Run("empty RouterState when no Active instances", func(t *testing.T) {
+	t.Run("empty ClusterState when no Active instances", func(t *testing.T) {
 		if len(state.Snapshots) != 0 {
 			t.Errorf("got %d snapshots, want 0 (all instances non-Active)", len(state.Snapshots))
 		}
@@ -98,13 +98,13 @@ func TestMultiModel_BuildRouterState_EmptyWhenNonActive(t *testing.T) {
 }
 
 // T046b: Request with empty Model includes all routable instances (backward-compat).
-func TestMultiModel_BuildRouterState_EmptyModelIncludesAll(t *testing.T) {
+func TestMultiModel_BuildClusterState_EmptyModelIncludesAll(t *testing.T) {
 	cfg := newTestDeploymentConfig(3)
 	cs := newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 
 	// No model set — all instances treated as routable (backward-compat)
 	noModelReq := newModelRequest("req-nomodel", "", 0)
-	state := buildRouterState(cs, noModelReq)
+	state := buildClusterState(cs, noModelReq)
 
 	if len(state.Snapshots) != 3 {
 		t.Errorf("got %d snapshots for empty-model request, want 3 (all instances)", len(state.Snapshots))

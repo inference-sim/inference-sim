@@ -1847,6 +1847,11 @@ func TestDisaggregation_PD_SessionManager_ContextAccumulation(t *testing.T) {
 			round1InputLen, wantRound1InputLen, round0InputLen+(round0OutputLen-1))
 	}
 
+	// INV-11: both rounds ran, so the session settled in exactly one terminal state.
+	if st := sm.States(); st.Total != 1 || st.Active != 0 || st.Completed != 1 {
+		t.Errorf("session states = %+v, want the one session completed", st)
+	}
+
 	// All parents should have completed
 	for _, p := range parents {
 		if p.CompletionTime == 0 {

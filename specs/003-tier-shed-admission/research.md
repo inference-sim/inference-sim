@@ -10,8 +10,8 @@
 |-------|----------|------|
 | `Request.SLOClass string` | `sim/request.go` | "critical"/"standard"/"sheddable"/"batch"/"background"/"" |
 | `AdmissionPolicy` interface | the simulator's admission file (line 11 at the time) | `Admit(req *Request, state *RouterState) (admitted bool, reason string)` |
-| `RoutingSnapshot.EffectiveLoad()` | `sim/routing.go:28` | `QueueDepth + BatchSize + InFlightRequests` — already the correct overload signal |
-| `RouterState.Snapshots` | `sim/routing.go` | Passed to `Admit()` — overload signal available without new wiring |
+| `RoutingSnapshot.EffectiveLoad()` | `sim/instance_status.go:28` | `QueueDepth + BatchSize + InFlightRequests` — already the correct overload signal |
+| `RouterState.Snapshots` | `sim/instance_status.go` | Passed to `Admit()` — overload signal available without new wiring |
 | `validAdmissionPolicies` | `sim/bundle.go:61` | Unexported map, exposed via `IsValidAdmissionPolicy()` — correct pattern (R8) |
 | `cs.rejectedRequests` | `sim/cluster/cluster.go:32` | Admission rejection counter already exists; we add a per-tier companion |
 | `cs.inFlightRequests map[string]int` | `sim/cluster/cluster.go:36` | Instance ID → in-flight count; already populated by `buildRouterState()` |

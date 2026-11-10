@@ -713,7 +713,7 @@ func TestPDParentMetrics_NoTokenExcludedFromLatency(t *testing.T) {
 
 // TestPDParentMetrics_TTFTSamplesAcrossDrop: a run mixing a served parent with a no-token
 // drop reports one TTFT sample, the served parent's (issue #1511). Every TTFT statistic is
-// derived from these samples (DEV-9), so there is no aggregate to drift from them (#1628).
+// derived from these samples (DEV-9), so there is no aggregate to drift from them.
 func TestPDParentMetrics_TTFTSamplesAcrossDrop(t *testing.T) {
 	origReq := &sim.Request{ID: "orig", ArrivalTime: 0}
 	served := &ParentRequest{
@@ -732,7 +732,7 @@ func TestPDParentMetrics_TTFTSamplesAcrossDrop(t *testing.T) {
 	m.RequestTTFTs[served.PrefillSubReqID] = 2500
 	m.RequestTTFTs[dropped.PrefillSubReqID] = 1800
 	// The served parent's decode sub-request was preempted and prefilled again, which stamped
-	// a decode TTFT of its own (#1628); the projection must leave no sample under that key.
+	// a decode TTFT of its own; the projection must leave no sample under that key.
 	m.RequestTTFTs[served.DecodeSubReqID] = 777
 	m.RequestSchedulingDelays[served.DecodeSubReqID] = 151
 	m.RequestE2Es[served.DecodeSubReqID] = 301

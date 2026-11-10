@@ -25,9 +25,13 @@ type PlacementManager struct {
 	nodesByPool  map[string][]*Node // pool name → nodes in index order
 	gpusByID     map[string]*GPU    // all GPUs by ID (authoritative GPU-ID → node resolver, #1529)
 	pendingInsts []pendingInstance  // instances awaiting a Ready node
-	provisionRng *rand.Rand         // RNG for provisioning delays (subsystemNodeProvisioning)
-	loadingRng   *rand.Rand         // RNG for loading delays (subsystemInstanceLoading)
-	nextNodeIdx  map[string]int     // pool name → next sequential node index counter
+	// placedTP is the GPU count each placed instance asked for (its tpDegree), kept from the
+	// request so VerifyConservation compares it with what the nodes show. Entries leave with
+	// ReleaseInstance.
+	placedTP     map[InstanceID]int
+	provisionRng *rand.Rand     // RNG for provisioning delays (subsystemNodeProvisioning)
+	loadingRng   *rand.Rand     // RNG for loading delays (subsystemInstanceLoading)
+	nextNodeIdx  map[string]int // pool name → next sequential node index counter
 	// spanWarned latches true the first time an instance is placed across more than one
 	// node (#1529). Gates a one-time notice that the fleet contains a multi-node
 	// instance. Never reset.
@@ -66,6 +70,7 @@ func NewPlacementManager(pools []NodePoolConfig, provisionRng, loadingRng *rand.
 		nodesByID:    make(map[string]*Node),
 		nodesByPool:  make(map[string][]*Node),
 		gpusByID:     make(map[string]*GPU),
+		placedTP:     make(map[InstanceID]int),
 		nextNodeIdx:  make(map[string]int),
 		provisionRng: provisionRng,
 		loadingRng:   loadingRng,
@@ -179,23 +184,41 @@ func (pm *PlacementManager) FreeGPUCount(nodeID string) int {
 	return node.freeCount()
 }
 
-// VerifyConservation checks allocated + free == total for every node.
-// Returns nil if all nodes pass; a descriptive error on the first violation (INV-A).
-// Iterates nodes in sorted ID order for determinism (R2).
+// VerifyConservation checks INV-A, the per-instance law: for every placed instance, the number
+// of GPUs whose AllocatedTo names it equals the GPUs it asked for (its TPDegree), however the
+// placement spread them over nodes; and no GPU is allocated to an instance that is not placed.
+// The count is read from the nodes' GPUs and the expectation from the placement request, so a GPU
+// lost, duplicated or left behind by a release breaks the law. (allocated + free == total on a
+// node holds by construction, since both counts read the same slice, and checked nothing.)
+// Returns nil if the law holds; a descriptive error naming the first violation. Instances are
+// visited in sorted ID order for determinism (R2).
 func (pm *PlacementManager) VerifyConservation() error {
-	ids := make([]string, 0, len(pm.nodesByID))
-	for id := range pm.nodesByID {
-		ids = append(ids, id)
+	held := make(map[InstanceID]int, len(pm.placedTP))
+	for _, node := range pm.nodesByID {
+		for _, gpu := range node.GPUs {
+			if gpu.AllocatedTo != "" {
+				held[gpu.AllocatedTo]++
+			}
+		}
+	}
+	ids := make([]string, 0, len(pm.placedTP)+len(held))
+	for id := range pm.placedTP {
+		ids = append(ids, string(id))
+	}
+	for id := range held {
+		if _, placed := pm.placedTP[id]; !placed {
+			ids = append(ids, string(id))
+		}
 	}
 	sort.Strings(ids) // R2: deterministic iteration
-
-	for _, id := range ids {
-		node := pm.nodesByID[id]
-		allocated := node.allocatedCount()
-		free := node.freeCount()
-		if allocated+free != node.TotalGPUs {
-			return fmt.Errorf("INV-A violation on node %s: allocated=%d free=%d total=%d (sum=%d)",
-				node.ID, allocated, free, node.TotalGPUs, allocated+free)
+	for _, s := range ids {
+		id := InstanceID(s)
+		want, placed := pm.placedTP[id]
+		if !placed {
+			return fmt.Errorf("INV-A violation: %d GPU(s) are allocated to instance %s, which was never placed or was released", held[id], id)
+		}
+		if held[id] != want {
+			return fmt.Errorf("INV-A violation: instance %s asked for %d GPU(s) (TPDegree) and holds %d", id, want, held[id])
 		}
 	}
 	return nil
@@ -282,6 +305,7 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 				gpu.AllocatedTo = id
 				resultIDs[i] = gpu.ID
 			}
+			pm.placedTP[id] = tpDegree
 			return node.ID, resultIDs, poolState.config.GPUType, nil
 		}
 	}
@@ -340,6 +364,7 @@ func (pm *PlacementManager) PlaceInstance(id InstanceID, model, gpuType string, 
 		// selectedNodes[0] is the lowest-index touched node (nodes walked in order) —
 		// report it as the primary node for bookkeeping/logging.
 		primaryNode := selectedNodes[0].ID
+		pm.placedTP[id] = tpDegree
 
 		// One-time notice that this fleet contains a multi-node instance. The latency model
 		// prices steps from the deployment it was built for, not from this placement, so a
@@ -476,6 +501,7 @@ func (pm *PlacementManager) ReleaseInstance(id InstanceID) error {
 	if !released {
 		return fmt.Errorf("ReleaseInstance %s: no GPUs found for this instance", id)
 	}
+	delete(pm.placedTP, id)
 
 	// Drain completion check per touched node, in sorted ID order for determinism
 	// (R2): each fired callback schedules a NodeDrainedEvent (and advances its sender's count),
@@ -558,6 +584,12 @@ func (pm *PlacementManager) MarkNodeTerminated(nodeID string) error {
 	}
 	transitionNode(node, NodeStateTerminated)
 	for _, gpu := range node.GPUs {
+		if id := gpu.AllocatedTo; id != "" {
+			// The instance no longer holds this GPU, so the law expects one fewer.
+			if pm.placedTP[id]--; pm.placedTP[id] <= 0 {
+				delete(pm.placedTP, id)
+			}
+		}
 		gpu.AllocatedTo = ""
 	}
 	// Clear drain callback if present to prevent memory leak when node is

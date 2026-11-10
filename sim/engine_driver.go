@@ -74,6 +74,12 @@ type EngineDriver struct {
 	eng engine.Engine
 	cfg EngineDriverConfig
 
+	// lastEM is the last metrics state EngineMetricsAt returned and emSeq its publication number
+	// (EngineMetrics.Seq); emSeen is false until the first.
+	lastEM EngineMetrics
+	emSeq  uint64
+	emSeen bool
+
 	Clock   int64
 	Horizon int64
 	Metrics *Metrics
@@ -1237,6 +1243,17 @@ func (d *EngineDriver) BusyUntil() int64 { return max(d.gpuFreeAt, d.pipelineDra
 
 // EngineMetricsAt is what a scrape of the model server at t sees, from the engine's state.
 func (d *EngineDriver) EngineMetricsAt(t int64) EngineMetrics {
+	em := d.engineMetricsAt(t)
+	if !d.emSeen || !em.sameState(d.lastEM) {
+		d.emSeq++
+		d.emSeen = true
+		d.lastEM = em
+	}
+	em.Seq = d.emSeq
+	return em
+}
+
+func (d *EngineDriver) engineMetricsAt(t int64) EngineMetrics {
 	if d.cfg.ScrapeEngineMetrics {
 		// The engine's own published view (the compatibility engine's, at its last step end).
 		m := d.eng.Metrics(t)

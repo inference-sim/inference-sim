@@ -17,9 +17,12 @@ import (
 // ties are broken by lowest instance index for determinism.
 type ClusterSimulator struct {
 	// abortErr is the error the gateway aborted the run with (GatewayHost.Abort).
-	abortErr          error
-	config            DeploymentConfig
-	instances         []*InstanceSimulator
+	abortErr  error
+	config    DeploymentConfig
+	instances []*InstanceSimulator
+	// byID finds an instance by its ID without a scan (DEV-5). addInstance keeps it with instances;
+	// instanceByID rebuilds it when the slice was replaced under it.
+	byID              map[InstanceID]*InstanceSimulator
 	clock             int64
 	hasRun            bool
 	aggregatedMetrics *sim.Metrics
@@ -452,7 +455,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 				inst.TransitionTo(sim.InstanceStateLoading)
 				cs.scheduleInstanceLoadedEvent(inst)
 			}
-			cs.instances = append(cs.instances, inst)
+			cs.addInstance(inst)
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		} else {
@@ -472,7 +475,7 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 			} else {
 				inst.TransitionTo(sim.InstanceStateActive)
 			}
-			cs.instances = append(cs.instances, inst)
+			cs.addInstance(inst)
 			instanceMap[id] = inst
 			cs.inFlightRequests[string(id)] = 0
 		}
@@ -1329,7 +1332,7 @@ func (cs *ClusterSimulator) addLiveInstance(
 	inst.TransitionTo(sim.InstanceStateLoading)
 
 	cs.scheduleInstanceLoadedEvent(inst)
-	cs.instances = append(cs.instances, inst)
+	cs.addInstance(inst)
 	cs.inFlightRequests[string(id)] = 0
 	if cs.gateway != nil {
 		cs.gateway.OnInstanceChange(inst)
@@ -2066,7 +2069,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// Read prefill TTFT before deleting sub-request keys (R1: no silent data loss).
 		// Every TTFT sample is the fate-derived RequestTTFTs entry (DEV-9): there is no
 		// separate aggregate to keep in step, so a decode sub-request that was preempted and
-		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (#1628).
+		// prefilled again (re-stamping its FirstTokenTime) leaves no residual here (P/D preemption as a machine state is #2093).
 		// decodeDelay/hasDecodeDelay were read
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.

@@ -9,6 +9,7 @@ package sim
 
 import (
 	"maps"
+	"slices"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
@@ -50,6 +51,13 @@ type PrefixLookup struct {
 type EngineMetrics struct {
 	// PublishedAt is the simulated time (µs) at which these values were recorded.
 	PublishedAt int64
+	// Seq numbers the distinct states the driver has read, per engine, from 1 (DEV-4). Two
+	// states read at one instant, such as a step's state and the empty step after an abort at its
+	// end, share PublishedAt and differ in Seq, so a reader that caches by both never serves the
+	// first for the second. Two publications between two reads get one number: a reader sees only
+	// what it reads. The engine contract's Metrics carries only a time, so the driver assigns the
+	// number when the values it reads change.
+	Seq uint64
 	// Waiting is len(scheduler.waiting), including preempted requests (vllm:num_requests_waiting).
 	Waiting int
 	// Running is len(scheduler.running) (vllm:num_requests_running).
@@ -63,6 +71,13 @@ type EngineMetrics struct {
 	// waiting request (vllm:lora_requests_info), sorted.
 	RunningAdapters []string
 	WaitingAdapters []string
+}
+
+// sameState reports whether o carries the same published values as m, whatever their Seq.
+func (m EngineMetrics) sameState(o EngineMetrics) bool {
+	return m.PublishedAt == o.PublishedAt && m.Waiting == o.Waiting && m.Running == o.Running &&
+		m.KVUsage == o.KVUsage && m.Preemptions == o.Preemptions &&
+		slices.Equal(m.RunningAdapters, o.RunningAdapters) && slices.Equal(m.WaitingAdapters, o.WaitingAdapters)
 }
 
 // KVEvent is a change to the set of block hashes an engine's prefix cache can serve, as vLLM

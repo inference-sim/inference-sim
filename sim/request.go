@@ -177,24 +177,6 @@ func (req *Request) IsMultimodal() bool {
 	return req.ImageTokenCount > 0 || req.AudioTokenCount > 0 || req.VideoTokenCount > 0
 }
 
-// SequenceTokenSlice is the request's tokens [start, end) over its prompt followed by its
-// output.
-func (req *Request) SequenceTokenSlice(start, end int64) []TokenID {
-	n := req.InputLen()
-	if end <= n {
-		return req.InputTokenSlice(start, end)
-	}
-	if end-n > int64(len(req.OutputTokens)) || start < 0 || end < start {
-		panic(fmt.Sprintf("Request.SequenceTokenSlice: invalid range [%d, %d) for %d input and %d output tokens (request %s)",
-			start, end, n, len(req.OutputTokens), req.ID))
-	}
-	out := make([]TokenID, 0, end-start)
-	if start < n {
-		out = append(out, req.InputTokens[start:n]...)
-	}
-	return append(out, req.OutputTokens[max(start-n, 0):end-n]...)
-}
-
 // InputLen returns the total number of input tokens without forcing materialization.
 // Canonical replacement for `len(req.InputTokens)` and `util.Len64(req.InputTokens)`
 // at call sites that need only the length (#1445).

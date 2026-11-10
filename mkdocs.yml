@@ -126,6 +126,7 @@ nav:
       - reference/index.md
       - Project Structure: reference/project-structure.md
       - Configuration: reference/configuration.md
+      - Control Loops: reference/control-loops.md
       - Model Compatibility: reference/models.md
       - Workload Spec Schema: reference/workload-spec.md
   - Methodology:

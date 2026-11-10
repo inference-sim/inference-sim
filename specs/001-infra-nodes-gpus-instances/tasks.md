@@ -31,7 +31,7 @@
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
 - [x] T003 Add `Model string` field to `sim.Request` in `sim/request.go` (R4: update all construction sites found in T001; zero value `""` = single-model backward-compatible)
-- [x] T004 Add `Model string` field to `sim.RoutingSnapshot` in `sim/routing.go` (R4: update all construction sites found in T002)
+- [x] T004 Add `Model string` field to `sim.RoutingSnapshot` in `sim/instance_status.go` (R4: update all construction sites found in T002)
 - [x] T005 [P] Create `NodeState` and `InstanceState` enums with `IsValidNodeState()` / `IsValidInstanceState()` accessors (unexported validation maps per R8) in `sim/cluster/infra_node.go`
 - [x] T006 [P] Create `NodePoolConfig` struct with `IsValid()` method and `NewNodePoolConfig()` factory (validates GPUsPerNode ≥1, GPUMemoryGiB >0, InitialNodes ≤ MaxNodes, MinNodes ≤ MaxNodes, DistSpec per R3) in `sim/cluster/infra_config.go`
 - [x] T007 [P] Create `InstanceLifecycleConfig` struct with `DrainPolicy` enum, `IsValidDrainPolicy()` accessor, and validation (WarmUpTTFTFactor ≥ 1.0 per R3) in `sim/cluster/infra_config.go`

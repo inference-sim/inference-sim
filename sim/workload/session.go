@@ -91,6 +91,43 @@ type SessionManager struct {
 	budgetEnabled  bool  // true once SetFollowUpBudget has been called
 }
 
+// SessionStates is the number of sessions in each state (INV-11).
+type SessionStates struct {
+	Total              int
+	Active             int // sessions that have not reached a terminal state
+	Completed          int
+	Cancelled          int
+	HorizonInterrupted int
+	BudgetExhausted    int
+}
+
+// Terminal is the number of sessions in a terminal state.
+func (s SessionStates) Terminal() int {
+	return s.Completed + s.Cancelled + s.HorizonInterrupted + s.BudgetExhausted
+}
+
+// States tallies the sessions by state. INV-11: when a run has ended and every session's rounds
+// have been settled, Active is zero and Total equals Terminal().
+func (sm *SessionManager) States() SessionStates {
+	var s SessionStates
+	for _, sess := range sm.sessions {
+		s.Total++
+		switch sess.state {
+		case sessionActive:
+			s.Active++
+		case sessionCompleted:
+			s.Completed++
+		case sessionCancelled:
+			s.Cancelled++
+		case sessionHorizonInterrupted:
+			s.HorizonInterrupted++
+		case sessionBudgetExhausted:
+			s.BudgetExhausted++
+		}
+	}
+	return s
+}
+
 // NewSessionManager creates a SessionManager from pre-generated session blueprints.
 // Panics if any blueprint has MaxRounds < 1.
 func NewSessionManager(blueprints []SessionBlueprint) *SessionManager {

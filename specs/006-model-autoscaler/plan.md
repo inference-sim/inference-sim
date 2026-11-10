@@ -28,7 +28,7 @@ Add a model-level autoscaling pipeline to BLIS's cluster simulator, mirroring th
 
 | Principle | Status | Notes |
 |-----------|--------|-------|
-| **I. Architecture & Layering** | ✅ PASS | New types go in `sim/cluster/`. `RoutingSnapshot` extension goes in `sim/router_state.go` (no import cycle: `sim/` does not import `cluster/`). Autoscaler interfaces live in `sim/cluster/autoscaler.go` — cluster-level module boundary. |
+| **I. Architecture & Layering** | ✅ PASS | New types go in `sim/cluster/`. `RoutingSnapshot` extension goes in `sim/instance_status.go` (no import cycle: `sim/` does not import `cluster/`). Autoscaler interfaces live in `sim/cluster/autoscaler.go` — cluster-level module boundary. |
 | **II. Determinism** | ✅ PASS | Actuation delay uses existing `DelaySpec.Sample(rng)`. New RNG subsystem `"autoscaler"` declared in `infra_config.go`. All map iteration over `GPUInventory.ByVariant` must sort keys first (R2). |
 | **III. Interface & Module Design** | ✅ PASS | Four single-method interfaces (Collector, Analyzer, Engine, Actuator). Each has ≥2 implementations shipped in this feature: Collector(Default+future), Analyzer(Saturation+Utilization+Queue), Engine(Greedy+Unlimited), Actuator(Direct+future). Query methods are pure. |
 | **IV. BDD/TDD** | ✅ PASS | Each PR begins with GIVEN/WHEN/THEN behavioral contracts. Tests written before implementation. Table-driven test files per PR. No test exceeds 5s. |
@@ -80,7 +80,7 @@ sim/cluster/ (tests)
 └── pipeline_integration_test.go ← NEW (1C-1b): end-to-end pipeline test
 ```
 
-**Structure Decision**: Single-project Go library. All new code lands in `sim/cluster/` (cluster-level domain module) following the established package layout. `sim/router_state.go` receives additive fields only. No new packages. No CLI changes.
+**Structure Decision**: Single-project Go library. All new code lands in `sim/cluster/` (cluster-level domain module) following the established package layout. `sim/cluster_state.go` receives additive fields only. No new packages. No CLI changes.
 
 ## Complexity Tracking
 

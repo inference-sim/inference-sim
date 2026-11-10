@@ -352,13 +352,27 @@ func (cs *ClusterSimulator) releaseInFlight(id string) {
 	}
 }
 
+// addInstance appends inst to the cluster's instances and to the index by ID.
+func (cs *ClusterSimulator) addInstance(inst *InstanceSimulator) {
+	cs.instances = append(cs.instances, inst)
+	if cs.byID == nil {
+		cs.byID = make(map[InstanceID]*InstanceSimulator, cap(cs.instances))
+	}
+	cs.byID[inst.ID()] = inst
+}
+
+// instanceByID returns the instance with the given ID, or nil. It is a map lookup, not a scan of
+// the instances (DEV-5): a routing event costs the same at 1 and at 1000 instances. The index is
+// rebuilt when the instances slice no longer matches it, which only a test that replaces the
+// slice does.
 func (cs *ClusterSimulator) instanceByID(id InstanceID) *InstanceSimulator {
-	for _, inst := range cs.instances {
-		if inst.ID() == id {
-			return inst
+	if len(cs.byID) != len(cs.instances) {
+		cs.byID = make(map[InstanceID]*InstanceSimulator, len(cs.instances))
+		for _, inst := range cs.instances {
+			cs.byID[inst.ID()] = inst
 		}
 	}
-	return nil
+	return cs.byID[id]
 }
 
 // dispatchDisaggregated starts a disaggregated request: the prefill runs on p.Prefill, then its

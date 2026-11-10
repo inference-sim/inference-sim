@@ -106,13 +106,7 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 	}
 
 	decodeInstID := string(e.parentReq.DecodeInstanceID)
-	var decodeInst *InstanceSimulator
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decodeInstID {
-			decodeInst = inst
-			break
-		}
-	}
+	decodeInst := cs.instanceByID(InstanceID(decodeInstID))
 
 	// Split diagnostics for the two failure modes: a nil instance is a
 	// programming error (the gateway chose an ID not in cs.instances);
@@ -336,13 +330,7 @@ func (e *KVTransferCompletedEvent) Execute(cs *ClusterSimulator) {
 	logrus.Debugf("[cluster] KV transfer completed for %s, promoting decode sub-req on decode pod %s",
 		e.parentReq.ID, decodeInstID)
 
-	var decodeInst *InstanceSimulator
-	for _, inst := range cs.instances {
-		if string(inst.ID()) == decodeInstID {
-			decodeInst = inst
-			break
-		}
-	}
+	decodeInst := cs.instanceByID(InstanceID(decodeInstID))
 
 	// Split diagnostics: nil instance = programming error (routing returned
 	// an ID not in cs.instances); non-routable = legitimate drain/terminate
