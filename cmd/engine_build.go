@@ -664,6 +664,23 @@ func hostOverheads(dcfg *sim.EngineDriverConfig, m latencyModel) {
 	}
 }
 
+// streamIntervalOf is the pool's engine.stream_interval, how many tokens the API server holds
+// before streaming them to the client (vllm/config/scheduler.py:213@5df63a72), which the driver
+// applies to the delivery of tokens. Zero, unstated, is vLLM's default of 1. A negative value never
+// gets here: the scenario's validation refuses it. A model that is not the engine's own reports
+// none.
+func streamIntervalOf(m latencyModel) (int, error) {
+	km, ok := m.(*engineModel)
+	if !ok {
+		return 0, nil
+	}
+	e, err := km.Engine()
+	if err != nil {
+		return 0, fmt.Errorf("reading the pool's engine settings: %w", err)
+	}
+	return e.StreamInterval, nil
+}
+
 // provenanceOf is a pool's kernel evidence as the host's report records it, field for field.
 func provenanceOf(p cengine.KernelPoolProvenance) sim.KernelPoolProvenance {
 	out := sim.KernelPoolProvenance{MethodCounts: p.MethodCounts, Evidenced: p.Evidenced, Total: p.Total,
@@ -758,6 +775,15 @@ func adapterRegistryOf(cfg loraConfig) workload.AdapterRegistry {
 		logrus.Fatalf("%v", err)
 	}
 	return r
+}
+
+// adapterIDsOf lists the LoRA adapter IDs a run declares, in declaration order.
+func adapterIDsOf(cfg loraConfig) []string {
+	ids := make([]string, len(cfg.Adapters))
+	for i, a := range cfg.Adapters {
+		ids[i] = a.ID
+	}
+	return ids
 }
 
 // offloadRecord and offloadTierRecord are a trace header's record of the KV-offload config,

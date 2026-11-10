@@ -117,7 +117,7 @@ func (m *Metrics) recordCompletionOrder(id string, clock int64, outputTokens int
 	m.completions++
 	rm.completionSeq = m.completions
 	rm.completionClock = clock
-	rm.OutputTokens = outputTokens
+	rm.OutputTokens, rm.NumDecodeTokens = outputTokens, outputTokens
 	rm.completionOverheadTicks = overheadTicks
 	m.Requests[id] = rm
 }
@@ -127,7 +127,7 @@ func (m *Metrics) recordCompletionOrder(id string, clock int64, outputTokens int
 // another id -- a disaggregated parent completes when its decode sub-request does.
 func (rm RequestMetrics) WithCompletionOf(src RequestMetrics) RequestMetrics {
 	rm.completionSeq, rm.completionClock = src.completionSeq, src.completionClock
-	rm.OutputTokens, rm.emittedTokens = src.OutputTokens, src.emittedTokens
+	rm.OutputTokens, rm.NumDecodeTokens, rm.emittedTokens = src.OutputTokens, src.NumDecodeTokens, src.emittedTokens
 	rm.completionOverheadTicks, rm.timedOut = src.completionOverheadTicks, src.timedOut
 	return rm
 }

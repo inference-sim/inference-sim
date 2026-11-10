@@ -41,8 +41,7 @@ var declaredOutputLengthReaders = map[string]string{
 // outputLengthReadersToRemove read the sampled output where the rule gives them only the tokens
 // emitted. Each is debt with the reason it remains; the list may only shrink.
 var outputLengthReadersToRemove = map[string]string{
-	"sim:NewRequestMetrics":                  "sets NumDecodeTokens, the per-model, per-tenant and per-adapter token totals, from the sampled length; the totals move to the tokens emitted in pull request 2, a validation change",
-	"sim:EngineDriver.complete":              "decides the post-decode overhead from the presence of a sampled output; it reads the tokens emitted in pull request 2",
+	"sim:EngineDriver.complete":              "decides the post-decode overhead from the presence of a sampled output; reading the tokens emitted instead can move a completion's E2E by the overhead where the two disagree about being zero, so it is a validation change for a later pull request",
 	"sim/workload:SessionManager.OnComplete": "appends the content of the tokens a round emitted to the session's context; it reads the count from the token record (GeneratedTokens) but takes the content, and a corruption check against the sampled length, from OutputTokens, because the engine contract returns counts and no token content (the M2 token record, SIM-12)",
 }
 

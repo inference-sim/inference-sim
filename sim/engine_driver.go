@@ -59,6 +59,15 @@ type EngineDriverConfig struct {
 	// steps in a row emit no token and finish no request while the engine holds work. Zero
 	// means DefaultStallSteps.
 	StallSteps int
+	// StreamInterval is the API server's stream_interval (vllm/config/scheduler.py:213@5df63a72):
+	// the client is sent a request's tokens in groups, not at every step. Zero and one deliver
+	// at every step and record nothing extra. Above one, the client sees the first output at
+	// once, then a group each time StreamInterval tokens have accumulated since the last, and
+	// what is left when the request finishes (RequestState.make_request_output,
+	// vllm/v1/engine/output_processor.py:324-343@5df63a72, streaming in delta mode); the gaps
+	// between those sends are Request.ClientITL. The engine's steps, sampling, TTFT, end-to-end
+	// latency and per-step ITL entries (Request.ITL) are as without it.
+	StreamInterval int
 }
 
 // DefaultStallSteps is the progress watchdog's limit when EngineDriverConfig.StallSteps is
@@ -168,6 +177,8 @@ type driverReq struct {
 	scheduledIdx int
 	lastEnd      int64 // the end of the last step that emitted a token for the request
 	emitted      int
+	sent         int     // tokens delivered to the client (StreamInterval groups them)
+	clientEnd    int64   // the end of the step that delivered the last of them
 	acceptCarry  float64 // the fraction of an accepted draft the request is owed
 	resumed      bool    // preempted after its first token, not yet emitting again
 	lookedUp     bool    // its first admission's prefix-cache lookup is recorded
@@ -930,6 +941,8 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			continue
 		}
 		n := res.Emitted[id]
+		grouped := d.cfg.StreamInterval > 1
+		firstStep := false
 		if n > 0 {
 			d.noteProgress()
 		}
@@ -946,6 +959,7 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			}
 			r.lastEnd = end
 			n-- // the first token's latency is TTFT, not an ITL entry
+			firstStep = true
 		}
 		if n > 0 {
 			// A step emitting n tokens is one ITL entry, as the compatibility engine's
@@ -965,6 +979,13 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 			r.resumed = false
 			r.req.ITL = append(r.req.ITL, gap)
 			r.lastEnd = end
+			if grouped && firstStep {
+				// The first output is sent at once, with whatever else the step emitted.
+				r.req.ClientITL = append(r.req.ClientITL, gap)
+			}
+		}
+		if grouped {
+			d.deliver(r, res.Emitted[id], end, firstStep)
 		}
 		r.emitted += res.Emitted[id]
 		if res.Emitted[id] > 0 {
@@ -981,8 +1002,44 @@ func (d *EngineDriver) apply(b engine.Batch, res engine.Result, end int64) {
 		if r == nil {
 			continue
 		}
+		d.flushUndelivered(r, f, end)
 		d.finish(r, f, end)
 	}
+}
+
+// deliver is the client's view of a request's tokens under StreamInterval (vLLM's output
+// processor, output_processor.py:324-343@5df63a72): the first output is sent at once, then a
+// group each time StreamInterval tokens have accumulated since the last send, and the finish
+// sends what is left (flushUndelivered). Each send after the first is one entry of the request's
+// ClientITL, the gap since the previous send plus the group's output processing. The engine's
+// own per-step ITL entries are not touched: the engine schedules and samples as without it.
+func (d *EngineDriver) deliver(r *driverReq, emittedNow int, end int64, firstStep bool) {
+	total := r.emitted + emittedNow
+	if firstStep {
+		r.sent, r.clientEnd = total, end
+		return
+	}
+	if emittedNow == 0 {
+		return
+	}
+	if r.sent != 0 && total-r.sent < d.cfg.StreamInterval {
+		return
+	}
+	m := total - r.sent
+	r.req.ClientITL = append(r.req.ClientITL, end-r.clientEnd+int64(m)*d.cfg.OutputTokenProcessingTime)
+	r.sent, r.clientEnd = total, end
+}
+
+// flushUndelivered sends the client the tokens a finishing request still holds under
+// StreamInterval: those emitted and not yet delivered, including the finishing step's own
+// (output_processor.py:331-336@5df63a72).
+func (d *EngineDriver) flushUndelivered(r *driverReq, f engine.Finished, end int64) {
+	if d.cfg.StreamInterval <= 1 || f.Reason == engine.FinishError || r.sent >= r.emitted || !r.req.TTFTSet {
+		return
+	}
+	m := r.emitted - r.sent
+	r.req.ClientITL = append(r.req.ClientITL, end-r.clientEnd+int64(m)*d.cfg.OutputTokenProcessingTime)
+	r.sent, r.clientEnd = r.emitted, end
 }
 
 // noteStep counts a step that ran requests toward the progress watchdog (SIM-7).

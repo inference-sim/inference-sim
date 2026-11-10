@@ -312,11 +312,12 @@ func normalizeRouter(in routerInputs) routerInputs {
 }
 
 // newGateway builds the embedded llm-d router for a cluster run.
-func newGateway(in routerInputs, model string) *llmd.Gateway {
+func newGateway(in routerInputs, model string, adapters ...string) *llmd.Gateway {
 	return llmd.New(llmd.Options{
 		EPPFlags:         in.EPPFlags,
 		Manifests:        []byte(in.Manifests),
 		Model:            model,
+		Adapters:         adapters,
 		PodLabels:        podLabelFunc(in.PodLabels),
 		GatewayLatencyUs: in.GatewayLatencyUs,
 		ScrapeJitter:     time.Duration(in.ScrapeJitterUs) * time.Microsecond,

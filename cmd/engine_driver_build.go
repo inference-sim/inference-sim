@@ -70,6 +70,15 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	data := mustRunData()
 	frontend := groupFrontendConfigFromCLI(dataParallelism)
 	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
+		m := latency
+		if kernelPDOpened != nil {
+			// Each P/D pool's host overheads are its own kernel's.
+			m = engineConfigIn(ic).LatencyModel
+		}
+		streamInterval, err := streamIntervalOf(m)
+		if err != nil {
+			return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+		}
 		// The Spec carries no configuration: the factory reads the pool's engine block from the
 		// scenario file itself, so this binary opens no engine configuration.
 		eng, err := newContractEngine(engine.Spec{
@@ -94,12 +103,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			}
 			s.EnableServerSeries(iv)
 		}
-		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance}
-		m := latency
-		if kernelPDOpened != nil {
-			// Each P/D pool's host overheads are its own kernel's.
-			m = engineConfigIn(ic).LatencyModel
-		}
+		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval}
 		hostOverheads(&cfg, m)
 		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)
 	}

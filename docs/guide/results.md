@@ -73,6 +73,15 @@ requests, which BLIS does not compute. Schema 1's `itl_*` was the per-request ti
 token, which schema 2 names `tpot_*`. Under speculative decoding one decode step emits several
 tokens, so `step_interval_*` is longer than `tpot_*` by the accepted length.
 
+A pool's `engine.stream_interval` (vLLM's `SchedulerConfig.stream_interval`) groups the tokens the
+client is sent: the first output at once, then a group each time that many tokens have
+accumulated, and the rest when the request finishes. It changes when the client sees tokens and
+nothing the engine does, so the engine's steps, TTFT, each request's end-to-end latency, `tpot_*`
+and `step_interval_*` are as without it (the last chunk arrives at the finish, and a client
+computing `(latency - ttft) / (output tokens - 1)` gets the same figure). Only the gaps between the
+client's chunks change: fewer, longer ones. The simulator records them on the request
+(`Request.ClientITL`); the Result does not report them, since it reports no pooled `itl_*`.
+
 ### From schema 1 to schema 2
 
 The Result moved from blis-schemas' schema 1 to contracts/spec/result's schema 2. Each schema 1

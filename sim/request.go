@@ -81,7 +81,10 @@ type Request struct {
 	DepartureTime    int64   // Tick its final step ends (its RequestLeftEvent time); 0 until it completes
 	NumNewTokens     int     // Number of new tokens to be generated in the current step
 	LengthCapped     bool    // Set when force-completed by runtime MaxModelLen cap (BC-5)
-	ITL              []int64 // List of inter-token latencies
+	ITL              []int64 // List of inter-token latencies, one per engine step that emitted a token
+	// ClientITL is the gaps between the sends a client sees when the API server groups tokens
+	// (EngineDriverConfig.StreamInterval above 1); nil otherwise.
+	ClientITL []int64
 	// GeneratedTokens is the number of output tokens the engine generated, set when the request
 	// completes; it is what a model server reports as usage.completion_tokens.
 	GeneratedTokens int

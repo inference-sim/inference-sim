@@ -172,3 +172,48 @@ func manifestNodes(docs []byte) ([]*corev1.Node, error) {
 		nodes = append(nodes, obj.(*corev1.Node))
 	}
 }
+
+// rewriteTarget is one place a rewrite rule may send a request, by the model name it rewrites to.
+type rewriteTarget struct {
+	Resource string // the InferenceModelRewrite's name
+	Rule     int
+	Model    string
+}
+
+// manifestRewriteTargets returns every model an InferenceModelRewrite in the manifests may send
+// a request to, in document order. It reads only the fields it needs and leaves validating the
+// resource to the router (embed.Config.Manifests), which refuses a malformed one first.
+func manifestRewriteTargets(docs []byte) ([]rewriteTarget, error) {
+	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(docs)))
+	var out []rewriteTarget
+	for i := 0; ; i++ {
+		doc, err := reader.Read()
+		if err == io.EOF {
+			return out, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("manifest document %d: %w", i, err)
+		}
+		var rw struct {
+			metav1.TypeMeta   `json:",inline"`
+			metav1.ObjectMeta `json:"metadata"`
+			Spec              struct {
+				Rules []struct {
+					Targets []struct {
+						ModelRewrite string `json:"modelRewrite"`
+					} `json:"targets"`
+				} `json:"rules"`
+			} `json:"spec"`
+		}
+		if sigsyaml.Unmarshal(doc, &rw) != nil || rw.Kind != "InferenceModelRewrite" {
+			continue
+		}
+		for r, rule := range rw.Spec.Rules {
+			for _, t := range rule.Targets {
+				if t.ModelRewrite != "" {
+					out = append(out, rewriteTarget{Resource: rw.Name, Rule: r, Model: t.ModelRewrite})
+				}
+			}
+		}
+	}
+}
