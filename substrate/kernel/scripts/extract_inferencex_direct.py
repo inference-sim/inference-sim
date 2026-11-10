@@ -105,6 +105,15 @@ PER_POINT_FIELDS = (
 MIN_POINTS = 3
 
 
+def spec_method_of(row: dict) -> str:
+    """The speculative method a row's own server log states, else the database's column.
+
+    The column is the benchmark's label and can disagree with the run: a row labelled mtp
+    served an EAGLE3 draft model. The log's `speculative_method` is what the engine was
+    given, so it names the deployment; a row whose log states none keeps the column."""
+    return str(row["passed"].get("speculative_method") or row["spec_method"])
+
+
 def query(sql: str) -> list[list[str]]:
     out = subprocess.run([PSQL, "-d", DB, "-t", "-A", "-F", "\t", "-c", sql],
                          capture_output=True, text=True, check=True)
@@ -194,7 +203,7 @@ def main() -> int:
             "workload": f"{r['isl']}:{r['osl']}",
             "label": f"{r['isl'] // 1024 or 1}k{r['osl'] // 1024 or 1}k",
             "serving": "aggregated",
-            "spec_method": r["spec_method"],
+            "spec_method": spec_method_of(r),
             "parallelism": {"tp_size": r["tp"], "pp_size": 1,
                             "attention_dp_size": 2 if r["dp_attention"] else 1,
                             "moe_ep_size": r["ep"],
