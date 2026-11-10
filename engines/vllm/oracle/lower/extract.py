@@ -100,6 +100,19 @@ def load(root):
           and any(getattr(t, "id", "") == "DEFAULT_BREAKABLE_CUDAGRAPH_ARCHITECTURES" for t in n.targets)]
     assert len(br) == 1
     run(br, ns, "vllm/config/vllm.py")
+    eg = parse(root, "vllm/config/engram.py")
+    for name in ("resolve_dp_shared_memory", "verify_parallel_config", "get_parallel_size"):
+        fn = method(eg, "EngramConfig", name)[0]
+        fn.decorator_list = []
+        run([fn], ns, "vllm/config/engram.py")
+        ns["engram_" + name] = ns.pop(name)
+    en = parse(root, "vllm/models/deepseek_v41/common/engram.py")
+    fn = method(en, "ParallelEngramEmbedding", "_get_shard_info")[0]
+    fn.decorator_list = []
+    run([fn], ns, "engram.py")
+    ns["_get_shard_info"] = ns.pop("_get_shard_info")
+    ns["engram_head_shard_rank"] = lambda: ns["_cur"]["tp_rank"] * ns["_cur"]["edp"] + ns["_cur"]["dp_rank"]
+    ns["get_tensor_model_parallel_rank"] = lambda: ns["_cur"]["tp_rank"]
     dp = parse(root, "vllm/v1/worker/gpu/dp_utils.py")
     # Type names the signatures mention; annotations are evaluated when the def runs.
     ns.update(CudaGraphManager=object, ParallelConfig=object)
@@ -312,6 +325,57 @@ def dp_cases(ns):
     return out
 
 
+# Engram host tables. EngramConfig's resolution and checks, and the shard an EngramTable holds, are
+# run as written. The engine's `EngramTable.__init__` cannot run (it needs a GPU), so the rows a
+# shard holds are computed in core/lower from the head sizes and the shard it is given, and tested
+# there against the source's formulas, not against an oracle.
+ENGRAM_CASES = [
+    dict(stated=None, cpu_offload=True, use_thp=False, dp=1, elastic=False),
+    dict(stated=None, cpu_offload=True, use_thp=False, dp=2, elastic=False),
+    dict(stated=None, cpu_offload=True, use_thp=False, dp=4, elastic=True),
+    dict(stated=None, cpu_offload=True, use_thp=True, dp=2, elastic=False),
+    dict(stated=None, cpu_offload=False, use_thp=False, dp=2, elastic=False),
+    dict(stated=True, cpu_offload=True, use_thp=False, dp=2, elastic=False),
+    dict(stated=True, cpu_offload=True, use_thp=False, dp=1, elastic=False),
+    dict(stated=True, cpu_offload=False, use_thp=False, dp=2, elastic=False),
+    dict(stated=True, cpu_offload=True, use_thp=False, dp=2, elastic=True),
+    dict(stated=True, cpu_offload=True, use_thp=True, dp=2, elastic=False),
+    dict(stated=False, cpu_offload=True, use_thp=False, dp=2, elastic=False),
+    dict(stated=False, cpu_offload=False, use_thp=False, dp=1, elastic=False),
+]
+SHARD_CASES = [dict(tp=tp, tp_rank=r, edp=edp, dp_rank=d, shared=sh)
+               for tp in (1, 4, 8) for edp in (1, 2, 4) for sh in (False, True)
+               for r in sorted({0, tp - 1}) for d in sorted({0, edp - 1})]
+
+
+def engram_cases(ns):
+    out = {"resolve": [], "shard": [], "parallel_size": []}
+    for c in ENGRAM_CASES:
+        cfg = types.SimpleNamespace(dp_shared_memory=c["stated"], cpu_offload=c["cpu_offload"], use_thp=c["use_thp"],
+                                    embedding_across_dp=False)
+        pc = types.SimpleNamespace(data_parallel_size=c["dp"], enable_elastic_ep=c["elastic"], tensor_parallel_size=8)
+        row = {"case": c}
+        try:
+            ns["engram_resolve_dp_shared_memory"](cfg, pc)
+            row["resolved"] = bool(cfg.dp_shared_memory)
+            # EngramConfig.__post_init__ checks the stated/resolved pair; only verify_parallel_config is run here.
+            ns["engram_verify_parallel_config"](cfg, pc)
+            row["error"] = None
+        except ValueError as e:
+            row["resolved"] = bool(cfg.dp_shared_memory)
+            row["error"] = str(e)
+        out["resolve"].append(row)
+    for c in SHARD_CASES:
+        ns["_cur"] = c
+        self_ = types.SimpleNamespace(dp_size=1 if c["shared"] else c["edp"], tp_size=c["tp"])
+        out["shard"].append({"case": c, "got": list(ns["_get_shard_info"](self_))})
+    for tp, dp, across in itertools.product((1, 4, 8), (1, 2, 4), (False, True)):
+        cfg = types.SimpleNamespace(embedding_across_dp=across)
+        pc = types.SimpleNamespace(tensor_parallel_size=tp, data_parallel_size=dp)
+        out["parallel_size"].append({"tp": tp, "dp": dp, "across": across, "got": ns["engram_get_parallel_size"](cfg, pc)})
+    return out
+
+
 def decode_len_cases(ns):
     out = []
     for spec, par, v2 in itertools.product([None, 0, 1, 3, 7], [False, True], [False, True]):
@@ -339,6 +403,7 @@ def build(root):
         "max_decode_query_len": decode_len_cases(ns),
         "graph_context_tokens": context_cases(ns),
         "dp_sync": dp_cases(ns),
+        "engram": engram_cases(ns),
     }
 
 

@@ -7,6 +7,9 @@ import (
 	"os"
 	"slices"
 	"testing"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 )
 
 // vllm_lower.json is vLLM v0.32.0's own answers for every case below, printed by
@@ -81,6 +84,35 @@ type oracleFile struct {
 			} `json:"sync"`
 		} `json:"results"`
 	} `json:"dp_sync"`
+	Engram struct {
+		Resolve []struct {
+			Case struct {
+				Stated  *bool `json:"stated"`
+				Offload bool  `json:"cpu_offload"`
+				THP     bool  `json:"use_thp"`
+				DP      int   `json:"dp"`
+				Elastic bool  `json:"elastic"`
+			} `json:"case"`
+			Resolved bool    `json:"resolved"`
+			Error    *string `json:"error"`
+		} `json:"resolve"`
+		Shard []struct {
+			Case struct {
+				TP     int  `json:"tp"`
+				TPRank int  `json:"tp_rank"`
+				EDP    int  `json:"edp"`
+				DPRank int  `json:"dp_rank"`
+				Shared bool `json:"shared"`
+			} `json:"case"`
+			Got [2]int `json:"got"`
+		} `json:"shard"`
+		ParallelSize []struct {
+			TP     int  `json:"tp"`
+			DP     int  `json:"dp"`
+			Got    int  `json:"got"`
+			Across bool `json:"across"`
+		} `json:"parallel_size"`
+	} `json:"engram"`
 	Context []struct {
 		Steps        int `json:"steps"`
 		MaxNumTokens int `json:"max_num_tokens"`
@@ -375,5 +407,106 @@ func TestADecodeIsAsWideAsAVerify(t *testing.T) {
 	}
 	if got := MaxDecodeQueryLen(&k, true, false); got != 11 {
 		t.Errorf("V1 runner with a parallel drafter: %d, want 1+K+K", got)
+	}
+}
+
+func TestEngramSharingIsVLLMs(t *testing.T) {
+	o := loadOracle(t)
+	if len(o.Engram.Resolve) < 12 {
+		t.Fatalf("%d Engram cases", len(o.Engram.Resolve))
+	}
+	for _, c := range o.Engram.Resolve {
+		got, err := EngramShared(c.Case.Stated, c.Case.Offload, c.Case.THP, c.Case.DP, c.Case.Elastic)
+		if got != c.Resolved || (err != nil) != (c.Error != nil) {
+			t.Errorf("%+v: shared %v err %v; vLLM shared %v err %v", c.Case, got, err, c.Resolved, c.Error)
+		}
+	}
+	for _, c := range o.Engram.ParallelSize {
+		if got := EngramParallelSize(c.TP, c.DP, c.Across); got != c.Got {
+			t.Errorf("tp %d dp %d across %v: %d; vLLM %d", c.TP, c.DP, c.Across, got, c.Got)
+		}
+	}
+}
+
+// The shard an Engram table's rank holds is vLLM's _get_shard_info, run as written.
+func TestEngramShardIsVLLMs(t *testing.T) {
+	for _, c := range loadOracle(t).Engram.Shard {
+		s, r := EngramShard(c.Case.TP, c.Case.TPRank, c.Case.EDP, c.Case.DPRank, c.Case.Shared)
+		if s != c.Got[0] || r != c.Got[1] {
+			t.Errorf("%+v: shard %d of %d; vLLM %d of %d", c.Case, r, s, c.Got[1], c.Got[0])
+		}
+	}
+}
+
+// A node holds one copy of a shared table and one for each rank of an unshared one. Four tensor
+// ranks over a table of eight hash heads, two data-parallel replicas of four ranks on one node of
+// eight: shared, a rank's shard (two heads) is counted once for the node; unshared, a rank's shard
+// is cut over tensor and data parallelism (one head) and counted for each of the node's eight
+// ranks. Head sizes differ, so the expected figures are summed from the heads the shard holds.
+func TestASharedTableCountsOncePerNode(t *testing.T) {
+	heads := []int{101, 103, 107, 109, 113, 127, 131, 137}
+	const dim, block = 64, 32
+	node := func(ranksOnNode, tp, engramDP int, shared bool) units.Bytes {
+		t.Helper()
+		var p plan.PoolPlan
+		sh, r := EngramShard(tp, 0, engramDP, 0, shared)
+		tab, err := EngramTable("engram", heads, dim, block, sh, r, shared)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Weights = []plan.ResidentTensor{tab}
+		m, err := plan.MemoryOf(p, ranksOnNode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m.Host.Value()
+	}
+	bytesOf := func(h ...int) units.Bytes {
+		var n int
+		for _, x := range h {
+			n += x
+		}
+		return units.Bytes(n) * (dim + dim/block)
+	}
+	// Shared, tp 4: rank 0 holds heads 0 and 1, and the node counts them once.
+	if got, want := node(8, 4, 2, true), bytesOf(101, 103); got != want {
+		t.Errorf("a shared shard on an 8-rank node: %d bytes, want %d once", got, want)
+	}
+	// Unshared, tp 4 x dp 2: rank 0 holds head 0, counted for each of the node's 8 ranks.
+	if got, want := node(8, 4, 2, false), 8*bytesOf(101); got != want {
+		t.Errorf("an unshared shard on an 8-rank node: %d bytes, want 8 x %d", got, bytesOf(101))
+	}
+	if _, err := EngramTable("engram", heads, dim, block, 16, 0, false); err == nil {
+		t.Error("16 shards of 8 hash heads were accepted; vLLM refuses a layout that leaves ranks without heads")
+	}
+	tab, _ := EngramTable("engram", heads, dim, block, 4, 0, true)
+	if !tab.Shared || tab.Where != plan.ResidentHost {
+		t.Errorf("a shared table is a host figure that counts once: %+v", tab)
+	}
+}
+
+// The draft-logits buffer is (max_num_seqs, K, vocab) in the head dtype for DeepSeek-V4.1 at K=5:
+// 129,280 x 5 x 2 bytes a slot, 1,325,... bytes, about 1.2 GiB at 1,024 slots; greedy has none.
+func TestTheProbabilisticDraftSamplerChargesItsLogits(t *testing.T) {
+	b, ok, err := DraftLogits(true, 1024, 5, 129280, 2)
+	if err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if want := units.Bytes(1024) * 5 * 129280 * 2; b.Bytes != want || b.Basis != plan.BasisRank || b.Host {
+		t.Errorf("%+v, want %d bytes per rank on the GPU", b, want)
+	}
+	if gib := float64(b.Bytes) / (1 << 30); gib < 1.2 || gib > 1.3 {
+		t.Errorf("%.2f GiB, the issue's figure is about 1.2", gib)
+	}
+	if _, ok, _ := DraftLogits(false, 1024, 5, 129280, 2); ok {
+		t.Error("greedy sampling allocated a buffer")
+	}
+	small, _, _ := DraftLogits(true, 512, 5, 129280, 2)
+	if small.Bytes >= b.Bytes {
+		t.Error("the buffer does not grow with max_num_seqs")
+	}
+	f32, _, _ := DraftLogits(true, 1024, 5, 129280, 4)
+	if f32.Bytes != 2*b.Bytes {
+		t.Error("a float32 cache is not twice a bfloat16 one")
 	}
 }

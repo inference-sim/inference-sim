@@ -20,6 +20,11 @@
       "symbol": "get_dp_group, should_skip_dp_coordination",
       "kind": "environment",
       "how": "get_dp_group returns an object holding the CPU group handle the all-reduce is given, which the replaced all-reduce ignores; should_skip_dp_coordination is False, as it is for a real multi-rank pool, so the function takes the all-reduce path."
+    },
+    {
+      "symbol": "engram_head_shard_rank, get_tensor_model_parallel_rank, _cur",
+      "kind": "environment",
+      "how": "ParallelEngramEmbedding._get_shard_info asks which rank this process is. The harness answers from the case (tp_rank, the engram data-parallel size and rank) with the formulas the source states (engram_head_shard_rank: tensor rank x engram DP size + DP rank, vllm/models/deepseek_v41/common/engram.py:724-733), so the shard rule runs as written for every rank of the case. The module-level helpers are not extracted; the class method is."
     }
   ]
 }

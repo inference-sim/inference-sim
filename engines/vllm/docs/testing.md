@@ -75,14 +75,17 @@ are reported as priced by the kernel's vLLM 0.31.0 behaviour.
 
 `core/lower` is what the engine decides about a launch before the cost model prices it (design
 section 6): the CUDA-graph capture sizes, the graph a batch replays and the padded token count, the
-data-parallel padding, the decode threshold, a parallel-block drafter's padded rows, and the KV
-groups' pages. `oracle/lower/extract.py` takes the release's own definitions out of their modules
+data-parallel padding, the decode threshold, a parallel-block drafter's padded rows, the KV
+groups' pages, the Engram host tables' sharing and shard, and the probabilistic draft sampler's
+logits buffer. `oracle/lower/extract.py` takes the release's own definitions out of their modules
 by syntax tree and runs them as written, with the data-parallel all-reduce supplied the ranks'
 votes; its answers are `core/lower/testdata/vllm_lower.json`, which CI regenerates and compares
 (`oracle-tier2`). The Go tests compare the port with those answers: 19 capture configurations, 1,937
-dispatch probes around their sizes, 12 data-parallel cases and the threshold and context rules.
+dispatch probes around their sizes, 12 data-parallel cases, 12 Engram sharing cases, 50 Engram shard
+cases, and the threshold and context rules. The draft-logits buffer and the Engram table's rows are
+sums of figures the source states, tested by arithmetic, with no oracle.
 What the oracle replaces is in `oracle/lower/replacements.json`, which `check_replacements.py`
-checks against the extractor. The KV group pages (`core/kv.GroupPages`) are checked against the
+checks against the extractor. The KV group pages (`GroupPages` in `core/kv`) are checked against the
 pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from. Two things have no
 oracle here: the microbatching path (dual batch overlap is not modelled) and dynamic speculative
 decoding, which the extractor refuses if a case reaches them.

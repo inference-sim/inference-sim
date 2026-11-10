@@ -24954,6 +24954,904 @@
    ]
   }
  ],
+ "engram": {
+  "parallel_size": [
+   {
+    "across": false,
+    "dp": 1,
+    "got": 1,
+    "tp": 1
+   },
+   {
+    "across": true,
+    "dp": 1,
+    "got": 1,
+    "tp": 1
+   },
+   {
+    "across": false,
+    "dp": 2,
+    "got": 1,
+    "tp": 1
+   },
+   {
+    "across": true,
+    "dp": 2,
+    "got": 2,
+    "tp": 1
+   },
+   {
+    "across": false,
+    "dp": 4,
+    "got": 1,
+    "tp": 1
+   },
+   {
+    "across": true,
+    "dp": 4,
+    "got": 4,
+    "tp": 1
+   },
+   {
+    "across": false,
+    "dp": 1,
+    "got": 4,
+    "tp": 4
+   },
+   {
+    "across": true,
+    "dp": 1,
+    "got": 4,
+    "tp": 4
+   },
+   {
+    "across": false,
+    "dp": 2,
+    "got": 4,
+    "tp": 4
+   },
+   {
+    "across": true,
+    "dp": 2,
+    "got": 8,
+    "tp": 4
+   },
+   {
+    "across": false,
+    "dp": 4,
+    "got": 4,
+    "tp": 4
+   },
+   {
+    "across": true,
+    "dp": 4,
+    "got": 16,
+    "tp": 4
+   },
+   {
+    "across": false,
+    "dp": 1,
+    "got": 8,
+    "tp": 8
+   },
+   {
+    "across": true,
+    "dp": 1,
+    "got": 8,
+    "tp": 8
+   },
+   {
+    "across": false,
+    "dp": 2,
+    "got": 8,
+    "tp": 8
+   },
+   {
+    "across": true,
+    "dp": 2,
+    "got": 16,
+    "tp": 8
+   },
+   {
+    "across": false,
+    "dp": 4,
+    "got": 8,
+    "tp": 8
+   },
+   {
+    "across": true,
+    "dp": 4,
+    "got": 32,
+    "tp": 8
+   }
+  ],
+  "resolve": [
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 1,
+     "elastic": false,
+     "stated": null,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": false
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 2,
+     "elastic": false,
+     "stated": null,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": true
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 4,
+     "elastic": true,
+     "stated": null,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": false
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 2,
+     "elastic": false,
+     "stated": null,
+     "use_thp": true
+    },
+    "error": null,
+    "resolved": false
+   },
+   {
+    "case": {
+     "cpu_offload": false,
+     "dp": 2,
+     "elastic": false,
+     "stated": null,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": false
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 2,
+     "elastic": false,
+     "stated": true,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": true
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 1,
+     "elastic": false,
+     "stated": true,
+     "use_thp": false
+    },
+    "error": "dp_shared_memory requires data_parallel_size > 1.",
+    "resolved": true
+   },
+   {
+    "case": {
+     "cpu_offload": false,
+     "dp": 2,
+     "elastic": false,
+     "stated": true,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": true
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 2,
+     "elastic": true,
+     "stated": true,
+     "use_thp": false
+    },
+    "error": "dp_shared_memory is not supported with elastic EP.",
+    "resolved": true
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 2,
+     "elastic": false,
+     "stated": true,
+     "use_thp": true
+    },
+    "error": null,
+    "resolved": true
+   },
+   {
+    "case": {
+     "cpu_offload": true,
+     "dp": 2,
+     "elastic": false,
+     "stated": false,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": false
+   },
+   {
+    "case": {
+     "cpu_offload": false,
+     "dp": 1,
+     "elastic": false,
+     "stated": false,
+     "use_thp": false
+    },
+    "error": null,
+    "resolved": false
+   }
+  ],
+  "shard": [
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": false,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     1,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": true,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     1,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": false,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     2,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": false,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     2,
+     1
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": true,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     1,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": true,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     1,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": false,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": false,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": true,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     1,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": true,
+     "tp": 1,
+     "tp_rank": 0
+    },
+    "got": [
+     1,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     1
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     8,
+     6
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     8,
+     7
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     16,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     16,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     16,
+     12
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": false,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     16,
+     15
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 0
+    },
+    "got": [
+     4,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": true,
+     "tp": 4,
+     "tp_rank": 3
+    },
+    "got": [
+     4,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     8,
+     7
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 1,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     8,
+     7
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     16,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     16,
+     1
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     16,
+     14
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     16,
+     15
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 2,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     8,
+     7
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 1,
+     "edp": 2,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     8,
+     7
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     32,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     32,
+     3
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     32,
+     28
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": false,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     32,
+     31
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 0
+    },
+    "got": [
+     8,
+     0
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 0,
+     "edp": 4,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     8,
+     7
+    ]
+   },
+   {
+    "case": {
+     "dp_rank": 3,
+     "edp": 4,
+     "shared": true,
+     "tp": 8,
+     "tp_rank": 7
+    },
+    "got": [
+     8,
+     7
+    ]
+   }
+  ]
+ },
  "graph_context_tokens": [
   {
    "got": 0,
