@@ -530,7 +530,7 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "44159362a4fca9a909d57b2a93949211c6cf1521+dirty",
+  "blis_vllm_commit": "857d50b7d2fb0338ff0e5167c38bc6bd18021c89",
   "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
   "mock_version": "gpu-mock/4+420a44386aa4",
   "mocks": [
@@ -572,7 +572,7 @@
   "tier": 5,
   "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
   "vllm_distribution": "0.32.0+cpu",
-  "vllm_version": "0.32.0+cpu"
+  "vllm_version": "0.32.0"
  },
  "series": {
   "vllm:admission_rejections_total{reason=max_num_queued_reqs}": 0.0,
