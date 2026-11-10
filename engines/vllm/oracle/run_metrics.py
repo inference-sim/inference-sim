@@ -76,7 +76,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     from vllm.v1.metrics.loggers import PrometheusStatLogger  # noqa: E402
     from vllm.v1.metrics.stats import IterationStats  # noqa: E402
     from vllm.v1.outputs import ModelRunnerOutput  # noqa: E402
-    from vllm.v1.request import Request  # noqa: E402
+    from vllm.v1.request import Request, RequestStatus  # noqa: E402
 
     import vllm.v1.core.sched.scheduler as sched_mod  # noqa: E402
     import vllm.v1.engine as engine_mod  # noqa: E402
@@ -110,20 +110,21 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     if here not in sys.path:
         sys.path.insert(0, here)
     spec = cfg.get("speculative")
-    if spec:
-        # A speculative scenario is built as tier 2 builds it (run_scheduler.build_scheduler):
-        # vLLM's own SpeculativeConfig handed to the helper's constructors.
+    if spec or cfg.get("max_loras"):
+        # A speculative or LoRA scenario is built as tier 2 builds it (run_scheduler.build_scheduler):
+        # vLLM's own SpeculativeConfig and LoRAConfig handed to the helper's constructors.
         import tests.v1.core.utils as helpers  # noqa: E402
         from run_scheduler import build_scheduler  # noqa: E402
 
-        # Only the speculative configuration is added to the tier-5 scheduler. The scheduler
+        # Only the speculative and LoRA configurations are added to the tier-5 scheduler. The scheduler
         # knobs tier 2 also varies (watermark, active-sequence and scheduled-token caps, the
         # adaptive prefill threshold, LoRA, KV events and hybrid groups) are not modelled by this
         # tier's Go driver, and tier 5 has never applied them, so they are left out of the
         # configuration here as they are for a scenario without speculation.
         spec_only = {k: v for k, v in cfg.items() if k in (
             "max_num_seqs", "max_num_batched_tokens", "block_size", "num_blocks", "max_model_len",
-            "long_prefill_token_threshold", "enable_prefix_caching", "scheduling_policy", "speculative")}
+            "long_prefill_token_threshold", "enable_prefix_caching", "scheduling_policy", "speculative",
+            "max_loras", "max_cpu_loras")}
         scheduler = build_scheduler(helpers, create_scheduler, model, spec_only)
     else:
         scheduler = create_scheduler(
@@ -147,6 +148,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     by_id = {r["id"]: r for r in sc["requests"]}
     sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
+    # LoRA adapter ids, numbered from 1 in name order, as run_scheduler.py numbers them.
+    lora_ids = {n: i + 1 for i, n in enumerate(sorted({r["lora"] for r in sc["requests"] if r.get("lora")}))}
     accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
     verify_steps = {r["id"]: 0 for r in sc["requests"]}
     num_spec = getattr(scheduler, "num_spec_tokens", 0)
@@ -175,16 +178,59 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             r = pending.pop(0)
             params = SamplingParams(max_tokens=r.get("max_tokens", 1 << 20))
             params.update_from_generation_config({}, EOS_TOKEN_ID)
+            lora = None
+            if r.get("lora"):
+                from vllm.lora.request import LoRARequest  # noqa: E402
+
+                lora = LoRARequest(lora_name=r["lora"], lora_int_id=lora_ids[r["lora"]],
+                                   lora_path="/adapters/" + r["lora"])
             core_req = EngineCoreRequest(
                 request_id=r["id"], external_req_id=r["id"], prompt_token_ids=list(r["prompt"]),
                 mm_features=None, sampling_params=params, pooling_params=None,
-                arrival_time=float(r["arrival_step"]), lora_request=None, cache_salt=None,
+                arrival_time=float(r["arrival_step"]), lora_request=lora, cache_salt=None,
                 data_parallel_rank=None, priority=r.get("priority", 0))
             frontend.add_request(core_req, None)
             scheduler.add_request(Request(
                 request_id=r["id"], prompt_token_ids=list(r["prompt"]), sampling_params=params,
                 pooling_params=None, arrival_time=float(r["arrival_step"]),
-                priority=r.get("priority", 0), block_hasher=hasher))
+                priority=r.get("priority", 0), block_hasher=hasher, lora_request=lora))
+        # An abort at this step, before the step runs. Two kinds, because only one reaches the
+        # finish-reason counter:
+        #  - "client" (the default): AsyncLLM.abort. The frontend's OutputProcessor forgets the
+        #    request (async_llm.py:918), then EngineCore finishes it in the scheduler
+        #    (core.py:554-559@5df63a72). No output carries the abort back, so the request is in
+        #    no vllm:request_success sample.
+        #  - "engine": the engine ends the request itself (pause in abort mode, shutdown with a
+        #    zero timeout; core.py:1648-1651, 2089-2092@5df63a72). EngineCoreProc._send_abort_outputs,
+        #    vLLM's own method, queues an output with finish_reason ABORT, which the frontend
+        #    processes while it still holds the request, so the abort is counted.
+        client = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step
+                        and r.get("abort_by", "client") == "client")
+        engine = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step
+                        and r.get("abort_by") == "engine")
+        if client:
+            frontend.abort_requests(client, internal=True)
+            scheduler.finish_requests(client, RequestStatus.FINISHED_ABORTED)
+        if engine:
+            import queue as _queue
+            from vllm.v1.engine.core import EngineCoreProc  # noqa: E402
+
+            class _EngineSide:
+                """Only the output queue and the three methods that fill it are used."""
+                def __init__(self):
+                    self.output_queue = _queue.Queue()
+                _send_abort_outputs = EngineCoreProc._send_abort_outputs
+                _send_abort_outputs_to_client = EngineCoreProc._send_abort_outputs_to_client
+                _send_finish_outputs_to_client = EngineCoreProc._send_finish_outputs_to_client
+
+            side = _EngineSide()
+            aborted = scheduler.finish_requests(engine, RequestStatus.FINISHED_ABORTED)
+            side._send_abort_outputs(aborted)
+            while not side.output_queue.empty():
+                _, eco_abort = side.output_queue.get_nowait()
+                it = IterationStats()
+                frontend.process_outputs(eco_abort.outputs, float(step), it)
+                logger.record(scheduler_stats=None, iteration_stats=it, engine_idx=0)
         if not scheduler.has_unfinished_requests() and not pending:
             break
         out = scheduler.schedule()

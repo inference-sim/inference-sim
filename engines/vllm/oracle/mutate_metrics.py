@@ -50,13 +50,22 @@ MUTANTS = [
      "for i := 0; i < d.Accepted && i < m.specTokens; i++ {", "for i := 0; i < d.Accepted-1 && i < m.specTokens; i++ {"),
     ("X12", "one accepted-tokens counter is registered for every draft position", "core/metrics/metrics.go",
      "for i := range numSpecTokens {", "for i := range numSpecTokens - 1 {"),
+    # The deferred side of vllm:num_requests_waiting_by_reason (loggers.py:547-567), and aborts
+    # (output_processor.py:552-613, core.py:2132-2140@5df63a72).
+    ("X13", "capacity is the waiting requests less the deferred ones", "core/metrics/metrics.go",
+     "float64(s.Waiting - s.Deferred)", "float64(s.Waiting)"),
+    ("X14", "the deferred gauge is the deferred requests", "core/metrics/metrics.go",
+     "m.gauges[\"vllm:num_requests_waiting_by_reason{reason=deferred}\"] = float64(s.Deferred)",
+     "m.gauges[\"vllm:num_requests_waiting_by_reason{reason=deferred}\"] = 0"),
+    ("X15", "a client-aborted request is in no finish-reason sample", "core/metrics/metrics.go",
+     "\tfor _, id := range s.Forgotten {\n\t\tdelete(m.pending, id)",
+     "\tfor _, id := range s.Forgotten {\n\t\tm.counters[\"vllm:request_success_total{finished_reason=abort}\"]++\n\t\tdelete(m.pending, id)"),
+    ("X16", "a request the engine aborts is counted with reason abort", "core/metrics/metrics.go",
+     "m.counters[\"vllm:request_success_total{finished_reason=\"+f.Reason+\"}\"]++",
+     "if f.Reason != \"abort\" {\n\t\t\tm.counters[\"vllm:request_success_total{finished_reason=\"+f.Reason+\"}\"]++\n\t\t}"),
+    ("X17", "an engine-sent abort output is an iteration of the logger", "core/metrics/metrics.go",
+     "\tif s.EngineAborts > 0 {\n\t\tm.observe(\"vllm:iteration_tokens_total\", 0)\n\t}", "\t_ = s.EngineAborts"),
 ]
-
-# Not a mutant here: the deferred split of vllm:num_requests_waiting_by_reason. No committed
-# scenario or fuzz seed defers a waiting request (deferred_waiting is set only by a structured
-# output, a remote-KV wait or a LoRA or encoder budget skip, scheduler.py:230), so vLLM's traces
-# hold 0 there and the diff test feeds Deferred=0; dropping the subtraction is equivalent on every
-# trace. docs/feature-matrix.md states the gauge as checked at 0 only.
 
 TESTS = "TestCountersFollowTheSteps|TestAResumedRequestIsNotCountedAgain|TestNoLookupNoPrefixCacheQueries|" \
         "TestPromptStatsArriveWithTheFirstToken|TestMetricsAgainstVLLM|TestMetricsFuzzCorpusAgainstVLLM"

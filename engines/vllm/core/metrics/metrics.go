@@ -74,6 +74,18 @@ type Step struct {
 	FirstTokens []string
 	// Finished are the requests the step finished.
 	Finished []Finish
+	// Forgotten are the requests a client aborted (AsyncLLM.abort): the frontend drops the request
+	// state before any output carries the abort back (OutputProcessor.abort_requests,
+	// output_processor.py:552-613@5df63a72), so the request is in no finish-reason sample and
+	// the events it held (a preemption, its prefill stats) are never counted. A request the
+	// engine itself ends (a pause in abort mode, a shutdown with no timeout) arrives instead as
+	// a Finished entry with Reason "abort", and is counted.
+	Forgotten []string
+	// EngineAborts is the number of requests the engine itself aborted this step (each is also a
+	// Finished entry with reason "abort"). The frontend processes their abort outputs as an
+	// iteration of their own, before the step's batch (EngineCoreProc._send_abort_outputs,
+	// core.py:2132-2140@5df63a72).
+	EngineAborts int
 	// Drafts are the requests that verified drafts this step, in scheduled order. The counters
 	// they feed are SpecDecodingStats.observe_draft's (vllm/v1/spec_decode/metrics.py:41-49).
 	Drafts []Draft
@@ -240,6 +252,13 @@ func (m *Model) Step(s Step) {
 		generated += s.Emitted[id]
 	}
 	m.counters["vllm:generation_tokens_total"] += float64(generated)
+	// An engine-sent abort output is its own iteration to the logger (the frontend builds
+	// IterationStats for any output batch, and PrometheusStatLogger.record observes the
+	// iteration's tokens, zero here). A step that carries one is counted once more if it also
+	// ran a batch: the abort outputs are processed before the batch's.
+	if s.EngineAborts > 0 {
+		m.observe("vllm:iteration_tokens_total", 0)
+	}
 	if len(s.Emitted) > 0 || len(s.FirstTokens) > 0 {
 		// One observation per step that produced outputs: the prompt tokens computed for
 		// requests whose first token this is, plus the generated tokens (loggers.py:1272-1275).
@@ -255,6 +274,11 @@ func (m *Model) Step(s Step) {
 		for i := 0; i < d.Accepted && i < m.specTokens; i++ {
 			m.counters[fmt.Sprintf("vllm:spec_decode_num_accepted_tokens_per_pos_total{position=%d}", i)]++
 		}
+	}
+	for _, id := range s.Forgotten {
+		delete(m.pending, id)
+		delete(m.preemptions, id)
+		delete(m.cached, id)
 	}
 	for _, f := range s.Finished {
 		f.CachedTokens = m.cached[f.ID]

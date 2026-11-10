@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -27,6 +28,7 @@ type scenario struct {
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
+		MaxLoRAs                  int    `json:"max_loras"`
 		Speculative               *struct {
 			Method           string `json:"method"`
 			K                int    `json:"num_speculative_tokens"`
@@ -42,6 +44,12 @@ type scenario struct {
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
 		Accepted    []int   `json:"accepted"`
+		// AbortStep is the step before which the request is aborted (0 or absent: never, as
+		// step 0 aborts nothing that has not been added); AbortBy is "client" (AsyncLLM.abort:
+		// the frontend forgets the request) or "engine" (the engine ends it and sends the abort).
+		LoRA      string `json:"lora"`
+		AbortStep *int   `json:"abort_step"`
+		AbortBy   string `json:"abort_by"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -156,7 +164,7 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 		Spec: spec, MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
-		ReserveFullSequence: true,
+		ReserveFullSequence: true, MaxLoRAs: c.MaxLoRAs,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -190,8 +198,16 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 			if mt == 0 {
 				mt = 1 << 20
 			}
-			if err := s.Add(&sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
-				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}); err != nil {
+			req := &sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalStep),
+				Prompt: r.Prompt, MaxTokens: mt, EOS: eosToken}
+			if r.LoRA != "" {
+				// Adapter ids number from 1 in name order, as the oracle numbers them, and the block
+				// key carries the adapter's name and path (kv_cache_utils.py:578-595@5df63a72).
+				req.LoRA = adapterID(sc, r.LoRA)
+				req.LoRAName = r.LoRA
+				req.Keys.Extra = []kv.ExtraKey{{"lora", r.LoRA, "/adapters/" + r.LoRA}}
+			}
+			if err := s.Add(req); err != nil {
 				t.Fatal(err)
 			}
 			outputs[r.ID] = r.Output
@@ -199,11 +215,42 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 			maxTokens[r.ID] = mt
 			next++
 		}
+		// Aborts, before the step runs (oracle/run_metrics.py). A client's abort is forgotten by
+		// the frontend and counted nowhere; one the engine sends is a finish with reason abort.
+		var forgotten []string
+		var abortFins []Finish
+		var abortIDs []string
+		for _, r := range reqs {
+			if r.AbortStep != nil && *r.AbortStep == i && s.Request(r.ID) != nil && !s.Request(r.ID).IsFinished() {
+				abortIDs = append(abortIDs, r.ID)
+			}
+		}
+		sort.Strings(abortIDs)
+		for _, id := range abortIDs {
+			r := s.Request(id)
+			by := "client"
+			for _, q := range reqs {
+				if q.ID == id && q.AbortBy != "" {
+					by = q.AbortBy
+				}
+			}
+			if by == "client" {
+				forgotten = append(forgotten, id)
+			} else {
+				abortFins = append(abortFins, Finish{ID: id, Reason: "abort", PromptTokens: len(r.Prompt),
+					GenerationTokens: generated[id], Preemptions: r.NumPreemptions, MaxTokens: maxTokens[id]})
+			}
+		}
+		s.Abort(abortIDs)
 		if !s.HasUnfinished() && next == len(reqs) {
+			if len(forgotten) > 0 || len(abortFins) > 0 {
+				m.Step(Step{Forgotten: forgotten, Finished: abortFins, EngineAborts: len(abortFins), Emitted: map[string]int{}})
+			}
 			break
 		}
 		out := s.Schedule()
-		step := Step{Scheduled: out.Scheduled, Preempted: out.Preempted, Emitted: map[string]int{}}
+		step := Step{Scheduled: out.Scheduled, Preempted: out.Preempted, Emitted: map[string]int{},
+			Forgotten: forgotten, Finished: abortFins, EngineAborts: len(abortFins)}
 		for _, id := range out.NewIDs {
 			r := s.Request(id)
 			hit, looked := out.PrefixHit[id]
@@ -299,6 +346,7 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 		}
 		nr, nw := s.Counts()
 		step.Running, step.Waiting, step.KVUsage = nr, nw, s.KV.Pool.Usage()
+		step.Deferred = s.Deferred()
 		m.Step(step)
 		if after != nil {
 			after(i, m)
@@ -497,4 +545,20 @@ func draftNextnLayers(t *testing.T, draft string) int {
 	}
 	readJSON(t, filepath.Join("..", "..", "oracle", "drafts", draft, "config.json"), &c)
 	return c.Layers
+}
+
+// adapterID is the lora_int_id the oracle gives an adapter: numbered from 1 in name order.
+func adapterID(sc scenario, name string) int {
+	names := map[string]bool{}
+	for _, r := range sc.Requests {
+		if r.LoRA != "" {
+			names[r.LoRA] = true
+		}
+	}
+	sorted := make([]string, 0, len(names))
+	for n := range names {
+		sorted = append(sorted, n)
+	}
+	sort.Strings(sorted)
+	return sort.SearchStrings(sorted, name) + 1
 }
