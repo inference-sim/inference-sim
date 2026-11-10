@@ -32,6 +32,12 @@ func TestAUnitThatTheFormulaDoesNotNeedIsRefused(t *testing.T) {
 		{"gemm_m_half_bf16", vocab.UnitDimensionless},
 		{"host_output_token", vocab.UnitMicrosecondsPerRequest},
 		{"cudagraph_capture_bytes_full", vocab.UnitBytesPerMicrosecond},
+		// blis-schemas#86: the per-token capture slopes multiply a token count, so a size per rank
+		// is the wrong unit for them, and a per-token unit is the wrong unit for a size.
+		{"cudagraph_capture_bytes_per_mixed_token_full_and_piecewise", vocab.UnitBytesPerRank},
+		{"cudagraph_capture_bytes_per_decode_token_full_and_piecewise", vocab.UnitBytesPerRank},
+		{"cudagraph_capture_floor_bytes_full_and_piecewise", vocab.UnitBytesPerToken},
+		{"cudagraph_capture_bytes_full", vocab.UnitBytesPerToken},
 		{"recurrent_decode_rate_kda", vocab.UnitMicrosecondsPerXfer},
 	} {
 		p := entryNamed(c.name, c.unit).Validate()
@@ -44,9 +50,13 @@ func TestAUnitThatTheFormulaDoesNotNeedIsRefused(t *testing.T) {
 func TestTheRightUnitLoads(t *testing.T) {
 	for name, u := range map[string]vocab.Unit{
 		"collective_peak_rate_all_reduce_fp16_8rank_h100": vocab.UnitBytesPerMicrosecond,
-		"gemm_m_half_bf16":        vocab.UnitTokens,
-		"host_output_token":       vocab.UnitMicrosecondsPerToken,
-		"a_name_no_family_covers": vocab.UnitDimensionless,
+		"gemm_m_half_bf16":                                            vocab.UnitTokens,
+		"host_output_token":                                           vocab.UnitMicrosecondsPerToken,
+		"a_name_no_family_covers":                                     vocab.UnitDimensionless,
+		"cudagraph_capture_floor_bytes_full_and_piecewise":            vocab.UnitBytesPerRank,
+		"cudagraph_capture_bytes_full_decode_only":                    vocab.UnitBytesPerRank,
+		"cudagraph_capture_bytes_per_mixed_token_full_and_piecewise":  vocab.UnitBytesPerToken,
+		"cudagraph_capture_bytes_per_decode_token_full_and_piecewise": vocab.UnitBytesPerToken,
 	} {
 		if p := entryNamed(name, u).Validate(); !p.OK() {
 			t.Errorf("%s as %s was refused: %v", name, u, p)

@@ -29,6 +29,7 @@ const (
 	UnitMicrosecondsPerHop     Unit = "us_per_hop"
 	UnitBytesPerMicrosecond    Unit = "bytes_per_us"
 	UnitBytesPerRank           Unit = "bytes_per_rank"
+	UnitBytesPerToken          Unit = "bytes_per_token" // bytes on one rank per token of a ceiling
 	UnitMicrosecondsPerLoad    Unit = "us_per_load"
 	UnitMicrosecondsPerXfer    Unit = "us_per_transfer"
 
@@ -43,7 +44,7 @@ var units = map[Unit]bool{
 	UnitDimensionless: true, UnitMicrosecondsPerLayer: true,
 	UnitMicrosecondsPerRequest: true, UnitMicrosecondsPerStep: true,
 	UnitMicrosecondsPerHop: true, UnitBytesPerMicrosecond: true,
-	UnitBytesPerRank: true, UnitMicrosecondsPerLoad: true,
+	UnitBytesPerRank: true, UnitBytesPerToken: true, UnitMicrosecondsPerLoad: true,
 	UnitMicrosecondsPerXfer: true, UnitTokens: true, UnitSMCount: true,
 	UnitMicrosecondsPerToken: true,
 }
