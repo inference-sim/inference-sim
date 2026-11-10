@@ -100,10 +100,57 @@ class CheckGoldens(unittest.TestCase):
                     self.assertEqual(r.returncode, 1, r.stdout)
                     self.assertIn("decisions changed without a golden-reviewed: trailer", r.stdout)
 
-    def test_a_trailer_allows_the_change(self):
-        self.write("core/engine/testdata/golden-dp/g.json", {"provenance": {"v": 1}, "steps": [{"a": 9}], "finished": {}})
-        self.commit("change a decision\n\ngolden-reviewed: a reviewer")
-        self.assertEqual(self.check().returncode, 0)
+    GOLDEN = "core/engine/testdata/golden-dp/g.json"
+
+    def change(self, trailer):
+        """Change GOLDEN's decisions in one commit with the given message trailer (or none)."""
+        self.write(self.GOLDEN, {"provenance": {"v": 1}, "steps": [{"a": 9}], "finished": {}})
+        self.commit("change a decision" + (f"\n\n{trailer}" if trailer else ""))
+        return self.check()
+
+    def test_a_trailer_naming_the_trace_and_a_reason_allows_the_change(self):
+        for name, trailer in [("path", f"golden-reviewed: {self.GOLDEN}: step 0 now schedules 9 tokens, as vLLM does"),
+                              ("file name", "golden-reviewed: g.json: step 0 now schedules 9 tokens, as vLLM does")]:
+            with self.subTest(name):
+                git(self.repo, "reset", "-q", "--hard", self.base)
+                r = self.change(trailer)
+                self.assertEqual(r.returncode, 0, r.stdout)
+
+    def test_no_trailer_fails(self):
+        r = self.change(None)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("names the trace and gives the reason", r.stdout)
+
+    def test_a_trailer_naming_a_different_trace_fails(self):
+        r = self.change("golden-reviewed: core/engine/testdata/golden-dp/other.json: the schedule moved")
+        self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_a_trailer_with_a_name_and_no_reason_fails(self):
+        for name, trailer in [("a person", "golden-reviewed: a reviewer"),
+                              ("the trace, no reason", f"golden-reviewed: {self.GOLDEN}"),
+                              ("the trace, empty reason", f"golden-reviewed: {self.GOLDEN}:  ")]:
+            with self.subTest(name):
+                git(self.repo, "reset", "-q", "--hard", self.base)
+                r = self.change(trailer)
+                self.assertEqual(r.returncode, 1, r.stdout)
+
+    def test_each_changed_trace_needs_its_own_trailer(self):
+        a, b = "core/engine/testdata/golden-dp/a.json", "core/engine/testdata/golden-dp/b.json"
+        for p in (a, b):
+            self.write(p, {"provenance": {"v": 1}, "steps": [{"a": 1}], "finished": {}})
+        self.commit("add two goldens")
+        base = git(self.repo, "rev-parse", "HEAD")
+        for p in (a, b):
+            self.write(p, {"provenance": {"v": 1}, "steps": [{"a": 2}], "finished": {}})
+        one = f"golden-reviewed: {a}: the step moved"
+        self.commit(f"change both\n\n{one}")
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("b.json", r.stdout)
+        self.assertNotIn("a.json decisions", r.stdout)
+        git(self.repo, "commit", "-q", "--amend", "-m", f"change both\n\n{one}\ngolden-reviewed: {b}: the step moved")
+        r = run([sys.executable, "-I", os.path.join(HERE, "check_goldens.py"), base, "HEAD"], self.repo)
+        self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_a_provenance_refresh_needs_no_trailer(self):
         self.write("core/metrics/testdata/golden/g.json", {"provenance": {"v": 2}, "steps": [{"a": 1}], "finished": {}})
@@ -112,17 +159,19 @@ class CheckGoldens(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_a_deletion_or_rename_needs_a_trailer(self):
+        path = "core/connector/nixl/testdata/golden/g.json"
         for how in ("delete", "rename"):
-            with self.subTest(how=how):
-                git(self.repo, "reset", "-q", "--hard", self.base)
-                p = os.path.join(self.repo, "core/connector/nixl/testdata/golden/g.json")
-                if how == "delete":
-                    os.remove(p)
-                else:
-                    os.rename(p, p[:-5] + "2.json")
-                self.commit(how)
-                r = self.check()
-                self.assertEqual(r.returncode, 1, r.stdout)
+            for trailered in (False, True):
+                with self.subTest(how=how, trailered=trailered):
+                    git(self.repo, "reset", "-q", "--hard", self.base)
+                    p = os.path.join(self.repo, path)
+                    if how == "delete":
+                        os.remove(p)
+                    else:
+                        os.rename(p, p[:-5] + "2.json")
+                    self.commit(how + (f"\n\ngolden-reviewed: {path}: the scenario was dropped" if trailered else ""))
+                    r = self.check()
+                    self.assertEqual(r.returncode, 0 if trailered else 1, r.stdout)
 
     def test_a_golden_naming_a_commit_outside_the_history_fails(self):
         self.write("core/sched/testdata/golden/side.json", {"steps": []})

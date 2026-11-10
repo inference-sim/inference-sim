@@ -7,7 +7,9 @@ the scheduler's (core/sched), the EngineCore's and the DP loop's (core/engine), 
 connector's (core/connector/nixl), the OffloadingConnector's (core/connector/offloading) and the metric series' (core/metrics); and core/kv's block
 hashes (GOLDEN_FILES), which are vLLM's own hash_block_tokens output. A commit that changes
 the recorded content of an existing golden, or deletes one, must carry a
-`golden-reviewed: <reviewer>` trailer (docs/testing.md). Adding a golden for a new scenario (in a
+`golden-reviewed:` trailer for each trace it changes, which names the trace (its path or file name)
+and gives the reason (design FID-3, section 7.7): `golden-reviewed: <trace>: <reason>`. A trailer that
+names no changed trace, or gives no reason, does not count; a person's name is neither. Adding a golden for a new scenario (in a
 golden file, appending a case), or refreshing only its `provenance` block, needs none, and this
 check verifies that such a commit changed nothing else. A golden directory this list does not name fails the check, so a new
 tier's goldens cannot go unguarded. A golden whose provenance names a blis-vllm commit outside
@@ -93,6 +95,24 @@ def unreachable_commits(head: str) -> list[str]:
     return out
 
 
+def trailer_covers(trailers: list[str], path: str, change: str) -> bool:
+    """Whether one of the commit's golden-reviewed trailers names this trace and gives a reason.
+
+    A trailer is `<trace>: <reason>`. The trace is the golden's path or its file name; a renamed
+    golden is named by either path. The reason is what follows the first colon after the trace and
+    must not be empty. A trailer that is only a name, or names another trace, covers nothing.
+    """
+    names = {path, path.rsplit("/", 1)[-1]}
+    m = re.search(r" renamed to (\S+)$", change)
+    if m:
+        names |= {m.group(1), m.group(1).rsplit("/", 1)[-1]}
+    for t in trailers:
+        trace, sep, reason = t.partition(": ")
+        if sep and trace.strip() in names and reason.strip():
+            return True
+    return False
+
+
 def main(base: str, head: str) -> int:
     bad = 0
     for d in unguarded(head):
@@ -119,12 +139,13 @@ def main(base: str, head: str) -> int:
                 needs_review.append(f"{path} decisions changed")
         if not needs_review:
             continue
-        trailer = git("log", "-1", "--format=%(trailers:key=golden-reviewed,valueonly)", c).strip()
-        if not trailer:
-            subject = git("log", "-1", "--format=%h %s", c).strip()
-            for n in needs_review:
-                print(f"{subject}: {n} without a golden-reviewed: trailer")
-            bad = 1
+        trailers = [t.strip() for t in git("log", "-1", "--format=%(trailers:key=golden-reviewed,valueonly)", c)
+                    .splitlines() if t.strip()]
+        subject = git("log", "-1", "--format=%h %s", c).strip()
+        for n in needs_review:
+            if not trailer_covers(trailers, n.split(" ", 1)[0], n):
+                print(f"{subject}: {n} without a golden-reviewed: trailer that names the trace and gives the reason")
+                bad = 1
     return bad
 
 

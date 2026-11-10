@@ -36,7 +36,7 @@ In short:
 - **The oracle decides.** Behaviour is checked against vLLM's own classes in CI (`oracle/`).
   The oracle may patch only the GPU, the clock, transports and external services, never a
   decision; every patch is listed in `oracle/mocks.json`, and CI fails on a patch of decision
-  code. Never overwrite a golden trace without human review (`docs/testing.md`).
+  code. Never change a golden trace's decisions without a `golden-reviewed: <trace>: <reason>` trailer, and a "Golden changes" section in the pull request body (`docs/testing.md`).
 - Tests: `go test ./...`; lint: `golangci-lint run ./...` (v2.14.0); the oracle tiers: the
   `oracle-tier2` CI job, step by step, from a Python with `oracle/requirements.lock` installed
   (`pip install --require-hashes --no-deps -r oracle/requirements-hashed.txt`, Linux x86_64;

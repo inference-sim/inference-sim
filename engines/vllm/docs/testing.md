@@ -182,8 +182,10 @@ so the Go tests can run without Python. It is never overwritten without review:
 `oracle/run_scheduler.py` refuses to write into a `testdata/golden*` directory unless
 `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1`, and CI (`goldens-reviewed`, `oracle/check_goldens.py`) fails a
 push or pull request with a commit that changes the decisions an existing golden records (its
-`steps` or `finished`), or deletes one, without a `golden-reviewed: <reviewer>` trailer naming
-the person who checked it. A new golden for a new scenario, or a refresh of only the
+`steps` or `finished`), renames or deletes one, without a trailer for that trace that names it and
+gives the reason: `golden-reviewed: <trace>: <reason>` (design FID-3, section 7.7), where `<trace>` is
+the golden's path or file name, one trailer for each trace the commit changes. A trailer that names
+no changed trace, or gives no reason, does not count; a person's name is neither. A new golden for a new scenario, or a refresh of only the
 `provenance` block, needs no trailer; the check verifies the decisions are unchanged as JSON
 values (parsed and compared, so a reformatted file with the same decisions passes). It also fails a golden whose `blis_vllm_commit` is not a commit in the pushed
 history, so a golden's provenance always names a commit anyone can check out: a refresh takes
@@ -197,6 +199,21 @@ goldens, `oracle/compare_goldens_t3.py` for the EngineCore and DP ones,
 `core/kv/testdata/block_hashes.json` with vLLM's own `hash_block_tokens`
 (`oracle/gen_block_hashes.py`, which fails on any difference), so a golden made on a
 developer's machine counts only while the release itself still produces it.
+
+### Golden changes: what a pull request that changes a golden says
+
+Every pull request body that changes or deletes an existing golden has a "Golden changes" section;
+one that does not says "Golden changes: none" under it. For each changed golden the section gives:
+
+- the trace (its path) and the commit that carries its `golden-reviewed` trailer;
+- what decisions changed: the step-level before and after, or the exact fields (`steps[i].scheduled`,
+  `finished.<id>.reason`, a metric series key), and not "regenerated";
+- why that is right: the oracle command that produced it, the vLLM version and commit, and the
+  result of `oracle/compare_goldens*.py` against a fresh run at the pinned release;
+- how a reviewing agent verifies it: rerun the named oracle runner at the pinned vLLM commit on the
+  scenario (`oracle/README.md` gives the command), compare with the committed golden through
+  `check_goldens.py` and the `compare_goldens*` script for the tier, and expect no difference in
+  decisions (a provenance-only difference is a refresh and needs no trailer).
 
 ## The compatibility engine's tests
 

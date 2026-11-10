@@ -33,7 +33,7 @@ which CI runs first, fails while they disagree. The runners also read:
 | `ORACLE_LOCKFILE` | the `pip freeze` of the environment, whose sha256 provenance records |
 | `HF_HUB_OFFLINE=1` | no Hub access while a scenario runs |
 | `VLLM_ALLOW_LONG_MAX_MODEL_LEN=1` | lets a scenario state a `max_model_len` above the helper model's 2048 positions (its `config.json`), as a dashboard deployment's start-up check needs; the window reaches only the scheduler's length checks and the KV start-up check, never a weight |
-| `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1` | lets a runner write into a `testdata/golden*` directory (then add a `golden-reviewed:` trailer) |
+| `BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1` | lets a runner write into a `testdata/golden*` directory (then add a `golden-reviewed: <trace>: <reason>` trailer for each trace the commit changes) |
 
 ## Runners and tests, by tier
 
@@ -53,8 +53,8 @@ so, when it is unset.
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
 
 The guards: `check_mocks.py` (every write a runner makes into vLLM is listed in `mocks.json`),
-`check_goldens.py <base> <head>` (a golden's decisions change only with a `golden-reviewed:`
-trailer), `compare_goldens.py` / `compare_goldens_t3.py` (each golden is what the pinned release
+`check_goldens.py <base> <head>` (a golden's decisions change only in a commit whose
+`golden-reviewed: <trace>: <reason>` trailer names that trace and gives the reason), `compare_goldens.py` / `compare_goldens_t3.py` (each golden is what the pinned release
 produces now), `check_manifest.py` (tier 5's manifest against vLLM's live registry) and
 `test_checks.py` (each guard fails on what it guards). The mutation sweeps: `mutate.py` (T2),
 `mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_offloading.py` (the OffloadingConnector), `mutate_e24.py` (the engine interface) and

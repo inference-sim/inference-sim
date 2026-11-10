@@ -177,7 +177,7 @@ def main() -> None:
         if "testdata/golden" in os.path.abspath(out_dir).replace(os.sep, "/") and \
                 os.environ.get("BLIS_VLLM_ALLOW_GOLDEN_UPDATE") != "1":
             sys.exit("refusing to write golden traces: set BLIS_VLLM_ALLOW_GOLDEN_UPDATE=1, and add "
-                     "a golden-reviewed: <reviewer> trailer to the commit")
+                     "a golden-reviewed: <trace>: <reason> trailer for each trace the commit changes")
         names = sorted(f for f in os.listdir(scenario_path)
                        if f.endswith(".json") and not f.endswith(".trace.json"))
         for name in names:
