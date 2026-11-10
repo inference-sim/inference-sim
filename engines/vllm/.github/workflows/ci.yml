@@ -40,7 +40,7 @@ jobs:
   go:
     name: go
     if: always()
-    needs: [go-build, go-test-kerneltests, go-test-rest, go-race-guard, go-race]
+    needs: [go-build, go-test-kerneltests, go-test-rest, go-bench, go-race-guard, go-race]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -103,6 +103,25 @@ jobs:
           go-version-file: go.mod
       - name: go test
         run: go test -timeout 30m $(go list ./... | grep -v '/kerneltests')
+
+  # The speed benchmarks of the v0.32.0 engine: a decode step at 512 and at 32,768 tokens of
+  # context (core/sched), and the engine interface over long decodes (core/vllm). Wall time on a
+  # shared runner is too noisy for a hard threshold, so the numbers are recorded in an artifact;
+  # the check that fails a build is TestDecodeStepAllocationDoesNotGrowWithContext, which runs
+  # in go-test-rest and bounds the bytes a step allocates, which do not vary between runs.
+  go-bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: benchmarks
+        run: go test -run '^$' -bench . -benchmem -benchtime 20x ./core/sched ./core/vllm | tee bench.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: go-bench
+          path: bench.txt
 
   # The race detector stays on every package that holds a goroutine, channel, atomic, mutex or
   # Once. Today those are internal/substratedata (a sync.Once), core/vllm (the registration Once)
