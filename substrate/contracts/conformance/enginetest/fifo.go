@@ -120,6 +120,9 @@ func NewFIFO(cfg FIFOConfig) (*FIFO, error) {
 
 // Add implements engine.Engine.
 func (f *FIFO) Add(r engine.Request, _ engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return fmt.Errorf("fifo: %w", err)
+	}
 	if len(r.Prompt) == 0 {
 		return fmt.Errorf("fifo: request %s has an empty prompt", r.ID)
 	}

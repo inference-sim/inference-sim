@@ -126,6 +126,24 @@ func TestProtocolErrors(t *testing.T) {
 	}
 }
 
+// A request that states an adapter path and no adapter is refused at Add, not run as the base
+// model.
+func TestAddRefusesAnAdapterPathWithoutAnAdapter(t *testing.T) {
+	f, err := NewFIFO(fifoCfg())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := req("A", 4, 2)
+	r.AdapterPath = "/loras/sql-v1"
+	if err := f.Add(r, 0); err == nil || !strings.Contains(err.Error(), "no adapter name") {
+		t.Fatalf("Add of a path with no adapter returned %v, want a refusal", err)
+	}
+	r.Adapter = "sql"
+	if err := f.Add(r, 0); err != nil {
+		t.Fatalf("Add of a named adapter with a path: %v", err)
+	}
+}
+
 // The FIFO engine is built from an opaque spec through the registry, as a simulator builds
 // any engine; its config decodes strictly.
 func TestFIFOBuildsThroughTheRegistry(t *testing.T) {

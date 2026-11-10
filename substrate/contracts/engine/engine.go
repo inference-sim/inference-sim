@@ -181,8 +181,15 @@ type Request struct {
 	// ArrivalTime is when the request arrived, which FCFS and priority policies break ties
 	// by. It may be earlier than the instant of the Add call that delivers it.
 	ArrivalTime Time
-	// Adapter names a LoRA adapter, or is empty for the base model.
+	// Adapter names a LoRA adapter, or is empty for the base model. It is vLLM's lora_name.
 	Adapter string
+	// AdapterPath is where the adapter's weights are, as the client gave it (vLLM's
+	// lora_path). vLLM adds it, with the name, to the hash of every prefix-cache block of a
+	// LoRA request, so that pointing a name at different weights does not reuse KV computed
+	// with the old ones; an engine that models that hash needs it. Empty for the base model.
+	// It is a label for hashing: an engine never opens it. Only vLLM's name and path enter
+	// the hash, not its integer adapter ID.
+	AdapterPath string
 	// CacheSalt isolates the request's prefix-cache entries from requests with another
 	// salt; an empty salt shares with every unsalted request.
 	CacheSalt string
@@ -199,6 +206,17 @@ type Request struct {
 	// TransferLoad among a Batch's TransfersStarted), and runs the request once the simulator
 	// reports that transfer done. An engine that does not disaggregate refuses it.
 	RemotePrefill bool
+}
+
+// Validate reports a request that cannot exist: an adapter path with no adapter to belong
+// to. It does not require the path of a named adapter, because an engine that never hashes
+// it has no use for one; an engine that models vLLM refuses a LoRA request without a path,
+// as vLLM does.
+func (r Request) Validate() error {
+	if r.AdapterPath != "" && r.Adapter == "" {
+		return fmt.Errorf("engine: request %s has adapter path %q and no adapter name", r.ID, r.AdapterPath)
+	}
+	return nil
 }
 
 // Batch is one scheduling decision.

@@ -32,6 +32,16 @@ interface in its own repository with no change here or in the simulator.
 | `Snapshot() State` | Current state (waiting, running, in-flight, KV capacity), a copy the caller may keep. |
 | `Fields() fields.FieldList` | The field list of the engine release this engine models: every configuration field and environment variable it reads, with its status and estimation rule (design VLM-3, SGL-3). The substrate defines the method and the shape of a list ([the field list](fields.md)) and holds no engine's fields. The same list on every call, valid under `FieldList.Validate`, naming the engine kind and upstream release. `inference-sim fields` prints what the registered engine returns, without reading it. |
 
+## Requests: `engine.Request`
+
+A request carries its identity, prompt, assigned output and scheduling facts. The LoRA fields
+follow vLLM's `LoRARequest`: `Adapter` is its `lora_name` and `AdapterPath` its `lora_path`.
+vLLM puts both, as `("lora", lora_name, lora_path)`, into the hash of every prefix-cache block
+of a LoRA request (`_gen_lora_extra_hash_keys` in `vllm/v1/core/kv_cache_utils.py`, v0.32.0),
+so an engine that models that hash needs the path as well as the name; the integer adapter ID
+does not enter it. Both are empty for the base model. `Request.Validate` refuses a path with no
+adapter name, and `Add` of the reference FIFO engine calls it.
+
 Calls are sequential: a simulator never calls an engine from two goroutines, and an engine
 starts none.
 
