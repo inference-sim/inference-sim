@@ -188,6 +188,11 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
 		pp: max(st.sched.DecodeStagger, 1),
 	}
+	if st.sched.Spec.NumTokens > 0 {
+		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
+		// does not registers none.
+		e.metrics.WithSpeculation(st.sched.Spec.NumTokens)
+	}
 	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
 	// A pool that can start a transfer states each one against its placement (engine.Transfer.Move) and
 	// is priced against the plan built from it, so it must say where it sits.
@@ -467,7 +472,7 @@ func (e *Engine) drainEmpty(at engine.Time) {
 		e.queuedEmpty = e.queuedEmpty[1:]
 		res := e.core.StepEnd(core.StepResult{})
 		e.emptyFinished = append(e.emptyFinished, res.Finished...)
-		e.finishStep(*res.Processed, nil, res.Finished, at)
+		e.finishStep(*res.Processed, nil, nil, res.Finished, at)
 	}
 }
 
@@ -483,7 +488,7 @@ func (e *Engine) admit(cb core.Batch, now engine.Time) (engine.Batch, error) {
 		// output for it: update_from_output with nothing scheduled changes no request.
 		fins := e.core.Drop(cb)
 		e.emptyFinished = append(e.emptyFinished, fins...)
-		e.finishStep(cb, nil, fins, now)
+		e.finishStep(cb, nil, nil, fins, now)
 		e.idleWake = 0
 		if e.polls() && len(e.pending) == 0 {
 			e.idleWake = now + idlePollUs
@@ -775,6 +780,16 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	for rid := range tokens {
 		before[rid] = len(e.s.Request(rid).Output)
 	}
+	// Each verifying request's drafts for the spec_decode counters: the drafts it was scheduled
+	// (placeholders included, as make_spec_decoding_stats counts len(scheduled_spec_token_ids)),
+	// and those the target accepted, the tokens sampled beyond the one the step always samples
+	// (scheduler.py:2116-2119@5df63a72), counted before a stop discards any.
+	var drafts []metrics.Draft
+	for _, rid := range pb.b.Samples {
+		if d := pb.b.Out.SpecDecode[rid]; len(d) > 0 && len(tokens[rid]) > 0 {
+			drafts = append(drafts, metrics.Draft{Proposed: len(d), Accepted: max(len(tokens[rid])-1, 0)})
+		}
+	}
 	fins := take()
 	e.gpu.tokens = nil
 	res := engine.Result{Emitted: map[string]int{}}
@@ -829,7 +844,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	// order, published that much later.
 	res.KVEvents = kvEvents(e.indexable(e.s.TakeKVEvents()))
 	res.Handoffs = e.pd.handoffs(e.s, fins)
-	e.finishStep(pb.b, emitted, fins, end)
+	e.finishStep(pb.b, emitted, drafts, fins, end)
 	// A request that finished here has had its final step consumed: its result and its metrics
 	// step are recorded, so its entry goes (the scheduler freed its own at the finish). Under a
 	// batch queue a later batch in flight may still name it: then it stays, finished, and its ID

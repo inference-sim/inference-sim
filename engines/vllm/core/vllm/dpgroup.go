@@ -213,7 +213,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		}
 		res := e.core.StepEnd(st.Step)
 		steps[i].Step = res
-		e.finishStep(*res.Processed, nil, res.Finished, now)
+		e.finishStep(*res.Processed, nil, nil, res.Finished, now)
 	}
 	if !it.batch.Empty() {
 		g.nextID++
