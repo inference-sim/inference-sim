@@ -270,6 +270,9 @@ func TestFactoryRefuses(t *testing.T) {
 		{"an unknown key", Version, "max_num_seqz: 3\n", "max_num_seqz"},
 		{"no KV blocks", Version, "num_gpu_blocks: 1\n", "num_gpu_blocks"},
 		{"an unknown policy", Version, "scheduling_policy: sjf\n", "fcfs and priority"},
+		// vLLM refuses a stated async_scheduling beside ngram (vllm/config/vllm.py:1566-1576@5df63a72);
+		// stated off, or unstated (which resolves to synchronous), it builds (TestFactoryAccepts).
+		{"async scheduling stated with ngram", Version, "async_scheduling: true\nspeculative: {method: ngram, num_spec_tokens: 3}\n", "only supported with"},
 		{"an unmodelled draft method", Version, "speculative: {method: medusa, num_spec_tokens: 3}\n", "not built"},
 		{"a drafter whose slots the deployment cannot state", Version, "speculative: {method: draft_model, num_spec_tokens: 3}\n", "not built"},
 		{"dspark on the V1 runner", Version, "speculative: {method: dspark, num_spec_tokens: 3}\n", "V2 model runner"},
@@ -364,6 +367,10 @@ func TestFactoryAccepts(t *testing.T) {
 		{"the V2 runner as its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"0\"}\n"},
 		// The AsyncScheduler's placeholder drafts are diff-tested (core/engine t3-async-mtp*, t3-async-dspark).
 		{"async with drafts", "async_scheduling: true\nspeculative: {method: eagle3, num_spec_tokens: 3}\n"},
+		// The closest neighbours of the ngram refusal: async stated off, and async left to resolve
+		// (which falls back to synchronous for ngram, vllm/config/vllm.py:1598-1606@5df63a72).
+		{"ngram with async stated off", "async_scheduling: false\nspeculative: {method: ngram, num_spec_tokens: 3}\n"},
+		{"ngram with async unstated", "speculative: {method: ngram, num_spec_tokens: 3}\n"},
 		{"the runner field and its env key agreeing", "use_v2_model_runner: true\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
 		{"dspark on V2 by its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +

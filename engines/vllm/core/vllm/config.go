@@ -300,6 +300,14 @@ func resolve(c Config) (settings, error) {
 		return s, err
 	}
 	async := resolveAsync(e.AsyncScheduling, method, pp, v2)
+	if async && e.AsyncScheduling != nil && !asyncSpecMethod(method) {
+		// vLLM refuses a stated async_scheduling with a drafter that is not EAGLE-family, ngram_gpu,
+		// draft_model, DSpark or DFlash (vllm/config/vllm.py:1566-1576@5df63a72); the unstated
+		// default falls back to synchronous instead (resolveAsync).
+		return s, fmt.Errorf("vllm: async_scheduling is only supported with EAGLE, MTP, draft_model, ngram_gpu, "+
+			"DSpark or DFlash speculative decoding, and speculative method %q is not one of them "+
+			"(vllm/config/vllm.py:1566-1576@5df63a72)", method)
+	}
 	if err := engine.CheckConfig(pp, async, v2); err != nil {
 		return s, fmt.Errorf("vllm: %w", err)
 	}
@@ -523,6 +531,16 @@ func resolveV2Runner(c Config) (bool, error) {
 		"vLLM resolves it from whether the image has Triton (vllm/config/vllm.py:720-737@5df63a72)")
 }
 
+// asyncSpecMethod is whether async scheduling runs with a drafter of this method: none, an
+// EAGLE-family method, ngram_gpu, draft_model, DSpark or DFlash (vllm/config/vllm.py:1566-1576).
+func asyncSpecMethod(method string) bool {
+	switch method {
+	case "", "eagle", "eagle3", "mtp", "dflash", "dspark", "draft_model", "ngram_gpu":
+		return true
+	}
+	return false
+}
+
 // resolveAsync is SchedulerConfig.async_scheduling as VllmConfig resolves it
 // (vllm/config/vllm.py:1553-1644@5df63a72): a stated value stands (vLLM refuses an
 // incompatible one, which CheckConfig and resolve's own checks catch), and an unstated one is
@@ -533,9 +551,7 @@ func resolveAsync(stated *bool, method string, pp int, v2 bool) bool {
 	if stated != nil {
 		return *stated
 	}
-	switch method {
-	case "", "eagle", "eagle3", "mtp", "dflash", "dspark", "draft_model", "ngram_gpu":
-	default:
+	if !asyncSpecMethod(method) {
 		return false
 	}
 	if pp > 1 && !v2 {
