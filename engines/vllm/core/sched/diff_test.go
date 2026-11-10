@@ -74,6 +74,9 @@ type scenario struct {
 		// Accepted is the GPU mock's draft acceptance: drafts accepted at each verify step.
 		Accepted []int  `json:"accepted"`
 		LoRA     string `json:"lora"`
+		// AbortStep is the step before which the request is aborted; AbortBy (read by tier 5)
+		// does not change what the scheduler decides.
+		AbortStep *int `json:"abort_step"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -204,6 +207,15 @@ func run(t *testing.T, sc scenario) trace {
 			accepted[r.ID] = r.Accepted
 			next++
 		}
+		// Aborts before the step runs (oracle/run_scheduler.py).
+		var aborts []string
+		for _, r := range reqs {
+			if r.AbortStep != nil && *r.AbortStep == i {
+				aborts = append(aborts, r.ID)
+			}
+		}
+		sort.Strings(aborts)
+		s.Abort(aborts)
 		if !s.HasUnfinished() && next == len(reqs) {
 			break
 		}

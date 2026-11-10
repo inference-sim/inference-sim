@@ -274,6 +274,14 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     kv_events = KVEventTap(scheduler) if cfg.get("kv_events") else None
     while step < max_steps:
         add_arrivals(step)
+        # An abort at this step, before the step runs: the scheduler finishes the request
+        # (finish_requests, EngineCore.abort_requests, core.py:554-559@5df63a72). Tier 5 tells a
+        # client's abort from one the engine sends; the scheduler's decisions are the same.
+        aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step)
+        if aborts:
+            from vllm.v1.request import RequestStatus  # noqa: E402
+
+            scheduler.finish_requests(aborts, RequestStatus.FINISHED_ABORTED)
         if not scheduler.has_unfinished_requests() and not pending:
             break
         out = scheduler.schedule()
