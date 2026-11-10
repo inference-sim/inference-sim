@@ -21,7 +21,14 @@ cp -R "$substrate/." "$work/"
 chmod -R u+w "$work"
 # The kernel's own tests stay as the substrate runs them; these run beside them, against the
 # fixtures under kerneltests/testdata and the substrate's own catalog/ and registry/.
-cp -R "$here/testdata" "$work/kernel/testdata"
+# The substrate's kernel/testdata may exist already (it holds its own files), so the fixtures go
+# into it and not beside it; a fixture that would replace a substrate file of the same name is an
+# error, because the substrate's own tests read that file.
+mkdir -p "$work/kernel/testdata"
+for f in "$here"/testdata/*; do
+	[[ -e "$work/kernel/testdata/$(basename "$f")" ]] && { echo "run-inpackage: fixture $(basename "$f") would overwrite the substrate's kernel/testdata file of that name" >&2; exit 1; }
+done
+cp -R "$here/testdata/." "$work/kernel/testdata/"
 for f in "$here"/_inpackage/*_test.go; do
 	# A file named like one of the kernel's own tests goes beside it, not over it.
 	cp "$f" "$work/kernel/vllm_$(basename "$f")"
