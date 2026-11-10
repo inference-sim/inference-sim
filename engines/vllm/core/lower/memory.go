@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 // Derived from vllm/config/engram.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
-// EngramConfig.resolve_dp_shared_memory, verify_parallel_config and get_parallel_size (:84-118).
-// Also vllm/models/deepseek_v41/common/engram.py (ParallelEngramEmbedding, :942-1060) and
+// EngramConfig._validate_shared_memory, resolve_dp_shared_memory, verify_parallel_config and
+// get_parallel_size (:56-117).
+// Also vllm/models/deepseek_v41/common/engram.py (ParallelEngramEmbedding, :942-1060, whose cpu_offload decides where the table lives, :1045-1052) and
 // vllm/v1/worker/gpu/spec_decode/speculator.py (the draft-logits buffer, :178-190, 403-409).
 
 package lower
@@ -14,11 +15,18 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/units"
 )
 
-// EngramShared is EngramConfig.resolve_dp_shared_memory followed by verify_parallel_config: whether
-// the host tables are shared between the node's data-parallel replicas. Unstated, they are shared
-// whenever the tables are offloaded, transparent huge pages are off, there is more than one
-// replica and the pool is not elastic. A stated true that cannot hold is refused as vLLM refuses it.
+// EngramShared is EngramConfig's _validate_shared_memory on the stated values, then
+// resolve_dp_shared_memory and verify_parallel_config: whether the host tables are shared between
+// the node's data-parallel replicas. Unstated, they are shared whenever the tables are offloaded,
+// transparent huge pages are off, there is more than one replica and the pool is not elastic. A
+// setting that cannot hold is refused as vLLM refuses it (the oracle runs all three).
 func EngramShared(stated *bool, cpuOffload, useTHP bool, dp int, elasticEP bool) (bool, error) {
+	if stated != nil && *stated && !cpuOffload {
+		return *stated, fmt.Errorf("lower: dp_shared_memory requires cpu_offload=True (vllm/config/engram.py:58-59)")
+	}
+	if useTHP && (!cpuOffload || (stated != nil && *stated)) {
+		return stated != nil && *stated, fmt.Errorf("lower: use_thp requires cpu_offload=True and dp_shared_memory=False (vllm/config/engram.py:60-63)")
+	}
 	shared := false
 	if stated != nil {
 		shared = *stated
@@ -27,10 +35,10 @@ func EngramShared(stated *bool, cpuOffload, useTHP bool, dp int, elasticEP bool)
 	}
 	if shared {
 		if dp <= 1 {
-			return shared, fmt.Errorf("lower: dp_shared_memory requires data_parallel_size > 1 (vllm/config/engram.py:93-94)")
+			return shared, fmt.Errorf("lower: dp_shared_memory requires data_parallel_size > 1 (vllm/config/engram.py:93)")
 		}
 		if elasticEP {
-			return shared, fmt.Errorf("lower: dp_shared_memory is not supported with elastic EP (vllm/config/engram.py:95-96)")
+			return shared, fmt.Errorf("lower: dp_shared_memory is not supported with elastic EP (vllm/config/engram.py:95)")
 		}
 	}
 	return shared, nil
@@ -55,11 +63,16 @@ func EngramShard(tp, tpRank, engramDP, dpRank int, shared bool) (shards, rank in
 	return tp * engramDP, tpRank*engramDP + dpRank
 }
 
-// EngramTable is the host-resident tensor one rank's share of an Engram table makes in a PoolPlan:
-// the rows of the hash heads this shard holds, each row `dim` fp8 values and one e8m0 scale per
-// `block` of them, in pinned host memory. A shared table counts once for the node, an unshared one
-// once for each rank (plan.MemoryOf). headSizes are the table's hash heads' row counts.
-func EngramTable(name string, headSizes []int, dim, block, shards, rank int, shared bool) (plan.ResidentTensor, error) {
+// EngramTable is the tensor one rank's share of an Engram table makes in a PoolPlan: the rows of
+// the hash heads this shard holds, each row `dim` fp8 values and one e8m0 scale per `block` of
+// them. With cpuOffload it lives in pinned host memory; without, on the GPU (engram.py:1045-1052),
+// and a table can be shared between replicas only in host memory. A shared table counts once for
+// the node, an unshared one once for each rank (plan.MemoryOf). headSizes are the table's hash
+// heads' row counts.
+func EngramTable(name string, headSizes []int, dim, block, shards, rank int, shared, cpuOffload bool) (plan.ResidentTensor, error) {
+	if shared && !cpuOffload {
+		return plan.ResidentTensor{}, fmt.Errorf("lower: a shared Engram table lives in host memory, and cpu_offload is off")
+	}
 	if len(headSizes) == 0 || dim < 1 || block < 1 || dim%block != 0 || shards < 1 || rank < 0 || rank >= shards {
 		return plan.ResidentTensor{}, fmt.Errorf("lower: an Engram table of %d heads, dim %d, block %d, shard %d of %d",
 			len(headSizes), dim, block, rank, shards)
@@ -67,7 +80,7 @@ func EngramTable(name string, headSizes []int, dim, block, shards, rank int, sha
 	per := (len(headSizes) + shards - 1) / shards
 	if (shards-1)*per >= len(headSizes) {
 		return plan.ResidentTensor{}, fmt.Errorf("lower: Engram sharding leaves ranks without hash heads: %d heads over %d shards "+
-			"(vllm/models/deepseek_v41/common/engram.py:1004-1008)", len(headSizes), shards)
+			"(vllm/models/deepseek_v41/common/engram.py:993-996)", len(headSizes), shards)
 	}
 	start := rank * per
 	end := min(start+per, len(headSizes))
@@ -75,9 +88,13 @@ func EngramTable(name string, headSizes []int, dim, block, shards, rank int, sha
 	for _, n := range headSizes[start:end] {
 		rows += n
 	}
+	where := plan.ResidentGPU
+	if cpuOffload {
+		where = plan.ResidentHost
+	}
 	return plan.ResidentTensor{Name: name, Elements: int64(rows) * int64(dim),
 		Format: units.QuantFormat{PayloadBits: 8, ScaleBits: 8, BlockElements: block},
-		Where:  plan.ResidentHost, Shared: shared}, nil
+		Where:  where, Shared: shared}, nil
 }
 
 // DraftLogits is the buffer a probabilistic draft sampler allocates when its speculator is built,

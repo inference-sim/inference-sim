@@ -154,7 +154,7 @@ func CaptureSizes(in CaptureInput) (Capture, error) {
 	if in.Sizes != nil {
 		if len(in.Sizes) == 0 {
 			return Capture{}, fmt.Errorf("lower: cudagraph_capture_sizes is empty; it holds at least one size when graphs are on " +
-				"(vllm/config/vllm.py:2454)")
+				"(vllm/config/vllm.py:2455)")
 		}
 		for _, s := range dedupSorted(append([]int(nil), in.Sizes...)) {
 			if s <= in.MaxNumBatchedTokens {

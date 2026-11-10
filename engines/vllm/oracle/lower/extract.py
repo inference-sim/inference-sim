@@ -67,7 +67,7 @@ class Quiet:
 
 def ns_base():
     return {"__builtins__": __builtins__, "dataclass": dataclasses.dataclass, "replace": dataclasses.replace,
-            "enum": enum, "product": product, "groupby": groupby, "defaultdict": defaultdict,
+            "enum": enum, "Self": object, "product": product, "groupby": groupby, "defaultdict": defaultdict,
             "logger": Quiet(), "Any": object, "annotations": None}
 
 
@@ -101,9 +101,9 @@ def load(root):
     assert len(br) == 1
     run(br, ns, "vllm/config/vllm.py")
     eg = parse(root, "vllm/config/engram.py")
-    for name in ("resolve_dp_shared_memory", "verify_parallel_config", "get_parallel_size"):
+    for name in ("resolve_dp_shared_memory", "verify_parallel_config", "get_parallel_size", "_validate_shared_memory"):
         fn = method(eg, "EngramConfig", name)[0]
-        fn.decorator_list = []
+        fn.decorator_list = []  # model_validator, a pydantic registration; the body is run as written
         run([fn], ns, "vllm/config/engram.py")
         ns["engram_" + name] = ns.pop(name)
     en = parse(root, "vllm/models/deepseek_v41/common/engram.py")
@@ -111,17 +111,23 @@ def load(root):
     fn.decorator_list = []
     run([fn], ns, "engram.py")
     ns["_get_shard_info"] = ns.pop("_get_shard_info")
-    ns["engram_head_shard_rank"] = lambda: ns["_cur"]["tp_rank"] * ns["_cur"]["edp"] + ns["_cur"]["dp_rank"]
+    run(pick(en, "engram_head_shard_rank"), ns, "engram.py")
+    # The two group lookups engram_head_shard_rank makes: this process's tensor-parallel rank and
+    # the node-local Engram data-parallel group, both answered from the case.
     ns["get_tensor_model_parallel_rank"] = lambda: ns["_cur"]["tp_rank"]
+    ns["get_engram_dp_group"] = lambda: (None if ns["_cur"]["edp"] == 1 else types.SimpleNamespace(
+        world_size=ns["_cur"]["edp"], rank_in_group=ns["_cur"]["dp_rank"]))
     dp = parse(root, "vllm/v1/worker/gpu/dp_utils.py")
     # Type names the signatures mention; annotations are evaluated when the def runs.
     ns.update(CudaGraphManager=object, ParallelConfig=object)
-    run(pick(dp, "DPSyncState", "sync_cudagraph_and_dp_padding"), ns, "vllm/v1/worker/gpu/dp_utils.py")
+    run(pick(dp, "DPSyncState", "sync_cudagraph_and_dp_padding", "dispatch_cg_and_sync_dp"), ns, "vllm/v1/worker/gpu/dp_utils.py")
     ns["get_dp_group"] = lambda: types.SimpleNamespace(cpu_group=None)
     ns["should_skip_dp_coordination"] = lambda: False
     df = parse(root, "vllm/v1/worker/gpu/spec_decode/dflash/speculator.py")
     ctx = method(df, "DFlashSpeculator", "_num_graph_context_tokens")[0]
     run([ctx], ns, "dflash/speculator.py")
+    sp = parse(root, "vllm/v1/worker/gpu/spec_decode/speculator.py")
+    run(method(sp, "DraftModelSpeculator", "_build_uniform_batch_dp_sync"), ns, "spec_decode/speculator.py")
     return ns
 
 
@@ -166,8 +172,13 @@ def set_cudagraph_sizes(ns, c):
     m = types.ModuleType("vllm.platforms")
     m.current_platform = Platform(bool(c.get("blackwell")))
     sys.modules["vllm.platforms"] = m
-    ns["_set_cudagraph_sizes"](self_)
-    return {"max": comp.max_cudagraph_capture_size, "sizes": list(comp.cudagraph_capture_sizes)}
+    try:
+        ns["_set_cudagraph_sizes"](self_)
+    except (ValueError, AssertionError) as e:
+        # The refusals the function makes at start-up: a stated maximum that disagrees with the
+        # stated sizes, no sizes, a ceiling below 1.
+        return {"max": None, "sizes": None, "error": f"{type(e).__name__}: {e}"}
+    return {"max": comp.max_cudagraph_capture_size, "sizes": list(comp.cudagraph_capture_sizes), "error": None}
 
 
 def manager(ns, c, resolved):
@@ -186,7 +197,7 @@ def manager(ns, c, resolved):
                                                  max_cudagraph_capture_size=resolved["max"])
     m.vllm_config = types.SimpleNamespace(
         speculative_config=None, num_speculative_tokens=c.get("spec_tokens", 0),
-        cache_config=types.SimpleNamespace(use_kda_recoverssm=False))
+        cache_config=types.SimpleNamespace(use_kda_recoverssm=bool(c.get("kda"))))
     m._init_candidates()
     return m
 
@@ -219,6 +230,15 @@ CAPTURE_CASES = [
     dict(name="mtp2-rounds-past-the-ceiling", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, spec_tokens=2),
     dict(name="mtp6-more-seqs-than-fit", mode="FULL_DECODE_ONLY", graph_mode="FULL_DECODE_ONLY", max_num_seqs=256, max_num_batched_tokens=8192, spec_tokens=6),
     dict(name="mtp5-varlen", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=64, max_num_batched_tokens=8192, spec_tokens=5, varlen=True),
+    dict(name="full-mode", mode="FULL", graph_mode="FULL", max_num_seqs=128, max_num_batched_tokens=4096),
+    dict(name="full-mode-spec", mode="FULL", graph_mode="FULL", max_num_seqs=32, max_num_batched_tokens=2048, spec_tokens=3),
+    dict(name="mtp1-seqs-above-platform-ceiling", mode="FULL_DECODE_ONLY", graph_mode="FULL_DECODE_ONLY", max_num_seqs=600, max_num_batched_tokens=8192, spec_tokens=1),
+    dict(name="mtp1-seqs-above-blackwell-ceiling", mode="FULL_DECODE_ONLY", graph_mode="FULL_DECODE_ONLY", max_num_seqs=1100, max_num_batched_tokens=16384, spec_tokens=1, blackwell=True),
+    dict(name="mtp3-recoverssm", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=64, max_num_batched_tokens=8192, spec_tokens=3, kda=True),
+    dict(name="refused-stated-max-and-sizes-disagree", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=8, max_num_batched_tokens=64, max_capture=5, sizes=[8, 16]),
+    dict(name="refused-empty-stated-sizes", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=8, max_num_batched_tokens=64, sizes=[]),
+    dict(name="refused-no-batched-tokens", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=8, max_num_batched_tokens=0),
+    dict(name="stated-max-is-the-largest-stated-size", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=8, max_num_batched_tokens=64, max_capture=16, sizes=[8, 16]),
     dict(name="interactivity", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, performance_mode="interactivity"),
 ]
 
@@ -228,7 +248,7 @@ def cases(ns):
     for c in CAPTURE_CASES:
         r = set_cudagraph_sizes(ns, c)
         row = {"case": c, "resolved": r, "dispatch": []}
-        if r["sizes"] and c["graph_mode"] != "NONE":
+        if r["error"] is None and r["sizes"] and c["graph_mode"] != "NONE":
             m = manager(ns, c, r)
             q = 1 + c.get("spec_tokens", 0)
             probes = set()
@@ -278,6 +298,14 @@ DP_CASES = [
          ranks=[dict(reqs=4, tokens=70, mql=None, uniform=None), dict(reqs=9, tokens=9, mql=1, uniform=1)]),
     dict(name="none", spec_tokens=0, mode="NONE", seqs=256, mnbt=8192,
          ranks=[dict(reqs=4, tokens=70, mql=None, uniform=None), dict(reqs=9, tokens=9, mql=1, uniform=1)]),
+    dict(name="full-mode-decodes", spec_tokens=0, mode="FULL", seqs=128, mnbt=4096,
+         ranks=[dict(reqs=3, tokens=3, mql=1, uniform=1), dict(reqs=20, tokens=20, mql=1, uniform=1)]),
+    dict(name="full-mode-mixed-batch-pads-to-the-request-bound", spec_tokens=0, mode="FULL", seqs=16, mnbt=4096,
+         ranks=[dict(reqs=2, tokens=300, mql=None, uniform=None), dict(reqs=9, tokens=9, mql=1, uniform=1)]),
+    dict(name="varlen-ranks-differ-in-query-bound", spec_tokens=3, mode="FULL_AND_PIECEWISE", varlen=True, seqs=64, mnbt=8192,
+         ranks=[dict(reqs=3, tokens=15, mql=5, uniform=None), dict(reqs=8, tokens=16, mql=2, uniform=None)]),
+    dict(name="varlen-ranks-within-the-graph-bound", spec_tokens=3, mode="FULL_AND_PIECEWISE", varlen=True, seqs=64, mnbt=8192,
+         ranks=[dict(reqs=3, tokens=9, mql=4, uniform=None), dict(reqs=8, tokens=16, mql=2, uniform=None)]),
 ]
 
 
@@ -286,7 +314,7 @@ def dp_cases(ns):
     out = []
     for c in DP_CASES:
         base = dict(mode=c["mode"], graph_mode=c["mode"], max_num_seqs=c["seqs"], max_num_batched_tokens=c["mnbt"],
-                    spec_tokens=c["spec_tokens"])
+                    spec_tokens=c["spec_tokens"], varlen=c.get("varlen", False))
         r = set_cudagraph_sizes(ns, base)
         m = manager(ns, base, r) if (r["sizes"] and c["mode"] != "NONE") else None
         n = len(c["ranks"])
@@ -342,6 +370,10 @@ ENGRAM_CASES = [
     dict(stated=True, cpu_offload=True, use_thp=True, dp=2, elastic=False),
     dict(stated=False, cpu_offload=True, use_thp=False, dp=2, elastic=False),
     dict(stated=False, cpu_offload=False, use_thp=False, dp=1, elastic=False),
+    dict(stated=None, cpu_offload=False, use_thp=True, dp=2, elastic=False),
+    dict(stated=False, cpu_offload=True, use_thp=True, dp=2, elastic=False),
+    dict(stated=True, cpu_offload=False, use_thp=True, dp=2, elastic=False),
+    dict(stated=None, cpu_offload=True, use_thp=True, dp=1, elastic=False),
 ]
 SHARD_CASES = [dict(tp=tp, tp_rank=r, edp=edp, dp_rank=d, shared=sh)
                for tp in (1, 4, 8) for edp in (1, 2, 4) for sh in (False, True)
@@ -356,9 +388,11 @@ def engram_cases(ns):
         pc = types.SimpleNamespace(data_parallel_size=c["dp"], enable_elastic_ep=c["elastic"], tensor_parallel_size=8)
         row = {"case": c}
         try:
+            # The config's own validator runs on the stated values, when the config is built; the
+            # parallel checks run once the parallel config is known.
+            ns["engram__validate_shared_memory"](cfg)
             ns["engram_resolve_dp_shared_memory"](cfg, pc)
             row["resolved"] = bool(cfg.dp_shared_memory)
-            # EngramConfig.__post_init__ checks the stated/resolved pair; only verify_parallel_config is run here.
             ns["engram_verify_parallel_config"](cfg, pc)
             row["error"] = None
         except ValueError as e:
@@ -373,6 +407,47 @@ def engram_cases(ns):
         cfg = types.SimpleNamespace(embedding_across_dp=across)
         pc = types.SimpleNamespace(tensor_parallel_size=tp, data_parallel_size=dp)
         out["parallel_size"].append({"tp": tp, "dp": dp, "across": across, "got": ns["engram_get_parallel_size"](cfg, pc)})
+    return out
+
+
+# The drafter pass of a parallel-block drafter (DFlash): the draft query rows are dispatched on the
+# drafter's own manager, through the target's agreement rebuilt by _build_uniform_batch_dp_sync and
+# dispatch_cg_and_sync_dp, both run as written. The branch that stores context rows eagerly sits
+# in a method that needs a GPU; its inputs are recorded here (the descriptor and the rows the
+# captured graph stores) and the rule over them is stated in core/lower and its test.
+DRAFTER_CASES = [
+    dict(name="one-rank", steps=3, reqs=3, target=12, sync=None),
+    dict(name="one-rank-padded", steps=5, reqs=9, target=58, sync=None),
+    dict(name="group-agreed-graph", steps=3, reqs=3, target=12, sync=dict(reqs=40, eager=False)),
+    dict(name="group-agreed-eager", steps=3, reqs=3, target=12, sync=dict(reqs=40, eager=True)),
+    dict(name="group-agreed-eager-narrow", steps=3, reqs=3, target=12, sync=dict(reqs=3, eager=True)),
+    dict(name="group-agreed-graph-wide", steps=5, reqs=9, target=58, sync=dict(reqs=33, eager=False)),
+]
+
+
+def drafter_cases(ns):
+    torch = ns["torch"]
+    out = []
+    for c in DRAFTER_CASES:
+        base = dict(mode="FULL_DECODE_ONLY", graph_mode="FULL_DECODE_ONLY", max_num_seqs=64, max_num_batched_tokens=8192,
+                    spec_tokens=c["steps"])
+        r = set_cudagraph_sizes(ns, base)
+        m = manager(ns, base, r)
+        nq = 1 + c["steps"]
+        if c["sync"] is None:
+            desc, _ = ns["dispatch_cg_and_sync_dp"](m, c["reqs"], c["reqs"] * nq, nq, dp_size=1, dp_rank=0)
+        else:
+            target = ns["DPSyncState"](
+                num_tokens_across_dp=torch.tensor([c["target"], c["target"]], dtype=torch.int32),
+                uniform_token_count=None, eager=c["sync"]["eager"], num_reqs=c["sync"]["reqs"])
+            batch_sync, num_batch_tokens = ns["_build_uniform_batch_dp_sync"](None, target, c["reqs"], nq)
+            desc, _ = ns["dispatch_cg_and_sync_dp"](m, c["reqs"], num_batch_tokens, nq, dp_size=2, dp_rank=0,
+                                                    dp_sync_state=batch_sync)
+        ctx = None
+        if desc.cg_mode.name == "FULL":
+            s = types.SimpleNamespace(num_speculative_steps=c["steps"], max_num_tokens=8192)
+            ctx = ns["_num_graph_context_tokens"](s, desc.num_reqs)
+        out.append({"case": c, "desc": desc_json(desc), "graph_context_rows": ctx})
     return out
 
 
@@ -403,6 +478,7 @@ def build(root):
         "max_decode_query_len": decode_len_cases(ns),
         "graph_context_tokens": context_cases(ns),
         "dp_sync": dp_cases(ns),
+        "drafter": drafter_cases(ns),
         "engram": engram_cases(ns),
     }
 

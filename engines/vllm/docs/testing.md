@@ -80,15 +80,24 @@ groups' pages, the Engram host tables' sharing and shard, and the probabilistic 
 logits buffer. `oracle/lower/extract.py` takes the release's own definitions out of their modules
 by syntax tree and runs them as written, with the data-parallel all-reduce supplied the ranks'
 votes; its answers are `core/lower/testdata/vllm_lower.json`, which CI regenerates and compares
-(`oracle-tier2`). The Go tests compare the port with those answers: 19 capture configurations, 1,937
-dispatch probes around their sizes, 12 data-parallel cases, 12 Engram sharing cases, 50 Engram shard
-cases, and the threshold and context rules. The draft-logits buffer and the Engram table's rows are
-sums of figures the source states, tested by arithmetic, with no oracle.
-What the oracle replaces is in `oracle/lower/replacements.json`, which `check_replacements.py`
-checks against the extractor. The KV group pages (`GroupPages` in `core/kv`) are checked against the
-pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from. Two things have no
-oracle here: the microbatching path (dual batch overlap is not modelled) and dynamic speculative
-decoding, which the extractor refuses if a case reaches them.
+(`oracle-tier2`). The Go tests compare the port with those answers: 28 capture configurations
+(including FULL mode, a request count above the platform ceiling, the recoverSSM kernel and the
+start-up refusals), 2,545 dispatch probes around their sizes, 16 data-parallel cases (including FULL
+mode and varlen graphs under ranks that differ), 6 drafter passes through the target's agreement,
+16 Engram sharing cases that include the config's own validator, 50 Engram shard cases, and the
+threshold and context rules. The oracle file was regenerated with the oracle environment's torch
+(2.15.0 here; CI pins 2.13.0+cpu in `oracle/requirements.lock`; every answer is an integer or a
+string, so the two agree).
+
+Not run against the release: the KV group pages (`GroupPages` in `core/kv`), which are checked
+against the pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from, and not
+against `get_kv_cache_groups`; the Engram table's rows and the draft-logits buffer, which are sums of
+figures the source states, tested by arithmetic; and the drafter's eager context store, which sits in
+a method that needs a GPU, so its rule over the oracle's recorded graph rows is stated in
+`core/lower` and tested there. What the oracle replaces is in `oracle/lower/replacements.json`,
+which `check_replacements.py` checks against the extractor, including a constructor bypass. Two
+things have no oracle here: the microbatching path (dual batch overlap is not modelled) and dynamic
+speculative decoding, which the extractor refuses if a case reaches them.
 
 The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `enginetest` checks the contract's laws on the v0.32.0 engine. A diff test drives tier-2 scenarios through `engine.Engine` (Add, then Schedule and Complete one batch at a time) and compares every step with vLLM's own Scheduler trace (`core/sched/testdata/golden`). Its mutants are in `oracle/mutate_e24.py`, which CI runs with the other sweeps. The factory builds one batch in flight only: with async scheduling or PP, vLLM's own loop decides which requests share a batch (`vllm/v1/engine/core.py:724-768@5df63a72`), and the adapter does not reproduce that loop yet, so it refuses those configurations (https://github.com/inference-sim/blis-vllm/issues/21). Tier 3 proves `core/engine`'s port of the loop, not the adapter.
 

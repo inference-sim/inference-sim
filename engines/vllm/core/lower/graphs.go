@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 // Derived from vllm/v1/worker/gpu/cudagraph_utils.py at vLLM v0.32.0 (5df63a7203cdb9328d824a27b682e77c7b9928be):
-// _is_compatible (:104-130), CudaGraphManager._init_candidates (:272-380) and dispatch (:471-497),
-// for a model without LoRA adapters, dynamic speculative decoding or microbatching.
+// _is_compatible (:106-133), CudaGraphManager._init_candidates (:251-389) and dispatch (:518-548),
+// for a model without LoRA adapters, dynamic speculative decoding or microbatching. The recoverSSM
+// kernel (use_kda_recoverssm) is modelled: it keeps mixed graphs to the decode token bound.
 
 package lower
 
@@ -42,6 +43,11 @@ type ManagerInput struct {
 	MaxNumReqs, DecodeQueryLen int
 	// VarlenDecode is the runner's varlen_decode, on under adaptive verification.
 	VarlenDecode bool
+	// UseKDARecoverSSM is cache_config.use_kda_recoverssm: set for a Kimi linear-attention
+	// model with speculation and replay state (vllm/config/vllm.py:3317-3334). Such a model cannot
+	// capture a mixed graph wider than max_num_reqs x decode_query_len tokens
+	// (cudagraph_utils.py:347-350).
+	UseKDARecoverSSM bool
 }
 
 // NewGraphManager builds the manager (CudaGraphManager.__init__ and _init_candidates). A manager
@@ -74,7 +80,7 @@ func NewGraphManager(in ManagerInput) (*GraphManager, error) {
 				}
 			}
 		}
-		if mixed != GraphNone {
+		if mixed != GraphNone && (!in.UseKDARecoverSSM || n <= maxDecodeTokens) {
 			d := Descriptor{Mode: mixed, Tokens: n}
 			if mixed == GraphFull {
 				d.Reqs = ptr(min(n, in.MaxNumReqs))
@@ -116,7 +122,7 @@ func contains(ds []Descriptor, d Descriptor) bool {
 	return false
 }
 
-// Dispatch is CudaGraphManager.dispatch (:471-497): the first candidate for the token count that
+// Dispatch is CudaGraphManager.dispatch (:518-548): the first candidate for the token count that
 // is compatible with the batch, or an eager descriptor of the batch's own shape. uniform is the
 // per-request token count of a uniform decode batch and maxQueryLen the bound a varlen graph
 // checks; nil is None.
@@ -131,7 +137,7 @@ func (g *GraphManager) Dispatch(reqs, tokens int, uniform, maxQueryLen *int) Des
 	return Descriptor{Mode: GraphNone, Tokens: tokens, Reqs: ptr(reqs)}
 }
 
-// compatible is _is_compatible (:104-130): a graph with no uniform count serves any, one with no
+// compatible is _is_compatible (:106-133): a graph with no uniform count serves any, one with no
 // request count needs no request padding, and a graph that bounds the query length serves only a
 // batch that states a bound within it.
 func compatible(d Descriptor, reqs, tokens int, uniform, maxQueryLen *int) bool {

@@ -33,10 +33,12 @@ type oracleFile struct {
 			Sizes          []int  `json:"sizes"`
 			PerformanceMod string `json:"performance_mode"`
 			Varlen         bool   `json:"varlen"`
+			KDA            bool   `json:"kda"`
 		} `json:"case"`
 		Resolved struct {
-			Max   int   `json:"max"`
-			Sizes []int `json:"sizes"`
+			Max   int     `json:"max"`
+			Sizes []int   `json:"sizes"`
+			Error *string `json:"error"`
 		} `json:"resolved"`
 		Dispatch []struct {
 			Reqs    int  `json:"reqs"`
@@ -63,6 +65,7 @@ type oracleFile struct {
 			Mode       string `json:"mode"`
 			Seqs       int    `json:"seqs"`
 			MNBT       int    `json:"mnbt"`
+			Varlen     bool   `json:"varlen"`
 			SpecTokens int    `json:"spec_tokens"`
 			Ranks      []struct {
 				Reqs   int  `json:"reqs"`
@@ -113,6 +116,24 @@ type oracleFile struct {
 			Across bool `json:"across"`
 		} `json:"parallel_size"`
 	} `json:"engram"`
+	Drafter []struct {
+		Case struct {
+			Name   string `json:"name"`
+			Steps  int    `json:"steps"`
+			Reqs   int    `json:"reqs"`
+			Target int    `json:"target"`
+			Sync   *struct {
+				Reqs  int  `json:"reqs"`
+				Eager bool `json:"eager"`
+			} `json:"sync"`
+		} `json:"case"`
+		Desc struct {
+			Mode   string `json:"mode"`
+			Tokens int    `json:"tokens"`
+			Reqs   *int   `json:"reqs"`
+		} `json:"desc"`
+		ContextRows *int `json:"graph_context_rows"`
+	} `json:"drafter"`
 	Context []struct {
 		Steps        int `json:"steps"`
 		MaxNumTokens int `json:"max_num_tokens"`
@@ -152,8 +173,11 @@ func TestCaptureSizesAreVLLMs(t *testing.T) {
 				MaxCaptureSize: c.Case.MaxCapture, Sizes: c.Case.Sizes, MaxNumSeqs: c.Case.MaxNumSeqs,
 				MaxNumBatchedTokens: c.Case.MaxBatched, SpecTokens: c.Case.SpecTokens, Blackwell: c.Case.Blackwell,
 				Interactivity: c.Case.PerformanceMod == "interactivity"})
+			if (err != nil) != (c.Resolved.Error != nil) {
+				t.Fatalf("error %v; vLLM's %v", err, show2(c.Resolved.Error))
+			}
 			if err != nil {
-				t.Fatal(err)
+				return
 			}
 			if got.Max != c.Resolved.Max || !slices.Equal(got.Sizes, c.Resolved.Sizes) {
 				t.Errorf("max %d sizes %v; vLLM resolves max %d sizes %v", got.Max, got.Sizes, c.Resolved.Max, c.Resolved.Sizes)
@@ -169,11 +193,12 @@ func TestDispatchIsVLLMs(t *testing.T) {
 		if len(c.Dispatch) == 0 {
 			continue
 		}
+		c := c
 		t.Run(c.Case.Name, func(t *testing.T) {
 			gm, _ := ParseGraphMode(c.Case.GraphMode)
 			dql := 1 + c.Case.SpecTokens
 			m, err := NewGraphManager(ManagerInput{Mode: gm, Capture: Capture{Max: c.Resolved.Max, Sizes: c.Resolved.Sizes},
-				MaxNumReqs: c.Case.MaxNumSeqs, DecodeQueryLen: dql, VarlenDecode: c.Case.Varlen})
+				MaxNumReqs: c.Case.MaxNumSeqs, DecodeQueryLen: dql, VarlenDecode: c.Case.Varlen, UseKDARecoverSSM: c.Case.KDA})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -198,6 +223,13 @@ func TestDispatchIsVLLMs(t *testing.T) {
 	if checked < 1000 {
 		t.Errorf("only %d dispatch probes ran; the oracle file shrank", checked)
 	}
+}
+
+func show2(s *string) string {
+	if s == nil {
+		return "none"
+	}
+	return *s
 }
 
 func sameInt(a, b *int) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
@@ -277,7 +309,8 @@ func TestSyncDPIsVLLMs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			m, err := NewGraphManager(ManagerInput{Mode: gm, Capture: cap, MaxNumReqs: c.Case.Seqs, DecodeQueryLen: dql})
+			m, err := NewGraphManager(ManagerInput{Mode: gm, Capture: cap, MaxNumReqs: c.Case.Seqs, DecodeQueryLen: dql,
+				VarlenDecode: c.Case.Varlen})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -349,7 +382,10 @@ func TestTheEagerContextStoreFollowsThePaddedGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pad, _ := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 9, TargetTokens: 1})
+	pad, err := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 9, TargetTokens: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if pad.Launch.Mode != GraphFull || pad.Launch.Tokens%(1+steps) != 0 {
 		t.Fatalf("nine requests launch %+v", pad.Launch)
 	}
@@ -371,27 +407,84 @@ func TestTheEagerContextStoreFollowsThePaddedGraph(t *testing.T) {
 	if unpadded := 58 - 9*(1+steps); unpadded != 4 {
 		t.Fatalf("arithmetic of the example: %d", unpadded)
 	}
-	got, _ := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 9, TargetTokens: 58})
+	got, err := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 9, TargetTokens: 58})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if got.EagerContextRows != 0 {
 		t.Errorf("58 target tokens on nine requests: %d eager rows; the padded graph holds %d", got.EagerContextRows, held)
 	}
 }
 
-// The drafter of a data-parallel pool is as wide as the group's agreement, not as its own batch.
-func TestTheDrafterReusesTheTargetsAgreement(t *testing.T) {
+// The drafter pass is vLLM's: its launch and the context rows its graph stores come from
+// _build_uniform_batch_dp_sync and dispatch_cg_and_sync_dp, run as written. The cases include a
+// target whose ranks agreed to run eager, for which vLLM still replays the drafter's FULL graph
+// (the rebuilt agreement carries eager=False).
+func TestTheDrafterPassIsVLLMs(t *testing.T) {
+	o := loadOracle(t)
+	if len(o.Drafter) < 6 {
+		t.Fatalf("%d drafter cases in the oracle file", len(o.Drafter))
+	}
+	for _, c := range o.Drafter {
+		t.Run(c.Case.Name, func(t *testing.T) {
+			steps := c.Case.Steps
+			cap, err := CaptureSizes(CaptureInput{Mode: GraphFullDecodeOnly, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, SpecTokens: steps})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, err := NewGraphManager(ManagerInput{Mode: GraphFullDecodeOnly, Capture: cap, MaxNumReqs: 64, DecodeQueryLen: 1 + steps})
+			if err != nil {
+				t.Fatal(err)
+			}
+			in := DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: c.Case.Reqs, TargetTokens: c.Case.Target}
+			if c.Case.Sync != nil {
+				in.Sync = &Sync{Reqs: c.Case.Sync.Reqs, Eager: c.Case.Sync.Eager}
+			}
+			got, err := Drafter(m, in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Launch.Mode.String() != c.Desc.Mode || got.Launch.Tokens != c.Desc.Tokens {
+				t.Errorf("launch %v %d tokens; vLLM %s %d", got.Launch.Mode, got.Launch.Tokens, c.Desc.Mode, c.Desc.Tokens)
+			}
+			if c.ContextRows == nil {
+				t.Fatalf("vLLM runs no FULL graph for %s; the case needs one", c.Case.Name)
+			}
+			if want := max(0, c.Case.Target-*c.ContextRows); got.EagerContextRows != want {
+				t.Errorf("%d eager context rows; the graph vLLM replays stores %d of %d target tokens, leaving %d",
+					got.EagerContextRows, *c.ContextRows, c.Case.Target, want)
+			}
+		})
+	}
+}
+
+// A pool of data-parallel ranks sizes the drafter by the group's agreement, however it was
+// reached, and a batch the agreement does not cover is vLLM's assert.
+func TestTheDrafterIsAsWideAsTheAgreement(t *testing.T) {
 	const steps = 3
-	cap, _ := CaptureSizes(CaptureInput{Mode: GraphFullDecodeOnly, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, SpecTokens: steps})
-	m, _ := NewGraphManager(ManagerInput{Mode: GraphFullDecodeOnly, Capture: cap, MaxNumReqs: 64, DecodeQueryLen: 1 + steps})
-	alone, _ := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 3, TargetTokens: 12})
-	grouped, _ := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 3, TargetTokens: 12,
+	cap, err := CaptureSizes(CaptureInput{Mode: GraphFullDecodeOnly, MaxNumSeqs: 64, MaxNumBatchedTokens: 8192, SpecTokens: steps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewGraphManager(ManagerInput{Mode: GraphFullDecodeOnly, Capture: cap, MaxNumReqs: 64, DecodeQueryLen: 1 + steps})
+	if err != nil {
+		t.Fatal(err)
+	}
+	alone, err := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 3, TargetTokens: 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	grouped, err := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 3, TargetTokens: 12,
 		Sync: &Sync{Reqs: 40, Tokens: 40}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if grouped.Launch.Tokens <= alone.Launch.Tokens || grouped.Launch.Tokens < 40*(1+steps) {
 		t.Errorf("alone %+v, in a group whose widest rank has 40 requests %+v", alone.Launch, grouped.Launch)
 	}
-	eager, _ := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 3, TargetTokens: 12,
-		Sync: &Sync{Reqs: 40, Eager: true}})
-	if eager.Launch.Mode != GraphNone || eager.EagerContextRows != 12 {
-		t.Errorf("ranks that agreed to run eager: %+v", eager)
+	if _, err := Drafter(m, DrafterInput{Steps: steps, MaxNumTokens: 8192, Reqs: 41, TargetTokens: 12,
+		Sync: &Sync{Reqs: 40}}); err == nil {
+		t.Error("a drafter batch wider than the agreement was accepted")
 	}
 }
 
@@ -450,7 +543,7 @@ func TestASharedTableCountsOncePerNode(t *testing.T) {
 		t.Helper()
 		var p plan.PoolPlan
 		sh, r := EngramShard(tp, 0, engramDP, 0, shared)
-		tab, err := EngramTable("engram", heads, dim, block, sh, r, shared)
+		tab, err := EngramTable("engram", heads, dim, block, sh, r, shared, true)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -476,17 +569,32 @@ func TestASharedTableCountsOncePerNode(t *testing.T) {
 	if got, want := node(8, 4, 2, false), 8*bytesOf(101); got != want {
 		t.Errorf("an unshared shard on an 8-rank node: %d bytes, want 8 x %d", got, bytesOf(101))
 	}
-	if _, err := EngramTable("engram", heads, dim, block, 16, 0, false); err == nil {
+	if _, err := EngramTable("engram", heads, dim, block, 16, 0, false, true); err == nil {
 		t.Error("16 shards of 8 hash heads were accepted; vLLM refuses a layout that leaves ranks without heads")
 	}
-	tab, _ := EngramTable("engram", heads, dim, block, 4, 0, true)
+	tab, err := EngramTable("engram", heads, dim, block, 4, 0, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !tab.Shared || tab.Where != plan.ResidentHost {
 		t.Errorf("a shared table is a host figure that counts once: %+v", tab)
+	}
+	// Without cpu_offload vLLM allocates the table on the GPU (engram.py:1045-1052), and a table
+	// there cannot be shared between replicas.
+	gpu, err := EngramTable("engram", heads, dim, block, 4, 0, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gpu.Where != plan.ResidentGPU {
+		t.Errorf("a table with cpu_offload off is on the GPU: %+v", gpu)
+	}
+	if _, err := EngramTable("engram", heads, dim, block, 4, 0, true, false); err == nil {
+		t.Error("a shared table without cpu_offload was accepted")
 	}
 }
 
 // The draft-logits buffer is (max_num_seqs, K, vocab) in the head dtype for DeepSeek-V4.1 at K=5:
-// 129,280 x 5 x 2 bytes a slot, 1,325,... bytes, about 1.2 GiB at 1,024 slots; greedy has none.
+// 129,280 x 5 x 2 bytes a slot, 1,323,827,200 bytes, about 1.2 GiB at 1,024 slots; greedy has none.
 func TestTheProbabilisticDraftSamplerChargesItsLogits(t *testing.T) {
 	b, ok, err := DraftLogits(true, 1024, 5, 129280, 2)
 	if err != nil || !ok {
@@ -508,5 +616,25 @@ func TestTheProbabilisticDraftSamplerChargesItsLogits(t *testing.T) {
 	f32, _, _ := DraftLogits(true, 1024, 5, 129280, 4)
 	if f32.Bytes != 2*b.Bytes {
 		t.Error("a float32 cache is not twice a bfloat16 one")
+	}
+}
+
+// A rank with no tokens among ranks with work would be priced as if it had agreed to run eager;
+// vLLM gives such a rank the dummy batch, so the input is an error. One rank has no agreement.
+func TestSyncDPRefusesAnIdleRankBesideBusyOnes(t *testing.T) {
+	cap, err := CaptureSizes(CaptureInput{Mode: GraphFullAndPiecewise, MaxNumSeqs: 256, MaxNumBatchedTokens: 8192})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewGraphManager(ManagerInput{Mode: GraphFullAndPiecewise, Capture: cap, MaxNumReqs: 256, DecodeQueryLen: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy := RankBatch{Reqs: 4, Tokens: 4, MaxQueryLen: 1, DecodeEligible: true}
+	if _, _, err := SyncDP(m, []RankBatch{{}, busy}); err == nil {
+		t.Error("an idle rank beside a busy one was accepted")
+	}
+	if _, syncs, err := SyncDP(m, []RankBatch{busy}); err != nil || syncs != nil {
+		t.Errorf("one rank: syncs %v, err %v; vLLM returns no agreement at dp_size 1", syncs, err)
 	}
 }

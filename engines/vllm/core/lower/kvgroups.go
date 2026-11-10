@@ -16,7 +16,8 @@ import (
 
 // KVGroups is the KV groups a PoolPlan states for a model's layers: one entry for each group the
 // scheduler forms, with the bytes of one block of the group, the tokens a block covers and the
-// window. The page is sized here, by the engine's own spec classes, because a cache's page size is
+// window. A group's BytesPerPage is the bytes of one block of the whole group, summed over its
+// layers (GroupPage.BytesPerBlock), not of one layer. The page is sized here, by the engine's own spec classes, because a cache's page size is
 // an engine decision; the cost model prices the figures it is handed and the
 // substrate's memory-closure check compares the plan's bytes with the engine's log.
 func KVGroups(layers []kv.Layer, o kv.GroupOptions, blockSize int) ([]plan.KVGroup, error) {

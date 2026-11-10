@@ -55,7 +55,7 @@ func TestThePlanStatesEachGroupsPage(t *testing.T) {
 }
 
 // The stated pages agree with the pool's stride for every shape the engine groups, including the
-// packed layout of DeepSeek V4, whose widest block-outer group is rounded by the pool.
+// packed layout of DeepSeek V4.
 func TestTheWidestStatedPageIsThePoolStride(t *testing.T) {
 	v4 := []kv.Layer{}
 	for range 4 {
@@ -83,9 +83,9 @@ func TestTheWidestStatedPageIsThePoolStride(t *testing.T) {
 		for _, g := range got {
 			widest = max(widest, int64(g.BytesPerPage))
 		}
-		// The packed layout rounds the widest group up to the layers' common alignment, so its
-		// stride may exceed the widest page; every other layout's stride is the widest page.
-		if widest > stride || name != "deepseek v4 packed" && widest != stride {
+		// Every layout's pool stride is the widest group page, the packed DeepSeek V4 one included
+		// (SUB-14: the bytes a plan states are the bytes the engine allocates).
+		if widest != stride {
 			t.Errorf("%s: widest group page %d, pool stride %d", name, widest, stride)
 		}
 	}
