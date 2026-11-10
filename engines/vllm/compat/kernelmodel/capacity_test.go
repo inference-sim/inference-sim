@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"pgregory.net/rapid"
 
@@ -396,13 +398,13 @@ func TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle(t *testing.T) {
 }
 
 // A deployment too big for its part must be reported as that, not as a defect of the simulator
-// (blis-vllm#92): at tp 2 on an 80 GB part one rank's weights alone exceed the device, and the
-// message says the model does not fit and what to widen. The same model one step wider in
-// tensor parallelism fits its weights and runs out of KV, which is vLLM's ordinary refusal.
+// at tp 2 on an 80 GB part one rank's weights alone exceed the device, and the
+// message says the model does not fit and what to widen. The same model at pp 2 x tp 8 (the repository's own scenario) fits and
+// has a KV budget, so the refusal is the deployment's and not the model's.
 func TestADeploymentTooLargeForItsPartIsNotCalledASimulatorBug(t *testing.T) {
 	r := repos()
 	r.Scenarios = "../../testdata/scenarios"
-	m, err := Open("muse-h100-tp2dp4-ep.yaml", r)
+	m, err := Open("muse-h100-tp2-ep.yaml", r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,11 +423,39 @@ func TestADeploymentTooLargeForItsPartIsNotCalledASimulatorBug(t *testing.T) {
 			t.Errorf("the message blames the simulator (%q) for a deployment that does not fit: %s", bad, msg)
 		}
 	}
-	m, err = Open("muse-h100-tp4dp2-ep.yaml", r)
+	m, err = Open("muse-h100-pp2tp8.yaml", r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = m.KVBudget(); err == nil || !strings.Contains(err.Error(), "No available memory for the cache blocks") {
-		t.Errorf("one step narrower in tensor parallelism should give vLLM's ordinary refusal: %v", err)
+	if _, err = m.KVBudget(); err != nil {
+		t.Errorf("the pp 2 x tp 8 deployment fits and should have a KV budget: %v", err)
+	}
+}
+
+// checkMuseSparkParallel refuses data and prefill-context parallelism above 1 for Muse-Spark on a
+// Hopper part, as vLLM's route-major Marlin path does, and nothing else: not
+// Blackwell, not another model, and not width 1.
+func TestMuseSparkOnHopperRefusesDataAndPrefillContextParallelism(t *testing.T) {
+	hopper := &hardware.Chip{Name: "h200", ComputeCapability: "9.0"}
+	blackwell := &hardware.Chip{Name: "gb200", ComputeCapability: "10.0"}
+	for _, c := range []struct {
+		name string
+		arch string
+		chip *hardware.Chip
+		pl   deployment.Parallelism
+		bad  bool
+	}{
+		{"muse on hopper at dp 8", museSparkArchitecture, hopper, deployment.Parallelism{TP: 1, DP: 8}, true},
+		{"muse on hopper at pcp 2", museSparkArchitecture, hopper, deployment.Parallelism{TP: 8, DP: 1, PCP: 2}, true},
+		{"muse on hopper at dp 1", museSparkArchitecture, hopper, deployment.Parallelism{TP: 8, DP: 1}, false},
+		{"muse on hopper with dp and pcp unstated", museSparkArchitecture, hopper, deployment.Parallelism{TP: 8}, false},
+		{"muse on blackwell at dp 8", museSparkArchitecture, blackwell, deployment.Parallelism{TP: 1, DP: 8}, false},
+		{"another model on hopper at dp 8", "LlamaForCausalLM", hopper, deployment.Parallelism{TP: 1, DP: 8}, false},
+		{"muse with no chip", museSparkArchitecture, nil, deployment.Parallelism{TP: 1, DP: 8}, false},
+	} {
+		err := checkMuseSparkParallel(c.arch, c.chip, c.pl)
+		if (err != nil) != c.bad {
+			t.Errorf("%s: err %v, want refused %v", c.name, err, c.bad)
+		}
 	}
 }

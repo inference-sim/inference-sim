@@ -65,6 +65,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
@@ -357,6 +358,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, fmt.Errorf("the scenario's cluster: %w", err)
 	}
 	if err := checkDPLocal(pool.Parallel, pk.GPUsPerNode); err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
+	}
+	if err := checkMuseSparkParallel(architectureOf(in.Model), in.Chip, pool.Parallel); err != nil {
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
@@ -1112,6 +1116,36 @@ func checkSpeculativeMethod(in latencykernel.Inputs, engine engineconfig.Engine)
 	if !in.Rules.SpeculativeMethodAccepted(sp.Method) {
 		return fmt.Errorf("engine.speculative.method %q is not accepted by engine %s; it accepts %s",
 			sp.Method, in.Rules.EngineVersion(), strings.Join(in.Rules.SpeculativeMethodNames(), ", "))
+	}
+	return nil
+}
+
+// museSparkArchitecture is the architecture of the Muse-Spark checkpoints (the catalog graphs'
+// global.architecture).
+const museSparkArchitecture = "MuseSparkForConditionalGeneration"
+
+// checkMuseSparkParallel refuses what vLLM refuses for Muse-Spark on a Hopper part: data or
+// prefill-context parallelism above 1. Its MoE layers take the route-major Marlin and Triton path
+// on every capability-90 device (MuseSparkModelOptNvFp4FusedMoE.__init__ for NVFP4 experts, and
+// MuseSparkUnquantizedFusedMoE.__init__ for the layers the checkpoint excludes), and that path
+// calls _validate_route_major_deployment, which raises NotImplementedError "MuseSpark1x
+// Triton/Marlin currently requires DP1 and PCP1" (vllm/models/muse_spark/nvidia/muse_moe_runner.py
+// :140-146,569-581,745-751@0f6b2619). The model is not in the pinned v0.32.0 release; the
+// compatibility engine takes it from the commit the catalog's Muse graphs were derived from, as
+// kvlayers.go does. Blackwell takes the TRT-LLM path, which has no such check.
+func checkMuseSparkParallel(arch string, chip *hardware.Chip, pl deployment.Parallelism) error {
+	if arch != museSparkArchitecture || chip == nil {
+		return nil
+	}
+	if fam, ok := chip.CapabilityMajor(); !ok || fam != 9 {
+		return nil
+	}
+	if pl.DP > 1 || pl.PCP > 1 {
+		return fmt.Errorf("Muse-Spark on %s (compute capability %s) requires data parallelism 1 and prefill-context "+
+			"parallelism 1 (got dp %d, pcp %d): its MoE layers take the route-major Marlin path on Hopper, which "+
+			"vLLM refuses to build with more (\"MuseSpark1x Triton/Marlin currently requires DP1 and PCP1\", "+
+			"vllm/models/muse_spark/nvidia/muse_moe_runner.py:140-146@0f6b2619). Blackwell is not affected",
+			chip.Name, chip.ComputeCapability, pl.DP, pl.PCP)
 	}
 	return nil
 }

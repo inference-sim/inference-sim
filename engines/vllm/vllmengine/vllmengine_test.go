@@ -454,15 +454,15 @@ func TestADeploymentVLLMRefusesAtStartupIsRefusedWithVLLMsMessage(t *testing.T) 
 
 // Muse-Spark-Open-816B-A42B's hybrid KV (16 full, 46 sliding-window layers at 2048) is checked
 // at start-up over its groups, as vLLM checks it, not as one full-attention group: a DP8
-// rank on H200 holds a 262,144-token request (a full-attention group at full context and three
+// rank on GB200 holds a 262,144-token request (a full-attention group at full context and three
 // sliding-window groups at their admission caps), which every layer at full context would not.
-// Each arm runs: H100 RoCE PP2 x TP8 with and without the DSpark drafter, H200 InfiniBand
-// DP8 x EP8, and GB200 TP8 x EP8 and DP8 x EP8 with DSpark over two trays of one NVL72 rack.
+// Each arm runs: H100 RoCE PP2 x TP8 with and without the DSpark drafter, and GB200 TP8 x EP8 and
+// DP8 x EP8 with DSpark over two trays of one NVL72 rack. The H200 DP8 arms are refused below:
+// vLLM does not build Muse-Spark with data parallelism on Hopper.
 func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 	Register()
 	for _, s := range []string{"muse-h100-roce-armB.yaml", "muse-h100-roce-armC.yaml",
-		"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark-128k.yaml", "muse-gb200-nvl-tep8.yaml",
-		"muse-gb200-nvl-dep8-dspark.yaml"} {
+		"muse-gb200-nvl-tep8.yaml", "muse-gb200-nvl-dep8-dspark.yaml"} {
 		t.Run(s, func(t *testing.T) {
 			t.Parallel()
 			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
@@ -492,17 +492,24 @@ func TestMuseSparkDeploymentsBuildAndRun(t *testing.T) {
 	}
 }
 
-// What vLLM refuses to start, the engine refuses, with vLLM's message: H200 DP8 x EP8 with the
-// DSpark drafter at a 262,144-token window leaves a rank 16,124 blocks, and one request needs
-// cdiv(262144, 16) = 16,384 for its full-attention group plus 4 x 1,153 for its sliding-window
-// groups (get_kv_cache_configs' check,
-// vllm/v1/core/kv_cache_utils.py:2627-2647@5df63a72). The same arm at 131,072 runs (above).
-func TestMuseSparkDeploymentVLLMRefusesIsRefused(t *testing.T) {
+// What vLLM refuses to start, the engine refuses, with vLLM's reason. On Hopper
+// Muse-Spark's MoE layers take the route-major Marlin path, which raises "MuseSpark1x
+// Triton/Marlin currently requires DP1 and PCP1" at model construction, so every H200 DP8 x EP8
+// arm is refused, with and without the DSpark drafter and at either window
+// (vllm/models/muse_spark/nvidia/muse_moe_runner.py:140-146@0f6b2619). The Blackwell DP8 arm
+// (TestMuseSparkDeploymentsBuildAndRun) takes the TRT-LLM path and builds, which is the control.
+func TestMuseSparkOnHopperWithDataParallelismIsRefused(t *testing.T) {
 	Register()
-	spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, "muse-h200-ib-dep8-dspark.yaml")}
-	_, err := engine.New(spec)
-	if err == nil || !strings.Contains(err.Error(), "To serve at least one request with the model's max seq len (262144)") {
-		t.Errorf("err %v, want vLLM's start-up refusal", err)
+	for _, s := range []string{"muse-h200-ib-dep8.yaml", "muse-h200-ib-dep8-dspark.yaml",
+		"muse-h200-ib-dep8-dspark-128k.yaml"} {
+		t.Run(s, func(t *testing.T) {
+			spec := engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots(t, s)}
+			_, err := engine.New(spec)
+			if err == nil || !strings.Contains(err.Error(), "requires data parallelism 1") ||
+				!strings.Contains(err.Error(), "MuseSpark1x Triton/Marlin currently requires DP1 and PCP1") {
+				t.Errorf("err %v, want vLLM's Muse-Spark refusal on Hopper", err)
+			}
+		})
 	}
 }
 

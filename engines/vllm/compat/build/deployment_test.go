@@ -324,15 +324,16 @@ func TestCompatVersionsAgreeWithTheFactory(t *testing.T) {
 }
 
 // A 0.32.0 hybrid model's first pool opens on its KV cache groups, as the v0.32.0 engine checks them:
-// Muse-Spark-Open-816B-A42B at H200 DP8 x EP8 and 262,144 tokens holds one request in vLLM
-// (19.38 GiB against 25.77). At 0.31.0 the compatibility engine runs it and its own check stands,
+// Muse-Spark-Open-816B-A42B at TP8 x EP8 on GB200 and 262,144 tokens is a hybrid model whose KV is
+// checked over its groups (the figures below are the H200 DP8 arm's, which vLLM does not build with
+// data parallelism on Hopper: vllmengine TestMuseSparkOnHopperWithDataParallelismIsRefused). At 0.31.0 the compatibility engine runs it and its own check stands,
 // and that check now passes too: the kernel sizes the 46 sliding-window layers as rings of their
 // 2,048-token window (SequenceFixedBytes) rather than as caches that grow to 262,144 tokens
 // (blis-latency-kernel's KV per token is the full-attention layers'), so one request needs
 // about 19.2 GiB there as well.
 func TestAdopt_032HybridKVIsCheckedOverItsGroups(t *testing.T) {
 	repos := vendoredRepos(t)
-	src := filepath.Join("..", "..", "vllmengine", "testdata", "muse-h200-ib-dep8.yaml")
+	src := filepath.Join("..", "..", "vllmengine", "testdata", "muse-gb200-nvl-tep8.yaml")
 	raw, err := os.ReadFile(src)
 	if err != nil {
 		t.Fatal(err)
