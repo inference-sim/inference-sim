@@ -334,6 +334,11 @@ func TestPDRefusals(t *testing.T) {
 			t.Errorf("%s: built, want refused", c.name)
 		}
 	}
+	// vLLM refuses a decoder at pp 2 by testing kv_role == "kv_consumer" alone (base_worker.py:775@5df63a72),
+	// so a kv_both pool at pp 2 starts.
+	if _, err := build(t, both+"pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n")(); err != nil {
+		t.Errorf("kv_both at pp 2 refused, which vLLM starts: %v", err)
+	}
 	plain := mustEngine(t, "")
 	r := req("a", 40, 2)
 	r.RemotePrefill, r.Peer = true, peer

@@ -113,7 +113,7 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 	default:
 		return nil, fmt.Errorf("vllm: kv_transfer.kv_load_failure_policy %q: want fail or recompute", c.LoadFailurePolicy)
 	}
-	if err := nixl.CheckWorker(pp, hybrid, c.Role.consumer()); err != nil {
+	if err := nixl.CheckWorker(pp, hybrid, c.Role == roleConsumer); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	cfg := nixl.Default()

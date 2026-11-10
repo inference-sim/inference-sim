@@ -180,7 +180,7 @@ func run(t *testing.T, sc scenario) trace {
 		t.Fatal(err)
 	}
 	role := c.Connector.KVRole
-	if err := CheckWorker(pp, s.KV.NumGroups() > 1, role == "kv_consumer" || role == "kv_both"); err != nil {
+	if err := CheckWorker(pp, s.KV.NumGroups() > 1, role == "kv_consumer"); err != nil {
 		t.Fatal(err)
 	}
 	ncfg := Default()
