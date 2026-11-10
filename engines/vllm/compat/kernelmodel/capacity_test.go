@@ -394,3 +394,38 @@ func TestSequenceStateHoldsWhatVLLMAllocatesOverALifecycle(t *testing.T) {
 		t.Errorf("%d blocks held after release", kvc.UsedBlocks())
 	}
 }
+
+// A deployment too big for its part must be reported as that, not as a defect of the simulator
+// (blis-vllm#92): at tp 2 on an 80 GB part one rank's weights alone exceed the device, and the
+// message says the model does not fit and what to widen. The same model one step wider in
+// tensor parallelism fits its weights and runs out of KV, which is vLLM's ordinary refusal.
+func TestADeploymentTooLargeForItsPartIsNotCalledASimulatorBug(t *testing.T) {
+	r := repos()
+	r.Scenarios = "../../testdata/scenarios"
+	m, err := Open("muse-h100-tp2dp4-ep.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = m.KVBudget()
+	if err == nil {
+		t.Fatal("a deployment whose weights exceed the device produced a KV budget")
+	}
+	msg := err.Error()
+	for _, want := range []string{"does not fit", "weights alone", "widen tensor or expert parallelism"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("the message should say %q: %s", want, msg)
+		}
+	}
+	for _, bad := range []string{"sharding term", "is wrong"} {
+		if strings.Contains(msg, bad) {
+			t.Errorf("the message blames the simulator (%q) for a deployment that does not fit: %s", bad, msg)
+		}
+	}
+	m, err = Open("muse-h100-tp4dp2-ep.yaml", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = m.KVBudget(); err == nil || !strings.Contains(err.Error(), "No available memory for the cache blocks") {
+		t.Errorf("one step narrower in tensor parallelism should give vLLM's ordinary refusal: %v", err)
+	}
+}
