@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv" // registers the KV store the engine is built with
@@ -512,6 +513,17 @@ func (e *Engine) EnableKVEvents() {
 		}
 	})
 }
+
+// Fields implements engine.Engine. The compatibility engine models vLLM 0.29.0 and 0.31.0
+// behaviour, and the field list of design VLM-3 is stated for the 0.32.0 engine only
+// (blisvllm.FieldListJSON, core/vllm). This engine therefore reports a valid list that names
+// the compatibility engine and classifies nothing, rather than a 0.32.0 list that is not its
+// own. compat/ is deleted in M4.
+func (e *Engine) Fields() fields.FieldList { return compatFields }
+
+// compatFields is the compatibility engine's list: no field is classified.
+var compatFields = fields.FieldList{Kind: fields.Kind, Engine: fields.Engine{Kind: "vllm", Version: "compat"},
+	Fields: []fields.Field{}}
 
 // Snapshot is the engine's queues and KV pool.
 func (e *Engine) Snapshot() engine.State {

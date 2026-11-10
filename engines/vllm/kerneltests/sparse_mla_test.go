@@ -19,7 +19,7 @@ func TestARepackedCacheIsReportedAsResolved(t *testing.T) {
 		editEngine(t, &in, func(e *engineconfig.Engine) { e.CacheDType = "fp8" })
 		if blackwell {
 			chip := *in.Chip
-			chip.NVFP4Peak = 1
+			chip.NVFP4Peak = 2 * chip.FP8Peak
 			in.Chip = &chip
 		}
 		k, err := newKernel(in)

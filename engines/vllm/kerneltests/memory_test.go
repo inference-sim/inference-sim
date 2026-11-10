@@ -579,7 +579,7 @@ func TestUnderDCPAMixedStepGetsNoOneLaunchRebate(t *testing.T) {
 		return mustDCPVariant(t, fixture, 8, 1, 2, func(in *Inputs) {
 			if blackwell {
 				chip := *in.Chip
-				chip.NVFP4Peak = 1
+				chip.NVFP4Peak = 2 * chip.FP8Peak
 				in.Chip = &chip
 			}
 		})
@@ -750,6 +750,15 @@ func TestRecurrentStateIsShardedByTensorParallelism(t *testing.T) {
 	}
 }
 
+// captureUnits is the unit a capture entry states: the floor is bytes on a rank, and each per-token
+// entry is bytes per token of the capture ceiling, which the form multiplies by a token count.
+func captureUnits(name string) vocab.Unit {
+	if strings.Contains(name, "_per_") {
+		return vocab.UnitBytesPerToken
+	}
+	return vocab.UnitBytesPerRank
+}
+
 // captureContract is docs/COEFF_CONTRACT.md v2.3's capture entries for FULL_AND_PIECEWISE,
 // at test magnitudes: a floor and a per-token cost for each graph family.
 func captureContract(drop ...string) []coefficient.Entry {
@@ -764,7 +773,7 @@ func captureContract(drop ...string) []coefficient.Entry {
 			skip = skip || d == name
 		}
 		if !skip {
-			out = append(out, coefficient.Entry{Name: name, Value: v, Units: "bytes_per_rank",
+			out = append(out, coefficient.Entry{Name: name, Value: v, Units: captureUnits(name),
 				Method: "assumed", Rationale: "test", Scope: coefficient.Scope{
 					Hardware: []string{"h200"}, Model: []string{"deepseek-v4.1-flash"}}})
 		}
@@ -893,7 +902,7 @@ func TestThePublishedV41CaptureFormReproducesItsStartUps(t *testing.T) {
 		"cudagraph_capture_bytes_per_decode_token_full_and_piecewise": 6772854,
 	} {
 		published = append(published, coefficient.Entry{Name: name, Value: v,
-			Units: "bytes_per_rank", Method: "measured", Fitted: true, Rationale: "test",
+			Units: captureUnits(name), Method: "measured", Fitted: true, Rationale: "test",
 			Scope: coefficient.Scope{Hardware: []string{"h200"},
 				Model: []string{"deepseek-v4.1-flash"}}})
 	}

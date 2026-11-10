@@ -31,6 +31,7 @@ import (
 	"strconv"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
@@ -863,6 +864,10 @@ func (e *Engine) InFlightLimit() int { return max(e.core.QueueSize, 1) }
 // contract: a simulator gating a pipelined step on the step pp back looks for it by type
 // assertion.
 func (e *Engine) RunnerSteps() int { return e.core.Schedules() }
+
+// Fields implements engine.Engine: the field list of the release this engine models, fields.json
+// (blisvllm.FieldListJSON). It is parsed once; every call returns that list.
+func (e *Engine) Fields() fields.FieldList { return fieldList }
 
 // Snapshot implements engine.Engine.
 func (e *Engine) Snapshot() engine.State {

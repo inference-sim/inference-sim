@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
 	"github.com/inference-sim/blis-vllm/compat/dplb"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
@@ -377,6 +378,9 @@ func (g *DPGroup) Metrics(now engine.Time) engine.Metrics { return g.ranks[0].Me
 // RankMetrics is rank k's published view.
 func (g *DPGroup) RankMetrics(k int, now engine.Time) engine.Metrics { return g.ranks[k].Metrics(now) }
 
+// Fields is the compatibility engine's list (Engine.Fields).
+func (g *DPGroup) Fields() fields.FieldList { return compatFields }
+
 // Snapshot is the group's queues and KV pools, summed over the ranks.
 func (g *DPGroup) Snapshot() engine.State {
 	var s engine.State
@@ -472,6 +476,7 @@ func (v *RankView) NextWake(now engine.Time) (engine.Time, bool) {
 func (v *RankView) InFlightLimit() int                     { return 1 }
 func (v *RankView) Metrics(now engine.Time) engine.Metrics { return v.g.RankMetrics(v.k, now) }
 func (v *RankView) Snapshot() engine.State                 { return v.g.RankSnapshot(v.k) }
+func (v *RankView) Fields() fields.FieldList               { return compatFields }
 
 // AdmitIdle admits the rank's waiting P/D handoffs at now when it has no other work and no step is
 // executing, as an idle decode engine does at once, and returns the pulls it started.

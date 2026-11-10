@@ -61,13 +61,6 @@ var summaries = map[string]struct{ title, summary string }{
 			"parallelism on, and the kernel cannot see which runs, so such a deployment's " +
 			"SequenceAdmissionBytes is up to one token budget a window group high.",
 	},
-	"draft.go|(*Kernel).priceDraft|Coverage limit": {
-		"Draft passes not padded under data-parallel lockstep",
-		"A data-parallel rank's pad tokens run the target model's forward but not the " +
-			"drafter's passes. vLLM pads the draft passes across the group too, to a count set " +
-			"by every rank's draft batch, which one rank's batch does not state, so a padded " +
-			"rank's draft work is under-stated by its pad.",
-	},
 	"kernel.go|(*Kernel).PreSnapshotBytes|Known divergence": {
 		"The engine workspace is all outside the memory budget",
 		"The registry's engine workspace is one lumped allowance for the CUDA context, cuBLAS " +

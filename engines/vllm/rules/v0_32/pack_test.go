@@ -23,8 +23,8 @@ func graniteGraph() *model.Graph {
 			WeightDType: model.DTypeFP8},
 		LayerKinds: []model.LayerKind{{ID: "attn_moe", Nodes: []model.Node{
 			{Op: model.OpAttention, AttentionKind: model.AttentionGQA,
-				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64},
-			{Op: model.OpGroupedGEMM, N: 1536, K: 3072, Experts: 224, TopK: 8},
+				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64, HoldsEngineKV: boolPtr(true)},
+			{Op: model.OpGroupedGEMM, N: 1536, K: 3072, Experts: 224, TopK: 8, Shared: boolPtr(false)},
 		}}},
 		Stack: model.Stack{Pattern: []string{"attn_moe"}, Repeat: 72},
 	}
@@ -1361,3 +1361,6 @@ func TestDCPDividesTP(t *testing.T) {
 		}
 	}
 }
+
+// boolPtr is a typed node property the validator requires (SUB-20).
+func boolPtr(b bool) *bool { return &b }

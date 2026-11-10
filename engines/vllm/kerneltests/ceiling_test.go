@@ -35,7 +35,7 @@ func TestTheCaptureCeilingFollowsTheEngineDefault(t *testing.T) {
 		e.CUDAGraphMode, e.MaxNumSeqs = mode, seqs
 		if blackwell {
 			chip := *in.Chip
-			chip.NVFP4Peak = 1
+			chip.NVFP4Peak = 2 * chip.FP8Peak
 			in.Chip = &chip
 		}
 		setEngine(t, &in.Deployment.Pools[0], e)

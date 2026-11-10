@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/sched"
@@ -428,6 +429,9 @@ func (g *DPGroup) Metrics(now engine.Time) engine.Metrics {
 	}
 	return out
 }
+
+// Fields implements engine.Engine: every rank runs one release, so the group's list is Engine's.
+func (g *DPGroup) Fields() fields.FieldList { return fieldList }
 
 // Snapshot implements engine.Engine: the group's totals.
 func (g *DPGroup) Snapshot() engine.State {
