@@ -1,0 +1,367 @@
+{
+ "description": "Engine-block shapes run through EngineArgs.create_engine_config (oracle/run_engineargs.py): accepted, refused by one rule each, and leaving a default to resolve.",
+ "cases": [
+  {
+   "name": "accepted-base",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64
+   }
+  },
+  {
+   "name": "accepted-priority",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "scheduling_policy": "priority"
+   }
+  },
+  {
+   "name": "accepted-fcfs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "scheduling_policy": "fcfs"
+   }
+  },
+  {
+   "name": "accepted-no-prefix-caching",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "enable_prefix_caching": false
+   }
+  },
+  {
+   "name": "accepted-prefix-caching",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "enable_prefix_caching": true
+   }
+  },
+  {
+   "name": "accepted-long-prefill-threshold",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "long_prefill_token_threshold": 64
+   }
+  },
+  {
+   "name": "accepted-long-prefill-at-max-model-len",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "long_prefill_token_threshold": 512
+   }
+  },
+  {
+   "name": "accepted-max-active-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "max_num_active_seqs": 2
+   }
+  },
+  {
+   "name": "accepted-max-active-equal-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "max_num_active_seqs": 4
+   }
+  },
+  {
+   "name": "accepted-watermark",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "watermark": 0.1
+   }
+  },
+  {
+   "name": "accepted-async",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "async_scheduling": true
+   }
+  },
+  {
+   "name": "accepted-sync",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "async_scheduling": false
+   }
+  },
+  {
+   "name": "accepted-max-loras",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "enable_lora": true,
+    "max_loras": 2
+   }
+  },
+  {
+   "name": "accepted-ngram",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "speculative_config": {
+     "method": "ngram",
+     "num_speculative_tokens": 3
+    }
+   }
+  },
+  {
+   "name": "accepted-ngram-async-off",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "async_scheduling": false,
+    "speculative_config": {
+     "method": "ngram",
+     "num_speculative_tokens": 3
+    }
+   }
+  },
+  {
+   "name": "accepted-budget-equals-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 4
+   }
+  },
+  {
+   "name": "default-max-num-seqs-unstated",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_batched_tokens": 64
+   }
+  },
+  {
+   "name": "default-max-num-batched-tokens-unstated",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4
+   }
+  },
+  {
+   "name": "default-block-size-unstated",
+   "args": {
+    "max_model_len": 512,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64
+   }
+  },
+  {
+   "name": "default-max-model-len-unstated",
+   "args": {
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64
+   }
+  },
+  {
+   "name": "default-all-scheduler-unstated",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16
+   }
+  },
+  {
+   "name": "default-async-unstated-with-ngram",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "speculative_config": {
+     "method": "ngram",
+     "num_speculative_tokens": 3
+    }
+   }
+  },
+  {
+   "name": "refused-budget-below-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 2
+   }
+  },
+  {
+   "name": "refused-unknown-policy",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "scheduling_policy": "sjf"
+   }
+  },
+  {
+   "name": "refused-max-active-above-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "max_num_active_seqs": 9
+   }
+  },
+  {
+   "name": "refused-long-prefill-above-max-model-len",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "long_prefill_token_threshold": 600
+   }
+  },
+  {
+   "name": "refused-zero-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 0,
+    "max_num_batched_tokens": 64
+   }
+  },
+  {
+   "name": "refused-negative-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": -1,
+    "max_num_batched_tokens": 64
+   }
+  },
+  {
+   "name": "refused-zero-budget",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 0
+   }
+  },
+  {
+   "name": "refused-negative-long-prefill",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "long_prefill_token_threshold": -1
+   }
+  },
+  {
+   "name": "refused-watermark-one",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "watermark": 1.0
+   }
+  },
+  {
+   "name": "refused-watermark-above-one",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "watermark": 1.5
+   }
+  },
+  {
+   "name": "refused-negative-watermark",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "watermark": -0.1
+   }
+  },
+  {
+   "name": "refused-async-with-ngram-stated",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "async_scheduling": true,
+    "speculative_config": {
+     "method": "ngram",
+     "num_speculative_tokens": 3
+    }
+   }
+  },
+  {
+   "name": "refused-negative-max-loras",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "enable_lora": true,
+    "max_loras": -1
+   }
+  },
+  {
+   "name": "refused-unknown-speculative-method",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "speculative_config": {
+     "method": "nonsense",
+     "num_speculative_tokens": 3
+    }
+   }
+  }
+ ]
+}

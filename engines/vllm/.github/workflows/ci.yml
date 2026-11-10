@@ -518,6 +518,20 @@ jobs:
           done
           python -I oracle/run_metrics.py vllm-source oracle/out/metrics-scenarios oracle/out/metrics
           python3 -I oracle/compare_goldens_metrics.py core/metrics/testdata/golden oracle/out/metrics
+      # Tier 1, the dynamic half: the engine-block shapes of oracle/engineargs-cases.json run
+      # through vLLM's own EngineArgs(...).create_engine_config(), and the committed answers the
+      # factory is compared with (core/vllm TestEngineArgsAgainstVLLM) must equal them.
+      - name: the EngineArgs answers are vLLM's own
+        env:
+          ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+        run: |
+          mkdir -p oracle/out
+          python -I oracle/run_engineargs.py vllm-source oracle/engineargs-cases.json > oracle/out/engineargs.json
+          python3 -I oracle/compare_engineargs.py core/vllm/testdata/engineargs.json oracle/out/engineargs.json
       # The block-hash fixture: every case's hashes recomputed by vLLM's own hash_block_tokens;
       # the generator exits non-zero if any differs from the committed file.
       - name: the block-hash fixture is vLLM's own hashes
