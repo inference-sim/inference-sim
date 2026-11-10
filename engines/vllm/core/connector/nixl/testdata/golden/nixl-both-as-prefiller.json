@@ -22,7 +22,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "f3e2b8fb541ab5ec45104fa8c0be5936ecf856e0+dirty",
+  "blis_vllm_commit": "e2f1d38aa13a4619676a92ee724d1c1657bf33eb",
   "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
   "mock_version": "gpu-mock/4+420a44386aa4",
   "mocks": [
