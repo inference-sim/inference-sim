@@ -1854,6 +1854,39 @@ DSV4_PAGE_ALIGNMENT = 576
 DSV4_SPARSE_BLOCK_TOKENS = 256
 
 
+def v4_expert_width(raw: dict[str, Any], cfg: dict[str, Any], by_expert_dtype: str,
+                    model: str) -> str:
+    """The routed experts' stored width in a DeepSeek-V4 checkpoint.
+
+    vLLM's DeepseekV4FP8Config.get_quant_method (models/deepseek_v4/quant_config.py:
+    181-199@v0.32.0) picks the expert method from expert_dtype and, for expert_dtype "fp4",
+    from quantization_config.moe_quant_algo: "NVFP4" gives ModelOptNvFp4FusedMoE (NVFP4,
+    16-element groups), anything else Mxfp4MoEMethod. The linear and attention layers are
+    FP8 block either way. So a ModelOpt NVFP4 export of the expert tensors states
+    expert_dtype "fp4" beside moe_quant_algo "NVFP4", and reading expert_dtype alone prices
+    its experts at MXFP4. An algorithm vLLM would read as MXFP4 but the config names
+    otherwise is refused, as is NVFP4 on an expert_dtype vLLM does not dispatch it for."""
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    algo = str(quant.get("moe_quant_algo") or "").upper()
+    if not algo:
+        return by_expert_dtype
+    if algo != "NVFP4":
+        raise DeriveError(f"{model}: moe_quant_algo {algo!r}; vLLM reads only NVFP4 here and "
+                          f"would price anything else as MXFP4 experts, which this deriver "
+                          f"does not assume")
+    if str(cfg.get("expert_dtype")) != "fp4":
+        raise DeriveError(f"{model}: moe_quant_algo NVFP4 with expert_dtype "
+                          f"{cfg.get('expert_dtype')!r}; vLLM dispatches NVFP4 experts only "
+                          f"for expert_dtype fp4")
+    layers = quant.get("quantized_layers")
+    if isinstance(layers, dict):
+        algos = {str((v or {}).get("quant_algo", "")).upper() for v in layers.values()}
+        if algos != {"NVFP4"}:
+            raise DeriveError(f"{model}: quantized_layers names {sorted(algos)}, but the experts "
+                              f"are priced at one width")
+    return "nvfp4"
+
+
 def handler_deepseek_v4(cfg, raw, model):
     """DeepSeek-V4: compressed sparse MLA at two ratios, each compressed layer with its
     own compressor and caches, an indexer on the ratio-4 layers, mHC on every
@@ -2278,6 +2311,7 @@ def handler_deepseek_v4(cfg, raw, model):
     if expert_width is None:
         raise DeriveError(f"{model}: expert_dtype {cfg.get('expert_dtype')!r} is not one "
                           f"this deriver maps")
+    expert_width = v4_expert_width(raw, cfg, expert_width, model)
     vocab = positive("vocab_size", concept=True)
 
     def ffn(hashed):

@@ -1,0 +1,12 @@
+name: deepseek-v4-pro-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/DeepSeek-V4-Pro-NVFP4
+  revision: 1449d1e641023406daf6b432361486c768aad740
+  retrieved: 2026-11-10
+licence:
+  id: MIT
+  evidence: https://huggingface.co/nvidia/DeepSeek-V4-Pro-NVFP4/raw/1449d1e641023406daf6b432361486c768aad740/LICENSE
+config:
+  sha256: 05e9f7d612bb89a9eef2e973af50d5d99e747668a76f398a13eed0d9b155ce09
+drafters: [speculator]

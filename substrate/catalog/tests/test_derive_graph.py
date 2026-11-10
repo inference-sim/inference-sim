@@ -6176,3 +6176,53 @@ def test_eagle3_fc_norm_is_priced_only_when_the_config_turns_it_on(tmp_path):
     assert norm["bytes_per_token"] == 2 * 3 * 6144 * 2
     off = _derive_raw({**EAGLE3_CFG, "fc_norm": False}, tmp_path, "minimax-m3-eagle3")
     assert ctx(off) == ["eagle3_fc"]
+
+
+# --- ModelOpt NVFP4 experts in a DeepSeek-V4 checkpoint (nvidia/DeepSeek-V4-Pro-NVFP4) -----
+
+DSV4_PRO = MODELS / "deepseek-v4-pro"
+
+
+def _v4_expert_dtypes(g: dict) -> set[str]:
+    out = set()
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n.get("role") == "experts":
+                out.add(n["weight_dtype"])
+    return out
+
+
+def _v4_with(raw: dict, **quant) -> dict:
+    bad = json.loads(json.dumps(raw))
+    bad.setdefault("quantization_config", {}).update(quant)
+    return bad
+
+
+def test_v4_moe_quant_algo_nvfp4_prices_the_experts_at_nvfp4(tmp_path):
+    """vLLM dispatches ModelOptNvFp4FusedMoE for expert_dtype fp4 with moe_quant_algo NVFP4
+    (deepseek_v4/quant_config.py:181-199@v0.32.0). Reading expert_dtype alone priced a ModelOpt
+    NVFP4 export's experts at MXFP4. The linear and attention layers stay FP8 block."""
+    raw = config_of(DSV4_PRO)
+    assert _v4_expert_dtypes(_derive_raw(raw, tmp_path, "deepseek-v4-pro")) == {"mxfp4"}
+    nv = _derive_raw(_v4_with(raw, moe_quant_algo="NVFP4"), tmp_path, "deepseek-v4-pro-nvfp4")
+    assert _v4_expert_dtypes(nv) == {"nvfp4"}
+    assert nv["global"]["weight_dtype"] == "fp8"
+    # Case does not matter to vLLM (it upper-cases the value).
+    assert _v4_expert_dtypes(
+        _derive_raw(_v4_with(raw, moe_quant_algo="nvfp4"), tmp_path, "x")) == {"nvfp4"}
+
+
+@pytest.mark.parametrize("quant,expert_dtype,why", [
+    ({"moe_quant_algo": "MXFP8"}, "fp4", "vLLM reads only NVFP4"),
+    ({"moe_quant_algo": "NVFP4"}, "fp8", "only for expert_dtype fp4"),
+    ({"moe_quant_algo": "NVFP4", "quantized_layers": {
+        "layers.0.ffn.experts": {"quant_algo": "NVFP4"},
+        "layers.1.ffn.experts": {"quant_algo": "FP8"}}}, "fp4", "one width"),
+])
+def test_v4_refuses_a_moe_quant_algo_it_cannot_price(tmp_path, quant, expert_dtype, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = _v4_with(config_of(DSV4_PRO), **quant)
+    raw["expert_dtype"] = expert_dtype
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "deepseek-v4-pro-nvfp4")
