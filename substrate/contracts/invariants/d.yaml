@@ -201,6 +201,14 @@
     runs: pull_request
     status: ci
     test: 'ledger: TestLintWorkflows'
+  - repo: blis-substrate
+    check: >-
+      The three published lists are read back and checked against the ledger that drew them: the
+      seed hash and partition version it records, units that exist, one role per unit
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
+    known_bad: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
   - repo: accuracy-dashboard
     check: A workflow lint that those jobs check out only main
     runs: pull_request

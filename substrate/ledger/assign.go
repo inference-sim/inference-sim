@@ -3,6 +3,8 @@ package ledger
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 )
 
@@ -99,12 +101,113 @@ type Published struct {
 	Units            []string `yaml:"units"`
 }
 
+// PublishedKind is the kind of a published list.
+const PublishedKind = "PublishedUnits"
+
+// Check is what a published list can know about itself: its kind, that its role is one the
+// release publishes and the one its file name states, the partition and seed it was drawn
+// under, and that its units are unit identifiers, sorted and listed once. file is the role
+// the file name states.
+func (p *Published) Check(file Role, cfg *Config) error {
+	var errs []error
+	if p.Kind != PublishedKind {
+		errs = append(errs, fmt.Errorf("kind %q, want %q", p.Kind, PublishedKind))
+	}
+	if !p.Role.Published() {
+		errs = append(errs, fmt.Errorf("role %q is not published; only fit, anchor and report are", p.Role))
+	} else if p.Role != file {
+		errs = append(errs, fmt.Errorf("role %q in the file for %q", p.Role, file))
+	}
+	if !cfg.Seed.Created() {
+		errs = append(errs, errors.New("a list is published, but ledger.yaml records no seed; the lists are drawn from the seed"))
+	} else if p.SeedSHA256 != cfg.Seed.SHA256 {
+		errs = append(errs, fmt.Errorf("seed_sha256 %q is not the seed ledger.yaml records, %q", p.SeedSHA256, cfg.Seed.SHA256))
+	}
+	if p.PartitionVersion != cfg.PartitionVersion {
+		errs = append(errs, fmt.Errorf("partition_version %d, but ledger.yaml is at %d", p.PartitionVersion, cfg.PartitionVersion))
+	}
+	for i, id := range p.Units {
+		switch {
+		case !hex64.MatchString(id):
+			errs = append(errs, fmt.Errorf("units[%d] %q is not a unit_id (64 lowercase hex digits)", i, id))
+		case i > 0 && id == p.Units[i-1]:
+			errs = append(errs, fmt.Errorf("units[%d] %s is listed twice", i, id))
+		case i > 0 && id < p.Units[i-1]:
+			errs = append(errs, fmt.Errorf("units[%d] %s is out of order; the list is sorted", i, id))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// LoadPublished reads the lists the release job wrote under dir/published/ and checks them
+// against the ledger: each list's own checks, every unit on it is a unit of some source, and
+// no unit is on two lists (one role per unit, D4). The lists are optional until the first
+// release publishes them; a missing list is absent from the result, but a directory holding
+// some lists and not all of the three is refused, because the dashboard and the candidate
+// jobs read them as a set.
+func LoadPublished(dir string, cfg *Config, units map[string][]Unit) (map[Role]*Published, error) {
+	out := map[Role]*Published{}
+	var errs []error
+	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+		path := filepath.Join(dir, DirPublished, string(r)+".yaml")
+		raw, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var p Published
+		if err := decodeStrict(path, raw, &p); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := p.Check(r, cfg); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", path, err))
+		}
+		out[r] = &p
+	}
+	if len(out) == 0 {
+		return out, errors.Join(errs...)
+	}
+	if len(out) != 3 {
+		errs = append(errs, fmt.Errorf("%s holds %d of the three published lists; the release job writes fit, anchor and report together", DirPublished, len(out)))
+	}
+	known := map[string]bool{}
+	for _, us := range units {
+		for _, u := range us {
+			known[u.UnitID] = true
+		}
+	}
+	on := map[string]Role{}
+	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+		p := out[r]
+		if p == nil {
+			continue
+		}
+		for _, id := range p.Units {
+			if !known[id] {
+				errs = append(errs, fmt.Errorf("%s list: unit %s is in no source's unit list", r, id))
+				break
+			}
+		}
+		for _, id := range p.Units {
+			if other, dup := on[id]; dup {
+				errs = append(errs, fmt.Errorf("unit %s is on the %s list and the %s list; a unit has one role", id, other, r))
+				break
+			}
+			on[id] = r
+		}
+	}
+	return out, errors.Join(errs...)
+}
+
 // Release computes the three published lists from every unit of every source. It returns
 // only fit, anchor and report: the members of the other roles never leave the job.
 func (a *Assigner) Release(cfg *Config, units map[string][]Unit) (map[Role]*Published, error) {
 	out := map[Role]*Published{}
 	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
-		out[r] = &Published{Kind: "PublishedUnits", Role: r, PartitionVersion: cfg.PartitionVersion,
+		out[r] = &Published{Kind: PublishedKind, Role: r, PartitionVersion: cfg.PartitionVersion,
 			SeedSHA256: cfg.Seed.SHA256, Units: []string{}}
 	}
 	for _, src := range sortedKeys(units) {

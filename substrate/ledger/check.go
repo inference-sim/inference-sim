@@ -27,6 +27,9 @@ type Ledger struct {
 	Units map[string][]Unit
 	// Aliases holds every alias table, in file order.
 	Aliases []*AliasTable
+	// Published holds the lists the release job wrote, by role: all three, or none before the
+	// first release publishes them.
+	Published map[Role]*Published
 }
 
 // Load reads and checks every committed file of a ledger directory. It refuses a file the
@@ -102,6 +105,9 @@ func Load(dir string, roleKeys map[string]RoleKeyFunc) (*Ledger, error) {
 		}
 	}
 	if l.Aliases, err = LoadAliases(dir); err != nil {
+		errs = append(errs, err)
+	}
+	if l.Published, err = LoadPublished(dir, l.Config, l.Units); err != nil {
 		errs = append(errs, err)
 	}
 	if err := errors.Join(errs...); err != nil {

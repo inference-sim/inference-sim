@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The canonical encoding equals Python's json.dumps(sort_keys=True, separators=(",", ":"),
@@ -759,5 +762,100 @@ func TestCheckCitesOnlyFit(t *testing.T) {
 	}
 	if err := CheckCitesOnlyFit(nil, &Published{Role: RoleAnchor}); err == nil {
 		t.Error("the anchor list was accepted as the fit list")
+	}
+}
+
+// The published lists are read back and checked against the ledger that drew them (D7, COV-2):
+// a list from another seed or partition, a role the release does not publish, a unit no source
+// has, a unit on two lists, an unsorted list, and a directory holding only some of the three are
+// each refused. Each case is a known-bad directory.
+func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
+	a := assignerFor(t, nil)
+	cfg := testConfig()
+	rawSeed, _ := hex.DecodeString(strings.Repeat("5a", 32))
+	sum := sha256.Sum256(rawSeed)
+	cfg.Seed = SeedRecord{SHA256: hex.EncodeToString(sum[:]), GeneratedBy: "test", GeneratedOn: "2026-11-04", RotationOwner: "test"}
+	var units []Unit
+	for i := 0; i < 200; i++ {
+		units = append(units, testUnit(i, i))
+	}
+	byUnit := map[string][]Unit{"s": units}
+	lists, err := a.Release(cfg, byUnit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(t *testing.T, mut func(map[Role]*Published)) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, DirPublished), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cp := map[Role]*Published{}
+		for r, p := range lists {
+			q := *p
+			q.Units = append([]string(nil), p.Units...)
+			cp[r] = &q
+		}
+		mut(cp)
+		for r, p := range cp {
+			b, err := yaml.Marshal(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, DirPublished, string(r)+".yaml"), b, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	if len(lists[RoleAnchor].Units) < 2 || len(lists[RoleFit].Units) < 2 {
+		t.Fatal("the test ledger gives a list fewer than two units")
+	}
+
+	dir := write(t, func(map[Role]*Published) {})
+	got, err := LoadPublished(dir, cfg, byUnit)
+	if err != nil || len(got) != 3 {
+		t.Fatalf("the lists the release wrote were refused: %v", err)
+	}
+	if got, err := LoadPublished(t.TempDir(), cfg, byUnit); err != nil || len(got) != 0 {
+		t.Errorf("a ledger with no published lists yet: %v %v", got, err)
+	}
+
+	for name, c := range map[string]struct {
+		mut  func(map[Role]*Published)
+		want string
+	}{
+		"another seed":           {func(m map[Role]*Published) { m[RoleAnchor].SeedSHA256 = strings.Repeat("0", 64) }, "is not the seed ledger.yaml records"},
+		"another partition":      {func(m map[Role]*Published) { m[RoleFit].PartitionVersion = 2 }, "ledger.yaml is at 1"},
+		"a role not published":   {func(m map[Role]*Published) { m[RoleReport].Role = RoleHeld }, `role "held" is not published`},
+		"a role in another file": {func(m map[Role]*Published) { m[RoleReport].Role = RoleFit }, `role "fit" in the file for "report"`},
+		"a unit no source has": {func(m map[Role]*Published) {
+			m[RoleAnchor].Units = append(m[RoleAnchor].Units, strings.Repeat("f", 64))
+		}, "is in no source's unit list"},
+		"a unit on two lists": {func(m map[Role]*Published) {
+			m[RoleReport].Units = append([]string{m[RoleFit].Units[0]}, m[RoleReport].Units...)
+			sort.Strings(m[RoleReport].Units)
+		}, "a unit has one role"},
+		"an unsorted list": {func(m map[Role]*Published) {
+			u := m[RoleFit].Units
+			u[0], u[1] = u[1], u[0]
+		}, "is out of order"},
+		"a repeated unit": {func(m map[Role]*Published) {
+			u := m[RoleFit].Units
+			m[RoleFit].Units = append(u[:2:2], u[1:]...)
+		}, "is listed twice"},
+		"a name that is no unit id": {func(m map[Role]*Published) { m[RoleFit].Units[0] = "A" }, "is not a unit_id"},
+		"only two of the three":     {func(m map[Role]*Published) { delete(m, RoleReport) }, "holds 2 of the three"},
+	} {
+		_, err := LoadPublished(write(t, c.mut), cfg, byUnit)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error containing %q", name, err, c.want)
+		}
+	}
+
+	// A list with the seed not yet recorded is refused: the lists are drawn from it.
+	noSeed := testConfig()
+	if _, err := LoadPublished(dir, noSeed, byUnit); err == nil || !strings.Contains(err.Error(), "records no seed") {
+		t.Errorf("lists published with no recorded seed: %v", err)
 	}
 }
