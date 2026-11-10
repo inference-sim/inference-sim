@@ -15,7 +15,9 @@
     "config:speculative_config.model": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:278 marks it inert, role drafter; a run that does not state it leaves vLLM's default, None (no separate drafter checkpoint), which the engine resolves",
     "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves"
   },
- "extra_env": [],
+ "extra_env": [
+  "NVSHMEM_QP_DEPTH"
+ ],
  "dynamic_reads": {
   "vllm/config/utils.py: envs.is_set(env_name)": {
    "reason": "get_from_deprecated_env_if_set, called only by set_from_deprecated_env_if_set (config/utils.py:511), which nothing in vLLM v0.32.0 calls"
@@ -5592,6 +5594,15 @@
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#53"
+   },
+   "status": "not_modelled"
+  },
+  "env:NVSHMEM_QP_DEPTH": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "issue": "inference-sim/blis-vllm#75"
    },
    "status": "not_modelled"
   },

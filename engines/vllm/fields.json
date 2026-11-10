@@ -787,6 +787,17 @@
       }
     },
     {
+      "name": "NVSHMEM_QP_DEPTH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/blis-vllm#75"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "OMP_NUM_THREADS",
       "source": "env",
       "status": "not_modelled",
