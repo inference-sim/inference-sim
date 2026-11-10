@@ -4596,8 +4596,158 @@ def handler_muse_spark_dspark(cfg, raw, model):
     return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
 
 
+# The target an EAGLE3 drafter checkpoint is served with, for a drafter whose configuration
+# names no capture layers. The engine then asks the TARGET model for its default
+# (get_eagle3_aux_layers_from_config returns None, and the target's
+# SupportsEagle3.get_eagle3_default_aux_hidden_state_layers answers: layers
+# (2, n // 2, n - 3) of its n decoder layers, vllm/model_executor/models/interfaces.py:
+# 1712-1733@v0.32.0; MiniMaxM3SparseForCausalLM does not override it, minimax_m3/nvidia/
+# model.py:1042@v0.32.0, which records captures as idx + 1, :909-911). The default depends on
+# the target's depth, which a drafter's configuration does not state, so it is recorded per
+# drafter here rather than defaulted, with the catalog target whose depth it is. A test holds
+# the depth to the target's committed configuration.
+EAGLE3_TARGETS = {
+    "minimax-m3-eagle3": {"target": "minimax-m3-mxfp8", "layers": 60},
+}
+
+
+def eagle3_default_aux_layers(layers: int) -> list[int]:
+    """The capture layers vLLM's SupportsEagle3 default gives a target of `layers` layers."""
+    return sorted({2, layers // 2, layers - 3})
+
+
+def handler_llama_eagle3(cfg, raw, model):
+    """An EAGLE3 drafter on the Llama architecture (LlamaForCausalLMEagle3,
+    vllm/model_executor/models/llama_eagle3.py@v0.32.0), a checkpoint of its own that a
+    deployment names as its speculative draft_model.
+
+    The drafter has its own token embedding and its own lm_head (both are loaded when the
+    checkpoint holds them, load_weights :411-470, and Inferact/MiniMax-M3-EAGLE3 holds both,
+    from its safetensors header). It reads one hidden state per captured target layer
+    (num_aux_hidden_states, else the length of eagle_config.eagle_aux_hidden_state_layer_ids,
+    else 3, :210-216); each is normalised by its own RMSNorm when fc_norm is set (:230-243,
+    combine_hidden_states :395-413) and the concatenation is projected to hidden_size by a
+    replicated fc. Its one decoder layer takes the token embedding and that projected state
+    side by side: the embedding through input_layernorm, the state through hidden_norm, and
+    qkv_proj reads their concatenation, 2 x hidden_size wide (:79-92, :111-120). Attention is
+    full, the MLP gated; the final norm and the lm_head follow (:251-253, :322-349).
+
+    NOT PRICED: the first draft pass runs the layer over every token the target scheduled,
+    not one position per request; the schema states that work as the context stack only for
+    the fc projection, and the layer's pass over those rows is the kernel's to price from
+    the step (blis-latency-kernel). The vocabulary mapping a drafter with
+    draft_vocab_size != vocab_size carries (draft_id_to_target_id) is refused rather than
+    priced as free."""
+    def whole(v, key):
+        if isinstance(v, bool) or int(v) != v:
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return int(v)
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    ffn = whole(require(cfg, "ffn_size", model), "intermediate_size")
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    if layers != 1:
+        raise DeriveError(f"{model}: {layers} draft layers; this handler prices the one-layer "
+                          f"EAGLE3 drafter (layers after the first read only the hidden state)")
+    if whole(cfg.get("draft_vocab_size", vocab), "draft_vocab_size") != vocab:
+        raise DeriveError(f"{model}: draft_vocab_size differs from vocab_size, so the drafter "
+                          f"carries a draft-to-target id map this handler does not price")
+    if cfg.get("sliding_window") or cfg.get("use_sliding_window"):
+        raise DeriveError(f"{model}: a sliding-window EAGLE3 layer; this handler prices full attention")
+    if cfg.get("attention_bias"):
+        raise DeriveError(f"{model}: attention_bias is on, so the qkv projection carries a bias "
+                          f"this handler does not price")
+    if cfg.get("norm_before_fc") or (cfg.get("eagle_config") or {}).get("norm_before_fc"):
+        raise DeriveError(f"{model}: norm_before_fc adds an RMSNorm over the concatenated states "
+                          f"that this handler does not price")
+    eagle = cfg.get("eagle_config") or {}
+    if eagle.get("use_aux_hidden_state") is False:
+        raise DeriveError(f"{model}: use_aux_hidden_state is off, so the drafter has no fc")
+    ids = eagle.get("eagle_aux_hidden_state_layer_ids")
+    states = cfg.get("num_aux_hidden_states") or (len(ids) if ids else 3)
+    target_hidden = whole(cfg.get("target_hidden_size", hidden), "target_hidden_size")
+    if cfg.get("eagle_aux_hidden_state_layer_ids") or eagle.get("eagle_aux_hidden_state_layer_ids") \
+            or cfg.get("dflash_config") or eagle.get("layer_ids"):
+        aux = draft_aux_hidden_state_layers({**cfg, **eagle}, model, 10**9, states=states)
+    else:
+        target = EAGLE3_TARGETS.get(model)
+        if target is None:
+            raise DeriveError(f"{model}: the drafter names no target layers to read and no "
+                              f"target is recorded for it in EAGLE3_TARGETS, so the engine's "
+                              f"default for the target cannot be resolved")
+        aux = eagle3_default_aux_layers(target["layers"])
+        if len(aux) != states:
+            raise DeriveError(f"{model}: the target's default captures {len(aux)} states {aux} "
+                              f"and the drafter's input projection takes {states}")
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    fc_in = target_hidden * states
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    attn = {"op": "Attention", "holds_engine_kv": True, "kind": "gqa", "n_q": nq, "n_kv": nkv, "d_h": dh}
+    layer = [
+        traffic("input_norm", 2 * hidden * act, tp="replicated"),
+        traffic("hidden_norm", 2 * hidden * act, tp="replicated"),
+        gemm("qkv_proj", (nq + 2 * nkv) * dh, 2 * hidden),
+        attn,
+        gemm("o_proj", hidden, nq * dh),
+        collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+        traffic("post_attn_norm", 2 * hidden * act, tp="replicated"),
+        gemm("mlp_gate_up", 2 * ffn, hidden),
+        gemm("mlp_down", hidden, ffn),
+        collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+    ]
+    context = []
+    if cfg.get("fc_norm"):
+        # One RMSNorm per captured state, over target_hidden_size each.
+        context.append(traffic("eagle3_fc_norm", 2 * fc_in * act, tp="replicated"))
+    context.append(with_tp(gemm("eagle3_fc", hidden, fc_in), "replicated"))
+    kinds = [{"id": "eagle3_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "eagle3_context", "nodes": context, "edges": chain(context)}]
+    embed = [{"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": hidden * act,
+              "rows_per_token": 1, "out_bytes_per_token": hidden * act, "shard": "rows"},
+             collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL)]
+    head = [traffic("final_norm", 2 * hidden * act, tp="replicated"),
+            with_tp(gemm("lm_head", vocab, hidden), "column")]
+    spec_embed = [dict(embed[0], role="eagle3_embed_tokens", aliases="embedding.embed_tokens"),
+                  collective("AllReduce", "eagle3_embed_out", EMIT_TENSOR_PARALLEL)]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "embedding": embed,
+        "head": head,
+        "speculator": {
+            "method": "eagle3",
+            # One token per pass: the drafter runs autoregressively, once per drafted token,
+            # and the deployment's num_speculative_tokens says how many passes.
+            "num_spec_tokens": 1,
+            "embedding": spec_embed,
+            "stack": {"pattern": ["eagle3_layer"], "repeat": layers},
+            "context_stack": {"pattern": ["eagle3_context"], "repeat": 1},
+            "head": [traffic("eagle3_final_norm", 2 * hidden * act, tp="replicated"),
+                     {**with_tp(gemm("eagle3_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"}],
+            "aux_hidden_state_layers": aux,
+        },
+    }
+    return kinds, {"pattern": ["eagle3_layer"], "repeat": layers}, extras
+
+
 HANDLERS = {
     "LlamaForCausalLM": handler_dense,
+    "LlamaForCausalLMEagle3": handler_llama_eagle3,
     "MistralForCausalLM": handler_dense,
     "Qwen2ForCausalLM": handler_dense,
     "Qwen3ForCausalLM": handler_dense,

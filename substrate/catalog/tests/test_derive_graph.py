@@ -6085,3 +6085,94 @@ def test_every_attention_and_grouped_gemm_states_its_typed_role():
             else:
                 assert "shared" not in n, (path, n)
     assert all(seen.values()), seen
+
+
+# --- EAGLE3 drafter (Inferact/MiniMax-M3-EAGLE3) ----------------------------------------
+
+# The shapes of Inferact/MiniMax-M3-EAGLE3 at 44cafa5ace41 (config.json, and the tensor shapes
+# of its safetensors header: q/k/v_proj 8192 x 12288, fc 6144 x 18432, embed_tokens and
+# lm_head 200064 x 6144). The file is not committed (its licence is not on the allow-list);
+# a test states the keys the handler reads.
+EAGLE3_CFG = {
+    "architectures": ["LlamaForCausalLMEagle3"], "model_type": "llama", "torch_dtype": "bfloat16",
+    "hidden_size": 6144, "intermediate_size": 18432, "num_hidden_layers": 1,
+    "num_attention_heads": 64, "num_key_value_heads": 64, "head_dim": 128,
+    "vocab_size": 200064, "draft_vocab_size": 200064, "fc_norm": True, "norm_output": True,
+    "tie_word_embeddings": False, "attention_bias": False, "sliding_window": None,
+}
+
+
+def test_eagle3_drafter_weights_equal_the_checkpoints_tensor_total(tmp_path):
+    """The graph's resident bytes (bf16) equal the 3,263,735,808 parameters the checkpoint's
+    safetensors metadata states: every tensor of the drafter is a node, none is missing and
+    none is counted twice."""
+    g = _derive_raw(EAGLE3_CFG, tmp_path, "minimax-m3-eagle3")
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    params = 0
+    for n in kinds["eagle3_layer"]["nodes"] + kinds["eagle3_context"]["nodes"] + g["head"]:
+        if n["op"] == "GEMM":
+            params += n["n"] * n["k"]
+    params += g["embedding"][0]["rows"] * g["embedding"][0]["row_bytes"] // 2
+    # RMSNorm vectors: input_layernorm, hidden_norm, post_attention_layernorm, norm, and one
+    # fc_norm per captured state (3).
+    params += 7 * 6144
+    assert params == 3_263_735_808
+
+
+def test_eagle3_layer_reads_the_embedding_and_the_state_side_by_side(tmp_path):
+    g = _derive_raw(EAGLE3_CFG, tmp_path, "minimax-m3-eagle3")
+    layer = {k["id"]: k for k in g["layer_kinds"]}["eagle3_layer"]
+    qkv = _node(layer, "qkv_proj")
+    assert (qkv["n"], qkv["k"]) == ((64 + 2 * 64) * 128, 2 * 6144)
+    sp = g["speculator"]
+    assert (sp["method"], sp["aux_hidden_state_layers"]) == ("eagle3", [2, 30, 57])
+    fc = _node({"id": "c", "nodes": [n for k in g["layer_kinds"] if k["id"] == "eagle3_context"
+                                     for n in k["nodes"]]}, "eagle3_fc")
+    assert (fc["n"], fc["k"], fc["tp"]) == (6144, 3 * 6144, "replicated")
+
+
+def test_eagle3_default_capture_layers_follow_the_targets_depth():
+    """The engine asks the target for (2, n // 2, n - 3), and the target is MiniMax-M3-MXFP8,
+    whose committed configuration has 60 layers: the depth recorded for the drafter must be
+    that one."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    t = derive_graph.EAGLE3_TARGETS["minimax-m3-eagle3"]
+    target = text_config(config_of(MODELS / t["target"]))
+    assert t["layers"] == target["num_hidden_layers"] == 60
+    assert derive_graph.eagle3_default_aux_layers(60) == [2, 30, 57]
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"draft_vocab_size": 32000}, "draft_vocab_size differs"),
+    ({"num_hidden_layers": 2}, "draft layers"),
+    ({"attention_bias": True}, "attention_bias"),
+    ({"norm_before_fc": True}, "norm_before_fc"),
+    ({"sliding_window": 4096}, "sliding-window"),
+    ({"eagle_config": {"use_aux_hidden_state": False}}, "use_aux_hidden_state"),
+])
+def test_eagle3_refuses_what_it_does_not_price(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw({**EAGLE3_CFG, **edit}, tmp_path, "minimax-m3-eagle3")
+
+
+def test_eagle3_with_no_capture_layers_and_no_recorded_target_is_refused(tmp_path):
+    """The default depends on the target's depth, which the drafter's configuration does not
+    state; a drafter with no recorded target is refused, not given a guessed default."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match="EAGLE3_TARGETS"):
+        _derive_raw(EAGLE3_CFG, tmp_path, "some-other-eagle3")
+
+
+def test_eagle3_fc_norm_is_priced_only_when_the_config_turns_it_on(tmp_path):
+    """One RMSNorm per captured state before fc (combine_hidden_states), read and written."""
+    ctx = lambda g: [n["role"] for k in g["layer_kinds"] if k["id"] == "eagle3_context" for n in k["nodes"]]
+    on = _derive_raw(EAGLE3_CFG, tmp_path, "minimax-m3-eagle3")
+    assert ctx(on) == ["eagle3_fc_norm", "eagle3_fc"]
+    norm = [n for k in on["layer_kinds"] if k["id"] == "eagle3_context" for n in k["nodes"]][0]
+    assert norm["bytes_per_token"] == 2 * 3 * 6144 * 2
+    off = _derive_raw({**EAGLE3_CFG, "fc_norm": False}, tmp_path, "minimax-m3-eagle3")
+    assert ctx(off) == ["eagle3_fc"]
