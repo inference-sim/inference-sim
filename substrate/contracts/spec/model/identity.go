@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -50,7 +51,20 @@ type Identity struct {
 	// allow-list: such a model commits only this hash and the source revision, and the
 	// deriver fetches the file in a nightly job that holds the access token (X12).
 	Config *ConfigPin `yaml:"config,omitempty"`
+	// Drafters lists what can draft tokens for this target (design D8): the word
+	// "speculator" for the in-graph speculator its graph.yaml states (its MTP layers, say), and
+	// the catalog name of each separate drafter checkpoint. The catalog check requires every
+	// graph with a speculator to list it, and every named drafter to name this model as its
+	// Target.
+	Drafters []string `yaml:"drafters,omitempty"`
+	// Target is set on a separate drafter's entry: the catalog name of the model it drafts
+	// for. That model lists this entry in its Drafters. A drafter drafts for one target.
+	Target string `yaml:"target,omitempty"`
 }
+
+// InGraphSpeculator is the word a target's Drafters list uses for the speculator its own
+// graph states.
+const InGraphSpeculator = "speculator"
 
 // Licence records a model's licence and where it was read.
 type Licence struct {
@@ -113,6 +127,25 @@ func (id *Identity) validateStructure(p *validate.Problems) {
 	p.Merge("source", id.Source.Validate())
 	if id.Config != nil && !validate.IsSHA256(id.Config.SHA256) {
 		p.Field("config.sha256", "%q is not a lowercase hex SHA-256", id.Config.SHA256)
+	}
+	seen := map[string]bool{}
+	for i, d := range id.Drafters {
+		at := fmt.Sprintf("drafters[%d]", i)
+		switch {
+		case d == "":
+			p.Field(at, "is empty: name %q or a catalog model", InGraphSpeculator)
+		case d == id.Name:
+			p.Field(at, "%q is this model; a model does not draft for itself", d)
+		case seen[d]:
+			p.Field(at, "%q is listed twice", d)
+		}
+		seen[d] = true
+	}
+	switch {
+	case id.Target != "" && id.Target == id.Name:
+		p.Field("target", "%q is this model; a drafter's target is another model", id.Target)
+	case id.Target != "" && len(id.Drafters) > 0:
+		p.Field("drafters", "a separate drafter names its target and lists no drafters of its own")
 	}
 }
 

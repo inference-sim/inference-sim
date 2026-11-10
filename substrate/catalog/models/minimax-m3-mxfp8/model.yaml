@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-minimax-community
   evidence: https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8/raw/c5454eb03678d8710e54a4e0fc681b9f3b4a3dba/README.md
+drafters: [speculator]

@@ -7,3 +7,4 @@ source:
 licence:
   id: MIT
   evidence: https://huggingface.co/deepseek-ai/DeepSeek-V4-Pro/raw/b5968e9190ef611bbf34a7229255be88a0e937c1/README.md
+drafters: [speculator]

@@ -280,9 +280,10 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
   - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
   - `new`, pull_request: Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
-- **D8** (new; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
+- **D8** (partial; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
   - `new`, pull_request: A validator rule refusing such families in the registry without a workload key
-  - `new`, pull_request: A test per borrowing step, for a tie, for each bound of K with and without stated per-position rates, for an ambiguous key, for the exact-only option and for the refusal
+  - `ci`, pull_request: A test per borrowing step, for a tie, for each bound of K with and without stated per-position rates, for an ambiguous key, for the exact-only option and for the refusal (`contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed`)
+  - `ci`, pull_request: The catalog's drafter link holds in both directions: a target lists its drafters, each separate drafter names its target, and a graph with a speculator is listed as having one (`validate/dataset: TestCheckDraftersHoldsInBothDirections`)
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.

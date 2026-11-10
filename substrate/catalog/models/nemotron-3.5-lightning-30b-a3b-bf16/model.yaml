@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-openmdw-1.1
   evidence: https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16/raw/a9904d24bcc1d289a1950fa9d2b978c47cf903b9/README.md
+drafters: [speculator]

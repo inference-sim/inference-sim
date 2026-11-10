@@ -7,3 +7,4 @@ source:
 licence:
   id: LicenseRef-muse-spark-open
   evidence: https://huggingface.co/Inferact/Muse-Spark-Open-DSpark/raw/ffc3eb50c8ae7a5a391ddedc43085d2e5249bc35/README.md
+target: muse-spark-open-816b-a42b-nvfp4

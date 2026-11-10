@@ -267,12 +267,23 @@
       A test per borrowing step, for a tie, for each bound of K with and without stated per-position
       rates, for an ambiguous key, for the exact-only option and for the refusal
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed'
+    known_bad: 'contracts/spec/acceptance: TestExactOnlyAndRefusal'
+  - repo: blis-substrate
+    check: >-
+      The catalog's drafter link holds in both directions: a target lists its drafters, each separate
+      drafter names its target, and a graph with a speculator is listed as having one
+    runs: pull_request
+    status: ci
+    test: 'validate/dataset: TestCheckDraftersHoldsInBothDirections'
+    known_bad: 'validate/dataset: TestCheckDraftersHoldsInBothDirections'
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2
   note: >-
-    profiles state no drafter, and the lookup matches the exact key, substituting only a requested
-    fallback category; a run with no match is refused unless a value is stated
+    the lookup borrows in the order of D8 and the Result records the step; the validator rule that
+    refuses a workload-dependent family in the coefficient registry without a workload key is not
+    built, because the design does not say what the key of expert routing balance is

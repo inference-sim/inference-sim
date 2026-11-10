@@ -9,4 +9,5 @@
 # Columns: identifier, status here, "In CI by" here, the layer that closes the difference.
 SUB-18	new	M2	5
 CFG-3	new	M2	open
-SUB-20	partial	M2	open
+SUB-20	partial	M2	blis-vllm:field-list-classification
+D8	partial	M2	open

@@ -413,6 +413,8 @@ the entry is and where its `config.json` came from.
 | `source` | mapping | yes | Where the vendor configuration was fetched from, below. |
 | `licence` | mapping | no | The licence `config.json` is published under, below (X12). The loader decodes it and does not require it; `validate-catalog` requires it in the project's own catalog. |
 | `config` | mapping | no | The SHA-256 of a `config.json` that is not committed, below (X12). |
+| `drafters` | list of strings | no | What can draft tokens for this model (D8): `speculator` for the speculator its own graph states, and the catalog name of each separate drafter checkpoint. `validate-catalog` requires a graph with a speculator to list `speculator`, and each named drafter to name this model as its `target`. |
+| `target` | string | no | On a separate drafter's entry: the catalog name of the model it drafts for. That model lists this entry in its `drafters`. |
 
 ### `source`
 

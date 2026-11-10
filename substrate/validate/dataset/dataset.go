@@ -274,6 +274,7 @@ func CheckCatalog(files map[string][]byte) (*Catalog, []Problem) {
 			out = append(out, Problem{"models/" + name + "/", "has a model.yaml but no graph.yaml"})
 		}
 	}
+	out = append(out, checkDrafters(c)...)
 	seen := map[string]bool{}
 	for _, d := range c.Devices {
 		if seen[d.Name] {
@@ -322,6 +323,62 @@ func CheckRegistry(files map[string][]byte) (*Registry, []Problem) {
 func failed(ps []Problem, file string) bool {
 	for _, p := range ps {
 		if p.File == file {
+			return true
+		}
+	}
+	return false
+}
+
+// checkDrafters is the catalog's drafter link, checked in both directions (design D8). A
+// model lists the drafters it can run with: "speculator" for the one its own graph states, and
+// each separate drafter checkpoint by its catalog name. A separate drafter names its target.
+// So a drafter a target lists must exist and name that target, a target a drafter names must
+// exist and list it, and a graph that states a speculator is listed as having one.
+func checkDrafters(c *Catalog) []Problem {
+	var out []Problem
+	file := func(name string) string { return "models/" + name + "/model.yaml" }
+	for _, name := range sortedKeys(c.Identities) {
+		id := c.Identities[name]
+		g := c.Models[name]
+		listsSpeculator := false
+		for _, d := range id.Drafters {
+			if d == model.InGraphSpeculator {
+				listsSpeculator = true
+				continue
+			}
+			other := c.Identities[d]
+			switch {
+			case other == nil:
+				out = append(out, Problem{file(name), fmt.Sprintf("lists drafter %q, which is not a catalog model", d)})
+			case other.Target != name:
+				out = append(out, Problem{file(name), fmt.Sprintf("lists drafter %q, whose model.yaml names target %q", d, other.Target)})
+			}
+		}
+		if t := id.Target; t != "" {
+			switch target := c.Identities[t]; {
+			case target == nil:
+				out = append(out, Problem{file(name), fmt.Sprintf("names target %q, which is not a catalog model", t)})
+			case !contains(target.Drafters, name):
+				out = append(out, Problem{file(name), fmt.Sprintf("names target %q, whose model.yaml does not list %q as a drafter", t, name)})
+			}
+		}
+		// A separate drafter's own graph states the draft module; only a target is held to
+		// listing its speculator.
+		if id.Target == "" && g != nil {
+			switch {
+			case g.Speculator != nil && !listsSpeculator:
+				out = append(out, Problem{file(name), fmt.Sprintf("its graph states a speculator, so drafters must list %q", model.InGraphSpeculator)})
+			case g.Speculator == nil && listsSpeculator:
+				out = append(out, Problem{file(name), fmt.Sprintf("lists %q, but its graph states no speculator", model.InGraphSpeculator)})
+			}
+		}
+	}
+	return out
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
 			return true
 		}
 	}

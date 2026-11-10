@@ -57,6 +57,8 @@ blis-substrate:
   "kernel: TestTrustIsTheLeastTrustedEffectiveRank": [cost model]
   "validate/dataset: TestCheckOrdered": [contracts and validators]
   "nightly.yml job method-error: ledger method-error": ["method error, one chip left out (VAL-5)"]
+  "contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed": [contracts and validators]
+  "validate/dataset: TestCheckDraftersHoldsInBothDirections": [contracts and validators]
   "ci.yml job required": [required]
 blis-vllm:
   "oracle/check_mocks.py": [oracle-tier2]

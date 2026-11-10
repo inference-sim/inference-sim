@@ -106,3 +106,35 @@ func TestIdentityValidateLeavesTheLicenceToCI(t *testing.T) {
 		t.Error("an invalid licence passed the licence check")
 	}
 }
+
+// A drafter list and a target are checked for what a file can know about itself: no empty or
+// repeated name, no model that drafts for itself, and a separate drafter lists none of its own.
+// The links between files are the catalog check's (validate/dataset).
+func TestIdentityValidateChecksDrafterNames(t *testing.T) {
+	base := func() *Identity {
+		return &Identity{Name: "m", Source: &Source{Provider: "huggingface", Repo: "o/m", Revision: "r"}}
+	}
+	good := base()
+	good.Drafters = []string{InGraphSpeculator, "m-eagle3"}
+	if p := good.Validate(); !p.OK() {
+		t.Fatalf("a target listing its speculator and a drafter was refused:\n%s", p.Error())
+	}
+	drafter := base()
+	drafter.Name, drafter.Target = "m-eagle3", "m"
+	if p := drafter.Validate(); !p.OK() {
+		t.Fatalf("a drafter naming its target was refused:\n%s", p.Error())
+	}
+	for name, mut := range map[string]func(*Identity){
+		"an empty drafter":          func(i *Identity) { i.Drafters = []string{""} },
+		"a model drafting itself":   func(i *Identity) { i.Drafters = []string{"m"} },
+		"a drafter listed twice":    func(i *Identity) { i.Drafters = []string{"a", "a"} },
+		"a model as its own target": func(i *Identity) { i.Target = "m" },
+		"a drafter with drafters":   func(i *Identity) { i.Target, i.Drafters = "t", []string{"a"} },
+	} {
+		id := base()
+		mut(id)
+		if p := id.Validate(); p.OK() {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}

@@ -125,3 +125,60 @@ func TestCheckFitsReadsAProfilesDrafterAndArchitecture(t *testing.T) {
 		t.Errorf("a profile with no architecture was reported: %v", got)
 	}
 }
+
+// The catalog's drafter link holds in both directions (design D8): a target lists its drafters,
+// each separate drafter names its target, and a graph that states a speculator is listed as
+// having one. Each case below is a known-bad catalog.
+func TestCheckDraftersHoldsInBothDirections(t *testing.T) {
+	cat := func(mut func(map[string]*model.Identity, map[string]*model.Graph)) *Catalog {
+		ids := map[string]*model.Identity{
+			"target":  {Name: "target", Drafters: []string{model.InGraphSpeculator, "drafter"}},
+			"drafter": {Name: "drafter", Target: "target"},
+			"plain":   {Name: "plain"},
+		}
+		graphs := map[string]*model.Graph{
+			"target": {Speculator: &model.Speculator{}}, "drafter": {Speculator: &model.Speculator{}}, "plain": {},
+		}
+		mut(ids, graphs)
+		return &Catalog{Identities: ids, Models: graphs}
+	}
+	if got := checkDrafters(cat(func(map[string]*model.Identity, map[string]*model.Graph) {})); len(got) != 0 {
+		t.Fatalf("a consistent catalog was reported: %v", got)
+	}
+	for name, c := range map[string]struct {
+		mut  func(map[string]*model.Identity, map[string]*model.Graph)
+		want string
+	}{
+		"a listed drafter that is no model": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["target"].Drafters = []string{model.InGraphSpeculator, "ghost"}
+		}, `lists drafter "ghost", which is not a catalog model`},
+		"a listed drafter that names another target": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["drafter"].Target = "plain"
+		}, `lists drafter "drafter", whose model.yaml names target "plain"`},
+		"a drafter whose target does not list it": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["target"].Drafters = []string{model.InGraphSpeculator}
+		}, `does not list "drafter" as a drafter`},
+		"a drafter whose target is no model": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["drafter"].Target = "ghost"
+		}, `names target "ghost", which is not a catalog model`},
+		"a speculator the target does not list": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["target"].Drafters = []string{"drafter"}
+		}, `its graph states a speculator, so drafters must list "speculator"`},
+		"a listed speculator the graph lacks": {func(_ map[string]*model.Identity, g map[string]*model.Graph) {
+			g["target"].Speculator = nil
+		}, `lists "speculator", but its graph states no speculator`},
+	} {
+		got := checkDrafters(cat(c.mut))
+		if len(got) == 0 {
+			t.Errorf("%s: nothing reported", name)
+			continue
+		}
+		found := false
+		for _, p := range got {
+			found = found || strings.Contains(p.Message, c.want)
+		}
+		if !found {
+			t.Errorf("%s: %v, want a problem containing %q", name, got, c.want)
+		}
+	}
+}
