@@ -381,6 +381,10 @@ func TestFactoryAccepts(t *testing.T) {
 		// vLLM upper-cases the mode before it parses it (vllm/config/compilation.py:873-879@5df63a72).
 		{"adaptive verification with a lowercase full mode", "use_v2_model_runner: true\ncudagraph_mode: full_decode_only\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
+		// The factory sees one engine block and not the pool's parallel block, so EPLB beside
+		// expert parallelism is a shape the block can have; eplb-needs-expert-parallelism is the
+		// whole-document validator's (rules/v0_32 TestEPLBNeedsExpertParallelism).
+		{"EPLB stated in the block alone", "eplb: {enable_eplb: true}\n"},
 		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
 		{"adaptive verification stated off, on the V1 runner", "speculative: {method: eagle3, num_spec_tokens: 3, " +

@@ -799,16 +799,27 @@ func fullCUDAGraphs(mode string) bool {
 // The block is one pool's engine, and it is all the engine is given: the model graph, the cluster
 // and the pool's parallel widths other than pipeline_parallel_size are not in it. So a refusal
 // stands only where the block decides it whatever those widths are: the pack runs once for each
-// parallel shape in blockShapes, and only an error every run reports refuses. A clause that
+// parallel shape in blockShapes (tensor and data widths at 1 and at 2, with and without expert
+// parallelism), and only an error every run reports refuses. A clause that
 // turns on a width the block does not state, such as engram-config-valid's "dp_shared_memory
 // requires dp above 1" (vllm/config/engram.py@5df63a72), is left to the caller that validates
 // the whole document set, as is every rule that needs the model graph, which checks nothing
 // without one. Warnings are not refusals. pp is the pool's pipeline_parallel_size.
 func checkRules(e engineconfig.Engine, pp int) error { return checkRulesWith(v0_32.Pack(), e, pp) }
 
-// blockShapes are the tensor and data parallel widths checkRules runs the pack under: each at 1
-// and at 2, so that a clause turning on either width, whichever way, is silent in one of them.
-var blockShapes = []struct{ tp, dp int }{{1, 1}, {1, 2}, {2, 1}, {2, 2}}
+// blockShapes are the parallel shapes checkRules runs the pack under: the tensor and data widths
+// each at 1 and at 2, so that a clause turning on either width, whichever way, is silent in one of
+// them.
+var blockShapes = []struct {
+	tp, dp         int
+	expertParallel bool
+}{
+	{1, 1, false}, {1, 2, false}, {2, 1, false}, {2, 2, false},
+	// Expert parallelism is a fact of the pool's parallel block too, and a rule that turns on it
+	// (eplb-needs-expert-parallelism) must be silent in a shape that has it, so the shapes with
+	// it are run beside the shapes without.
+	{1, 1, true}, {1, 2, true}, {2, 1, true}, {2, 2, true},
+}
 
 // checkRulesWith is checkRules for a given rules pack.
 func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error {
@@ -820,9 +831,10 @@ func checkRulesWith(pack rules.EngineRules, e engineconfig.Engine, pp int) error
 	in := map[string]map[int]bool{} // an error's key: the shapes that reported it
 	for i, shape := range blockShapes {
 		doc := rules.Input{Deployment: &deployment.Deployment{Pools: []deployment.Pool{{
-			Role:     deployment.RoleColocated,
-			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp},
-			Engine:   block,
+			Role: deployment.RoleColocated,
+			Parallel: deployment.Parallelism{TP: shape.tp, PP: max(pp, 1), DP: shape.dp,
+				EnableExpertParallel: shape.expertParallel},
+			Engine: block,
 		}}}}
 		for _, p := range pack.Check(doc).Errors() {
 			key := p.Rule + "\x00" + p.Message
