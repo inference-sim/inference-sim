@@ -574,7 +574,7 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "857d50b7d2fb0338ff0e5167c38bc6bd18021c89",
+  "blis_vllm_commit": "836b073e7e10308766edfff6e973ca2aa18d4ec0",
   "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
   "mock_version": "gpu-mock/4+420a44386aa4",
   "mocks": [
@@ -611,7 +611,7 @@
   "platform": "darwin-arm64",
   "python": "3.12.13",
   "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-  "scenario_sha256": "dc9d7f8d42321d573d8e37fe3a976efb2e1e659b4d6c5693f458a846820920d1",
+  "scenario_sha256": "f4c4d1457487a22bef20c91d12feab4868444d8b0ff0e3cfce0076099fccf134",
   "seed": null,
   "tier": 5,
   "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
