@@ -1,6 +1,6 @@
 {
- "name": "nixl-both-async-kv-delivery",
- "description": "nixl-p-async-kv-delivery with kv_role kv_both: the engine is also a consumer, so beside concurrent batches it defers block frees and a tight pool preempts differently from a pure producer's (vllm/v1/core/sched/scheduler.py:184-194, vllm/config/kv_transfer.py:129-135). The producer half (dropping a preempted request's in-flight output) acts in this trace too, but no trace built here separates it from the consumer half.",
+ "name": "nixl-both-async-tight-pool",
+ "description": "The workload of nixl-p-async-kv-delivery with kv_role kv_both, under async scheduling with a tight pool. A kv_both engine is also a consumer, so beside concurrent batches it defers block frees (vllm/v1/core/sched/scheduler.py:184-194@5df63a72; vllm/config/kv_transfer.py:129-135@5df63a72), and the pool preempts differently from a pure producer's. The trace equals a kv_consumer's on the same workload; no trace built here separates the producer half of kv_both (dropping a preempted request's in-flight output) from the consumer half.",
  "config": {
   "max_num_seqs": 4,
   "max_num_batched_tokens": 16,
