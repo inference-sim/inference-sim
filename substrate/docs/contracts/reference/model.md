@@ -416,6 +416,13 @@ the entry is and where its `config.json` came from.
 | `drafters` | list of strings | no | What can draft tokens for this model (D8): `speculator` for the speculator its own graph states, and the catalog name of each separate drafter checkpoint. `validate-catalog` requires a graph with a speculator to list `speculator`, and each named drafter to name this model as its `target`. |
 | `target` | string | no | On a separate drafter's entry: the catalog name of the model it drafts for. That model lists this entry in its `drafters`. |
 
+Adding a model includes the drafters it ships with and those that public benchmark deployments run
+with it (design §12.1): a separate drafter checkpoint gets its own entry, derived from its public
+`config.json` at a pinned revision, and is listed here. A drafter whose configuration does not
+name the target layers it reads is priced with the capture layers the engine takes from the
+target's own default, which the deriver records per drafter with the target whose depth it is.
+A model run with a drafter the catalog lacks is refused for that drafter, not priced without it.
+
 ### `source`
 
 <!-- fields: model.Source -->
