@@ -948,9 +948,14 @@ func TestCapabilityMatrix_Workloads(t *testing.T) {
 		t.Parallel()
 		a := capSpec(t, 4, 20, capClient("chat", "critical", 1, 500, 64, ""))
 		b := capSpec(t, 2, 10, capClient("batch", "batch", 1, 3000, 32, ""))
-		merged := capFile(t, "merged.yaml", capRawCLI(t, "compose", "--from", a, "--from", b))
-		// compose drops num_requests (#1906), so the horizon bounds the run.
-		args := with(colocated(1)[:len(colocated(1))-2], "--horizon", "10000000")
+		composed := capRawCLI(t, "compose", "--from", a, "--from", b)
+		// Composing keeps what the inputs bound: num_requests is the sum (20 + 10), so the merged
+		// spec runs on its own, without a horizon to bound it.
+		if !strings.Contains(composed, "num_requests: 30") {
+			t.Fatalf("the composed spec lost the inputs' num_requests:\n%s", composed)
+		}
+		merged := capFile(t, "merged.yaml", composed)
+		args := colocated(1)[:len(colocated(1))-2] // without --horizon: num_requests bounds the run
 		o, rows := capRunRows(t, runArgs(args, "--workload-spec", merged)...)
 		o.conserves(t, int(o.num("injected_requests")))
 		_, n := meanTTFTBy(rows, bySLOClass)
