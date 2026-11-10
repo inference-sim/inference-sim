@@ -316,6 +316,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"adaptive verification on the V1 runner", Version, "speculative: {method: eagle3, num_spec_tokens: 3, enable_adaptive_verification: true}\nuse_v2_model_runner: false\n", "adaptive draft verification runs only on the V2 model runner"},
 		{"adaptive verification with LoRA", Version, "use_v2_model_runner: true\nmax_loras: 2\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "not currently compatible with LoRA"},
 		{"adaptive verification without full CUDA graphs", Version, "use_v2_model_runner: true\ncudagraph_mode: PIECEWISE\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "requires full CUDA graphs"},
+		{"adaptive verification with a lowercase piecewise mode", Version, "use_v2_model_runner: true\ncudagraph_mode: piecewise\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "requires full CUDA graphs"},
 		{"adaptive verification with PP", Version, "use_v2_model_runner: true\npipeline_parallel_size: 2\nspeculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n", "pipeline parallelism"},
 		// What rules/v0_32 refuses in an engine block (#2021 B11 step 2).
 		{"a cache dtype v0.32.0 does not accept", Version, "cache_dtype: fp9\n", "enum-values-known"},
@@ -376,6 +377,9 @@ func TestFactoryAccepts(t *testing.T) {
 		{"dspark on V2 by its env key", "use_v2_model_runner: null\nenv: {VLLM_USE_V2_MODEL_RUNNER: \"1\"}\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3}\n"},
 		{"adaptive verification on V2 with full graphs", "use_v2_model_runner: true\ncudagraph_mode: FULL_DECODE_ONLY\n" +
+			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
+		// vLLM upper-cases the mode before it parses it (vllm/config/compilation.py:873-879@5df63a72).
+		{"adaptive verification with a lowercase full mode", "use_v2_model_runner: true\ncudagraph_mode: full_decode_only\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},
 		{"adaptive verification at vLLM's default graph mode", "use_v2_model_runner: true\n" +
 			"speculative: {method: dspark, num_spec_tokens: 3, enable_adaptive_verification: true}\n"},

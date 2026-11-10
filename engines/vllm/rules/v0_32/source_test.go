@@ -553,6 +553,32 @@ func TestRefusalMessagesMatchSource(t *testing.T) {
 			t.Errorf("moe-ep-backend-binds-passthrough: the engine no longer contains %q", want)
 		}
 	}
+	// flashinfer-mega-deep-gemm-model, eplb-needs-expert-parallelism and the cudagraph_mode case.
+	for _, want := range []string{
+		"def validate_flashinfer_moe_ep_model(",
+		"if moe_backend != FLASHINFER_MOE_EP_DEEP_GEMM:",
+		"is only supported for DeepSeek-V4 ",
+		`"DeepseekV4ForCausalLM",`, `"DeepSeekV4MTPModel",`, `"DeepseekV41ForCausalLM",`,
+		"validate_flashinfer_moe_ep_model(\n                self.moe_backend, vllm_config.model_config.architectures",
+	} {
+		if !strings.Contains(kernelCfg, want) {
+			t.Errorf("flashinfer-mega-deep-gemm-model: the engine no longer contains %q", want)
+		}
+	}
+	for _, want := range []string{
+		`raise ValueError("enable_expert_parallel must be True to use EPLB.")`,
+		"EPLB requires tensor, prefill-context, or data parallelism, ",
+		"self.tensor_parallel_size\n                * self.prefill_context_parallel_size\n                * self.data_parallel_size\n                <= 1",
+		"if self.eplb_config.num_redundant_experts != 0:",
+	} {
+		if !strings.Contains(parallel, want) {
+			t.Errorf("eplb-needs-expert-parallelism: the engine no longer contains %q", want)
+		}
+	}
+	compilation := readSource(t, root, "vllm", "config", "compilation.py")
+	if !strings.Contains(compilation, "return CUDAGraphMode[value.upper()]") {
+		t.Error("enum-values-known: the engine no longer upper-cases cudagraph_mode before parsing it")
+	}
 	if strings.Contains(parallel, "PCP does not support data parallelism yet") {
 		t.Error("the engine refuses PCP with DP again; this pack has no rule for it")
 	}

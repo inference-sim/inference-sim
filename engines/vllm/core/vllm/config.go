@@ -785,7 +785,9 @@ func checkAdaptiveVerification(e engineconfig.Engine, pp int, v2 bool) error {
 // and FULL_AND_PIECEWISE capture full graphs (vllm/config/compilation.py:59-91@5df63a72). An
 // unstated mode is vLLM's default, FULL_AND_PIECEWISE (vllm/config/vllm.py:303@5df63a72).
 func fullCUDAGraphs(mode string) bool {
-	switch mode {
+	// CompilationConfig upper-cases a string before it parses the mode
+	// (vllm/config/compilation.py:873-879@5df63a72).
+	switch strings.ToUpper(mode) {
 	case "", "FULL", "FULL_DECODE_ONLY", "FULL_AND_PIECEWISE":
 		return true
 	}

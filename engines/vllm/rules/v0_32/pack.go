@@ -284,7 +284,7 @@ func Pack() *pack.Pack {
 		TritonFetchSMs:       12,
 
 		// CascadeAttnOptIn stays false: v0.32.0 removed cascade attention. disable_cascade_attn is
-		// a deprecated no-op (vllm/config/model.py:312-314) and the runner hard-sets it off
+		// a deprecated no-op (vllm/config/model.py:312-314@5df63a72) and the runner hard-sets it off
 		// (vllm/v1/worker/gpu_model_runner.py:531-533).
 
 		// all2all_backend: All2AllBackend = "allgather_reducescatter" (vllm/config/parallel.py),
@@ -366,7 +366,9 @@ func ruleList(p *pack.Pack) []rules.Rule {
 							"%s.engine.%s: %q is not accepted by engine %s",
 							at, field, value, p.Version)
 					}
-					check("cudagraph_mode", e.CUDAGraphMode, p.CUDAGraphModes)
+					// CompilationConfig upper-cases a string before it parses the mode
+					// (vllm/config/compilation.py:873-879@5df63a72), so "full" is FULL.
+					check("cudagraph_mode", strings.ToUpper(e.CUDAGraphMode), p.CUDAGraphModes)
 					check("cache_dtype", e.CacheDType, p.CacheDTypes)
 					check("mamba_cache_dtype", e.MambaCacheDType, p.MambaDTypes)
 					check("mamba_ssm_cache_dtype", e.MambaSSMCacheDType, p.MambaDTypes)
@@ -972,7 +974,7 @@ func ruleList(p *pack.Pack) []rules.Rule {
 					moe := pack.NormalizeMoEBackend(e.MoEBackend)
 					selfCommunicating := moe == "flashinfer_moe_ep_cutedsl" || moe == "flashinfer_moe_ep_mega_deep_gemm"
 					// The binding reads the backend after ParallelConfig has renamed the removed
-					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py:532-538),
+					// pplx and naive to allgather_reducescatter (vllm/config/parallel.py:533-538@5df63a72),
 					// so those start beside an EP megakernel, as the default does.
 					a2a := p.EffectiveAll2AllBackend(e.All2AllBackend)
 					switch {
@@ -984,6 +986,58 @@ func ruleList(p *pack.Pack) []rules.Rule {
 						out.RuleErrorf("moe-ep-backend-binds-passthrough",
 							"%s.engine: all2all_backend passthrough is valid on engine %s only beside a MoE backend that dispatches and combines itself (flashinfer_moe_ep_cutedsl, flashinfer_moe_ep_mega_deep_gemm), not moe_backend %q",
 							at, p.Version, moe)
+					}
+				})
+			},
+		},
+		{
+			Name:    "flashinfer-mega-deep-gemm-model",
+			Because: "this release refuses moe_backend flashinfer_moe_ep_mega_deep_gemm at startup for a model that is not DeepSeek-V4 or DeepSeek-V4.1 (validate_flashinfer_moe_ep_model, vllm/config/kernel.py:230-241@5df63a72, called from set_platform_defaults, :443-446), so such a pool does not run; a graph that names no architecture draws a warning, since the refusal turns on the architecture",
+			Check: func(in rules.Input, out *rules.Problems) {
+				if in.Model == nil {
+					return
+				}
+				arch := in.Model.Global.Architecture
+				// FLASHINFER_MOE_EP_ARCHITECTURES (kernel.py:182-188@5df63a72).
+				if arch == "DeepseekV4ForCausalLM" || arch == "DeepSeekV4MTPModel" || arch == rules.ArchDeepseekV41 {
+					return
+				}
+				forEachEngine(in, func(at string, e engineconfig.Engine) {
+					if pack.NormalizeMoEBackend(e.MoEBackend) != "flashinfer_moe_ep_mega_deep_gemm" {
+						return
+					}
+					if arch == "" {
+						out.RuleWarnf("flashinfer-mega-deep-gemm-model",
+							"%s.engine: moe_backend flashinfer_moe_ep_mega_deep_gemm on a model that names no architecture; engine %s refuses it for any model but DeepSeek-V4 and DeepSeek-V4.1",
+							at, p.Version)
+						return
+					}
+					out.RuleErrorf("flashinfer-mega-deep-gemm-model",
+						"%s.engine: moe_backend flashinfer_moe_ep_mega_deep_gemm is only supported for DeepSeek-V4 models, and the model is %s; engine %s refuses it at startup",
+						at, arch, p.Version)
+				})
+			},
+		},
+		{
+			Name:    "eplb-needs-expert-parallelism",
+			Because: "this release refuses expert-parallel load balancing at startup without enable_expert_parallel, and with tensor, prefill-context and data parallelism all 1, because the expert-parallel group spans their product (vllm/config/parallel.py:559-581@5df63a72), so such a pool does not run; it also refuses num_redundant_experts without EPLB (:583-589)",
+			Check: func(in rules.Input, out *rules.Problems) {
+				forEachPool(in, func(at string, pool engineconfig.Pool) {
+					e, pl := pool.Engine, pool.Parallel
+					on := e.EPLB != nil && e.EPLB.Enabled
+					switch {
+					case on && !pl.EnableExpertParallel:
+						out.RuleErrorf("eplb-needs-expert-parallelism",
+							"%s.engine.eplb: enable_eplb needs enable_expert_parallel; engine %s refuses it at startup",
+							at, p.Version)
+					case on && max(pl.TP, 1)*max(pl.PCP, 1)*max(pl.DP, 1) <= 1:
+						out.RuleErrorf("eplb-needs-expert-parallelism",
+							"%s.engine.eplb: enable_eplb needs tensor, prefill-context or data parallelism above 1 (tp %d, pcp %d, dp %d); engine %s refuses it at startup",
+							at, pl.TP, pl.PCP, pl.DP, p.Version)
+					case !on && e.EPLB != nil && e.EPLB.NumRedundantExperts != 0:
+						out.RuleErrorf("eplb-needs-expert-parallelism",
+							"%s.engine.eplb: num_redundant_experts is %d but enable_eplb is off; engine %s refuses it at startup (enable EPLB or unset it)",
+							at, e.EPLB.NumRedundantExperts, p.Version)
 					}
 				})
 			},
@@ -1097,13 +1151,13 @@ func ruleList(p *pack.Pack) []rules.Rule {
 					if !stated {
 						return
 					}
-					if e.CUDAGraphMode == "NONE" {
+					if strings.EqualFold(e.CUDAGraphMode, "NONE") {
 						out.RuleWarnf("cudagraph-capture-sizes",
 							"%s.engine: cudagraph_mode NONE captures no graph, so engine %s ignores the stated capture sizes",
 							at, p.Version)
 						return
 					}
-					c, _, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{Mode: e.CUDAGraphMode,
+					c, _, err := p.CUDAGraphCaptureSizes(rules.CUDAGraphCaptureInput{Mode: strings.ToUpper(e.CUDAGraphMode),
 						MaxCaptureSize: e.MaxCUDAGraphCaptureSize, CaptureSizes: e.CUDAGraphCaptureSizes,
 						MaxNumBatchedTokens: e.MaxNumBatchedTokens})
 					switch {
