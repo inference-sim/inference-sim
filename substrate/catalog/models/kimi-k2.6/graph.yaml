@@ -40,6 +40,7 @@ layer_kinds:
     k: 512
     weight_dtype: bf16
   - op: Attention
+    holds_engine_kv: true
     kind: mla
     n_q: 64
     n_kv: 1
@@ -118,6 +119,7 @@ layer_kinds:
     k: 512
     weight_dtype: bf16
   - op: Attention
+    holds_engine_kv: true
     kind: mla
     n_q: 64
     n_kv: 1
@@ -135,6 +137,7 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2048
     k: 7168

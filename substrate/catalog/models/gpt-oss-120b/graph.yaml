@@ -20,6 +20,7 @@ layer_kinds:
     n: 5120
     k: 2880
   - op: Attention
+    holds_engine_kv: true
     kind: swa
     n_q: 64
     n_kv: 8
@@ -35,6 +36,7 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2880
     k: 2880
@@ -73,6 +75,7 @@ layer_kinds:
     n: 5120
     k: 2880
   - op: Attention
+    holds_engine_kv: true
     kind: gqa
     n_q: 64
     n_kv: 8
@@ -87,6 +90,7 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2880
     k: 2880

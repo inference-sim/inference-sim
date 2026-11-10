@@ -74,7 +74,7 @@ func isDSA(g *model.Graph) bool {
 	}
 	for _, id := range g.Stack.Expand() {
 		for _, n := range byID[id].Nodes {
-			if n.Op == model.OpAttention && n.Role == "" &&
+			if n.ReadsEngineKV() &&
 				n.AttentionKind == model.AttentionSparseMLA && n.HeadDim == dsaHeadDim {
 				return true
 			}

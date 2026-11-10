@@ -624,7 +624,9 @@
       A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on
       a documentation-only string field outside tests
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts: TestNoPriceDependsOnAFreeTextLabel'
+    known_bad: 'contracts: TestRoleLintFindsItsKnownBadInputs'
   - repo: blis-vllm
     check: >-
       A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on
@@ -640,9 +642,11 @@
   - repo: blis-substrate
     check: A perturbation test (SUB-11) that changing such a label changes no price
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestChangingALabelChangesNoPriceOrIsListed'
+    known_bad: 'kernel: TestFlippingHoldsEngineKVOnAScorerMovesThePrice'
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2

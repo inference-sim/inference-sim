@@ -31,6 +31,7 @@ layer_kinds:
     n: 4096
     k: 512
   - op: Attention
+    holds_engine_kv: true
     kind: mla
     n_q: 16
     n_kv: 1
@@ -100,6 +101,7 @@ layer_kinds:
     n: 4096
     k: 512
   - op: Attention
+    holds_engine_kv: true
     kind: mla
     n_q: 16
     n_kv: 1
@@ -116,6 +118,7 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 1408
     k: 2048

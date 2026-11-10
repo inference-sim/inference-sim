@@ -37,9 +37,9 @@ func bundle() Bundle {
 			Global: model.GlobalShape{HiddenSize: 3072, VocabSize: 100352,
 				WeightDType: model.DTypeFP8},
 			LayerKinds: []model.LayerKind{{ID: "attn_moe", Nodes: []model.Node{
-				{Op: model.OpAttention, AttentionKind: model.AttentionGQA,
+				{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionGQA,
 					NumQHeads: 48, NumKVHeads: 8, HeadDim: 64},
-				{Op: model.OpGroupedGEMM, N: 1536, K: 3072, Experts: 224, TopK: 8},
+				{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 1536, K: 3072, Experts: 224, TopK: 8},
 			}}},
 			Stack: model.Stack{Pattern: []string{"attn_moe"}, Repeat: 72},
 		},

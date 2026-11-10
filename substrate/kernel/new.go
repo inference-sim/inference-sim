@@ -773,34 +773,8 @@ func weightFormat(g *model.Graph, n model.Node, served model.DType) price.Format
 }
 
 // aliasTarget resolves "<layer kind id>.<role>", "head.<role>" or "embedding.<role>" to the
-// node it names, splitting at the last dot as blis-schemas does (a layer-kind id may hold
-// dots; a role may not).
-func aliasTarget(g *model.Graph, ref string) (model.Node, bool) {
-	i := strings.LastIndex(ref, ".")
-	if i < 0 {
-		return model.Node{}, false
-	}
-	scope, r := ref[:i], ref[i+1:]
-	var nodes []model.Node
-	switch scope {
-	case "head":
-		nodes = g.Head
-	case "embedding":
-		nodes = g.Embedding
-	default:
-		for _, lk := range g.LayerKinds {
-			if lk.ID == scope {
-				nodes = lk.Nodes
-			}
-		}
-	}
-	for _, n := range nodes {
-		if n.Role == r {
-			return n, true
-		}
-	}
-	return model.Node{}, false
-}
+// node it names, with the resolver validation uses.
+func aliasTarget(g *model.Graph, ref string) (model.Node, bool) { return g.AliasTarget(ref) }
 
 // attentionKinds is every attention kind a layer of the target stack reads the engine's
 // cache with. A speculator's layers are not the target's, and a kind declared but not
@@ -813,7 +787,7 @@ func attentionKinds(g *model.Graph) map[model.AttentionKind]bool {
 	kinds := map[model.AttentionKind]bool{}
 	for _, id := range g.Stack.Expand() {
 		for _, n := range byID[id].Nodes {
-			if n.Op == model.OpAttention && n.Role == "" {
+			if n.ReadsEngineKV() {
 				kinds[n.AttentionKind] = true
 			}
 		}
@@ -2691,7 +2665,7 @@ func (k *Kernel) engineBufferBytes(g *model.Graph) float64 {
 			ws = math.Max(ws, aligned(dsv41PrefillChunkSize*rows*float64(l.AttnHeadDim)*2)+
 				aligned(tokens*combined*4)+aligned(tokens*4))
 			for _, a := range l.Attentions {
-				if a.Role != "block_index_scores" || a.HeadDim <= 0 {
+				if a.HoldsKV || a.HeadDim <= 0 {
 					continue
 				}
 				indexed = true
@@ -2716,11 +2690,11 @@ func (k *Kernel) engineBufferBytes(g *model.Graph) float64 {
 		indexBuffers++
 	}
 	total += indexBuffers * tokens * float64(topk) * 4
-	for _, lk := range g.LayerKinds {
-		if hasRole(lk.Nodes, "candidate_block_scores") {
-			total += tokens * dsv41CandidateTopKBlocks * 4
-			break
-		}
+	// The candidate-block top-k buffer exists where some layer runs work over a buffer padded to
+	// max_model_len (context.decode_extent: max_model_len), which is what V4.1's candidate
+	// scoring and candidate mask do. The graph states that; no node's label is read.
+	if paddedToMaxModelLen(g) {
+		total += tokens * dsv41CandidateTopKBlocks * 4
 	}
 	if k.speculating {
 		total += tokens * dsv41HCMult * float64(g.Global.HiddenSize) * price.ActivationBytes
@@ -2743,7 +2717,7 @@ func (k *Kernel) dsv41RopeCacheBytes(g *model.Graph) float64 {
 	types := map[bool]int{}
 	for _, lk := range g.LayerKinds {
 		for _, n := range lk.Nodes {
-			if n.Op == model.OpAttention && n.Role == "" && n.QKRopeHeadDim > 0 {
+			if n.ReadsEngineKV() && n.QKRopeHeadDim > 0 {
 				types[n.CompressRatio > 0] = max(types[n.CompressRatio > 0], n.QKRopeHeadDim)
 			}
 		}
@@ -2755,11 +2729,14 @@ func (k *Kernel) dsv41RopeCacheBytes(g *model.Graph) float64 {
 	return total
 }
 
-// hasRole reports whether any of nodes carries the role.
-func hasRole(nodes []model.Node, role string) bool {
-	for _, n := range nodes {
-		if n.Role == role {
-			return true
+// paddedToMaxModelLen reports whether any layer kind states work launched over a buffer padded
+// to the engine's max_model_len.
+func paddedToMaxModelLen(g *model.Graph) bool {
+	for _, lk := range g.LayerKinds {
+		for _, n := range lk.Nodes {
+			if n.Context != nil && n.Context.DecodeExtent == model.ExtentMaxModelLen {
+				return true
+			}
 		}
 	}
 	return false

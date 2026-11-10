@@ -66,9 +66,9 @@ func chain(nodes []model.Node) [][2]int {
 }
 
 func attention(kind model.AttentionKind, window int) []model.Node {
-	n := model.Node{Op: model.OpAttention, AttentionKind: kind, NumQHeads: 16, NumKVHeads: 4, HeadDim: 64, Window: window}
+	n := model.Node{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: kind, NumQHeads: 16, NumKVHeads: 4, HeadDim: 64, Window: window}
 	if kind == model.AttentionMLA {
-		n = model.Node{Op: model.OpAttention, AttentionKind: kind, NumQHeads: 16, NumKVHeads: 1,
+		n = model.Node{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: kind, NumQHeads: 16, NumKVHeads: 1,
 			HeadDim: 576, KVLoRARank: 512, QKRopeHeadDim: 64}
 	}
 	return []model.Node{

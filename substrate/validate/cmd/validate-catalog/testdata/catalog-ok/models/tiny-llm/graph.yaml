@@ -15,7 +15,7 @@ layer_kinds:
     nodes:
       - {op: Elementwise, role: input_norm}
       - {op: GEMM, role: qkv_proj, n: 2560, k: 2048}
-      - {op: Attention, kind: gqa, n_q: 16, n_kv: 2, d_h: 128}
+      - {op: Attention, holds_engine_kv: true, kind: gqa, n_q: 16, n_kv: 2, d_h: 128}
       - {op: GEMM, role: o_proj, n: 2048, k: 2048}
       - {op: GEMM, role: mlp_gate_up, n: 11008, k: 2048}
       - {op: GEMM, role: mlp_down, n: 2048, k: 5504}

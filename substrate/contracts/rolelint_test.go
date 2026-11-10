@@ -25,7 +25,8 @@ import (
 // testdata/role_branches.txt. The list may only shrink: a new branch on a label fails, and a
 // listed branch that no longer exists fails, so removing one means deleting its line.
 //
-// The fix is the typed node roles of blis-schemas#67, a contract-change review set (SUB-1).
+// The fix is the typed node roles, holds_engine_kv and shared, set by the deriver and required
+// by the validator; a contract-change review set (SUB-1) landed them.
 func findRoleBranches(t *testing.T, roots ...string) []string {
 	t.Helper()
 	var found []string

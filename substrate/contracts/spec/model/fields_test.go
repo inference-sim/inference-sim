@@ -17,7 +17,7 @@ func v41Graph() *Graph {
 	g.Global.WeightScale = &WeightScale{Elements: 32, Bytes: 1}
 	g.Global.ContextWindow = 1048576
 	attn := func(owned bool) Node {
-		return Node{Op: OpAttention, AttentionKind: AttentionSparseMLA, NumQHeads: 64,
+		return Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA, NumQHeads: 64,
 			NumKVHeads: 1, HeadDim: 512, Window: 128, IndexTopK: 512, CompressRatio: 2,
 			Caches: []Cache{
 				{Name: "swa", Kind: CacheWindow, Owned: true, BytesPerEntry: 584, Window: 128},
@@ -191,7 +191,7 @@ func TestV41FieldRejects(t *testing.T) {
 		{"sharded on a GEMM", "not a layout a GEMM node accepts", func(g *Graph) { source(g)[0].TP = TPSharded }},
 		{"layout on a GroupedGEMM", "not a layout a GroupedGEMM node accepts", func(g *Graph) {
 			g.LayerKinds[1].Nodes = append(g.LayerKinds[1].Nodes,
-				Node{Op: OpGroupedGEMM, N: 1, K: 1, Experts: 2, TopK: 1, TP: TPReplicated})
+				Node{Op: OpGroupedGEMM, Shared: Bool(false), N: 1, K: 1, Experts: 2, TopK: 1, TP: TPReplicated})
 		}},
 		// Per-entry and context work.
 		{"per_tokens on a GEMM", "only an Elementwise node runs once per several", func(g *Graph) { source(g)[0].PerTokens = 2 }},
@@ -439,7 +439,7 @@ func TestDraftWindowRead(t *testing.T) {
 	g := v41Graph()
 	draft := func(window int) *Graph {
 		g := v41Graph()
-		g.LayerKinds[2].Nodes = append(g.LayerKinds[2].Nodes, Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+		g.LayerKinds[2].Nodes = append(g.LayerKinds[2].Nodes, Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 			NumQHeads: 64, NumKVHeads: 1, HeadDim: 512, Window: window,
 			Caches: []Cache{{Name: "swa", Kind: CacheWindow, Owned: true, BytesPerEntry: 584, Window: 128}}})
 		return g
@@ -526,7 +526,7 @@ func TestValidGraphsStayValidUnderEveryOverlay(t *testing.T) {
 // no bound at all it is refused.
 func TestWindowOnlySparseMLA(t *testing.T) {
 	g := validGraph()
-	g.LayerKinds[0].Nodes[2] = Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+	g.LayerKinds[0].Nodes[2] = Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 		NumQHeads: 64, NumKVHeads: 1, HeadDim: 512, Window: 128}
 	if p := g.Validate(); !p.OK() {
 		t.Fatalf("a window-only sparse_mla node was refused:\n%s", p.Error())
@@ -592,7 +592,7 @@ func TestCacheReferences(t *testing.T) {
 			g.LayerKinds[0].Nodes[5].Context.TokensPerEntry = 2
 		}},
 		{"a head node with caches", "head[0].caches: only a node in a layer kind reads a cache", func(g *Graph) {
-			g.Head = append([]Node{{Op: OpAttention, AttentionKind: AttentionGQA, NumQHeads: 8, NumKVHeads: 8, HeadDim: 64,
+			g.Head = append([]Node{{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionGQA, NumQHeads: 8, NumKVHeads: 8, HeadDim: 64,
 				Caches: []Cache{{Name: "x", Kind: CacheKV, Owned: true, BytesPerEntry: 1}}}}, g.Head...)
 		}},
 		{"per-entry work in the embedding", "embedding[1].per_tokens: only a layer's per-entry work", func(g *Graph) {

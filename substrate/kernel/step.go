@@ -697,7 +697,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			// free, which understates every block-sparse layer -- on MiniMax-M3 the
 			// dropped read is 0.94x the attention read at 8K context and 15x at 131K.
 			for _, a := range l.Attentions {
-				if a.HoldsKV() {
+				if a.HoldsKV {
 					continue
 				}
 				// The scorer's prefill: every prefill query scores every compressed
@@ -706,7 +706,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				// One matmul, not attention's two, so it is half attention's FLOPs a pair.
 				// An earlier form skipped every secondary kernel in a step with no decode,
 				// which made the scan free in prefill.
-				if pf, ok := k.attentionPrefillByRole[a.Role]; ok && s.prefillRequests > 0 &&
+				if pf, ok := k.attentionPrefillByRole[scorerKernel]; ok && s.prefillRequests > 0 &&
 					len(a.Caches) > 0 {
 					// The role's measured prefill form, over the index keys each query scores.
 					read := scorerPrefillReadBytes(s.prefillChunks, a.CompressRatio,
@@ -737,7 +737,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 				}
 				// A scorer with a measured form of its own, keyed by its role, takes it: it
 				// is a different kernel from the attention it feeds.
-				if fr, ok := k.attentionByRole[a.Role]; ok {
+				if fr, ok := k.attentionByRole[scorerKernel]; ok {
 					floor, rate = fr.floor, fr.rate
 				}
 				// With no measured form at all, the scan is charged as a raw read at HBM

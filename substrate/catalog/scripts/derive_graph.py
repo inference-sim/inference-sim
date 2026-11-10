@@ -713,7 +713,7 @@ def attention(cfg: dict[str, Any], model: str, *, kind: str | None = None,
         else:
             kind = "gqa"
 
-    node: dict[str, Any] = {"op": "Attention", "kind": kind, "n_q": nq}
+    node: dict[str, Any] = {"op": "Attention", "holds_engine_kv": True, "kind": kind, "n_q": nq}
 
     if latent_width is not None:
         # A family that states the per-token latent width inclusively, so there is no
@@ -805,6 +805,7 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
     inner = pick(cfg, "moe_ffn_size") or require(cfg, "ffn_size", model)
     node: dict[str, Any] = {
         "op": "GroupedGEMM",
+        "shared": False,
         "role": "experts",
         "n": int(inner),
         "k": hidden,
@@ -893,6 +894,7 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, An
         inner = int(node.get("shared_intermediate_size") or node["n"])
         shared = {
             "op": "GroupedGEMM",
+            "shared": True,
             "role": "shared_experts",
             "n": inner,
             "k": node["k"],
@@ -1549,6 +1551,7 @@ def lightning_indexer(cfg: dict[str, Any], model: str, hidden: int,
 
     scorer = {
         "op": "Attention",
+        "holds_engine_kv": False,
         "role": "block_index_scores",
         "kind": "gqa",
         "n_q": index_heads,
@@ -2225,7 +2228,8 @@ def handler_deepseek_v4(cfg, raw, model):
             traffic("index_q_rope_quant",
                     index_heads * index_dim * act + index_heads * act
                     + index_heads * index_dim + index_heads * fp32, tp="replicated"),
-            {"op": "Attention", "role": "block_index_scores", "kind": "sparse_mla",
+            {"op": "Attention", "holds_engine_kv": False, "role": "block_index_scores",
+             "kind": "sparse_mla",
              "n_q": index_heads, "n_kv": 1, "d_h": index_dim, "compress_ratio": 4,
              "tp": "replicated",
              "caches": [{"name": "index", "kind": "index", "owned": True,
@@ -2295,7 +2299,7 @@ def handler_deepseek_v4(cfg, raw, model):
         nodes += [
             # Mxfp4MoEMethod (deepseek_v4/quant_config.py:181-191; checkpoint packed FP4
             # with an E8M0 scale per 32)
-            *token_sharded({"op": "GroupedGEMM", "role": "experts",
+            *token_sharded({"op": "GroupedGEMM", "shared": False, "role": "experts",
                             "n": positive("moe_ffn_size", concept=True), "k": hidden,
                             "experts": experts, "top_k": top_k,
                             "weight_dtype": expert_width},
@@ -3071,7 +3075,8 @@ def handler_deepseek_v41(cfg, raw, model):
             # The scoring pass scans every compressed position of its KV source to
             # discover the top-k, so it carries the compression bound and no top-k
             # (sparse_attn_indexer.py:585-626). Its heads are replicated.
-            "op": "Attention", "role": "block_index_scores", "kind": "sparse_mla",
+            "op": "Attention", "holds_engine_kv": False, "role": "block_index_scores",
+            "kind": "sparse_mla",
             "n_q": index_heads, "n_kv": 1, "d_h": index_dim, "compress_ratio": ratio,
             "tp": "replicated", "caches": [index_cache(ratio, owns_k)],
         })
@@ -3139,7 +3144,7 @@ def handler_deepseek_v41(cfg, raw, model):
                 f"{quant.get('expert_dtype')!r} is not one this deriver maps")
         # Mxfp4MoEMethod (deepseek_v41/quant_config.py:211-228); gate and up fused, so
         # the node's N is the inner width and the consumer prices three matrices.
-        return {"op": "GroupedGEMM", "role": "experts",
+        return {"op": "GroupedGEMM", "shared": False, "role": "experts",
                 "n": positive("moe_ffn_size", concept=True), "k": hidden,
                 "experts": experts, "top_k": top_k,
                 "weight_dtype": mapped}
@@ -3548,6 +3553,7 @@ def handler_minimax_m3(cfg, raw, model):
     # whole-layer record, never divided by TP) cannot express.
     indexer = {
         "op": "Attention",
+        "holds_engine_kv": False,
         "role": "block_index_scores",
         "kind": "gqa",
         "n_q": index_heads,
@@ -4348,7 +4354,7 @@ def handler_muse_spark(cfg, raw, model):
         # slices by head group and cannot replicate a KV head (use_o_gate is True off the
         # drafter, model.py:977; MuseSpark1xQKVOGateParallelLinear asserts
         # total_num_kv_heads % tp_size == 0, common/layers.py:368-371@0f6b2619).
-        attn = {"op": "Attention", "kind": "swa" if win else "gqa", "n_q": nq,
+        attn = {"op": "Attention", "holds_engine_kv": True, "kind": "swa" if win else "gqa", "n_q": nq,
                 "n_kv": nkv, "d_h": dh, "kv_heads_not_replicated": True}
         if win:
             attn["window"] = int(win)
@@ -4369,7 +4375,7 @@ def handler_muse_spark(cfg, raw, model):
         ]
 
     def moe_nodes(expert_dtype):
-        node = {"op": "GroupedGEMM", "role": "experts", "n": inner, "k": hidden,
+        node = {"op": "GroupedGEMM", "shared": False, "role": "experts", "n": inner, "k": hidden,
                 "experts": experts, "top_k": top_k, "latent_size": latent}
         if expert_dtype and expert_dtype != base:
             node["weight_dtype"] = expert_dtype
@@ -4527,7 +4533,7 @@ def handler_muse_spark_dspark(cfg, raw, model):
     if not cfg.get("use_attn_o_gate", False):
         raise DeriveError(f"{model}: use_attn_o_gate is off, so the draft layers run the plain "
                           f"QKV projection and no output gate, which this handler does not price")
-    attention = {"op": "Attention", "kind": "swa", "n_q": nq, "n_kv": nkv, "d_h": dh,
+    attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq, "n_kv": nkv, "d_h": dh,
                  "window": window, "kv_heads_not_replicated": True}
 
     layer = [

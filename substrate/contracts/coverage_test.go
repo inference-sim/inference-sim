@@ -29,11 +29,11 @@ func graniteMoE() *model.Graph {
 		LayerKinds: []model.LayerKind{{ID: "attn_moe", Nodes: []model.Node{
 			{Op: model.OpElementwise, Role: "input_norm"},
 			{Op: model.OpGEMM, Role: "qkv_proj", N: 4096, K: 3072},
-			{Op: model.OpAttention, AttentionKind: model.AttentionGQA,
+			{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionGQA,
 				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64},
 			{Op: model.OpGEMM, Role: "o_proj", N: 3072, K: 3072},
 			{Op: model.OpAllReduce, Role: "attn_out", Emit: model.EmitTensorParallel},
-			{Op: model.OpGroupedGEMM, Role: "experts", N: 1536, K: 3072,
+			{Op: model.OpGroupedGEMM, Shared: model.Bool(false), Role: "experts", N: 1536, K: 3072,
 				Experts: 224, TopK: 8},
 			{Op: model.OpAll2All, Role: "moe", Emit: model.EmitExpertParallel},
 			{Op: model.OpAllReduce, Role: "mlp_out", Emit: model.EmitTensorParallelUnlessSequenceParallelMoE},
@@ -47,10 +47,10 @@ func graniteMoE() *model.Graph {
 func hybridMLAKDA() *model.Graph {
 	attn := model.LayerKind{ID: "mla_moe", Nodes: []model.Node{
 		{Op: model.OpElementwise, Role: "input_norm"},
-		{Op: model.OpAttention, AttentionKind: model.AttentionMLA,
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionMLA,
 			NumQHeads: 64, NumKVHeads: 1, HeadDim: 576,
 			KVLoRARank: 512, QKRopeHeadDim: 64},
-		{Op: model.OpGroupedGEMM, Role: "experts", N: 2048, K: 7168,
+		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), Role: "experts", N: 2048, K: 7168,
 			Experts: 256, TopK: 8},
 		{Op: model.OpAll2All, Role: "moe", Emit: model.EmitExpertParallel},
 	}, Edges: [][2]int{{0, 1}, {1, 2}, {2, 3}}}
@@ -58,7 +58,7 @@ func hybridMLAKDA() *model.Graph {
 		{Op: model.OpElementwise, Role: "input_norm"},
 		{Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentKDA,
 			NumHeads: 64, StateSize: 128, StateDType: model.DTypeFP32},
-		{Op: model.OpGroupedGEMM, Role: "experts", N: 2048, K: 7168,
+		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), Role: "experts", N: 2048, K: 7168,
 			Experts: 256, TopK: 8},
 		{Op: model.OpAll2All, Role: "moe", Emit: model.EmitExpertParallel},
 	}, Edges: [][2]int{{0, 1}, {1, 2}, {2, 3}}}
@@ -88,7 +88,7 @@ func mambaHybrid() *model.Graph {
 			{Op: model.OpRecurrentUpdate, RecurrentKind: model.RecurrentMamba2,
 				NumHeads: 128, StateSize: 128, NumGroups: 8, ConvKernel: 4,
 				IntermediateSize: 8192, StateDType: model.DTypeFP32},
-			{Op: model.OpGroupedGEMM, Role: "experts", N: 1536, K: 3072,
+			{Op: model.OpGroupedGEMM, Shared: model.Bool(false), Role: "experts", N: 1536, K: 3072,
 				Experts: 224, TopK: 8},
 			{Op: model.OpAll2All, Role: "moe", Emit: model.EmitExpertParallel},
 		}, Edges: [][2]int{{0, 1}, {1, 2}, {2, 3}}})

@@ -5,10 +5,5 @@
 # The list may only shrink: the test fails on a model not listed and on a listed model whose price
 # no longer moves.
 #
-# Why: the cost model decides whether an attention node holds the engine's KV cache by whether
-# its Role is empty, and treats a node whose role is "block_index_scores" as DeepSeek-V4.1's
-# separate indexer. Renaming only block_index_scores moves the price; renaming only
-# shared_experts does not (checked one label at a time). The fix is a typed field on the
-# attention node, with a closed set of values, which is blis-schemas#67 and a contract-change
-# review set (SUB-1); see also contracts/testdata/role_branches.txt for the seven sites.
-deepseek-v4.1-flash
+# It is empty. The cost model reads holds_engine_kv and shared, which the deriver sets, and the
+# graph's context.decode_extent; it reads no label.

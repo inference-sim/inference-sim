@@ -28,6 +28,7 @@ layer_kinds:
     role: qk_norm_rope
     bytes_per_token: 36864
   - op: Attention
+    holds_engine_kv: true
     kind: swa
     n_q: 128
     n_kv: 16
@@ -67,6 +68,7 @@ layer_kinds:
     bytes_per_token: 16384
     tp: replicated
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 4096
     k: 8192
@@ -144,6 +146,7 @@ layer_kinds:
     role: qk_norm_rope
     bytes_per_token: 36864
   - op: Attention
+    holds_engine_kv: true
     kind: gqa
     n_q: 128
     n_kv: 16
@@ -180,6 +183,7 @@ layer_kinds:
     bytes_per_token: 16384
     tp: replicated
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 4096
     k: 8192

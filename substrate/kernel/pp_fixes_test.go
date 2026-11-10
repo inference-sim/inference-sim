@@ -21,9 +21,9 @@ func TestAPiecewiseStageReplaysItsOwnSegments(t *testing.T) {
 	k := &Kernel{graphDecode: graphModePiecewise, graphOther: graphModePiecewise,
 		replayPerStep: time.Microsecond, captureTokens: 512}
 	dense := price.PlannedLayer{Count: 4, AttnKind: model.AttentionGQA, AttnQHeads: 8,
-		Attentions: []price.PlannedAttention{{}}}
+		Attentions: []price.PlannedAttention{{HoldsKV: true}}}
 	sparse := price.PlannedLayer{Count: 3, AttnKind: model.AttentionSparseMLA, AttnQHeads: 8,
-		Attentions: []price.PlannedAttention{{}, {Role: "block_index_scores"}}}
+		Attentions: []price.PlannedAttention{{HoldsKV: true}, {Role: "block_index_scores"}}}
 	b := kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 1, Computed: 9, PromptLen: 10}}}
 	for _, c := range []struct {
 		what string
@@ -87,7 +87,7 @@ func TestTheBindingStageIsOneWorkersPool(t *testing.T) {
 func TestAnUnsplittableKVHeadCountIsRefused(t *testing.T) {
 	g := func(notReplicated bool) *model.Graph {
 		return &model.Graph{LayerKinds: []model.LayerKind{{ID: "a", Nodes: []model.Node{
-			{Op: model.OpAttention, AttentionKind: model.AttentionGQA, NumQHeads: 128,
+			{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionGQA, NumQHeads: 128,
 				NumKVHeads: 16, HeadDim: 64, KVHeadsNotReplicated: notReplicated}}}}}
 	}
 	for _, c := range []struct {
@@ -103,7 +103,7 @@ func TestAnUnsplittableKVHeadCountIsRefused(t *testing.T) {
 	draft := g(false)
 	draft.Speculator = &model.Speculator{Head: []model.Node{{Op: model.OpGEMM}}}
 	draft.LayerKinds = append(draft.LayerKinds, model.LayerKind{ID: "d", Nodes: []model.Node{
-		{Op: model.OpAttention, NumKVHeads: 16, KVHeadsNotReplicated: true}}})
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), NumKVHeads: 16, KVHeadsNotReplicated: true}}})
 	if refuseUnsplittableKVHeads(draft, 32) == nil {
 		t.Error("a drafter layer's unsplittable heads at tp 32 were priced")
 	}

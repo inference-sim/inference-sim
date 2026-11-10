@@ -47,6 +47,7 @@ layer_kinds:
     n: 2048
     k: 8192
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 5120
     k: 8192
@@ -55,6 +56,7 @@ layer_kinds:
     weight_dtype: nvfp4
     latent_size: 2048
   - op: GroupedGEMM
+    shared: true
     role: shared_experts
     n: 10240
     k: 8192
@@ -94,6 +96,7 @@ layer_kinds:
     n: 8704
     k: 8192
   - op: Attention
+    holds_engine_kv: true
     kind: gqa
     n_q: 64
     n_kv: 2

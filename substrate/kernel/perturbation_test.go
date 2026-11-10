@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -49,11 +50,14 @@ type perturbationCase struct {
 // perturbationScenarios opens every catalog model on every catalog chip at tensor-parallel
 // widths 2, 4 and 8, and at the block sizes and cache dtypes the engine accepts, keeping each
 // combination the cost model builds.
-func perturbationScenarios(t *testing.T, d *load.Data) []perturbationCase {
+func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturbationCase {
 	t.Helper()
 	sets := "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]"
 	var out []perturbationCase
 	for _, m := range d.Models() {
+		if len(only) > 0 && !slices.Contains(only, m) {
+			continue
+		}
 		for _, c := range d.Chips() {
 			ch, _ := d.Chip(c)
 			// Layouts: tensor parallel alone at 2, 4 and 8; and expert parallel over data parallel
@@ -152,10 +156,9 @@ type layoutCase struct {
 // catalog graph that carries a Role has it replaced by a string that matches nothing, and the
 // model is priced again. A price that moves is a decision that depends on the label.
 //
-// At this release it does move for the models that have a block-index scorer or a shared
-// expert, because the cost model branches on those two labels (contracts/testdata/
-// role_branches.txt). The test lists them: it fails on a model not listed and on a listed model
-// whose price no longer moves, so typed roles (blis-schemas#67) must delete lines.
+// No catalog model's price moves: the cost model reads holds_engine_kv and shared, which the
+// deriver sets, and no label. testdata/label_dependent_models.txt is empty; the test still
+// fails on a model that moves and is not listed, so a new decision on a label cannot return.
 func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("prices every catalog model; CI runs it without -short")
@@ -190,7 +193,10 @@ func TestChangingALabelChangesNoPriceOrIsListed(t *testing.T) {
 		}
 	}
 	sort.Strings(movers)
-	got := strings.Join(movers, "\n") + "\n"
+	got := ""
+	if len(movers) > 0 {
+		got = strings.Join(movers, "\n") + "\n"
+	}
 	path := filepath.Join("testdata", "label_dependent_models.txt")
 	raw, err := os.ReadFile(path)
 	if err != nil {

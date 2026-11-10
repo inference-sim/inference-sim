@@ -37,14 +37,14 @@ func hybridGraph() *model.Graph {
 	attn := model.LayerKind{ID: "attention", Nodes: []model.Node{
 		{Op: model.OpElementwise},
 		{Op: model.OpGEMM, N: 10240, K: hidden},
-		{Op: model.OpAttention, AttentionKind: model.AttentionGQA,
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionGQA,
 			NumQHeads: 64, NumKVHeads: 2, HeadDim: 128},
 		{Op: model.OpGEMM, N: hidden, K: hidden},
 		{Op: model.OpAllReduce, Emit: model.EmitTensorParallel},
 	}}
 	moe := model.LayerKind{ID: "moe", Nodes: []model.Node{
 		{Op: model.OpElementwise},
-		{Op: model.OpGroupedGEMM, N: 5120, K: hidden, Experts: 512, TopK: 22,
+		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 5120, K: hidden, Experts: 512, TopK: 22,
 			SharedExperts: 1, SharedIntermediateSize: 10240},
 		{Op: model.OpAll2All, Emit: model.EmitExpertParallel},
 	}}
@@ -232,10 +232,10 @@ func blockSparseGraph() *model.Graph {
 		{Op: model.OpElementwise},
 		{Op: model.OpGEMM, N: 9216, K: hidden},
 		{Op: model.OpGEMM, N: 640, K: hidden, Role: "index_qk_proj"},
-		{Op: model.OpAttention, Role: "block_index_scores",
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(false), Role: "block_index_scores",
 			AttentionKind: model.AttentionGQA,
 			NumQHeads:     4, NumKVHeads: 1, HeadDim: 128},
-		{Op: model.OpAttention, AttentionKind: model.AttentionSWA,
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionSWA,
 			NumQHeads: 64, NumKVHeads: 4, HeadDim: 128, Window: 2176},
 		{Op: model.OpGEMM, N: hidden, K: 8192},
 	}}
@@ -255,11 +255,11 @@ func pooledIndexerGraph(ratio int) *model.Graph {
 		{Op: model.OpElementwise},
 		{Op: model.OpGEMM, N: 2048, K: hidden},
 		{Op: model.OpGEMM, N: 4096, K: 1536, Role: "index_wq_b"},
-		{Op: model.OpAttention, Role: "block_index_scores",
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(false), Role: "block_index_scores",
 			AttentionKind: model.AttentionSparseMLA,
 			NumQHeads:     32, NumKVHeads: 1, HeadDim: 128,
 			CompressRatio: ratio},
-		{Op: model.OpAttention, AttentionKind: model.AttentionSparseMLA,
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), AttentionKind: model.AttentionSparseMLA,
 			NumQHeads: 64, NumKVHeads: 1, HeadDim: 512, IndexTopK: 2048},
 		{Op: model.OpGEMM, N: hidden, K: 16384},
 	}}
@@ -327,7 +327,7 @@ func TestPrimaryAttentionIsTheOneHoldingKVWhicheverOrderTheyAppearIn(t *testing.
 				if n.Op != model.OpAttention {
 					continue
 				}
-				if n.Role == "" {
+				if n.ReadsEngineKV() {
 					main = i
 				} else {
 					idx = i
@@ -363,7 +363,7 @@ func TestIndexerIsNotCountedAsHoldingKV(t *testing.T) {
 	}
 	var holders int
 	for _, a := range p.Layers[0].Attentions {
-		if a.HoldsKV() {
+		if a.HoldsKV {
 			holders++
 		}
 	}
@@ -401,7 +401,7 @@ func mixedPrecisionMoE(expertDType model.DType) *model.Graph {
 	const hidden = 7168
 	nodes := []model.Node{
 		{Op: model.OpGEMM, Role: "qkv_proj", N: 66560, K: hidden},
-		{Op: model.OpGroupedGEMM, Role: "experts", N: 3072, K: hidden,
+		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), Role: "experts", N: 3072, K: hidden,
 			Experts: 384, TopK: 6, WeightDType: expertDType},
 	}
 	return &model.Graph{
@@ -581,7 +581,7 @@ func TestConsecutiveColumnParallelGEMMsFuse(t *testing.T) {
 	// mlp_gate_up sit either side of the attention.
 	got = plan(
 		model.Node{Op: model.OpGEMM, Role: "qkv_proj", N: 9216, K: hidden},
-		model.Node{Op: model.OpAttention, NumQHeads: 64, NumKVHeads: 4, HeadDim: 128},
+		model.Node{Op: model.OpAttention, HoldsEngineKV: model.Bool(true), NumQHeads: 64, NumKVHeads: 4, HeadDim: 128},
 		model.Node{Op: model.OpGEMM, Role: "mlp_gate_up", N: 24576, K: hidden},
 	)
 	if len(got.DenseGEMMs) != 2 {
@@ -617,16 +617,16 @@ func testOptions(dtypeBytes, stateBytes float64) PlanOptions {
 	}
 }
 
-// A layer that runs attention with no primary -- every attention node labelled, none the
-// one that reads the engine's cache -- is refused rather than planned with its attention
+// A layer that runs attention with no primary -- every attention node states holds_engine_kv
+// false, none reads the engine's cache -- is refused rather than planned with its attention
 // unpriced.
 func TestALayerWithAttentionButNoPrimaryIsRefused(t *testing.T) {
 	_, err := planNodes([]model.Node{
-		{Op: model.OpAttention, Role: "attention", AttentionKind: model.AttentionGQA,
+		{Op: model.OpAttention, HoldsEngineKV: model.Bool(false), Role: "attention", AttentionKind: model.AttentionGQA,
 			NumQHeads: 8, NumKVHeads: 8, HeadDim: 128},
 	}, emitAll{}, testOptions(2, 4), 1024)
 	if err == nil {
-		t.Fatal("a layer whose only attention is labelled was planned")
+		t.Fatal("a layer whose only attention does not hold the engine cache was planned")
 	}
 }
 
@@ -636,9 +636,9 @@ func TestConflictingExpertFormatsAreRefused(t *testing.T) {
 	o := testOptions(1, 4)
 	o.Format = func(n model.Node) Format { return Format{DType: n.WeightDType} }
 	_, err := planNodes([]model.Node{
-		{Op: model.OpGroupedGEMM, N: 512, K: 1024, Experts: 64, TopK: 4,
+		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 512, K: 1024, Experts: 64, TopK: 4,
 			WeightDType: model.DTypeFP8},
-		{Op: model.OpGroupedGEMM, N: 512, K: 1024, Experts: 64, TopK: 4,
+		{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 512, K: 1024, Experts: 64, TopK: 4,
 			WeightDType: model.DTypeMXFP4},
 	}, emitAll{}, o, 1024)
 	if err == nil {
@@ -651,7 +651,7 @@ func TestConflictingExpertFormatsAreRefused(t *testing.T) {
 // latent projection keeps the hidden width, and a shared expert's latent_size does not count.
 func TestTheMoEDispatchCarriesTheLatentWidth(t *testing.T) {
 	const hidden, latent = 8192, 4096
-	experts := model.Node{Op: model.OpGroupedGEMM, Role: "experts", N: 4096, K: hidden,
+	experts := model.Node{Op: model.OpGroupedGEMM, Shared: model.Bool(false), Role: "experts", N: 4096, K: hidden,
 		Experts: 256, TopK: 8, LatentSize: latent}
 	a2a := model.Node{Op: model.OpAll2All, Emit: model.EmitExpertParallel}
 	for _, c := range []struct {
@@ -661,7 +661,7 @@ func TestTheMoEDispatchCarriesTheLatentWidth(t *testing.T) {
 	}{
 		{"experts then dispatch", []model.Node{experts, a2a}, latent * ActivationBytes},
 		{"dispatch then experts", []model.Node{a2a, experts}, latent * ActivationBytes},
-		{"no latent", []model.Node{{Op: model.OpGroupedGEMM, N: 4096, K: hidden, Experts: 256, TopK: 8}, a2a},
+		{"no latent", []model.Node{{Op: model.OpGroupedGEMM, Shared: model.Bool(false), N: 4096, K: hidden, Experts: 256, TopK: 8}, a2a},
 			hidden * ActivationBytes},
 	} {
 		pl, err := planNodes(c.nodes, emitAll{}, PlanOptions{
@@ -687,9 +687,9 @@ func TestTheMoEDispatchCarriesTheLatentWidth(t *testing.T) {
 // pipeline stage counts the indexers of the sparse-MLA layers it holds and no others.
 func TestPiecewiseSegmentsOfAShare(t *testing.T) {
 	dense := PlannedLayer{Count: 10, AttnKind: model.AttentionGQA,
-		Attentions: []PlannedAttention{{}}}
+		Attentions: []PlannedAttention{{HoldsKV: true}}}
 	sparse := PlannedLayer{Count: 6, AttnKind: model.AttentionSparseMLA,
-		Attentions: []PlannedAttention{{}, {Role: "block_index_scores"}}}
+		Attentions: []PlannedAttention{{HoldsKV: true}, {Role: "block_index_scores"}}}
 	if got := PiecewiseSegmentsOf(16, []PlannedLayer{dense, sparse}); got != 16+6+1 {
 		t.Errorf("whole stack: %d segments, want 23", got)
 	}

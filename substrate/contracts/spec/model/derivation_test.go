@@ -64,7 +64,7 @@ func TestHeadDimIsDerived(t *testing.T) {
 		Global: GlobalShape{HiddenSize: 7168, VocabSize: 1000, WeightDType: DTypeFP8},
 		LayerKinds: []LayerKind{{ID: "mla", Nodes: []Node{
 			// 576 is the latent width, not 7168/96.
-			{Op: OpAttention, AttentionKind: AttentionMLA, NumQHeads: 96,
+			{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionMLA, NumQHeads: 96,
 				NumKVHeads: 1, HeadDim: 576, KVLoRARank: 512, QKRopeHeadDim: 64},
 		}}},
 		Stack: Stack{Pattern: []string{"mla"}, Repeat: 1},
@@ -87,7 +87,7 @@ func TestGraphIsIndependentOfVendorVocabulary(t *testing.T) {
 			Global: GlobalShape{HiddenSize: 4096, VocabSize: 32000,
 				WeightDType: DTypeBF16},
 			LayerKinds: []LayerKind{{ID: "block", Nodes: []Node{
-				{Op: OpAttention, AttentionKind: AttentionGQA, NumQHeads: 32,
+				{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionGQA, NumQHeads: 32,
 					NumKVHeads: 8, HeadDim: 128},
 			}}},
 			Stack: Stack{Pattern: []string{"block"}, Repeat: 32},
@@ -130,7 +130,7 @@ func TestModalityMakesAnOmissionExplicit(t *testing.T) {
 		Global: GlobalShape{HiddenSize: 6144, VocabSize: 151552,
 			WeightDType: DTypeBF16},
 		LayerKinds: []LayerKind{{ID: "block", Nodes: []Node{
-			{Op: OpAttention, AttentionKind: AttentionGQA, NumQHeads: 64,
+			{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionGQA, NumQHeads: 64,
 				NumKVHeads: 8, HeadDim: 128},
 		}}},
 		Stack: Stack{Pattern: []string{"block"}, Repeat: 66},

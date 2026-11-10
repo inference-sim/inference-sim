@@ -32,7 +32,7 @@ Qwen3-14B's single layer kind, as committed:
   nodes:
   - {op: Elementwise, role: input_norm}
   - {op: GEMM, role: qkv_proj, n: 7168, k: 5120}
-  - {op: Attention, kind: gqa, n_q: 40, n_kv: 8, d_h: 128}
+  - {op: Attention, holds_engine_kv: true, kind: gqa, n_q: 40, n_kv: 8, d_h: 128}
   - {op: GEMM, role: o_proj, n: 5120, k: 5120}
   - {op: AllReduce, role: attn_out, emit: tensor_parallel}
   - {op: Elementwise, role: post_attn_norm}

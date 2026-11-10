@@ -336,26 +336,26 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 	k.attentionByRole = map[string]floorRate{}
 	for _, l := range layers {
 		for _, a := range l.Attentions {
-			if a.HoldsKV() || a.Role == "" {
+			if a.HoldsKV {
 				continue
 			}
-			if _, done := k.attentionByRole[a.Role]; done {
+			if _, done := k.attentionByRole[scorerKernel]; done {
 				continue
 			}
-			rate := k.optional(c, "attention_decode_rate_"+a.Role, true,
-				"no measured decode form for the "+a.Role+" kernel, so it is priced with "+
+			rate := k.optional(c, "attention_decode_rate_"+scorerKernel, true,
+				"no measured decode form for the "+scorerKernel+" kernel, so it is priced with "+
 					"its attention kind's pair")
 			if rate <= 0 {
 				// Recorded once: the absence above is the record.
-				k.attentionByRole[a.Role] = floorRate{}
+				k.attentionByRole[scorerKernel] = floorRate{}
 				continue
 			}
 			floor := k.attentionFloor
-			if f := k.optional(c, "attention_decode_floor_"+a.Role, true,
-				"the "+a.Role+" kernel inherits the part-wide attention floor"); f > 0 {
+			if f := k.optional(c, "attention_decode_floor_"+scorerKernel, true,
+				"the "+scorerKernel+" kernel inherits the part-wide attention floor"); f > 0 {
 				floor = time.Duration(f * float64(time.Microsecond))
 			}
-			k.attentionByRole[a.Role] = floorRate{floor: floor, rate: rate * 1e6}
+			k.attentionByRole[scorerKernel] = floorRate{floor: floor, rate: rate * 1e6}
 		}
 	}
 	for role, fr := range k.attentionByRole {

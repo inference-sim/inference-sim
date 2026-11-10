@@ -54,6 +54,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -112,6 +113,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -252,6 +254,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -310,6 +313,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -470,6 +474,7 @@ layer_kinds:
     writes_cache: index
     per_tokens: 2
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -501,6 +506,7 @@ layer_kinds:
       per: request
       phase: prefill
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -581,6 +587,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -708,6 +715,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -781,6 +789,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -966,6 +975,7 @@ layer_kinds:
     writes_cache: index
     per_tokens: 2
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -997,6 +1007,7 @@ layer_kinds:
       per: request
       phase: prefill
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -1077,6 +1088,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -1259,6 +1271,7 @@ layer_kinds:
     tp: replicated
     writes_cache: index
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -1302,6 +1315,7 @@ layer_kinds:
       per: query_token
       decode_extent: max_model_len
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -1376,6 +1390,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -1507,6 +1522,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -1579,6 +1595,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -1699,6 +1716,7 @@ layer_kinds:
     bytes_per_token: 12480
     tp: replicated
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -1733,6 +1751,7 @@ layer_kinds:
       per: query_token
       decode_extent: max_model_len
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -1805,6 +1824,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -1924,6 +1944,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -1982,6 +2003,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -2085,6 +2107,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -2143,6 +2166,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
@@ -2246,6 +2270,7 @@ layer_kinds:
     tp: replicated
     writes_cache: swa
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -2304,6 +2329,7 @@ layer_kinds:
     tp: replicated
     under_sequence_parallel: token_sharded
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2304
     k: 5120
