@@ -423,6 +423,14 @@ name the target layers it reads is priced with the capture layers the engine tak
 target's own default, which the deriver records per drafter with the target whose depth it is.
 A model run with a drafter the catalog lacks is refused for that drafter, not priced without it.
 
+`catalog/scripts/drafter_coverage.py` reports the drafters that published deployments run and the
+catalog lacks (design §12.2). It reads vLLM's recipe files and InferenceX's recipe files, and for
+each speculative configuration checks that the target has an entry, that a named draft checkpoint
+has an entry whose `targets` include the target's, and that the target lists it. Run it with
+checkouts of the two sources; it exits 1 on a missing or unlinked drafter unless `--report-only`.
+A recipe for a quantisation is read as the checkpoint it names, and a target the catalog lacks is
+reported as a missing model, not a missing drafter.
+
 ### `source`
 
 <!-- fields: model.Source -->
