@@ -81,6 +81,10 @@ Every number must be finite. Beyond that, a chip is invalid if
 - `TFlopsFP8` or `TFlopsNVFP4` is negative;
 - `TFlopsFP8` is positive but not above `TFlopsPeak`; no shipped part has an FP8 peak at or
   below its BF16 peak, so this is almost always a transcription slip;
+- a peak is a sparse figure entered as dense: `TFlopsFP8` is more than 3.5 times `TFlopsPeak`,
+  `TFlopsNVFP4` is more than 3.5 times `TFlopsFP8`, or `TFlopsNVFP4` does not exceed `TFlopsFP8`
+  (design SUB-16: catalog peaks are dense figures, and their ratios between data types are the
+  datasheet's; the shipped parts run 2.0 to 3.11);
 - `GPUsPerRack` is not a multiple of `GPUsPerNode`, when both are set;
 - `IntraRackBwGBps` is set without `GPUsPerRack`;
 - `ComputeCapability` is set but is not `major.minor`.
