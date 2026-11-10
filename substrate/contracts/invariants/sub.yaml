@@ -24,18 +24,19 @@
     runs: pull_request
     status: ci
     test: 'contracts: TestKernelImportsOnlySpec'
+    known_bad: 'contracts: TestKernelImportsOnlySpec'
   - repo: blis-substrate
     check: >-
       API-compatibility check of the contracts/ packages against the last substrate tag
     runs: pull_request
-    status: new
+    status: ci
     test: 'ci.yml job contracts: prcheck contracts-apidiff'
     known_bad: 'tools/prcheck: TestContractsAPI'
   review: null
-  status: partial
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-2
   section: §5
   statement: >-
@@ -495,13 +496,13 @@
   - repo: blis-substrate
     check: The compiler
     runs: pull_request
-    status: new
+    status: ci
     test: 'contracts/units: TestMixedUnitsDoNotCompile'
     known_bad: 'contracts/units: TestMixedUnitsDoNotCompile'
   - repo: blis-substrate
     check: A load-time unit check in the cost model
     runs: pull_request
-    status: new
+    status: ci
     test: 'contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused'
     known_bad: 'contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused'
   - repo: blis-substrate
@@ -509,12 +510,14 @@
       Validator rules that catalog peaks are dense figures and that their ratios between data types
       match the datasheet. The bounds on rates are SUB-5's
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/hardware: TestPeaksAreDenseFigures'
+    known_bad: 'contracts/spec/hardware: TestPeaksAreDenseFigures'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-17
   section: §5
   statement: >-
