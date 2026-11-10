@@ -317,6 +317,21 @@ type StepShape struct {
 	Drafts DraftShape
 	// Stage is the pipeline stage; 0 without pipeline parallelism.
 	Stage int
+	// DecodeQueryLen is the most tokens a request may schedule and still be priced as a decode:
+	// the engine's own decode threshold, 1 plus the draft length under speculation and 1
+	// without. A request that schedules more is priced as a prefill chunk. The engine states it
+	// because only the engine knows which of its requests its attention kernels treat as a
+	// decode, and the cost model resolves nothing (SUB-6). The zero value means 1.
+	DecodeQueryLen units.Tokens
+}
+
+// DecodeWidth returns DecodeQueryLen with its floor applied: a step has no request that
+// decodes in fewer than one token, so zero reads as one.
+func (s StepShape) DecodeWidth() units.Tokens {
+	if s.DecodeQueryLen < 1 {
+		return 1
+	}
+	return s.DecodeQueryLen
 }
 
 // StepMode is what one step contains.

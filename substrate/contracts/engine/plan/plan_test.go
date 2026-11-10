@@ -110,6 +110,7 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 		{"unknown launch", func(s *StepShape) { s.Padded[0].Launch = "jit" }, `launch "jit"`},
 		{"verified drafts outside a verify step", func(s *StepShape) { s.Drafts.Verified = 2 }, "only a verify step verifies"},
 		{"a prebuilt step that launches", func(s *StepShape) { s.Mode = StepPrebuilt }, "launches nothing"},
+		{"a negative decode threshold", func(s *StepShape) { s.DecodeQueryLen = -1 }, "DecodeQueryLen is -1"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -124,6 +125,19 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 	// A lockstep group of two ranks needs both, since padding depends on every rank's tokens.
 	if err := good().Validate(2, 1); err == nil {
 		t.Error("a step describing one of two lockstep ranks was accepted")
+	}
+}
+
+// DecodeQueryLen keeps a meaningful zero (design 6.2): unstated reads as 1, the least a decode is,
+// and a stated value is returned as stated.
+func TestTheDecodeThresholdKeepsAMeaningfulZero(t *testing.T) {
+	for _, c := range []struct{ stated, want units.Tokens }{{0, 1}, {1, 1}, {4, 4}, {8, 8}} {
+		if got := (StepShape{DecodeQueryLen: c.stated}).DecodeWidth(); got != c.want {
+			t.Errorf("stated %d: width %d, want %d", c.stated, got, c.want)
+		}
+	}
+	if err := (StepShape{Mode: StepIdle}).Validate(1, 1); err != nil {
+		t.Errorf("the zero DecodeQueryLen was refused: %v", err)
 	}
 }
 

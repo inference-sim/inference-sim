@@ -192,6 +192,9 @@ func (s StepShape) Validate(ranks, stages int) error {
 			}
 		}
 	}
+	if s.DecodeQueryLen < 0 {
+		add("DecodeQueryLen is %d", s.DecodeQueryLen)
+	}
 	if s.Drafts.Drafted < 0 || s.Drafts.Verified < 0 {
 		add("drafts %+v", s.Drafts)
 	}
