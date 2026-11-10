@@ -32,10 +32,20 @@ type Workload struct {
 // NumSpecTokens come from the scenario and the deployment; Hardware, from the scenario's
 // cluster, is used only to record a profile measured elsewhere.
 type Request struct {
-	Model             string
+	Model string
+	// Drafter is the drafter the run uses: "" for the model's own in-graph speculator, or the
+	// catalog name of a separate drafter checkpoint (design D8).
+	Drafter           string
 	SpeculativeMethod string
 	NumSpecTokens     int
 	Hardware          string
+	// Architecture is the architecture of the target model as its graph records it
+	// (global.architecture). Borrowing from another target needs it; without it that step is
+	// skipped.
+	Architecture string
+	// ExactOnly limits a profile lookup to the run's exact key. A scenario's pin can ask for
+	// it as well; either one limits the lookup.
+	ExactOnly bool
 
 	// Registry is the default layer: the registry sets a consumer consults.
 	Registry []*ProfileSet
@@ -71,7 +81,22 @@ type Resolution struct {
 	// MeasuredOn is the hardware a profile was measured on when it differs from the
 	// request's, and empty otherwise.
 	MeasuredOn string
+
+	// Step is how a profile lookup found its value: StepExact for the run's exact key, or the
+	// borrowing step that supplied it. Empty for a value stated inline.
+	Step Step
+	// Differed names each key field in which the borrowed profile differs from the run's:
+	// model, drafter, speculative_method or num_spec_tokens. Empty for an exact match.
+	Differed []string
+	// KRule says how a borrowed value was brought to the run's K, when it was.
+	KRule KRule
+	// Used lists every profile the value was read from, the one that sets it first. An exact
+	// match lists its one profile; an interpolation lists the two it lies between.
+	Used []Used
 }
+
+// Borrowed reports whether the value came from a profile that is not the run's exact key.
+func (r Resolution) Borrowed() bool { return r.Step != "" && r.Step != StepExact }
 
 // AcceptanceRate is the accepted fraction of drafts, (AL-1)/K.
 func (r Resolution) AcceptanceRate() float64 {
@@ -144,7 +169,7 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string) (Reso
 	if !req.Workload.Thinking.Valid() {
 		return Resolution{}, fmt.Errorf("%s acceptance: thinking %q is not one of %v", layer, req.Workload.Thinking, AllThinkingModes())
 	}
-	key := Key{Model: req.Model, SpeculativeMethod: req.SpeculativeMethod,
+	key := Key{Model: req.Model, Drafter: req.Drafter, SpeculativeMethod: req.SpeculativeMethod,
 		NumSpecTokens: req.NumSpecTokens, Thinking: req.Workload.Thinking,
 		Category: req.Workload.Category}
 	fallbackFrom := ""
@@ -162,9 +187,22 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string) (Reso
 			return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
 		}
 	}
+	if prof == nil && !exactOnly(req) {
+		// No measured profile has the run's exact key: borrow the closest one, in the order
+		// design D8 states. Every step keeps the category and thinking mode (the fallback
+		// category, when one was requested and applied, stands in for the category).
+		r, found, err := borrow(sets, req, key)
+		if err != nil {
+			return Resolution{}, fmt.Errorf("%s acceptance: %w", layer, err)
+		}
+		if found {
+			r.Layer, r.FallbackFrom = layer, fallbackFrom
+			return r, nil
+		}
+	}
 	if prof == nil {
 		return Resolution{}, fmt.Errorf("%s acceptance: no profile for %s in %s; %s",
-			layer, key, setNames(sets), missHint(req.Workload.Category, fallback))
+			layer, key, setNames(sets), missHint(req.Workload.Category, fallback)+exactHint(req))
 	}
 	rates, derived, err := prof.Rates()
 	if err != nil {
@@ -172,7 +210,7 @@ func lookup(layer Layer, sets []*ProfileSet, req Request, fallback string) (Reso
 	}
 	r := Resolution{AcceptanceLength: prof.AcceptanceLength, PerPositionRates: rates,
 		RatesDerived: derived, Layer: layer, Set: set, Profile: prof,
-		FallbackFrom: fallbackFrom}
+		FallbackFrom: fallbackFrom, Step: StepExact, Used: []Used{{Set: set, Profile: prof}}}
 	if prof.Provenance != nil {
 		r.Source = prof.Provenance.Source
 		if req.Hardware != "" && prof.Provenance.Hardware != "" &&
@@ -227,4 +265,17 @@ func setNames(sets []*ProfileSet) string {
 		return "no profile set (none was supplied)"
 	}
 	return fmt.Sprintf("set(s) %v", names)
+}
+
+// exactOnly reports whether the lookup may not borrow: the request asks for it, or the
+// scenario's pin does.
+func exactOnly(req Request) bool {
+	return req.ExactOnly || (req.Scenario != nil && req.Scenario.ExactOnly)
+}
+
+func exactHint(req Request) string {
+	if exactOnly(req) {
+		return "; exact_only forbids borrowing the closest measured profile"
+	}
+	return ""
 }

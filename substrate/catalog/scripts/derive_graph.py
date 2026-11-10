@@ -4658,6 +4658,15 @@ HANDLERS = {
 EXTRAS_KEYS = frozenset({"global", "embedding", "head", "speculator",
                          "base_capability_families", "arch_overrides"})
 # The global shapes a handler may add; the rest derive() computes itself.
+def architecture_of(raw: dict, model: str) -> str:
+    """The configuration's architectures[0], which every checkpoint states."""
+    archs = raw.get("architectures")
+    if not isinstance(archs, list) or not archs or not isinstance(archs[0], str) or not archs[0]:
+        raise DeriveError(f"{model}: config.json states no architectures[0], which the graph records "
+                          f"as global.architecture")
+    return archs[0]
+
+
 EXTRA_GLOBAL_KEYS = frozenset({"architecture", "weight_scale", "context_window",
                                "default_context_window",
                                "pipeline_boundary_bytes_per_token"})
@@ -4710,6 +4719,11 @@ def derive(config_path: Path, model: str) -> dict[str, Any]:
             "vocab_size": int(require(cfg, "vocab_size", model)),
             "tie_word_embeddings": bool(cfg.get("tie_word_embeddings", False)),
             "weight_dtype": weight_dtype(cfg, raw, model),
+            # The configuration's architectures[0], for every graph (design D8, SUB-15). A
+            # lookup that borrows across models reads it to find another target of the same
+            # architecture, and several engine rules are keyed by it. A handler that states it
+            # states the same value.
+            "architecture": architecture_of(raw, model),
         },
         "layer_kinds": kinds,
         "stack": stack,

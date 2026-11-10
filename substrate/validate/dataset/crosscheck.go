@@ -45,6 +45,16 @@ func CheckFits(c *Catalog, r *Registry) []Problem {
 			if c.Models[p.Model] == nil {
 				miss(file, "profile "+p.Key().String()+" names model", p.Model, models)
 			}
+			if p.Drafter != "" && c.Models[p.Drafter] == nil {
+				miss(file, "profile "+p.Key().String()+" names drafter", p.Drafter, models)
+			}
+			// The architecture a profile states is the architecture of its target's graph: a
+			// lookup that borrows across targets matches on it, and a wrong one would borrow
+			// from a model of another architecture.
+			if g := c.Models[p.Model]; g != nil && p.Architecture != "" && g.Global.Architecture != p.Architecture {
+				out = append(out, Problem{file, fmt.Sprintf("profile %s states architecture %q, but the catalog's graph for %s records %q",
+					p.Key().String(), p.Architecture, p.Model, g.Global.Architecture)})
+			}
 			if p.Provenance != nil && p.Provenance.Hardware != "" && c.Chips[p.Provenance.Hardware] == nil {
 				miss(file, "profile "+p.Key().String()+" was measured on chip", p.Provenance.Hardware, chips)
 			}

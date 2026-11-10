@@ -34,6 +34,12 @@ caveats:
   may have changed since its run.'
 - 'The source files for deepseek-v4-pro, glm-5.2-fp8, minimax-m3 name no engine image, so
   their engine_image reads "unrecorded: the source file names no engine image".'
+- 'minimax-m3 eagle3: the curve is for the base EAGLE3 drafter. InferenceX''s MiniMax-M3 runs
+  serve EAGLE3 through a separate draft_model, which the catalog graph does not describe (the
+  catalog lists no such drafter), and its minimaxm3_eagle3_gqa curve is for a second one.
+  The catalog lists no such drafter yet, so a profile cannot name one (its drafter must be
+  a catalog model) and these profiles name none. Until it does, a run that uses the model''s
+  own speculator would borrow them as another drafter''s.'
 - 'Not carried: dsv4-pro-0813-dspark.yaml (deepseek-v4-pro-0813), because its model deepseek-v4-pro-0813
   is no catalog model''s repository, and no alias maps it.'
 - 'Not carried: kimik3_dspark.yaml (kimi-k3), because the two Kimi-K3 DSpark curves differ
@@ -53,6 +59,7 @@ caveats:
   is no catalog model''s repository, and no alias maps it.'
 profiles:
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
   thinking: 'off'
@@ -71,6 +78,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
   thinking: 'off'
@@ -89,6 +97,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
   thinking: 'off'
@@ -107,6 +116,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
   thinking: 'off'
@@ -125,6 +135,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
   thinking: 'off'
@@ -143,6 +154,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
   thinking: 'off'
@@ -161,6 +173,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
   thinking: 'off'
@@ -179,6 +192,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
   thinking: 'off'
@@ -197,6 +211,7 @@ profiles:
     settings:
       kv_cache_dtype: fp8
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
   thinking: 'on'
@@ -216,6 +231,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
   thinking: 'on'
@@ -235,6 +251,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
   thinking: 'on'
@@ -254,6 +271,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
   thinking: 'on'
@@ -273,6 +291,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
   thinking: 'on'
@@ -292,6 +311,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
   thinking: 'on'
@@ -311,6 +331,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
   thinking: 'on'
@@ -330,6 +351,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4-pro
+  architecture: DeepseekV4ForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
   thinking: 'on'
@@ -349,6 +371,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"thinking": true, "reasoning_effort": "high"}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 1
   thinking: 'off'
@@ -375,6 +398,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":false}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 2
   thinking: 'off'
@@ -401,6 +425,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":false}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 3
   thinking: 'off'
@@ -427,6 +452,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":false}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 4
   thinking: 'off'
@@ -453,6 +479,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":false}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 5
   thinking: 'off'
@@ -479,6 +506,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":false}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 1
   thinking: 'on'
@@ -505,6 +533,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":true,"reasoning_effort":"high"}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 2
   thinking: 'on'
@@ -531,6 +560,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":true,"reasoning_effort":"high"}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 3
   thinking: 'on'
@@ -557,6 +587,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":true,"reasoning_effort":"high"}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 4
   thinking: 'on'
@@ -583,6 +614,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":true,"reasoning_effort":"high"}'
 - model: deepseek-v4.1-flash
+  architecture: DeepseekV41ForCausalLM
   speculative_method: dspark
   num_spec_tokens: 5
   thinking: 'on'
@@ -609,6 +641,7 @@ profiles:
       engram_cpu_offload: 'true'
       chat_template_kwargs: '{"thinking":true,"reasoning_effort":"high"}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 1
   thinking: 'on'
@@ -629,6 +662,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 2
   thinking: 'on'
@@ -649,6 +683,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
   thinking: 'on'
@@ -669,6 +704,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 4
   thinking: 'on'
@@ -689,6 +725,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 5
   thinking: 'on'
@@ -709,6 +746,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 6
   thinking: 'on'
@@ -729,6 +767,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 7
   thinking: 'on'
@@ -749,6 +788,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.2-fp8
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 8
   thinking: 'on'
@@ -769,6 +809,7 @@ profiles:
       kv_cache_dtype: fp8
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: glm-5.3
+  architecture: GlmMoeDsaForCausalLM
   speculative_method: mtp
   num_spec_tokens: 3
   thinking: 'on'
@@ -800,6 +841,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"enable_thinking": true}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 1
   thinking: 'off'
@@ -820,6 +862,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 2
   thinking: 'off'
@@ -840,6 +883,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 3
   thinking: 'off'
@@ -860,6 +904,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 4
   thinking: 'off'
@@ -880,6 +925,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 5
   thinking: 'off'
@@ -900,6 +946,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 6
   thinking: 'off'
@@ -920,6 +967,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 7
   thinking: 'off'
@@ -940,6 +988,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 8
   thinking: 'off'
@@ -960,6 +1009,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "disabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 1
   thinking: 'on'
@@ -980,6 +1030,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 2
   thinking: 'on'
@@ -1000,6 +1051,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 3
   thinking: 'on'
@@ -1020,6 +1072,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 4
   thinking: 'on'
@@ -1040,6 +1093,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 5
   thinking: 'on'
@@ -1060,6 +1114,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 6
   thinking: 'on'
@@ -1080,6 +1135,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 7
   thinking: 'on'
@@ -1100,6 +1156,7 @@ profiles:
     settings:
       chat_template_kwargs: '{"thinking_mode": "enabled"}'
 - model: minimax-m3
+  architecture: MiniMaxM3SparseForConditionalGeneration
   speculative_method: eagle3
   num_spec_tokens: 8
   thinking: 'on'

@@ -3,6 +3,9 @@
     "acceptance.Pin": {
       "additionalProperties": false,
       "properties": {
+        "exact_only": {
+          "type": "boolean"
+        },
         "fallback_category": {
           "type": "string"
         },
@@ -1547,11 +1550,26 @@
     "result.WorkloadProperty": {
       "additionalProperties": false,
       "properties": {
+        "differed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "k_rule": {
+          "type": "string"
+        },
         "name": {
           "type": "string"
         },
         "profile": {
           "type": "string"
+        },
+        "profiles": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "source": {
           "enum": [
@@ -1561,6 +1579,9 @@
             "profile",
             "default"
           ],
+          "type": "string"
+        },
+        "step": {
           "type": "string"
         },
         "values": {

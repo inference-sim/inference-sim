@@ -3,6 +3,9 @@
     "acceptance.Pin": {
       "additionalProperties": false,
       "properties": {
+        "exact_only": {
+          "type": "boolean"
+        },
         "fallback_category": {
           "type": "string"
         },

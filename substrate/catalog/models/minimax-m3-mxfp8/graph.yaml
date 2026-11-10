@@ -10,6 +10,7 @@ global:
   vocab_size: 200064
   tie_word_embeddings: false
   weight_dtype: fp8
+  architecture: MiniMaxM3SparseForConditionalGeneration
 layer_kinds:
 - id: dense
   nodes:

@@ -1,6 +1,7 @@
 package result
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"math"
 	"strings"
 	"testing"
@@ -182,6 +183,30 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"options unsorted", func(r *Result) { r.Input.Options[1].Name = "a" }, "input.options[1].name", "sorted"},
 		{"option without source", func(r *Result) { r.Input.Options[0].Source = "" }, "input.options[0].source", "is not one of"},
 		{"property with unknown source", func(r *Result) { r.Input.WorkloadProperties[0].Source = "guess" }, "input.workload_properties[0].source", "is not one of"},
+		{"a step on a property that is not a profile", func(r *Result) {
+			r.Input.WorkloadProperties[0].Step, r.Input.WorkloadProperties[0].Profiles = "exact", []string{"s k"}
+		}, "input.workload_properties[0].step", "only when source is profile"},
+		{"an unknown step", func(r *Result) { r.Input.WorkloadProperties[0] = borrowed("guess", nil, "", "s k") }, "input.workload_properties[0].step", "is not one of"},
+		{"a step with no profiles", func(r *Result) { r.Input.WorkloadProperties[0] = borrowed("exact", nil, "") }, "input.workload_properties[0].profiles", "required with step"},
+		{"an exact match that differs", func(r *Result) {
+			r.Input.WorkloadProperties[0] = borrowed("exact", []string{"drafter"}, "", "s k")
+		}, "input.workload_properties[0].differed", "an exact match differs in no key field"},
+		{"a borrowed value that differs in nothing", func(r *Result) {
+			r.Input.WorkloadProperties[0] = borrowed("other_drafter", nil, "", "s k")
+		}, "input.workload_properties[0].differed", "required for a borrowed value"},
+		{"an unknown key field", func(r *Result) {
+			r.Input.WorkloadProperties[0] = borrowed("other_drafter", []string{"colour"}, "", "s k")
+		}, "input.workload_properties[0].differed[0]", "is not one of"},
+		{"a K rule on an exact match", func(r *Result) {
+			r.Input.WorkloadProperties[0] = borrowed("exact", nil, "interpolated", "s k")
+		}, "input.workload_properties[0].k_rule", "an exact match brings no K to the run's"},
+		{"the K step with no K rule", func(r *Result) {
+			r.Input.WorkloadProperties[0] = borrowed("same_drafter_other_k", []string{"num_spec_tokens"}, "", "s k")
+		}, "input.workload_properties[0].k_rule", "required for step same_drafter_other_k"},
+		{"an unknown K rule", func(r *Result) {
+			r.Input.WorkloadProperties[0] = borrowed("same_drafter_other_k", []string{"num_spec_tokens"}, "rounded", "s k")
+		}, "input.workload_properties[0].k_rule", "is not one of"},
+		{"a differed field with no step", func(r *Result) { r.Input.WorkloadProperties[0].Differed = []string{"drafter"} }, "input.workload_properties[0].differed", "only with step"},
 		{"property from a profile without its name", func(r *Result) {
 			r.Input.WorkloadProperties[0] = WorkloadProperty{Name: "speculative_acceptance", Source: PropertyProfile,
 				Values: map[string]float64{"acceptance_length": 3}}
@@ -479,5 +504,93 @@ func TestUnmarshalRefusesASecondDocument(t *testing.T) {
 	err := Unmarshal([]byte("kind: Result\n---\nbogus: 1\n"), &r)
 	if err == nil || !strings.Contains(err.Error(), "second YAML document") {
 		t.Fatalf("err = %v, want a refusal of the second document", err)
+	}
+}
+
+// borrowed is a speculative-acceptance property read from a profile, borrowing as step says.
+func borrowed(step string, differed []string, kRule string, profiles ...string) WorkloadProperty {
+	return WorkloadProperty{Name: "speculative_acceptance", Source: PropertyProfile,
+		Values: map[string]float64{"acceptance_length": 2.5}, Profile: "s m/mtp/k3/thinking-off/coding",
+		Step: step, Differed: differed, KRule: kRule, Profiles: profiles}
+}
+
+// A borrowed value that is well formed is accepted, for each step.
+func TestAWellFormedBorrowedPropertyValidates(t *testing.T) {
+	for _, w := range []WorkloadProperty{
+		borrowed("exact", nil, "", "s m/mtp/k3/thinking-off/coding"),
+		borrowed("same_drafter_other_k", []string{"num_spec_tokens"}, "interpolated", "s a", "s b"),
+		borrowed("same_drafter_other_k", []string{"num_spec_tokens"}, "below_smallest_proportional", "s a"),
+		borrowed("other_drafter", []string{"drafter", "speculative_method"}, "", "s a"),
+		borrowed("other_target", []string{"model"}, "", "s a"),
+		// Steps 2 and 3 find their value by step 1's rules (design D8), so they may bring K to the
+		// run's, and say how.
+		borrowed("other_drafter", []string{"drafter", "num_spec_tokens"}, "interpolated", "s a", "s b"),
+		borrowed("other_target", []string{"model", "num_spec_tokens"}, "above_largest", "s a"),
+	} {
+		r := valid()
+		r.Input.WorkloadProperties = []WorkloadProperty{w}
+		if p := r.Validate(); !p.OK() {
+			t.Errorf("step %s was refused:\n%s", w.Step, p.Error())
+		}
+	}
+}
+
+// AcceptanceProperty records a resolution the way the schema says, for every way a value can be
+// supplied, and what it builds is a valid property.
+func TestAcceptancePropertyRecordsEveryResolution(t *testing.T) {
+	al := 2.5
+	set := func(name string, ps ...acceptance.Profile) *acceptance.ProfileSet {
+		return &acceptance.ProfileSet{Kind: acceptance.Kind, Name: name, Profiles: ps}
+	}
+	p := func(k int, a float64) acceptance.Profile {
+		return acceptance.Profile{Model: "m", SpeculativeMethod: "mtp", NumSpecTokens: k, Thinking: acceptance.ThinkingOff,
+			Category: "coding", AcceptanceLength: a, Method: "measured"}
+	}
+	req := func(k int, mut func(*acceptance.Request)) acceptance.Request {
+		r := acceptance.Request{Model: "m", SpeculativeMethod: "mtp", NumSpecTokens: k,
+			Registry: []*acceptance.ProfileSet{set("s", p(2, 2.0), p(6, 4.0))},
+			Workload: acceptance.Workload{Category: "coding", Thinking: acceptance.ThinkingOff}}
+		if mut != nil {
+			mut(&r)
+		}
+		return r
+	}
+	for _, c := range []struct {
+		name      string
+		r         acceptance.Request
+		source    PropertySource
+		step      string
+		kRule     string
+		profiles  int
+		differed  []string
+		profileIs string
+	}{
+		{"an exact profile", req(2, nil), PropertyProfile, "exact", "", 1, nil, "s m/mtp/k2/thinking-off/coding"},
+		{"an interpolated profile", req(4, nil), PropertyProfile, "same_drafter_other_k", "interpolated", 2, []string{"num_spec_tokens"}, "s m/mtp/k2/thinking-off/coding"},
+		{"a command-line value", req(3, func(r *acceptance.Request) { r.CLI = &acceptance.Value{NumSpecTokens: 3, AcceptanceLength: &al} }), PropertyCommandLine, "", "", 0, nil, ""},
+		{"a scenario value", req(3, func(r *acceptance.Request) {
+			r.Scenario = &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: 3, AcceptanceLength: &al}}
+		}), PropertyScenario, "", "", 0, nil, ""},
+		{"a workload value", req(3, func(r *acceptance.Request) {
+			r.Workload.Value = &acceptance.Value{NumSpecTokens: 3, AcceptanceLength: &al}
+		}), PropertyWorkload, "", "", 0, nil, ""},
+	} {
+		res, err := acceptance.Resolve(c.r)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		w := AcceptanceProperty(res)
+		if w.Name != SpeculativeAcceptance || w.Source != c.source || w.Step != c.step || w.KRule != c.kRule ||
+			len(w.Profiles) != c.profiles || strings.Join(w.Differed, ",") != strings.Join(c.differed, ",") || w.Profile != c.profileIs {
+			t.Errorf("%s: %+v", c.name, w)
+		}
+		if w.Values["acceptance_length"] != res.AcceptanceLength {
+			t.Errorf("%s: acceptance_length %v, resolution %v", c.name, w.Values["acceptance_length"], res.AcceptanceLength)
+		}
+		r := valid()
+		r.Input.WorkloadProperties = []WorkloadProperty{w}
+		if pr := r.Validate(); !pr.OK() {
+			t.Errorf("%s builds a property the schema refuses:\n%s", c.name, pr.Error())
+		}
 	}
 }

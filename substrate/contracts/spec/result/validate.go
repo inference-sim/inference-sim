@@ -245,6 +245,7 @@ func (in Input) validate(p *validate.Problems) {
 		if (w.Source == PropertyProfile) != (w.Profile != "") {
 			p.Field(at+".profile", "is stated exactly when source is profile")
 		}
+		w.validateBorrowing(p, at)
 		if len(w.Values) == 0 && w.Source != PropertyDefault {
 			p.Field(at+".values", "required: the values %s supplied", w.Source)
 		}
@@ -755,4 +756,50 @@ func sortedKeys[K ~string, V any](m map[K]V) []K {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+// validateBorrowing checks the fields that say how a profile lookup found its value (D8). They
+// describe a profile, so none is stated for another source; a borrowed value names the key
+// fields that differ and the profiles it read; an exact match differs in none; and a K rule
+// appears only for the step that changes K.
+func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
+	if w.Step == "" {
+		for field, set := range map[string]bool{"differed": len(w.Differed) > 0, "k_rule": w.KRule != "", "profiles": len(w.Profiles) > 0} {
+			if set {
+				p.Field(at+"."+field, "is stated only with step")
+			}
+		}
+		return
+	}
+	if w.Source != PropertyProfile {
+		p.Field(at+".step", "is stated only when source is profile, because only a profile lookup borrows")
+	}
+	steps := map[string]bool{"exact": true, "same_drafter_other_k": true, "other_drafter": true, "other_target": true}
+	if !steps[w.Step] {
+		p.Field(at+".step", "%q is not one of exact, same_drafter_other_k, other_drafter, other_target", w.Step)
+	}
+	if len(w.Profiles) == 0 {
+		p.Field(at+".profiles", "required with step: the profiles the value was read from")
+	}
+	if w.Step == "exact" && (len(w.Differed) > 0 || w.KRule != "") {
+		p.Field(at+".differed", "an exact match differs in no key field and brings no K to the run's")
+	}
+	if w.Step != "exact" && len(w.Differed) == 0 {
+		p.Field(at+".differed", "required for a borrowed value: the key fields in which it differs")
+	}
+	known := map[string]bool{"model": true, "drafter": true, "speculative_method": true, "num_spec_tokens": true}
+	for i, d := range w.Differed {
+		if !known[d] {
+			p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not one of model, drafter, speculative_method, num_spec_tokens", d)
+		}
+	}
+	rules := map[string]bool{"interpolated": true, "above_largest": true, "below_smallest_rates": true, "below_smallest_proportional": true}
+	switch {
+	case w.KRule != "" && !rules[w.KRule]:
+		p.Field(at+".k_rule", "%q is not one of interpolated, above_largest, below_smallest_rates, below_smallest_proportional", w.KRule)
+	case w.KRule != "" && w.Step == "exact":
+		p.Field(at+".k_rule", "an exact match brings no K to the run's")
+	case w.Step == "same_drafter_other_k" && w.KRule == "":
+		p.Field(at+".k_rule", "required for step same_drafter_other_k")
+	}
 }

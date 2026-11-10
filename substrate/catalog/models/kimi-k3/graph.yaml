@@ -10,6 +10,7 @@ global:
   vocab_size: 163840
   tie_word_embeddings: false
   weight_dtype: mxfp4
+  architecture: KimiK3ForConditionalGeneration
 layer_kinds:
 - id: kda_moe
   nodes:

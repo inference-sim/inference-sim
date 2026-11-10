@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -78,5 +79,49 @@ func TestCheckFits(t *testing.T) {
 		if !strings.Contains(got[i].Message, want) || got[i].File != "coefficients/s.yaml" {
 			t.Errorf("problem %d: %v, want one naming %s", i, got[i], want)
 		}
+	}
+}
+
+// A profile's drafter must be a catalog model, and the architecture it states must be the one
+// its target's graph records, or a lookup that borrows across targets would borrow from a model
+// of another architecture (design D8).
+func TestCheckFitsReadsAProfilesDrafterAndArchitecture(t *testing.T) {
+	graph := func(arch string) *model.Graph {
+		g := &model.Graph{}
+		g.Global.Architecture = arch
+		return g
+	}
+	c := &Catalog{Chips: map[string]*hardware.Chip{}, Fabrics: map[string]*hardware.Fabric{},
+		Models: map[string]*model.Graph{"target": graph("DeepseekV3ForCausalLM"), "drafter": graph("X")}}
+	p := func(mut func(*acceptance.Profile)) *Registry {
+		pr := acceptance.Profile{Model: "target", SpeculativeMethod: "mtp", NumSpecTokens: 3,
+			Thinking: acceptance.ThinkingOff, Category: "coding", AcceptanceLength: 2,
+			Architecture: "DeepseekV3ForCausalLM", Method: "measured"}
+		mut(&pr)
+		return &Registry{Acceptance: map[string]*acceptance.ProfileSet{"s": {Profiles: []acceptance.Profile{pr}}}}
+	}
+	if got := CheckFits(c, p(func(*acceptance.Profile) {})); len(got) != 0 {
+		t.Errorf("a consistent profile was reported: %v", got)
+	}
+	if got := CheckFits(c, p(func(pr *acceptance.Profile) { pr.Drafter = "drafter" })); len(got) != 0 {
+		t.Errorf("a profile naming a catalog drafter was reported: %v", got)
+	}
+	for name, c2 := range map[string]struct {
+		mut  func(*acceptance.Profile)
+		want string
+	}{
+		"a drafter that is no catalog model": {func(pr *acceptance.Profile) { pr.Drafter = "ghost" }, `drafter "ghost"`},
+		"an architecture the graph does not record": {func(pr *acceptance.Profile) { pr.Architecture = "LlamaForCausalLM" },
+			`states architecture "LlamaForCausalLM", but the catalog's graph for target records "DeepseekV3ForCausalLM"`},
+	} {
+		got := CheckFits(c, p(c2.mut))
+		if len(got) != 1 || !strings.Contains(got[0].Message, c2.want) {
+			t.Errorf("%s: %v, want one problem containing %q", name, got, c2.want)
+		}
+	}
+	// A profile that states no architecture is never borrowed across targets, so nothing is
+	// asserted about it.
+	if got := CheckFits(c, p(func(pr *acceptance.Profile) { pr.Architecture = "" })); len(got) != 0 {
+		t.Errorf("a profile with no architecture was reported: %v", got)
 	}
 }

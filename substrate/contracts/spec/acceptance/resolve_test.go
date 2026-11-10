@@ -176,8 +176,9 @@ func TestResolveRefuses(t *testing.T) {
 		errorHas string
 	}{
 		{"no speculation", func(r *Request) { r.NumSpecTokens = 0 }, "at least 1"},
-		{"K with no curve", func(r *Request) { r.NumSpecTokens = 6 }, "no profile for deepseek-v4.1-flash/dspark/k6"},
-		{"another method", func(r *Request) { r.SpeculativeMethod = "mtp" }, "no profile"},
+		{"K with no curve, exact only", func(r *Request) { r.NumSpecTokens = 6; r.ExactOnly = true }, "no profile for deepseek-v4.1-flash/dspark/k6"},
+		{"another method, exact only", func(r *Request) { r.SpeculativeMethod = "mtp"; r.ExactOnly = true }, "exact_only forbids borrowing"},
+		{"a model with no profile of its own and no architecture to borrow by", func(r *Request) { r.Model = "other-model" }, "no profile for other-model/dspark/k5"},
 		{"no thinking mode", func(r *Request) { r.Workload.Thinking = "" }, "no thinking mode"},
 		{"unknown thinking mode", func(r *Request) { r.Workload.Thinking = "maybe" }, "not one of"},
 		{"no model", func(r *Request) { r.Model = "" }, "needs the model"},

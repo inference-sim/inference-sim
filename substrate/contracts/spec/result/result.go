@@ -242,6 +242,21 @@ type WorkloadProperty struct {
 	// Profile names the registry profile, as set and key, when Source is
 	// PropertyProfile.
 	Profile string `yaml:"profile,omitempty"`
+	// Step is how a profile lookup found its value (D8): "exact" for the run's exact key, or
+	// the borrowing step that supplied it: "same_drafter_other_k", "other_drafter" or
+	// "other_target". Present exactly when Source is PropertyProfile and the property is a
+	// profile lookup that can borrow (speculative acceptance).
+	Step string `yaml:"step,omitempty"`
+	// Differed names each key field in which a borrowed profile differs from the run's:
+	// model, drafter, speculative_method or num_spec_tokens. Empty for an exact match.
+	Differed []string `yaml:"differed,omitempty"`
+	// KRule says how a borrowed value was brought to the run's K when Step is
+	// "same_drafter_other_k": "interpolated", "above_largest", "below_smallest_rates" or
+	// "below_smallest_proportional".
+	KRule string `yaml:"k_rule,omitempty"`
+	// Profiles lists every profile the value was read from, as set and key, the one that sets
+	// it first. An interpolation lists the two it lies between. Present with Step.
+	Profiles []string `yaml:"profiles,omitempty"`
 }
 
 // PropertySource is what supplied a workload property, highest precedence first (D8).

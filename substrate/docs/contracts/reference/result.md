@@ -163,6 +163,10 @@ simulate, such as speculative acceptance or expert routing imbalance (D8).
 | `values` | mapping | unless `default` | The property's figures, by name. Finite. |
 | `source` | string | yes | What supplied the values, highest precedence first: `command_line`, `scenario`, `workload` (stated by or derived from it), `profile` (the substrate's profile for the workload), `default` (none stated). |
 | `profile` | string | with `profile` | The profile, as set and key. |
+| `step` | string | for a profile lookup that can borrow | How the lookup found its value (D8): `exact`, `same_drafter_other_k`, `other_drafter` or `other_target`. |
+| `differed` | list of strings | with a borrowing step | Each key field in which a borrowed profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`. None for `exact`. |
+| `k_rule` | string | with `same_drafter_other_k` | How the borrowed value was brought to the run's K: `interpolated`, `above_largest`, `below_smallest_rates` or `below_smallest_proportional`. |
+| `profiles` | list of strings | with `step` | Every profile the value was read from, as set and key, the one that sets it first; an interpolation lists both it lies between. |
 
 ## `frame`
 
