@@ -538,6 +538,11 @@ jobs:
         env:
           ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
         run: python -I oracle/gen_block_hashes.py vllm-source core/kv/testdata/block_hashes.json > oracle/out/block_hashes.json
+      # Block hashes under a stated PYTHONHASHSEED, from vLLM's own init_none_hash and hash_block_tokens.
+      - name: the seeded block-hash fixture is vLLM's own hashes
+        run: |
+          python -I oracle/gen_seeded_block_hashes.py vllm-source > oracle/out/seeded_block_hashes.json
+          diff -u core/kv/testdata/seeded_block_hashes.json oracle/out/seeded_block_hashes.json
       # The seeded fuzz corpora (tier 2: 4000 scenarios; tier 3: 1000, DP: 1000; the connector:
       # 3300), each from fixed seeds and run through vLLM, then through blis-vllm below, which must
       # match at zero mismatches. Cached, keyed on the generators, seeds, runners, mock, lock and

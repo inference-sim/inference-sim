@@ -344,7 +344,9 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 			return fmt.Errorf("vllm: request %s names adapter %q but LoRA is not enabled (max_loras unset)", r.ID, r.Adapter)
 		}
 		// The LoRA block key (vllm/v1/core/kv_cache_utils.py:578-595@5df63a72): its name and
-		// path. An engine.Request names the adapter only, so the name stands for both.
+		// path. An engine.Request names the adapter only, so the name stands for both. Which
+		// blocks hit is unchanged (the key is per adapter either way), but the hash published in
+		// a KV event differs from vLLM's for a LoRA request (docs/feature-matrix.md, "KV events").
 		sr.LoRA = e.loraID(r.Adapter)
 		sr.LoRAName = r.Adapter
 		sr.Keys.Extra = []kv.ExtraKey{{"lora", r.Adapter, r.Adapter}}
