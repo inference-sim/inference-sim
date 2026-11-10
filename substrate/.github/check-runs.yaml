@@ -26,6 +26,7 @@ blis-substrate:
   "contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused": [contracts and validators]
   "contracts/spec/hardware: TestPeaksAreDenseFigures": [contracts and validators]
   "contracts/units: TestMixedUnitsDoNotCompile": [contracts and validators]
+  "contracts/metrics: TestComparableFiguresRefusesEachDifference": [contracts and validators]
   "contracts: TestEveryLoaderReadsEveryFieldItsExampleStates": [contracts and validators]
   "contracts/check: TestAFieldThatOptsInHoldsPlusInfinity": [contracts and validators]
   "contracts/spec/result: TestEveryFieldAWriterCanEmitRoundTripsInBothEncodings": [contracts and validators]

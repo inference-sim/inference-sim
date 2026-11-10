@@ -223,8 +223,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-20** (partial; target ci by M2) No price, size or engine decision depends on a free-text label.
   - `ci`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests (`contracts: TestNoPriceDependsOnAFreeTextLabel`)
   - `ci`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price (`kernel: TestChangingALabelChangesNoPriceOrIsListed`)
-- **DEV-8** (new; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
-  - `new`, pull_request: The metric registry in contracts/, which the simulator reads directly and the dashboard and config search read through inference-sim metrics
+- **DEV-8** (partial; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
+  - `ci`, pull_request: The metric registry in contracts/ states each metric's scopes and aggregates and refuses a comparison unless metric, scope and aggregate are the same (`contracts/metrics: TestComparableFiguresRefusesEachDifference`)
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
   - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class (`.github/pull_request_template.md (generated)`)
 - **VAL-1** (ci; target reached) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.

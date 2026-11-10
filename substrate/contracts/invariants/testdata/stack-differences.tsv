@@ -9,3 +9,4 @@
 #
 # Columns: identifier, status here, "In CI by" here, the layer that closes the difference.
 CFG-3	new	M2	open
+DEV-8	partial	M2	open
