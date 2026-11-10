@@ -35,14 +35,20 @@ generates and never commits (X11). Once the set is approved, the bot releases it
 the applications. For each repository the bot stages the final release commit on a branch
 `release/<tag>`: it merges the head into the base branch and writes the pins to the published
 tags of the layers below it in one commit. It tags nothing at that point. The commit it stages is not the head
-that was checked, so a person or the release job pushes the branch, CI runs on that exact commit,
-and its results are recorded under that commit's SHA. Only then does the bot make the annotated tag, whose message is the generated release notes (LIF-4), on that same commit, and
-only if the recorded results cover every ci check (LIF-3). A tip that moved after the check has
-no results and is refused. A head that already carries a release tag is refused, and so is a
+that was checked, so a person pushes the branch and CI runs on that exact commit. The bot reads
+the results from that commit's own check runs, through `.github/check-runs.yaml`, which names
+the check runs that prove each registry check. Only then does the bot make the annotated tag,
+whose message is the generated release notes (LIF-4), on that same commit, and only if every ci
+check has a successful run there (LIF-3). A hand-written result cannot stand in for a run: there
+is no results file. A tip that moved after the check has no check runs and is refused, and so is
+a check whose job was skipped, which proves nothing. When a job ran more than once on the commit
+(a re-run, or another manual run), its newest attempt decides: an earlier failure that a later
+run of the same job replaced does not hold the tag back, and an earlier pass does not hide a later
+failure. A newest attempt that is still running is no result. Every leg of a matrix is still
+needed. A head that already carries a release tag is refused, and so is a
 `go.mod` that requires a BLIS module at a pseudo-version.
 
-The release job does not exist yet (it arrives in M2). Until it does, the bot works one layer at
-a time and a person does the pushing and the waiting by hand. Each run re-plans the whole
+The bot works one layer at a time and a person does the pushing and the waiting. Each run re-plans the whole
 `stack.lock` from the repositories as they stand, so it can be repeated after any interruption:
 a head that is already staged keeps its tag and its branch, a head whose tag is already made is
 reported as done and skipped, and the version numbers never advance. It is refused only when the
@@ -53,11 +59,12 @@ For each layer, lowest first:
 1. `-apply` stages the layer (`-layer <repo>`, by default the first layer not yet tagged). A
    layer above the first is staged only when the tag of every layer below it exists and is
    published on that repository's origin, because its `go.mod` is pinned to those real tags.
-2. The person pushes `release/<tag>` and run the layer's checks on that exact commit, and record
-   the results under its SHA.
-3. `-tag` makes the annotated tag on that tip, if the recorded results cover every ci check, and
-   tags nothing else.
-4. The person pushes the tag and run the layer's checks against it. Then they run `-apply` for the
+2. The person pushes `release/<tag>` and runs the layer's checks on that exact commit. A manual
+   run of the workflow (`workflow_dispatch`) runs every job, including those a path filter
+   skips on a pull request.
+3. `-tag` makes the annotated tag on that tip, if its check runs prove every ci check, and tags
+   nothing else.
+4. The person pushes the tag and runs the layer's checks against it. Then they run `-apply` for the
    next layer.
 
 The command prints the next step after each run. The push to `main` needs a bypass for the
@@ -67,7 +74,7 @@ approving review; the tag push needs the same, because tags are protected (LIF-1
 A dry run prints each tag, pin, refusal and the notes, and changes nothing:
 
 ```sh
-go run ./tools/release -lock stack.lock -results results.json \
+go run ./tools/release -lock stack.lock \
     -dir blis-substrate=../blis-substrate -dir blis-vllm=../blis-vllm -dir inference-sim=../inference-sim
 ```
 
@@ -78,8 +85,8 @@ the plan up front when it is missing, is not inference-sim's module, or does not
 direct `blis-substrate` requirement.
 
 `-apply` stages one layer's release commit on `release/<tag>` in the local checkout and tags
-nothing. After CI has run on the staged commit, `-tag` with a `results.json` that records it tags
-that exact commit. `-sign` signs the pin commits and tags with the key git is configured with;
+nothing. After CI has run on the staged commit, `-tag` reads its check runs (`-check-runs` names the
+mapping, `.github/check-runs.yaml` by default) and tags that exact commit. `-sign` signs the pin commits and tags with the key git is configured with;
 without it they are annotated and unsigned. The command never pushes.
 
 ## The manual procedure

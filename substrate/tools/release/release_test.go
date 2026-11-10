@@ -418,17 +418,11 @@ func TestCommandDryRun(t *testing.T) {
 	dir := t.TempDir()
 	lock := filepath.Join(dir, "stack.lock")
 	os.WriteFile(lock, []byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: "+h+", bump: patch}\n"), 0o644)
-	reg := registry(t)
-	res := `{"blis-substrate": {"` + h + `": {`
-	var parts []string
-	for k := range allPassed(reg, "blis-substrate") {
-		parts = append(parts, `"`+k+`": true`)
-	}
-	res += strings.Join(parts, ",") + "}}}"
-	resPath := filepath.Join(dir, "results.json")
-	os.WriteFile(resPath, []byte(res), 0o644)
+	old := fetchCheckRuns
+	t.Cleanup(func() { fetchCheckRuns = old })
+	fetchCheckRuns = func(repo, _ string) (map[string]string, error) { return everyRunSucceeded(t, repo), nil }
 	var out strings.Builder
-	code, err := run([]string{"-lock", lock, "-results", resPath, "-dir", "blis-substrate=" + sub.dir}, &out)
+	code, err := run([]string{"-lock", lock, "-check-runs", filepath.Join("..", "..", ".github", "check-runs.yaml"), "-dir", "blis-substrate=" + sub.dir}, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
