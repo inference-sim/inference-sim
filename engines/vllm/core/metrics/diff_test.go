@@ -28,9 +28,10 @@ type scenario struct {
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
 		Speculative               *struct {
-			Method string `json:"method"`
-			K      int    `json:"num_speculative_tokens"`
-			Draft  string `json:"draft"`
+			Method           string `json:"method"`
+			K                int    `json:"num_speculative_tokens"`
+			Draft            string `json:"draft"`
+			ParallelDrafting bool   `json:"parallel_drafting"`
 		} `json:"speculative"`
 	} `json:"config"`
 	Requests []struct {
@@ -148,7 +149,8 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 	}
 	var spec sched.Spec
 	if c.Speculative != nil {
-		spec = sched.ResolveSpec(sched.SpecOptions{Method: c.Speculative.Method, NumTokens: c.Speculative.K})
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: c.Speculative.Method, NumTokens: c.Speculative.K,
+			ParallelDrafting: c.Speculative.ParallelDrafting, NextnPredictLayers: draftNextnLayers(t, c.Speculative.Draft)})
 	}
 	s, err := sched.New(sched.Config{
 		Spec: spec, MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
@@ -480,4 +482,19 @@ func readJSON(t *testing.T, path string, v any) {
 	if err := json.Unmarshal(raw, v); err != nil {
 		t.Fatalf("%s: %v", path, fmt.Errorf("%w", err))
 	}
+}
+
+// draftNextnLayers reads an MTP drafter's num_nextn_predict_layers from its configuration-only
+// checkpoint under oracle/drafts, the file vLLM's SpeculativeConfig reads in the oracle (as
+// core/sched's driver reads it): the prefill lookahead of a multi-module MTP drafter turns on it.
+func draftNextnLayers(t *testing.T, draft string) int {
+	t.Helper()
+	if draft == "" {
+		return 0
+	}
+	var c struct {
+		Layers int `json:"num_nextn_predict_layers"`
+	}
+	readJSON(t, filepath.Join("..", "..", "oracle", "drafts", draft, "config.json"), &c)
+	return c.Layers
 }

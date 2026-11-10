@@ -36,8 +36,11 @@ SPEC_METHODS = [
     {"method": "mtp", "draft": "mtp-1", "k": 1},
     {"method": "mtp", "draft": "mtp-4"},
     {"method": "dspark"},
-    {"method": "ngram"},
 ]
+# n-gram is drawn from a stream of its own, so adding it moved no earlier seed's draw (the
+# generator's other draws all come from the seed's first stream).
+NGRAM = {"method": "ngram"}
+NGRAM_SHARE = 0.07
 
 
 def scenario(seed: int) -> dict:
@@ -51,6 +54,8 @@ def extend(sc: dict, rng: random.Random) -> None:
     cfg, reqs = sc["config"], sc["requests"]
     if rng.random() < 0.5:
         m = dict(rng.choice(SPEC_METHODS))
+        if random.Random(sc["seed"] * 104729 + 3).random() < NGRAM_SHARE:
+            m = dict(NGRAM)
         k = m.pop("k", rng.randint(1, 4))
         if m["method"] == "mtp" and m["draft"] == "mtp-4":
             k = rng.randint(2, 4)
