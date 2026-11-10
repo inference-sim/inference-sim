@@ -120,7 +120,7 @@ func TestIdentityValidateChecksDrafterNames(t *testing.T) {
 		t.Fatalf("a target listing its speculator and a drafter was refused:\n%s", p.Error())
 	}
 	drafter := base()
-	drafter.Name, drafter.Target = "m-eagle3", "m"
+	drafter.Name, drafter.Targets = "m-eagle3", []string{"m", "m-fp8"}
 	if p := drafter.Validate(); !p.OK() {
 		t.Fatalf("a drafter naming its target was refused:\n%s", p.Error())
 	}
@@ -128,8 +128,10 @@ func TestIdentityValidateChecksDrafterNames(t *testing.T) {
 		"an empty drafter":          func(i *Identity) { i.Drafters = []string{""} },
 		"a model drafting itself":   func(i *Identity) { i.Drafters = []string{"m"} },
 		"a drafter listed twice":    func(i *Identity) { i.Drafters = []string{"a", "a"} },
-		"a model as its own target": func(i *Identity) { i.Target = "m" },
-		"a drafter with drafters":   func(i *Identity) { i.Target, i.Drafters = "t", []string{"a"} },
+		"a model as its own target": func(i *Identity) { i.Targets = []string{"t", "m"} },
+		"an empty target":           func(i *Identity) { i.Targets = []string{""} },
+		"a target listed twice":     func(i *Identity) { i.Targets = []string{"t", "t"} },
+		"a drafter with drafters":   func(i *Identity) { i.Targets, i.Drafters = []string{"t"}, []string{"a"} },
 	} {
 		id := base()
 		mut(id)

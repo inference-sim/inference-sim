@@ -57,9 +57,13 @@ type Identity struct {
 	// graph with a speculator to list it, and every named drafter to name this model as its
 	// Target.
 	Drafters []string `yaml:"drafters,omitempty"`
-	// Target is set on a separate drafter's entry: the catalog name of the model it drafts
-	// for. That model lists this entry in its Drafters. A drafter drafts for one target.
-	Target string `yaml:"target,omitempty"`
+	// Targets is set on a separate drafter's entry: the catalog names of the models it drafts
+	// for. Each of them lists this entry in its Drafters. A drafter checkpoint drafts for every
+	// model whose hidden states it was trained to read, and one architecture ships in several
+	// quantisations that are separate catalog entries, so a drafter may have several targets;
+	// acceptance is keyed by the (target, drafter) pair (design D8), so each pair is its own
+	// key.
+	Targets []string `yaml:"targets,omitempty"`
 }
 
 // InGraphSpeculator is the word a target's Drafters list uses for the speculator its own
@@ -141,11 +145,21 @@ func (id *Identity) validateStructure(p *validate.Problems) {
 		}
 		seen[d] = true
 	}
-	switch {
-	case id.Target != "" && id.Target == id.Name:
-		p.Field("target", "%q is this model; a drafter's target is another model", id.Target)
-	case id.Target != "" && len(id.Drafters) > 0:
-		p.Field("drafters", "a separate drafter names its target and lists no drafters of its own")
+	seenTarget := map[string]bool{}
+	for i, t := range id.Targets {
+		at := fmt.Sprintf("targets[%d]", i)
+		switch {
+		case t == "":
+			p.Field(at, "is empty: name the catalog model this drafter drafts for")
+		case t == id.Name:
+			p.Field(at, "%q is this model; a drafter's target is another model", t)
+		case seenTarget[t]:
+			p.Field(at, "%q is listed twice", t)
+		}
+		seenTarget[t] = true
+	}
+	if len(id.Targets) > 0 && len(id.Drafters) > 0 {
+		p.Field("drafters", "a separate drafter names its targets and lists no drafters of its own")
 	}
 }
 

@@ -6132,14 +6132,21 @@ def test_eagle3_layer_reads_the_embedding_and_the_state_side_by_side(tmp_path):
 
 
 def test_eagle3_default_capture_layers_follow_the_targets_depth():
-    """The engine asks the target for (2, n // 2, n - 3), and the target is MiniMax-M3-MXFP8,
-    whose committed configuration has 60 layers: the depth recorded for the drafter must be
-    that one."""
+    """The engine asks the target for (2, n // 2, n - 3). Both targets, MiniMax-M3 and
+    MiniMax-M3-MXFP8, have 60 layers in their committed configurations and the hidden width
+    the drafter's fc reads: the depth recorded for the drafter must be theirs, and each target
+    must list the drafter."""
     sys.path.insert(0, str(DERIVER.parent))
     import derive_graph  # noqa: E402
     t = derive_graph.EAGLE3_TARGETS["minimax-m3-eagle3"]
-    target = text_config(config_of(MODELS / t["target"]))
-    assert t["layers"] == target["num_hidden_layers"] == 60
+    drafter = yaml.safe_load((MODELS / "minimax-m3-eagle3" / "model.yaml").read_text())
+    assert sorted(t["targets"]) == sorted(drafter["targets"])
+    for name in t["targets"]:
+        cfg = text_config(config_of(MODELS / name))
+        assert t["layers"] == cfg["num_hidden_layers"] == 60
+        assert cfg["hidden_size"] == EAGLE3_CFG["hidden_size"]
+        listed = yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
+        assert "minimax-m3-eagle3" in listed
     assert derive_graph.eagle3_default_aux_layers(60) == [2, 30, 57]
 
 

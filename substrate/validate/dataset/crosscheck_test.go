@@ -127,17 +127,18 @@ func TestCheckFitsReadsAProfilesDrafterAndArchitecture(t *testing.T) {
 }
 
 // The catalog's drafter link holds in both directions (design D8): a target lists its drafters,
-// each separate drafter names its target, and a graph that states a speculator is listed as
+// each separate drafter names its targets, and a graph that states a speculator is listed as
 // having one. Each case below is a known-bad catalog.
 func TestCheckDraftersHoldsInBothDirections(t *testing.T) {
 	cat := func(mut func(map[string]*model.Identity, map[string]*model.Graph)) *Catalog {
 		ids := map[string]*model.Identity{
 			"target":  {Name: "target", Drafters: []string{model.InGraphSpeculator, "drafter"}},
-			"drafter": {Name: "drafter", Target: "target"},
+			"drafter": {Name: "drafter", Targets: []string{"target", "target2"}},
 			"plain":   {Name: "plain"},
+			"target2": {Name: "target2", Drafters: []string{"drafter"}},
 		}
 		graphs := map[string]*model.Graph{
-			"target": {Speculator: &model.Speculator{}}, "drafter": {Speculator: &model.Speculator{}}, "plain": {},
+			"target": {Speculator: &model.Speculator{}}, "drafter": {Speculator: &model.Speculator{}}, "plain": {}, "target2": {},
 		}
 		mut(ids, graphs)
 		return &Catalog{Identities: ids, Models: graphs}
@@ -153,13 +154,20 @@ func TestCheckDraftersHoldsInBothDirections(t *testing.T) {
 			ids["target"].Drafters = []string{model.InGraphSpeculator, "ghost"}
 		}, `lists drafter "ghost", which is not a catalog model`},
 		"a listed drafter that names another target": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
-			ids["drafter"].Target = "plain"
-		}, `lists drafter "drafter", whose model.yaml names target "plain"`},
+			ids["drafter"].Targets = []string{"plain"}
+		}, `lists drafter "drafter", whose model.yaml names targets [plain], not this model`},
 		"a drafter whose target does not list it": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
 			ids["target"].Drafters = []string{model.InGraphSpeculator}
 		}, `does not list "drafter" as a drafter`},
+		"a drafter one of whose targets does not list it": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["target2"].Drafters = nil
+		}, `names target "target2", whose model.yaml does not list "drafter" as a drafter`},
+		"a model that lists a drafter naming other targets only": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
+			ids["target2"].Drafters = []string{"drafter"}
+			ids["drafter"].Targets = []string{"target"}
+		}, `lists drafter "drafter", whose model.yaml names targets [target], not this model`},
 		"a drafter whose target is no model": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
-			ids["drafter"].Target = "ghost"
+			ids["drafter"].Targets = []string{"ghost"}
 		}, `names target "ghost", which is not a catalog model`},
 		"a speculator the target does not list": {func(ids map[string]*model.Identity, _ map[string]*model.Graph) {
 			ids["target"].Drafters = []string{"drafter"}

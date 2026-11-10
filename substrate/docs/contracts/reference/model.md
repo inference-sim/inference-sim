@@ -413,8 +413,8 @@ the entry is and where its `config.json` came from.
 | `source` | mapping | yes | Where the vendor configuration was fetched from, below. |
 | `licence` | mapping | no | The licence `config.json` is published under, below (X12). The loader decodes it and does not require it; `validate-catalog` requires it in the project's own catalog. |
 | `config` | mapping | no | The SHA-256 of a `config.json` that is not committed, below (X12). |
-| `drafters` | list of strings | no | What can draft tokens for this model (D8): `speculator` for the speculator its own graph states, and the catalog name of each separate drafter checkpoint. `validate-catalog` requires a graph with a speculator to list `speculator`, and each named drafter to name this model as its `target`. |
-| `target` | string | no | On a separate drafter's entry: the catalog name of the model it drafts for. That model lists this entry in its `drafters`. |
+| `drafters` | list of strings | no | What can draft tokens for this model (D8): `speculator` for the speculator its own graph states, and the catalog name of each separate drafter checkpoint. `validate-catalog` requires a graph with a speculator to list `speculator`, and each named drafter to name this model among its `targets`. |
+| `targets` | list of strings | no | On a separate drafter's entry: the catalog names of the models it drafts for. Each of them lists this entry in its `drafters`. One drafter checkpoint serves every model whose hidden states it was trained to read, and an architecture shipped in several quantisations is several catalog entries, so a drafter may have several targets; acceptance is keyed by the target and drafter pair (D8). |
 
 Adding a model includes the drafters it ships with and those that public benchmark deployments run
 with it (design §12.1): a separate drafter checkpoint gets its own entry, derived from its public

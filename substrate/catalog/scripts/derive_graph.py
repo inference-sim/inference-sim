@@ -4638,10 +4638,10 @@ def handler_muse_spark_dspark(cfg, raw, model):
 # 1712-1733@v0.32.0; MiniMaxM3SparseForCausalLM does not override it, minimax_m3/nvidia/
 # model.py:1042@v0.32.0, which records captures as idx + 1, :909-911). The default depends on
 # the target's depth, which a drafter's configuration does not state, so it is recorded per
-# drafter here rather than defaulted, with the catalog target whose depth it is. A test holds
-# the depth to the target's committed configuration.
+# drafter here rather than defaulted, with the catalog targets whose depth it is. A test holds
+# the depth to each target's committed configuration.
 EAGLE3_TARGETS = {
-    "minimax-m3-eagle3": {"target": "minimax-m3-mxfp8", "layers": 60},
+    "minimax-m3-eagle3": {"targets": ["minimax-m3", "minimax-m3-mxfp8"], "layers": 60},
 }
 
 
