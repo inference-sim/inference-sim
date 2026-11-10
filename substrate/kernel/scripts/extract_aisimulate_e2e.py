@@ -236,6 +236,14 @@ def main() -> int:
 
     scenarios = {s["scenario"] for s in corpus["sweeps"]}
     points = sum(len(s["points"]) for s in corpus["sweeps"])
+    if points == 0:
+        # A corpus of nothing is not a corpus (X22). The artifact's schema drifts: an extractor
+        # whose slug maps no longer match reads 0 points and must say so, not exit cleanly.
+        print(f"error: 0 sweeps, 0 points from {args.summary}; the artifact's model or chip "
+              "slugs no longer match MODELS and CHIPS", file=sys.stderr)
+        for reason, n in sorted(corpus["selection"]["skipped"].items()):
+            print(f"  skipped {n:4d}  {reason}", file=sys.stderr)
+        return 1
     with open(args.out, "w") as fh:
         json.dump(corpus, fh, indent=1, sort_keys=False)
         fh.write("\n")
