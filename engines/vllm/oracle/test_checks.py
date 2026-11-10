@@ -348,5 +348,42 @@ class CheckLockHashed(unittest.TestCase):
         self.assertIn("torch==2.13.0+cpu is in the lock but not hashed", r.stdout)
 
 
+class WallClockGauge(unittest.TestCase):
+    """A gauge vLLM sets to the current time (vllm:lora_requests_info) is compared by its labels.
+
+    Its value is when the sample was made, which differs between two runs of one scenario, so the
+    golden records it as 1.0 (set) and compare_goldens_metrics.py compares the rest. The family
+    stays in the golden with every label, and a changed label set still fails.
+    """
+
+    FAM = "vllm:lora_requests_info"
+
+    @staticmethod
+    def load(name):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, name + ".py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def series(self, key, value=1.0):
+        return {"provenance": {"scenario_sha256": "s"}, "steps": 1,
+                "per_step": [{key: value}], "series": {key: value}}
+
+    def test_a_timestamp_is_recorded_as_set(self):
+        m = self.load("run_metrics")
+        self.assertEqual(m.sample_value(self.FAM, 1794345891.12), 1.0)
+        self.assertEqual(m.sample_value(self.FAM, 0.0), 0.0)
+        self.assertEqual(m.sample_value("vllm:num_requests_running", 3.0), 3.0)
+
+    def test_same_labels_pass_and_changed_labels_fail(self):
+        c = self.load("compare_goldens_metrics")
+        key = self.FAM + "{max_lora=1,running_lora_adapters=a,waiting_lora_adapters=}"
+        self.assertEqual(c.first_difference(self.series(key), self.series(key)), "")
+        other = self.FAM + "{max_lora=1,running_lora_adapters=,waiting_lora_adapters=a}"
+        self.assertNotEqual(c.first_difference(self.series(key), self.series(other)), "")
+        self.assertNotEqual(c.first_difference(self.series(key, 1.0), self.series(key, 0.0)), "")
+
+
 if __name__ == "__main__":
     unittest.main()

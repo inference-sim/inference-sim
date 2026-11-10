@@ -26,6 +26,21 @@ import os
 import sys
 
 
+# Gauges vLLM sets to the wall-clock time of the update (Gauge.set_to_current_time), so their
+# value differs between two runs of the same scenario while their labels do not. The labels are
+# what a step decided (the running and waiting adapters); the value is when the sample was made.
+# The series records the value as 1.0 once the sample is set, and keeps every label, so the
+# family is compared by its labels and a changed label set still fails the golden comparison.
+WALL_CLOCK_GAUGES = frozenset({"vllm:lora_requests_info"})
+
+
+def sample_value(name: str, value: float) -> float:
+    """A sample's value as the series records it: a wall-clock gauge's timestamp is 1.0 when set."""
+    if name in WALL_CLOCK_GAUGES:
+        return 1.0 if value > 0 else 0.0
+    return value
+
+
 def main() -> None:
     vllm_root, path = sys.argv[1], sys.argv[2]
     if os.path.isdir(path):
@@ -151,7 +166,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                     continue
                 labels = ",".join(f"{k}={v}" for k, v in sorted(smp.labels.items())
                                   if k not in ("model_name", "engine"))
-                out[smp.name + ("{" + labels + "}" if labels else "")] = smp.value
+                out[smp.name + ("{" + labels + "}" if labels else "")] = sample_value(smp.name, smp.value)
         return dict(sorted(out.items()))
 
     while step < max_steps:
