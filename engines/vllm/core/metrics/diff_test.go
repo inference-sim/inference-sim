@@ -27,6 +27,11 @@ type scenario struct {
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
+		Speculative               *struct {
+			Method string `json:"method"`
+			K      int    `json:"num_speculative_tokens"`
+			Draft  string `json:"draft"`
+		} `json:"speculative"`
 	} `json:"config"`
 	Requests []struct {
 		ID          string  `json:"id"`
@@ -35,6 +40,7 @@ type scenario struct {
 		Output      []int64 `json:"output"`
 		MaxTokens   int     `json:"max_tokens"`
 		Priority    int     `json:"priority"`
+		Accepted    []int   `json:"accepted"`
 	} `json:"requests"`
 	MaxSteps int `json:"max_steps"`
 }
@@ -140,8 +146,12 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 	if maxLen == 0 {
 		maxLen = c.MaxNumBatchedTokens
 	}
+	var spec sched.Spec
+	if c.Speculative != nil {
+		spec = sched.ResolveSpec(sched.SpecOptions{Method: c.Speculative.Method, NumTokens: c.Speculative.K})
+	}
 	s, err := sched.New(sched.Config{
-		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
+		Spec: spec, MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: maxLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: true, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true,
@@ -150,7 +160,12 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 		t.Fatal(err)
 	}
 	m := New(histogramBounds(t, maxLen))
+	if c.Speculative != nil {
+		m.WithSpeculation(c.Speculative.K)
+	}
 	reqs := sc.Requests
+	accepted := map[string][]int{}
+	verifies := map[string]int{}
 	sort.SliceStable(reqs, func(i, j int) bool {
 		if reqs[i].ArrivalStep != reqs[j].ArrivalStep {
 			return reqs[i].ArrivalStep < reqs[j].ArrivalStep
@@ -178,6 +193,7 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 				t.Fatal(err)
 			}
 			outputs[r.ID] = r.Output
+			accepted[r.ID] = r.Accepted
 			maxTokens[r.ID] = mt
 			next++
 		}
@@ -196,22 +212,56 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 				LocalHit: hit, Preempted: r.NumPreemptions > 0, CacheLookup: c.EnablePrefixCaching})
 		}
 		mock := map[string][]int64{}
+		pendingGot := map[string]int{}
+		before := map[string]int{}
 		for id := range out.Scheduled {
+			before[id] = len(s.Request(id).Output)
 			if s.Request(id).IsPrefillChunk {
 				continue
 			}
-			k, o := sampled[id], outputs[id]
-			if k == len(o)-1 {
-				mock[id] = []int64{eosToken}
-			} else {
-				mock[id] = []int64{o[k]}
+			// The shared GPU mock, as oracle/run_metrics.py runs it: one token, plus the drafts the
+			// scenario accepts at this verify step (at most the real drafts).
+			n := 1
+			if drafts := out.SpecDecode[id]; len(drafts) > 0 {
+				real := 0
+				for _, d := range drafts {
+					if d >= 0 {
+						real++
+					}
+				}
+				plan, v := accepted[id], verifies[id]
+				verifies[id] = v + 1
+				a := 0
+				if v < len(plan) {
+					a = plan[v]
+				}
+				a = min(a, real)
+				n = 1 + a
+			}
+			o := outputs[id]
+			got := 0
+			for j := 0; j < n && sampled[id] < len(o); j++ {
+				k := sampled[id]
+				if k == len(o)-1 {
+					mock[id] = append(mock[id], eosToken)
+				} else {
+					mock[id] = append(mock[id], o[k])
+				}
+				sampled[id] = k + 1
+				got++
+			}
+			if drafts := out.SpecDecode[id]; len(drafts) > 0 {
+				// observe_draft counts the accepted drafts: the tokens sampled beyond the one
+				// the step always samples (scheduler.py:2118-2135@5df63a72).
+				step.Drafts = append(step.Drafts, Draft{Proposed: len(drafts), Accepted: max(got-1, 0)})
 			}
 			if generated[id] == 0 {
 				step.FirstTokens = append(step.FirstTokens, id)
 			}
-			sampled[id] = k + 1
-			generated[id]++
-			step.Emitted[id] = 1
+			// generated[id] and step.Emitted are the tokens the request keeps: a request that
+			// stops mid-way discards the rest (_update_request_with_output), which the
+			// scheduler does when it applies the step, so they are settled after Update below.
+			pendingGot[id] = got
 		}
 		prompts := map[string]int{}
 		preemptions := map[string]int{}
@@ -220,7 +270,27 @@ func drive(t *testing.T, sc scenario, after func(step int, m *Model)) *Model {
 			prompts[id] = len(r.Prompt)
 			preemptions[id] = r.NumPreemptions
 		}
-		for _, f := range s.Update(out, mock) {
+		fins := s.Update(out, mock)
+		finalLen := map[string]int{}
+		for _, f := range fins {
+			finalLen[f.ID] = f.Output
+		}
+		for id, got := range pendingGot {
+			kept := got
+			if n, done := finalLen[id]; done {
+				kept = min(got, n-before[id])
+			}
+			generated[id] += kept
+			step.Emitted[id] = kept
+		}
+		if c.Speculative != nil && len(out.Scheduled) > 0 {
+			drafts := map[string][]int64{}
+			for id := range out.Scheduled {
+				drafts[id] = make([]int64, c.Speculative.K)
+			}
+			s.UpdateDrafts(drafts)
+		}
+		for _, f := range fins {
 			reason := map[sched.Status]string{sched.FinishedStopped: "stop", sched.FinishedLength: "length"}[f.Status]
 			step.Finished = append(step.Finished, Finish{ID: f.ID, Reason: reason, PromptTokens: prompts[f.ID],
 				GenerationTokens: generated[f.ID], Preemptions: preemptions[f.ID], MaxTokens: maxTokens[f.ID]})

@@ -91,17 +91,37 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         sc = json.load(f)
     cfg = sc["config"]
     block_size = cfg["block_size"]
-    scheduler = create_scheduler(
-        model=model,
-        max_num_seqs=cfg["max_num_seqs"],
-        max_num_batched_tokens=cfg["max_num_batched_tokens"],
-        long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
-        enable_prefix_caching=cfg.get("enable_prefix_caching", False),
-        num_blocks=cfg["num_blocks"],
-        block_size=block_size,
-        max_model_len=cfg.get("max_model_len"),
-        scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
-    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    spec = cfg.get("speculative")
+    if spec:
+        # A speculative scenario is built as tier 2 builds it (run_scheduler.build_scheduler):
+        # vLLM's own SpeculativeConfig handed to the helper's constructors.
+        import tests.v1.core.utils as helpers  # noqa: E402
+        from run_scheduler import build_scheduler  # noqa: E402
+
+        # Only the speculative configuration is added to the tier-5 scheduler. The scheduler
+        # knobs tier 2 also varies (watermark, active-sequence and scheduled-token caps, the
+        # adaptive prefill threshold, LoRA, KV events and hybrid groups) are not modelled by this
+        # tier's Go driver, and tier 5 has never applied them, so they are left out of the
+        # configuration here as they are for a scenario without speculation.
+        spec_only = {k: v for k, v in cfg.items() if k in (
+            "max_num_seqs", "max_num_batched_tokens", "block_size", "num_blocks", "max_model_len",
+            "long_prefill_token_threshold", "enable_prefix_caching", "scheduling_policy", "speculative")}
+        scheduler = build_scheduler(helpers, create_scheduler, model, spec_only)
+    else:
+        scheduler = create_scheduler(
+            model=model,
+            max_num_seqs=cfg["max_num_seqs"],
+            max_num_batched_tokens=cfg["max_num_batched_tokens"],
+            long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
+            enable_prefix_caching=cfg.get("enable_prefix_caching", False),
+            num_blocks=cfg["num_blocks"],
+            block_size=block_size,
+            max_model_len=cfg.get("max_model_len"),
+            scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+        )
     # A fresh registry view per scenario: the logger unregisters earlier vllm:* collectors
     # itself (unregister_vllm_metrics, vllm/v1/metrics/prometheus.py:56-69@5df63a72).
     logger = PrometheusStatLogger(scheduler.vllm_config, [0])
@@ -112,6 +132,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     pending = sorted(sc["requests"], key=lambda r: (r["arrival_step"], r["id"]))
     by_id = {r["id"]: r for r in sc["requests"]}
     sampled_so_far = {r["id"]: 0 for r in sc["requests"]}
+    accepted_plan = {r["id"]: list(r.get("accepted", [])) for r in sc["requests"]}
+    verify_steps = {r["id"]: 0 for r in sc["requests"]}
+    num_spec = getattr(scheduler, "num_spec_tokens", 0)
     step = 0
     max_steps = sc.get("max_steps", 10000)
     per_step = []
@@ -156,15 +179,37 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             req = scheduler.requests[rid]
             req_ids.append(rid)
             if not req.is_prefill_chunk:
-                k = sampled_so_far[rid]
+                # The shared GPU mock, as in run_scheduler.py: one token, plus the drafts the
+                # scenario accepts at this verify step (at most the real drafts; a -1
+                # placeholder is always rejected, rejection_sampler.py:762-763).
+                drafts = out.scheduled_spec_decode_tokens.get(rid, [])
+                n = 1
+                if drafts:
+                    plan = accepted_plan[rid]
+                    i = verify_steps[rid]
+                    verify_steps[rid] = i + 1
+                    real = len([d for d in drafts if d >= 0])
+                    n = 1 + min(plan[i] if i < len(plan) else 0, real)
+                toks = []
                 outp = by_id[rid]["output"]
-                sampled.append([EOS_TOKEN_ID if k == len(outp) - 1 else outp[k]])
-                sampled_so_far[rid] = k + 1
+                for _ in range(n):
+                    k = sampled_so_far[rid]
+                    if k >= len(outp):
+                        break
+                    toks.append(EOS_TOKEN_ID if k == len(outp) - 1 else outp[k])
+                    sampled_so_far[rid] = k + 1
+                sampled.append(toks)
             else:
                 sampled.append([])
         outputs = scheduler.update_from_output(out, ModelRunnerOutput(
             req_ids=req_ids, req_id_to_index={rid: i for i, rid in enumerate(req_ids)},
             sampled_token_ids=sampled, logprobs=None, prompt_logprobs_dict={}, pooler_output=[]))
+        if spec and out.total_num_scheduled_tokens > 0:
+            # The drafter proposes for every request the step ran, as in run_scheduler.py.
+            from vllm.v1.outputs import DraftTokenIds  # noqa: E402
+
+            ids = [rid for rid in out.num_scheduled_tokens if rid in scheduler.requests]
+            scheduler.update_draft_token_ids(DraftTokenIds(ids, [[0] * num_spec for _ in ids]))
         eco = outputs.get(0)
         if eco is not None:
             iteration = IterationStats() if eco.outputs else None
