@@ -264,7 +264,7 @@ func resolve(c Config) (settings, error) {
 			// draft_model's draft slots depend on parallel_drafting (PARD, K slots, or one;
 			// vllm/config/speculative.py:1907-1926@5df63a72), which is not a deployment field.
 			return s, fmt.Errorf("vllm: speculative method %q is not built by this factory; it builds eagle, "+
-				"eagle3, mtp and dspark, whose scheduler numbers the engine block fully states (docs/feature-matrix.md)", method)
+				"eagle3, mtp, dspark and ngram, whose scheduler numbers the engine block fully states (docs/feature-matrix.md)", method)
 		}
 		if method == "mtp" && c.MTPNextnPredictLayers < 1 {
 			// The prefill lookahead depends on the drafter checkpoint's layer count
@@ -483,7 +483,7 @@ func defaultOr(v, def string) string {
 // (docs/feature-matrix.md, "Speculative decoding") whose scheduler numbers depend only on the
 // method and num_speculative_tokens.
 func specMethodModelled(method string) bool {
-	return slices.Contains([]string{"eagle", "eagle3", "mtp", "dspark"}, method)
+	return slices.Contains([]string{"eagle", "eagle3", "mtp", "dspark", "ngram"}, method)
 }
 
 // resolveV2Runner is VllmConfig.use_v2_model_runner (vllm/config/vllm.py:703-739@5df63a72) for

@@ -242,6 +242,24 @@ func TestInFlightLimitIsMaxConcurrentBatches(t *testing.T) {
 
 // The factory refuses what it does not model or what vLLM refuses, each with its reason, and
 // never builds a v0.32.0 engine for another release (#2021 B6).
+// n-gram speculation builds, runs to completion and keeps every law of the engine contract
+// (design VLM-1; the tier-2 scenarios spec-ngram and spec-ngram-prefix-hit show its scheduling
+// against vLLM's own Scheduler). Its accepted drafts are the simulator's input, as the EAGLE
+// family's are.
+func TestNgramSpeculationBuildsAndKeepsTheContractsLaws(t *testing.T) {
+	tr := enginetest.TestEngine(t, build(t, "speculative: {method: ngram, num_spec_tokens: 3}\n"),
+		arrivals(req("a", 40, 12), req("b", 70, 7), req("c", 20, 9)),
+		enginetest.Options{Accepted: func(engine.Batch, engine.Scheduled) int { return 2 }})
+	for id, f := range tr.Finished {
+		if f.Reason != engine.FinishStop {
+			t.Errorf("%s finished %+v, want stop", id, f)
+		}
+	}
+	if len(tr.Finished) != 3 {
+		t.Errorf("%d requests finished, want 3", len(tr.Finished))
+	}
+}
+
 func TestFactoryRefuses(t *testing.T) {
 	f := Factory{Pricer: fixed}
 	for _, c := range []struct {
@@ -252,7 +270,7 @@ func TestFactoryRefuses(t *testing.T) {
 		{"an unknown key", Version, "max_num_seqz: 3\n", "max_num_seqz"},
 		{"no KV blocks", Version, "num_gpu_blocks: 1\n", "num_gpu_blocks"},
 		{"an unknown policy", Version, "scheduling_policy: sjf\n", "fcfs and priority"},
-		{"an unmodelled draft method", Version, "speculative: {method: ngram, num_spec_tokens: 3}\n", "not built"},
+		{"an unmodelled draft method", Version, "speculative: {method: medusa, num_spec_tokens: 3}\n", "not built"},
 		{"a drafter whose slots the deployment cannot state", Version, "speculative: {method: draft_model, num_spec_tokens: 3}\n", "not built"},
 		{"dspark on the V1 runner", Version, "speculative: {method: dspark, num_spec_tokens: 3}\n", "V2 model runner"},
 		// The resolved runner decides, not either statement alone (vllm/config/vllm.py:2976-2979@5df63a72):

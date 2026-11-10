@@ -36,6 +36,7 @@ SPEC_METHODS = [
     {"method": "mtp", "draft": "mtp-1", "k": 1},
     {"method": "mtp", "draft": "mtp-4"},
     {"method": "dspark"},
+    {"method": "ngram"},
 ]
 
 
