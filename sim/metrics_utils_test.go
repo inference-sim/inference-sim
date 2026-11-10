@@ -39,8 +39,8 @@ func TestNewRequestMetrics_PropagatesAllFields(t *testing.T) {
 	if rm.NumPrefillTokens != 128 {
 		t.Errorf("NumPrefillTokens: got %d, want 128", rm.NumPrefillTokens)
 	}
-	if rm.NumDecodeTokens != 64 {
-		t.Errorf("NumDecodeTokens: got %d, want 64", rm.NumDecodeTokens)
+	if rm.NumDecodeTokens != 0 {
+		t.Errorf("NumDecodeTokens: got %d, want 0 until the request completes: the sampled output length (64) is not a count of tokens emitted (DEV-13)", rm.NumDecodeTokens)
 	}
 	if rm.SLOClass != "critical" {
 		t.Errorf("SLOClass: got %q, want %q", rm.SLOClass, "critical")
@@ -219,5 +219,22 @@ func TestCalculatePercentile_RoundsTheRankOnEveryPlatform(t *testing.T) {
 	if want := math.Float64frombits(0x40012474538ef34e); got != want {
 		t.Errorf("p99 = %v (%#x), want %v (%#x): the rank's product was fused into the subtraction",
 			got, math.Float64bits(got), want, math.Float64bits(want))
+	}
+}
+
+// The per-model, per-tenant and per-adapter token totals sum the tokens a request emitted, not
+// the output length the workload sampled for it (DEV-13). A request that stops at a length limit
+// emits fewer tokens than were sampled; its total is what it emitted.
+func TestNumDecodeTokens_IsTheTokensEmittedNotTheSampledLength(t *testing.T) {
+	m := NewMetrics()
+	req := &Request{ID: "capped", InputTokens: make([]TokenID, 8), OutputTokens: make([]TokenID, 64)}
+	m.Requests[req.ID] = NewRequestMetrics(req, 0)
+	if got := m.Requests[req.ID].NumDecodeTokens; got != 0 {
+		t.Fatalf("before completion NumDecodeTokens = %d, want 0: the sampled length (64) is not a count of tokens emitted", got)
+	}
+	m.recordCompletionOrder(req.ID, 10, 10, 0) // stopped at a length limit after 10 of the 64 sampled
+	rm := m.Requests[req.ID]
+	if rm.NumDecodeTokens != 10 || rm.OutputTokens != 10 {
+		t.Errorf("after completion NumDecodeTokens = %d, OutputTokens = %d, want both 10, the tokens emitted", rm.NumDecodeTokens, rm.OutputTokens)
 	}
 }

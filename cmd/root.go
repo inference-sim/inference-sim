@@ -1169,7 +1169,7 @@ var runCmd = &cobra.Command{
 			cs.SetUnservedHook(unservedHook)
 		}
 		router := resolveRouterInputs()
-		gw := newGateway(router, model)
+		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
 		cs.SetGateway(gw)
 
 		// Arrival hook: capture trace-emission references at the cluster's

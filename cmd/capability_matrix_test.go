@@ -582,10 +582,10 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 		if len(rows) != 4 {
 			t.Errorf("%d request rows for 2 sessions x 2 rounds", len(rows))
 		}
-		// accumulate replay carries each round's prompt and answer into the next round's
-		// prompt. (The exact reconstruction -- round 1's prompt equal to the recorded 1500 and
-		// 1200 -- is one token short per round, #1893: the session manager carries output-1
-		// tokens forward. Asserted here once that is fixed.)
+		// Accumulate replay carries each round's prompt and answer into the next round's prompt,
+		// and reconstructs the recorded prompts exactly: round 1 is the 1500 and 1200 tokens the
+		// trace recorded. The session manager grows the context by the tokens the round emitted
+		// (SIM-12), not by the decode-step count, which is one fewer.
 		prompt := map[string]map[int]int{}
 		for _, r := range rows {
 			if prompt[r.SessionID] == nil {
@@ -593,10 +593,46 @@ func TestCapabilityMatrix_Compositions(t *testing.T) {
 			}
 			prompt[r.SessionID][r.Round] = r.Prompt
 		}
+		recorded := map[int]int{1000: 1500, 800: 1200} // round 0 prompt -> round 1 prompt
 		for sid, rounds := range prompt {
-			if rounds[1] <= rounds[0] {
-				t.Errorf("session %s: round 1's prompt (%d tokens) did not grow past round 0's (%d)", sid, rounds[1], rounds[0])
+			if want, ok := recorded[rounds[0]]; !ok || rounds[1] != want {
+				t.Errorf("session %s: round 0 prompt %d, round 1 prompt %d; want round 1 to be the recorded %d", sid, rounds[0], rounds[1], want)
 			}
+		}
+	})
+
+	t.Run("accumulate sessions: each follow-up round's prompt is the context plus the new input, exactly", func(t *testing.T) {
+		t.Parallel()
+		// Closed-loop sessions of three rounds, each round a 500-token input and a 50-token
+		// output: round 1 is 500 + 50 + 500 = 1050 tokens and round 2 is 1050 + 50 + 500 = 1600.
+		// Counting the decode steps and not the tokens emitted left each round one token short
+		// (1049, 1598). Command: blis run --scenarios testdata/scenarios --scenario
+		// llama-3.1-70b-instruct-h200-tp4-4node.yaml --num-instances 1 --seed 11 --horizon 900000000
+		// --workload-spec <the spec below>.
+		spec := capSpecBody(t, "version: \"2\"\nseed: 7\ncategory: reasoning\naggregate_rate: 2\nnum_requests: 6\nclients:\n"+
+			"  - id: chat\n    tenant_id: t\n    slo_class: standard\n    rate_fraction: 1\n    closed_loop: true\n"+
+			"    arrival: {process: poisson}\n"+
+			"    input_distribution: {type: constant, params: {value: 500}}\n"+
+			"    output_distribution: {type: constant, params: {value: 50}}\n"+
+			"    reasoning:\n      reason_ratio_distribution: {type: constant, params: {value: 0}}\n"+
+			"      multi_turn: {max_rounds: 3, think_time_us: 500000, context_growth: accumulate}\n")
+		o, rows := capRunRows(t, runArgs(colocated(1), "--workload-spec", spec)...)
+		want := map[int]int{0: 500, 1: 1050, 2: 1600}
+		if len(rows) == 0 {
+			t.Fatal("no request rows")
+		}
+		rounds := map[int]int{}
+		for _, r := range rows {
+			rounds[r.Round]++
+			if r.Prompt != want[r.Round] {
+				t.Errorf("session %s round %d: prompt %d tokens, want %d", r.SessionID, r.Round, r.Prompt, want[r.Round])
+			}
+		}
+		if rounds[1] == 0 || rounds[2] == 0 {
+			t.Errorf("rounds seen %v: the run must reach rounds 1 and 2 for the table to be tested", rounds)
+		}
+		if got := o.num("total_output_tokens"); got != float64(len(rows)*50) {
+			t.Errorf("total output tokens = %v, want %d: %d requests of 50", got, len(rows)*50, len(rows))
 		}
 	})
 

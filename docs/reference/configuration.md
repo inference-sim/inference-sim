@@ -193,7 +193,7 @@ Every cluster run routes with the llm-d router (the Endpoint Picker, EPP) embedd
 |----------------|-------------|
 | `router.epp_flags` | The llm-d router's (EPP's) command-line flags, verbatim, one entry per flag. Default: a standalone router whose pool is every simulated pod (`--endpoint-selector=llm-d.ai/inference-serving=true --endpoint-target-ports=8000`). |
 | `router.endpoint_picker_config` | EndpointPickerConfig file, as the EPP reads it with `--config-file`. Default: the router's built-in default configuration. Refused together with an EPP flag `--config-file` or `--config-text`. |
-| `router.manifests` | Kubernetes manifest files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. |
+| `router.manifests` | Kubernetes manifest files. The router reads `InferencePool`, `InferenceObjective` and `InferenceModelRewrite` objects; other kinds are ignored. Every `modelRewrite` target must be the scenario's model or a LoRA adapter the scenario declares; any other is refused at start-up, because BLIS runs one model graph. |
 | `pools[].labels` | Labels on the pool's simulated model-server pods, so an `InferencePool` selector or label filter from a real deployment matches. A label every pool states with one value is on every pod; any other is on its pool's pods only. |
 
 Paths are relative to the scenario file; a file that cannot be read is refused at startup. `--epp-flags`, `--epp-config`, `--epp-manifests` and `--pod-labels` were removed (unknown flags), as `--tp` was. The flags below model the environment around the router, not the deployment, and stay on `run` and `replay`:

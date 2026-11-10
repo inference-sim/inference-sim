@@ -53,6 +53,7 @@ Each identifier is a contracts/metrics registry entry in the pinned blis-substra
 | `ttft_{mean,p50,p90,p95,p99}_ms` | arrival to first output token |
 | `tpot_{mean,p50,p90,p99}_ms` | per request `(latency - ttft) / (output_tokens - 1)`: time per output token after the first |
 | `e2e_{mean,p50,p90,p95,p99}_ms` | arrival to last streamed token |
+| `itl_{mean,p50,p90,p95,p99}_ms` | the client-observed gap between consecutive output tokens, pooled over measured requests completing in the window; tokens of one chunk share its arrival (below) |
 | `step_interval_{mean,p50,p90,p95,p99}_ms` | the engines' per-decode-step interval, over measured requests completing in the window |
 | `interactivity_mean` | mean of `1000 / tpot_ms` over requests |
 | `interactivity_p50`, `interactivity_p90` | `1000 / tpot_p50_ms`, `1000 / tpot_p90_ms` |
@@ -68,10 +69,31 @@ positive (they are its reciprocal), and `interactivity_mean` needs a request wit
 TPOT. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are
 numpy-linear.
 
-No `itl_*` is reported. The registry's `itl` pools every gap between consecutive tokens, across
-requests, which BLIS does not compute. Schema 1's `itl_*` was the per-request time per output
-token, which schema 2 names `tpot_*`. Under speculative decoding one decode step emits several
-tokens, so `step_interval_*` is longer than `tpot_*` by the accepted length.
+`itl_{mean,p50,p90,p95,p99}_ms` is the registry's `itl`: the gaps between consecutive output
+tokens, pooled over every measured request that completed in the window and had two or more
+output tokens, as the client observes them. A server sends tokens in chunks, and every token of a
+chunk reaches the client at the chunk's time, so the gap before a chunk is charged to its first
+token and the gaps between the chunk's other tokens are zero. A request with N output tokens
+contributes N - 1 gaps, and `samples` is their number. With one token per chunk (the default
+`stream_interval`, no speculative decoding) these are the engine's per-step intervals; with
+several tokens per chunk the median falls, the tail grows and the mean stays where the stream's
+length puts it. It is stated for the whole run only: a request's gaps are not split by model,
+tenant or adapter. It is not what a `vllm bench serve` or InferenceX client stores as ITL, which
+is one entry per received chunk (comparability audit A4); a chunk-gap figure has no registry
+identifier yet (see the pull request for the issue). Schema 1's `itl_*` was the per-request time
+per output token, which schema 2 names `tpot_*`. Under speculative decoding one decode step emits
+several tokens, so `step_interval_*` is longer than `tpot_*` by the accepted length.
+
+A pool's `engine.stream_interval` (vLLM's `SchedulerConfig.stream_interval`) groups the tokens the
+client is sent: the first output at once, then a group each time that many tokens have
+accumulated, and the rest when the request finishes. It changes when the client sees tokens and
+nothing the engine does, so the engine's steps, TTFT, each request's end-to-end latency, `tpot_*`
+and `step_interval_*` are as without it (the last chunk arrives at the finish, and a client
+computing `(latency - ttft) / (output tokens - 1)` gets the same figure). What changes is `itl_*`:
+the tokens of a group arrive together, so most gaps become zero and the gaps before a group are
+about `stream_interval` steps long. The simulator records the chunks on the request
+(`Request.ClientFirstTokens`, `ClientITL`, `ClientChunk`) and `Request.ClientTokenGaps` derives the
+series.
 
 ### From schema 1 to schema 2
 
@@ -82,7 +104,7 @@ member has a schema 2 home, or is listed as dropped with the reason.
 |---|---|
 | `metric_defs` | dropped: every metric is a contracts/metrics registry identifier, defined once there |
 | `metrics.<id>` (a number) | `metrics.<id>.value`, with `metrics.<id>.samples` |
-| `metrics.itl_{mean,p50,p90,p99}_ms` | `metrics.tpot_*_ms` |
+| `metrics.itl_{mean,p50,p90,p99}_ms` (per request) | `metrics.tpot_*_ms`; schema 2's `itl_*` is the pooled token-gap series |
 | `engine.cluster.step_interval_*_ms` | `metrics.step_interval_*_ms`, and still in `reports.engine.cluster` |
 | `goodput.goodput_rps`, `goodput.slo_attainment` | `metrics.goodput_rps`, `metrics.slo_attainment` |
 | `input.run.load` | `frame.generator.load` |

@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -57,6 +58,9 @@ type Options struct {
 	Manifests []byte
 	// Model is the served model name requests carry.
 	Model string
+	// Adapters are the LoRA adapter IDs the scenario declares. A model rewrite may target the
+	// scenario's model or one of these; any other target is refused (SIM-9).
+	Adapters []string
 	// PodLabels returns the labels of an instance's pod.
 	PodLabels func(id cluster.InstanceID, role cluster.PoolRole) map[string]string
 	// GatewayLatencyUs is the time from a request's arrival to the router's first look at it:
@@ -279,6 +283,9 @@ func (g *Gateway) check(req embed.Requirements, pool embed.Pool) error {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
 	if err := checkTopologyLabels(req.Topology); err != nil {
+		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
+	}
+	if err := checkRewriteTargets(g.opts.Manifests, g.opts.Model, g.opts.Adapters); err != nil {
 		return fmt.Errorf("the router configuration cannot be simulated faithfully: %w", err)
 	}
 	g.topologyRequested = req.Topology.Requested
@@ -893,6 +900,33 @@ func (g *Gateway) applyModelRewrite(f *flight, d embed.Decision) {
 		return
 	}
 	f.req.Adapter = target
+}
+
+// checkRewriteTargets refuses, at start-up, a deployment whose InferenceModelRewrite sends
+// requests to a model that is neither the scenario's model nor a declared LoRA adapter (SIM-9).
+// BLIS runs one model graph: another full model cannot be priced as it, and an undeclared adapter
+// has no resident set, so serving either would price the request as the base model without
+// saying so. The router picks one target per request by weight, so a check at the first rewritten
+// request would refuse a run or not by the seed and the request count; every target the
+// manifests name is checked here instead.
+func checkRewriteTargets(docs []byte, model string, adapters []string) error {
+	targets, err := manifestRewriteTargets(docs)
+	if err != nil {
+		return err
+	}
+	for _, t := range targets {
+		if t.Model == model || slices.Contains(adapters, t.Model) {
+			continue
+		}
+		declared := "no adapters"
+		if len(adapters) > 0 {
+			declared = "adapters " + strings.Join(adapters, ", ")
+		}
+		return fmt.Errorf("InferenceModelRewrite %q rule %d sends requests to %q, which is neither the scenario's model %q nor a declared "+
+			"LoRA adapter (the scenario declares %s); BLIS serves one model graph and cannot price another model or an undeclared adapter",
+			t.Resource, t.Rule, t.Model, model, declared)
+	}
+	return nil
 }
 
 // --- request and response translation ---

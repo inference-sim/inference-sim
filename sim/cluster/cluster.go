@@ -1474,10 +1474,12 @@ func (c *ClusterSimulator) detectDecodeCompletions(inst *InstanceSimulator) {
 			// (contract at ParentRequests: callers must not mutate via OriginalRequest).
 			origCopy := *parent.OriginalRequest
 			origCopy.State = sim.StateCompleted
-			// Use the decode sub-request's actual ProgressIndex for accurate context
-			// accumulation (session.go:163). For length-capped decode sub-requests
-			// (BC-5 force-completion), MaxOutputLen overstates the actual output;
-			// DecodeSubReq.ProgressIndex reflects the true final position.
+			// The session manager grows the context by the tokens the round emitted, which
+			// parentDone has copied from the decode sub-request onto the original request
+			// (GeneratedTokens), so a length-capped round contributes what it emitted and not
+			// its sampled length. The decode sub-request's final ProgressIndex is still handed to
+			// the callback, as the colocated path hands its own, for a callback that reads it;
+			// the session manager does not.
 			// (blis replay passes onRequestDone=nil, so this code never runs in replay mode.)
 			origCopy.ProgressIndex = parent.DecodeSubReq.ProgressIndex
 			nextReqs := c.sessionCallback(&origCopy, parent.CompletionTime)
@@ -1853,6 +1855,7 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		merged.KVThrashEvents += m.KVThrashEvents
 		merged.KVThrashOpportunities += m.KVThrashOpportunities
 		merged.StepOwners = append(merged.StepOwners, m.StepOwners...)
+		merged.ClientGaps = append(merged.ClientGaps, m.ClientGaps...)
 		merged.MeasuredContextOverflows += m.MeasuredContextOverflows
 		merged.MeasuredFailures += m.MeasuredFailures
 		merged.StillQueued += m.StillQueued

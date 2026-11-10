@@ -175,8 +175,9 @@ func windowRulesOf(m *sim.Metrics, sum sim.MeasuredSummary) windowRules {
 // Two series were renamed by the registry (docs/guide/results.md has the table): the
 // per-request (latency - TTFT) / (output tokens - 1), schema 1's itl_*, is tpot_*; and the
 // per-step interval the engine section carried is step_interval_*. Schema 1's itl_* is not
-// the registry's itl, which pools every token gap, and BLIS does not compute that pool yet,
-// so no itl_* figure is written.
+// the registry's itl, which pools every gap between output tokens: that one is written from
+// the client's view of the output (Request.ClientTokenGaps), where the tokens of a chunk
+// arrive together and the gaps between them are zero.
 func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus int, windowS float64) map[string]result.Figure {
 	out := map[string]result.Figure{}
 	put := func(id string, v float64, n int) { out[id] = result.Figure{Value: v, Samples: n} }
@@ -221,6 +222,16 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus int, windowS 
 		// A run of no steps states none.
 		if steps := len(m.AllITLs); steps > 0 {
 			put("preemptions", float64(m.PreemptionCount), steps)
+		}
+		// itl: the client-observed gaps between output tokens (Request.ClientTokenGaps), over
+		// the whole run: a request's gaps are not attributed to a model, tenant or adapter, so
+		// the splits omit it, as they do the step intervals.
+		if k := sum.ClientITLCount; k > 0 {
+			put("itl_mean_ms", sum.ClientITLMeanMs, k)
+			put("itl_p50_ms", sum.ClientITLP50Ms, k)
+			put("itl_p90_ms", sum.ClientITLP90Ms, k)
+			put("itl_p95_ms", sum.ClientITLP95Ms, k)
+			put("itl_p99_ms", sum.ClientITLP99Ms, k)
 		}
 		if steps := sum.StepIntervalCount; steps > 0 {
 			put("step_interval_mean_ms", sum.StepIntervalMeanMs, steps)

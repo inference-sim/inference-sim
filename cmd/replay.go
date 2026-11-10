@@ -553,7 +553,7 @@ Example:
 		}
 		// INV-13: the router the trace was recorded with, unless the command line names one.
 		router := reconcileReplayRouter(cmd, traceData.Header.Router)
-		gw := newGateway(router, model)
+		gw := newGateway(router, model, adapterIDsOf(loraCfg)...)
 		cs.SetGateway(gw)
 		if agx != nil {
 			cs.SetArrivalGate(agx.driver.Gate)

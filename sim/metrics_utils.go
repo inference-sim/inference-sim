@@ -11,9 +11,12 @@ type IntOrFloat64 interface {
 
 // Individual request metrics for the JSON log
 type RequestMetrics struct {
-	ArrivedAt         float64 `json:"arrived_at"`
-	ID                string  `json:"requestID"`
-	NumPrefillTokens  int     `json:"num_prefill_tokens"`
+	ArrivedAt        float64 `json:"arrived_at"`
+	ID               string  `json:"requestID"`
+	NumPrefillTokens int     `json:"num_prefill_tokens"`
+	// NumDecodeTokens is the count of output tokens the request emitted, set at completion and
+	// zero until then. It is never the sampled output length, which only the engine's stop check,
+	// the trace writer and replay may read (DEV-13).
 	NumDecodeTokens   int     `json:"num_decode_tokens"`
 	TTFT              float64 `json:"ttft_ms"`
 	ITL               float64 `json:"itl_ms"`
@@ -33,7 +36,7 @@ type RequestMetrics struct {
 	// Outcome reads as the request ended. Absent for every other workload.
 	Agentic *AgenticTag `json:"agentic,omitempty"`
 	// OutputTokens is the count the request emitted (aiperf's OSL), set at completion. It
-	// differs from NumDecodeTokens, the oracle count, for a length-capped request.
+	// is the same count as NumDecodeTokens.
 	OutputTokens int `json:"output_tokens,omitempty"`
 
 	// CachedLocalTokens and CachedExternalTokens are the prompt tokens the device prefix cache and
@@ -88,7 +91,6 @@ func NewRequestMetrics(req *Request, arrivedAt float64) RequestMetrics {
 		ID:               req.ID,
 		ArrivedAt:        arrivedAt,
 		NumPrefillTokens: int(req.InputLen()),
-		NumDecodeTokens:  len(req.OutputTokens),
 		SLOClass:         req.SLOClass,
 		TenantID:         req.TenantID,
 		HandledBy:        req.AssignedInstance,

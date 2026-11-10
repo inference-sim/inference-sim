@@ -734,6 +734,11 @@
       "interactivity_mean",
       "interactivity_p50",
       "interactivity_p90",
+      "itl_mean_ms",
+      "itl_p50_ms",
+      "itl_p90_ms",
+      "itl_p95_ms",
+      "itl_p99_ms",
       "output_tok_s",
       "output_tok_s_per_gpu",
       "preemptions",
@@ -798,6 +803,26 @@
     "interactivity_p90": {
       "value": 63.6395999320008,
       "samples": 30
+    },
+    "itl_mean_ms": {
+      "value": 13.528779413985804,
+      "samples": 13242
+    },
+    "itl_p50_ms": {
+      "value": 0,
+      "samples": 13242
+    },
+    "itl_p90_ms": {
+      "value": 38.873,
+      "samples": 13242
+    },
+    "itl_p95_ms": {
+      "value": 40.112,
+      "samples": 13242
+    },
+    "itl_p99_ms": {
+      "value": 81.974,
+      "samples": 13242
     },
     "output_tok_s": {
       "value": 786.3494196258998,
