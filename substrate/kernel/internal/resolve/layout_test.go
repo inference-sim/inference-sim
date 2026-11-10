@@ -86,14 +86,14 @@ func (r stubRules) ResolveDPLoadBalancing(deployment.Parallelism) deployment.DPL
 func scenarioWith(nodes, gpusPerNode int,
 	pools ...deployment.Pool) (*scenario.Scenario, *deployment.Deployment) {
 	return &scenario.Scenario{
-			Kind: "Scenario", Name: "t", Model: "m",
-			Coefficients: []string{"c"}, EngineVersion: "0.29.0",
-			Cluster: scenario.Cluster{
-				Hardware: "h", Nodes: nodes, GPUsPerNode: gpusPerNode,
-			},
-		}, &deployment.Deployment{
-			Kind: "Deployment", Name: "t", Pools: pools,
-		}
+		Kind: "Scenario", Name: "t", Model: "m",
+		Coefficients: []string{"c"}, EngineVersion: "0.29.0",
+		Cluster: scenario.Cluster{
+			Hardware: "h", Nodes: nodes, GPUsPerNode: gpusPerNode,
+		},
+	}, &deployment.Deployment{
+		Kind: "Deployment", Name: "t", Pools: pools,
+	}
 }
 
 // packagingOf is the packaging a chip that leaves both fields open resolves the test
