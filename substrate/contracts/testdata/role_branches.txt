@@ -1,0 +1,32 @@
+# Comparisons of a graph node's Role in the cost model and the model-graph package, found by
+# TestNoPriceDependsOnAFreeTextLabel (design SUB-20). SUB-20 says no price, size or engine
+# decision depends on a free-text label, so each line is a decision that does, today.
+# The list may only shrink: the test fails on a new comparison and on a listed one that is gone.
+#
+# What the lines are, so the fix is the right size:
+#   n.Role == ""   (draft.go, plan.go x2, new.go x2, prefill_forms.go, sparse_mla.go): tells an
+#                  attention node that holds the engine's KV cache (no role) from a block-index
+#                  scorer (a role), which keeps a narrower cache of its own. A typed field on the
+#                  attention node ("holds the engine's cache": yes or no) replaces all seven.
+#   "block_index_scores", "shared_experts": names a particular node by its label.
+#   n.Role == r, n.Role == role (new.go): look a node up by a role the caller names.
+#   validate_refs.go (x3): the graph's own alias and override checks match nodes by role; these
+#                  are references between nodes of one document, which the validator has to resolve
+#                  by some name, so they stay until typed roles exist (blis-schemas#67).
+# The fix is typed node roles with a closed set, derived from the checkpoint and checked at
+# load: a contract-change review set (SUB-1, design 12.8), landed with SUB-16.
+../kernel/draft.go: a.Role == ""
+../kernel/internal/price/plan.go: a.Role == ""
+../kernel/internal/price/plan.go: n.Role != "shared_experts"
+../kernel/internal/price/plan.go: n.Role == ""
+../kernel/internal/price/plan.go: n.Role == "shared_experts"
+../kernel/new.go: a.Role != "block_index_scores"
+../kernel/new.go: n.Role == ""
+../kernel/new.go: n.Role == ""
+../kernel/new.go: n.Role == r
+../kernel/new.go: n.Role == role
+../kernel/prefill_forms.go: a.Role != ""
+../kernel/sparse_mla.go: n.Role == ""
+spec/model/validate_refs.go: m.Role == role
+spec/model/validate_refs.go: no.Role != ""
+spec/model/validate_refs.go: no.Role == ""
