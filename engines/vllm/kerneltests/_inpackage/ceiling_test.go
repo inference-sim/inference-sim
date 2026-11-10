@@ -72,7 +72,13 @@ func TestADecodeStepDoesNotLaunchPrefillOnlyNodes(t *testing.T) {
 // decode step's host time is launches x (eager + dispatch) plus nothing else.
 func TestAModelScopedEagerCostWinsWhateverItsOrder(t *testing.T) {
 	entry := func(name string, v float64, model string) coefficient.Entry {
-		e := coefficient.Entry{Name: name, Value: v, Units: "us_per_transfer",
+		// The unit the substrate's table of form units requires of this name (the per-layer name
+		// is per layer, the per-kernel name per launch).
+		u, ok := coefficient.RequiredUnit(name)
+		if !ok {
+			t.Fatalf("no form unit covers %s", name)
+		}
+		e := coefficient.Entry{Name: name, Value: v, Units: u.Unit,
 			Method: "assumed", Rationale: "test", Scope: coefficient.Scope{
 				Hardware: []string{"h200"}}}
 		if model != "" {
