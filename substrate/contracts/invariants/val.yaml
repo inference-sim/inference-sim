@@ -20,17 +20,20 @@
     runs: pull_request
     status: ci
     test: 'contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured'
+    known_bad: 'contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured'
   - repo: blis-substrate
     check: >-
       Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method
       needs
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/vocab: TestRankFollowsDesignSection92'
+    known_bad: 'contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured'
   review: null
-  status: partial
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: VAL-2
   section: §9.4
   statement: >-
@@ -42,12 +45,14 @@
   - repo: blis-substrate
     check: Completeness test over every primitive and catalog chip (SUB-7)
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestEveryValueTheKernelSuppliesItselfIsListed'
+    known_bad: 'kernel: TestEveryValueTheKernelSuppliesItselfIsListed'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: VAL-3
   section: §9.4
   statement: >-
@@ -60,16 +65,20 @@
   - repo: blis-substrate
     check: Step-time result field
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestTrustIsTheLeastTrustedEffectiveRank'
+    known_bad: 'contracts/conformance/kerneltest: TestCheckTrustFailsEachWay'
   - repo: blis-substrate
     check: Checked in kernel tests
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestTheKernelMeetsTheTrustAndStageLaws'
+    known_bad: 'contracts/conformance/kerneltest: TestCheckTrustFailsEachWay'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: VAL-4
   section: §9.4
   statement: >-
@@ -91,15 +100,19 @@
   - repo: blis-substrate
     check: A validator rule that refuses unordered matches
     runs: pull_request
-    status: new
+    status: ci
+    test: 'validate/dataset: TestCheckOrdered'
+    known_bad: 'validate/dataset: TestCheckOrdered'
   - repo: blis-substrate
     check: >-
       A cost-model test that resolves every pair of scope kinds in both load orders and agrees with
       the validator (X15)
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel/internal/resolve: TestLookupAgreesWithTheValidatorOnPrecedenceInBothLoadOrders'
+    known_bad: 'kernel/internal/resolve: TestMethodRankOrdersEntriesAndSetOrderNeverDoes'
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2
@@ -116,7 +129,7 @@
       Nightly job: leave one chip out and compare each method's estimate with the chip's measured
       value, per primitive family, over the registry's measured coefficients
     runs: nightly
-    status: new
+    status: ci
     test: 'nightly.yml job method-error: ledger method-error'
     known_bad: 'ledger: TestSameGenerationLeavesOneChipOut'
   - repo: blis-substrate
@@ -126,7 +139,7 @@
     runs: nightly
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2
@@ -255,17 +268,21 @@
   - repo: blis-substrate
     check: Validator rules on the interval and range fields
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/coefficient: TestEvidenceRecords'
+    known_bad: 'contracts/spec/coefficient: TestEvidenceRecords'
   - repo: blis-substrate
     check: A test that extrapolated lookups report it
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/coefficient: TestUnidentifiedExtrapolatedAndEffectiveRank'
+    known_bad: 'contracts/spec/coefficient: TestUnidentifiedExtrapolatedAndEffectiveRank'
   - repo: blis-substrate
     check: The fitting scripts' identifiability check
     runs: pull_request
     status: new
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2

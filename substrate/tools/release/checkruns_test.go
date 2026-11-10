@@ -54,22 +54,25 @@ func TestEveryCICheckHasACheckRun(t *testing.T) {
 }
 
 // The check-run names the file asks for are names the repositories' workflows produce. The
-// substrate's are read from its own ci.yml, so a renamed job fails here and not at a release.
-func TestSubstrateRunsAreJobsOfCI(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+// substrate's are read from its own ci.yml and nightly.yml, so a renamed job fails here and not
+// at a release.
+func TestSubstrateRunsAreJobsOfItsWorkflows(t *testing.T) {
 	names := map[string]bool{}
-	for _, line := range strings.Split(string(raw), "\n") {
-		if n, ok := strings.CutPrefix(strings.TrimSpace(line), "name: "); ok && strings.HasPrefix(line, "    name:") {
-			names[n] = true
+	for _, file := range []string{"ci.yml", "nightly.yml"} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if n, ok := strings.CutPrefix(strings.TrimSpace(line), "name: "); ok && strings.HasPrefix(line, "    name:") {
+				names[strings.Trim(n, `"`)] = true
+			}
 		}
 	}
 	for test, runs := range repoRunMap(t)["blis-substrate"] {
 		for _, r := range runs {
 			if !names[r] {
-				t.Errorf("%q is proved by check run %q, which ci.yml has no job named", test, r)
+				t.Errorf("%q is proved by check run %q, which no job of ci.yml or nightly.yml is named", test, r)
 			}
 		}
 	}

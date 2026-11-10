@@ -203,12 +203,14 @@
   - repo: blis-substrate
     check: Completeness test over every primitive and every catalog chip
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestEveryValueTheKernelSuppliesItselfIsListed'
+    known_bad: 'kernel: TestEveryValueTheKernelSuppliesItselfIsListed'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-8
   section: §5
   statement: >-

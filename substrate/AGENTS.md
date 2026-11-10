@@ -179,8 +179,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Property tests: the per-data-type peak and the L2-bounded memory bandwidth
 - **SUB-6** (new; target ci by M4) The cost model resolves nothing.
   - `new`, pull_request: A test that the cost model's public functions accept only plans, step shapes, transfers, and catalog and registry handles
-- **SUB-7** (new; target ci by M2) The cost model has a price for every primitive it can be asked about.
-  - `new`, pull_request: Completeness test over every primitive and every catalog chip
+- **SUB-7** (ci; target reached) The cost model has a price for every primitive it can be asked about.
+  - `ci`, pull_request: Completeness test over every primitive and every catalog chip (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
 - **SUB-8** (partial; target ci by M1) A change to the substrate never breaks the data it releases: validators, deriver and writers all pass on the tree being released.
   - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
   - `ci`, pull_request: The graph deriver --check runs on every pull request (`ci.yml job catalog: derive_graph.py --check`)
@@ -225,20 +225,20 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The metric registry in contracts/, which the simulator reads directly and the dashboard and config search read through inference-sim metrics
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.
   - `new`, pull_request: In every repository, the change class in the pull-request template, and a check that the outputs that moved match the declared class (`.github/pull_request_template.md (generated)`)
-- **VAL-1** (partial; target ci by M2) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
+- **VAL-1** (ci; target reached) Every coefficient records exactly one method from the list in §9.2, or not_charged, with the sources that method needs: measured, calibrated: the data units it was fitted to; transferred: the source coefficient and the transfer rule; literature: an exact citation; vendor_spec: a datasheet citation; roofline: the catalog facts it was computed from; assumed, not_charged: a written reason.
   - `ci`, pull_request: Schema rules in blis-substrate/validate for the method vocabulary in use (`contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured`)
-  - `new`, pull_request: Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method needs
-- **VAL-2** (new; target ci by M2) For every primitive family and every catalog chip, some rank has a value.
-  - `new`, pull_request: Completeness test over every primitive and catalog chip (SUB-7)
-- **VAL-3** (new; target ci by M2) Each price records, among the coefficients it used, the least trusted effective rank, and names its method and any flag.
-  - `new`, pull_request: Step-time result field
-  - `new`, pull_request: Checked in kernel tests
-- **VAL-4** (new; target ci by M2) Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it.
+  - `ci`, pull_request: Schema rules in blis-substrate/validate for the method list of §9.2, with the sources each method needs (`contracts/vocab: TestRankFollowsDesignSection92`)
+- **VAL-2** (ci; target reached) For every primitive family and every catalog chip, some rank has a value.
+  - `ci`, pull_request: Completeness test over every primitive and catalog chip (SUB-7) (`kernel: TestEveryValueTheKernelSuppliesItselfIsListed`)
+- **VAL-3** (ci; target reached) Each price records, among the coefficients it used, the least trusted effective rank, and names its method and any flag.
+  - `ci`, pull_request: Step-time result field (`kernel: TestTrustIsTheLeastTrustedEffectiveRank`)
+  - `ci`, pull_request: Checked in kernel tests (`kernel: TestTheKernelMeetsTheTrustAndStageLaws`)
+- **VAL-4** (partial; target ci by M2) Each lookup resolves to one entry per rank, and the entry with the smallest rank number is used; flags do not change which entry is chosen, only how the price reports it.
   - `new`, pull_request: Validator check against the previous release, plus a review question
-  - `new`, pull_request: A validator rule that refuses unordered matches
-  - `new`, pull_request: A cost-model test that resolves every pair of scope kinds in both load orders and agrees with the validator (X15)
-- **VAL-5** (new; target ci by M2) The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10).
-  - `new`, nightly: Nightly job: leave one chip out and compare each method's estimate with the chip's measured value, per primitive family, over the registry's measured coefficients (`nightly.yml job method-error: ledger method-error`)
+  - `ci`, pull_request: A validator rule that refuses unordered matches (`validate/dataset: TestCheckOrdered`)
+  - `ci`, pull_request: A cost-model test that resolves every pair of scope kinds in both load orders and agrees with the validator (X15) (`kernel/internal/resolve: TestLookupAgreesWithTheValidatorOnPrecedenceInBothLoadOrders`)
+- **VAL-5** (partial; target ci by M2) The typical error of each method is measured by leaving one chip out, and published per primitive family, using data units with role validate (§10).
+  - `ci`, nightly: Nightly job: leave one chip out and compare each method's estimate with the chip's measured value, per primitive family, over the registry's measured coefficients (`nightly.yml job method-error: ledger method-error`)
   - `new`, nightly: The same comparison over data units with role validate, which the AISimulate and forward-pass sources do not list yet
 - **VAL-6** (partial; target ci by M1) A change to a measured or calibrated value passes the landing gate.
   - `ci`, pull_request: On fixtures per pull request (`registry/validator (pytest)`)
@@ -251,9 +251,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: A test that lists entries matching neither condition, which are removed in the next substrate release
 - **VAL-9** (new; target ci by M2) A coefficient states what its measurement includes: device time only or host issue time as well, captured or eager execution, and which harness collected it.
   - `new`, pull_request: A validator rule matching each coefficient's measurement boundary with the boundary its reading formula declares
-- **VAL-10** (new; target ci by M2) A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and kernel.
-  - `new`, pull_request: Validator rules on the interval and range fields
-  - `new`, pull_request: A test that extrapolated lookups report it
+- **VAL-10** (partial; target ci by M2) A measured or calibrated entry records the interval its fit supports (95%, by bootstrap or profile likelihood) and the range of inputs its fit data covered: shapes, token counts, ranks, chip and kernel.
+  - `ci`, pull_request: Validator rules on the interval and range fields (`contracts/spec/coefficient: TestEvidenceRecords`)
+  - `ci`, pull_request: A test that extrapolated lookups report it (`contracts/spec/coefficient: TestUnidentifiedExtrapolatedAndEffectiveRank`)
   - `new`, pull_request: The fitting scripts' identifiability check
 - **VAL-11** (new; target ci by M2) An operator-level check judges a pricing form; an end-to-end check judges how forms combine.
   - `new`, pull_request: A review question

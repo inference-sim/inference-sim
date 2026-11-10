@@ -45,7 +45,9 @@ a check whose job was skipped, which proves nothing. When a job ran more than on
 (a re-run, or another manual run), its newest attempt decides: an earlier failure that a later
 run of the same job replaced does not hold the tag back, and an earlier pass does not hide a later
 failure. A newest attempt that is still running is no result. Every leg of a matrix is still
-needed. A head that already carries a release tag is refused, and so is a
+needed. A check that runs only nightly (the method-error job of VAL-5) is proved by running the
+nightly workflow by hand on the staged commit (`workflow_dispatch`). A head that already carries a
+release tag is refused, and so is a
 `go.mod` that requires a BLIS module at a pseudo-version.
 
 The bot works one layer at a time and a person does the pushing and the waiting. Each run re-plans the whole
