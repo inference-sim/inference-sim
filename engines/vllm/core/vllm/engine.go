@@ -343,19 +343,32 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 			// (vllm/v1/engine/input_processor.py:278-286@5df63a72).
 			return fmt.Errorf("vllm: request %s names adapter %q but LoRA is not enabled (max_loras unset)", r.ID, r.Adapter)
 		}
-		// The LoRA block key (vllm/v1/core/kv_cache_utils.py:578-595@5df63a72): its name and
-		// path. An engine.Request names the adapter only, so the name stands for both. Which
-		// blocks hit is unchanged (the key is per adapter either way), but the hash published in
-		// a KV event differs from vLLM's for a LoRA request (docs/feature-matrix.md, "KV events").
+		// The LoRA block key keys the hash on the adapter's name and path (loraExtraKey).
 		sr.LoRA = e.loraID(r.Adapter)
 		sr.LoRAName = r.Adapter
-		sr.Keys.Extra = []kv.ExtraKey{{"lora", r.Adapter, r.Adapter}}
+		sr.Keys.Extra = loraExtraKey(r.Adapter, r.AdapterPath)
 	}
 	if err := e.s.Add(sr); err != nil {
 		return fmt.Errorf("vllm: %w", err)
 	}
 	e.reqs[r.ID] = &reqState{req: r, maxTokens: maxTokens}
 	return nil
+}
+
+// loraExtraKey is the LoRA component of a block's hash key: ("lora", lora_name, lora_path), what
+// _gen_lora_extra_hash_keys returns (vllm/v1/core/kv_cache_utils.py:578-595@5df63a72, the key added
+// to a block's extras at :646). vLLM keys on the name and the path, not on lora_int_id, so
+// re-pointing a name at another adapter does not hit the blocks computed with the first.
+//
+// A LoRARequest always has a path (vllm/lora/request.py:41-42@5df63a72). An engine.Request from a
+// host that supplies none gets the name in its place: which blocks hit is then unchanged (the key
+// is per adapter either way), but the hash a KV event publishes differs from vLLM's, and
+// docs/feature-matrix.md ("KV events") says so for that case.
+func loraExtraKey(name, path string) []kv.ExtraKey {
+	if path == "" {
+		path = name
+	}
+	return []kv.ExtraKey{{"lora", name, path}}
 }
 
 // loraID is a stable positive lora_int_id per adapter name, in order of first use

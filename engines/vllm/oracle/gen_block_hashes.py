@@ -57,8 +57,14 @@ def cases(committed):
         ("frame-boundary-before-a-str", 21831, 300, 300, [["lora", "adapter-d", "/adapters/d"]], None),
         ("large-block-binint", 16384, 70000, 151935, None, None),
         ("large-block-two-frames-each", 32768, 256, 151935, [["lora", "adapter-b", "/adapters/b"]], "s2"),
+        # A LoRA key whose path is not its name (_gen_lora_extra_hash_keys keys the hash on both),
+        # and the same name pointed at another adapter; the two cases share their tokens.
+        ("lora-path-differs-from-name", 16, 5, 50000, [["lora", "sql", "/loras/sql-v1"]], None),
+        ("lora-name-repointed", 16, 5, 50000, [["lora", "sql", "/loras/sql-v2"]], None),
     ]:
         tokens = [rng.randint(lo, hi) for _ in range(2 * size + 3)]
+        if name == "lora-name-repointed":
+            tokens = next(c["tokens"] for c in out if c["name"] == "lora-path-differs-from-name")
         if name not in have:
             out.append({"name": name, "block_size": size, "tokens": tokens,
                         **({"extra": extra} if extra else {}), **({"salt": salt} if salt else {})})
