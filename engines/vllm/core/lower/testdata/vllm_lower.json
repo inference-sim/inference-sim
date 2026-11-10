@@ -34965,6 +34965,12 @@
    }
   ]
  },
+ "dcp_preferences": {
+  "GlmMoeDsaForCausalLM": {
+   "comm_backend": "a2a",
+   "q_replicate": true
+  }
+ },
  "dp_sync": [
   {
    "case": {

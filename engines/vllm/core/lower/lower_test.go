@@ -134,6 +134,10 @@ type oracleFile struct {
 		} `json:"desc"`
 		ContextRows *int `json:"graph_context_rows"`
 	} `json:"drafter"`
+	DCPPreferences map[string]struct {
+		Backend    string `json:"comm_backend"`
+		QReplicate bool   `json:"q_replicate"`
+	} `json:"dcp_preferences"`
 	DBO struct {
 		Split []struct {
 			Enable  bool `json:"enable_dbo"`
@@ -763,12 +767,27 @@ func TestDCPDefaultsAreVLLMs(t *testing.T) {
 			t.Errorf("%+v: %+v %v; vLLM %s %v", c, got, err, c.Backend, c.Q)
 		}
 	}
-	// The one v0.32.0 model that states a preference is GLM-MoE-DSA's, a2a with query replication.
-	if p := DCPModelPreference("GlmMoeDsaForCausalLM"); p != (DCP{Backend: "a2a", QReplicate: true}) {
-		t.Errorf("GLM-MoE-DSA preference %+v", p)
+	// A model's preference is what its hook passes to set_dcp_defaults, read from vLLM's source by
+	// the oracle: every architecture it lists has that preference here, and every other one the
+	// stock one the function's own defaults give. Nothing below restates a value.
+	o2 := loadOracle(t)
+	if len(o2.DCPPreferences) == 0 {
+		t.Fatal("the oracle lists no model that states a DCP preference")
 	}
-	if p := DCPModelPreference("DeepseekV32ForCausalLM"); p != (DCP{Backend: "ag_rs"}) {
-		t.Errorf("stock preference %+v", p)
+	stock := DCPModelPreference("an architecture that states none")
+	for arch, want := range o2.DCPPreferences {
+		got := DCPModelPreference(arch)
+		if got.Backend != want.Backend || got.QReplicate != want.QReplicate {
+			t.Errorf("%s: preference %+v; vLLM's hook passes %s, %v", arch, got, want.Backend, want.QReplicate)
+		}
+		if got == stock {
+			t.Errorf("%s: its preference equals the stock one, so the table cannot tell it from a model that states none", arch)
+		}
+	}
+	for _, arch := range []string{"LlamaForCausalLM", "DeepseekV32ForCausalLM", ""} {
+		if _, stated := o2.DCPPreferences[arch]; !stated && DCPModelPreference(arch) != stock {
+			t.Errorf("%s states no preference in vLLM but resolves to %+v, not the stock %+v", arch, DCPModelPreference(arch), stock)
+		}
 	}
 	if _, err := DCPResolve("nccl", nil, DCP{Backend: "ag_rs"}); err == nil {
 		t.Error("a backend vLLM does not name was accepted")

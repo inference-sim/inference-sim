@@ -462,6 +462,35 @@ def drafter_cases(ns):
     return out
 
 
+def dcp_preferences(root):
+    """The classes of MODELS_CONFIG_MAP whose verify_and_update_config hook calls set_dcp_defaults,
+    with the literal arguments it passes, read by syntax tree from vllm/model_executor/models/config.py.
+    A model's preference is whatever its hook passes; the stock one (ag_rs, no replication) applies
+    to every model that passes none."""
+    tree = parse(root, "vllm/model_executor/models/config.py")
+    mapped = {}
+    for n in tree.body:
+        if isinstance(n, ast.AnnAssign) and getattr(n.target, "id", "") == "MODELS_CONFIG_MAP":
+            for k, v in zip(n.value.keys, n.value.values):
+                mapped[k.value] = v.id
+    calls = {}
+    for n in tree.body:
+        if not isinstance(n, ast.ClassDef):
+            continue
+        for c in ast.walk(n):
+            if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "set_dcp_defaults":
+                args = {kw.arg: kw.value.value for kw in c.keywords}
+                for i, a in enumerate(c.args):
+                    args[["comm_backend", "q_replicate"][i]] = a.value
+                calls[n.name] = args
+    out = {}
+    for arch, cls in sorted(mapped.items()):
+        if cls in calls:
+            out[arch] = {"comm_backend": calls[cls].get("comm_backend", "ag_rs"),
+                         "q_replicate": calls[cls].get("q_replicate", False)}
+    return out
+
+
 def dbo_cases(ns):
     """Dual-batch overlap: whether a step splits, and into how many ubatches."""
     out = {"split": [], "defaults": []}
@@ -504,6 +533,7 @@ def context_cases(ns):
 def build(root):
     ns = load(root)
     return {
+        "dcp_preferences": dcp_preferences(root),
         "commit": COMMIT,
         "breakable": sorted(ns["DEFAULT_BREAKABLE_CUDAGRAPH_ARCHITECTURES"]),
         "capture": cases(ns),
