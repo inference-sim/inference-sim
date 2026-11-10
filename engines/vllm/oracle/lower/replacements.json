@@ -22,9 +22,24 @@
       "how": "get_dp_group returns an object holding the CPU group handle the all-reduce is given, which the replaced all-reduce ignores; should_skip_dp_coordination is False, as it is for a real multi-rank pool, so the function takes the all-reduce path."
     },
     {
-      "symbol": "engram_head_shard_rank, get_tensor_model_parallel_rank, _cur",
+      "symbol": "get_tensor_model_parallel_rank, get_engram_dp_group, _cur",
       "kind": "environment",
-      "how": "ParallelEngramEmbedding._get_shard_info asks which rank this process is. The harness answers from the case (tp_rank, the engram data-parallel size and rank) with the formulas the source states (engram_head_shard_rank: tensor rank x engram DP size + DP rank, vllm/models/deepseek_v41/common/engram.py:724-733), so the shard rule runs as written for every rank of the case. The module-level helpers are not extracted; the class method is."
+      "how": "engram_head_shard_rank and ParallelEngramEmbedding._get_shard_info are taken from the source as written. They ask which rank this process is and what the node-local Engram data-parallel group is; the harness answers both from the case (tensor-parallel rank, the engram data-parallel size and rank, no group when that size is 1). The rule dp_size = 1 for a shared table is not applied by the harness: the case states the size the class holds, as the class sets it after resolving sharing (vllm/models/deepseek_v41/common/engram.py:975-985), and the Go EngramShard takes that size as its input."
+    },
+    {
+      "symbol": "CudaGraphManager.__init__ (bypassed: Manager.__new__ and attribute assignment)",
+      "kind": "environment",
+      "how": "CudaGraphManager.__init__ builds device buffers and a model runner's state, so the harness creates the manager object without it and sets the attributes _init_candidates and dispatch read: cudagraph_mode, max_num_reqs, decode_query_len, varlen_decode, the LoRA dispatch tables (one case, no adapters), ubatch_runner None (no microbatching), _graphs_captured, an empty candidate table, compilation_config (the sizes the case resolved) and vllm_config (num_speculative_tokens, use_kda_recoverssm, speculative_config None for no dynamic speculation). _init_candidates then runs as written. No decision is taken in the bypassed code."
+    },
+    {
+      "symbol": "EngramConfig (a namespace of its fields); model_validator and pydantic registration",
+      "kind": "environment",
+      "how": "EngramConfig's methods resolve_dp_shared_memory, verify_parallel_config, get_parallel_size and _validate_shared_memory are taken from the class as written, with the model_validator decorator removed (a registration, not a decision) and run over a namespace that holds the config's fields and the parallel config's."
+    },
+    {
+      "symbol": "Self",
+      "kind": "environment",
+      "how": "the typing name _validate_shared_memory's return annotation mentions; annotations are evaluated when the definition runs."
     }
   ]
 }

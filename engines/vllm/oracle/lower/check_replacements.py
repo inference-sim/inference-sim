@@ -58,6 +58,12 @@ def main(argv):
     for name in sorted(sites(tree) - PLUMBING - ANNOTATION_ONLY - RENAMED):
         if name not in syms and name not in {"vllm", "vllm.platforms"}:
             bad.append(f"extract.py patches {name!r}, which replacements.json does not list")
+    # An object built without its __init__ is a replacement of that constructor, which no namespace
+    # write shows.
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "__new__":
+            if "__new__" not in syms:
+                bad.append("extract.py builds an object with __new__, bypassing its __init__, which replacements.json does not list")
     if bad:
         raise SystemExit("\n".join(bad))
     print("ok: every patch in", src, "is listed")

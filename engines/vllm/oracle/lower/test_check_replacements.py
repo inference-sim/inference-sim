@@ -32,7 +32,14 @@ def main():
         json.dump(spec, open(bad_list, "w"))
         r = run(EXTRACT, bad_list)
         assert r.returncode != 0 and "decision" in r.stderr, "a decision-kind entry passed"
-    print("ok: check_replacements.py catches an unlisted patch and a disallowed kind")
+        # A constructor bypass (Manager.__new__) is a replacement too: dropping its entry fails.
+        spec = json.load(open(LIST, encoding="utf-8"))
+        spec["replacements"] = [e for e in spec["replacements"] if "__new__" not in e["symbol"]]
+        no_new = os.path.join(d, "n.json")
+        json.dump(spec, open(no_new, "w"))
+        r = run(EXTRACT, no_new)
+        assert r.returncode != 0 and "__new__" in r.stderr, "an unlisted constructor bypass passed"
+    print("ok: check_replacements.py catches an unlisted patch, a constructor bypass and a disallowed kind")
 
 
 if __name__ == "__main__":
