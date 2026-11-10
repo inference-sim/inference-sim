@@ -111,6 +111,14 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 		{"verified drafts outside a verify step", func(s *StepShape) { s.Drafts.Verified = 2 }, "only a verify step verifies"},
 		{"a prebuilt step that launches", func(s *StepShape) { s.Mode = StepPrebuilt }, "launches nothing"},
 		{"a negative decode threshold", func(s *StepShape) { s.DecodeQueryLen = -1 }, "DecodeQueryLen is -1"},
+		{"a drafter pass for one rank of two", func(s *StepShape) {
+			s.Ranks = append(s.Ranks, s.Ranks[0])
+			s.Padded = append(s.Padded, s.Padded[0])
+			s.Drafts.Passes = []DraftPass{{Padded: 4}}
+		}, "1 drafter passes for 2 ranks"},
+		{"too many drafter passes", func(s *StepShape) { s.Drafts.Passes = []DraftPass{{}, {}} }, "2 drafter passes for 1 ranks"},
+		{"a negative drafter width", func(s *StepShape) { s.Drafts.Passes = []DraftPass{{Padded: -3}} }, "drafter launches -3 tokens"},
+		{"an unknown drafter launch", func(s *StepShape) { s.Drafts.Passes = []DraftPass{{Padded: 4, Launch: "jit"}} }, `drafter launch "jit"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -125,6 +133,23 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 	// A lockstep group of two ranks needs both, since padding depends on every rank's tokens.
 	if err := good().Validate(2, 1); err == nil {
 		t.Error("a step describing one of two lockstep ranks was accepted")
+	}
+}
+
+// A drafter pass for every rank, or none, is a step the contract allows; the zero value is none.
+func TestADrafterPassForEveryRankIsAccepted(t *testing.T) {
+	s := StepShape{
+		Mode:   StepVerify,
+		Ranks:  []RankStep{{Requests: []RequestStep{{Scheduled: 8, Prompt: 8}}}, {Requests: []RequestStep{{Scheduled: 8, Prompt: 8}}}},
+		Padded: []PaddedShape{{Tokens: 8}, {Tokens: 8}},
+		Drafts: DraftShape{Drafted: 7, Verified: 7, Passes: []DraftPass{{Padded: 16, Launch: LaunchGraph}, {Padded: 16, Launch: LaunchGraph}}},
+	}
+	if err := s.Validate(2, 1); err != nil {
+		t.Errorf("a drafter pass on each rank was refused: %v", err)
+	}
+	s.Drafts.Passes = nil
+	if err := s.Validate(2, 1); err != nil {
+		t.Errorf("a step with no drafter pass was refused: %v", err)
 	}
 }
 

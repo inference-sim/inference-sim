@@ -4,3 +4,5 @@
 # repository, and that a field is on this list or on unpriced_plan_fields.txt, never both. A field
 # moves here from the unpriced list in the change that prices it.
 StepShape.DecodeQueryLen # kernel: TestTheDecodeThresholdTheEngineStatesMovesTheStepPrice
+DraftPass.Padded # kernel: TestADrafterPaddedByItsGroupIsPricedAsPadded
+DraftShape.Passes # kernel: TestADrafterPassIsReadFromTheRankItBelongsTo

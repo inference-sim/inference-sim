@@ -103,6 +103,7 @@ A `Batch` is what the simulator supplies for one step.
 | `DecodeThreshold int` | Engine configuration that selects the attention kernel for each request. An engine that states a step as a `plan.StepShape` carries the same figure as `StepShape.DecodeQueryLen` (a request scheduling at most that many tokens is a decode; unstated reads as 1), and `latencykernel.BatchOf` turns a step shape into a `Batch` with it. The cost model supplies no threshold of its own. |
 | `SMBudget int` | SMs available this step: the chip's count less any held by a concurrent offload fetch. |
 | `PadTokens int` | Tokens this data-parallel rank pads its step with under vLLM's DP lockstep: every rank runs the group's largest token count, and a rank with nothing scheduled runs a dummy batch of pad alone. Pad tokens run the GEMMs, the MoE dispatch and combine and the expert paths, but never the logits, the LM head, the vocabulary all-gather or sampling. They are not requests. 0 means none; never negative. |
+| `DraftPaddedTokens int` | Tokens this rank's drafter launches, after its own graph bucket and the width its data-parallel group agreed; the drafter coordinates its padding apart from the target's. The rows beyond the rank's own draft rows run the GEMMs and the MoE paths and no attention. An engine that states a step as a `plan.StepShape` carries it as `DraftShape.Passes[rank].Padded`. 0 means the drafter launches only its own rows; never negative. |
 
 Each `ReqShape` carries the counts an engine's own scheduler reads:
 

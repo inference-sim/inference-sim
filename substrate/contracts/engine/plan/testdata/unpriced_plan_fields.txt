@@ -16,6 +16,7 @@ Buffer.Name # not yet priced: the cost model reads a plan in the boundary transi
 Collective.Bytes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Collective.CrossesNodes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Collective.Group # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+DraftPass.Launch # not priced: the kernel charges a parallel-block drafter's host launches by its own capture rule (draftHost), not by a launch mode the engine states; pricing it needs a measured host-launch coefficient for an eager or piecewise drafter, which the registry does not hold
 DraftPolicy.Chain # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftPolicy.TreeSteps # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 DraftPolicy.TreeTopK # not yet priced: the cost model reads a plan in the boundary transition's equivalence step

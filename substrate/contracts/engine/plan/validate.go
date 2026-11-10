@@ -198,6 +198,17 @@ func (s StepShape) Validate(ranks, stages int) error {
 	if s.Drafts.Drafted < 0 || s.Drafts.Verified < 0 {
 		add("drafts %+v", s.Drafts)
 	}
+	if n := len(s.Drafts.Passes); n != 0 && n != len(s.Ranks) {
+		add("%d drafter passes for %d ranks; a step states none or one for each rank", n, len(s.Ranks))
+	}
+	for r, d := range s.Drafts.Passes {
+		if d.Padded < 0 {
+			add("rank %d: drafter launches %d tokens", r, d.Padded)
+		}
+		if !d.Launch.Valid() {
+			add("rank %d: drafter launch %q", r, d.Launch)
+		}
+	}
 	if s.Mode != StepVerify && s.Drafts.Verified > 0 {
 		add("%d verified draft tokens in a %s step; only a verify step verifies", s.Drafts.Verified, s.Mode)
 	}

@@ -399,6 +399,20 @@ func (l Launch) Valid() bool { return l == LaunchEager || l == LaunchGraph || l 
 type DraftShape struct {
 	Drafted  units.Tokens
 	Verified units.Tokens
+	// Passes is the drafter's launch on each data-parallel rank, in the order of StepShape.Ranks.
+	// It is empty when the step runs no drafter pass. A drafter coordinates its own padding across
+	// the lockstep group, apart from the target's, so a rank's draft pass can be wider than its own
+	// draft rows, and the engine states how wide (the target's padding is PaddedShape).
+	Passes []DraftPass
+}
+
+// DraftPass is one rank's drafter launch. The zero value is no drafter pass.
+type DraftPass struct {
+	// Padded is the token count the drafter launches after its graph bucket and the group's
+	// agreed width, at least the rank's own draft rows.
+	Padded units.Tokens
+	// Launch says how the drafter launches: a captured graph, a piecewise replay or eager.
+	Launch Launch
 }
 
 // Transfer is one KV move, with enough for the cost model to say what each link must carry.
