@@ -43,12 +43,23 @@ class CheckGoldens(unittest.TestCase):
         for d in self.DIRS:
             os.makedirs(os.path.join(self.repo, d))
             self.write(f"{d}/g.json", {"provenance": {"v": 1}, "steps": [{"a": 1}], "finished": {}})
+        os.makedirs(os.path.join(self.repo, "oracle"))
+        with open(os.path.join(self.repo, "oracle/requirements.lock"), "w") as f:
+            f.write("pkg==1\n")
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-qm", "base")
         self.base = git(self.repo, "rev-parse", "HEAD")
 
     def tearDown(self):
         shutil.rmtree(self.repo)
+
+    def prov(self, **kw):
+        """The provenance of a trace recorded by CI: its platform and the committed lock's hash."""
+        import hashlib
+        p = {"platform": "linux-x86_64",
+             "requirements_lock_sha256": hashlib.sha256(b"pkg==1\n").hexdigest()}
+        p.update(kw)
+        return p
 
     def write(self, rel, obj):
         with open(os.path.join(self.repo, rel), "w") as f:
@@ -172,6 +183,24 @@ class CheckGoldens(unittest.TestCase):
                     self.commit(how + (f"\n\ngolden-reviewed: {path}: the scenario was dropped" if trailered else ""))
                     r = self.check()
                     self.assertEqual(r.returncode, 0 if trailered else 1, r.stdout)
+
+    def test_a_new_golden_recorded_elsewhere_than_on_ci_fails(self):
+        for what, prov in (("platform", self.prov(platform="darwin-arm64")),
+                           ("lock", self.prov(requirements_lock_sha256="0" * 64)),
+                           ("no platform", {"requirements_lock_sha256": self.prov()["requirements_lock_sha256"]})):
+            with self.subTest(what=what):
+                git(self.repo, "reset", "-q", "--hard", self.base)
+                self.write("core/sched/testdata/golden/new.json", {"provenance": prov, "steps": [], "finished": {}})
+                self.commit("add a golden")
+                r = self.check()
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("new.json", r.stdout)
+
+    def test_a_new_golden_recorded_on_ci_passes_and_an_old_one_is_not_held_to_it(self):
+        self.write("core/sched/testdata/golden/new.json", {"provenance": self.prov(), "steps": [], "finished": {}})
+        self.commit("add a golden")
+        r = self.check()
+        self.assertEqual(r.returncode, 0, r.stdout)
 
     def test_a_golden_naming_a_commit_outside_the_history_fails(self):
         self.write("core/sched/testdata/golden/side.json", {"steps": []})

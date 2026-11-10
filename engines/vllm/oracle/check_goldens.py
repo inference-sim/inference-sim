@@ -14,7 +14,11 @@ golden file, appending a case), or refreshing only its `provenance` block, needs
 check verifies that such a commit changed nothing else. A golden directory this list does not name fails the check, so a new
 tier's goldens cannot go unguarded. A golden whose provenance names a blis-vllm commit outside
 head's history (one nobody can fetch, a "+dirty" tree or "unknown") fails too: its provenance
-must name a commit anyone can check out.
+must name a commit anyone can check out. A golden added in the range base..head must
+also have been produced on the platform CI runs (CI_PLATFORM) and from the oracle environment the
+repository commits (its requirements_lock_sha256 is the hash of oracle/requirements.lock at head),
+so a trace recorded elsewhere cannot enter unnoticed; the goldens already committed before this
+check existed are not held to it.
 
 Usage: python3 -I oracle/check_goldens.py <base> <head>
 """
@@ -113,6 +117,30 @@ def trailer_covers(trailers: list[str], path: str, change: str) -> bool:
     return False
 
 
+# The platform the oracle-traces workflow and the oracle jobs run on (ubuntu-latest, x86_64).
+CI_PLATFORM = "linux-x86_64"
+
+
+def foreign_provenance(base: str, head: str) -> list[str]:
+    """Goldens added in base..head whose provenance names a platform other than CI's,
+    or a committed-lock hash other than head's oracle/requirements.lock."""
+    import hashlib
+    lock = hashlib.sha256(git("show", f"{head}:oracle/requirements.lock").encode()).hexdigest()
+    out = []
+    for line in git("diff", "--name-status", "--diff-filter=A", f"{base}..{head}").splitlines():
+        status, path = line.split("\t", 1)
+        if not is_golden(path) or path in GOLDEN_FILES:
+            continue
+        prov = json.loads(git("show", f"{head}:{path}")).get("provenance", {})
+        if prov.get("platform") != CI_PLATFORM:
+            out.append(f"{path}: recorded on platform {prov.get('platform')!r}, not CI's {CI_PLATFORM!r} "
+                       "(record it with the oracle-traces workflow)")
+        if prov.get("requirements_lock_sha256") != lock:
+            out.append(f"{path}: records requirements_lock_sha256 {prov.get('requirements_lock_sha256')!r}, "
+                       f"not the committed oracle/requirements.lock's {lock!r}")
+    return out
+
+
 def main(base: str, head: str) -> int:
     bad = 0
     for d in unguarded(head):
@@ -124,6 +152,9 @@ def main(base: str, head: str) -> int:
     if not base or set(base) == {"0"}:
         # A first push: check every commit from the root.
         base = git("rev-list", "--max-parents=0", head).split()[-1]
+    for problem in foreign_provenance(base, head):
+        print(problem)
+        bad = 1
     for c in git("rev-list", "--reverse", "--no-merges", f"{base}..{head}").split():
         needs_review = []
         for line in git("diff-tree", "--no-commit-id", "-r", "-M", "--name-status", c).splitlines():
