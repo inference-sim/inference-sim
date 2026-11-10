@@ -6953,7 +6953,7 @@ def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscal
     scaled = {d.name for d in sorted(MODELS.iterdir())
               if d.is_dir() and graph_of(d)["global"].get("weight_scale")
               and graph_of(d)["global"]["weight_dtype"] == "fp8"}
-    assert scaled == {"minimax-m3-mxfp8", "deepseek-v4.1-flash"}
+    assert scaled == {"minimax-m3-mxfp8", "minimax-m3.1-flash", "deepseek-v4.1-flash"}
 
 
 # --- DSpark stages in a DeepSeek-V4 checkpoint (deepseek-ai/DeepSeek-V4-Pro-0813) ---------
@@ -7208,3 +7208,273 @@ def test_v4_dspark_context_pass_pays_for_the_zeroed_query_per_draft_layer():
     assert {n["tp"] for n in dummy} == {"sharded"}
     insert = [n for n in ctx["nodes"] if n["role"].startswith("dspark_context_kv_rope_insert_")]
     assert [n["bytes_per_token"] for n in insert] == [512 * 2 + 584] * 3
+
+
+# --- MiniMax-M3.1-Flash (MiniMaxAI/MiniMax-M3.1-Flash) --------------------------------------
+
+M31 = MODELS / "minimax-m3.1-flash"
+WIDTH.setdefault("nvfp4", 0.5)
+
+
+def _m31_cfg(**edit) -> dict:
+    """The keys of MiniMax-M3.1-Flash's config.json at ce7f4df87d2e that the deriver reads,
+    which the repository's licence keeps out of the catalog (the file is pinned by hash in
+    model.yaml and the nightly job re-derives the graph from the fetched file). The per-layer
+    vectors and the exclusion list are generated from the three dense layers they describe."""
+    layers = 60
+    moe = [0] * 3 + [1] * 57
+    text = {
+        "architectures": ["MiniMaxM3SparseForCausalLM"],
+        "hidden_size": 6144, "intermediate_size": 3072, "num_hidden_layers": layers,
+        "num_attention_heads": 64, "num_key_value_heads": 4, "head_dim": 128,
+        "vocab_size": 200064, "max_position_embeddings": 1048576, "rms_norm_eps": 1e-06,
+        "use_gemma_norm": True, "attention_output_gate": False, "rope_theta": 10000000,
+        "rotary_dim": 64, "partial_rotary_factor": 0.5, "hidden_act": "swigluoai",
+        "use_qk_norm": True, "tie_word_embeddings": False,
+        "dense_intermediate_size": 12288, "shared_intermediate_size": 3072,
+        "num_local_experts": 128, "num_experts_per_tok": 4, "n_shared_experts": 1,
+        "scoring_func": "sigmoid", "use_routing_bias": True, "qk_norm_type": "per_head",
+        "swiglu_alpha": 1.702, "swiglu_limit": 7.0, "routed_scaling_factor": 2.0,
+        "moe_layer_freq": moe,
+        "sparse_attention_config": {
+            "use_sparse_attention": True, "sparse_index_dim": 128,
+            "sparse_num_index_heads": 4, "sparse_topk_blocks": 16, "sparse_block_size": 128,
+            "sparse_score_type": "max", "sparse_init_block": 0, "sparse_local_block": 1,
+            "sparse_attention_freq": [1] * layers, "sparse_disable_index_value": [1] * layers,
+        },
+    }
+    quant = {
+        "quant_method": "mxfp8", "activation_scheme": "dynamic", "weight_block_size": [1, 32],
+        "group_size": 16, "moe_quant_algo": "NVFP4", "moe_quant_format": "nvfp4-pack-quantized",
+        "ignored_layers": sorted(
+            ["lm_head", "model.embed_tokens", "vision_tower", "multi_modal_projector",
+             "patch_merge_mlp"]
+            + [f"language_model.model.layers.{i}.block_sparse_moe.gate" for i in range(3, 60)]),
+    }
+    raw = {"architectures": ["MiniMaxM3SparseForConditionalGeneration"],
+           "model_type": "minimax_m3_vl", "torch_dtype": "bfloat16",
+           "text_config": text, "quantization_config": quant}
+    for key, value in edit.items():
+        where, _, name = key.rpartition("__")
+        target = {"": raw, "text": text, "sparse": text["sparse_attention_config"],
+                  "quant": quant}[where]
+        if value is None:
+            target.pop(name, None)
+        else:
+            target[name] = value
+    return raw
+
+
+def _m31_graph(tmp_path) -> dict:
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    return _derive_raw(_m31_cfg(), tmp_path, "minimax-m3.1-flash")
+
+
+def test_m31_committed_graph_is_the_derivation_of_the_pinned_keys(tmp_path):
+    """The committed graph equals what the deriver makes of the keys above, apart from the
+    digest of the file it was derived from, which model.yaml pins and the nightly job checks."""
+    committed = graph_of(M31)
+    derived = _m31_graph(tmp_path)
+    pin = yaml.safe_load((M31 / "model.yaml").read_text())["config"]["sha256"]
+    assert committed["derived_from"]["sha256"] == pin
+    committed["derived_from"].pop("sha256")
+    derived["derived_from"].pop("sha256")
+    assert committed == derived
+
+
+# Every tensor of the checkpoint in the 48 safetensors headers at ce7f4df87d2e (89,632 tensors,
+# 250,103,411,200 bytes): (module under language_model., stored dtype, shape, layers holding it,
+# copies, what the graph does with it). Routed experts count once per expert and matrix.
+# "priced" classes are the graph's GEMM and GroupedGEMM weights; "scale" classes are block
+# scales and global scales, which the graph does not state; "small" are norms and the routing
+# bias; "global" are the embedding and the head, which the graph states from vocab_size and
+# hidden_size and in its head.
+_ATTN = (0, 59)
+_DENSE = (0, 2)
+_ROUTED = (3, 59)
+M31_CHECKPOINT = [
+    ("L.self_attn.q_proj.weight", "F8_E4M3", (8192, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.k_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.v_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.index_q_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.index_k_proj.weight", "F8_E4M3", (128, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.o_proj.weight", "F8_E4M3", (6144, 8192), _ATTN, 60, "priced"),
+    ("L.self_attn.q_proj.weight_scale_inv", "U8", (8192, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.k_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.v_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.index_q_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.index_k_proj.weight_scale_inv", "U8", (128, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.o_proj.weight_scale_inv", "U8", (6144, 256), _ATTN, 60, "scale"),
+    ("L.mlp.gate_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.up_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.down_proj.weight", "F8_E4M3", (6144, 12288), _DENSE, 3, "priced"),
+    ("L.mlp.gate_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.mlp.up_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.mlp.down_proj.weight_scale_inv", "U8", (6144, 384), _DENSE, 3, "scale"),
+    ("L.block_sparse_moe.gate.weight", "F32", (128, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight", "F8_E4M3", (6144, 3072), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight_scale_inv", "U8", (6144, 96), _ROUTED, 57, "scale"),
+    # Packed two FP4 values to a byte: [3072, 3072] stores 3072 x 6144.
+    ("L.block_sparse_moe.experts.E.w1.weight_packed", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w3.weight_packed", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w2.weight_packed", "U8", (6144, 1536), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w1.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight_scale", "F8_E4M3", (6144, 192), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.input_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.input_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.input_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.weight_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight_global_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.e_score_correction_bias", "F32", (128,), _ROUTED, 57, "small"),
+    ("L.input_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.post_attention_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.self_attn.q_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.k_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.index_q_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.index_k_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("model.norm.weight", "BF16", (6144,), None, 1, "small"),
+    ("lm_head.weight", "BF16", (200064, 6144), None, 1, "head"),
+    ("model.embed_tokens.weight", "BF16", (200064, 6144), None, 1, "embedding"),
+]
+# The towers outside the text decoder, summed (515 + 4 + 4 tensors).
+M31_TOWERS = {"vision_tower": (515, 1_265_382_400), "multi_modal_projector": (4, 91_250_688),
+              "patch_merge_mlp": (4, 377_511_936)}
+_M31_STORED = {"F32": 4, "BF16": 2, "F8_E4M3": 1, "U8": 1}
+
+
+def test_m31_tensor_classes_sum_to_the_checkpoints_header_total():
+    count = sum(c[4] for c in M31_CHECKPOINT) + sum(n for n, _ in M31_TOWERS.values())
+    nbytes = sum(c[4] * _prod(c[2]) * _M31_STORED[c[1]] for c in M31_CHECKPOINT)
+    nbytes += sum(b for _, b in M31_TOWERS.values())
+    assert (count, nbytes) == (89_632, 250_103_411_200)
+    # Each class holds one copy per layer it spans (routed experts: 128 a layer a matrix).
+    for name, _, _, span, copies, _ in M31_CHECKPOINT:
+        per_layer = 128 if ".experts.E." in name else 1
+        assert copies == (1 if span is None else (span[1] - span[0] + 1)) * per_layer, name
+
+
+def _m31_expected(layer: int) -> list[tuple[int, int, str]]:
+    """The matrices the graph must price on one layer, from the priced classes above."""
+    out = []
+    for name, dt, shape, span, _, role in M31_CHECKPOINT:
+        if role != "priced" or span is None or not span[0] <= layer <= span[1]:
+            continue
+        rows, cols = shape
+        if name.endswith("weight_packed"):
+            width, cols = "nvfp4", cols * 2
+        else:
+            width = {"F8_E4M3": "fp8", "F32": "fp32", "BF16": "bf16"}[dt]
+        out += [(rows, cols, width)] * (128 if ".experts.E." in name else 1)
+    return out
+
+
+def test_m31_graph_charges_the_weights_the_checkpoint_stores(tmp_path):
+    """Every priced class of mtp-free MiniMax-M3.1-Flash, layer by layer: the MXFP8 linears at
+    FP8, the routed experts at NVFP4 (128 a layer, three matrices each), the shared expert at
+    FP8, the router at FP32; and the head at BF16 as lm_head.weight stores it."""
+    g = _m31_graph(tmp_path)
+    assert g["global"]["weight_dtype"] == "fp8"
+    layers = expanded_layers(g)
+    assert len(layers) == 60
+    for i, nodes in enumerate(layers):
+        want = _m31_expected(i)
+        # check_weights compares elements and bytes; the expert matrices are listed per
+        # expert, the graph states them as one GroupedGEMM.
+        check_weights(nodes, want, i, "fp8")
+    head = [n for n in g["head"] if n["op"] == "GEMM"]
+    assert [(n["n"], n["k"], n["weight_dtype"]) for n in head] == [(200064, 6144, "bf16")]
+    assert "speculator" not in g
+
+
+def test_m31_layers_pair_the_two_vectors_independently(tmp_path):
+    g = _m31_graph(tmp_path)
+    assert g["stack"] == {"prologue": ["sparse_attn_dense"] * 3,
+                          "pattern": ["sparse_attn_moe"], "repeat": 57}
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    assert sorted(kinds) == ["sparse_attn_dense", "sparse_attn_moe"]
+    for kind in kinds.values():
+        (idx,) = [n for n in kind["nodes"] if n.get("role") == "block_index_scores"]
+        (attn,) = [n for n in kind["nodes"] if n["op"] == "Attention" and n.get("holds_engine_kv")]
+        assert idx["caches"] == [{"name": "index", "kind": "index", "owned": True,
+                                  "bytes_per_entry": 256}]
+        assert (attn["kind"], attn["window"]) == ("swa", (16 + 1) * 128)
+    dense = [n["role"] for n in kinds["sparse_attn_dense"]["nodes"] if n["op"] == "GEMM"]
+    assert dense == ["qkv_proj", "index_qk_proj", "o_proj", "mlp_gate_up", "mlp_down"]
+    routed = [(n["role"], n["weight_dtype"]) for n in kinds["sparse_attn_moe"]["nodes"]
+              if n["op"] in ("GEMM", "GroupedGEMM") and "weight_dtype" in n]
+    assert routed == [("router", "fp32"), ("experts", "nvfp4"), ("shared_experts", "fp8")]
+    (shared,) = [n for n in kinds["sparse_attn_moe"]["nodes"] if n.get("role") == "shared_experts"]
+    assert (shared["n"], shared["k"], shared["experts"], shared["shared"]) == (3072, 6144, 1, True)
+
+
+@pytest.mark.parametrize("edit,why", [
+    # full attention under routed experts: a kind no checkpoint states
+    ({"sparse__sparse_attention_freq": [0] + [1] * 59,
+      "sparse__sparse_disable_index_value": [0] + [1] * 59,
+      "text__moe_layer_freq": [1] * 60}, "full attention under routed experts"),
+    ({"sparse__sparse_attention_freq": [2] + [1] * 59}, "names \\[2\\]"),
+    ({"text__moe_layer_freq": [0, 0, 0] + [1] * 56 + [2]}, "names \\[2\\]"),
+    ({"sparse__sparse_attention_freq": [1] * 59}, "59 entries for 60"),
+    ({"sparse__sparse_disable_index_value": [0] + [1] * 59}, "sparse_disable_index_value"),
+    ({"text__first_k_dense_replace": 2}, "first_k_dense_replace"),
+    ({"text__shared_intermediate_size": 1536}, "shared_intermediate_size"),
+    ({"quant__moe_quant_algo": "MXFP4"}, "accepts NVFP4"),
+    ({"quant__moe_quant_format": "int4-pack-quantized"}, "accepts NVFP4"),
+    ({"quant__group_size": 32}, "accepts NVFP4"),
+    ({"quant__kv_cache_quant_algo": "FP8"}, "kv_cache_quant_algo"),
+    ({"quant__quant_method": "fp8"}, "reads it for mxfp8 only"),
+    ({"quant__ignored_layers": [x for x in _m31_cfg()["quantization_config"]["ignored_layers"]
+                                if x != "lm_head"]}, "missing \\['lm_head'\\]"),
+    ({"quant__ignored_layers": _m31_cfg()["quantization_config"]["ignored_layers"]
+      + ["language_model.model.layers.3.self_attn"]}, "unplaced"),
+    ({"quant__ignored_layers": [x for x in _m31_cfg()["quantization_config"]["ignored_layers"]
+                                if not x.endswith("layers.10.block_sparse_moe.gate")]},
+     "missing"),
+])
+def test_m31_refuses_what_it_does_not_place(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_m31_cfg(**edit), tmp_path, "minimax-m3.1-flash")
+
+
+def test_a_draft_length_under_another_name_is_not_dropped_for_minimax_m3(tmp_path):
+    """MiniMax-M3.1-Flash states no draft layers, so its graph has no speculator. A config
+    that names them in the other spelling but not in num_mtp_modules is still refused: the
+    engine would read nothing, and a silent drop is the failure that rule exists for."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    assert "speculator" not in _derive_raw(_m31_cfg(), tmp_path, "minimax-m3.1-flash")
+    with pytest.raises(derive_graph.DeriveError, match="num_mtp_modules"):
+        _derive_raw(_m31_cfg(text__num_nextn_predict_layers=1), tmp_path, "minimax-m3.1-flash")
+    g = _derive_raw(_m31_cfg(text__num_mtp_modules=2), tmp_path, "minimax-m3.1-flash")
+    assert g["speculator"]["num_spec_tokens"] == 2
+
+
+def test_minimax_m3_siblings_keep_their_kinds_and_widths():
+    """The change that decoupled the two vectors leaves MiniMax-M3 and -MXFP8 as they were:
+    two kinds and no router node."""
+    for name in ("minimax-m3", "minimax-m3-mxfp8"):
+        g = graph_of(MODELS / name)
+        assert g["stack"]["prologue"] == ["dense"] * 3, name
+        assert sorted(k["id"] for k in g["layer_kinds"]) == ["dense", "sparse_attn_moe"], name
+        assert not [n for k in g["layer_kinds"] for n in k["nodes"] if n.get("role") == "router"]
+
+
+def test_m31_states_the_one_byte_per_32_weights_that_its_mxfp8_scales_hold():
+    """The U8 scale tensors beside the FP8 weights hold exactly one byte in 32 of them (the
+    classes above), which the graph states as its global weight_scale; the NVFP4 experts'
+    scales are part of their dtype."""
+    fp8 = sum(c[4] * _prod(c[2]) for c in M31_CHECKPOINT
+              if c[1] == "F8_E4M3" and c[5] == "priced")
+    scales = sum(c[4] * _prod(c[2]) for c in M31_CHECKPOINT
+                 if c[1] == "U8" and c[5] == "scale")
+    assert scales * 32 == fp8
+    assert graph_of(M31)["global"]["weight_scale"] == {"elements": 32, "bytes": 1}

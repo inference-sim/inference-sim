@@ -1161,7 +1161,8 @@ def moe(cfg: dict[str, Any], model: str, hidden: int) -> dict[str, Any]:
     return node
 
 
-def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, Any]]:
+def moe_block(cfg: dict[str, Any], model: str, hidden: int, *, routed_width: str | None = None,
+              shared_width: str | None = None) -> list[dict[str, Any]]:
     """The routed expert layer: its latent projections, where it has them, and the
     grouped GEMM.
 
@@ -1176,6 +1177,10 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, An
     `self.shared_experts(identity)` after the up-projection -- so neither is affected by
     the latent width, which is why shared_intermediate_size stays as moe() states it."""
     node = moe(cfg, model, hidden)
+    # A handler that reads the checkpoint's own layout states the routed width, and the shared
+    # expert's where it differs (MiniMax-M3.1: NVFP4 routed experts beside MXFP8 shared ones).
+    if routed_width:
+        node["weight_dtype"] = routed_width
     nodes = [node]
 
     # A shared expert stored at a DIFFERENT width from the routed ones cannot ride on
@@ -1184,7 +1189,7 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int) -> list[dict[str, An
     # experts NVFP4, shared experts FP8 -- so the shared half becomes its own node and
     # the routed node stops claiming it.
     classes = quantized_classes(cfg, model)
-    shared_width = classes.get("shared_experts")
+    shared_width = shared_width or classes.get("shared_experts")
     if shared_width and shared_width != node.get("weight_dtype") and node.get(
             "shared_experts"):
         inner = int(node.get("shared_intermediate_size") or node["n"])
@@ -3953,15 +3958,69 @@ def handler_deepseek_v41(cfg, raw, model):
     return kinds, compress(sequence), extras
 
 
+# What a MiniMax-M3.1 checkpoint leaves out of its MXFP8 quantization: the embedding, the head,
+# the vision tower and projectors, and each routed layer's router. vLLM turns the config's
+# `ignored_layers` into the ModelOpt exclusion list (ModelOptMxFp8Config.from_config,
+# model_executor/layers/quantization/modelopt.py:1286-1318@v0.34.0rc0), and a module whose prefix
+# matches is built unquantized; the router is an fp32 GateLinear in any case
+# (models/minimax_m3/nvidia/model.py:529-538). A list that names anything else puts a module of
+# the stack at a width this handler does not place, so it is refused, not priced as MXFP8.
+MINIMAX_M3_UNQUANTIZED = frozenset({"lm_head", "model.embed_tokens", "vision_tower",
+                                    "multi_modal_projector", "patch_merge_mlp"})
+
+
+def minimax_m3_routed_width(raw: dict[str, Any], cfg: dict[str, Any], moe_freq: list[int],
+                            model: str) -> str | None:
+    """The routed experts' stored width in a MiniMax-M3 checkpoint, when it is not the MXFP8 of
+    the rest: NVFP4 for `moe_quant_algo` NVFP4, else None.
+
+    ModelOptMxFp8Config builds a RoutedExperts module as CompressedTensorsW4A4Nvfp4MoEMethod
+    when moe_quant_algo is NVFP4 and the module is not excluded (:1352-1382), and raises unless
+    the format is nvfp4-pack-quantized and group_size 16 (:1294-1306). Every other linear is
+    MXFP8. A kv_cache_quant_algo is a statement the engine reads (:1301) and this handler
+    does not."""
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    algo = str(quant.get("moe_quant_algo") or "").upper()
+    if not algo:
+        return None
+    if str(quant.get("quant_method", "")).lower() != "mxfp8":
+        raise DeriveError(f"{model}: moe_quant_algo {algo} beside quant_method "
+                          f"{quant.get('quant_method')!r}; vLLM reads it for mxfp8 only")
+    if (algo != "NVFP4" or quant.get("moe_quant_format") != "nvfp4-pack-quantized"
+            or quant.get("group_size") != 16):
+        raise DeriveError(f"{model}: moe_quant_algo {quant.get('moe_quant_algo')!r}, "
+                          f"moe_quant_format {quant.get('moe_quant_format')!r}, group_size "
+                          f"{quant.get('group_size')!r}; vLLM accepts NVFP4, nvfp4-pack-quantized "
+                          f"and 16 only")
+    if quant.get("kv_cache_quant_algo"):
+        raise DeriveError(f"{model}: kv_cache_quant_algo {quant['kv_cache_quant_algo']!r} is read "
+                          f"by the engine and not by this handler")
+    ignored = quant.get("ignored_layers")
+    want = MINIMAX_M3_UNQUANTIZED | {
+        f"language_model.model.layers.{i}.block_sparse_moe.gate"
+        for i, f in enumerate(moe_freq) if f}
+    if not isinstance(ignored, list) or set(ignored) != want or len(ignored) != len(want):
+        extra = sorted(set(ignored or ()) - want)
+        absent = sorted(want - set(ignored or ()))
+        raise DeriveError(f"{model}: ignored_layers is not the embedding, head, towers and "
+                          f"routers this handler places (unplaced {extra[:3]}, missing "
+                          f"{absent[:3]}); a module outside them is at a width it does not state")
+    return "nvfp4"
+
+
 def handler_minimax_m3(cfg, raw, model):
     """MiniMax-M3: block-sparse attention with a learned indexer, over a MoE stack whose
     first three layers are dense.
 
-    Two layer kinds, ordered by the config's own per-layer vectors. `moe_layer_freq`
-    and `sparse_attention_config.sparse_attention_freq` are checked to be the same
-    vector rather than assumed to be: they are two statements of one fact on the
-    published weights, and a variant that decoupled them would need its kinds named
-    rather than collapsed.
+    Layer kinds, ordered by the config's two per-layer vectors, which the engine reads
+    separately: `sparse_attention_config.sparse_attention_freq` gives each layer's attention
+    (layer_types) and `moe_layer_freq` its MLP (mlp_layer_types; transformers'
+    MiniMaxM3VLTextConfig.__post_init__, read by models/minimax_m3/nvidia/model.py:196-203@
+    v0.34.0rc0). MiniMax-M3 states the same vector twice: a dense prologue of full attention
+    and a dense MLP, then sparse attention under routed experts. MiniMax-M3.1-Flash decouples
+    them: its first three layers run the block-sparse attention under a dense MLP, which is a
+    third kind. A full-attention layer under routed experts is a fourth that no checkpoint
+    states, and is refused rather than priced.
 
     The attention kind is `swa`. What the schema's SWA means is a per-token read
     bounded by something other than context length, and M3's bound is
@@ -4014,30 +4073,49 @@ def handler_minimax_m3(cfg, raw, model):
             raise DeriveError(
                 f"{model}: {name} has {len(vec)} entries for {layers} layers"
             )
-    if list(attn_freq) != list(moe_freq):
+        unknown = set(vec) - {0, 1}
+        if unknown:
+            raise DeriveError(
+                f"{model}: {name} names {sorted(unknown)}, which this "
+                f"handler cannot price; add the kind rather than defaulting it"
+            )
+    attn_freq, moe_freq = list(attn_freq), list(moe_freq)
+    # The index value and output projections exist only where the engine builds them, and it
+    # builds none on a sparse layer (MiniMaxM3SparseAttention, nvidia/model.py:846-860); the
+    # vector that disables them is read nowhere else, so it must say the same as the one
+    # that makes a layer sparse.
+    disabled = sparse.get("sparse_disable_index_value")
+    if disabled is not None and list(disabled) != attn_freq:
         raise DeriveError(
-            f"{model}: sparse_attention_freq and moe_layer_freq differ. This handler "
-            f"prices one dense prologue and one sparse-plus-routed body; a stack that "
-            f"mixed them independently needs its kinds named rather than paired"
+            f"{model}: sparse_disable_index_value differs from sparse_attention_freq; the "
+            f"engine builds no index value projection on a sparse layer, and this handler "
+            f"prices none"
         )
-    unknown = set(attn_freq) - {0, 1}
-    if unknown:
+    if any(a == 0 and m == 1 for a, m in zip(attn_freq, moe_freq)):
         raise DeriveError(
-            f"{model}: sparse_attention_freq names {sorted(unknown)}, which this "
-            f"handler cannot price; add the kind rather than defaulting it"
+            f"{model}: a layer with full attention under routed experts; no published "
+            f"MiniMax-M3 checkpoint has one, and this handler names no kind for it"
         )
 
-    # A stated dense-prologue length and the vector state the same fact. Read by
+    # A stated dense-prologue length and the MLP vector state the same fact. Read by
     # literal name: only this family declares it, so it has no cross-dialect concept.
     first_dense = cfg.get("first_k_dense_replace")
     if first_dense is not None:
         expected = [0] * int(first_dense) + [1] * (layers - int(first_dense))
-        if expected != list(attn_freq):
+        if expected != moe_freq:
             raise DeriveError(
                 f"{model}: first_k_dense_replace {first_dense} disagrees with the "
                 f"per-layer vector; the two state one fact and this handler will not "
                 f"choose between them"
             )
+    routed_width = minimax_m3_routed_width(raw, cfg, moe_freq, model)
+    # The shared expert and every linear are MXFP8, which the graph's global width states.
+    global_width = weight_dtype(cfg, raw, model)
+    if routed_width and int(cfg.get("shared_intermediate_size", cfg["intermediate_size"])) != int(
+            cfg["intermediate_size"]):
+        # The shared expert is built at intermediate_size (nvidia/model.py:545-551).
+        raise DeriveError(f"{model}: shared_intermediate_size differs from intermediate_size; "
+                          f"vLLM sizes the shared expert by the second")
 
     topk_blocks = int(require_key(sparse, "sparse_topk_blocks", model))
     block = int(require_key(sparse, "sparse_block_size", model))
@@ -4051,12 +4129,13 @@ def handler_minimax_m3(cfg, raw, model):
 
     dense_attn = attention_block(cfg, model, hidden, raw=raw)
     dense_ffn = int(require_key(cfg, "dense_intermediate_size", model))
-    dense_nodes = dense_attn + [
+    dense_mlp = [
         norm("post_attn_norm"),
         gemm("mlp_gate_up", 2 * dense_ffn, hidden),
         gemm("mlp_down", hidden, dense_ffn),
         collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
     ]
+    dense_nodes = dense_attn + dense_mlp
 
     sparse_attn = attention_block(cfg, model, hidden, raw=raw, kind="swa", window=bound)
     # The indexer scores the whole context to choose blocks, so its read is bounded by
@@ -4089,22 +4168,43 @@ def handler_minimax_m3(cfg, raw, model):
                     "bytes_per_entry": index_dim * DTYPE_WIDTHS["bf16"]}],
     }
     at = next(i for i, n in enumerate(sparse_attn) if n.get("op") == "Attention")
-    sparse_nodes = sparse_attn[:at] + [
+    sparse_front = sparse_attn[:at] + [
         gemm("index_qk_proj", index_heads * index_dim + index_dim, hidden),
         indexer,
     ] + sparse_attn[at:]
-    sparse_nodes += [
+    routed = []
+    if routed_width:
+        # The router is an fp32 GateLinear, replicated, and is in the exclusion list the
+        # width above was read against (nvidia/model.py:529-538).
+        routed.append({**gemm("router", int(require(cfg, "num_experts", model)), hidden),
+                       "weight_dtype": "fp32", "tp": "replicated"})
+    sparse_nodes = sparse_front + [
         norm("post_attn_norm"),
-        *moe_block(cfg, model, hidden),
+        *routed,
+        *moe_block(cfg, model, hidden, routed_width=routed_width,
+                   shared_width=global_width if routed_width else None),
         collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
         collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
     ]
+    sparse_dense_nodes = sparse_front + dense_mlp
 
-    kinds = [
-        {"id": "dense", "nodes": dense_nodes, "edges": chain(dense_nodes)},
-        {"id": "sparse_attn_moe", "nodes": sparse_nodes, "edges": chain(sparse_nodes)},
-    ]
-    sequence = ["sparse_attn_moe" if f else "dense" for f in attn_freq]
+    built = {
+        (0, 0): ("dense", dense_nodes),
+        (1, 1): ("sparse_attn_moe", sparse_nodes),
+        (1, 0): ("sparse_attn_dense", sparse_dense_nodes),
+    }
+    sequence = [built[(a, m)][0] for a, m in zip(attn_freq, moe_freq)]
+    kinds = [{"id": kid, "nodes": nodes, "edges": chain(nodes)}
+             for kid, nodes in built.values() if kid in sequence]
+    kinds.sort(key=lambda k: sequence.index(k["id"]))
+    extras = {}
+    if routed_width:
+        # The ignored_layers list names lm_head, so it is stored at the base width and not
+        # at the MXFP8 of the rest (checkpoint BF16 [200064, 6144]).
+        extras["head"] = [norm("final_norm"),
+                          {**gemm("lm_head", int(require(cfg, "vocab_size", model)), hidden),
+                           "weight_dtype": base_dtype(cfg, raw, model)}]
+        return kinds, compress(sequence), extras
     return kinds, compress(sequence)
 
 
@@ -5767,12 +5867,14 @@ def derive(config_path: Path, model: str) -> dict[str, Any]:
     # field globally would invent a draft stack for every such config.
     if arch in MTP_MODULE_ARCHS:
         modules = cfg.get("num_mtp_modules")
-        if modules is None:
+        if modules is None and spec:
             raise DeriveError(
                 f"{model}: {arch} takes its draft length from num_mtp_modules and the "
                 f"config declares none"
             )
-        spec = modules
+        # A config that names no draft layers in either spelling has none: MiniMax-M3.1-Flash
+        # ships no MTP module, and its DSpark drafter is a checkpoint of its own.
+        spec = modules or 0
     if spec and int(spec) > 0:
         # A draft module is its own stack: for an MoE target the draft pass is a second
         # MoE, which a scalar draft length would hide. Its layer composition comes from

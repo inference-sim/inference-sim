@@ -1,0 +1,177 @@
+kind: ModelGraph
+name: minimax-m3.1-flash
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: df6a3668e2de5b8dc0e883e3767495ad17af7e4d69fabe9683088be015fda9ab
+  deriver_version: 1
+global:
+  hidden_size: 6144
+  vocab_size: 200064
+  tie_word_embeddings: false
+  weight_dtype: fp8
+  architecture: MiniMaxM3SparseForConditionalGeneration
+  weight_scale:
+    elements: 32
+    bytes: 1
+layer_kinds:
+- id: sparse_attn_dense
+  nodes:
+  - &id001
+    op: Elementwise
+    role: input_norm
+  - &id002
+    op: GEMM
+    role: qkv_proj
+    n: 9216
+    k: 6144
+  - &id003
+    op: GEMM
+    role: index_qk_proj
+    n: 640
+    k: 6144
+  - &id004
+    op: Attention
+    holds_engine_kv: false
+    role: block_index_scores
+    kind: gqa
+    n_q: 4
+    n_kv: 1
+    d_h: 128
+    caches:
+    - name: index
+      kind: index
+      owned: true
+      bytes_per_entry: 256
+  - &id005
+    op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 64
+    n_kv: 4
+    d_h: 128
+    window: 2176
+  - &id006
+    op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - &id007
+    op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 24576
+    k: 6144
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 12288
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+- id: sparse_attn_moe
+  nodes:
+  - *id001
+  - *id002
+  - *id003
+  - *id004
+  - *id005
+  - *id006
+  - *id007
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    weight_dtype: fp32
+    tp: replicated
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 3072
+    k: 6144
+    experts: 128
+    top_k: 4
+    weight_dtype: nvfp4
+  - op: GroupedGEMM
+    shared: true
+    role: shared_experts
+    n: 3072
+    k: 6144
+    experts: 1
+    top_k: 1
+    weight_dtype: fp8
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+stack:
+  prologue:
+  - sparse_attn_dense
+  - sparse_attn_dense
+  - sparse_attn_dense
+  pattern:
+  - sparse_attn_moe
+  repeat: 57
+modality: text_decoder_of_multimodal
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 200064
+  k: 6144
+  weight_dtype: bf16
