@@ -35,6 +35,9 @@ func TestTheCaptureCeilingFollowsTheEngineDefault(t *testing.T) {
 		e.CUDAGraphMode, e.MaxNumSeqs = mode, seqs
 		if blackwell {
 			chip := *in.Chip
+			if chip.FP8Peak <= 0 {
+				t.Fatal("the chip has no FP8 peak, so a Blackwell NVFP4 peak of twice it is 0")
+			}
 			chip.NVFP4Peak = 2 * chip.FP8Peak
 			in.Chip = &chip
 		}

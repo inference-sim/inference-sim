@@ -269,6 +269,9 @@ func TestAPackedSparseMLACacheIsItsOwnSize(t *testing.T) {
 		editEngine(t, &in, func(e *engineconfig.Engine) { e.CacheDType = cache })
 		if blackwell {
 			chip := *in.Chip
+			if chip.FP8Peak <= 0 {
+				t.Fatal("the chip has no FP8 peak, so a Blackwell NVFP4 peak of twice it is 0")
+			}
 			chip.NVFP4Peak = 2 * chip.FP8Peak
 			in.Chip = &chip
 		}
@@ -314,6 +317,9 @@ func TestAMixedStepIsOneAttentionLaunchOnFlashAttention(t *testing.T) {
 		in := fixtureInputs(t, "minimax-m25-h200-tp8.yaml")
 		if blackwell {
 			chip := *in.Chip
+			if chip.FP8Peak <= 0 {
+				t.Fatal("the chip has no FP8 peak, so a Blackwell NVFP4 peak of twice it is 0")
+			}
 			chip.NVFP4Peak = 2 * chip.FP8Peak
 			in.Chip = &chip
 		}
@@ -431,13 +437,15 @@ func TestAStatedCaptureSizeIsTheCeiling(t *testing.T) {
 	}
 }
 
-// captureUnits is the unit a capture entry states: the floor is bytes on a rank, and each per-token
-// entry is bytes per token of the capture ceiling, which the form multiplies by a token count.
+// captureUnits is the unit a capture entry states: the one the substrate's own table of form units
+// (coefficient.RequiredUnit, which the registry validator reads) requires of the name, so a name the
+// table does not cover fails the test instead of taking a guessed unit.
 func captureUnits(name string) vocab.Unit {
-	if strings.Contains(name, "_per_") {
-		return vocab.UnitBytesPerToken
+	u, ok := coefficient.RequiredUnit(name)
+	if !ok {
+		panic("no form unit covers " + name)
 	}
-	return vocab.UnitBytesPerRank
+	return u.Unit
 }
 
 // captureContract is docs/COEFF_CONTRACT.md v2.3's capture entries for FULL_AND_PIECEWISE,
