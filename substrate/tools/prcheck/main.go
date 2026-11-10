@@ -179,7 +179,7 @@ func run(args []string, w io.Writer) error {
 		_, mergeErr := git("merge-tree", "--write-tree", baseSHA, headSHA)
 		return report(w, "description", CheckDescription(DescriptionInput{
 			Body: string(raw), Repo: *repo, Head: headSHA, Base: baseSHA,
-			Heads: ghPRHead, Merges: mergeErr == nil,
+			Heads: ghPRHead, Tags: ghTagCommit, Merges: mergeErr == nil,
 		}))
 	case "threads":
 		if *repo == "" || *prNum == 0 {
@@ -523,6 +523,16 @@ func ghPRHead(repo string, n int) (string, error) {
 	out, err := exec.Command("gh", "api", fmt.Sprintf("repos/%s/pulls/%d", repo, n), "--jq", ".head.sha").Output()
 	if err != nil {
 		return "", fmt.Errorf("gh api: %v", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// ghTagCommit is the commit a release tag of an owner/repo points at: the tag ref, and when it
+// names an annotated tag object, the commit that object tags.
+func ghTagCommit(repo, tag string) (string, error) {
+	out, err := exec.Command("gh", "api", fmt.Sprintf("repos/%s/commits/%s", repo, tag), "--jq", ".sha").Output()
+	if err != nil {
+		return "", fmt.Errorf("release tag %s of %s does not resolve: %v", tag, repo, err)
 	}
 	return strings.TrimSpace(string(out)), nil
 }

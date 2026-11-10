@@ -14,6 +14,10 @@ import (
 // .../pull/<n>, or owner/repo#<n>), the hash must be that pull request's head. On any
 // other line it must be the head of this pull request or of its base. A short hash cannot
 // be checked and is refused, so a reader can always check what the description claims.
+//
+// A dependency is also named by a release tag: on a line that names a repository's release tag
+// (owner/repo at vX.Y.Z, or a .../releases/tag/vX.Y.Z URL) and a full hash, the hash must be the
+// commit that tag points at, so a pin written as a tag cannot drift from the commit it names.
 
 var (
 	fullHash = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
@@ -27,10 +31,17 @@ var (
 	urlRevision = regexp.MustCompile(`(?i)https?://github\.com/[\w.-]+/[\w.-]+/(?:commit|commits|blob|tree)/([0-9a-f]{7,39})(?:[^0-9a-z]|$)`)
 	prURL       = regexp.MustCompile(`https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)`)
 	prRef       = regexp.MustCompile(`\b([\w.-]+/[\w.-]+)#(\d+)\b`)
+	// tagRef is a repository's release tag: "owner/repo v0.13.0", "owner/repo@v0.13.0", or a
+	// releases/tag URL. The tag is semver with an optional pre-release suffix such as -blis.2.
+	tagRef = regexp.MustCompile(`\b([\w.-]+/[\w.-]+)(?:@| at | pinned at | )(v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\b|https://github\.com/([\w.-]+/[\w.-]+)/releases/tag/(v\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)`)
 )
 
 // PRHeads answers "what is the head commit of pull request n in repo".
 type PRHeads func(repo string, n int) (string, error)
+
+// TagCommits answers "what commit does release tag t of repo point at" (the commit, not the
+// tag object, so an annotated tag resolves to what it tags).
+type TagCommits func(repo, tag string) (string, error)
 
 // DescriptionInput is what the description check reads.
 type DescriptionInput struct {
@@ -38,7 +49,8 @@ type DescriptionInput struct {
 	Repo       string // owner/name of this pull request's repository
 	Head, Base string // this pull request's head and base commits
 	Heads      PRHeads
-	Merges     bool // git merge-tree of base and head reports no conflict
+	Tags       TagCommits // nil: a line that names a release tag is checked for nothing
+	Merges     bool       // git merge-tree of base and head reports no conflict
 }
 
 // CheckDescription returns the X14 violations in a pull-request description.
@@ -59,6 +71,27 @@ func CheckDescription(in DescriptionInput) []string {
 		type ref struct {
 			repo string
 			n    int
+		}
+		// A line that names a release tag: the hash is the commit the tag points at.
+		if tags := tagRef.FindAllStringSubmatch(line, -1); len(tags) > 0 && in.Tags != nil && len(prURL.FindAllString(line, -1)) == 0 {
+			if len(tags) != len(hashes) {
+				bad = append(bad, fmt.Sprintf("line %d: %d release tags and %d hashes; list one hash per tag (X14)", ln, len(tags), len(hashes)))
+				continue
+			}
+			for k, m := range tags {
+				repo, tag := m[1], m[2]
+				if repo == "" {
+					repo, tag = m[3], m[4]
+				}
+				commit, err := in.Tags(repo, tag)
+				switch {
+				case err != nil:
+					bad = append(bad, fmt.Sprintf("line %d: %s %s: %v", ln, repo, tag, err))
+				case commit != hashes[k]:
+					bad = append(bad, fmt.Sprintf("line %d: %s lists %s for %s, but the tag points at %s (X14)", ln, repo, hashes[k], tag, commit))
+				}
+			}
+			continue
 		}
 		var refs []ref
 		for _, m := range prURL.FindAllStringSubmatch(line, -1) {

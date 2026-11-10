@@ -209,6 +209,43 @@ func TestDescriptionCheck(t *testing.T) {
 	none(t, CheckDescription(commented))
 }
 
+// X14: a pin written as a release tag resolves to the commit the tag points at, and a stale
+// pin fails (blis-schemas#92). Known-bad inputs: a hash that is not the tag's commit, a tag
+// that does not resolve, and a line with a tag but no hash for it.
+func TestDescriptionChecksReleaseTagPins(t *testing.T) {
+	head, base := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	tagged := strings.Repeat("a", 40)
+	tags := func(repo, tag string) (string, error) {
+		if repo == "inference-sim/blis-substrate" && tag == "v0.13.0" {
+			return tagged, nil
+		}
+		if repo == "inference-sim/blis-vllm" && tag == "v0.32.0-blis.2" {
+			return strings.Repeat("b", 40), nil
+		}
+		return "", fmt.Errorf("no such tag")
+	}
+	check := func(body string) []string {
+		return CheckDescription(DescriptionInput{Body: body, Repo: "inference-sim/x", Head: head, Base: base,
+			Tags: tags, Merges: true,
+			Heads: func(string, int) (string, error) { return "", fmt.Errorf("no such pull request") }})
+	}
+	none(t, check("Pins inference-sim/blis-substrate v0.13.0 at "+tagged+".\n"))
+	none(t, check("Pins inference-sim/blis-substrate@v0.13.0, commit "+tagged+".\n"))
+	none(t, check("Pins https://github.com/inference-sim/blis-substrate/releases/tag/v0.13.0 at "+tagged+".\n"))
+	none(t, check("Pins inference-sim/blis-vllm v0.32.0-blis.2 at "+strings.Repeat("b", 40)+".\n"))
+	has(t, check("Pins inference-sim/blis-substrate v0.13.0 at "+strings.Repeat("c", 40)+".\n"), "but the tag points at "+tagged)
+	has(t, check("Pins inference-sim/blis-substrate v9.9.9 at "+tagged+".\n"), "no such tag")
+	has(t, check("Pins inference-sim/blis-substrate v0.13.0 and inference-sim/blis-vllm v0.32.0-blis.2 at "+tagged+".\n"), "2 release tags and 1 hashes")
+	// A tag in prose with no hash needs no check, and a hash with no tag is the head rule.
+	none(t, check("Pins inference-sim/blis-substrate v0.13.0.\n"))
+	has(t, check("Built on "+strings.Repeat("5", 40)+".\n"), "is neither this pull request's head")
+	// A pull request line keeps its own rule even when it mentions a tag.
+	prLine := "inference-sim/blis-vllm#9 at " + strings.Repeat("7", 40) + ", built for v0.32.0\n"
+	other := CheckDescription(DescriptionInput{Body: prLine, Repo: "inference-sim/x", Head: head, Base: base, Tags: tags, Merges: true,
+		Heads: func(string, int) (string, error) { return strings.Repeat("7", 40), nil }})
+	none(t, other)
+}
+
 // X28.
 func TestCitedIssues(t *testing.T) {
 	src := []byte(`// Refused: KV role kv_both is not modelled (inference-sim/blis-vllm#48).
