@@ -155,7 +155,7 @@ adapter-blind router; scorer not selected → routing unchanged.
 **Dependencies**: Phase 4 (resident set → snapshot), Phase 3 (identity).
 
 - [ ] T035 [US4] Write scorer contract tests in the simulator's routing-scorers test file: warm instance scores > cold (US4-1); empty `req.Adapter` ⇒ neutral; scorer absent from profile ⇒ routing unchanged (US4-3, INV-6); reads only `Adapter`/`ResidentAdapters`, never `OutputTokens` (INV-9) (fail first)
-- [ ] T036 [US4] Add `ResidentAdapters` field to `RoutingSnapshot` in `sim/routing.go` (zero value ⇒ scorer neutral)
+- [ ] T036 [US4] Add `ResidentAdapters` field to `RoutingSnapshot` in `sim/instance_status.go` (zero value ⇒ scorer neutral)
 - [ ] T037 [US4] Populate `ResidentAdapters` in `buildRouterState()` (`sim/cluster/cluster_event.go`) at Periodic freshness (INV-7); confirm adapter rides the existing per-model routing filter
 - [ ] T038 [US4] Implement `lora-affinity` `scorerFunc` + register in `validScorerNames` (R8) and the `newScorerWithObserver` switch in the simulator's routing-scorers file; min-max normalize (llm-d parity); doc comment declares `ResidentAdapters` + Periodic tier (R17), to pass T035
 - [ ] T039 [US4] Add `--lora-scorer-weight` flag + profile composition in the run command's file and `cmd/replay.go` with `Flags().Changed` guard (R18)

@@ -136,10 +136,10 @@ func mustOK(t *testing.T, errs ...error) {
 }
 
 // DEV-9: every latency sample is derived from the per-request samples; Metrics keeps no second
-// accumulator of them that a re-stamped sample (a preempted decode sub-request's, #1628) could
+// accumulator of them that a re-stamped sample (a preempted decode sub-request's, #2093) could
 // leave out of step. This fails if a TTFT total returns beside RequestTTFTs.
 func TestMetrics_NoSeparateTTFTAccumulator(t *testing.T) {
 	if _, ok := reflect.TypeOf(Metrics{}).FieldByName("TTFTSum"); ok {
-		t.Fatal("Metrics.TTFTSum exists: derive TTFT statistics from RequestTTFTs (DEV-9, #1628)")
+		t.Fatal("Metrics.TTFTSum exists: derive TTFT statistics from RequestTTFTs (DEV-9, #2093)")
 	}
 }

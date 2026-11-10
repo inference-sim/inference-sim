@@ -1,5 +1,5 @@
 // default_collector.go implements DefaultCollector — the standard Collector that maps
-// RouterState snapshots into per-model ModelSignals for the autoscaler pipeline.
+// ClusterState snapshots into per-model ModelSignals for the autoscaler pipeline.
 package cluster
 
 import (
@@ -9,17 +9,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DefaultCollector maps RoutingSnapshot fields to ReplicaMetrics, grouping by model.
+// DefaultCollector maps InstanceStatus fields to ReplicaMetrics, grouping by model.
 // Filters only structurally incomplete snapshots (empty Model, empty GPUType, or loading
 // snapshots with TotalKvCapacityTokens <= 0), emitting a Debugf for each skip. All valid
 // signals pass through unmodified — no thresholding, no business-logic suppression.
 // Latency fields (TTFT, ITL, DispatchRate, AvgInTokens, AvgOutTokens) are always zero
-// after #1382 removed LatencyStats() from buildRouterState(). MaxBatchSize is still populated.
+// after #1382 removed LatencyStats() from buildClusterState(). MaxBatchSize is still populated.
 type DefaultCollector struct{}
 
 // Collect produces one ModelSignals per model present in either routable or loading snapshots.
 // Models are sorted alphabetically for determinism (R2).
-func (c *DefaultCollector) Collect(state *sim.RouterState) []ModelSignals {
+func (c *DefaultCollector) Collect(state *sim.ClusterState) []ModelSignals {
 	if state == nil {
 		return nil
 	}

@@ -1299,3 +1299,29 @@ func TestGenerateWorkload_OpenLoopMultiTurnFollowUpsAreBudgeted(t *testing.T) {
 		t.Errorf("injected %d requests, num_requests is %d", total, spec.NumRequests)
 	}
 }
+
+// INV-11: States tallies every session once, and a session that has settled is in exactly one
+// terminal state.
+func TestSessionManager_StatesTalliesEachSessionInOneState(t *testing.T) {
+	mk := func(id string, rounds int) SessionBlueprint {
+		return makeTestBlueprint(id, rounds, 1000, "accumulate", 1_000_000)
+	}
+	sm := NewSessionManager([]SessionBlueprint{mk("done", 1), mk("dropped", 3), mk("running", 3)})
+	if got := sm.States(); got.Total != 3 || got.Active != 3 || got.Terminal() != 0 {
+		t.Fatalf("before any round ends: %+v, want 3 sessions all active", got)
+	}
+	finished := func(id string, state sim.RequestState) *sim.Request {
+		return &sim.Request{ID: id + "_r0", SessionID: id, RoundIndex: 0, State: state, ProgressIndex: 15,
+			InputTokens: make([]sim.TokenID, 10), OutputTokens: make([]sim.TokenID, 5)}
+	}
+	sm.OnComplete(finished("done", sim.StateCompleted), 5000) // its only round: completed
+	sm.OnComplete(finished("dropped", sim.StateQueued), 5000) // refused by the system: cancelled
+	got := sm.States()
+	want := SessionStates{Total: 3, Active: 1, Completed: 1, Cancelled: 1}
+	if got != want {
+		t.Errorf("States = %+v, want %+v", got, want)
+	}
+	if got.Active+got.Terminal() != got.Total {
+		t.Errorf("a session is in no state or in two: active %d + terminal %d != total %d", got.Active, got.Terminal(), got.Total)
+	}
+}

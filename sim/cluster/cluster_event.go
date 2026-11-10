@@ -201,12 +201,12 @@ func (cs *ClusterSimulator) instanceSender(inst *InstanceSimulator) *eventSender
 	return s
 }
 
-// buildRouterState constructs the autoscaler's view of the cluster from live instance state.
+// buildClusterState constructs the autoscaler's view of the cluster from live instance state.
 // Filters to instances that are routable (IsRoutable()) and, when req is non-nil and
 // has a non-empty Model, further filters to instances serving that model (T044, T048).
 // Complexity: O(N) per call where N = number of instances.
-func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
-	snapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
+func buildClusterState(cs *ClusterSimulator, req *sim.Request) *sim.ClusterState {
+	snapshots := make([]sim.InstanceStatus, 0, len(cs.instances))
 	for _, inst := range cs.instances {
 		// Filter by lifecycle state (T044): exclude non-routable instances
 		if !inst.IsRoutable() {
@@ -229,17 +229,17 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 	// Collect Loading instances as pending supply information for the autoscaler.
 	// TotalKvCapacityTokens is
 	// provisioned at NewInstanceSimulator and does not change over the instance lifetime.
-	loadingSnapshots := make([]sim.RoutingSnapshot, 0, len(cs.instances))
+	loadingSnapshots := make([]sim.InstanceStatus, 0, len(cs.instances))
 	for _, inst := range cs.instances {
 		if inst.State != sim.InstanceStateLoading {
 			continue
 		}
 		if inst.Model == "" || inst.GPU() == "" {
-			logrus.Debugf("[cluster] buildRouterState: loading instance %q has empty Model=%q or GPU=%q — excluded from LoadingSnapshots",
+			logrus.Debugf("[cluster] buildClusterState: loading instance %q has empty Model=%q or GPU=%q — excluded from LoadingSnapshots",
 				inst.ID(), inst.Model, inst.GPU())
 			continue
 		}
-		snap := sim.NewRoutingSnapshot(string(inst.ID()))
+		snap := sim.NewInstanceStatus(string(inst.ID()))
 		snap.Model = inst.Model
 		snap.GPUType = inst.GPU()
 		snap.TPDegree = inst.TPDegree
@@ -248,7 +248,7 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 		// QueueDepth, BatchSize, KVUtilization, FreeKVBlocks, CacheHitRate, InFlightRequests, KvTokensInUse remain zero.
 		loadingSnapshots = append(loadingSnapshots, snap)
 	}
-	return &sim.RouterState{
+	return &sim.ClusterState{
 		Snapshots:        snapshots,
 		LoadingSnapshots: loadingSnapshots,
 		Clock:            cs.clock,
@@ -256,8 +256,8 @@ func buildRouterState(cs *ClusterSimulator, req *sim.Request) *sim.RouterState {
 }
 
 // liveSnapshot reads an instance's current state.
-func liveSnapshot(inst *InstanceSimulator) sim.RoutingSnapshot {
-	snap := sim.NewRoutingSnapshot(string(inst.ID()))
+func liveSnapshot(inst *InstanceSimulator) sim.InstanceStatus {
+	snap := sim.NewInstanceStatus(string(inst.ID()))
 	snap.PreemptionCount = inst.PreemptionCount()
 	snap.QueueDepth = inst.QueueDepth()
 	snap.BatchSize = inst.BatchSize()

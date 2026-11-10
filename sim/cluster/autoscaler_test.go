@@ -20,7 +20,7 @@ type countingCollector struct {
 	calls int
 }
 
-func (c *countingCollector) Collect(_ *sim.RouterState) []ModelSignals {
+func (c *countingCollector) Collect(_ *sim.ClusterState) []ModelSignals {
 	c.calls++
 	return nil
 }

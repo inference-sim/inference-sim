@@ -42,7 +42,7 @@ type InstanceSimulator struct {
 	gpu              string            // GPU type used for this instance (set from pool gpu_type, or config.GPU)
 
 	// Phase 1C: hardware variant fields (set at placement time in cluster.go).
-	// Read by buildRouterState() into RoutingSnapshot for the autoscaler Collector.
+	// Read by buildClusterState() into InstanceStatus for the autoscaler Collector.
 	// GPUType is available via inst.GPU(); TPDegree and CostPerHour are autoscaler-specific.
 	TPDegree    int     // tensor-parallel degree; 0 = unplaced/unknown
 	CostPerHour float64 // $/hr from NodePool.CostPerHour; 0 = unplaced/free tier
@@ -282,7 +282,7 @@ func (i *InstanceSimulator) LatencyStats() InstanceLatencyStats {
 	}
 	sort.Strings(reqIDs)
 	// TTFT is derived from the same per-request samples (DEV-9): each completed request's
-	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#1628).
+	// entry in RequestTTFTs, which has no separate accumulator to drift from it (#2093 states P/D preemption as a machine state).
 	var itlSum, ttftSum float64
 	for _, id := range reqIDs {
 		itlSum += m.RequestITLs[id]

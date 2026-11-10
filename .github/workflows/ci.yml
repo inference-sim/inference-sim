@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main, 'feature/**', llm-d-r]
+    # edited: retargeting the next pull request of a squash stack to main (a change of its base)
+    # is an edit, and must start CI; ready_for_review starts it for a draft made ready.
+    types: [opened, edited, synchronize, reopened, ready_for_review]
   # On-demand, so the L1 delivery loop (#1654) can run the REAL required checks against a
   # delivery branch. A bot-opened PR has its pull_request runs held for human approval, so the
   # loop cannot rely on them; a workflow_dispatch run always starts and produces check runs with
@@ -12,9 +15,17 @@ on:
   # otherwise — it only adds a manual "Run workflow" button.
   workflow_dispatch:
 
+# One run per pull request or ref: a newer push supersedes a running pull-request run, so a
+# duplicate run does not take another draw at the runner (flakiness analysis, cause A). Pushes
+# to main and dispatched runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -33,6 +44,7 @@ jobs:
     # checks: an entry whose packages moved keeps its old name (name_packages), byte for byte.
     name: test (${{ matrix.name }}, ${{ matrix.name_packages || matrix.packages }}, ${{ matrix.timeout }})
     runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -116,12 +128,23 @@ jobs:
       - name: Test ${{ matrix.name }} from an empty module cache
         env:
           GOMODCACHE: ${{ runner.temp }}/gomodcache
-          GOFLAGS: -modcacherw
+          # The heavy leg builds and runs a 120 MB test binary that re-executes itself; two
+          # concurrent compile and test jobs instead of one per CPU keep the runner responsive.
+          GOFLAGS: -modcacherw${{ matrix.name == 'workload & cmd' && ' -p=2' || '' }}
           REQUIRE_NODE: "1"
-        run: go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
+        run: |
+          # A diagnostic for the runner kills of the heavy leg (exit 143, "The runner has received
+          # a shutdown signal", 4 to 6 minutes into compiling and running ./cmd): memory and load
+          # every ten seconds, in this step's own log, which survives the kill (a later step does
+          # not run after one).
+          if [ "${{ matrix.name }}" = "workload & cmd" ]; then
+            ( while sleep 10; do echo "sample $(date +%T) $(free -m | sed -n 2p) | $(uptime)"; done ) &
+          fi
+          go test -v -timeout ${{ matrix.timeout }} ${{ matrix.packages }}
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -148,6 +171,7 @@ jobs:
   # stack.json. internal/stack's tests hold the first three; versions-doc --check the last.
   stack:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
     steps:
@@ -184,6 +208,7 @@ jobs:
   # versions inference-sim selects (design §3.2, LIF-2). Also on pull requests that change go.mod.
   selected-deps:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GOTOOLCHAIN: local
     steps:
@@ -211,6 +236,7 @@ jobs:
   # through them, and a gate that fails on first contact would be switched off, not fixed.
   actionlint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -225,6 +251,7 @@ jobs:
 
   claude-md-size:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

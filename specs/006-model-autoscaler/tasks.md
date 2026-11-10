@@ -19,7 +19,7 @@
 
 ## Phase 2: Foundational — Shared Types, Interfaces, Config ✅ Complete (1C-1a, PR #934)
 
-- [X] T002 [P] Add three fields to `RoutingSnapshot` in `sim/router_state.go`
+- [X] T002 [P] Add three fields to `RoutingSnapshot` in `sim/instance_status.go`
 - [X] T003 [P] Add `CostPerHour float64` field to `NodePoolConfig` in `sim/cluster/infra_config.go`
 - [X] T004 [P] Create `sim/cluster/autoscaler.go`; declare all shared value types
 - [X] T005 [P] Add autoscaler config fields to `DeploymentConfig` in `sim/cluster/deployment.go`

@@ -744,3 +744,42 @@ func TestEngineDriver_WatchdogAllowsLongChunkedPrefill(t *testing.T) {
 		t.Fatalf("5,000 prefill chunks: StallErr = %v, completed = %v; want nil and true", err, done)
 	}
 }
+
+// scriptedMetrics is an engine whose exported metrics a test sets: the time they are stamped with
+// and the running count.
+type scriptedMetrics struct {
+	engine.Engine
+	at      engine.Time
+	running float64
+}
+
+func (s *scriptedMetrics) Metrics(engine.Time) engine.Metrics {
+	return engine.Metrics{At: s.at, Families: []engine.Family{{Name: "num_requests_running", Kind: engine.Gauge,
+		Samples: []engine.Sample{{Value: s.running}}}}}
+}
+
+// An engine can publish twice at one simulated instant. The driver numbers each distinct state
+// it reads, so a reader keying a cache on the time and the number tells the two apart; reading
+// the same state again keeps its number (DEV-4).
+func TestEngineMetricsAt_NumbersEachPublicationAtOneInstant(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &scriptedMetrics{Engine: fifo, at: 500, running: 1}
+	d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1e6, ScrapeEngineMetrics: true})
+
+	a := d.EngineMetricsAt(500)
+	again := d.EngineMetricsAt(500)
+	if a.Seq == 0 || again.Seq != a.Seq {
+		t.Fatalf("one state read twice: sequence %d then %d, want the same non-zero number", a.Seq, again.Seq)
+	}
+	eng.running = 0 // the empty step after an abort publishes the corrected state, at the same instant
+	b := d.EngineMetricsAt(500)
+	if b.PublishedAt != a.PublishedAt {
+		t.Fatalf("test setup: the two states are stamped %d and %d, want one instant", a.PublishedAt, b.PublishedAt)
+	}
+	if b.Seq <= a.Seq {
+		t.Errorf("the corrected state has sequence %d, the earlier one %d: want a later number", b.Seq, a.Seq)
+	}
+}
