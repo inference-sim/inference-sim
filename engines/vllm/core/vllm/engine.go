@@ -785,7 +785,7 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 	// and those the target accepted, the tokens sampled beyond the one the step always samples
 	// (scheduler.py:2116-2119@5df63a72), counted before a stop discards any.
 	var drafts []metrics.Draft
-	for _, rid := range pb.b.Samples {
+	for _, rid := range pb.b.Out.Order {
 		if d := pb.b.Out.SpecDecode[rid]; len(d) > 0 && len(tokens[rid]) > 0 {
 			drafts = append(drafts, metrics.Draft{Proposed: len(d), Accepted: max(len(tokens[rid])-1, 0)})
 		}
