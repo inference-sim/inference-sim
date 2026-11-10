@@ -137,7 +137,7 @@ dataset constrains**:
   does not change with the dataset.
 
 So FPM **may** fit a term that is itself about composition — the overlap-band choice
-(`docs/band-selection.md`), the attention-DP funnel factor, a per-step host constant —
+(`docs/registry/band-selection.md`), the attention-DP funnel factor, a per-step host constant —
 because those are properties of the whole forward pass and FPM measures the whole forward
 pass. It **may not** fit an attention rate or a GEMM asymptote, because nothing in a
 whole-pass total identifies those separately.
@@ -673,7 +673,7 @@ GB300 (21), H200 (13), GB200 (4), B300_SXM (4). So:
   the cleanest possible pairing. An earlier revision of this section said the catalog had
   no `gb300` chip; it has carried one since blis-catalog#23, and this registry carries
   102 GB300 coefficients including the KDA pair. The dataset's own
-  `catalog/index.json` lists both artifacts as `aic_fpm_forward_perf` with
+  catalog index lists both artifacts as `aic_fpm_forward_perf` with
   `phases: [decode, prefill]`, 5,266 and 4,874 rows at `tep8`.
 
   What blocks the scoring now is a **rank width**, not a chip. The `tep8` artifact is
@@ -856,7 +856,7 @@ still live on GLM.
 
 ### 9.4 A committed figure this corrected
 
-`docs/band-selection.md` reports NoOverlap's signed mean as −3.44% over 219 points and
+`docs/registry/band-selection.md` reports NoOverlap's signed mean as −3.44% over 219 points and
 calls it "nearly unbiased". Scoring every pure-decode grid point in the m27 tep4 artifact
 rather than the 45 the old band sweep reached gives **−22.93%** (1,500 points), or
 **−19.27%** restricted to batches within the scenario's declared `max_num_seqs` of 256

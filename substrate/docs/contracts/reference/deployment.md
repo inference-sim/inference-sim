@@ -67,7 +67,7 @@ loads the block as written and passes it through unchanged. The engine model tha
 scenario's `engine_version` selects opens it, and its rules check it. A validator passes
 those rules in (`Bundle.Rules`), and they report a problem in the block at its path below
 `deployment.pools[i].engine`. For vLLM the keys, their defaults and their checks are
-blis-vllm's (`rules/engineconfig`, with its reference in blis-vllm's `docs/engine-config.md`).
+blis-vllm's (`rules/engineconfig`, documented in blis-vllm's engine-configuration reference).
 
 ## Offload
 
