@@ -19,9 +19,9 @@ import sys
 # (id and the regression, file, exact old text, new text)
 MUTANTS = [
     ("S1 whole-sequence copy when a block is hashed", "core/sched/scheduler.go",
-     "\t\tr.hashes = append(r.hashes, kv.HashBlock(parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))",
+     "\t\tr.hashes = append(r.hashes, kv.HashBlockUnder(r.root, parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))",
      "\t\tall := r.allTokens()\n"
-     "\t\tr.hashes = append(r.hashes, kv.HashBlock(parent, all[i*blockSize:(i+1)*blockSize], r.Keys.ExtraFor(i)))"),
+     "\t\tr.hashes = append(r.hashes, kv.HashBlockUnder(r.root, parent, all[i*blockSize:(i+1)*blockSize], r.Keys.ExtraFor(i)))"),
     ("S2 whole-sequence copy on every Update", "core/sched/scheduler.go",
      "func (r *Request) updateHashes(blockSize int) {\n",
      "func (r *Request) updateHashes(blockSize int) {\n\t_ = r.allTokens()\n"),

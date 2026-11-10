@@ -161,6 +161,10 @@ type settings struct {
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
+	// hashSeed is PYTHONHASHSEED when the deployment sets it (nil: unset), which roots every
+	// request's block-hash chain (resolve_none_hash_seed, vllm/v1/core/kv_cache_utils.py:131-146
+	// @5df63a72). It changes the hashes a KV-event stream publishes, never which blocks hit.
+	hashSeed *string
 }
 
 // dpSettings are a data-parallel group's settings.
@@ -401,6 +405,9 @@ func resolve(c Config) (settings, error) {
 		KVGroups:             groups,
 	}
 	s.queueSize, s.v2Runner = queue, v2
+	if v, ok := e.Env["PYTHONHASHSEED"]; ok {
+		s.hashSeed = &v
+	}
 	s.connector, s.pp = c.KVTransfer, pp
 	s.offload, s.specMethod = c.KVOffload, method
 	if c.Placement != nil {
@@ -737,7 +744,7 @@ func refuseUnreadSettings(e engineconfig.Engine) error {
 }
 
 // readEnv are the engine environment variables this engine reads (resolveV2Runner).
-var readEnv = []string{"VLLM_USE_V2_MODEL_RUNNER"}
+var readEnv = []string{"PYTHONHASHSEED", "VLLM_USE_V2_MODEL_RUNNER"}
 
 // unreadEnv are env's keys this engine does not read, sorted.
 func unreadEnv(env map[string]string) []string {

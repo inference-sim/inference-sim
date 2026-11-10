@@ -917,12 +917,22 @@
     {
       "name": "PYTHONHASHSEED",
       "source": "env",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#53"
+        "traces": [
+          "core/kv/testdata/seeded_block_hashes.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "0",
+          "1234",
+          "a-string-seed"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

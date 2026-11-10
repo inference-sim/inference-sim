@@ -108,6 +108,73 @@
     "name": "MC_WORKERS_PER_CTX"
    }
   },
+  "PYTHONHASHSEED": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "0",
+     "1234",
+     "a-string-seed"
+    ]
+   },
+   "basis": {
+    "kind": "open",
+    "classes": [
+     {
+      "other": true,
+      "compared_at": [],
+      "covered_by": [
+       "core/kv/testdata/seeded_block_hashes.json"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/v1/core/kv_cache_utils.py:140",
+       "vllm/v1/core/kv_cache_utils.py:164"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/v1/core/kv_cache_utils.py:140",
+      "expr": "hash_seed is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/core/kv_cache_utils.py:164",
+      "expr": "os.getenv(\"PYTHONHASHSEED\") is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "0",
+      "trace": "core/kv/testdata/seeded_block_hashes.json",
+      "reviewed": true
+     },
+     {
+      "value": "1234",
+      "trace": "core/kv/testdata/seeded_block_hashes.json",
+      "reviewed": true
+     },
+     {
+      "value": "a-string-seed",
+      "trace": "core/kv/testdata/seeded_block_hashes.json",
+      "reviewed": true
+     }
+    ],
+    "name": "PYTHONHASHSEED"
+   }
+  },
   "PYTHONNOUSERSITE": {
    "value_classes": {
     "type": "numeric",

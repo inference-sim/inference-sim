@@ -92,6 +92,9 @@ type Engine struct {
 	metrics *metrics.Model
 
 	reqs map[string]*reqState
+	// hashSeed is the deployment's PYTHONHASHSEED (nil: unset), the root of every request's
+	// block-hash chain.
+	hashSeed *string
 	// aborted are the requests Finish aborted, or that finished, while a batch in flight scheduled
 	// them: their entries in reqs go once no batch in flight does.
 	aborted map[string]bool
@@ -186,7 +189,7 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		s: s, pricer: pricer, reqs: map[string]*reqState{}, aborted: map[string]bool{},
 		metrics:  metrics.New(histogramBounds(st.sched.MaxModelLen)),
 		maxLoRAs: st.sched.MaxLoRAs, specTokens: st.sched.Spec.NumTokens, async: st.sched.Async,
-		pp: max(st.sched.DecodeStagger, 1),
+		pp: max(st.sched.DecodeStagger, 1), hashSeed: st.hashSeed,
 	}
 	if st.sched.Spec.NumTokens > 0 {
 		// A pool that speculates registers the spec_decode counters (SpecDecodingProm); one that
@@ -325,6 +328,7 @@ func (e *Engine) Add(r engine.Request, now engine.Time) error {
 	}
 	sr := &sched.Request{ID: r.ID, Priority: r.Priority, ArrivalTime: float64(r.ArrivalTime) / 1e6,
 		Prompt: prompt, MaxTokens: maxTokens, EOS: eosToken}
+	sr.Keys.Seed = e.hashSeed
 	if r.CacheSalt != "" {
 		sr.Keys.CacheSalt = r.CacheSalt
 	}

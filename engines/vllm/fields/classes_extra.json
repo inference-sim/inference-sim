@@ -11,6 +11,19 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "PYTHONHASHSEED": {
+  "stated": [
+   {
+    "trace": "core/kv/testdata/seeded_block_hashes.json",
+    "values": [
+     "0",
+     "1234",
+     "a-string-seed"
+    ],
+    "why": "the fixture's cases state these PYTHONHASHSEED values (and the empty string and unset, which a value class does not hold)"
+   }
+  ]
+ },
  "PYTHONNOUSERSITE": {
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"

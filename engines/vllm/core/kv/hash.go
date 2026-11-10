@@ -22,8 +22,13 @@ type BlockHash []byte
 // is ("lora", name, path) (kv_cache_utils.py:592-595), a cache salt ("cache_salt", salt).
 type ExtraKey []string
 
-// BlockKeys are a request's per-block extra keys.
+// BlockKeys are a request's per-block extra keys, and the seed its chain is rooted at.
 type BlockKeys struct {
+	// Seed is the PYTHONHASHSEED the engine process was started with; nil is unset. NONE_HASH, the
+	// parent of every prefix's first block, is derived from it when it is set
+	// (resolve_none_hash_seed, kv_cache_utils.py:131-146@5df63a72), an empty string included: an
+	// empty variable is set. Nil is DEFAULT_NONE_HASH_SEED.
+	Seed *string
 	// Extra applies to every block (the LoRA key).
 	Extra []ExtraKey
 	// CacheSalt applies to the first block only (kv_cache_utils.py:647-651).
@@ -40,12 +45,30 @@ var noneHash = sha256Pickle(pickleString(noneHashSeed))
 // sha256(pickle(seed)) (init_none_hash, kv_cache_utils.py:162-175).
 func NoneHash() BlockHash { return append(BlockHash(nil), noneHash...) }
 
+// NoneHashFor is NONE_HASH under a PYTHONHASHSEED (nil: unset).
+func NoneHashFor(seed *string) BlockHash {
+	if seed == nil {
+		return NoneHash()
+	}
+	return sha256Pickle(pickleString(*seed))
+}
+
 // HashBlock is hash_block_tokens (kv_cache_utils.py:695-725): sha256 of the pickled tuple
 // (parent hash, the block's tokens as a tuple, extra keys or None). A nil parent is the
 // NONE_HASH.
 func HashBlock(parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
+	return hashBlockUnder(noneHash, parent, tokens, extra)
+}
+
+// HashBlockUnder is HashBlock for a chain rooted at root, the NONE_HASH its seed gives
+// (NoneHashFor).
+func HashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
+	return hashBlockUnder(root, parent, tokens, extra)
+}
+
+func hashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) BlockHash {
 	if len(parent) == 0 {
-		parent = noneHash
+		parent = root
 	}
 	var p pickler
 	p.frame(func() {
@@ -76,8 +99,9 @@ func BlockHashes(tokens []int64, blockSize int, keys BlockKeys) []BlockHash {
 	n := len(tokens) / blockSize
 	out := make([]BlockHash, 0, n)
 	var parent BlockHash
+	root := NoneHashFor(keys.Seed)
 	for i := 0; i < n; i++ {
-		h := HashBlock(parent, tokens[i*blockSize:(i+1)*blockSize], keys.ExtraFor(i))
+		h := HashBlockUnder(root, parent, tokens[i*blockSize:(i+1)*blockSize], keys.ExtraFor(i))
 		out = append(out, h)
 		parent = h
 	}

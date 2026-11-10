@@ -5738,12 +5738,14 @@
   },
   "env:PYTHONHASHSEED": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#53"
+    "traces": [
+     "core/kv/testdata/seeded_block_hashes.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "env:PYTHONNOUSERSITE": {
    "estimation": {

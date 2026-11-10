@@ -119,6 +119,7 @@ type Request struct {
 	Transfer    *TransferParams
 	fetchStage  FetchStage
 	hashes      []kv.BlockHash
+	root        kv.BlockHash // the chain's NONE_HASH under Keys.Seed, set with the first hash
 	numInFlight int
 	seq         int // FIFO tie-break within a priority queue
 	// Placeholders is num_output_placeholders: tokens scheduled to be sampled whose output
@@ -160,7 +161,10 @@ func (r *Request) updateHashes(blockSize int) {
 		if i > 0 {
 			parent = r.hashes[i-1]
 		}
-		r.hashes = append(r.hashes, kv.HashBlock(parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))
+		if r.root == nil {
+			r.root = kv.NoneHashFor(r.Keys.Seed)
+		}
+		r.hashes = append(r.hashes, kv.HashBlockUnder(r.root, parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))
 	}
 }
 
