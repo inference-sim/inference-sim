@@ -40,6 +40,13 @@ const (
 	roleBoth     kvRole = "kv_both"
 )
 
+// producer and consumer are KVTransferConfig.is_kv_producer and is_kv_consumer
+// (vllm/config/kv_transfer.py:129-135@5df63a72): kv_both is both. A kv_both engine is no fixed side
+// of a transfer: which side a request is comes from its own kv_transfer_params, do_remote_decode
+// for a prefill leg and do_remote_prefill for a decode leg, which the host sets for each request.
+func (r kvRole) producer() bool { return r == roleProducer || r == roleBoth }
+func (r kvRole) consumer() bool { return r == roleConsumer || r == roleBoth }
+
 // connectorConfig is the engine block's kv_transfer: the connector a P/D pool runs.
 type connectorConfig struct {
 	// Connector is kv_connector, the connector's registered name.
@@ -94,11 +101,9 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 			"NixlPullConnector; registry/connectors.yaml)", c.Connector)
 	}
 	switch c.Role {
-	case roleProducer, roleConsumer:
-	case roleBoth:
-		return nil, fmt.Errorf("vllm: kv_transfer.kv_role kv_both is not modelled: a P/D pool is a prefiller or a decoder")
+	case roleProducer, roleConsumer, roleBoth:
 	default:
-		return nil, fmt.Errorf("vllm: kv_transfer.kv_role %q: want kv_producer or kv_consumer", c.Role)
+		return nil, fmt.Errorf("vllm: kv_transfer.kv_role %q: want kv_producer, kv_consumer or kv_both", c.Role)
 	}
 	recompute := false
 	switch c.LoadFailurePolicy {
@@ -108,7 +113,7 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 	default:
 		return nil, fmt.Errorf("vllm: kv_transfer.kv_load_failure_policy %q: want fail or recompute", c.LoadFailurePolicy)
 	}
-	if err := nixl.CheckWorker(pp, hybrid, c.Role == roleConsumer); err != nil {
+	if err := nixl.CheckWorker(pp, hybrid, c.Role.consumer()); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	cfg := nixl.Default()
@@ -120,7 +125,7 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 	// defer_block_free and requires_kv_delivery beside more than one batch in flight
 	// (vllm/v1/core/sched/scheduler.py:184-194@5df63a72).
 	if err := s.SetConnector(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute,
-		Consumer: c.Role == roleConsumer, Producer: c.Role == roleProducer}); err != nil {
+		Consumer: c.Role.consumer(), Producer: c.Role.producer()}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
 	return p, nil
@@ -148,13 +153,13 @@ func (p *pd) transferParams(r engine.Request, blockSize int) (*sched.TransferPar
 	case r.RemoteDecode && r.RemotePrefill:
 		return nil, fmt.Errorf("vllm: request %s is both a remote prefill and a remote decode", r.ID)
 	case r.RemoteDecode:
-		if p == nil || p.role != roleProducer {
+		if p == nil || !p.role.producer() {
 			return nil, fmt.Errorf("vllm: request %s is a disaggregated prefill, and this engine is not a kv_producer", r.ID)
 		}
 		p.decode[r.ID] = true
 		return &sched.TransferParams{DoRemoteDecode: true}, nil
 	case r.RemotePrefill:
-		if p == nil || p.role != roleConsumer {
+		if p == nil || !p.role.consumer() {
 			return nil, fmt.Errorf("vllm: request %s is a disaggregated decode, and this engine is not a kv_consumer", r.ID)
 		}
 		if r.Peer == nil {
@@ -171,7 +176,7 @@ func (p *pd) transferParams(r engine.Request, blockSize int) (*sched.TransferPar
 // started reports the loads a schedule began: the remote-prefilled requests that entered
 // WAITING_FOR_REMOTE_KVS, in queue order, each once.
 func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
-	if p == nil || p.role != roleConsumer {
+	if p == nil || !p.role.consumer() {
 		return nil
 	}
 	var out []engine.Transfer
@@ -195,7 +200,7 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 // handoffs reports the prefill side's finished requests whose blocks the connector holds, each a
 // transfer the simulator ends once the decode side has read them, in finish order.
 func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handoff {
-	if p == nil || p.role != roleProducer {
+	if p == nil || !p.role.producer() {
 		return nil
 	}
 	var out []engine.Handoff

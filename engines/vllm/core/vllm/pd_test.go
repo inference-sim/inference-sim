@@ -1,6 +1,7 @@
 package vllm
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -129,6 +130,58 @@ func TestPDThroughTheEngine(t *testing.T) {
 	}
 	if emitted != 6 {
 		t.Fatalf("the decoder emitted %d tokens, want 6", emitted)
+	}
+}
+
+// kv_both is both a producer and a consumer (vllm/config/kv_transfer.py:129-135@5df63a72), and
+// which side a request is comes from its own kv_transfer_params. One kv_both engine therefore
+// serves a prefill leg as a kv_producer does (one token, blocks held as a handoff) and a decode
+// leg as a kv_consumer does (a load of the prompt's KV, then every token), and the legs behave as
+// they do on an engine of that single role, at one batch in flight. Beside concurrent batches a
+// kv_both engine is both at once (it defers block frees as a consumer and requires KV delivery as
+// a producer), so it is not either single role there: the tier-4 scenarios nixl-both-* show both
+// cases against vLLM's own NIXL scheduler.
+func TestKVBothServesEitherLegAsThatRoleDoes(t *testing.T) {
+	both := "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n"
+	leg := func(extra string, decode bool) ([]engine.Result, []engine.Transfer) {
+		e := mustEngine(t, extra)
+		r := req("a", 80, 6)
+		if decode {
+			r.RemotePrefill, r.Peer = true, peer
+		} else {
+			r.RemoteDecode, r.MaxOutputTokens = true, 1
+		}
+		if err := e.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+		res, started, _ := runOne(t, e, 500)
+		return res, started
+	}
+	for _, decode := range []bool{false, true} {
+		want, wantStarted := leg(map[bool]string{false: producer, true: consumer}[decode], decode)
+		got, gotStarted := leg(both, decode)
+		if !reflect.DeepEqual(got, want) || !reflect.DeepEqual(gotStarted, wantStarted) {
+			t.Errorf("decode leg %v: a kv_both engine's results differ from a single-role engine's:\n got %+v %+v\nwant %+v %+v",
+				decode, got, gotStarted, want, wantStarted)
+		}
+	}
+	// The two legs share one engine: a prefill leg and a decode leg in flight together.
+	e := mustEngine(t, both)
+	pre, dec := req("p", 40, 4), req("d", 40, 4)
+	pre.RemoteDecode, pre.MaxOutputTokens = true, 1
+	dec.RemotePrefill, dec.Peer = true, peer
+	if err := e.Add(pre, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Add(dec, 0); err != nil {
+		t.Fatalf("a kv_both engine refused a decode leg beside a prefill leg: %v", err)
+	}
+	// Neither role refuses the other's leg only when it is kv_both.
+	if err := mustEngine(t, producer).Add(dec, 0); err == nil {
+		t.Error("a kv_producer accepted a decode leg")
+	}
+	if err := mustEngine(t, consumer).Add(pre, 0); err == nil {
+		t.Error("a kv_consumer accepted a prefill leg")
 	}
 }
 
@@ -272,7 +325,6 @@ func TestPDConformance(t *testing.T) {
 func TestPDRefusals(t *testing.T) {
 	for _, c := range []struct{ name, extra string }{
 		{"unknown connector", "kv_transfer: {connector: LMCacheConnectorV1, kv_role: kv_producer}\n"},
-		{"kv_both", "kv_transfer: {connector: NixlConnector, kv_role: kv_both}\n"},
 		{"unknown role", "kv_transfer: {connector: NixlConnector, kv_role: decoder}\n"},
 		{"consumer at pp 2", consumer + "pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n"},
 		{"producer at dp 2", producer + "data_parallel_size: 2\n"},
