@@ -22,7 +22,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "e2f1d38aa13a4619676a92ee724d1c1657bf33eb",
+  "blis_vllm_commit": "fe4bf4c6a2421e204ce00758d0e174275b9e32d3",
   "engine": {
    "async_scheduling": true,
    "max_concurrent_batches": 2,
