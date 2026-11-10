@@ -1,6 +1,7 @@
 package workload
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"math"
 	"strings"
 	"testing"
@@ -264,6 +265,42 @@ func TestReplayReference(t *testing.T) {
 	if p := (&Replay{Workload: "agentx", Concurrency: 1, ReplayDefinition: ReplayDefinition{Scenario: ScenarioInferenceXAgentXMVP}}).Validate(); p.OK() ||
 		!strings.Contains(p.Error(), "scenario") {
 		t.Errorf("a reference restating the scenario validated: %s", p.Error())
+	}
+}
+
+// blis-schemas#91: a reference that states a routing imbalance used to validate and then resolve
+// without it, so the resolved workload described different traffic than the binding stated.
+// Routing is a run choice: it is applied over the catalog entry's, validated, and never dropped.
+func TestReplayReferenceRoutingIsAppliedOrRefused(t *testing.T) {
+	entry := &CatalogReplay{Name: "agentx", ReplayDefinition: agentXDefinition()}
+	entry.Routing = &routing.Value{TokenImbalance: 1.2, Source: "catalog"}
+	run := &routing.Value{TokenImbalance: 1.8, Source: "measured-for-this-run"}
+	ref := &Replay{Workload: "agentx", Concurrency: 16, ReplayDefinition: ReplayDefinition{Routing: run}}
+	if p := ref.Validate(); !p.OK() {
+		t.Fatalf("a reference stating routing was refused:\n%s", p.Error())
+	}
+	got, err := ref.Resolve(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Routing == nil || got.Routing.TokenImbalance != 1.8 || got.Routing.Source != "measured-for-this-run" {
+		t.Errorf("the run's routing was dropped: resolved to %+v", got.Routing)
+	}
+	if entry.Routing.TokenImbalance != 1.2 {
+		t.Error("resolving changed the catalog entry's routing")
+	}
+	// Not stated: the catalog entry's routing stands.
+	keep, err := (&Replay{Workload: "agentx", Concurrency: 16}).Resolve(entry)
+	if err != nil || keep.Routing == nil || keep.Routing.TokenImbalance != 1.2 {
+		t.Errorf("an unstated routing did not keep the entry's: %+v, %v", keep, err)
+	}
+	// A stated routing is validated, not just copied.
+	bad := &Replay{Workload: "agentx", Concurrency: 16, ReplayDefinition: ReplayDefinition{Routing: &routing.Value{TokenImbalance: 0.5}}}
+	if p := bad.Validate(); p.OK() {
+		t.Error("a routing imbalance below 1 was accepted on a reference")
+	}
+	if _, err := bad.Resolve(entry); err == nil {
+		t.Error("a reference with an invalid routing resolved")
 	}
 }
 

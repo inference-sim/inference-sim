@@ -88,7 +88,7 @@ the run's choices:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `workload` | string | no | A catalog replay workload under `workloads/`, by file name. Set, the binding may state only `concurrency`, `random_seed`, `benchmark_duration_s`, `grace_period_s`, `max_context_length` and `acceptance`, which override the entry's; `ValidateAgainstCatalog` loads the entry and `ResolveReplay` merges the two. |
+| `workload` | string | no | A catalog replay workload under `workloads/`, by file name. Set, the binding may state only `concurrency`, `random_seed`, `benchmark_duration_s`, `grace_period_s`, `max_context_length`, `acceptance` and `routing`, which override the entry's; `ValidateAgainstCatalog` loads the entry and `ResolveReplay` merges the two. |
 | `concurrency` | integer | yes | Session-tree lanes, at least 1. Subagents run beside their parent without taking a lane. One value: a scenario run is not a sweep. It is the run's choice, so a catalog entry does not state it. |
 
 The other keys are the definition's, below.

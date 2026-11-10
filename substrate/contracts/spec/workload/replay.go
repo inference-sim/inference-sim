@@ -69,7 +69,7 @@ func (r *Replay) Validate() *validate.Problems {
 	if fixed := r.catalogFixedFields(); len(fixed) > 0 {
 		p.Errorf("a reference to catalog replay %q may state only the run's choices "+
 			"(concurrency, random_seed, benchmark_duration_s, grace_period_s, max_context_length, "+
-			"acceptance); it also states %v, which the catalog entry fixes", r.Workload, fixed)
+			"acceptance, routing); it also states %v, which the catalog entry fixes", r.Workload, fixed)
 	}
 	r.validateRunChoices(p)
 	return p
@@ -121,6 +121,9 @@ func (r *Replay) validateRunChoices(p *validate.Problems) {
 	if d.Acceptance != nil {
 		p.Merge("acceptance", d.Acceptance.Validate())
 	}
+	if d.Routing != nil {
+		p.Merge("routing", d.Routing.Validate())
+	}
 }
 
 // Resolve merges a reference with the catalog entry it names: the entry's definition, with
@@ -149,6 +152,12 @@ func (r *Replay) Resolve(entry *CatalogReplay) (*Replay, error) {
 	}
 	if run.Acceptance != nil {
 		out.Acceptance = run.Acceptance
+	}
+	// A run's own measured routing imbalance is a run choice, as its acceptance is: it outranks
+	// the catalog entry's, and stating it is never dropped (a reference used to validate with it
+	// and resolve without it).
+	if run.Routing != nil {
+		out.Routing = run.Routing
 	}
 	if p := r.Validate(); !p.OK() {
 		return nil, fmt.Errorf("replay workload %q: %s", r.Workload, p.Error())
