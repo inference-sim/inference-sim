@@ -376,14 +376,29 @@ class WallClockGauge(unittest.TestCase):
         self.assertEqual(m.sample_value(self.FAM, 0.0), 0.0)
         self.assertEqual(m.sample_value("vllm:num_requests_running", 3.0), 3.0)
 
+    GOLDEN = os.path.join(HERE, "..", "core", "metrics", "testdata", "golden", "lora-max-loras-skip.metrics.json")
+
+    def test_the_committed_trace_carries_the_adapter_label_sets(self):
+        # vLLM's frontend fills running_lora_adapters and waiting_lora_adapters from
+        # update_scheduler_stats (stats.py:696-700@5df63a72); a trace recorded without that call has
+        # the empty set alone and compares no adapter label.
+        with open(self.GOLDEN) as f:
+            keys = [k for k in json.load(f)["series"] if k.startswith(self.FAM + "{")]
+        self.assertGreaterEqual(len(keys), 3, keys)
+        self.assertTrue(any("running_lora_adapters=A," in k for k in keys), keys)
+        self.assertTrue(any("running_lora_adapters=B," in k for k in keys), keys)
+
     def test_same_labels_pass_and_changed_labels_fail(self):
         c = self.load("compare_goldens_metrics")
-        key = self.FAM + "{max_lora=1,running_lora_adapters=a,waiting_lora_adapters=}"
+        with open(self.GOLDEN) as f:
+            keys = sorted(k for k in json.load(f)["series"] if k.startswith(self.FAM + "{"))
+        key = next(k for k in keys if "running_lora_adapters=A," in k)
         self.assertEqual(c.first_difference(self.series(key), self.series(key)), "")
-        other = self.FAM + "{max_lora=1,running_lora_adapters=,waiting_lora_adapters=a}"
+        # the same sample under the other adapter's labels is a different label set
+        other = key.replace("=A", "=B")
+        self.assertIn(other, keys)
         self.assertNotEqual(c.first_difference(self.series(key), self.series(other)), "")
         self.assertNotEqual(c.first_difference(self.series(key, 1.0), self.series(key, 0.0)), "")
-
 
 if __name__ == "__main__":
     unittest.main()
