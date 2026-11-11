@@ -35,15 +35,26 @@ func draftModelName(e enginesettings.Settings) string {
 const draftKindPrefix = "draft."
 
 // withDrafter returns the target graph with the drafter graph's speculator as its own, or the
-// target unchanged when draft is nil. A target that already states a speculator, or a drafter
-// graph that states none, is refused: either would leave two answers to which drafter runs.
+// target unchanged when draft is nil.
+//
+// A target that already states a speculator -- its own MTP layers, say -- has that speculator
+// REPLACED, not refused. vLLM builds the in-graph MTP draft only when speculative_config.model
+// is unset: with no model, an mtp method sets the model to the target's own checkpoint
+// (vllm/config/speculative.py:1147-1159@v0.32.0; a dspark method does the same, :1160-1166),
+// and with a model named that branch is skipped, so the draft model config is built from the
+// named checkpoint (:1289-1291) and the target's MTP layers are not loaded or run. The
+// catalog says the same: a target's drafters list names its own "speculator" and each
+// separate drafter as alternatives (design D8). The replaced speculator's stacks, embedding
+// and head leave the graph, and a layer kind only that speculator used leaves with them, so
+// none of it is priced or resident.
+//
+// Still refused, each because it leaves no one answer to what runs: a drafter graph that states
+// no speculator, so it does not describe a drafter; and a drafter whose hidden size is not the
+// target's, since the drafter reads the target's hidden states. A deployment whose method differs
+// from the drafter's speculator method is refused where the speculator is lifted (liftDraft).
 func withDrafter(target, draft *model.Graph) (*model.Graph, error) {
 	if draft == nil {
 		return target, nil
-	}
-	if target.Speculator != nil {
-		return nil, fmt.Errorf("the deployment names draft_model %s and the target graph %s "+
-			"already states a speculator; one drafter runs", draft.Name, target.Name)
 	}
 	sp := draft.Speculator
 	if sp == nil {
@@ -56,7 +67,7 @@ func withDrafter(target, draft *model.Graph) (*model.Graph, error) {
 			target.Name, target.Global.HiddenSize)
 	}
 	g := *target
-	g.LayerKinds = append([]model.LayerKind{}, target.LayerKinds...)
+	g.LayerKinds = withoutSpeculatorKinds(target)
 	rename := func(id string) string { return draftKindPrefix + id }
 	// The grafted graph keeps the TARGET's global dtype and scale, so a drafter node that
 	// states no weight dtype of its own is stamped with the DRAFTER checkpoint's global ones:
@@ -150,4 +161,35 @@ func withDrafter(target, draft *model.Graph) (*model.Graph, error) {
 	spec.SequentialHead = realias(sp.SequentialHead)
 	g.Speculator = &spec
 	return &g, nil
+}
+
+// withoutSpeculatorKinds returns the target's layer kinds less those that only its own
+// speculator ran: a kind the target's stack does not expand to and the speculator's stacks do.
+// A kind that nothing runs is left as it was; this removes only what the replacement orphans.
+func withoutSpeculatorKinds(target *model.Graph) []model.LayerKind {
+	out := append([]model.LayerKind{}, target.LayerKinds...)
+	sp := target.Speculator
+	if sp == nil {
+		return out
+	}
+	runs := map[string]bool{}
+	for _, id := range target.Stack.Expand() {
+		runs[id] = true
+	}
+	only := map[string]bool{}
+	for _, id := range sp.Stack.Expand() {
+		only[id] = !runs[id]
+	}
+	if sp.ContextStack != nil {
+		for _, id := range sp.ContextStack.Expand() {
+			only[id] = !runs[id]
+		}
+	}
+	kept := out[:0]
+	for _, lk := range out {
+		if !only[lk.ID] {
+			kept = append(kept, lk)
+		}
+	}
+	return kept
 }

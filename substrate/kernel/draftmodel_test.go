@@ -59,15 +59,15 @@ func TestANamedDrafterBecomesTheTargetsSpeculator(t *testing.T) {
 	}
 }
 
-// What would leave two answers to which drafter runs, or none, is refused.
+// What would leave no answer to which drafter runs is refused. (A target that states its own
+// speculator is not here: a named drafter replaces it; see namedrafter_test.go.)
 func TestADrafterThatCannotBeGraftedIsRefused(t *testing.T) {
 	for name, c := range map[string]struct {
 		edit func(target, draft *model.Graph)
 		want string
 	}{
-		"a target that states its own": {func(tg, d *model.Graph) { tg.Speculator = d.Speculator }, "already states"},
-		"a drafter that states none":   {func(_, d *model.Graph) { d.Speculator = nil }, "states no speculator"},
-		"a different hidden size":      {func(_, d *model.Graph) { d.Global.HiddenSize = 32 }, "hidden size"},
+		"a drafter that states none": {func(_, d *model.Graph) { d.Speculator = nil }, "states no speculator"},
+		"a different hidden size":    {func(_, d *model.Graph) { d.Global.HiddenSize = 32 }, "hidden size"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			target, draft := draftGraphs()

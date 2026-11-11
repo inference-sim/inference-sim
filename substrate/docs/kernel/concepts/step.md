@@ -96,7 +96,12 @@ uses for them, the grouped four-bit experts on their own measured efficiency. A 
 measured prefill rate, or, where the registry has none, as the chunked scan vLLM runs for them.
 
 **Speculative decoding.** When the deployment speculates and the graph states its drafter,
-each step also pays the drafter's passes, and the drafter's weights are resident.
+each step also pays the drafter's passes, and the drafter's weights are resident. A deployment
+that names a separate drafter (`speculative_config.model`) is priced with that drafter's graph in
+place of the target graph's own speculator, as vLLM runs only the named checkpoint: the target's
+in-graph MTP layers are neither priced nor resident, and the layer kinds only they used leave
+the graph. A drafter graph that states no speculator, one whose hidden size is not the
+target's, and a deployment method that is not the drafter's are refused.
 
 **Experts.** In a mixture-of-experts layer each token is routed to a few experts. The kernel
 estimates how many distinct experts a batch touches, reads their weights, and prices their
