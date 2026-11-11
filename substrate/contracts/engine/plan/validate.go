@@ -75,6 +75,16 @@ func (p PoolPlan) Validate() error {
 			if err := ll.Shape.Format.Validate(); err != nil && ll.Shape.Format != (units.QuantFormat{}) {
 				add("%s: %v", at, err)
 			}
+			if d := ll.Shape.Dtype; d != "" {
+				switch {
+				case !d.Valid():
+					add("%s: Dtype %q is not a catalog dtype", at, d)
+				case ll.Primitive != PrimAttentionDecode && ll.Primitive != PrimAttentionPrefill:
+					add("%s: Dtype %q is set on %s; only an attention primitive states the element type of its cache", at, d, ll.Primitive)
+				case ll.Shape.Format != (units.QuantFormat{}) && ll.Shape.Format.PayloadBits != d.Bits():
+					add("%s: Dtype %q is %d bits and Format stores %d bits of payload; they describe different caches", at, d, d.Bits(), ll.Shape.Format.PayloadBits)
+				}
+			}
 		}
 	}
 	layers("Layers", p.Layers)

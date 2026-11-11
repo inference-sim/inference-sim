@@ -59,6 +59,16 @@ func loweredOperations(g *model.Graph, ops []plan.Operation, chip hardware.Chip,
 		if !ok {
 			return nil, fmt.Errorf("%s: layer %d of %s is of kind %q, which the graph does not define", at, op.Layer, whose, stack[op.Layer])
 		}
+		if d := op.Dtype; d != "" {
+			switch {
+			case !d.Valid():
+				return nil, fmt.Errorf("%s: Dtype %q is not a catalog dtype", at, d)
+			case op.Primitive != plan.PrimAttentionDecode && op.Primitive != plan.PrimAttentionPrefill:
+				return nil, fmt.Errorf("%s: Dtype %q is set on %s; only an attention primitive states the element type of its cache", at, d, op.Primitive)
+			case op.Format != (units.QuantFormat{}) && op.Format.PayloadBits != d.Bits():
+				return nil, fmt.Errorf("%s: Dtype %q is %d bits and Format stores %d bits of payload; they describe different caches", at, d, d.Bits(), op.Format.PayloadBits)
+			}
+		}
 		r := resolve.Operation{Primitive: string(op.Primitive), Draft: op.Draft, Scorer: op.Scorer,
 			Impl: coefficient.KernelImpl{Library: op.Impl.Library, Variant: op.Impl.Variant, CodeHash: op.Impl.CodeHash}}
 		switch op.Primitive {
@@ -76,8 +86,8 @@ func loweredOperations(g *model.Graph, ops []plan.Operation, chip hardware.Chip,
 				r.Chain = append(r.Chain, c)
 			}
 			if op.Primitive == plan.PrimAttentionPrefill && !latentAttention(kind) {
-				r.NonLatentPrefill, r.CacheDtype = true, op.Dtype
-				if w := cacheDtypeWord(op.Dtype); w != "" {
+				r.NonLatentPrefill, r.CacheDtype = true, string(op.Dtype)
+				if w := cacheDtypeWord(string(op.Dtype)); w != "" {
 					r.Chain = append(r.Chain, "kv_"+w)
 				}
 			}

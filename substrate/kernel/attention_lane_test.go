@@ -447,7 +447,7 @@ func TestTheCommittedTRTLLMGenLaneIsNotPricedWithoutAKernelHash(t *testing.T) {
 
 // prefillOps reports the prefill of every layer of the model that has attention as one operation
 // on the given kernel, reading a cache of the given format.
-func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, dtype string, impl plan.KernelImpl) []plan.Operation {
+func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, dtype plan.Dtype, impl plan.KernelImpl) []plan.Operation {
 	t.Helper()
 	kinds := map[string]model.LayerKind{}
 	for _, lk := range in.Model.LayerKinds {
@@ -470,7 +470,7 @@ func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, dtype string, impl
 
 // dtypeOf is the element type a test cache of the format holds: the sizes the tests use are bf16
 // and fp8.
-func dtypeOf(f units.QuantFormat) string {
+func dtypeOf(f units.QuantFormat) plan.Dtype {
 	if f.PayloadBits == 8 {
 		return "fp8"
 	}
@@ -633,7 +633,7 @@ func TestAnFP16CacheDoesNotConsumeTheBF16MeasuredLane(t *testing.T) {
 	raw := laneCase(t, d, "b200")
 	pooled := pricesOf(mustKernel(t, raw))
 	keyed := keyLaneEntries(raw, map[string]plan.KernelImpl{"bf16": laneBF16, "fp8": laneBF16})
-	at := func(dtype string) Inputs {
+	at := func(dtype plan.Dtype) Inputs {
 		in := keyed
 		in.Operations = prefillOps(t, in, bf16Cache, dtype, laneBF16) // 16 bits whichever element type
 		return in
@@ -641,7 +641,7 @@ func TestAnFP16CacheDoesNotConsumeTheBF16MeasuredLane(t *testing.T) {
 	if pricesOf(mustKernel(t, at("bf16"))) == pooled {
 		t.Fatal("a bf16 cache is not priced from the lane that lists its kernel")
 	}
-	for _, dtype := range []string{"fp16", ""} {
+	for _, dtype := range []plan.Dtype{"fp16", ""} {
 		k := mustKernel(t, at(dtype))
 		if pricesOf(k) != pooled || k.laneRuns {
 			t.Errorf("a %q cache consumed the bf16-measured lane", dtype)
@@ -665,5 +665,56 @@ func TestAnFP16CacheDoesNotConsumeTheBF16MeasuredLane(t *testing.T) {
 	mixed.Operations = ops
 	if _, err := New(mixed); err == nil || !strings.Contains(err.Error(), "more than one element type") {
 		t.Errorf("bf16 and fp16 layers together: %v", err)
+	}
+}
+
+// The plan's dtype words are the catalog's: every catalog dtype is a plan dtype with the same
+// payload size, and every plan dtype is a catalog dtype.
+func TestThePlanDtypesAreTheCatalogsDtypes(t *testing.T) {
+	catalog := []model.DType{model.DTypeBF16, model.DTypeFP16, model.DTypeFP8, model.DTypeNVFP4,
+		model.DTypeMXFP4, model.DTypeINT8, model.DTypeINT4, model.DTypeFP32}
+	if len(plan.Dtypes()) != len(catalog) {
+		t.Errorf("%d plan dtypes, %d catalog dtypes", len(plan.Dtypes()), len(catalog))
+	}
+	for _, c := range catalog {
+		d := plan.Dtype(c)
+		if !d.Valid() || float64(d.Bits()) != c.Bytes()*8 {
+			t.Errorf("catalog dtype %s: plan says %d bits, valid %v; the catalog %g bits", c, d.Bits(), d.Valid(), c.Bytes()*8)
+		}
+	}
+	for _, d := range plan.Dtypes() {
+		if !model.DType(d).Valid() {
+			t.Errorf("plan dtype %s is not a catalog dtype", d)
+		}
+	}
+}
+
+// The kernel does not rely on the host having validated the plan: operations whose cache element
+// type is not a catalog dtype, contradicts the stated format, or is set on a primitive that has no
+// cache are refused at construction, and no price is made from the label.
+func TestOperationsWithAMalformedDtypeAreRefused(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyed := keyLaneEntries(laneCase(t, d, "b200"), map[string]plan.KernelImpl{"bf16": laneBF16, "fp8": laneFP8})
+	for name, c := range map[string]struct {
+		dtype  plan.Dtype
+		format units.QuantFormat
+		want   string
+	}{
+		"a word that is not a dtype":  {"bf116", bf16Cache, "not a catalog dtype"},
+		"bf16 beside an 8-bit format": {"bf16", fp8Cache, "different caches"},
+	} {
+		in := keyed
+		in.Operations = prefillOps(t, in, c.format, c.dtype, laneBF16)
+		if _, err := New(in); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want a refusal containing %q", name, err, c.want)
+		}
+	}
+	in := keyed
+	in.Operations = append(prefillOps(t, in, bf16Cache, "bf16", laneBF16), plan.Operation{Layer: 0, Primitive: plan.PrimGEMM, Dtype: "bf16", Impl: laneBF16})
+	if _, err := New(in); err == nil || !strings.Contains(err.Error(), "only an attention primitive") {
+		t.Errorf("a dtype on a GEMM: %v", err)
 	}
 }

@@ -60,6 +60,13 @@ func TestAPlanThatNoPoolCanHaveIsRefused(t *testing.T) {
 		{"no kernel library", func(p *PoolPlan) { p.Layers[0].KernelImpl.Library = "" }, "names no kernel library"},
 		{"a scorer entry on a GEMM", func(p *PoolPlan) { p.Layers[0].Scorer = true }, "only an attention primitive has a block-index scorer"},
 		{"a scorer entry on a collective", func(p *PoolPlan) { l := collective(); l.Scorer = true; p.Layers = append(p.Layers, l) }, "only an attention primitive has a block-index scorer"},
+		{"a dtype that is not a catalog dtype", func(p *PoolPlan) {
+			p.Layers = append(p.Layers, attn(PrimAttentionPrefill, "bf116", units.QuantFormat{}))
+		}, "not a catalog dtype"},
+		{"a dtype that contradicts the stated format", func(p *PoolPlan) {
+			p.Layers = append(p.Layers, attn(PrimAttentionPrefill, "bf16", units.QuantFormat{PayloadBits: 8}))
+		}, "describe different caches"},
+		{"a dtype on a GEMM", func(p *PoolPlan) { p.Layers[0].Shape.Dtype = "bf16" }, "only an attention primitive states the element type"},
 		{"draft layers without speculation", func(p *PoolPlan) { p.DraftLayers = p.Layers }, "configures no speculation"},
 		{"a page of nothing", func(p *PoolPlan) { p.KV[0].TokensPerPage = 0 }, "both are positive"},
 		{"a tier with no device", func(p *PoolPlan) { p.Tiers = []KVTier{{Bytes: units.Rank(units.Bytes(1))}} }, "no device"},
@@ -404,6 +411,29 @@ func TestAScorerEntryOnAnAttentionPrimitiveValidates(t *testing.T) {
 			KernelImpl: KernelImpl{Library: "lib", CodeHash: "abc"}})
 		if err := p.Validate(); err != nil {
 			t.Errorf("a scorer entry on %s: %v", prim, err)
+		}
+	}
+}
+
+func attn(prim Primitive, d Dtype, f units.QuantFormat) LoweredLayer {
+	return LoweredLayer{Layer: 1, Primitive: prim, KernelImpl: KernelImpl{Library: "lib", CodeHash: "abc"},
+		Shape: PrimitiveShape{Dtype: d, Format: f}}
+}
+
+// The cache element type is a catalog dtype that agrees with the stated format, on an attention
+// primitive; the zero value is not stated and validates beside any format.
+func TestACacheDtypeThatAgreesWithItsFormatValidates(t *testing.T) {
+	for name, l := range map[string]LoweredLayer{
+		"bf16 at 16 bits":    attn(PrimAttentionPrefill, "bf16", units.QuantFormat{PayloadBits: 16}),
+		"fp16 at 16 bits":    attn(PrimAttentionDecode, "fp16", units.QuantFormat{PayloadBits: 16}),
+		"fp8 at 8 bits":      attn(PrimAttentionPrefill, "fp8", units.QuantFormat{PayloadBits: 8}),
+		"bf16, no format":    attn(PrimAttentionPrefill, "bf16", units.QuantFormat{}),
+		"not stated, 8 bits": attn(PrimAttentionPrefill, "", units.QuantFormat{PayloadBits: 8}),
+	} {
+		p := goodPlan()
+		p.Layers = append(p.Layers, l)
+		if err := p.Validate(); err != nil {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

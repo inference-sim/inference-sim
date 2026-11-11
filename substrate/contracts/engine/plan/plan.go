@@ -144,7 +144,7 @@ type Operation struct {
 	// (PrimitiveShape.Format); the zero value is not stated.
 	Format units.QuantFormat
 	// Dtype is the element type of the cache the operation reads (PrimitiveShape.Dtype).
-	Dtype string
+	Dtype Dtype
 	Impl  KernelImpl
 }
 
@@ -269,6 +269,45 @@ type KernelImpl struct {
 	Toolkit string
 }
 
+// Dtype is a number format, in the catalog's words: the closed list of the catalog's dtypes, restated
+// here because the plan imports no document type. A test in the kernel holds the two lists equal.
+// The zero value is not stated.
+type Dtype string
+
+const (
+	DtypeBF16  Dtype = "bf16"
+	DtypeFP16  Dtype = "fp16"
+	DtypeFP32  Dtype = "fp32"
+	DtypeFP8   Dtype = "fp8"
+	DtypeINT8  Dtype = "int8"
+	DtypeINT4  Dtype = "int4"
+	DtypeNVFP4 Dtype = "nvfp4"
+	DtypeMXFP4 Dtype = "mxfp4"
+)
+
+// Dtypes lists the words, in the catalog's order.
+func Dtypes() []Dtype {
+	return []Dtype{DtypeBF16, DtypeFP16, DtypeFP8, DtypeNVFP4, DtypeMXFP4, DtypeINT8, DtypeINT4, DtypeFP32}
+}
+
+// Bits is the size of one element's payload, 0 for a word that is not a dtype.
+func (d Dtype) Bits() int {
+	switch d {
+	case DtypeFP32:
+		return 32
+	case DtypeBF16, DtypeFP16:
+		return 16
+	case DtypeFP8, DtypeINT8:
+		return 8
+	case DtypeINT4, DtypeNVFP4, DtypeMXFP4:
+		return 4
+	}
+	return 0
+}
+
+// Valid reports whether d is one of the words.
+func (d Dtype) Valid() bool { return d.Bits() > 0 }
+
 // PrimitiveShape is the geometry of a lowered primitive. Which fields apply depends on the
 // primitive; the others are zero. Every figure is per rank unless its name says otherwise.
 type PrimitiveShape struct {
@@ -284,10 +323,12 @@ type PrimitiveShape struct {
 	// bits and scale blocks. It does not say which number format those bits hold, so BF16 and FP16
 	// are both {PayloadBits 16}, and FP8 and INT8 both 8 bits.
 	Format units.QuantFormat
-	// Dtype is the element type of the cache an attention primitive reads, in the catalog's words
-	// (bf16, fp16, fp8, int8); the zero value is not stated. The cost model prices a coefficient
-	// measured on one element type only for that type, which Format cannot tell.
-	Dtype string
+	// Dtype is the element type of the cache an attention primitive reads, one of the catalog's
+	// dtypes (model.DType: bf16, fp16, fp8, int8, ...); the zero value is not stated. Only an
+	// attention primitive states it, and a stated Format must be the size of the type (a bf16
+	// cache is 16 bits). The cost model prices a coefficient measured on one element type only for
+	// that type, which Format cannot tell.
+	Dtype Dtype
 }
 
 // Collective is a collective's group, message and whether it leaves its node.
