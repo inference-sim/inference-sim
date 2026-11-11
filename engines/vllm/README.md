@@ -116,11 +116,13 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   - read by the latency kernel, which prices a stated value at vLLM v0.31.0's policy:
     `gpu_memory_utilization` (#73) and `engram_config.cpu_offload` (#78), where `leave_unset` fills
     only a value the run did not record;
-  - refused when stated away from its default: `attention_config.indexer_kv_dtype` (#84). `auto`
-    and the model's own default size MiniMax-M3's indexer cache, and any other value is refused for
-    every model.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
+  `attention_config.indexer_kv_dtype` is `modelled`: the engine reads it and prices the indexer's key cache.
+  On DeepSeek V4 and V4.1 `auto` and `fp8` give the 132-byte record, as vLLM resolves them, and `bf16`, `nvfp4`
+  and `mxfp4` are refused with vLLM's reason or the kernel's (`mxfp4`'s 68-byte record is not what the graph
+  prices); on MiniMax-M3 `auto` and `bf16` size the indexer cache and any other value is refused; a model with
+  no indexer cache refuses every value but `auto` (blis-vllm#84). The covered class is `auto` and `fp8`.
 - **Value classes** (VLM-3) are in `fields/value_classes.json`, generated from the same
   pinned source by `fields/gen_classes.py` for every `modelled` and `proven_inert` field: for a
   boolean or enumerated field the values (a value some comparison singles out is a class, the

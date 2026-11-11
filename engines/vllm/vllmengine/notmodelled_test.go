@@ -119,7 +119,6 @@ var refused = map[string]string{
 	"linear_backend":                                            "linear_backend: flashinfer\n",
 	"compilation_config.custom_ops":                             "custom_ops: ['+rms_norm']\n",
 	"compilation_config.decoder_replay_cudagraph_capture_sizes": "decoder_replay_cudagraph_capture_sizes: [1, 2]\n",
-	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: fp8\n",
 	"speculative_config.kv_cache_dtype":                         "speculative: {method: eagle3, num_spec_tokens: 3, kv_cache_dtype: fp8}\n",
 	"speculative_config.rejection_sample_method":                "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: synthetic}\n",
 	"kv_events_config.publisher":                                "kv_events: {enable_kv_cache_events: true, publisher: \"null\"}\n",
@@ -142,7 +141,6 @@ var refused = map[string]string{
 // unreadSettings (core/vllm/config.go), each cited there. A key whose default is "unstated" has no
 // such value, and its entry says so.
 var atDefault = map[string]string{
-	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: auto\n",
 	"kernel_config.linear_backend":                              "linear_backend: auto\n",
 	"linear_backend":                                            "linear_backend: auto\n",
 	"compilation_config.custom_ops":                             "custom_ops: []\n",

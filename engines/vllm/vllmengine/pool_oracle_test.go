@@ -57,8 +57,12 @@ func runKey(spec string, window, heads, head, count int) string {
 }
 
 // A deployment that states kv_cache_dtype fp8 sizes its KV pool as vLLM v0.32.0 does, for each
-// architecture the dashboard states it for. The stated value is the engine block's cache_dtype
-// (fp8) in a committed fixture of each model, one per tensor-parallel width. For each, the KV
+// architecture the dashboard states it for. The engine block's key is cache_dtype, not
+// kv_cache_dtype (the name of vLLM's flag and of fields.json's entry), until a later change renames
+// it; the stated value here is cache_dtype fp8 in a committed fixture of each model, one per
+// tensor-parallel width. The DeepSeek-V4 row assumes the packed fp8_ds_mla layout of the default
+// FlashMLA backend (see core/kv's TestPoolBytesPerBlockIsVLLMsAtFP8 for the lines and what is not
+// covered). For each, the KV
 // layers the engine reads from the model graph (kernelmodel KVLayers), the page bytes the
 // substrate kernel sizes (KVLayerPageBytes) and the bytes per block of the pool (stagePoolsOf)
 // are compared with vLLM's own: the page_size_bytes of the specs it builds for those layers and

@@ -563,6 +563,82 @@
     "name": "async_scheduling"
    }
   },
+  "attention_config.indexer_kv_dtype": {
+   "value_classes": {
+    "type": "enumerated",
+    "values": [
+     "auto",
+     "bf16",
+     "fp8",
+     "mxfp4",
+     "nvfp4"
+    ],
+    "covered": [
+     "auto",
+     "fp8"
+    ]
+   },
+   "basis": {
+    "kind": "enumerated",
+    "classes": [
+     {
+      "values": [
+       "auto"
+      ],
+      "compared_at": [
+       "vllm/config/attention.py:165"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/engine_settings_test.go"
+      ]
+     },
+     {
+      "values": [
+       "bf16",
+       "fp8",
+       "mxfp4",
+       "nvfp4"
+      ],
+      "uncompared": true,
+      "compared_at": [],
+      "covered_by": [
+       "compat/kernelmodel/engine_settings_test.go"
+      ]
+     }
+    ],
+    "enumeration": [
+     "auto",
+     "bf16",
+     "fp8",
+     "mxfp4",
+     "nvfp4"
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/attention.py:165",
+      "expr": "self.indexer_kv_dtype == \"auto\"",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "auto",
+      "trace": "compat/kernelmodel/engine_settings_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "fp8",
+      "trace": "compat/kernelmodel/engine_settings_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "attention_config.indexer_kv_dtype"
+   }
+  },
   "block_size": {
    "value_classes": {
     "type": "numeric",
@@ -1155,6 +1231,21 @@
      },
      {
       "value": 16,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 64,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 100,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 128,
       "trace": "compat/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },
@@ -5087,6 +5178,21 @@
      },
      {
       "value": 16,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 64,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 100,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 128,
       "trace": "compat/kernelmodel/capture_oracle_test.go",
       "reviewed": true
      },

@@ -15,6 +15,18 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "attention_config.indexer_kv_dtype": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/engine_settings_test.go",
+    "values": [
+     "auto",
+     "fp8"
+    ],
+    "why": "TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution states auto and fp8 on DeepSeek-V4-Pro and V4.1-Flash, on h200 and b200, and finds the KV layers equal to the unstated deployment's 132-byte index record; bf16, nvfp4 and mxfp4 are refused there, so they are outside the class"
+   }
+  ]
+ },
  "compilation_config.max_cudagraph_capture_size": {
   "stated": [
    {
@@ -22,12 +34,15 @@
     "values": [
      2,
      16,
+     64,
+     100,
+     128,
      300,
      1000,
      1024,
      2048
     ],
-    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
+    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 64, 100 and 128 in the class [8,256), 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
    }
   ]
  },
@@ -49,7 +64,7 @@
     "values": [
      "fp8"
     ],
-    "why": "the tests set fp8 for gpt-oss-120b, minimax-m2.5, minimax-m3, kimi-k2.5 and deepseek-v4-pro and compare the pool bytes per block with vLLM's"
+    "why": "the tests set fp8 (the engine block's cache_dtype key, which the field list names kv_cache_dtype until a later rename) for gpt-oss-120b, minimax-m2.5, minimax-m3, kimi-k2.5 and deepseek-v4-pro and compare the pool bytes per block with vLLM's; the DeepSeek-V4 pool is the packed fp8_ds_mla layout of the default FlashMLA backend"
    }
   ]
  },
@@ -71,12 +86,15 @@
     "values": [
      2,
      16,
+     64,
+     100,
+     128,
      300,
      1000,
      1024,
      2048
     ],
-    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
+    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 64, 100 and 128 in the class [8,256), 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
    }
   ]
  },

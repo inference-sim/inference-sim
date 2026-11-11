@@ -5253,12 +5253,30 @@
     {
       "name": "attention_config.indexer_kv_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#84"
+        "traces": [
+          "compat/kernelmodel/engine_settings_test.go",
+          "rules/v0_32/indexer_kv_dtype_test.go",
+          "rules/v0_32/testdata/vllm_indexer_kv_dtype.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "bf16",
+          "fp8",
+          "mxfp4",
+          "nvfp4"
+        ],
+        "covered": [
+          "auto",
+          "fp8"
+        ]
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {

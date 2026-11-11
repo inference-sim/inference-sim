@@ -74,7 +74,7 @@ func moeKey(tp, dp, pcp int, ep bool, backend string) string {
 // effect. An unstated backend is allgather_reducescatter (vllm/config/parallel.py:219).
 //
 // Part 1 compares the rules pack and the deployment schema with the oracle for all 384 layouts
-// (tp 1 to 8 x dp 1 to 9 x pcp 1 to 2 x four backends x on and off). Part 2 builds the substrate's kernel
+// (tp in {1, 2, 4, 8} x dp in {1, 2, 3, 4, 8, 9} x pcp in {1, 2} x four backends x on and off). Part 2 builds the substrate's kernel
 // for the stated shapes of the dashboard's deployments (MiniMax-M2.5 on a B200 node at tp2 dp2
 // with expert parallelism, MiniMax-M3 and DeepSeek-V4 at tp8 with dp 1 to 8) by swapping tp, dp,
 // enable_expert_parallel and all2all_backend into committed fixtures, and compares what the

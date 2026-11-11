@@ -3,7 +3,6 @@
  "estimation_sources": {
   "config:attention_backend": "AD33 \u00a715, explicit attention backend",
   "config:attention_config.backend": "AD33 \u00a715, explicit attention backend",
-  "config:attention_config.indexer_kv_dtype": "AD33 \u00a715, indexer cache rows",
   "config:attention_config.indexer_sparse_logits": "AD33 \u00a715, last row",
   "config:speculative_config.synthetic_acceptance_length": "AD33 \u00a715, drafter acceptance",
     "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
@@ -370,12 +369,16 @@
   },
   "config:attention_config.indexer_kv_dtype": {
    "estimation": {
-    "rule": "leave_unset"
+    "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#84"
+    "traces": [
+     "compat/kernelmodel/engine_settings_test.go",
+     "rules/v0_32/indexer_kv_dtype_test.go",
+     "rules/v0_32/testdata/vllm_indexer_kv_dtype.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:attention_config.indexer_sparse_logits": {
    "estimation": {

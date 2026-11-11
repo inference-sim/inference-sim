@@ -92,8 +92,8 @@ func layersOfCase(t *testing.T, c ocCase) []Layer {
 // MultipleOf(64), 64, 128, 32 or 64):
 //
 //	architecture          layers at fp8 (per rank)                          layout    per layer = once
-//	gpt-oss-120b          18 sliding window + 18 full, tp 1 to 8            LBNHC     yes, every case
-//	minimax-m2.5          62 full, tp 1 to 8                                LBNHC     yes, every case
+//	gpt-oss-120b          18 sliding window + 18 full, tp 1,2,4,8           LBNHC     yes, every case
+//	minimax-m2.5          62 full, tp 1,2,4,8                               LBNHC     yes, every case
 //	minimax-m3            60 full (fp8) + 57 indexer (bf16), tp 2 to 8      LBNHC     yes, every case
 //	kimi-k2.5             61 MLA latents of 576, tp 4 and 8                 LBNHC     yes, every case
 //	kimi-k3 (MLA only)    24 MLA latents of 576                             LBNHC     yes, every case
@@ -108,6 +108,21 @@ func layersOfCase(t *testing.T, c ocCase) []Layer {
 // block-outermost, which rounds once, as the substrate's single least-common-multiple field
 // (rules.KVCacheGroupsInput.BlockStrideAlignment) does. The substrate has no per-layer field, and
 // no default setting needs one; compat/kernelmodel's TestSubstrateStatesNoPerLayerStrideAlignment records that.
+//
+// Two assumptions behind the DeepSeek-V4 rows. The pool is the packed fp8_ds_mla layout: vLLM maps
+// cache_dtype auto and fp8 to it when use_fp8_ds_mla_layout holds
+// (vllm/models/deepseek_v4/attention.py:94-132@5df63a72), which is the case with the default
+// attention backend (FlashMLA; _select_dsv4_attn_cls, vllm/models/deepseek_v4/nvidia/model.py:1013-1044@5df63a72,
+// picks another class only on SM12x). An explicit FLASHINFER_MLA_SPARSE_DSV4 backend on SM100 selects
+// DeepseekV4FlashInferMLAAttention, whose use_fp8_ds_mla_layout is False
+// (vllm/models/deepseek_v4/nvidia/flashinfer_sparse.py:206@5df63a72) and whose rows are plain
+// per-tensor fp8, which these cases do not cover; attention_backend is not_modelled with the rule
+// leave_unset, so no run states it. And the layer counts and head sizes are the catalog's, so the
+// comparison is of the page and pool arithmetic, not of the catalog.
+//
+// The stated setting is the engine block's cache_dtype (fields.json lists the field as
+// kv_cache_dtype, the name of vLLM's flag; the engine block keeps cache_dtype until the rename in
+// a later change).
 //
 // Limit: the sliding-window layers of a backend whose kernel block exceeds the engine's block
 // size take that larger block (_largest_kernel_block_within,

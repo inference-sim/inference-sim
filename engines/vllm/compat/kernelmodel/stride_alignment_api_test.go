@@ -17,7 +17,7 @@ import (
 // 1515-1518@5df63a72) and rounds the summed block once to the lcm of the alignments when it is
 // block-outermost (:1540-1552). rules.KVCacheGroupsInput carries one integer, the lcm, which is
 // the block-outermost rule and nothing else; the kernel passes none (kernel/caches.go
-// resolveKVPool, pinned substrate 3053fa8).
+// resolveKVPool, pinned substrate f70c6c7).
 //
 // No setting a deployment states at the defaults needs more: core/kv's TestPoolBytesPerBlockIsVLLMsAtFP8
 // finds rounding each layer and rounding once agree for gpt-oss-120b, minimax-m2.5, minimax-m3,
