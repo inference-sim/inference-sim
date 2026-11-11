@@ -31,4 +31,7 @@ cd "$BUILD_DIR"
 go build -o "$BUILD_DIR/archon-go" . >&2
 echo "Built: $BUILD_DIR/archon-go" >&2
 
-echo "$BUILD_DIR/archon-go"
+# printf, not echo: the documented caller contract is that stdout carries the path
+# verbatim, and a shell with `xpg_echo` set would have `echo` reinterpret a backslash
+# in the path as an escape. printf '%s\n' emits the operand unchanged in every shell.
+printf '%s\n' "$BUILD_DIR/archon-go"
