@@ -141,7 +141,10 @@ const (
 // Substitution is one departure from an exact comparison.
 type Substitution struct {
 	Kind SubstitutionKind `yaml:"kind"`
-	// Subject names what was substituted: a field, a coefficient, a library or a build.
+	// Subject names what was substituted: a field, a coefficient, a library or a build. For
+	// profile_value it is the profile, as set and key, as the Result names it; for
+	// unevaluated it is the G1 condition that could not be evaluated, named by the kind that
+	// records its failure (kernel_hash, value_class and so on).
 	Subject string `yaml:"subject"`
 	// Detail says what stood in, for example the estimation rule's setting, the
 	// coefficient's method, or the changed functions. Required for client_difference and
@@ -165,6 +168,11 @@ type Substitution struct {
 	// Evidence cites the router table's evidence for matching the router to Policy, as the
 	// table entry gives it. Only with router_differs, where it is required.
 	Evidence string `yaml:"evidence,omitempty"`
+	// Differed names each key field in which the substrate profile differs from the run's:
+	// model, drafter, speculative_method or num_spec_tokens, sorted, each once. Only with
+	// profile_value, where Subject is the profile; it may be empty, for a profile whose key is
+	// the run's own.
+	Differed []string `yaml:"differed,omitempty"`
 }
 
 // SubstitutionKind names a condition of design §11.3 that lowers a grade.
@@ -183,6 +191,8 @@ const (
 	SubClientDifference  SubstitutionKind = "client_difference"  // the simulated requests differ from the ones the run's client sent (COV-12)
 	SubLaterRecord       SubstitutionKind = "later_record"       // a cluster fact the run's record lacks was taken from the benchmark's later record of the same runner
 	SubRouterDiffers     SubstitutionKind = "router_differs"     // the run's router, which BLIS does not host, was replaced by an llm-d policy from the router table
+	SubProfileValue      SubstitutionKind = "profile_value"      // a workload-dependent value the run did not record was taken from a substrate profile (D8)
+	SubUnevaluated       SubstitutionKind = "unevaluated"        // a condition of G1 could not be evaluated, because the data it needs is not recorded for the point
 	// Grade G3 and G4 conditions.
 	SubOtherRelease     SubstitutionKind = "other_release"     // the run's engine release is another one
 	SubChangedFunctions SubstitutionKind = "changed_functions" // ported upstream functions changed between the releases

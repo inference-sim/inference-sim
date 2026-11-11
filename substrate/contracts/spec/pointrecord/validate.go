@@ -3,11 +3,13 @@ package pointrecord
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
@@ -30,7 +32,20 @@ var substitutionGrade = map[SubstitutionKind]Grade{
 	SubCoefficientMethod: G2, SubCoefficientRange: G2, SubExecutionMode: G2, SubKernelHash: G2,
 	SubValueClass: G2, SubEstimated: G2, SubInterimStatus: G2,
 	SubResolvedDiffers: G2, SubClientDifference: G2, SubLaterRecord: G2, SubRouterDiffers: G2,
+	SubProfileValue: G2, SubUnevaluated: G2,
 	SubOtherRelease: G3, SubChangedFunctions: G4, SubNightlyBuild: G4,
+}
+
+// g1Conditions are the kinds that can name an unevaluated condition of G1: each is the kind
+// that records the condition's failure, so a condition the data could not decide is named by
+// the departure it would have been (design 11.3: "a condition of G1 could not be evaluated ...
+// the point names the condition as unevaluated"). A kind that records something the scorer did,
+// such as an estimate, a later record, a profile or a router, is not a condition it could
+// fail to evaluate.
+var g1Conditions = map[SubstitutionKind]bool{
+	SubCoefficientMethod: true, SubCoefficientRange: true, SubExecutionMode: true, SubKernelHash: true,
+	SubValueClass: true, SubInterimStatus: true, SubResolvedDiffers: true, SubClientDifference: true,
+	SubOtherRelease: true,
 }
 
 var matches = map[Match]bool{MatchExact: true, MatchMapped: true, MatchInert: true, MatchEstimated: true,
@@ -229,6 +244,9 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 	case SubClientDifference, SubResolvedDiffers:
 		need["detail"] = &s.Detail
 	}
+	if s.Kind != SubProfileValue && len(s.Differed) > 0 {
+		p.Field(at+".differed", "is not a key of %s", s.Kind)
+	}
 	why := map[string]string{
 		"record":   "the record the value was taken from, with its revision",
 		"date":     "the date of that record, YYYY-MM-DD",
@@ -258,11 +276,35 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 			p.Field(at+".entry", "%q is not an entry of the router %q: an entry's name begins with its router", s.Entry, s.Subject)
 		}
 	}
+	switch s.Kind {
+	case SubProfileValue:
+		for i, d := range s.Differed {
+			switch {
+			case !result.IsProfileKeyField(d):
+				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not one of %s", d, strings.Join(result.ProfileKeyFields(), ", "))
+			case i > 0 && d <= s.Differed[i-1]:
+				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "key fields are sorted, each once")
+			}
+		}
+	case SubUnevaluated:
+		if s.Subject != "" && !g1Conditions[SubstitutionKind(s.Subject)] {
+			p.Field(at+".subject", "%q is not a condition of G1 a point can leave unevaluated: name it by the kind that would record its failure (%s)", s.Subject, strings.Join(g1ConditionNames(), ", "))
+		}
+	}
 	if s.Kind == SubLaterRecord && s.Date != "" {
 		if _, err := time.Parse("2006-01-02", s.Date); err != nil {
 			p.Field(at+".date", "must be YYYY-MM-DD, got %q", s.Date)
 		}
 	}
+}
+
+func g1ConditionNames() []string {
+	out := make([]string, 0, len(g1Conditions))
+	for k := range g1Conditions {
+		out = append(out, string(k))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *Record) has(k SubstitutionKind) bool {

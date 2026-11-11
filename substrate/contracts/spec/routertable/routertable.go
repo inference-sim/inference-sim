@@ -1,6 +1,6 @@
 // Package routertable describes the router table: for each router BLIS does not host, the
 // policy of llm-d's router that stands closest to it, with the evidence for the match
-// (the design change in blis-design#1, a draft that amends §11.3 and §11.4 and has not merged).
+// (design §11.3 and §11.4).
 //
 // BLIS hosts one router, llm-d's (X4), and never simulates another. A benchmark run measured
 // behind another router, such as Dynamo's, could not be scored. The design scores it G2 when

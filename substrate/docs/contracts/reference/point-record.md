@@ -57,7 +57,8 @@ refuses an unknown key in either; `Record.Validate` checks it.
 A point takes the highest-numbered grade whose conditions apply. Each substitution sets a
 floor: those of grade G2 (`coefficient_method`, `coefficient_range`, `execution_mode`,
 `kernel_hash`, `value_class`, `estimated`, `interim_status`, `resolved_differs`,
-`client_difference`, `later_record`, `router_differs`), `other_release` for G3, and
+`client_difference`, `later_record`, `profile_value`, `router_differs`, `unevaluated`),
+`other_release` for G3, and
 `changed_functions` and `nightly_or_custom` for G4. A record whose grade is below its
 substitutions' floor is refused, and a G2, G3 or G4 record names the substitution that
 makes it so (COV-4).
@@ -74,8 +75,10 @@ makes it so (COV-4).
 | `entry` | string | for `router_differs` | The router table entry used, by name. Its name begins with the router, which is `subject`; its key is the router, its mode and its session-affinity setting. |
 | `policy` | string | for `router_differs` | The llm-d router policy BLIS simulated in place of the run's router. |
 | `evidence` | string | for `router_differs` | The router table's evidence for the match, as the table entry cites it. |
+| `differed` | sequence | no, and only for `profile_value` | The key fields in which the profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`, sorted, each once. Empty when the profile's key is the run's own. |
 
-Four conditions beside the earlier ones name what the point must say. `client_difference`, `later_record` and `resolved_differs` are in design §11.3 and §11.2; `router_differs` follows the design change in blis-design#1, which is a draft and has not merged:
+Design §11.3 lists thirteen G2 conditions, and the record has one kind for each (a test
+holds the kinds to that list). Six of the kinds name more than a subject:
 
 `client_difference`
 :   The simulated requests differ from the ones the run's client sent (COV-12). `subject`
@@ -93,6 +96,20 @@ Four conditions beside the earlier ones name what the point must say. `client_di
 `resolved_differs`
 :   A resolved value the run logged differs from the engine's resolution (design §11.2).
     `subject` is the setting; `detail` gives both values.
+`profile_value`
+:   A workload-dependent value the run did not record, such as the acceptance length of
+    speculative decoding, was taken from a substrate profile (design D8, §11.3). `subject` is
+    the profile, as the Result's `workload_properties` names it (its set and key), and `differed`
+    lists each key field in which the profile differs from the run's. A value the run recorded is
+    copied as stated and is not this kind.
+`unevaluated`
+:   A condition of G1 could not be evaluated, because the data it needs is not recorded for the
+    point (design §11.3: a G1 is published only for a point whose every condition was
+    evaluated). `subject` is the condition, named by the kind that would record its failure:
+    `coefficient_method`, `coefficient_range`, `execution_mode`, `kernel_hash`, `value_class`,
+    `interim_status`, `resolved_differs`, `client_difference` or `other_release`. The point is
+    G2 and names the condition; it is never G1. A condition that was evaluated and failed is
+    named by its own kind, not by this one.
 
 A key belongs to its own kind: a `policy` on a `later_record` is refused.
 

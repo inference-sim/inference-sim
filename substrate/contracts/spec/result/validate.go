@@ -852,10 +852,9 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	if w.Step != "exact" && len(w.Differed) == 0 {
 		p.Field(at+".differed", "required for a borrowed value: the key fields in which it differs")
 	}
-	known := map[string]bool{"model": true, "drafter": true, "speculative_method": true, "num_spec_tokens": true}
 	for i, d := range w.Differed {
-		if !known[d] {
-			p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not one of model, drafter, speculative_method, num_spec_tokens", d)
+		if !IsProfileKeyField(d) {
+			p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not one of %s", d, strings.Join(ProfileKeyFields(), ", "))
 		}
 	}
 	rules := map[string]bool{"interpolated": true, "above_largest": true, "below_smallest_rates": true, "below_smallest_proportional": true}
@@ -867,4 +866,22 @@ func (w WorkloadProperty) validateBorrowing(p *validate.Problems, at string) {
 	case w.Step == "same_drafter_other_k" && w.KRule == "":
 		p.Field(at+".k_rule", "required for step same_drafter_other_k")
 	}
+}
+
+var profileKeyFields = []string{"model", "drafter", "speculative_method", "num_spec_tokens"}
+
+// ProfileKeyFields returns the key fields in which a borrowed acceptance profile can differ
+// from the run's (design D8): the target model, the drafter, the speculative method and the
+// number of speculative tokens. A point record's profile substitution names them from the same
+// list.
+func ProfileKeyFields() []string { return append([]string(nil), profileKeyFields...) }
+
+// IsProfileKeyField reports whether name is one of ProfileKeyFields.
+func IsProfileKeyField(name string) bool {
+	for _, f := range profileKeyFields {
+		if f == name {
+			return true
+		}
+	}
+	return false
 }

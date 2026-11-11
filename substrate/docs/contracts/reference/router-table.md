@@ -2,7 +2,7 @@
 
 <p class="lede">An entry of the router table maps one router BLIS does not host, in one mode,
 to the policy of llm-d's router that stands closest to it, with the evidence for the match
-(the design change in blis-design#1, a draft that amends §11.3 and §11.4 and has not merged).</p>
+(design §11.3 and §11.4).</p>
 
 The entries are in the catalog, as `routers/<name>.yaml`, and the [catalog reference](../../catalog/reference/routers.md)
 shows them. `LoadRouterEntry` reads one strictly, and `Entry.Validate` checks it. The name is the

@@ -538,6 +538,12 @@
         "detail": {
           "type": "string"
         },
+        "differed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "entry": {
           "type": "string"
         },
@@ -557,6 +563,8 @@
             "client_difference",
             "later_record",
             "router_differs",
+            "profile_value",
+            "unevaluated",
             "other_release",
             "changed_functions",
             "nightly_or_custom"

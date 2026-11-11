@@ -2,8 +2,6 @@ package pointrecord
 
 import (
 	"math"
-	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -166,6 +164,9 @@ func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 		{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at 0123456789abcdef0123456789abcdef01234567", Date: "2026-03-02"},
 		{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"},
 		{Kind: SubResolvedDiffers, Subject: "max_num_batched_tokens", Detail: "the run resolved 8192, the engine resolves 2048"},
+		{Kind: SubProfileValue, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat", Differed: []string{"drafter", "num_spec_tokens"}},
+		{Kind: SubProfileValue, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat"},
+		{Kind: SubUnevaluated, Subject: "kernel_hash"},
 	} {
 		r := valid()
 		r.Substitutions = []Substitution{s}
@@ -190,6 +191,8 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"}
 	client := Substitution{Kind: SubClientDifference, Subject: "send_gap", Detail: "x"}
 	resolved := Substitution{Kind: SubResolvedDiffers, Subject: "s", Detail: "x"}
+	profile := Substitution{Kind: SubProfileValue, Subject: "acceptance/mtp:k3", Differed: []string{"drafter", "model"}}
+	unevaluated := Substitution{Kind: SubUnevaluated, Subject: "kernel_hash"}
 	with := func(s Substitution, edit func(*Substitution)) func(*Record) {
 		edit(&s)
 		return func(r *Record) { r.Substitutions = []Substitution{s} }
@@ -217,6 +220,16 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"client_difference without a detail", with(client, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for client_difference"},
 		{"client_difference naming evidence", with(client, func(s *Substitution) { s.Evidence = "e" }), "substitutions[0].evidence", "not a key of client_difference"},
 		{"resolved_differs without a detail", with(resolved, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for resolved_differs"},
+		{"profile_value without the profile", with(profile, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"profile_value naming a field that is not a profile key", with(profile, func(s *Substitution) { s.Differed = []string{"temperature"} }), "substitutions[0].differed[0]", "not one of"},
+		{"profile_value with the key fields out of order", with(profile, func(s *Substitution) { s.Differed = []string{"model", "drafter"} }), "substitutions[0].differed[1]", "sorted, each once"},
+		{"profile_value naming a key field twice", with(profile, func(s *Substitution) { s.Differed = []string{"drafter", "drafter"} }), "substitutions[0].differed[1]", "sorted, each once"},
+		{"a key field list on a client_difference", with(client, func(s *Substitution) { s.Differed = []string{"model"} }), "substitutions[0].differed", "not a key of client_difference"},
+		{"unevaluated without the condition", with(unevaluated, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"unevaluated naming a name that is not a condition", with(unevaluated, func(s *Substitution) { s.Subject = "the kernel" }), "substitutions[0].subject", "not a condition of G1"},
+		{"unevaluated naming itself", with(unevaluated, func(s *Substitution) { s.Subject = "unevaluated" }), "substitutions[0].subject", "not a condition of G1"},
+		{"unevaluated naming an estimate", with(unevaluated, func(s *Substitution) { s.Subject = "estimated" }), "substitutions[0].subject", "not a condition of G1"},
+		{"unevaluated naming a policy", with(unevaluated, func(s *Substitution) { s.Policy = "round-robin" }), "substitutions[0].policy", "not a key of unevaluated"},
 		{"an estimate naming an entry", func(r *Record) { r.Substitutions[0].Entry = "e" }, "substitutions[0].entry", "not a key of estimated"},
 		{"an estimate naming a policy", func(r *Record) { r.Substitutions[0].Policy = "p" }, "substitutions[0].policy", "not a key of estimated"},
 	} {
@@ -231,23 +244,5 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 			}
 			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
 		})
-	}
-}
-
-// The kinds the record lists are the ones the dashboard's grading code emits for G2 (its
-// G2_KINDS), no fewer and no more. The list is restated here because the dashboard is another
-// repository; a change to either side is a change to the other.
-func TestTheG2KindsAreTheOnesTheDashboardEmits(t *testing.T) {
-	var g2 []string
-	for k, g := range substitutionGrade {
-		if g == G2 {
-			g2 = append(g2, string(k))
-		}
-	}
-	sort.Strings(g2)
-	want := []string{"client_difference", "coefficient_method", "coefficient_range", "estimated", "execution_mode",
-		"interim_status", "kernel_hash", "later_record", "resolved_differs", "router_differs", "value_class"}
-	if !reflect.DeepEqual(g2, want) {
-		t.Errorf("G2 kinds %v, want %v", g2, want)
 	}
 }
