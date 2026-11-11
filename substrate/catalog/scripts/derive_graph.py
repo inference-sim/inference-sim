@@ -2183,7 +2183,7 @@ DSV4_SPARSE_BLOCK_TOKENS = 256
 
 
 def v4_expert_width(raw: dict[str, Any], cfg: dict[str, Any], by_expert_dtype: str,
-                    model: str) -> str:
+                    model: str) -> tuple[str, str]:
     """The routed experts' stored width in a DeepSeek-V4 checkpoint.
 
     vLLM's DeepseekV4FP8Config.get_quant_method (models/deepseek_v4/quant_config.py:
@@ -2193,11 +2193,18 @@ def v4_expert_width(raw: dict[str, Any], cfg: dict[str, Any], by_expert_dtype: s
     FP8 block either way. So a ModelOpt NVFP4 export of the expert tensors states
     expert_dtype "fp4" beside moe_quant_algo "NVFP4", and reading expert_dtype alone prices
     its experts at MXFP4. An algorithm vLLM would read as MXFP4 but the config names
-    otherwise is refused, as is NVFP4 on an expert_dtype vLLM does not dispatch it for."""
+    otherwise is refused, as is NVFP4 on an expert_dtype vLLM does not dispatch it for.
+
+    Returns the width of the main layers' experts and of the MTP draft's. The NVFP4 export
+    leaves the MTP experts as the original checkpoint stores them: its `ignore` list names
+    `mtp.*`, its `quantized_layers` map holds no `mtp` entry, and the header of
+    nvidia/DeepSeek-V4-Pro-NVFP4 at 1449d1e6 stores `mtp.0.ffn.experts.0.w1.weight` as I8
+    [3072, 3584] with an F8_E8M0 `scale` [3072, 224] (MXFP4, one scale per 32), where
+    `layers.5.ffn.experts.0.w1.weight` is U8 with an F8_E4M3 `weight_scale` (NVFP4)."""
     quant = raw_quant(cfg, model) or raw_quant(raw, model)
     algo = str(quant.get("moe_quant_algo") or "").upper()
     if not algo:
-        return by_expert_dtype
+        return by_expert_dtype, by_expert_dtype
     if algo != "NVFP4":
         raise DeriveError(f"{model}: moe_quant_algo {algo!r}; vLLM reads only NVFP4 here and "
                           f"would price anything else as MXFP4 experts, which this deriver "
@@ -2212,7 +2219,10 @@ def v4_expert_width(raw: dict[str, Any], cfg: dict[str, Any], by_expert_dtype: s
         if algos != {"NVFP4"}:
             raise DeriveError(f"{model}: quantized_layers names {sorted(algos)}, but the experts "
                               f"are priced at one width")
-    return "nvfp4"
+        mtp_quantized = any(str(k).startswith("mtp") for k in layers)
+    else:
+        mtp_quantized = not modelopt_excluded("mtp.0.ffn.experts", modelopt_exclusions(quant))
+    return "nvfp4", ("nvfp4" if mtp_quantized else by_expert_dtype)
 
 
 # The DSpark draft of a DeepSeek-V4 checkpoint (DSparkDeepseekV4ForCausalLM,
@@ -2702,10 +2712,10 @@ def handler_deepseek_v4(cfg, raw, model):
     if expert_width is None:
         raise DeriveError(f"{model}: expert_dtype {cfg.get('expert_dtype')!r} is not one "
                           f"this deriver maps")
-    expert_width = v4_expert_width(raw, cfg, expert_width, model)
+    expert_width, draft_expert_width = v4_expert_width(raw, cfg, expert_width, model)
     vocab = positive("vocab_size", concept=True)
 
-    def ffn(hashed):
+    def ffn(hashed, draft=False):
         nodes = [
             *mhc_boundary("ffn"),
             # The gate GEMM runs on every layer, hash layers included: the hash table
@@ -2727,7 +2737,7 @@ def handler_deepseek_v4(cfg, raw, model):
             *token_sharded({"op": "GroupedGEMM", "shared": False, "role": "experts",
                             "n": positive("moe_ffn_size", concept=True), "k": hidden,
                             "experts": experts, "top_k": top_k,
-                            "weight_dtype": expert_width},
+                            "weight_dtype": draft_expert_width if draft else expert_width},
                            # The shared expert is a dense FP8 MLP, DeepseekV4MLP: a
                            # merged gate/up column-parallel linear and a row-parallel
                            # down, TP-split normally and whole on every rank over the
@@ -2877,7 +2887,7 @@ def handler_deepseek_v4(cfg, raw, model):
             else:
                 nodes = mhc_boundary("attn")
             nodes += attention_block(1, read_window=window + draft_block)
-            nodes += ffn(False)
+            nodes += ffn(False, draft=True)
             draft_kinds.append({"id": f"dspark_{d}", "nodes": nodes, "edges": chain(nodes)})
         kinds += draft_kinds
         context = [
@@ -2958,7 +2968,7 @@ def handler_deepseek_v4(cfg, raw, model):
                 traffic("mhc_attn_pre", mhc_pre_bytes, tp="replicated"),
                 with_tp(fp32_gemm("hc_attn_fn", mix_hc, hc_mult * hidden), "replicated")),
             *attention_block(1),
-            *ffn(False),
+            *ffn(False, draft=True),
             *token_sharded(traffic("mtp_mhc_post", mhc_post_bytes, tp="replicated")),
             # gathered back before the head under sequence parallelism (nvidia/mtp.py:
             # 206-209)
@@ -5609,9 +5619,9 @@ def handler_k3_dspark(cfg, raw, model):
       * the token embedding and the lm_head, which the drafter does not load and shares with
         the target (has_own_lm_head False, load_dspark_model aliases them; the mapper drops
         embed_tokens and lm_head from the checkpoint, :435-447). The graph states an lm_head
-        because a graph's speculator head must alias a node of the same graph (validation),
-        and withDrafter then counts it as the drafter's own weight: one vocabulary x hidden
-        table of resident bytes the engine does not hold twice;
+        because a drafter graph is validated as a model, and its speculator says
+        shares_target_head, so withDrafter keeps the head as an alias of the target's and the
+        table is resident once; the token embedding is not priced;
       * the confidence head (`proj`, input hidden_size + markov_rank), loaded and consulted by
         adaptive verification alone;
       * the context K/V projection's weights are the layers' kv_a_proj_with_mqa rows loaded a
@@ -6266,6 +6276,9 @@ def main() -> int:
     ap.add_argument("--check", action="store_true",
                     help="re-derive and report differences without writing")
     ap.add_argument("--model", default=None, help="derive one model only")
+    ap.add_argument("--allow-unfetched", action="store_true",
+                    help="with --fetched, count a pinned entry whose file was not fetched (a gated "
+                         "repository) as not re-derivable offline instead of failing it")
     ap.add_argument("--fetched", default=None,
                     help="directory holding <model>/config.json for models whose model.yaml "
                          "pins config.sha256 instead of committing the file (X12); the nightly "
@@ -6307,7 +6320,10 @@ def main() -> int:
                 continue
             cfg = Path(args.fetched) / entry.name / "config.json"
             if not cfg.is_file():
-                failed.append(f"{entry.name}: no fetched config.json at {cfg}")
+                if args.allow_unfetched:
+                    unverified.append(entry.name)
+                else:
+                    failed.append(f"{entry.name}: no fetched config.json at {cfg}")
                 continue
             got = hashlib.sha256(cfg.read_bytes()).hexdigest()
             if got != pinned:
@@ -6337,6 +6353,11 @@ def main() -> int:
             failed.append(f"{entry.name}: {type(exc).__name__}: {exc}")
             continue
 
+        # A config that sits elsewhere in its repository (a drafter's dspark/config.json) says so.
+        card_path = ((yaml.safe_load((entry / "model.yaml").read_text()) or {}).get("source") or {}).get("path") \
+            if (entry / "model.yaml").is_file() else None
+        if card_path:
+            graph["derived_from"]["path"] = card_path
         text = dump(graph)
         out = entry / "graph.yaml"
         if args.check:

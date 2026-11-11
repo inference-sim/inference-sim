@@ -2,7 +2,7 @@ kind: ModelGraph
 name: minimax-m3.1-flash-dspark
 derived_from:
   format: hf_config_json
-  path: config.json
+  path: dspark/config.json
   sha256: d3f2ef9a308be0c5689e98b348d8cff73b90487db22ba79e9269f9b1f25cfa3a
   deriver_version: 1
 global:

@@ -125,16 +125,32 @@ def read_inferencex(root: Path) -> list[Deployment]:
 class Catalog:
     def __init__(self, root: Path):
         self.models: dict[str, dict] = {}
-        self.by_repo: dict[str, str] = {}
+        self.targets_by_repo: dict[str, str] = {}
+        self.drafters_by_repo: dict[str, str] = {}
         for m in sorted((root / "models").glob("*/model.yaml")):
             card = yaml.safe_load(m.read_text()) or {}
             self.models[m.parent.name] = card
             repo = ((card.get("source") or {}).get("repo") or "").casefold()
             if repo:
-                self.by_repo.setdefault(repo, m.parent.name)
+                # A drafter shipped in its target's repository (MiniMax-M3.1-Flash's dspark/)
+                # shares the repository; it is found as a drafter, never as the target.
+                book = self.drafters_by_repo if card.get("targets") else self.targets_by_repo
+                book.setdefault(repo, m.parent.name)
 
     def entry(self, repo: str) -> str | None:
-        return self.by_repo.get(repo.casefold())
+        """The target entry whose source repository is repo."""
+        return self.targets_by_repo.get(repo.casefold())
+
+    def drafter(self, repo: str) -> str | None:
+        """The separate-drafter entry whose source repository is repo, else a target entry."""
+        r = repo.casefold()
+        return self.drafters_by_repo.get(r) or self.targets_by_repo.get(r)
+
+    def ships_a_draft(self, target: str) -> bool:
+        """Whether a drafter the target lists is shipped inside the target's own repository."""
+        repo = ((self.models[target].get("source") or {}).get("repo") or "").casefold()
+        return any(d in self.models and (self.models[d].get("source") or {}).get("repo", "").casefold() == repo
+                   for d in self.models[target].get("drafters") or [] if d != "speculator")
 
 
 def check(cat: Catalog, deployments: list[Deployment]) -> dict[str, list[str]]:
@@ -148,11 +164,11 @@ def check(cat: Catalog, deployments: list[Deployment]) -> dict[str, list[str]]:
             continue
         listed = (cat.models[target].get("drafters") or [])
         if not d.draft:
-            if "speculator" not in listed:
+            if "speculator" not in listed and not cat.ships_a_draft(target):
                 gaps["missing_speculator"].add(
                     f"{d.target}: {d.method} without a draft checkpoint, and {target} lists no speculator")
             continue
-        drafter = cat.entry(d.draft)
+        drafter = cat.drafter(d.draft)
         if drafter is None:
             gaps["missing_drafter"].add(f"{d.draft} ({d.method}) drafts for {d.target}")
             continue

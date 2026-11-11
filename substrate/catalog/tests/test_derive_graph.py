@@ -6727,7 +6727,7 @@ def _k3_graph_total(g: dict) -> tuple[collections.Counter, int]:
 
 
 def test_kimi_k3_resident_parameters_equal_the_header_total():
-    """2,779,484,478,208 weights in the 497,220-tensor header's language model: the nodes, the
+    """2,779,484,478,208 weights in the language model of the 497,220-tensor header (497,052 language_model.* tensors): the nodes, the
     inferred embedding table, and the tensors no node carries (router, norms, KDA's small
     state). None is missing and none is counted twice."""
     got, emb = _k3_graph_total(graph_of(KIMI_K3))
@@ -7642,6 +7642,9 @@ def test_m31_dspark_committed_graph_is_the_derivation_of_the_pinned_keys(tmp_pat
     assert committed["derived_from"]["sha256"] == pin
     committed["derived_from"].pop("sha256")
     derived["derived_from"].pop("sha256")
+    # The drafter's config sits at source.path in the target's repository, and the graph says so.
+    assert committed["derived_from"].pop("path") == "dspark/config.json"
+    derived["derived_from"].pop("path")
     assert committed == derived
 
 
@@ -7860,3 +7863,57 @@ def test_drafters_without_an_lm_head_tensor_state_that_they_share_their_targets(
         assert bool(sp.get("shares_target_head")) == (name in shares), name
         if name in shares:
             assert any(n.get("aliases", "").startswith("head.") for n in sp["head"]), name
+
+
+def _v4_expert_dtypes_by_kind(g: dict) -> dict:
+    return {k["id"]: n["weight_dtype"] for k in g["layer_kinds"] for n in k["nodes"]
+            if n.get("role") == "experts"}
+
+
+def test_v4_nvfp4_export_leaves_the_mtp_experts_at_mxfp4(tmp_path):
+    """nvidia/DeepSeek-V4-Pro-NVFP4 at 1449d1e6: `ignore` names mtp.*, `quantized_layers` holds
+    only layers.N.ffn.experts, and the header stores mtp.0.ffn.experts.0.w1.weight as I8
+    [3072, 3584] with an F8_E8M0 scale [3072, 224] (MXFP4) while layers.5's is U8 with an
+    F8_E4M3 weight_scale (NVFP4). The draft's experts are priced at MXFP4; the 61 layers' at
+    NVFP4. Pricing the draft at NVFP4 overcharged 384 x 3 x 3072 x 7168 weights by 1/32 B."""
+    raw = _v4_with(config_of(DSV4_PRO), moe_quant_algo="NVFP4",
+                   ignore=["*.attn.*", "*.ffn.shared_experts.*", "head", "mtp.*"],
+                   quantized_layers={f"layers.{i}.ffn.experts": {"quant_algo": "NVFP4"}
+                                     for i in range(61)})
+    by_kind = _v4_expert_dtypes_by_kind(_derive_raw(raw, tmp_path, "deepseek-v4-pro-nvfp4"))
+    assert by_kind.pop("mtp") == "mxfp4"
+    assert set(by_kind.values()) == {"nvfp4"}
+    # A map that holds an mtp entry quantizes the draft.
+    qmap = {**raw["quantization_config"]["quantized_layers"],
+            "mtp.0.ffn.experts": {"quant_algo": "NVFP4"}}
+    again = _v4_expert_dtypes_by_kind(_derive_raw(_v4_with(raw, quantized_layers=qmap), tmp_path, "x"))
+    assert again["mtp"] == "nvfp4"
+    # With no map, the exclusion list decides: mtp.* excluded leaves it, otherwise it is quantized.
+    nomap = json.loads(json.dumps(raw))
+    del nomap["quantization_config"]["quantized_layers"]
+    assert _v4_expert_dtypes_by_kind(_derive_raw(nomap, tmp_path, "x"))["mtp"] == "mxfp4"
+    nomap["quantization_config"]["ignore"] = ["head"]
+    assert _v4_expert_dtypes_by_kind(_derive_raw(nomap, tmp_path, "x"))["mtp"] == "nvfp4"
+
+
+def test_the_committed_v4_nvfp4_graph_prices_its_mtp_experts_at_mxfp4():
+    by_kind = _v4_expert_dtypes_by_kind(graph_of(MODELS / "deepseek-v4-pro-nvfp4"))
+    assert by_kind["mtp"] == "mxfp4" and "nvfp4" in by_kind.values()
+
+
+def test_modelopt_stacked_loader_rename_excludes_the_fused_projection(tmp_path):
+    """MiniMax-M2 stores q_proj, k_proj and v_proj and vLLM builds one qkv_proj; the loader's
+    stacked rename maps the checkpoint's spelling onto the fused module, and ModelOpt applies it
+    to the exclusion list. A list that names only the checkpoint's q_proj on every layer
+    therefore excludes the fused projection, which then stays at the base width."""
+    raw = _minimax_m25_nvfp4_raw()
+    ignore = ["lm_head"]
+    for i in range(62):
+        ignore += [f"model.layers.{i}.block_sparse_moe.gate", f"model.layers.{i}.self_attn.q_proj",
+                   f"model.layers.{i}.self_attn.o_proj"]
+    raw["quantization_config"]["ignore"] = ignore
+    by = _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))
+    assert by["qkv_proj"] == {"-"} and by["o_proj"] == {"-"} and by["experts"] == {"nvfp4"}
+    # Without the q_proj entry the fused projection is quantized.
+    raw["quantization_config"]["ignore"] = [p for p in ignore if not p.endswith("q_proj")]
+    assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["qkv_proj"] == {"nvfp4"}

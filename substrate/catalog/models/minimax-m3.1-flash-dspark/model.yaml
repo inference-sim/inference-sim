@@ -6,7 +6,7 @@ source:
   path: dspark/config.json
   retrieved: 2026-11-10
 licence:
-  id: LicenseRef-minimax-community
+  id: LicenseRef-minimax-m3.1-flash
   evidence: https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash/raw/ce7f4df87d2e05262f5775f373dac4772f134041/LICENSE
 config:
   sha256: d3f2ef9a308be0c5689e98b348d8cff73b90487db22ba79e9269f9b1f25cfa3a

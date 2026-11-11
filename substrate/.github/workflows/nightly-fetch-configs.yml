@@ -4,7 +4,8 @@ name: nightly config fetch
 # hash (model.yaml config.sha256) and its source revision. This job, which alone holds the
 # Hugging Face access token, fetches each such file at its pinned revision, checks its hash,
 # and re-derives the graph with derive_graph.py --check --fetched. Pull-request jobs need no
-# secret: they check the hash, the revision and the graph's derived_from hash only.
+# secret for a public repository: the catalog job fetches those without a token and re-derives
+# them, and checks only the hash, the revision and the graph's derived_from hash for a gated one.
 #
 # The token is the HF_TOKEN secret of the protected environment "config-fetch", whose branch
 # policy allows only main. A person creates the environment and the secret.

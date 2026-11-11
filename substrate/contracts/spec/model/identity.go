@@ -269,6 +269,13 @@ func checkConfigPath(p string) string {
 			return "must not contain an empty, . or .. element"
 		}
 	}
+	// The nightly job puts the path into a URL: letters, digits and . _ - / only.
+	for _, r := range p {
+		letter := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
+		if !letter && (r < '0' || r > '9') && !strings.ContainsRune("._-/", r) {
+			return "may contain only letters, digits and . _ - /"
+		}
+	}
 	if !strings.HasSuffix(p, ".json") {
 		return "must name a .json file"
 	}

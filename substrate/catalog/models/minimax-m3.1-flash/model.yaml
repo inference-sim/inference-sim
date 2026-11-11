@@ -5,7 +5,7 @@ source:
   revision: ce7f4df87d2e05262f5775f373dac4772f134041
   retrieved: 2026-11-10
 licence:
-  id: LicenseRef-minimax-community
+  id: LicenseRef-minimax-m3.1-flash
   evidence: https://huggingface.co/MiniMaxAI/MiniMax-M3.1-Flash/raw/ce7f4df87d2e05262f5775f373dac4772f134041/LICENSE
 config:
   sha256: df6a3668e2de5b8dc0e883e3767495ad17af7e4d69fabe9683088be015fda9ab

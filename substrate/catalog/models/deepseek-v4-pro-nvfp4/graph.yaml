@@ -1382,7 +1382,7 @@ layer_kinds:
     k: 7168
     experts: 384
     top_k: 6
-    weight_dtype: nvfp4
+    weight_dtype: mxfp4
     under_sequence_parallel: token_sharded
   - op: GEMM
     role: shared_gate_up

@@ -126,9 +126,15 @@ func withDrafter(target, draft *model.Graph) (*model.Graph, error) {
 	if sp.SharesTargetHead {
 		for _, n := range sp.Head {
 			if strings.HasPrefix(n.Aliases, "head.") {
-				if _, ok := target.AliasTarget(n.Aliases); !ok {
+				t, ok := target.AliasTarget(n.Aliases)
+				if !ok {
 					return nil, fmt.Errorf("draft_model %s reads its target's %s, and the target %s "+
 						"states no such node", draft.Name, n.Aliases, target.Name)
+				}
+				if n.Op == model.OpGEMM && (t.Op != model.OpGEMM || t.N != n.N || t.K != n.K) {
+					return nil, fmt.Errorf("draft_model %s reads its target's %s as a %d x %d head, "+
+						"and the target %s holds a %s of %d x %d; the drafter was built for another "+
+						"vocabulary or width", draft.Name, n.Aliases, n.N, n.K, target.Name, t.Op, t.N, t.K)
 				}
 			}
 		}

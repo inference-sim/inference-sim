@@ -119,7 +119,8 @@ func TestSourcePathNamesAFileInsideTheRepository(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"/config.json", "../config.json", "a/../config.json", "a//b.json", "./config.json",
-		"dspark/", "dspark/config.txt", "dspark\\config.json"} {
+		"dspark/", "dspark/config.txt", "dspark\\config.json",
+		"a?x=1/config.json", "a#b/config.json", "a%2e/config.json", "a b/config.json", "a\x00/config.json"} {
 		p := src(bad).Validate()
 		if p.OK() || !strings.Contains(p.Error(), "source.path") {
 			t.Errorf("path %q was accepted: %v", bad, p)

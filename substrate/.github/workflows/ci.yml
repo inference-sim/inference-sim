@@ -243,6 +243,16 @@ jobs:
       - name: Every graph re-derives from its vendor configuration
         working-directory: catalog
         run: python3 scripts/derive_graph.py --check
+      # The entries whose licence keeps config.json out of the tree commit its hash. The
+      # repositories that are public are fetched here with no token, hash-checked, and their
+      # graphs re-derived, so a hand edit of one fails the pull request; a gated repository is
+      # left for the nightly token job (nightly-fetch-configs.yml).
+      - name: Hash-pinned graphs re-derive from their public configs
+        working-directory: catalog
+        run: |
+          set -euo pipefail
+          python3 scripts/fetch_pinned_configs.py "$RUNNER_TEMP/fetched"
+          python3 scripts/derive_graph.py --check --fetched "$RUNNER_TEMP/fetched" --allow-unfetched
       - name: The deriver's tests
         working-directory: catalog
         run: python3 -m pytest tests -q

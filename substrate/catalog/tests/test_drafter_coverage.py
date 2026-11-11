@@ -107,3 +107,17 @@ def test_the_command_exits_nonzero_on_a_gap_unless_report_only(tmp_path):
                                         capture_output=True, text=True)
     assert run().returncode == 1
     assert run("--report-only").returncode == 0
+
+
+def test_a_draft_shipped_in_the_targets_repository_is_found_and_never_taken_for_the_target(tmp_path):
+    """MiniMax-M3.1-Flash's DSpark lives in dspark/ of the target's repository: the target is the
+    entry without targets, a deployment with no draft checkpoint is satisfied by the shipped
+    drafter, and one naming the shared repository as its draft finds the drafter entry."""
+    shipped = {"source": {"repo": "Org/Flash", "path": "dspark/config.json"}, "targets": ["flash"]}
+    models = {"flash": {"source": {"repo": "Org/Flash"}, "drafters": ["flash-dspark"]},
+              "flash-dspark": shipped}
+    assert not any(gaps(tmp_path, models, [dep(draft=None, method="dspark", target="Org/Flash")]).values())
+    assert not any(gaps(tmp_path / "x", models, [dep(draft="Org/Flash", method="dspark", target="Org/Flash")]).values())
+    # A target that lists no speculator and ships no draft is still reported.
+    bare = {"flash": {"source": {"repo": "Org/Flash"}, "drafters": []}}
+    assert len(gaps(tmp_path / "y", bare, [dep(draft=None, method="dspark", target="Org/Flash")])["missing_speculator"]) == 1

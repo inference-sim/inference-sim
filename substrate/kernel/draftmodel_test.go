@@ -167,3 +167,24 @@ func TestASharedHeadTheTargetLacksIsRefused(t *testing.T) {
 		t.Fatalf("got %v, want a refusal naming the missing head", err)
 	}
 }
+
+// The head a drafter shares must be the shape it was built for: another vocabulary or hidden
+// width would price the draft head at one shape and read the target's weights at another.
+func TestASharedHeadOfAnotherShapeIsRefused(t *testing.T) {
+	for name, edit := range map[string]func(*model.Node){
+		"another vocabulary": func(n *model.Node) { n.N = 120 },
+		"another width":      func(n *model.Node) { n.K = 32 },
+	} {
+		target, draft := draftGraphs()
+		draft.Speculator.SharesTargetHead = true
+		edit(&target.Head[0])
+		if _, err := withDrafter(target, draft); err == nil || !strings.Contains(err.Error(), "another vocabulary or width") {
+			t.Errorf("%s: got %v, want a refusal naming the shape", name, err)
+		}
+	}
+	target, draft := draftGraphs()
+	draft.Speculator.SharesTargetHead = true
+	if _, err := withDrafter(target, draft); err != nil {
+		t.Errorf("a head of the same shape was refused: %v", err)
+	}
+}

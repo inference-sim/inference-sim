@@ -287,7 +287,9 @@ type Speculator struct {
 	// count: DeepSeek-V4.1's DSpark drafts dspark_block_size = 5 tokens through
 	// num_nextn_predict_layers = 3 layers. A method with no default (eagle, eagle3, dflash,
 	// draft_model: the engine refuses a deployment that states none, speculative.py:1502-1507)
-	// states 1, the least a deployment can state. A deployment's own count replaces it, and
+	// states 1, the least a deployment can state. One entry states a count its configuration
+	// does not: Kimi-K3's DSpark drafter states 7, the model card's, where vLLM refuses a
+	// deployment that states none. A deployment's own count replaces it, and
 	// the method decides whether the count is valid (an MTP draft needs a multiple of n_predict
 	// above n_predict, :1493-1501); the model reference lists the rules. Under autoregressive
 	// drafting the stack runs once per drafted token, so the count is how many passes; under
@@ -360,7 +362,10 @@ type Speculator struct {
 	// head.<role>. When the drafter is named as a deployment's draft model that alias
 	// means the drafter's own head and its weights are the drafter's resident bytes; with
 	// SharesTargetHead it means the head of the target graph the drafter is grafted onto,
-	// which is already resident once. Requires a GEMM in Head that aliases a head node.
+	// which is already resident once. Requires a GEMM in Head that aliases a head node. Only a
+	// separate drafter's graph (one whose model.yaml names targets) sets it; a graph cannot see
+	// its identity, so the catalog check does not refuse it on a target's own in-graph
+	// speculator, where it has no meaning.
 	SharesTargetHead bool `yaml:"shares_target_head,omitempty"`
 }
 
