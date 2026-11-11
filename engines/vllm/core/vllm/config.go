@@ -618,7 +618,7 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 	}
 	switch {
 	case e.PrefixMatchUnit != 0:
-		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
+		return fmt.Errorf("vllm: prefix_match_unit is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
 	case e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0:
 		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
 		// is the default and keeps only the semantic checkpoints, which this engine builds.
@@ -685,8 +685,8 @@ var unreadSettings = []unreadSetting{
 	// synthetic_acceptance_length, the run's supplied acceptance profile, which vLLM resolves to the
 	// rates the acceptance resolver derives; stated alone it is refused, as vLLM refuses it (:575).
 	// "block", which recorded runs state, decides which drafts are accepted, and acceptance is an
-	// input (#29).
-	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "29",
+	// input (#106).
+	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "106",
 		func(e engineconfig.Engine) bool {
 			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic" &&
 				e.Speculative.SyntheticAcceptanceLength == nil
