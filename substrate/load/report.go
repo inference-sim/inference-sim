@@ -46,7 +46,18 @@ type Selected struct {
 	Method string
 	// KernelImpls, FitRange, Extrapolated and Unidentified are a coefficient's, as the
 	// Result's SelectedCoefficient carries them; zero for a profile.
-	KernelImpls  []coefficient.KernelImpl
+	KernelImpls []coefficient.KernelImpl
+	// Priced are the implementations of KernelImpls that run in the pool the entry priced: the
+	// lowered implementation, with its code hash. Match says how the entry met them (exact, or
+	// unkeyed when it lists none). MeasuredOn are the implementations a transferred value was
+	// measured on. A sibling implementation the entry is also valid for is in KernelImpls and
+	// not in Priced.
+	Priced     []coefficient.KernelImpl
+	Match      coefficient.KernelMatch
+	MeasuredOn []coefficient.KernelImpl
+	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), or
+	// "" for a name that prices no lowered kernel.
+	Primitive    string
 	FitRange     []coefficient.Bound
 	Extrapolated bool
 	Unidentified bool
@@ -59,6 +70,10 @@ type Selected struct {
 
 // Report is the selected-entry report.
 type Report struct {
+	// Implementations are the kernel implementations the recorded cost models ran, by lowered
+	// primitive, each once and sorted: what the priced implementation of each coefficient is
+	// one of, for its primitive.
+	Implementations map[string][]coefficient.KernelImpl
 	// Selected is every entry a lookup returned, sorted by kind, set, entry, method and
 	// scope: the order the Result's validator requires (the file order differs when one set's
 	// name is a prefix of another's).
@@ -83,9 +98,17 @@ func (d *Data) RecordCoefficient(set, name string, scope coefficient.Scope, meth
 // engine instance, or a pool, each has its own), and a flag any record raised stays raised.
 // One Data serves one run: nothing is cleared, so a Data reused for a second run carries the
 // first run's flags into its report.
-func (d *Data) RecordEntry(set string, e coefficient.Entry, extrapolated bool) {
+//
+// primitive is the lowered primitive the entry prices and priced the implementations the pool
+// runs for it, which a keyed entry matched whole (resolve.Resolved.Primitive and Running);
+// match says how it met them (design VAL-8): a keyed entry is exact and names the build that
+// ran, an unkeyed one applies to every build and names none. Two entries that differ only in the implementations they are valid for are two
+// records.
+func (d *Data) RecordEntry(set string, e coefficient.Entry, primitive string, priced []coefficient.KernelImpl, match coefficient.KernelMatch, extrapolated bool) {
 	d.record(Selected{Kind: KindCoefficient, File: d.setFileOf(set), Set: set, Entry: e.Name,
 		Scope: e.Scope, Method: string(e.Method),
+		Primitive: primitive, Priced: append([]coefficient.KernelImpl(nil), priced...), Match: match,
+		MeasuredOn:   append([]coefficient.KernelImpl(nil), e.MeasuredOn...),
 		KernelImpls:  append([]coefficient.KernelImpl(nil), e.KernelImpls...),
 		FitRange:     append([]coefficient.Bound(nil), e.FitRange...),
 		CI95:         copyInterval(e.CI95),
@@ -104,7 +127,7 @@ func copyInterval(iv *coefficient.Interval) *coefficient.Interval {
 // coefficient outside its fit range. The cost model is one: it learns which entries a step
 // left only while the run prices steps, after OpenPool has recorded the entries.
 type ExtrapolationObserver interface {
-	Extrapolated(set, name string, scope coefficient.Scope, method string) bool
+	Extrapolated(set, name string, scope coefficient.Scope, method string, impls []coefficient.KernelImpl) bool
 }
 
 // Observe asks o, at every later Report, whether each recorded coefficient was extrapolated.
@@ -126,6 +149,54 @@ func (d *Data) Observe(o ExtrapolationObserver) {
 		}
 	}
 	d.observers = append(d.observers, o)
+}
+
+// RecordImplementations records the kernel implementations a cost model ran, by the lowered
+// primitive each executes (the pool's plan.PoolPlan.ImplementationsByPrimitive, design VAL-8), so
+// the report states them once. Several cost models accumulate; an implementation is kept once.
+func (d *Data) RecordImplementations(impls map[string][]coefficient.KernelImpl) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.running == nil {
+		d.running = map[string]map[coefficient.KernelImpl]bool{}
+	}
+	for prim, l := range impls {
+		if d.running[prim] == nil {
+			d.running[prim] = map[coefficient.KernelImpl]bool{}
+		}
+		for _, k := range l {
+			d.running[prim][k] = true
+		}
+	}
+}
+
+// unionImpls returns the implementations of a and b, each once, sorted.
+func unionImpls(a, b []coefficient.KernelImpl) []coefficient.KernelImpl {
+	seen := map[coefficient.KernelImpl]bool{}
+	var out []coefficient.KernelImpl
+	for _, l := range [][]coefficient.KernelImpl{a, b} {
+		for _, k := range l {
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+	}
+	sortImpls(out)
+	return out
+}
+
+func sortImpls(l []coefficient.KernelImpl) {
+	sort.Slice(l, func(i, j int) bool {
+		a, b := l[i], l[j]
+		if a.Library != b.Library {
+			return a.Library < b.Library
+		}
+		if a.Variant != b.Variant {
+			return a.Variant < b.Variant
+		}
+		return a.CodeHash < b.CodeHash
+	})
 }
 
 // RecordAcceptance records the profile an acceptance resolution used, if it used one.
@@ -161,7 +232,8 @@ func (d *Data) record(s Selected) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.loaded[s.File] = true
-	key := string(s.Kind) + "\x00" + s.Set + "\x00" + s.Entry + "\x00" + s.Method + "\x00" + s.Scope.Key()
+	key := string(s.Kind) + "\x00" + s.Set + "\x00" + s.Entry + "\x00" + s.Method + "\x00" + s.Scope.Key() +
+		"\x00" + coefficient.DescribeImpls(s.KernelImpls)
 	if old, ok := d.selected[key]; ok && s.Kind == KindCoefficient {
 		s = mergeCoefficient(old, s)
 	}
@@ -180,10 +252,13 @@ func mergeCoefficient(a, b Selected) Selected {
 	out.Extrapolated = a.Extrapolated || b.Extrapolated
 	out.Unidentified = a.Unidentified || b.Unidentified
 	out.Whole = a.Whole && b.Whole
-	agree := reflect.DeepEqual(a.KernelImpls, b.KernelImpls) && reflect.DeepEqual(a.FitRange, b.FitRange) &&
+	out.Priced = unionImpls(a.Priced, b.Priced)
+	agree := reflect.DeepEqual(a.KernelImpls, b.KernelImpls) && a.Match == b.Match &&
+		reflect.DeepEqual(a.MeasuredOn, b.MeasuredOn) && reflect.DeepEqual(a.FitRange, b.FitRange) &&
 		reflect.DeepEqual(a.CI95, b.CI95)
 	if a.Whole && b.Whole && !agree {
-		out.KernelImpls, out.FitRange, out.CI95, out.Whole = nil, nil, nil, false
+		out.KernelImpls, out.Priced, out.MeasuredOn, out.Match = nil, nil, nil, ""
+		out.FitRange, out.CI95, out.Whole = nil, nil, false
 	}
 	return out
 }
@@ -194,11 +269,20 @@ func (d *Data) Report() Report {
 	defer d.mu.Unlock()
 	keys := sortedKeys(d.selected)
 	r := Report{Selected: make([]Selected, 0, len(keys)), Unloaded: []string{}}
+	if len(d.running) > 0 {
+		r.Implementations = map[string][]coefficient.KernelImpl{}
+	}
+	for prim, set := range d.running {
+		for k := range set {
+			r.Implementations[prim] = append(r.Implementations[prim], k)
+		}
+		sortImpls(r.Implementations[prim])
+	}
 	for _, k := range keys {
 		s := d.selected[k]
 		if s.Kind == KindCoefficient && !s.Extrapolated {
 			for _, o := range d.observers {
-				if o.Extrapolated(s.Set, s.Entry, s.Scope, s.Method) {
+				if o.Extrapolated(s.Set, s.Entry, s.Scope, s.Method, s.KernelImpls) {
 					s.Extrapolated = true
 					break
 				}
@@ -248,6 +332,12 @@ func (r Report) Result() result.SelectedEntries {
 	}
 	if whole && n > 0 {
 		out.ClosenessVersion = result.ClosenessVersion
+		if len(r.Implementations) > 0 {
+			out.Implementations = map[string][]coefficient.KernelImpl{}
+			for prim, l := range r.Implementations {
+				out.Implementations[prim] = append([]coefficient.KernelImpl(nil), l...)
+			}
+		}
 	}
 	for _, s := range r.Selected {
 		switch s.Kind {
@@ -256,6 +346,7 @@ func (r Report) Result() result.SelectedEntries {
 				Set: s.Set, Name: s.Entry, Method: vocab.Method(s.Method), Scope: s.Scope, File: s.File}
 			if out.ClosenessVersion != 0 {
 				c.KernelImpls, c.FitRange, c.CI95 = s.KernelImpls, s.FitRange, s.CI95
+				c.Primitive, c.Priced, c.KernelMatch, c.MeasuredOn = s.Primitive, s.Priced, s.Match, s.MeasuredOn
 				c.Extrapolated, c.Unidentified = s.Extrapolated, s.Unidentified
 			}
 			out.Coefficients = append(out.Coefficients, c)

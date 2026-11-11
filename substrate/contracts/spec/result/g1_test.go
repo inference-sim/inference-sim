@@ -15,6 +15,9 @@ func withG1() *Result {
 	r.SelectedEntries.ClosenessVersion = ClosenessVersion
 	c := &r.SelectedEntries.Coefficients[0]
 	c.KernelImpls = []coefficient.KernelImpl{{Library: "attn-lib", Variant: "decode_v2", CodeHash: "0123456789abcdef"}}
+	c.Name, c.Primitive = "gemm_eps_max_bf16", "gemm"
+	c.Priced, c.KernelMatch = c.KernelImpls, coefficient.KernelExact
+	r.SelectedEntries.Implementations = map[string][]coefficient.KernelImpl{"gemm": c.KernelImpls}
 	c.FitRange = []coefficient.Bound{{Dim: "tokens", Low: 1, High: 8192}}
 	c.CI95 = &coefficient.Interval{Low: 0, High: 100}
 	c.Extrapolated = true
@@ -75,8 +78,8 @@ func TestTheG1DataIsRefusedWhenMalformed(t *testing.T) {
 		}), "selected_entries.coefficients[0].fit_range[1].dim", "duplicate"},
 		{"closeness data in an unmarked report", func(r *Result) { r.SelectedEntries.ClosenessVersion = 0 },
 			"selected_entries.coefficients[0]", "closeness_version is absent"},
-		{"an unknown closeness version", func(r *Result) { r.SelectedEntries.ClosenessVersion = 2 },
-			"selected_entries.closeness_version", "must be 1 or absent"},
+		{"an unknown closeness version", func(r *Result) { r.SelectedEntries.ClosenessVersion = 3 },
+			"selected_entries.closeness_version", "must be 2 or absent"},
 		{"unidentified with no interval", co(func(c *SelectedCoefficient) { c.CI95 = nil }),
 			"selected_entries.coefficients[0].unidentified", "no ci95"},
 		{"an interval in an unmarked report", func(r *Result) {
@@ -90,6 +93,53 @@ func TestTheG1DataIsRefusedWhenMalformed(t *testing.T) {
 			"selected_entries.coefficients[0].kernel_impls", "states none"},
 		{"a fit range on a literature entry", co(func(c *SelectedCoefficient) { c.KernelImpls = nil; c.Method = "literature" }),
 			"selected_entries.coefficients[0].fit_range", "not fitted"},
+		// The implementation the entry priced (design VAL-8, G1).
+		{"a sibling build priced, which the entry is not valid for", co(func(c *SelectedCoefficient) {
+			c.Priced = []coefficient.KernelImpl{{Library: "attn-lib", Variant: "decode_v2", CodeHash: "fedcba9876543210"}}
+		}), "selected_entries.coefficients[0].priced[0]", "not among kernel_impls"},
+		{"a priced build the run did not run", func(r *Result) {
+			r.SelectedEntries.Implementations = map[string][]coefficient.KernelImpl{"all_reduce": r.SelectedEntries.Implementations["gemm"]}
+		},
+			"selected_entries.coefficients[0].priced[0]", "did not run it for that primitive"},
+		{"an exact entry that names nothing priced", co(func(c *SelectedCoefficient) { c.Priced = nil }),
+			"selected_entries.coefficients[0].priced", "required for an exact entry"},
+		{"a priced build with no code hash", co(func(c *SelectedCoefficient) {
+			c.Priced = []coefficient.KernelImpl{{Library: "attn-lib", Variant: "decode_v2"}}
+		}),
+			"selected_entries.coefficients[0].priced[0].code_hash", "hexadecimal"},
+		{"an unkeyed entry that lists implementations", co(func(c *SelectedCoefficient) { c.KernelMatch = coefficient.KernelUnkeyed }),
+			"selected_entries.coefficients[0].kernel_match", "unkeyed, but the entry lists"},
+		{"an unkeyed entry that names a priced build", co(func(c *SelectedCoefficient) {
+			c.KernelMatch, c.KernelImpls = coefficient.KernelUnkeyed, nil
+		}), "selected_entries.coefficients[0].priced", "names no implementation"},
+		{"an exact entry that lists nothing", co(func(c *SelectedCoefficient) { c.KernelImpls, c.Priced = nil, nil }),
+			"selected_entries.coefficients[0].kernel_match", "lists no kernel_impls"},
+		{"a marked entry with no kernel match", co(func(c *SelectedCoefficient) { c.KernelMatch = "" }),
+			"selected_entries.coefficients[0].kernel_match", "required"},
+		{"a refused match", co(func(c *SelectedCoefficient) { c.KernelMatch = coefficient.KernelRefused }),
+			"selected_entries.coefficients[0].kernel_match", "does not return"},
+		{"measured_on on a measured entry", co(func(c *SelectedCoefficient) { c.MeasuredOn = c.KernelImpls }),
+			"selected_entries.coefficients[0].measured_on", "not transferred"},
+		{"the run's implementations out of order", func(r *Result) {
+			a := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "0123456789abcdef"}
+			b := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "fedcba9876543210"}
+			r.SelectedEntries.Implementations = map[string][]coefficient.KernelImpl{"gemm": {b, a}}
+		}, "selected_entries.implementations.gemm[1]", "sorted"},
+		{"the run ran a build the exact entry did not price", func(r *Result) {
+			b := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "fedcba9876543210"}
+			r.SelectedEntries.Implementations["gemm"] = append(r.SelectedEntries.Implementations["gemm"], b)
+		}, "selected_entries.coefficients[0].priced", "prices a primitive only when it lists every implementation"},
+		{"an implementation list of a word that is not a primitive", func(r *Result) {
+			r.SelectedEntries.Implementations["warp_drive"] = r.SelectedEntries.Implementations["gemm"]
+		}, "selected_entries.implementations.warp_drive", "not a lowered primitive"},
+		{"a primitive that is not the name's", co(func(c *SelectedCoefficient) { c.Primitive = "all_reduce" }),
+			"selected_entries.coefficients[0].primitive", "prices"},
+		{"an exact entry with no primitive", co(func(c *SelectedCoefficient) { c.Primitive = "" }),
+			"selected_entries.coefficients[0].primitive", "required for an exact entry"},
+		{"the run's implementations in an unmarked report", func(r *Result) {
+			r.SelectedEntries.ClosenessVersion = 0
+			r.SelectedEntries.Coefficients[0] = SelectedCoefficient{Set: "s", Name: "n", Method: "measured", File: "coefficients/s.yaml"}
+		}, "selected_entries.implementations", "closeness_version is absent"},
 		{"extrapolated with no fit range", co(func(c *SelectedCoefficient) { c.FitRange = nil }),
 			"selected_entries.coefficients[0].extrapolated", "no fit_range"},
 	}
@@ -119,6 +169,7 @@ func TestAnUnmarkedReportWithoutClosenessDataStillValidates(t *testing.T) {
 		t.Fatalf("%s", p.Error())
 	}
 	r.SelectedEntries.ClosenessVersion = ClosenessVersion
+	r.SelectedEntries.Coefficients[0].KernelMatch = coefficient.KernelUnkeyed
 	if p := r.Validate(); !p.OK() {
 		t.Fatalf("a marked report with every flag false: %s", p.Error())
 	}

@@ -28,6 +28,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
@@ -311,7 +312,10 @@ type Kernel struct {
 	// selected is every registry entry a lookup returned while the kernel was built, for
 	// the selected-entry report (RecordSelected). Pricing reads no coefficient after
 	// construction, so the list is complete when New returns.
-	selected    []resolve.Resolved
+	selected []resolve.Resolved
+	// running are the kernel implementations the lookup was keyed by (the pool's lowered
+	// implementations), for the selected-entry report.
+	running     map[string][]coefficient.KernelImpl
 	assumptions []kernel.CoefficientOrigin
 	// trust is the selected entries as terms of a price's trust (trust.go, VAL-3).
 	trust      []trustTerm

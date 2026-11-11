@@ -1,12 +1,14 @@
 package latencykernel
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
@@ -158,6 +160,66 @@ func TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices(t *testing
 	}
 	if pricesOf(k) != movedBy || matchOf(k) != "exact" {
 		t.Errorf("build Z: prices come from the transferred value = %v, match %q", pricesOf(k) == movedBy, matchOf(k))
+	}
+
+	// The Result names, for the coefficient, its primitive and the build that primitive ran (design
+	// VAL-8, G1), and the builds the run ran by primitive. Changing the lowering from X to Z
+	// changes it: the entry keyed to X reports X, the transferred entry for Z reports Z and that
+	// it was measured on X, and neither reports the other as priced.
+	implX := coefficient.KernelImpl{Library: buildX.Library, Variant: buildX.Variant, CodeHash: buildX.CodeHash}
+	implZ := coefficient.KernelImpl{Library: buildZ.Library, Variant: buildZ.Variant, CodeHash: buildZ.CodeHash}
+	implY := coefficient.KernelImpl{Library: buildY.Library, Variant: buildY.Variant, CodeHash: buildY.CodeHash}
+	reported := func(in Inputs, run map[plan.Primitive][]plan.KernelImpl) (result.SelectedCoefficient, result.SelectedEntries) {
+		in.Implementations = run
+		kk, err := New(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dd, err := load.Embedded()
+		if err != nil {
+			t.Fatal(err)
+		}
+		kk.RecordSelected(dd)
+		se := dd.Report().Result()
+		for _, c := range se.Coefficients {
+			if c.Name == name {
+				return c, se
+			}
+		}
+		t.Fatalf("%s is not in the selected entries", name)
+		return result.SelectedCoefficient{}, se
+	}
+	cx, sex := reported(keyed, map[plan.Primitive][]plan.KernelImpl{prim: {buildX}, other: {buildY}})
+	cz, _ := reported(keyed, map[plan.Primitive][]plan.KernelImpl{prim: {buildZ}, other: {buildY}})
+	if cx.Primitive != string(prim) || !reflect.DeepEqual(cx.Priced, []coefficient.KernelImpl{implX}) || cx.KernelMatch != coefficient.KernelExact {
+		t.Errorf("build X: primitive %q priced %v match %q", cx.Primitive, cx.Priced, cx.KernelMatch)
+	}
+	if !reflect.DeepEqual(cz.Priced, []coefficient.KernelImpl{implZ}) || !reflect.DeepEqual(cz.MeasuredOn, []coefficient.KernelImpl{implX}) ||
+		cz.Method != vocab.MethodTransferred {
+		t.Errorf("build Z: priced %v measured on %v method %s", cz.Priced, cz.MeasuredOn, cz.Method)
+	}
+	if !reflect.DeepEqual(sex.Implementations[string(prim)], []coefficient.KernelImpl{implX}) ||
+		!reflect.DeepEqual(sex.Implementations[string(other)], []coefficient.KernelImpl{implY}) {
+		t.Errorf("the Result records the builds the run ran by primitive: %v", sex.Implementations)
+	}
+	// One entry valid for X and Z (A and B valid), a pool that runs X (A ran): X is priced and
+	// the sibling Z, which the entry is also valid for, is not reported as priced.
+	both := keyed
+	both.Coefficients = nil
+	for _, set := range keyed.Coefficients {
+		c := *set
+		c.Coefficients = append([]coefficient.Entry(nil), set.Coefficients...)
+		for j, e := range c.Coefficients {
+			if set.Name == pick.Set && e.Name == name && e.Method == vocab.MethodMeasured {
+				e.KernelImpls = []coefficient.KernelImpl{implX, implZ}
+				c.Coefficients[j] = e
+			}
+		}
+		both.Coefficients = append(both.Coefficients, &c)
+	}
+	cb, _ := reported(both, map[plan.Primitive][]plan.KernelImpl{prim: {buildX}, other: {buildY}})
+	if !reflect.DeepEqual(cb.Priced, []coefficient.KernelImpl{implX}) || !reflect.DeepEqual(cb.KernelImpls, []coefficient.KernelImpl{implX, implZ}) {
+		t.Errorf("valid for X and Z, X ran: priced %v, valid for %v", cb.Priced, cb.KernelImpls)
 	}
 
 	// No sibling fallback. Neither entry is used when the primitive runs another build; when the

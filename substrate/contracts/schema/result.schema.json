@@ -1540,6 +1540,20 @@
           },
           "type": "array"
         },
+        "kernel_match": {
+          "enum": [
+            "unkeyed",
+            "exact",
+            "refused"
+          ],
+          "type": "string"
+        },
+        "measured_on": {
+          "items": {
+            "$ref": "#/$defs/coefficient.KernelImpl"
+          },
+          "type": "array"
+        },
         "method": {
           "enum": [
             "measured",
@@ -1554,6 +1568,15 @@
           "type": "string"
         },
         "name": {
+          "type": "string"
+        },
+        "priced": {
+          "items": {
+            "$ref": "#/$defs/coefficient.KernelImpl"
+          },
+          "type": "array"
+        },
+        "primitive": {
           "type": "string"
         },
         "scope": {
@@ -1592,6 +1615,15 @@
             "$ref": "#/$defs/result.SelectedCoefficient"
           },
           "type": "array"
+        },
+        "implementations": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/coefficient.KernelImpl"
+            },
+            "type": "array"
+          },
+          "type": "object"
         },
         "routing_profiles": {
           "items": {

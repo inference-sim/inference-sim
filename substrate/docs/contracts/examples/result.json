@@ -19,10 +19,12 @@
     "build": "unreleased"
   },
   "selected_entries": {
-    "closeness_version": 1,
+    "closeness_version": 2,
+    "implementations": { "gemm": [{ "library": "example-gemm", "variant": "bf16_128x128", "code_hash": "9f2c41d07ab3e5c8" }] },
     "coefficients": [
       { "set": "cost-model-primitives", "name": "gemm_eps_max_bf16", "method": "measured", "scope": { "hardware": ["h100"] }, "file": "coefficients/cost-model-primitives.yaml",
         "kernel_impls": [{ "library": "example-gemm", "variant": "bf16_128x128", "code_hash": "9f2c41d07ab3e5c8" }],
+        "primitive": "gemm", "priced": [{ "library": "example-gemm", "variant": "bf16_128x128", "code_hash": "9f2c41d07ab3e5c8" }], "kernel_match": "exact",
         "fit_range": [{ "dim": "tokens", "low": 1, "high": 8192 }], "ci95": [0.9, 1.1] }
     ],
     "unread_files": ["coefficients/cost-model-recurrent.yaml"]

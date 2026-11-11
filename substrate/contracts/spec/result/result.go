@@ -161,16 +161,17 @@ type Overlay struct {
 }
 
 // ClosenessVersion is the version of the closeness data a SelectedEntries can carry.
-const ClosenessVersion = 1
+const ClosenessVersion = 2
 
 // SelectedEntries is the selected-entry report (VAL-6). Every reader behind the engine's
 // Environment contributes to it, the acceptance and routing profile readers included.
 type SelectedEntries struct {
 	// ClosenessVersion says the recorder passed on everything each coefficient's entry states:
 	// its kernel implementations, fit range and interval, and the flags found from them. It is
-	// 1 for the layout of this package, and absent in a report written before the data existed
+	// 2 for the layout of this package, and absent in a report written before the data existed
 	// or by a recorder that held only identities. It does not say the conditions were decided.
-	// Under version 1, extrapolated is evaluated only for a coefficient that has a fit_range,
+	// Version 2 added the implementation each coefficient priced (priced, kernel_match) and the
+	// implementations the run ran (implementations). Under version 2, extrapolated is evaluated only for a coefficient that has a fit_range,
 	// unidentified only for one that has a ci95, and the kernel hash only for one that has
 	// kernel_impls; where the data is absent the entry did not state it, and the flag's false is
 	// "not evaluated". Without the version, nothing is said.
@@ -178,6 +179,13 @@ type SelectedEntries struct {
 	// Coefficients are the coefficient entries a lookup returned, each once, sorted by
 	// set, name, method and scope.
 	Coefficients []SelectedCoefficient `yaml:"coefficients,omitempty"`
+	// Implementations are the kernel implementations the run's cost models ran, by the lowered
+	// primitive each executes (a plan.Primitive word such as "attention.prefill"), each once and
+	// sorted by library, variant and code hash: the lowered implementations of every pool
+	// (design VAL-8). Each coefficient's priced implementations are those of its primitive.
+	// Present with closeness_version. An implementation the engine could not identify has no
+	// code hash.
+	Implementations map[string][]coefficient.KernelImpl `yaml:"implementations,omitempty"`
 	// AcceptanceProfiles are the acceptance profiles a lookup returned.
 	AcceptanceProfiles []SelectedProfile `yaml:"acceptance_profiles,omitempty"`
 	// RoutingProfiles are the routing profiles a lookup returned.
@@ -203,11 +211,29 @@ type SelectedCoefficient struct {
 	File string `yaml:"file"`
 	// KernelImpls are the kernel implementations the entry states it is valid for: the
 	// library, its variant and the hash of the kernel's source (design D5, VAL-8), copied
-	// from the entry. A reader maps each library version a benchmark run recorded to a
-	// kernel hash and compares it with these. Empty when the entry states none, which is
-	// allowed for an entry that is not tied to one implementation; a reader then cannot
-	// compare a hash for it.
+	// from the entry. It is the entry's validity list, which can name builds the run did not
+	// run; the build it priced is Priced. Empty when the entry states none, which is allowed
+	// for an entry that is not tied to one implementation (KernelMatch is then unkeyed).
 	KernelImpls []coefficient.KernelImpl `yaml:"kernel_impls,omitempty"`
+	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), or
+	// empty for a name that prices no lowered kernel. Present with closeness_version.
+	Primitive string `yaml:"primitive,omitempty"`
+	// Priced are the implementations of the entry's primitive that ran, with their code hashes:
+	// what the engine lowered that primitive to and the lookup matched whole by library, variant
+	// and code hash (design VAL-8): an exact entry is used only when every implementation that
+	// ran for its primitive is one it lists. Equal to selected_entries.implementations[primitive],
+	// and a subset of kernel_impls. A sibling build the entry is also valid for, and an
+	// implementation of another primitive, is not here. A reader maps each library version a benchmark run recorded to a kernel hash and
+	// compares it with these, not with KernelImpls (design §11.3, G1).
+	Priced []coefficient.KernelImpl `yaml:"priced,omitempty"`
+	// KernelMatch says how the entry met the implementations that ran: exact when it lists one
+	// of them, unkeyed when it lists none and so applies to every build without having been
+	// shown to match the one that ran. A kernel hash is decided only for an exact entry; an
+	// unkeyed one leaves it unevaluated. Present with closeness_version.
+	KernelMatch coefficient.KernelMatch `yaml:"kernel_match,omitempty"`
+	// MeasuredOn are the implementations a transferred value was measured on, copied from the
+	// entry. It is evidence about where the value came from, never a match.
+	MeasuredOn []coefficient.KernelImpl `yaml:"measured_on,omitempty"`
 	// FitRange is the range of inputs the entry's fit covered (design VAL-10), copied from
 	// the entry. Empty when the entry records none, and then the extrapolation condition cannot
 	// be evaluated for it.

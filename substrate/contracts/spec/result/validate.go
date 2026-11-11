@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
@@ -195,6 +196,40 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 	if s.ClosenessVersion != 0 && s.ClosenessVersion != ClosenessVersion {
 		p.Field("selected_entries.closeness_version", "must be %d or absent, got %d", ClosenessVersion, s.ClosenessVersion)
 	}
+	if s.ClosenessVersion == 0 && len(s.Implementations) > 0 {
+		p.Field("selected_entries.implementations", "states implementations, but selected_entries.closeness_version is absent")
+	}
+	prims := make([]string, 0, len(s.Implementations))
+	for prim := range s.Implementations {
+		prims = append(prims, prim)
+	}
+	sort.Strings(prims)
+	for _, prim := range prims {
+		at := "selected_entries.implementations." + prim
+		if !plan.Primitive(prim).Valid() {
+			p.Field(at, "%q is not a lowered primitive", prim)
+		}
+		var prevImpl coefficient.KernelImpl
+		for i, k := range s.Implementations[prim] {
+			kat := fmt.Sprintf("%s[%d]", at, i)
+			switch {
+			case strings.TrimSpace(k.Library) == "":
+				p.Field(kat+".library", "required")
+			case strings.TrimSpace(k.Variant) == "":
+				p.Field(kat+".variant", "required: the library's own exported kernel name")
+			case k.CodeHash != "":
+				one := &validate.Problems{}
+				coefficient.ValidateKernelImpls(one, kat, []coefficient.KernelImpl{k})
+				if !one.OK() {
+					p.Field(kat+".code_hash", "%q must be a lower-case hexadecimal hash of at least 12 digits, or absent for an implementation the engine could not identify", k.CodeHash)
+				}
+			}
+			if i > 0 && !implLess(prevImpl, k) {
+				p.Field(kat, "implementations are listed once each, sorted by library, variant and code hash")
+			}
+			prevImpl = k
+		}
+	}
 	read := map[string]bool{}
 	var prev string
 	for i, c := range s.Coefficients {
@@ -207,9 +242,9 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 		if c.Method != "" && !c.Method.Valid() {
 			p.Field(at+".method", "%q is not a registry method", c.Method)
 		}
-		key := c.Set + "\x00" + c.Name + "\x00" + string(c.Method) + "\x00" + c.Scope.Key()
+		key := c.Set + "\x00" + c.Name + "\x00" + string(c.Method) + "\x00" + c.Scope.Key() + "\x00" + coefficient.DescribeImpls(c.KernelImpls)
 		if i > 0 && key <= prev {
-			p.Field(at, "coefficients are listed once each, sorted by set, name, method and scope")
+			p.Field(at, "coefficients are listed once each, sorted by set, name, method, scope and kernel implementations")
 		}
 		prev = key
 		read[c.File] = true
@@ -226,6 +261,10 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 		}
 		if c.Unidentified && c.CI95 == nil {
 			p.Field(at+".unidentified", "is true, but the entry records no ci95 that leaves it unidentified")
+		}
+		c.validatePriced(p, at, s.ClosenessVersion != 0, s.Implementations)
+		if s.ClosenessVersion == 0 && (len(c.Priced) > 0 || c.KernelMatch != "" || len(c.MeasuredOn) > 0) {
+			p.Field(at, "states the implementation it priced, but selected_entries.closeness_version is absent")
 		}
 		if s.ClosenessVersion == 0 && (len(c.KernelImpls) > 0 || len(c.FitRange) > 0 || c.CI95 != nil || c.Extrapolated || c.Unidentified) {
 			p.Field(at, "states closeness data, but selected_entries.closeness_version is absent: without it a reader cannot tell an omitted flag from false")
@@ -885,4 +924,76 @@ func IsProfileKeyField(name string) bool {
 		}
 	}
 	return false
+}
+
+func implLess(a, b coefficient.KernelImpl) bool {
+	if a.Library != b.Library {
+		return a.Library < b.Library
+	}
+	if a.Variant != b.Variant {
+		return a.Variant < b.Variant
+	}
+	return a.CodeHash < b.CodeHash
+}
+
+// validatePriced checks the implementations a coefficient priced against the ones it is valid
+// for and the ones the run ran for its primitive (design VAL-8, G1). A keyed entry is exact and
+// names, with their code hashes, the implementations that ran for its primitive, all of which it
+// lists; an unkeyed one names none; a transferred one may say what it was measured on, and no
+// other method may.
+func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, marked bool, running map[string][]coefficient.KernelImpl) {
+	coefficient.ValidateKernelImpls(p, at+".priced", c.Priced)
+	coefficient.ValidateKernelImpls(p, at+".measured_on", c.MeasuredOn)
+	if len(c.MeasuredOn) > 0 && !coefficient.MayStateMeasuredOn(c.Method) {
+		p.Field(at+".measured_on", "method %q was not transferred from another implementation, so the entry states no measured_on", c.Method)
+	}
+	if c.Primitive != "" && c.Primitive != coefficient.PrimitiveOf(c.Name) {
+		p.Field(at+".primitive", "%q is not the primitive %q prices (%q)", c.Primitive, c.Name, coefficient.PrimitiveOf(c.Name))
+	}
+	listed := map[coefficient.KernelImpl]bool{}
+	for _, k := range c.KernelImpls {
+		listed[k] = true
+	}
+	ran := map[coefficient.KernelImpl]bool{}
+	for _, k := range running[c.Primitive] {
+		ran[k] = true
+	}
+	for i, k := range c.Priced {
+		kat := fmt.Sprintf("%s.priced[%d]", at, i)
+		if !listed[k] {
+			p.Field(kat, "%s is not among kernel_impls: the entry priced a build it is not valid for", coefficient.DescribeImpls([]coefficient.KernelImpl{k}))
+		}
+		if !ran[k] {
+			p.Field(kat, "%s is not among selected_entries.implementations[%q]: the run did not run it for that primitive", coefficient.DescribeImpls([]coefficient.KernelImpl{k}), c.Primitive)
+		}
+	}
+	if len(c.Priced) > 0 && len(c.Priced) != len(running[c.Primitive]) {
+		p.Field(at+".priced", "names %d implementations, but %d ran for primitive %q: an exact entry prices a primitive only when it lists every implementation that ran for it", len(c.Priced), len(running[c.Primitive]), c.Primitive)
+	}
+	if !marked {
+		return
+	}
+	switch c.KernelMatch {
+	case coefficient.KernelExact:
+		if len(c.KernelImpls) == 0 {
+			p.Field(at+".kernel_match", "exact, but the entry lists no kernel_impls to match")
+		}
+		if c.Primitive == "" {
+			p.Field(at+".primitive", "required for an exact entry: the primitive whose implementations it matched")
+		}
+		if len(c.Priced) == 0 {
+			p.Field(at+".priced", "required for an exact entry: the implementations it priced, with their code hashes")
+		}
+	case coefficient.KernelUnkeyed:
+		if len(c.KernelImpls) > 0 {
+			p.Field(at+".kernel_match", "unkeyed, but the entry lists kernel_impls")
+		}
+		if len(c.Priced) > 0 {
+			p.Field(at+".priced", "an unkeyed entry names no implementation it priced")
+		}
+	case "":
+		p.Field(at+".kernel_match", "required: exact or unkeyed, so a reader can tell an entry shown to match the running kernel from one that applies to every build")
+	default:
+		p.Field(at+".kernel_match", "%q is not exact or unkeyed: a lookup does not return an entry whose implementations do not run", c.KernelMatch)
+	}
 }

@@ -266,11 +266,11 @@ func TestTheKernelAnswersExtrapolatedPerEntry(t *testing.T) {
 		{scopeB, vocab.MethodMeasured, false},
 		{scopeA, vocab.MethodCalibrated, false},
 	} {
-		if got := k.Extrapolated("s", "n", c.scope, string(c.method)); got != c.want {
+		if got := k.Extrapolated("s", "n", c.scope, string(c.method), nil); got != c.want {
 			t.Errorf("Extrapolated(s, n, %s, %s) = %v, want %v", c.scope.Key(), c.method, got, c.want)
 		}
 	}
-	if k.Extrapolated("other", "n", scopeA, string(vocab.MethodMeasured)) || k.Extrapolated("s", "m", scopeA, string(vocab.MethodMeasured)) {
+	if k.Extrapolated("other", "n", scopeA, string(vocab.MethodMeasured), nil) || k.Extrapolated("s", "m", scopeA, string(vocab.MethodMeasured), nil) {
 		t.Error("an entry of another set or name is reported extrapolated")
 	}
 }

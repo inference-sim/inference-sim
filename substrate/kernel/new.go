@@ -470,6 +470,7 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 	k.buildProvenance(coeffs)
 	k.selected = coeffs.Selected()
+	k.running = coeffs.Implementations()
 	k.trust = buildTrust(k.selected)
 	k.fixed = k.computeFixedBytes(in.Model)
 	if err := k.refuseUnallocatableDeepEP(); err != nil {

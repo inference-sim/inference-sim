@@ -163,18 +163,19 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
 func (k *Kernel) RecordSelected(d *load.Data) {
 	extrapolated := extrapolatedEntries(k.trust)
 	for i, r := range k.selected {
-		d.RecordEntry(r.Set, r.Entry, extrapolated[i])
+		d.RecordEntry(r.Set, r.Entry, r.Primitive, r.Running, r.Match, extrapolated[i])
 	}
+	d.RecordImplementations(k.running)
 	d.Observe(k)
 }
 
 // Extrapolated implements load.ExtrapolationObserver: whether any step this kernel priced
 // read the selected entry outside the range its fit covered.
-func (k *Kernel) Extrapolated(set, name string, scope coefficient.Scope, method string) bool {
+func (k *Kernel) Extrapolated(set, name string, scope coefficient.Scope, method string, impls []coefficient.KernelImpl) bool {
 	extrapolated := extrapolatedEntries(k.trust)
 	for i, r := range k.selected {
 		if extrapolated[i] && r.Set == set && r.Entry.Name == name && r.Entry.Scope.Key() == scope.Key() &&
-			string(r.Entry.Method) == method {
+			string(r.Entry.Method) == method && coefficient.DescribeImpls(r.Entry.KernelImpls) == coefficient.DescribeImpls(impls) {
 			return true
 		}
 	}
