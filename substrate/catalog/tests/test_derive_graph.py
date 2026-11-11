@@ -7459,26 +7459,24 @@ def test_a_draft_length_under_another_name_is_not_dropped_for_minimax_m3(tmp_pat
     assert g["speculator"]["num_spec_tokens"] == 2
 
 
-def test_minimax_m3_siblings_keep_their_kinds_and_widths():
-    """The change that decoupled the two vectors leaves MiniMax-M3 and -MXFP8 as they were:
-    two kinds and no router node."""
+def test_minimax_m3_siblings_keep_their_kinds_and_state_the_router_and_the_head():
+    """MiniMax-M3 and -MXFP8 keep two kinds, and state what their headers hold: the fp32
+    router [128, 6144] on each of the 57 routed layers (44,826,624 weights; the headers' F32
+    totals are that plus the 7,296-value routing bias) and, for MXFP8, the head at BF16."""
     for name in ("minimax-m3", "minimax-m3-mxfp8"):
         g = graph_of(MODELS / name)
         assert g["stack"]["prologue"] == ["dense"] * 3, name
         assert sorted(k["id"] for k in g["layer_kinds"]) == ["dense", "sparse_attn_moe"], name
-        assert not [n for k in g["layer_kinds"] for n in k["nodes"] if n.get("role") == "router"]
-
-
-def test_m31_states_the_one_byte_per_32_weights_that_its_mxfp8_scales_hold():
-    """The U8 scale tensors beside the FP8 weights hold exactly one byte in 32 of them (the
-    classes above), which the graph states as its global weight_scale; the NVFP4 experts'
-    scales are part of their dtype."""
-    fp8 = sum(c[4] * _prod(c[2]) for c in M31_CHECKPOINT
-              if c[1] == "F8_E4M3" and c[5] == "priced")
-    scales = sum(c[4] * _prod(c[2]) for c in M31_CHECKPOINT
-                 if c[1] == "U8" and c[5] == "scale")
-    assert scales * 32 == fp8
-    assert graph_of(M31)["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+        routers = [n for k in g["layer_kinds"] for n in k["nodes"] if n.get("role") == "router"]
+        assert [(r["n"], r["k"], r["weight_dtype"], r["tp"]) for r in routers] == [
+            (128, 6144, "fp32", "replicated")], name
+        stack = g["stack"]
+        assert len(stack["pattern"]) * stack["repeat"] == 57
+        assert len(routers) * 57 * 128 * 6144 == 44_826_624
+    head = [n for n in graph_of(MODELS / "minimax-m3-mxfp8")["head"] if n["op"] == "GEMM"][0]
+    assert head["weight_dtype"] == "bf16"
+    assert "weight_dtype" not in [n for n in graph_of(MODELS / "minimax-m3")["head"]
+                                  if n["op"] == "GEMM"][0]
 
 
 # --- MiniMax-M3.1-Flash's DSpark drafter (dspark/ in the same repository) ------------------
@@ -7713,3 +7711,48 @@ def test_m31_dspark_states_the_one_byte_per_32_weights_that_its_mxfp8_scales_hol
                  if c[1] == "U8" and c[4] == "scale")
     assert scales * 32 == fp8
     assert graph_of(M31_DSPARK)["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+
+
+# --- MiniMax-M3.1-Flash's scales against the headers ------------------------------------
+
+def _stored_params_by_dtype(g: dict) -> dict:
+    """Parameters of the decoder stack's GEMM and GroupedGEMM nodes by stored dtype (a
+    GroupedGEMM is experts x three matrices of n x k)."""
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    st = g["stack"]
+    out = collections.Counter()
+    for kid in (list(st.get("prologue", [])) + list(st["pattern"]) * st["repeat"]
+                + list(st.get("epilogue", []))):
+        for n in kinds[kid]["nodes"]:
+            dt = n.get("weight_dtype", g["global"]["weight_dtype"])
+            if n["op"] == "GEMM":
+                out[dt] += n["n"] * n["k"]
+            elif n["op"] == "GroupedGEMM":
+                out[dt] += n["experts"] * 3 * n["n"] * n["k"]
+    return dict(out)
+
+
+def test_m31_weights_and_their_scales_equal_the_checkpoints_header(tmp_path):
+    """MiniMaxAI/MiniMax-M3.1-Flash at ce7f4df87d2e, 89,632 tensors. The MXFP8 linears and the
+    shared expert are 10,560,208,896 F8_E4M3 weights whose `weight_scale_inv` is U8, 330,006,528
+    bytes: one in 32. The routed experts are 206,561,083,392 packed bytes (413,122,166,784
+    four-bit weights) with 25,820,135,424 bytes of F8_E4M3 `weight_scale`: one in 16, the NVFP4
+    layout, which the dtype defines for itself. The fp32 routers are 44,826,624 weights. The
+    graph states the MXFP8 scale and the committed graph agrees with a fresh derivation."""
+    for g in (graph_of(M31), _m31_graph(tmp_path)):
+        by = _stored_params_by_dtype(g)
+        assert by == {"fp8": 10_560_208_896, "nvfp4": 413_122_166_784, "fp32": 44_826_624}
+        sc = g["global"]["weight_scale"]
+        assert sc == {"elements": 32, "bytes": 1}
+        assert by["fp8"] * sc["bytes"] // sc["elements"] == 330_006_528
+        assert by["nvfp4"] // 16 == 25_820_135_424       # DType.IntrinsicScale: 1 byte per 16
+
+
+def test_m31_dspark_weights_and_their_scales_equal_the_drafters_header(tmp_path):
+    """The drafter's 97 tensors: 1,667,235,840 F8_E4M3 weights and 52,101,120 U8 scale bytes."""
+    for g in (graph_of(M31_DSPARK), _m31ds_graph(tmp_path)):
+        by = _stored_params_by_dtype(g)
+        assert by["fp8"] == 1_667_235_840
+        sc = g["global"]["weight_scale"]
+        assert by["fp8"] * sc["bytes"] // sc["elements"] == 52_101_120
+

@@ -103,6 +103,12 @@ layer_kinds:
     emit: tensor_parallel
   - op: Elementwise
     role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 6144
+    weight_dtype: fp32
+    tp: replicated
   - op: GroupedGEMM
     shared: false
     role: experts
@@ -138,6 +144,8 @@ layer_kinds:
     - 9
   - - 9
     - 10
+  - - 10
+    - 11
 stack:
   prologue:
   - dense

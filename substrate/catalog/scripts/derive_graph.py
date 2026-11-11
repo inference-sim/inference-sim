@@ -4172,12 +4172,11 @@ def handler_minimax_m3(cfg, raw, model):
         gemm("index_qk_proj", index_heads * index_dim + index_dim, hidden),
         indexer,
     ] + sparse_attn[at:]
-    routed = []
-    if routed_width:
-        # The router is an fp32 GateLinear, replicated, and is in the exclusion list the
-        # width above was read against (nvidia/model.py:529-538).
-        routed.append({**gemm("router", int(require(cfg, "num_experts", model)), hidden),
-                       "weight_dtype": "fp32", "tp": "replicated"})
+    # The router is an fp32 GateLinear, replicated, whatever the checkpoint's width
+    # (nvidia/model.py:529-538@v0.34.0rc0), and every MiniMax-M3 header stores it F32
+    # [128, 6144] (MiniMax-M3 and -MXFP8 too: 44,826,624 weights over 57 layers).
+    routed = [{**gemm("router", int(require(cfg, "num_experts", model)), hidden),
+               "weight_dtype": "fp32", "tp": "replicated"}]
     sparse_nodes = sparse_front + [
         norm("post_attn_norm"),
         *routed,
