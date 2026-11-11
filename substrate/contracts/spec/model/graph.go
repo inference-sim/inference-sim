@@ -280,11 +280,19 @@ type Speculator struct {
 	// because the set of methods is engine-version data, not a schema invariant;
 	// a rules pack validates it against a declared engine version.
 	Method string `yaml:"method"`
-	// NumSpec is the tokens drafted per request per step. It is not the draft layer
+	// NumSpec is the draft length the checkpoint defaults to: the value vLLM gives
+	// num_speculative_tokens when a deployment states none (n_predict for an MTP draft,
+	// num_mtp_modules for MiniMax-M3; block_size or dspark_block_size for DSpark;
+	// vllm/config/speculative.py:1479-1492@v0.32.0). It is not a limit and not the draft layer
 	// count: DeepSeek-V4.1's DSpark drafts dspark_block_size = 5 tokens through
-	// num_nextn_predict_layers = 3 layers (both from the checkpoint's configuration;
-	// the engine's config/speculative.py defaults num_speculative_tokens to the draft
-	// config's block_size, or dspark_block_size where it has none).
+	// num_nextn_predict_layers = 3 layers. A method with no default (eagle, eagle3, dflash,
+	// draft_model: the engine refuses a deployment that states none, speculative.py:1502-1507)
+	// states 1, the least a deployment can state. A deployment's own count replaces it, and
+	// the method decides whether the count is valid (an MTP draft needs a multiple of n_predict
+	// above n_predict, :1493-1501); the model reference lists the rules. Under autoregressive
+	// drafting the stack runs once per drafted token, so the count is how many passes; under
+	// parallel_block it is the positions of the one pass, which also sizes a draft-only
+	// window cache.
 	NumSpec int `yaml:"num_spec_tokens"`
 	// Drafting is how Stack runs. See Drafting.
 	Drafting Drafting `yaml:"drafting,omitempty"`

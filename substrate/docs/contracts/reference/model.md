@@ -120,7 +120,7 @@ least one layer.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `method` | string | yes | The engine's name for the speculative method. The rules pack checks it. |
-| `num_spec_tokens` | integer | yes | Draft tokens per request per step, at least 1. Not the draft layer count. |
+| `num_spec_tokens` | integer | yes | The draft length the checkpoint defaults to, at least 1: what vLLM gives `num_speculative_tokens` when a deployment states none (`n_predict` for an MTP draft, `block_size` for DSpark), and 1 for a method with no default (EAGLE, EAGLE3, DFlash). Not a limit and not the draft layer count. A deployment's own count replaces it; see [stated draft lengths](#stated-draft-lengths). |
 | `drafting` | string | no | How `stack` runs. Omitted means once per drafted token; `parallel_block` means once per step over `num_spec_tokens` positions per request. See [drafting modes](vocabularies.md#drafting-modes). |
 | `embedding` | list of nodes | no | The draft's own token lookup and its reduction, before each pass of `stack`, over the same rows. A lookup into the target's table aliases `embedding.<role>`. Outside every layer, like the top-level `embedding`. |
 | `stack` | mapping | yes | The draft module's own stack over the graph's layer kinds. Needs a `pattern` and a `repeat` of at least 1. |
@@ -436,6 +436,19 @@ has an entry whose `targets` include the target's, and that the target lists it.
 checkouts of the two sources; it exits 1 on a missing or unlinked drafter unless `--report-only`.
 A recipe for a quantisation is read as the checkpoint it names, and a target the catalog lacks is
 reported as a missing model, not a missing drafter.
+
+### Stated draft lengths
+
+A deployment states `num_speculative_tokens` (K); the graph's `num_spec_tokens` is not compared with it for equality. What vLLM v0.32.0 (`vllm/config/speculative.py`) does with K, by method:
+
+| Method | K not stated | Stated K | Passes of the draft |
+|---|---|---|---|
+| `mtp` (any `*_mtp` graph method) | `n_predict` (:1490-1492; MiniMax-M3: `num_mtp_modules`, :1043-1046) | refused if K is above `n_predict` and not a multiple of it (:1493-1501); any K from 1 to `n_predict` is valid and uses the first K modules; a larger multiple reuses the modules in turn, with a warning (:1377-1384; module `spec_step_idx % num_mtp_layers`, `minimax_m3/nvidia/mtp.py:136`) | K, one per drafted token |
+| `eagle`, `eagle3`, `draft_model` | refused (:1502-1507, :1819-1824) | any K of at least 1 | K, one per drafted token (`llm_base_proposer.py:689`) |
+| `dflash` | refused | any K of at least 1 | one, over 1 + K positions (:1892-1918) |
+| `dspark` | `block_size`, else `dspark_block_size` (:1479-1488) | any K of at least 1; a Qwen3-Omni draft must equal its block size (:148-184) | one, over K positions |
+
+K of zero or less is refused for every method (:393, :1826-1830). The rule is the engine's, not the catalog's, so a stated K is checked against the method's row and the checkpoint's `n_predict` or block size, and priced at K.
 
 ### `source`
 
