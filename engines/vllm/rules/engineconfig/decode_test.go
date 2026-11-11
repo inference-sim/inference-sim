@@ -126,11 +126,21 @@ func TestStatedLeaveUnsetFieldsWithNoEngineKeyAreRefused(t *testing.T) {
 			t.Errorf("a block stating %s decodes; it must be refused", key)
 		}
 	}
+	// synthetic_acceptance_length is a key of the block (a supplied acceptance profile); the per-position
+	// rates are not, and stay refused (#88).
 	var n yaml.Node
-	if err := yaml.Unmarshal([]byte("speculative: {method: m, num_spec_tokens: 1, synthetic_acceptance_length: 2}\n"), &n); err != nil {
+	if err := yaml.Unmarshal([]byte("speculative: {method: m, num_spec_tokens: 2, rejection_sample_method: synthetic, synthetic_acceptance_length: 2, synthetic_acceptance_rates: [1, 0.5]}\n"), &n); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Decode(deployment.NewEngineBlock(n.Content[0])); err == nil {
-		t.Error("a block stating speculative.synthetic_acceptance_length decodes; it must be refused")
+		t.Error("a block stating speculative.synthetic_acceptance_rates decodes; it must be refused")
+	}
+	n = yaml.Node{}
+	if err := yaml.Unmarshal([]byte("speculative: {method: m, num_spec_tokens: 2, rejection_sample_method: synthetic, synthetic_acceptance_length: 2}\n"), &n); err != nil {
+		t.Fatal(err)
+	}
+	e, err := Decode(deployment.NewEngineBlock(n.Content[0]))
+	if err != nil || e.Speculative == nil || e.Speculative.SyntheticAcceptanceLength == nil || *e.Speculative.SyntheticAcceptanceLength != 2 {
+		t.Errorf("a block stating speculative.synthetic_acceptance_length decoded as %+v (%v)", e.Speculative, err)
 	}
 }

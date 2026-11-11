@@ -4545,9 +4545,13 @@
     "rule": "leave_unset"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#88"
+    "traces": [
+     "compat/kernelmodel/synthetic_acceptance_test.go",
+     "rules/engineconfig/synthetic_acceptance_test.go",
+     "rules/engineconfig/testdata/synthetic_acceptance.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:speculative_config.synthetic_acceptance_rates": {
    "estimation": {

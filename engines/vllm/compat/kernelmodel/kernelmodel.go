@@ -1080,6 +1080,11 @@ func ShapeOf(scenario string, r Repos) (Shape, error) {
 		sh.LongPrefillTokenThresholds = append(sh.LongPrefillTokenThresholds, e.LongPrefillTokenThreshold)
 		sh.DPLoadBalancings = append(sh.DPLoadBalancings, p.Parallel.DataParallelLoadBalancing)
 		sh.Unmodelled = append(sh.Unmodelled, unmodelledSettings(e))
+		// The engine block's synthetic_acceptance_length is the run's supplied acceptance, at the
+		// rank of the scenario's pin (AcceptanceWithEngine); every pool must state the same one.
+		if sh.Acceptance, err = AcceptanceWithEngine(sh.Acceptance, e); err != nil {
+			return Shape{}, fmt.Errorf("%s: pools[%d]: %w", scenario, i, err)
+		}
 	}
 	return sh, nil
 }

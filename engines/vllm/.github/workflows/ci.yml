@@ -421,6 +421,10 @@ jobs:
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
           BLIS_ORACLE_CATALOG="$catalog" python -I oracle/quantization/oracle.py vllm-source check oracle/quantization/resolved.json
+      # speculative_config.synthetic_acceptance_length, resolved to per-position rates by vLLM's own
+      # function over a grid of lengths, valid and not (the sampler that consumes the rates needs a GPU).
+      - name: the synthetic acceptance resolutions are vLLM's own
+        run: python -I oracle/synthetic_acceptance/oracle.py vllm-source check rules/engineconfig/testdata/synthetic_acceptance.json
       # The lowering (core/lower) is held to vLLM's own CUDA-graph capture, dispatch and
       # data-parallel padding code, run unmodified with only the all-reduce supplied (FID-1,
       # FID-8). The committed answers must equal what the pinned release gives now.

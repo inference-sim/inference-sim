@@ -7,6 +7,7 @@ package engineconfig
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -109,6 +110,18 @@ func validateEngine(p *rules.Problems, at string, e Engine) {
 		}
 		if m := sp.RejectionSampleMethod; m != "" && !rejectionSampleMethods[m] {
 			p.Field(at+".engine.speculative.rejection_sample_method", "%q is not standard, synthetic or block", m)
+		}
+		if l := sp.SyntheticAcceptanceLength; l != nil {
+			// SpeculativeConfig._resolve_synthetic_acceptance_rates and the check that follows it
+			// (vllm/config/speculative.py:566-598, 1832-1847@5df63a72).
+			switch {
+			case sp.RejectionSampleMethod != "synthetic":
+				p.Field(at+".engine.speculative.synthetic_acceptance_length",
+					"is only valid with rejection_sample_method synthetic, which this block states as %q", sp.RejectionSampleMethod)
+			case math.IsNaN(*l) || *l < 1 || *l > float64(sp.NumSpecTokens+1):
+				p.Field(at+".engine.speculative.synthetic_acceptance_length",
+					"must be in [1, %d] (num_spec_tokens + 1), got %v", sp.NumSpecTokens+1, *l)
+			}
 		}
 	}
 	validateSchedulerKnobs(p, at, e)

@@ -379,6 +379,14 @@ type Speculative struct {
 	// EnableAdaptiveVerification sizes the verification budget from per-request confidence;
 	// DSpark only (vllm/config/speculative.py:551@5df63a72). Tri-state: nil is false.
 	EnableAdaptiveVerification *bool `yaml:"enable_adaptive_verification,omitempty"`
+	// SyntheticAcceptanceLength is the target mean acceptance length of synthetic rejection
+	// sampling, in [1, num_spec_tokens+1]: vLLM resolves it to per-position unconditional rates
+	// by the minimum-variance schedule (vllm/config/speculative.py:545-549, 557-598@5df63a72). It
+	// is valid only with rejection_sample_method synthetic. Here it is the supplied acceptance
+	// profile of the run, at the rank of the scenario's own pin (compat/kernelmodel
+	// AcceptanceWithEngine); the schedule is the one blis-substrate's acceptance.MinimumVarianceRates
+	// derives. Nil is unstated.
+	SyntheticAcceptanceLength *float64 `yaml:"synthetic_acceptance_length,omitempty"`
 }
 
 // Sample-method vocabularies of vLLM v0.32.0 (vllm/config/speculative.py:84-85@5df63a72).

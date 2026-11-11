@@ -121,7 +121,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   - not a key of the engine block, so a deployment that states it is refused when the block
     is decoded (an unknown key), and a run that does not state it runs vLLM's default: `attention_backend`,
     `attention_config.backend` (blis-vllm#80), `attention_config.indexer_sparse_logits` (#84),
-    `speculative_config.synthetic_acceptance_length` (#88), `kv_offloading_backend` (#87) and the
+    `kv_offloading_backend` (#87) and the
     environment variable `VLLM_USE_SIMPLE_KV_OFFLOAD` (#87, refused by the block's `env`);
   - a deployment field, not a key of the engine block, that the engine reads from the deployment:
     `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
@@ -137,6 +137,8 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   and `mxfp4` are refused with vLLM's reason or the kernel's (`mxfp4`'s 68-byte record is not what the graph
   prices); on MiniMax-M3 `auto` and `bf16` size the indexer cache and any other value is refused; a model with
   no indexer cache refuses every value but `auto` (blis-vllm#84). The covered class is `auto` and `fp8`.
+  `speculative_config.synthetic_acceptance_length` is `modelled` (blis-vllm#88): with `rejection_sample_method: synthetic` it is the run's supplied
+  acceptance length, in [1, num_spec_tokens + 1], taken at the rank of the scenario's pin; `synthetic` without it is refused.
 - **Value classes** (VLM-3) are in `fields/value_classes.json`, generated from the same
   pinned source by `fields/gen_classes.py` for every `modelled` and `proven_inert` field: for a
   boolean or enumerated field the values (a value some comparison singles out is a class, the

@@ -32,6 +32,54 @@ type AcceptanceOverrides struct {
 	FallbackCategory string
 }
 
+// SyntheticAcceptanceSource names the engine block's synthetic_acceptance_length as the source of a
+// pinned acceptance value.
+const SyntheticAcceptanceSource = "engine.speculative.synthetic_acceptance_length"
+
+// AcceptanceWithEngine is the scenario's acceptance pin with the pool's engine-block acceptance
+// stated in it. A block that states speculative.synthetic_acceptance_length together with
+// rejection_sample_method synthetic tells vLLM the mean acceptance length every verification
+// step has; here that is the run's supplied acceptance profile (the registry's "map onto a supplied
+// profile"), and it takes the rank of the scenario's own pin: above the registry and the workload,
+// below the command line. vLLM turns the length into per-position rates by the minimum-variance
+// schedule (SpeculativeConfig._acceptance_length_to_rates), which the resolver derives for a
+// length alone (acceptance.MinimumVarianceRates). A pin that already states a value must state
+// this one: two different acceptance values for one run are refused, not resolved by order.
+// A block that states none returns the pin as given.
+func AcceptanceWithEngine(pin *acceptance.Pin, e engineconfig.Engine) (*acceptance.Pin, error) {
+	sp := e.Speculative
+	if sp == nil || sp.SyntheticAcceptanceLength == nil {
+		return pin, nil
+	}
+	l := *sp.SyntheticAcceptanceLength
+	if pin == nil {
+		return &acceptance.Pin{Value: &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l,
+			Source: SyntheticAcceptanceSource}}, nil
+	}
+	if v := pin.Value; v != nil {
+		if v.NumSpecTokens != sp.NumSpecTokens || v.AcceptanceLength == nil || *v.AcceptanceLength != l {
+			return nil, fmt.Errorf("engine.speculative.synthetic_acceptance_length %v at num_spec_tokens %d contradicts the "+
+				"acceptance the scenario pins (%s); state one, or the same value in both", l, sp.NumSpecTokens, describeValue(v))
+		}
+		return pin, nil
+	}
+	merged := *pin
+	merged.Value = &acceptance.Value{NumSpecTokens: sp.NumSpecTokens, AcceptanceLength: &l, Source: SyntheticAcceptanceSource}
+	return &merged, nil
+}
+
+// describeValue is a pinned value for a refusal.
+func describeValue(v *acceptance.Value) string {
+	switch {
+	case v.AcceptanceLength != nil:
+		return fmt.Sprintf("acceptance_length %v at num_spec_tokens %d", *v.AcceptanceLength, v.NumSpecTokens)
+	case v.AcceptanceRate != nil:
+		return fmt.Sprintf("acceptance_rate %v at num_spec_tokens %d", *v.AcceptanceRate, v.NumSpecTokens)
+	default:
+		return fmt.Sprintf("per-position rates at num_spec_tokens %d", v.NumSpecTokens)
+	}
+}
+
 // resolveRequest is acceptance.Resolve; a test replaces it to see the request a pool makes.
 var resolveRequest = acceptance.Resolve
 
@@ -56,6 +104,10 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 	if !adaptiveVerification(e) || e.Speculative.NumSpecTokens <= 0 {
 		return nil, nil
 	}
+	pin, err := AcceptanceWithEngine(in.Scenario.Acceptance, e)
+	if err != nil {
+		return nil, err
+	}
 	req := acceptance.Request{
 		Model:             in.Scenario.Model,
 		Drafter:           e.Speculative.DraftModel,
@@ -64,7 +116,7 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 		NumSpecTokens:     e.Speculative.NumSpecTokens,
 		Hardware:          in.Chip.Name,
 		Workload:          bindingAcceptanceTerms(in.Scenario.Workload),
-		Scenario:          in.Scenario.Acceptance,
+		Scenario:          pin,
 		CLI:               o.CLI,
 		FallbackCategory:  o.FallbackCategory,
 	}

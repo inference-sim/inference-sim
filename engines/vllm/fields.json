@@ -10739,9 +10739,19 @@
     {
       "name": "speculative_config.synthetic_acceptance_length",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#88"
+        "traces": [
+          "compat/kernelmodel/synthetic_acceptance_test.go",
+          "rules/engineconfig/synthetic_acceptance_test.go",
+          "rules/engineconfig/testdata/synthetic_acceptance.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "leave_unset"

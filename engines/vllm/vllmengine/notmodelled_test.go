@@ -101,6 +101,7 @@ var engineKeys = map[string][]string{
 	"speculative.kv_cache_dtype":               {"speculative_config.kv_cache_dtype"},
 	"speculative.draft_sample_method":          {"speculative_config.draft_sample_method"},
 	"speculative.rejection_sample_method":      {"speculative_config.rejection_sample_method"},
+	"speculative.synthetic_acceptance_length":  {"speculative_config.synthetic_acceptance_length"},
 	"speculative.enable_adaptive_verification": {"speculative_config.enable_adaptive_verification"},
 	"engram_config.cpu_offload":                {"engram_config.cpu_offload"},
 	"engram_config.dp_shared_memory":           {"engram_config.dp_shared_memory"},
@@ -445,17 +446,33 @@ func TestADeploymentStatesDPSyncInterval(t *testing.T) {
 
 // rejection_sample_method is not_modelled (#29) only for the value that fixes the acceptance length.
 // "standard" and "block", the values recorded runs state, are accepted: acceptance is supplied, so
-// they decide nothing the engine takes from the setting. "synthetic" is refused.
+// they decide nothing the engine takes from the setting. "synthetic" fixes the length, which the
+// run supplies as speculative_config.synthetic_acceptance_length (#88): with it the block is
+// accepted, as the run's supplied acceptance profile; without it, as vLLM refuses it
+// (vllm/config/speculative.py:575), it is refused.
 func TestOnlySyntheticRejectionSamplingIsRefused(t *testing.T) {
 	Register()
 	for _, c := range []struct {
 		method  string
+		length  string
 		refused bool
-	}{{"standard", false}, {"block", false}, {"synthetic", true}} {
-		extra := "speculative: {method: eagle3, num_spec_tokens: 3, rejection_sample_method: " + c.method + "}\n"
+	}{
+		{"standard", "", false}, {"block", "", false}, {"synthetic", "", true},
+		{"synthetic", ", synthetic_acceptance_length: 2.5", false},
+		{"synthetic", ", synthetic_acceptance_length: 4.0", false},
+		{"synthetic", ", synthetic_acceptance_length: 4.5", true},
+		{"synthetic", ", synthetic_acceptance_length: 0.5", true},
+		{"block", ", synthetic_acceptance_length: 2.5", true},
+		{"", ", synthetic_acceptance_length: 2.5", true},
+	} {
+		extra := "speculative: {method: eagle3, num_spec_tokens: 3"
+		if c.method != "" {
+			extra += ", rejection_sample_method: " + c.method
+		}
+		extra += c.length + "}\n"
 		_, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, extra)})
 		if c.refused != (err != nil) {
-			t.Errorf("rejection_sample_method %s: err %v, want refused %t", c.method, err, c.refused)
+			t.Errorf("rejection_sample_method %q%s: err %v, want refused %t", c.method, c.length, err, c.refused)
 		}
 	}
 }

@@ -636,11 +636,15 @@ var unreadSettings = []unreadSetting{
 	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype", issueBase + "80",
 		func(e engineconfig.Engine) bool { return e.Speculative != nil && e.Speculative.KVCacheDType != "" }},
 	// SpeculativeConfig.rejection_sample_method: "standard" (vllm/config/speculative.py:529@5df63a72).
-	// Only "synthetic" fixes the acceptance length (:532-548) and is refused; "block", which recorded
-	// runs state, decides which drafts are accepted, and acceptance is an input (#29).
+	// Only "synthetic" fixes the acceptance length (:532-548). It is accepted with
+	// synthetic_acceptance_length, the run's supplied acceptance profile, which vLLM resolves to the
+	// rates the acceptance resolver derives; stated alone it is refused, as vLLM refuses it (:575).
+	// "block", which recorded runs state, decides which drafts are accepted, and acceptance is an
+	// input (#29).
 	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method", issueBase + "29",
 		func(e engineconfig.Engine) bool {
-			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic"
+			return e.Speculative != nil && e.Speculative.RejectionSampleMethod == "synthetic" &&
+				e.Speculative.SyntheticAcceptanceLength == nil
 		}},
 	// mamba_cache_mode and mamba_ssm_cache_dtype are not listed: a model hook rewrites them, so what
 	// differs from the default is decided on the resolved value (checkMambaCache).

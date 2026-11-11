@@ -9899,6 +9899,88 @@
     "name": "speculative_config.num_speculative_tokens"
    }
   },
+  "speculative_config.synthetic_acceptance_length": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "float",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "compat/kernelmodel/synthetic_acceptance_test.go",
+       "rules/engineconfig/synthetic_acceptance_test.go"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/config/speculative.py:1842"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/speculative.py:1842",
+      "expr": "self.synthetic_acceptance_length is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 2,
+      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 2.84,
+      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 3,
+      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 4,
+      "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 2.84,
+      "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 3.5,
+      "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "speculative_config.synthetic_acceptance_length"
+   }
+  },
   "stream_interval": {
    "value_classes": {
     "type": "numeric",

@@ -54,6 +54,29 @@
    }
   ]
  },
+ "speculative_config.synthetic_acceptance_length": {
+  "stated": [
+   {
+    "trace": "rules/engineconfig/synthetic_acceptance_test.go",
+    "values": [
+     1,
+     2,
+     2.84,
+     3,
+     4
+    ],
+    "why": "TestSyntheticAcceptanceLengthIsVLLMsOwnResolution states every length of oracle/synthetic_acceptance's grid (1, 1.1, 1.5, 2, 2.5, 2.84, 3, 10/3, K, K+0.5, K+1 for K 1 to 8) with rejection_sample_method synthetic and finds vLLM's rates equal acceptance.MinimumVarianceRates, bit for bit, and each length outside [1, K+1] refused by the block as by vLLM"
+   },
+   {
+    "trace": "compat/kernelmodel/synthetic_acceptance_test.go",
+    "values": [
+     2.84,
+     3.5
+    ],
+    "why": "TestSyntheticAcceptanceLengthIsTheRunsSuppliedAcceptance states 3.5 at 7 drafts in the engine block, with no scenario pin, with the same pin and with the pin 2.84, and finds it the run's pinned acceptance, unchanged beside the same value and refused beside another; TestSyntheticAcceptanceLengthResolvesToVLLMsSchedule finds the resolver derive vLLM's rates from it"
+   }
+  ]
+ },
  "compilation_config.max_cudagraph_capture_size": {
   "stated": [
    {
