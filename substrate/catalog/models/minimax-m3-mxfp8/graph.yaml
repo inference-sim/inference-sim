@@ -158,6 +158,17 @@ stack:
   - sparse_attn_moe
   repeat: 57
 modality: text_decoder_of_multimodal
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 200064
+  row_bytes: 12288
+  rows_per_token: 1
+  out_bytes_per_token: 12288
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
 head:
 - op: Elementwise
   role: final_norm

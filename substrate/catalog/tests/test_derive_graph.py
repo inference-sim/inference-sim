@@ -7934,3 +7934,42 @@ def test_modelopt_stacked_loader_rename_excludes_the_fused_projection(tmp_path):
     # Without the q_proj entry the fused projection is quantized.
     raw["quantization_config"]["ignore"] = [p for p in ignore if not p.endswith("q_proj")]
     assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["qkv_proj"] == {"nvfp4"}
+
+
+# --- MiniMax-M3 token embedding, in every variant --------------------------------------------
+
+MINIMAX_M3_FAMILY = ("minimax-m3", "minimax-m3-mxfp8")
+
+
+@pytest.mark.parametrize("name", MINIMAX_M3_FAMILY)
+def test_minimax_m3_graphs_state_the_token_embedding_the_engine_runs(name):
+    """VocabParallelEmbedding (models/minimax_m3/nvidia/model.py:817-822@v0.32.0): a vocabulary
+    shard per rank, the partial rows all-reduced (vocab_parallel_embedding.py:522-563). The
+    table is BF16 [200064, 6144] in every variant's header (model.embed_tokens is in the
+    exclusion list), so a row is 12,288 bytes. An EAGLE3 drafter aliases `embedding.embed_tokens`,
+    so the node must be there for the pair to validate."""
+    g = graph_of(MODELS / name)
+    gather, reduce = g["embedding"]
+    assert gather == {"op": "Gather", "role": "embed_tokens", "rows": 200064, "row_bytes": 12288,
+                      "rows_per_token": 1, "out_bytes_per_token": 12288, "shard": "rows"}
+    assert reduce == {"op": "AllReduce", "role": "embed_out", "emit": "tensor_parallel"}
+    assert gather["rows"] == text_config(config_of(MODELS / name))["vocab_size"]
+
+
+def test_minimax_m3_embedding_follows_the_vocabulary_and_width_of_the_config(tmp_path):
+    """Known-bad: a table the config does not describe is not the one stated. A vocabulary or
+    hidden width changed in the config moves the node, so it is derived and not copied."""
+    raw = json.loads(json.dumps(config_of(MODELS / "minimax-m3")))
+    raw["text_config"]["vocab_size"] = 1000
+    g = _derive_raw(raw, tmp_path, "minimax-m3")
+    assert g["embedding"][0]["rows"] == 1000 and g["embedding"][0]["row_bytes"] == 12288
+
+
+def test_minimax_m31_flash_states_the_same_embedding(tmp_path):
+    """The handler is shared, so MiniMax-M3.1-Flash (whose config is pinned by hash and not
+    committed) gets the node too, from the keys the test carries; the nightly job re-derives the
+    committed graph from the fetched file."""
+    g = _m31_graph(tmp_path)
+    assert [n["role"] for n in g["embedding"]] == ["embed_tokens", "embed_out"]
+    assert g["embedding"][0]["rows"] == 200064 and g["embedding"][0]["row_bytes"] == 12288
+    assert graph_of(MODELS / "minimax-m3.1-flash")["embedding"] == g["embedding"]

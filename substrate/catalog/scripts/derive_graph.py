@@ -4206,15 +4206,27 @@ def handler_minimax_m3(cfg, raw, model):
     kinds = [{"id": kid, "nodes": nodes, "edges": chain(nodes)}
              for kid, nodes in built.values() if kid in sequence]
     kinds.sort(key=lambda k: sequence.index(k["id"]))
-    extras = {}
+    # The token embedding is a VocabParallelEmbedding (models/minimax_m3/nvidia/model.py:817-822@
+    # v0.32.0): each rank looks up its vocabulary shard and the partial rows are all-reduced
+    # (vocab_parallel_embedding.py:522-563). It is stored at the checkpoint's base width in every
+    # variant, MXFP8 and mixed-precision ones included: the exclusion list names
+    # `model.embed_tokens`, so no quantization method reaches it. The graph states it so that a
+    # drafter that reads the target's table (an EAGLE3 head aliases `embedding.embed_tokens`)
+    # names a node of this graph, and so that the lookup and its reduction are priced as the
+    # engine runs them.
+    vocab = int(require(cfg, "vocab_size", model))
+    row = hidden * DTYPE_WIDTHS[base_dtype(cfg, raw, model)]
+    extras = {"embedding": [
+        {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": row,
+         "rows_per_token": 1, "out_bytes_per_token": row, "shard": "rows"},
+        collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL)]}
     if routed_width:
         # The ignored_layers list names lm_head, so it is stored at the base width and not
         # at the MXFP8 of the rest (checkpoint BF16 [200064, 6144]).
         extras["head"] = [norm("final_norm"),
-                          {**gemm("lm_head", int(require(cfg, "vocab_size", model)), hidden),
+                          {**gemm("lm_head", vocab, hidden),
                            "weight_dtype": base_dtype(cfg, raw, model)}]
-        return kinds, compress(sequence), extras
-    return kinds, compress(sequence)
+    return kinds, compress(sequence), extras
 
 
 # The keys a MiniMax-M3.1 DSpark draft config states that the engine reads, and the ones it states
