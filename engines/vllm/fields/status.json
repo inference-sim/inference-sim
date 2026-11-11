@@ -2395,7 +2395,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#77"
+    "issue": "inference-sim/blis-registry#75"
    },
    "status": "not_modelled"
   },
@@ -3261,7 +3261,7 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#77"
+    "issue": "inference-sim/blis-registry#75"
    },
    "status": "not_modelled"
   },
