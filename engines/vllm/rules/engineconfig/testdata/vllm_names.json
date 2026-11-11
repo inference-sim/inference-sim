@@ -32,7 +32,8 @@
    "method": true,
    "model": true,
    "num_speculative_tokens": true,
-   "rejection_sample_method": true
+   "rejection_sample_method": true,
+   "synthetic_acceptance_length": true
   }
  },
  "top": {

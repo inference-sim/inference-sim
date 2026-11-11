@@ -67,8 +67,9 @@ speculative_config:
     model: dsv4-mtp
     kv_cache_dtype: fp8
     draft_sample_method: greedy
-    rejection_sample_method: standard
+    rejection_sample_method: synthetic
     enable_adaptive_verification: true
+    synthetic_acceptance_length: 2.5
 engram_config:
     cpu_offload: false
     dp_shared_memory: true

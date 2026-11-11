@@ -45,6 +45,7 @@ GROUPS = {
                                            "draft_model": "model", "kv_cache_dtype": "kv_cache_dtype",
                                            "draft_sample_method": "draft_sample_method",
                                            "rejection_sample_method": "rejection_sample_method",
+                                           "synthetic_acceptance_length": "synthetic_acceptance_length",
                                            "enable_adaptive_verification": "enable_adaptive_verification"}),
 }
 KEY = re.compile(r"^(\s*)([A-Za-z_][A-Za-z0-9_]*):(.*)$")

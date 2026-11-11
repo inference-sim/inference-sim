@@ -14,7 +14,7 @@ import (
 
 // museSyntheticScenario is the Muse adaptive scenario with its acceptance pin and speculative block
 // rewritten: the block states rejection_sample_method synthetic and a synthetic_acceptance_length
-// (blockLine), and the scenario's own pin is as pin gives it (empty removes it).
+// (blockLine, a flow-mapping fragment), and the scenario's own pin is as pin gives it (empty removes it).
 func museSyntheticScenario(t *testing.T, pin, blockLine string) (Repos, string) {
 	t.Helper()
 	src, err := os.ReadFile(filepath.Join("..", "..", "vllmengine", "testdata", "muse-gb200-nvl-tep8-dspark-adaptive.yaml"))
@@ -28,11 +28,11 @@ func museSyntheticScenario(t *testing.T, pin, blockLine string) (Repos, string) 
 		t.Fatal("the scenario's acceptance pin was not found")
 	}
 	s = s[:i] + pin + s[j:]
-	const block = "        rejection_sample_method: block\n"
+	const block = "rejection_sample_method: block"
 	if !strings.Contains(s, block) {
-		t.Fatal("the scenario's rejection_sample_method line was not found")
+		t.Fatal("the scenario's rejection_sample_method was not found")
 	}
-	s = strings.Replace(s, block, "        rejection_sample_method: synthetic\n"+blockLine, 1)
+	s = strings.Replace(s, block, "rejection_sample_method: synthetic"+blockLine, 1)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(s), 0o600); err != nil {
 		t.Fatal(err)
@@ -48,7 +48,7 @@ func museSyntheticScenario(t *testing.T, pin, blockLine string) (Repos, string) 
 // value it changes nothing; beside another value it is refused.
 func TestSyntheticAcceptanceLengthIsTheRunsSuppliedAcceptance(t *testing.T) {
 	// No pin: the block's length is the pin.
-	r, name := museSyntheticScenario(t, "", "        synthetic_acceptance_length: 3.5\n")
+	r, name := museSyntheticScenario(t, "", ", synthetic_acceptance_length: 3.5")
 	sh, err := ShapeOf(name, r)
 	if err != nil {
 		t.Fatal(err)
@@ -63,13 +63,13 @@ func TestSyntheticAcceptanceLengthIsTheRunsSuppliedAcceptance(t *testing.T) {
 
 	// The pin states the same value: unchanged, and the scenario's own source is kept.
 	same := "acceptance:\n  value:\n    num_spec_tokens: 7\n    acceptance_length: 3.5\n    source: \"the scenario's own\"\n"
-	r, name = museSyntheticScenario(t, same, "        synthetic_acceptance_length: 3.5\n")
+	r, name = museSyntheticScenario(t, same, ", synthetic_acceptance_length: 3.5")
 	if sh, err = ShapeOf(name, r); err != nil || sh.Acceptance == nil || sh.Acceptance.Value.Source != "the scenario's own" {
 		t.Errorf("the same value in both: %+v (%v), want the scenario's pin unchanged", sh.Acceptance, err)
 	}
 
 	// The pin states another: refused, naming both.
-	r, name = museSyntheticScenario(t, strings.Replace(same, "3.5", "2.84", 1), "        synthetic_acceptance_length: 3.5\n")
+	r, name = museSyntheticScenario(t, strings.Replace(same, "3.5", "2.84", 1), ", synthetic_acceptance_length: 3.5")
 	if _, err = ShapeOf(name, r); err == nil || !strings.Contains(err.Error(), "contradicts the acceptance the scenario pins") {
 		t.Errorf("a conflicting pin: %v, want a refusal", err)
 	}

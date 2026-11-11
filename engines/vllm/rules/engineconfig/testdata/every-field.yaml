@@ -43,7 +43,7 @@ dbo_decode_token_threshold: 32
 dbo_prefill_token_threshold: 0
 enable_eplb: true
 eplb_config: {num_redundant_experts: 32, window_size: 1000, step_interval: 3000}
-speculative_config: {method: mtp, num_speculative_tokens: 3, model: dsv4-mtp, kv_cache_dtype: fp8, draft_sample_method: greedy, rejection_sample_method: standard, enable_adaptive_verification: true}
+speculative_config: {method: mtp, num_speculative_tokens: 3, model: dsv4-mtp, kv_cache_dtype: fp8, draft_sample_method: greedy, rejection_sample_method: synthetic, synthetic_acceptance_length: 2.5, enable_adaptive_verification: true}
 engram_config: {cpu_offload: false, dp_shared_memory: true, use_thp: false}
 dcp_comm_backend: ag_rs
 dcp_q_replicate: true

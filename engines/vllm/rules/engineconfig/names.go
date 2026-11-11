@@ -51,6 +51,7 @@ var moves = []move{
 	{"speculative.kv_cache_dtype", "speculative_config.kv_cache_dtype"},
 	{"speculative.draft_sample_method", "speculative_config.draft_sample_method"},
 	{"speculative.rejection_sample_method", "speculative_config.rejection_sample_method"},
+	{"speculative.synthetic_acceptance_length", "speculative_config.synthetic_acceptance_length"},
 	{"speculative.enable_adaptive_verification", "speculative_config.enable_adaptive_verification"},
 }
 
