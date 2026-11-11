@@ -195,6 +195,25 @@ def test_router_entries_link_every_citation_at_its_commit(cat):
             assert f"/blob/{c['commit']}/{c['path']}#L" in text
 
 
+def test_a_mapped_router_entry_prints_its_differences_and_its_bound(cat):
+    text = pages.routers_entries(cat)
+    mapped = [(n, e) for n, e in cat.routers.items() if e["policy"] != "none"]
+    assert mapped, "the catalog maps at least one router mode"
+    for name, e in mapped:
+        section = text.split(f"### `{name}`")[1].split("### `")[0]
+        for d in e["difference"]:
+            assert d["aspect"] in section
+        for r in e["bound"]["ratios"]:
+            assert f"{r['max_ratio']:.2f}" in section and r["metric"] in section
+        assert e["bound"]["evidence"]["sha256"] in section
+        assert all(" ".join(str(x).split()) in section for x in e["bound"]["not_measured"])
+        row = next(r for r in pages.routers_table(cat).splitlines() if r.startswith(f"| `{name}`"))
+        assert row.rstrip(" |").endswith(pages.bound_summary(e))
+    for name, e in cat.routers.items():
+        if e["policy"] == "none":
+            assert "bound" not in e and "difference" not in e
+
+
 def test_citation_link_anchors_a_line_and_a_range():
     base = {"repository": "o/r", "commit": "a" * 40, "path": "p.go"}
     assert pages.citation_link({**base, "lines": "7"}).endswith(f"/p.go#L7)")

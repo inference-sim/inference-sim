@@ -1,0 +1,354 @@
+# Dynamo's frontend in its random mode. The entry maps it to llm-d's round-robin policy, the
+# nearest in the closed list, and measures what the stand-in costs on BLIS: the first group of
+# ratios is the ratio between round-robin and llm-d's random picker, the policy that matches
+# Dynamo's draw. Every citation is a line of a router's own code at the commit named, or of
+# llm-d's router at the commit the module tag v1.0.0-blis.3 of inference-sim/llm-d-router points to.
+kind: RouterMapping
+router: dynamo
+mode: random
+revisions:
+  - 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+policy: round-robin
+reason: >-
+  Dynamo's random mode and llm-d's round-robin policy both choose a worker without reading load,
+  so over a long run each worker gets the same share of requests and neither reacts to a worker
+  that falls behind. Dynamo draws a uniform random number for each request and keeps nothing
+  between requests; llm-d's policy rotates, so its counts are equal to within one at every
+  moment and a random draw's are not. llm-d has a random picker that matches Dynamo's draw
+  more closely. It is not in the table's closed list of policies, so the entry maps to the
+  nearest policy that is, and the first group of ratios in the bound is what that costs: the
+  ratio between round-robin and the random picker on BLIS itself.
+difference:
+  - aspect: draw
+    text: >-
+      Dynamo draws a uniform random 64-bit value for each request and takes it modulo the
+      number of available instances, with no state (push_router.rs 379-392). llm-d's
+      round-robin takes the next value of a counter (picker.go 108-117, common.go 79-87), so
+      successive requests go to successive endpoints. Over a window the random draw gives a
+      binomial spread of counts across workers and runs of requests to one worker, which the
+      rotation does not. BLIS's stand-in is smoother than the mode it stands for.
+    evidence: [2, 4, 5]
+  - aspect: nearest-composition
+    text: >-
+      llm-d's random picker shuffles the candidates and takes the first (random/picker.go 94-97)
+      and matches Dynamo's draw more closely than the rotation does. The sweep ran it as
+      random-picker. It is not in the closed list of policies, so the entry does not map to it;
+      the first group of ratios in the bound is the ratio between round-robin and it.
+    evidence: [6]
+  - aspect: frontends
+    text: >-
+      Several frontends do not change the mode: independent uniform draws merged are still
+      uniform, so Dynamo's mode is the same however many frontends a deployment runs. Nothing
+      here differs on that account.
+    evidence: [2]
+  - aspect: load-blind
+    text: >-
+      Neither mode reads load, so neither reacts to a worker that falls behind. A policy that
+      does (least-active-requests, default, queue-scorer) is not this mode; the second group of
+      ratios in the bound is what a wrong guess of the mode would cost.
+    evidence: [2, 4]
+bound:
+  evidence:
+    file: registry/docs/router-sensitivity/runs.csv
+    sha256: f54dad99e89c657fb03e9484c2699303754bb2e2750dbffcaf9c670ae8cd1ec2
+    producer: inference-sim/inference-sim
+    commit: 780f661ef9c18a2a9928acf8a63a67667cd597c0
+    command: python3 -I registry/docs/router-sensitivity/sweep.py --blis <blis built from the commit> --work <scratch directory> --out runs.csv
+  ratios:
+    - metric: ttft_p50_ms
+      against: [random-picker]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.07
+    - metric: ttft_p99_ms
+      against: [random-picker]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.11
+    - metric: tpot_p50_ms
+      against: [random-picker]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.01
+    - metric: output_tok_s
+      against: [random-picker]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.01
+    - metric: ttft_p50_ms
+      against: [random-picker]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.13
+    - metric: ttft_p99_ms
+      against: [random-picker]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.19
+    - metric: tpot_p50_ms
+      against: [random-picker]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.01
+    - metric: output_tok_s
+      against: [random-picker]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.04
+    - metric: ttft_p50_ms
+      against: [random-picker]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.09
+    - metric: ttft_p99_ms
+      against: [random-picker]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.10
+    - metric: tpot_p50_ms
+      against: [random-picker]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.01
+    - metric: output_tok_s
+      against: [random-picker]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.01
+    - metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.55
+    - metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.05
+    - metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.09
+    - metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: balanced
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.12
+    - metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.18
+    - metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.65
+    - metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.04
+    - metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: prefill-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.16
+    - metric: ttft_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.41
+    - metric: ttft_p99_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.26
+    - metric: tpot_p50_ms
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.06
+    - metric: output_tok_s
+      against: [default, least-active-requests, queue-scorer]
+      regime:
+        workload: decode-bound
+        concurrency_min: 16
+        concurrency_max: 1024
+        model: minimax-m2.5
+        hardware: gb200-nvl72
+        shapes: [1P3D, 2P3D, 3P2D, 4P1D]
+      max_ratio: 1.07
+  not_measured:
+    - One model (minimax-m2.5) on one part (gb200-nvl72) over NIXL on ib-400g, served by vLLM 0.32.0. Another model or part moves where the pools saturate, and with it where the large ratios sit.
+    - Closed-loop clients with fixed prompt and output lengths. No run had a prefix shared between requests, a session of several turns, a spread of lengths, or an open-loop arrival rate.
+    - Concurrency 16, 64, 256 and 1024 only, and the pool shapes 1P3D, 2P3D, 3P2D and 4P1D only, with one-GPU prefill instances and four-GPU decode instances. Ratios between the swept points, and larger pools, were not run.
+    - The ratios are between policies inside BLIS. No run behind Dynamo was compared with a run of BLIS, so how far Dynamo's real behaviour is from either policy is not measured.
+    - Time to first token, at 64 to 256 clients, is where the ratios against the policies that read load are large. The bound does not hold tightly there, and a ranking by TTFT p50 or p99 in that regime should not rest on this substitution. Time per output token and throughput move far less, except at the extremes of concurrency.
+    - The random picker is the policy closest to this mode, and the first group of ratios is measured against it, but a mapping to it is not offered by the table; adding it to the closed list is a separate change with its defining file cited.
+evidence:
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: components/src/dynamo/common/configuration/groups/router_args.py
+    lines: "77-84"
+    claim: The frontend's router-mode argument accepts random among its choices, so a recipe can run it.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "156-168"
+    claim: The router modes are an enum with round-robin as its default and random as the second mode.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "379-392"
+    claim: Random mode draws a random 64-bit value for each request and selects the available instance at that value modulo their number; it keeps no state between requests.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/runtime/src/component/client.rs
+    lines: "166-168"
+    claim: The list the draw indexes is the client's available instances.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go
+    lines: "108-117"
+    claim: The max-score picker draws the counter at every pick and rotates each group of tied endpoints by it, which is the round-robin policy's rotation.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/framework/plugins/scheduling/picker/common.go
+    lines: "79-87"
+    claim: NextCounter returns one monotonically increasing counter.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/framework/plugins/scheduling/picker/random/picker.go
+    lines: "94-97"
+    claim: The random picker shuffles the candidates uniformly with the runtime's random source and ignores scores.

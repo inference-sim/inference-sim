@@ -13,3 +13,6 @@ you can copy.</p>
 [Validate documents from Go](go.md)
 :   Load documents, validate them together, read the report, and resolve names against a
     catalog directory.
+
+[Measure how far the router policy moves a figure](router-sensitivity.md)
+:   Run the sweep behind the router table's bounds, read its ratios, and see what they leave out.

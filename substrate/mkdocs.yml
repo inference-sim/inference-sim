@@ -145,6 +145,7 @@ nav:
     - Validate the catalog and the registry: contracts/guides/checkouts.md
     - Write a scenario and a deployment: contracts/guides/authoring.md
     - Validate documents from Go: contracts/guides/go.md
+    - Measure how far the router policy moves a figure: contracts/guides/router-sensitivity.md
   - Reference:
     - contracts/reference/index.md
     - Scenario: contracts/reference/scenario.md

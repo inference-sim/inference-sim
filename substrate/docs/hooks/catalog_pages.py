@@ -649,22 +649,57 @@ def citation_link(c: dict[str, Any]) -> str:
     return f"[{c['repository']}@{c['commit'][:12]}:{c['path']}:{c['lines']}]({url})"
 
 
+def bound_summary(e: dict[str, Any]) -> str:
+    """The largest ratio a bound states, for the table: a dash for an entry with no bound."""
+    ratios = (e.get("bound") or {}).get("ratios") or []
+    return f"{max(r['max_ratio'] for r in ratios):.2f}" if ratios else "—"
+
+
 def routers_table(cat: Catalog) -> str:
     rows = []
     for name, e in sorted(cat.routers.items(), key=lambda kv: router_key(kv[1])):
         ttl = e.get("session_affinity_ttl_s")
         n = Counter(c["side"] for c in e["evidence"])
         rows.append([f"`{name}`", e["router"], e["mode"], "—" if ttl is None else str(ttl),
-                     f"`{e['policy']}`", f"{n['router']} / {n['llm-d']}"])
+                     f"`{e['policy']}`", f"{n['router']} / {n['llm-d']}", bound_summary(e)])
     return table(["Entry", "Router", "Mode", "Affinity TTL (s)", "llm-d policy",
-                  "Citations (router / llm-d)"], "lllrlr", rows)
+                  "Citations (router / llm-d)", "Largest ratio"], "lllrlrr", rows)
+
+
+def regime_text(g: dict[str, Any]) -> str:
+    lo, hi = g["concurrency_min"], g["concurrency_max"]
+    conc = f"concurrency {lo}" if lo == hi else f"concurrency {lo} to {hi}"
+    return f"{g['workload']}, {conc}, {g['model']} on {g['hardware']}, shapes {', '.join(g['shapes'])}"
+
+
+def bound_block(e: dict[str, Any]) -> list[str]:
+    """An entry's bound as the file states it: each ratio with its regime, the evidence, and what
+    the bound leaves out."""
+    b = e["bound"]
+    out = ["**Bound**\n",
+           table(["Figure", "Against", "Regime", "Largest ratio"], "lllr",
+                 [[f"`{r['metric']}`", ", ".join(f"`{a}`" for a in r["against"]), regime_text(r["regime"]),
+                   f"{r['max_ratio']:.2f}"] for r in b["ratios"]]),
+           "", f"Measured by `{b['evidence']['file']}` (sha256 `{b['evidence']['sha256']}`), produced by "
+           f"{b['evidence']['producer']} at `{b['evidence']['commit']}`; reproduce with `{b['evidence']['command']}`.", "",
+           "Not measured:\n"]
+    out += [f"- {' '.join(str(x).split())}" for x in b["not_measured"]]
+    out.append("")
+    return out
 
 
 def routers_entries(cat: Catalog) -> str:
-    """Each entry's reason and its citations, as the file states them."""
+    """Each entry's reason, differences, bound and citations, as the file states them."""
     out = []
     for name, e in sorted(cat.routers.items(), key=lambda kv: router_key(kv[1])):
         out.append(f"### `{name}`\n\n{' '.join(str(e['reason']).split())}\n")
+        if e.get("difference"):
+            out.append("**Differences**\n")
+            out += [f"- {d['aspect']}: {' '.join(str(d['text']).split())} "
+                    f"(citations {', '.join(str(i) for i in d['evidence'])})" for d in e["difference"]]
+            out.append("")
+        if e.get("bound"):
+            out += bound_block(e)
         for side, title in (("router", "The router"), ("llm-d", "llm-d's router")):
             out.append(f"**{title}**\n")
             out += [f"- {citation_link(c)}, for the {c['field'].replace('_', ' ')}: {c['claim']}"

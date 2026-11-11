@@ -171,7 +171,8 @@ Workload kinds:
 :   Closed loop, 256 prompt tokens and 2,048 output tokens.
 
 The list is closed because a bound is a statement about the workloads it names and no others:
-a kind joins it with the measurement that covers it. How the ratios are measured and what they leave out is stated where the evidence is committed.
+a kind joins it with the measurement that covers it. How the ratios are measured, how to
+reproduce them and what they leave out is in the [router sensitivity guide](../guides/router-sensitivity.md).
 
 ## What the validator refuses
 

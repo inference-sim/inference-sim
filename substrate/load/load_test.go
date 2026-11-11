@@ -322,8 +322,11 @@ func TestTheEmbeddedCatalogCarriesTheRouterTable(t *testing.T) {
 	}
 	const covered = "1682167d3c97f0fc8cd405dee51f17288eeaeb55"
 	e, out := d.LookupRouter("dynamo", "round-robin", nil, covered)
-	if out != routertable.OutcomeNoPolicy || e.Name != "dynamo-round-robin" || e.Policy != "none" {
-		t.Fatalf("LookupRouter(dynamo, round-robin) = %+v, %v", e, out)
+	if out != routertable.OutcomeMapped || e.Name != "dynamo-round-robin" || e.Policy != "round-robin" || len(e.Difference) == 0 || e.Bound == nil {
+		t.Fatalf("LookupRouter(dynamo, round-robin) = %+v, %v; want the round-robin mapping with its differences and bound", e, out)
+	}
+	if k, out := d.LookupRouter("dynamo", "kv", nil, covered); out != routertable.OutcomeNoPolicy || k.Policy != "none" || k.Bound != nil {
+		t.Errorf("LookupRouter(dynamo, kv) = %+v, %v; want the entry that records no policy is close enough", k, out)
 	}
 	// The same router and mode on a later Dynamo build is not covered by the entry: it stays
 	// router_unsupported rather than inheriting what was shown for the cited build.
@@ -338,7 +341,7 @@ func TestTheEmbeddedCatalogCarriesTheRouterTable(t *testing.T) {
 		router, mode string
 		ttl          *int
 	}{
-		"another mode":        {"dynamo", "kv", nil},
+		"another mode":        {"dynamo", "least-loaded", nil},
 		"another router":      {"vllm", "round-robin", nil},
 		"an affinity setting": {"dynamo", "round-robin", &ttl},
 	} {
