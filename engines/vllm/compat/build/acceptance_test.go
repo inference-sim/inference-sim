@@ -54,3 +54,25 @@ func TestResolveAcceptanceNamesTheDrafter(t *testing.T) {
 		t.Errorf("a run naming a separate drafter resolved to the exact profile of the model's own speculator: %+v", got.Res)
 	}
 }
+
+// The case the acceptance-request issue names: an MXFP8 target has no profile of its own and borrows the minimax-m3
+// profile of the same architecture, at every K the registry holds for eagle3. Without the architecture in
+// the request the lookup finds nothing.
+func TestAnMXFP8TargetBorrowsTheMiniMaxM3Profile(t *testing.T) {
+	data, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	terms := acceptance.Workload{Category: "coding", Thinking: acceptance.ThinkingOff}
+	for k := 1; k <= 5; k++ {
+		got, ok, err := ResolveAcceptance(AcceptanceInputs{
+			Scenario: "s", Shape: kernelmodel.Shape{Model: "minimax-m3-mxfp8"}, Data: data, Workload: &terms,
+		}, k, "eagle3")
+		if err != nil || !ok {
+			t.Fatalf("K %d: resolved %+v, %v, %v; want the minimax-m3 profile", k, got, ok, err)
+		}
+		if got.Res.Step != acceptance.StepOtherTarget || got.Res.Profile == nil || got.Res.Profile.Model != "minimax-m3" {
+			t.Errorf("K %d: resolved %+v, want minimax-m3's eagle3 profile borrowed by architecture", k, got.Res)
+		}
+	}
+}
