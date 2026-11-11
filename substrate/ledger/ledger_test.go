@@ -613,9 +613,24 @@ func TestANewPartitionVersionIsASeedRotationTheCheckAccepts(t *testing.T) {
 	}
 
 	for name, c := range map[string]*Config{
-		"version two ahead":               seed(testConfig(), "seed two", 3),
-		"version back":                    seed(testConfig(), "seed zero", 0),
-		"new version with the same seed":  seed(testConfig(), "seed one", 2),
+		"version two ahead":              seed(testConfig(), "seed two", 3),
+		"version back":                   seed(testConfig(), "seed zero", 0),
+		"new version with the same seed": seed(testConfig(), "seed one", 2),
+		"new version, same sha256, only the generator changed": func() *Config {
+			c := seed(testConfig(), "seed one", 2)
+			c.Seed.GeneratedBy = "someone else"
+			return c
+		}(),
+		"new version, same sha256, only the date changed": func() *Config {
+			c := seed(testConfig(), "seed one", 2)
+			c.Seed.GeneratedOn = "2026-12-01"
+			return c
+		}(),
+		"new version, same sha256, only the rotation owner changed": func() *Config {
+			c := seed(testConfig(), "seed one", 2)
+			c.Seed.RotationOwner = "another owner"
+			return c
+		}(),
 		"new version with no seed record": func() *Config { c := testConfig(); c.PartitionVersion = 2; return c }(),
 		"new seed with no new version":    seed(testConfig(), "seed two", 1),
 	} {

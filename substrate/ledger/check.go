@@ -310,8 +310,8 @@ func LoadAliases(dir string) ([]*AliasTable, error) {
 // must map it to a unit of the candidate with the role key the alias names.
 //
 // The partition version, the seed record and the cut-points change only together, as one new
-// partition version: the next number, with a seed record that is created and differs from the
-// base's, and the cut-points the new version states. Nobody approves it in the pull request
+// partition version: the next number, with a seed record that is created and whose SHA-256
+// differs from the base's, and the cut-points the new version states. Nobody approves it in the pull request
 // (no check waits on a person). What keeps D7 is the seed itself: a ledger owner creates the
 // secret at release time, and every seed-holding job refuses a secret whose SHA-256 is not the
 // one the record states (NewAssigner), so a record without its secret draws no role.
@@ -325,8 +325,11 @@ func CheckAgainstBase(base, cand *Ledger) error {
 			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d; a new partition version is the next number, %d", bc.PartitionVersion, cc.PartitionVersion, bc.PartitionVersion+1))
 		case !cc.Seed.Created():
 			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with no seed record; a new partition version records its new seed (D7)", bc.PartitionVersion, cc.PartitionVersion))
-		case cc.Seed == bc.Seed:
-			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with the same seed record; a new partition version is drawn from a new seed (D7)", bc.PartitionVersion, cc.PartitionVersion))
+		case cc.Seed.SHA256 == bc.Seed.SHA256:
+			// A seed's identity is its SHA-256: what every seed-holding job checks the secret
+			// against. A record that differs only in who generated it, when, or who owns the
+			// rotation names the same secret, so it draws the same roles.
+			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with the seed record's sha256 unchanged; a new partition version is drawn from a new seed, and a seed is identified by its SHA-256, not by who generated it or when (D7)", bc.PartitionVersion, cc.PartitionVersion))
 		}
 	}
 	if !newVersion && bc.Seed.Created() && bc.Seed != cc.Seed {
