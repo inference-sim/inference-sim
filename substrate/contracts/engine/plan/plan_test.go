@@ -58,6 +58,8 @@ func TestAPlanThatNoPoolCanHaveIsRefused(t *testing.T) {
 		{"collective over one rank", func(p *PoolPlan) { l := collective(); l.Collective.Group = 1; p.Layers = append(p.Layers, l) }, "group of 1"},
 		{"stage beyond the pipeline", func(p *PoolPlan) { p.Layers[0].Stage = 1 }, "stage 1 of 1"},
 		{"no kernel library", func(p *PoolPlan) { p.Layers[0].KernelImpl.Library = "" }, "names no kernel library"},
+		{"a scorer entry on a GEMM", func(p *PoolPlan) { p.Layers[0].Scorer = true }, "only an attention primitive has a block-index scorer"},
+		{"a scorer entry on a collective", func(p *PoolPlan) { l := collective(); l.Scorer = true; p.Layers = append(p.Layers, l) }, "only an attention primitive has a block-index scorer"},
 		{"draft layers without speculation", func(p *PoolPlan) { p.DraftLayers = p.Layers }, "configures no speculation"},
 		{"a page of nothing", func(p *PoolPlan) { p.KV[0].TokensPerPage = 0 }, "both are positive"},
 		{"a tier with no device", func(p *PoolPlan) { p.Tiers = []KVTier{{Bytes: units.Rank(units.Bytes(1))}} }, "no device"},
@@ -390,5 +392,18 @@ func TestOperationsKeepWhichLayerAndGraphRunsWhichKernel(t *testing.T) {
 	}
 	if !reflect.DeepEqual(ImplementationsOf(want), by) {
 		t.Errorf("ImplementationsOf differs from ImplementationsByPrimitive")
+	}
+}
+
+// A scorer entry is a node of an attention layer: decode and prefill take it, and the plan stays
+// valid.
+func TestAScorerEntryOnAnAttentionPrimitiveValidates(t *testing.T) {
+	for _, prim := range []Primitive{PrimAttentionDecode, PrimAttentionPrefill} {
+		p := goodPlan()
+		p.Layers = append(p.Layers, LoweredLayer{Layer: 1, Primitive: prim, Scorer: true,
+			KernelImpl: KernelImpl{Library: "lib", CodeHash: "abc"}})
+		if err := p.Validate(); err != nil {
+			t.Errorf("a scorer entry on %s: %v", prim, err)
+		}
 	}
 }

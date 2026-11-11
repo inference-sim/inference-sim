@@ -55,6 +55,9 @@ func (p PoolPlan) Validate() error {
 			if ll.Layer < 0 {
 				add("%s: layer index %d", at, ll.Layer)
 			}
+			if ll.Scorer && ll.Primitive != PrimAttentionDecode && ll.Primitive != PrimAttentionPrefill {
+				add("%s: Scorer is set on %s; only an attention primitive has a block-index scorer node", at, ll.Primitive)
+			}
 			if ll.Stage < 0 || ll.Stage >= stages {
 				add("%s: stage %d of %d pipeline stages", at, ll.Stage, stages)
 			}
