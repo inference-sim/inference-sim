@@ -10,6 +10,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
@@ -168,6 +169,11 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 		}
 		prev = key
 		read[c.File] = true
+		coefficient.ValidateKernelImpls(p, at+".kernel_impls", c.KernelImpls)
+		coefficient.ValidateFitRange(p, at+".fit_range", c.FitRange)
+		if c.Extrapolated && len(c.FitRange) == 0 {
+			p.Field(at+".extrapolated", "is true, but the entry records no fit_range to leave")
+		}
 	}
 	for name, list := range map[string][]SelectedProfile{"acceptance_profiles": s.AcceptanceProfiles, "routing_profiles": s.RoutingProfiles} {
 		prev := ""

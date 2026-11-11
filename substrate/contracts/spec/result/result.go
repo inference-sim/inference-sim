@@ -168,7 +168,10 @@ type SelectedEntries struct {
 }
 
 // SelectedCoefficient identifies one registry coefficient as design §3.3 does: by its set,
-// its name, its scope and its method.
+// its name, its scope and its method, and records what a reader needs to judge how far the
+// run's price rests on it (design §11.3, the G1 conditions): the kernel implementations the
+// entry is valid for, the range its fit covered, and whether the run left that range or the
+// entry is not identified by its data.
 type SelectedCoefficient struct {
 	Set    string            `yaml:"set"`
 	Name   string            `yaml:"name"`
@@ -177,6 +180,26 @@ type SelectedCoefficient struct {
 	// File is the registry file the entry was read from, relative to the registry
 	// directory.
 	File string `yaml:"file"`
+	// KernelImpls are the kernel implementations the entry states it is valid for: the
+	// library, its variant and the hash of the kernel's source (design D5, VAL-8), copied
+	// from the entry. A reader maps each library version a benchmark run recorded to a
+	// kernel hash and compares it with these. Empty when the entry states none, which is
+	// allowed for an entry that is not tied to one implementation; a reader then cannot
+	// compare a hash for it.
+	KernelImpls []coefficient.KernelImpl `yaml:"kernel_impls,omitempty"`
+	// FitRange is the range of inputs the entry's fit covered (design VAL-10), copied from
+	// the entry. Empty when the entry records none, and then the run cannot have extrapolated
+	// it.
+	FitRange []coefficient.Bound `yaml:"fit_range,omitempty"`
+	// Extrapolated is true when at least one step the run priced read the entry at an input
+	// outside FitRange. The cost model reports it from the trust verdict of each priced step
+	// (kernel.Estimate.Trust), so a Result written before any step ran says false. It
+	// requires a fit range.
+	Extrapolated bool `yaml:"extrapolated,omitempty"`
+	// Unidentified is true when the entry's data do not determine it: its 95% interval is
+	// unbounded or wider than half its value (design VAL-10). It is a property of the entry,
+	// known when the cost model is built.
+	Unidentified bool `yaml:"unidentified,omitempty"`
 }
 
 // SelectedProfile identifies one acceptance or routing profile by its set and its key, as

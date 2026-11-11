@@ -149,11 +149,19 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
 }
 
 // RecordSelected records into d every coefficient this kernel's lookups returned while it
-// was built, for d's selected-entry report (design §3.3, VAL-6). OpenPool calls it; a caller
-// that builds a kernel with New from documents it took from d calls it itself.
+// was built, for d's selected-entry report (design §3.3, VAL-6), with what the report carries
+// of each (the kernel implementations it is valid for, its fit range, and whether it is
+// unidentified or was read outside its fit range).
+//
+// OpenPool calls it as soon as the kernel is built, when no step has been priced, so no entry
+// is yet extrapolated. Extrapolation is a fact about the steps a run priced, and the
+// simulator that wants it in the Result calls RecordSelected again when the run ends: the
+// second call replaces the first, entry by entry. A caller that builds a kernel with New
+// from documents it took from d calls it itself.
 func (k *Kernel) RecordSelected(d *load.Data) {
-	for _, r := range k.selected {
-		d.RecordCoefficient(r.Set, r.Entry.Name, r.Entry.Scope, string(r.Entry.Method))
+	extrapolated := extrapolatedEntries(k.trust)
+	for i, r := range k.selected {
+		d.RecordEntry(r.Set, r.Entry, extrapolated[i])
 	}
 }
 

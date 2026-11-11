@@ -280,9 +280,31 @@ func (e Entry) validateEvidenceRecords(p *validate.Problems, at string) {
 			p.Field(at+".measures.harness", "required: the harness that collected the data")
 		}
 	}
+	ValidateFitRange(p, at+".fit_range", e.FitRange)
+	if len(e.FitRange) > 0 && !MayStateFitRange(e.Method) {
+		p.Field(at+".fit_range", "method %q was not fitted to data, so it states no fit range", e.Method)
+	}
+	if e.Measures != nil && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated {
+		p.Field(at+".measures", "method %q has no measurement boundary", e.Method)
+	}
+}
+
+// MayStateFitRange reports whether an entry of method m may record the range its fit covered.
+// The data a measured, calibrated or transferred value was fitted to is part of what it claims:
+// a transferred value still has the rows it came from, and a lookup outside them is
+// extrapolated. A fit range on any other method would describe data that did not produce the
+// value. Both validators call this; no other place decides it. A 95% interval (ci95) has no
+// method rule: any method may state one.
+func MayStateFitRange(m vocab.Method) bool {
+	return m == vocab.MethodMeasured || m == vocab.MethodCalibrated || m == vocab.MethodTransferred
+}
+
+// ValidateFitRange checks a fit range (design VAL-10): each bound names a known dimension
+// once, with finite ends and low not above high. at names the list in a message.
+func ValidateFitRange(p *validate.Problems, at string, bounds []Bound) {
 	seenDim := map[string]bool{}
-	for i, b := range e.FitRange {
-		bat := fmt.Sprintf("%s.fit_range[%d]", at, i)
+	for i, b := range bounds {
+		bat := fmt.Sprintf("%s[%d]", at, i)
 		if !vocab.FitDim(b.Dim).Valid() {
 			p.Field(bat+".dim", "%q is not one of %v", b.Dim, vocab.AllFitDims())
 		}
@@ -295,17 +317,6 @@ func (e Entry) validateEvidenceRecords(p *validate.Problems, at string) {
 		if lowFinite && highFinite && b.Low > b.High {
 			p.Field(bat, "low %v exceeds high %v", b.Low, b.High)
 		}
-	}
-	// The data a measured, calibrated or transferred value was fitted to is part of what it
-	// claims: a transferred value still has the rows it came from, and a lookup outside them is
-	// extrapolated. A fit range on any other method would describe data that did not produce the
-	// value.
-	if len(e.FitRange) > 0 && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated &&
-		e.Method != vocab.MethodTransferred {
-		p.Field(at+".fit_range", "method %q was not fitted to data, so it states no fit range", e.Method)
-	}
-	if e.Measures != nil && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated {
-		p.Field(at+".measures", "method %q has no measurement boundary", e.Method)
 	}
 }
 

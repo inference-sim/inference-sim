@@ -3,6 +3,7 @@ package latencykernel
 import (
 	"github.com/inference-sim/blis-substrate/contracts/conformance/kerneltest"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/load"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -119,4 +120,82 @@ func TestTheKernelMeetsTheTrustAndStageLaws(t *testing.T) {
 	}
 	kerneltest.TestTrust(t, k, batches)
 	kerneltest.TestStages(t, k, batches)
+}
+
+// A Result reports a coefficient as extrapolated when any step the run priced read it outside
+// its fit range (design §11.3). The flag is the same verdict trustOf reports per step, kept
+// for the run: it is false until a step leaves the range, stays true after a later step is
+// inside, and is set on the entry that left the range and no other.
+func TestTrustKeepsWhichEntriesAnyStepExtrapolated(t *testing.T) {
+	tokens := func(lo, hi float64) coefficient.Bound {
+		return coefficient.Bound{Dim: string(vocab.FitTokens), Low: lo, High: hi}
+	}
+	in := func(tok float64) map[string]float64 {
+		return map[string]float64{"tokens": tok, "requests": 1, "context_tokens": 10}
+	}
+	selected := []resolve.Resolved{
+		res("a", vocab.MethodMeasured, 10, nil, tokens(1, 100)),
+		res("b", vocab.MethodMeasured, 10, nil, tokens(1, 1000)),
+		res("c", vocab.MethodMeasured, 10, nil),
+	}
+	terms := buildTrust(selected)
+	if got := extrapolatedEntries(terms); len(got) != 0 {
+		t.Fatalf("before any step, extrapolated = %v", got)
+	}
+	trustOf(terms, in(50))
+	if got := extrapolatedEntries(terms); len(got) != 0 {
+		t.Fatalf("a step inside every range extrapolated %v", got)
+	}
+	trustOf(terms, in(500))
+	got := extrapolatedEntries(terms)
+	if len(got) != 1 || !got[0] {
+		t.Fatalf("a step at 500 tokens left a's range (1-100) and not b's: extrapolated = %v, want only entry 0", got)
+	}
+	trustOf(terms, in(50))
+	if got := extrapolatedEntries(terms); !got[0] {
+		t.Errorf("a later step inside the range cleared the flag: %v", got)
+	}
+	trustOf(terms, in(5000))
+	if got := extrapolatedEntries(terms); !got[0] || !got[1] || got[2] {
+		t.Errorf("after 5000 tokens, extrapolated = %v, want entries 0 and 1 and not 2", got)
+	}
+}
+
+// RecordSelected reports the extrapolation of the steps the kernel has priced, and a second
+// call after more steps replaces the first.
+func TestRecordSelectedReportsExtrapolationOfThePricedSteps(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, k := priceOnGB200(t, 8, fewTokens, false)
+	// Replace the committed entries by one with a narrow fit range, so the test does not
+	// depend on what the registry records.
+	narrow := resolve.Resolved{Set: "cost-model-primitives", Entry: coefficient.Entry{
+		Name: "narrow", Method: vocab.MethodMeasured, Value: 1,
+		FitRange: []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: 4}}}}
+	k.selected = []resolve.Resolved{narrow}
+	k.trust = buildTrust(k.selected)
+	flag := func() bool {
+		d.RecordCoefficient("x", "x", coefficient.Scope{}, "measured") // a distinct entry; must not matter
+		k.RecordSelected(d)
+		for _, c := range d.Report().Result().Coefficients {
+			if c.Name == "narrow" {
+				return c.Extrapolated
+			}
+		}
+		t.Fatal("the entry was not recorded")
+		return false
+	}
+	if flag() {
+		t.Fatal("extrapolated before any step")
+	}
+	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 1, Computed: 99, PromptLen: 100}}})
+	if flag() {
+		t.Fatal("one token is inside 1 to 4, but the entry is reported extrapolated")
+	}
+	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}})
+	if !flag() {
+		t.Fatal("a 512-token step is outside 1 to 4, but the entry is not reported extrapolated")
+	}
 }

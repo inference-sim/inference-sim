@@ -80,3 +80,63 @@ func TestReportOrderSatisfiesTheResultValidator(t *testing.T) {
 		}
 	}
 }
+
+// TestRecordEntryCarriesWhatTheG1ConditionsNeed records an entry with a kernel implementation,
+// a fit range and an interval wider than half its value, and reads the facts back from the
+// Result's conversion. A second record of the entry replaces the first, so a run that records
+// at its start and again at its end reports extrapolation.
+func TestRecordEntryCarriesWhatTheG1ConditionsNeed(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	impl := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "0123456789ab"}
+	rng := coefficient.Bound{Dim: "tokens", Low: 1, High: 512}
+	e := coefficient.Entry{Name: "gemm_efficiency", Value: 10, Method: "measured",
+		Scope: coefficient.Scope{Hardware: []string{"h100"}}, KernelImpls: []coefficient.KernelImpl{impl},
+		FitRange: []coefficient.Bound{rng}, CI95: &coefficient.Interval{Low: 0, High: 100}}
+
+	d.RecordEntry("cost-model-primitives", e, false)
+	got := d.Report().Result().Coefficients
+	if len(got) != 1 {
+		t.Fatalf("got %d coefficients, want 1", len(got))
+	}
+	c := got[0]
+	if !reflect.DeepEqual(c.KernelImpls, []coefficient.KernelImpl{impl}) ||
+		!reflect.DeepEqual(c.FitRange, []coefficient.Bound{rng}) || c.Extrapolated || !c.Unidentified {
+		t.Fatalf("recorded %+v, want the implementation, the range, not extrapolated, unidentified", c)
+	}
+
+	d.RecordEntry("cost-model-primitives", e, true)
+	got = d.Report().Result().Coefficients
+	if len(got) != 1 || !got[0].Extrapolated {
+		t.Fatalf("a second record did not replace the first: %+v", got)
+	}
+
+	// An entry that states nothing, and a narrow interval, report nothing.
+	plain := coefficient.Entry{Name: "plain", Value: 10, Method: "measured", CI95: &coefficient.Interval{Low: 9, High: 11}}
+	d.RecordEntry("cost-model-primitives", plain, false)
+	for _, c := range d.Report().Result().Coefficients {
+		if c.Name == "plain" && (c.KernelImpls != nil || c.FitRange != nil || c.Extrapolated || c.Unidentified) {
+			t.Errorf("a plain entry reports %+v", c)
+		}
+	}
+}
+
+// TestRecordEntryCopiesTheEntry changes the entry's slices after recording; the report
+// must not follow them.
+func TestRecordEntryCopiesTheEntry(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := coefficient.Entry{Name: "x", Method: "measured",
+		KernelImpls: []coefficient.KernelImpl{{Library: "l", Variant: "v", CodeHash: "0123456789ab"}},
+		FitRange:    []coefficient.Bound{{Dim: "tokens", Low: 1, High: 2}}}
+	d.RecordEntry("cost-model-primitives", e, false)
+	e.KernelImpls[0].Library, e.FitRange[0].High = "changed", 99
+	c := d.Report().Result().Coefficients[0]
+	if c.KernelImpls[0].Library != "l" || c.FitRange[0].High != 2 {
+		t.Fatalf("the report follows the caller's slices: %+v", c)
+	}
+}

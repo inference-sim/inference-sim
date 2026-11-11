@@ -45,6 +45,46 @@
       ],
       "type": "object"
     },
+    "coefficient.Bound": {
+      "additionalProperties": false,
+      "properties": {
+        "dim": {
+          "type": "string"
+        },
+        "high": {
+          "type": "number"
+        },
+        "low": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "dim",
+        "high",
+        "low"
+      ],
+      "type": "object"
+    },
+    "coefficient.KernelImpl": {
+      "additionalProperties": false,
+      "properties": {
+        "code_hash": {
+          "type": "string"
+        },
+        "library": {
+          "type": "string"
+        },
+        "variant": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code_hash",
+        "library",
+        "variant"
+      ],
+      "type": "object"
+    },
     "coefficient.Scope": {
       "additionalProperties": false,
       "properties": {
@@ -1416,8 +1456,23 @@
     "result.SelectedCoefficient": {
       "additionalProperties": false,
       "properties": {
+        "extrapolated": {
+          "type": "boolean"
+        },
         "file": {
           "type": "string"
+        },
+        "fit_range": {
+          "items": {
+            "$ref": "#/$defs/coefficient.Bound"
+          },
+          "type": "array"
+        },
+        "kernel_impls": {
+          "items": {
+            "$ref": "#/$defs/coefficient.KernelImpl"
+          },
+          "type": "array"
         },
         "method": {
           "enum": [
@@ -1440,6 +1495,9 @@
         },
         "set": {
           "type": "string"
+        },
+        "unidentified": {
+          "type": "boolean"
         }
       },
       "required": [

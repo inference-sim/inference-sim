@@ -113,6 +113,14 @@ whose new entries no lookup selects shows them here as unread.
 | `method` | string | yes | One of the registry's [methods](vocabularies.md). |
 | `scope` | mapping | yes | The entry's [scope](coefficients.md), as written. |
 | `file` | string | yes | The registry file it was read from. |
+| `kernel_impls` | list | no | The kernel implementations the entry states it is valid for, copied from the entry: `library`, `variant` and `code_hash`, as in the [coefficient entry](coefficients.md). A reader maps each library version a benchmark run recorded to a kernel hash and compares it with these (design §11.3). Absent when the entry states none; the hash of such an entry cannot be compared. |
+| `fit_range` | list | no | The range of inputs the entry's fit covered (design VAL-10), copied from the entry: a `dim`, `low` and `high` per dimension. Absent when the entry records none. |
+| `extrapolated` | boolean | no | True when a step the run priced read the entry outside `fit_range`. Requires `fit_range`. The cost model sets it from the trust verdict of each priced step, so the record is complete only when the simulator records the cost model's selected entries again at the end of the run. |
+| `unidentified` | boolean | no | True when the entry's data do not determine it: its 95% interval is unbounded or wider than half its value (design VAL-10). Known when the cost model is built. |
+
+Where an entry does not record a kernel implementation or a fit range, the Result says so by
+leaving the key out, and a grader treats the condition it would decide as not evaluated
+rather than as met (design §11.3).
 
 <!-- fields: result.SelectedProfile -->
 

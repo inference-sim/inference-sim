@@ -1,6 +1,8 @@
 package latencykernel
 
 import (
+	"sync/atomic"
+
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
@@ -20,6 +22,11 @@ type trustTerm struct {
 	baseFlag string
 	// ranged is the entry, kept when it records a fit range a step can fall outside.
 	ranged *resolve.Resolved
+	// at is the entry's place in the kernel's selected list.
+	at int
+	// extrapolated is set once any step read the entry outside its fit range, so the
+	// selected-entry report can say so. Only an entry with a fit range has one.
+	extrapolated *atomic.Bool
 }
 
 // buildTrust turns the selected entries into terms. It runs once, after the lookups.
@@ -34,12 +41,13 @@ func buildTrust(selected []resolve.Resolved) []trustTerm {
 		if !ranked {
 			continue
 		}
-		t := trustTerm{name: e.Name, method: e.Method, base: rank}
+		t := trustTerm{name: e.Name, method: e.Method, base: rank, at: i}
 		if own, _ := e.Method.Rank(); rank > own {
 			t.baseFlag = "unidentified"
 		}
 		if len(e.FitRange) > 0 {
 			t.ranged = &selected[i]
+			t.extrapolated = new(atomic.Bool)
 		}
 		terms = append(terms, t)
 	}
@@ -59,6 +67,9 @@ func trustOf(terms []trustTerm, in map[string]float64) kernel.Trust {
 	for _, t := range terms {
 		rank, flag := t.base, t.baseFlag
 		if t.ranged != nil && t.ranged.Entry.Extrapolated(in) {
+			if !t.extrapolated.Load() {
+				t.extrapolated.Store(true)
+			}
 			if r, _ := t.ranged.Entry.EffectiveRank(true); r > rank {
 				rank, flag = r, "extrapolated"
 			}
@@ -66,6 +77,18 @@ func trustOf(terms []trustTerm, in map[string]float64) kernel.Trust {
 		consider(rank, t.name, t.method, flag)
 	}
 	return worst
+}
+
+// extrapolatedEntries is the set of selected entries, by place in the selected list, that a
+// step priced so far read outside their fit range.
+func extrapolatedEntries(terms []trustTerm) map[int]bool {
+	out := map[int]bool{}
+	for _, t := range terms {
+		if t.extrapolated != nil && t.extrapolated.Load() {
+			out[t.at] = true
+		}
+	}
+	return out
 }
 
 // inputs is the step's coordinates on the fit dimensions of design VAL-10: the tokens one

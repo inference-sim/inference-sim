@@ -43,6 +43,12 @@ type Selected struct {
 	Scope coefficient.Scope
 	// Method is the entry's method.
 	Method string
+	// KernelImpls, FitRange, Extrapolated and Unidentified are a coefficient's, as the
+	// Result's SelectedCoefficient carries them; zero for a profile.
+	KernelImpls  []coefficient.KernelImpl
+	FitRange     []coefficient.Bound
+	Extrapolated bool
+	Unidentified bool
 }
 
 // Report is the selected-entry report.
@@ -55,10 +61,25 @@ type Report struct {
 	Unloaded []string
 }
 
-// RecordCoefficient records a coefficient a lookup returned, from the named set.
+// RecordCoefficient records a coefficient a lookup returned, from the named set, when the
+// caller holds only its identity. The report then carries none of the entry's kernel
+// implementations or fit range; RecordEntry records them.
 func (d *Data) RecordCoefficient(set, name string, scope coefficient.Scope, method string) {
 	d.record(Selected{Kind: KindCoefficient, File: d.setFileOf(set), Set: set, Entry: name,
 		Scope: scope, Method: method})
+}
+
+// RecordEntry records a coefficient entry a lookup returned, from the named set, with the
+// facts the Result reports of it (design §11.3): the kernel implementations and fit range the
+// entry states, whether its data leave it unidentified (coefficient.Entry.Unidentified), and
+// extrapolated, which the caller knows from the steps it priced. A later record of the same
+// entry replaces the earlier one, so a run may record at its start and again at its end.
+func (d *Data) RecordEntry(set string, e coefficient.Entry, extrapolated bool) {
+	d.record(Selected{Kind: KindCoefficient, File: d.setFileOf(set), Set: set, Entry: e.Name,
+		Scope: e.Scope, Method: string(e.Method),
+		KernelImpls:  append([]coefficient.KernelImpl(nil), e.KernelImpls...),
+		FitRange:     append([]coefficient.Bound(nil), e.FitRange...),
+		Extrapolated: extrapolated, Unidentified: e.Unidentified()})
 }
 
 // RecordAcceptance records the profile an acceptance resolution used, if it used one.
@@ -138,7 +159,9 @@ func (r Report) Result() result.SelectedEntries {
 		switch s.Kind {
 		case KindCoefficient:
 			out.Coefficients = append(out.Coefficients, result.SelectedCoefficient{
-				Set: s.Set, Name: s.Entry, Method: vocab.Method(s.Method), Scope: s.Scope, File: s.File})
+				Set: s.Set, Name: s.Entry, Method: vocab.Method(s.Method), Scope: s.Scope, File: s.File,
+				KernelImpls: s.KernelImpls, FitRange: s.FitRange,
+				Extrapolated: s.Extrapolated, Unidentified: s.Unidentified})
 		case KindAcceptance:
 			out.AcceptanceProfiles = append(out.AcceptanceProfiles, result.SelectedProfile{Set: s.Set, Key: s.Entry, File: s.File})
 		case KindRouting:
