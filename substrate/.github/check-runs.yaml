@@ -64,6 +64,8 @@ blis-substrate:
   "kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid": [cost model]
   "ledger: TestPublishedListsAreCheckedAgainstTheLedger": [ledger]
   "ledger: TestReleaseRefusesAnEmptyPublishedSet": [ledger]
+  "ledger: TestWorkflowArtifactPinIsExact": [ledger]
+  "ledger: TestExtractorPinEqualsTheLedgerEntry": [ledger]
   "ci.yml job required": [required]
 blis-vllm:
   "oracle/check_mocks.py": [oracle-tier2]

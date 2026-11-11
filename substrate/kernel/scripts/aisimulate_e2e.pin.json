@@ -1,0 +1,13 @@
+{
+  "source": "aisimulate",
+  "artifact_id": "e2e-accuracy-web",
+  "repository": "ai-dynamo/aisimulate",
+  "run_id": "36849388864",
+  "run_attempt": 1,
+  "commit": "cab77b9c7888b1c40df8cd3228f5e03c355ef23c",
+  "release_tag": "db-dump/2026-09-28",
+  "artifact": "e2e-accuracy-web-0d6e4079e36703eb",
+  "zip_sha256": "a3cdf7b4937223a76e32ca028c5442ba1aab523e914d71d2244e5753140d9f5c",
+  "summary_sha256": "e1a380ad7b06ae7f27edc95357e24219f4003e3ed73a3f93ff0dcd192578a3a2",
+  "expected": {"sweeps": 204, "points": 1066}
+}

@@ -32,6 +32,16 @@ nothing and dilutes the reported figure with sweeps that cannot disagree. Aggreg
 here; both are asserted rather than assumed, so a future artifact that adds disaggregated or
 speculative arms fails loudly instead of being scored under the wrong deployment.
 
+# The input is pinned (D3)
+
+The extractor reads one artifact run, named in catalog/ledger/sources.yaml (source aisimulate,
+artifact e2e-accuracy-web) and copied to kernel/scripts/aisimulate_e2e.pin.json, which a Go test
+requires to equal that entry. It refuses a summary.json whose SHA-256 is not the pinned one,
+whose snapshot does not state the pinned run id, attempt, evaluated commit and release tag (a
+"latest", a branch, or a missing field is refused), or whose extraction does not give the pinned
+number of sweeps and points. To move to a newer artifact, change the ledger entry and the pin
+file together in one pull request.
+
 Usage:
 
     python scripts/extract_aisimulate_e2e.py summary.json -o testdata/measurements/aisimulate_e2e.json
@@ -39,8 +49,16 @@ Usage:
 
 import argparse
 import collections
+import hashlib
 import json
+import re
 import sys
+from pathlib import Path
+
+PIN_PATH = Path(__file__).resolve().with_name("aisimulate_e2e.pin.json")
+UNPINNED = {"latest", "main", "unknown", ""}
+HEX40 = re.compile(r"^[0-9a-f]{40}$")
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 # Artifact model slug -> blis-catalog model name. A slug absent here is skipped: the catalog
 # has no graph for it, so it cannot be priced.
@@ -223,15 +241,91 @@ def point_record(p: dict) -> dict:
     return rec
 
 
+def load_pin(path) -> dict:
+    """Read the pin and refuse one that is itself not an exact revision (D3)."""
+    with open(path) as fh:
+        pin = json.load(fh)
+    bad = []
+    if not re.fullmatch(r"[0-9]+", str(pin.get("run_id", ""))):
+        bad.append("run_id is not a workflow run id")
+    if not isinstance(pin.get("run_attempt"), int) or pin["run_attempt"] < 1:
+        bad.append("run_attempt is not a positive integer")
+    if not HEX40.match(str(pin.get("commit", ""))):
+        bad.append("commit is not a full 40-digit commit")
+    for key in ("zip_sha256", "summary_sha256"):
+        if not HEX64.match(str(pin.get(key, ""))):
+            bad.append(f"{key} is not a SHA-256")
+    for key in ("artifact", "release_tag"):
+        if str(pin.get(key, "")).strip().lower() in UNPINNED:
+            bad.append(f"{key} is empty or unpinned")
+    exp = pin.get("expected")
+    if not (isinstance(exp, dict) and isinstance(exp.get("sweeps"), int)
+            and isinstance(exp.get("points"), int) and exp["sweeps"] > 0 and exp["points"] > 0):
+        bad.append("expected needs positive integer sweeps and points")
+    if bad:
+        raise SystemExit(f"error: pin {path}: " + "; ".join(bad))
+    return pin
+
+
+def check_input(raw: bytes, summary: dict, pin: dict) -> list:
+    """Why this summary.json is not the pinned artifact; empty when it is."""
+    errs = []
+    got = hashlib.sha256(raw).hexdigest()
+    if got != pin["summary_sha256"]:
+        errs.append(f"summary.json has SHA-256 {got}, the pin is {pin['summary_sha256']}")
+    snap = summary.get("snapshot")
+    if not isinstance(snap, dict):
+        return errs + ["no snapshot block"]
+    camp = snap.get("campaign")
+    camp = camp if isinstance(camp, dict) else {}
+    run_id = str(camp.get("run_id") or "").strip()
+    if not run_id:
+        errs.append("the snapshot states no campaign run_id")
+    elif run_id != pin["run_id"]:
+        errs.append(f"campaign run_id {run_id!r}, the pin is {pin['run_id']!r}")
+    attempt = str(camp.get("run_attempt") or "").strip()
+    if attempt != str(pin["run_attempt"]):
+        errs.append(f"campaign run_attempt {attempt!r}, the pin is {pin['run_attempt']!r}")
+    rev = snap.get("evaluated_revision")
+    commit = rev.get("commit_sha") if isinstance(rev, dict) else None
+    if not isinstance(rev, dict):
+        errs.append(f"evaluated_revision is {rev!r}, not a commit record")
+    elif str(commit or "").strip().lower() in UNPINNED:
+        errs.append(f"evaluated_revision.commit_sha is {commit!r}; a revision is pinned by commit (D3)")
+    elif commit != pin["commit"]:
+        errs.append(f"evaluated_revision.commit_sha {commit!r}, the pin is {pin['commit']!r}")
+    tag = snap.get("release_tag")
+    if tag != pin["release_tag"]:
+        errs.append(f"release_tag {tag!r}, the pin is {pin['release_tag']!r}")
+    if camp.get("status") != "complete":
+        errs.append(f"campaign status {camp.get('status')!r}, want 'complete'")
+    return errs
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("summary", help="summary.json from the e2e-accuracy-web artifact")
     ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--pin", default=str(PIN_PATH),
+                    help="the pinned artifact run (default: aisimulate_e2e.pin.json beside this file)")
     args = ap.parse_args()
 
-    with open(args.summary) as fh:
-        summary = json.load(fh)
+    pin = load_pin(args.pin)
+    with open(args.summary, "rb") as fh:
+        raw = fh.read()
+    try:
+        summary = json.loads(raw)
+    except ValueError as exc:
+        print(f"error: {args.summary} is not JSON: {exc}", file=sys.stderr)
+        return 1
+    errs = check_input(raw, summary, pin)
+    if errs:
+        print(f"error: {args.summary} is not the pinned e2e-accuracy-web artifact "
+              f"(run {pin['run_id']}):", file=sys.stderr)
+        for e in errs:
+            print(f"  {e}", file=sys.stderr)
+        return 1
     corpus = extract(summary)
 
     scenarios = {s["scenario"] for s in corpus["sweeps"]}
@@ -243,6 +337,11 @@ def main() -> int:
               "slugs no longer match MODELS and CHIPS", file=sys.stderr)
         for reason, n in sorted(corpus["selection"]["skipped"].items()):
             print(f"  skipped {n:4d}  {reason}", file=sys.stderr)
+        return 1
+    want = pin["expected"]
+    if (len(corpus["sweeps"]), points) != (want["sweeps"], want["points"]):
+        print(f"error: {len(corpus['sweeps'])} sweeps, {points} points from the pinned artifact; "
+              f"the pin records {want['sweeps']} and {want['points']}", file=sys.stderr)
         return 1
     with open(args.out, "w") as fh:
         json.dump(corpus, fh, indent=1, sort_keys=False)

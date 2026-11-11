@@ -69,6 +69,18 @@
     runs: pull_request
     status: ci
     test: 'ledger: TestUnpinnedRevisionsRefused'
+  - repo: blis-substrate
+    check: >-
+      A workflow artifact a tool reads is pinned by run id, attempt, evaluated commit and the
+      SHA-256 of its zip and file, and a revision of latest is refused
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestWorkflowArtifactPinIsExact'
+  - repo: blis-substrate
+    check: The extractor's pin file equals the ledger's entry for the artifact
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestExtractorPinEqualsTheLedgerEntry'
   review: null
   status: ci
   target:

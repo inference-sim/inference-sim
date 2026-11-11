@@ -267,6 +267,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly join over every consumer's record of the units it read, run inside the nightly run of blis-substrate's gate job
 - **D3** (ci; target reached) Every source revision is pinned by commit, hash or run id.
   - `ci`, pull_request: A ledger check that refuses latest, main and unknown as revisions (`ledger: TestUnpinnedRevisionsRefused`)
+  - `ci`, pull_request: A workflow artifact a tool reads is pinned by run id, attempt, evaluated commit and the SHA-256 of its zip and file, and a revision of latest is refused (`ledger: TestWorkflowArtifactPinIsExact`)
+  - `ci`, pull_request: The extractor's pin file equals the ledger's entry for the artifact (`ledger: TestExtractorPinEqualsTheLedgerEntry`)
 - **D4** (partial; target ci by M1) Roles are drawn by the keyed rule, per role key, so every unit sharing a role key has the same role, except a legacy unit, which keeps its legacy side even where units of its role key fall on both sides.
   - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
   - `ci`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)

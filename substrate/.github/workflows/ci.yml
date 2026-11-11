@@ -207,6 +207,7 @@ jobs:
         run: |
           python3 kernel/scripts/test_extract_inferencex_engine_settings.py
           python3 kernel/scripts/test_gen_aisimulate_scenarios.py
+          python3 -I kernel/scripts/test_extract_aisimulate_e2e.py
 
   # The mutation check (X13) for the cost model's guarded properties: kernel/mutation_test.go
   # breaks each in turn, in the source, with go test -overlay, and requires the test that guards

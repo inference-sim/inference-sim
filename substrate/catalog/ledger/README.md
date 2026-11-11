@@ -164,6 +164,46 @@ What is not in place yet:
   consumer uploads an artifact named `unit-reads-<consumer>` in the format of `ledger.Reads`. The join reads only artifacts uploaded by a run on main of
   this repository; an artifact from a pull request run or a fork is ignored.
 
+## The AISimulate end-to-end artifact
+
+`kernel/scripts/extract_aisimulate_e2e.py` turns the `e2e-accuracy-web` artifact of NVIDIA's
+`E2E Accuracy Matrix` workflow into a per-point corpus of relative TTFT and TPOT. The ledger pins
+the artifact under source `aisimulate`, `artifacts[e2e-accuracy-web]` (D3):
+
+| Field | Value |
+|---|---|
+| Run | `ai-dynamo/aisimulate` actions run 36849388864, attempt 1 |
+| Evaluated commit | `cab77b9c7888b1c40df8cd3228f5e03c355ef23c` (branch `main`) |
+| Artifact | `e2e-accuracy-web-0d6e4079e36703eb`, zip SHA-256 `a3cdf7b4937223a76e32ca028c5442ba1aab523e914d71d2244e5753140d9f5c` |
+| File read | `summary.json`, SHA-256 `e1a380ad7b06ae7f27edc95357e24219f4003e3ed73a3f93ff0dcd192578a3a2` |
+| Measured values | InferenceX release `db-dump/2026-09-28` (the artifact's `measurement_source_url`) |
+| Kept by GitHub until | 2026-12-30; a copy is authentic when its SHA-256 matches |
+
+The extractor reads the pin from `kernel/scripts/aisimulate_e2e.pin.json`, and
+`TestExtractorPinEqualsTheLedgerEntry` requires that file to equal the ledger entry. It refuses a
+`summary.json` whose SHA-256 differs, whose snapshot states another run id or attempt, another
+evaluated commit (or "latest", or no commit record) or another release tag, whose campaign
+status is not `complete`, that yields no point, or whose sweep and point counts differ from the
+pin's. To reproduce:
+
+```sh
+gh api repos/ai-dynamo/aisimulate/actions/artifacts/11159236747/zip > a.zip
+shasum -a 256 a.zip                                  # a3cdf7b4...d9f5c
+mkdir x && (cd x && unzip ../a.zip)
+python3 -I kernel/scripts/extract_aisimulate_e2e.py x/summary.json -o corpus.json
+# 204 sweeps, 1066 points, 88 distinct deployments -> corpus.json
+# (54 topologies skipped: fewer than three successful points)
+shasum -a 256 corpus.json                            # 4128d4e8...fe97 (Python 3.14)
+```
+
+The run took 0.3 s and 28 MB on a laptop. The corpus is shape only: every value is
+normalised to its sweep's lowest concurrency, so it says nothing about absolute latency. It is an
+evaluation set, never fitted to. The predictions are NVIDIA's; the ground truth is InferenceX's,
+and the run's overall conclusion is `failure` only because two release-branch jobs failed (the
+job for `main` succeeded and the summary's campaign status is `complete`). To move to a newer
+artifact, change the ledger entry and the pin file in one pull request. The artifact has no unit
+list yet: it holds relatives, not InferenceX units, so no role is drawn for it.
+
 ## Other sources
 
 AISimulate (`ai-dynamo/aisimulate` at `2f0f4cd8`) and the forward-pass dataset

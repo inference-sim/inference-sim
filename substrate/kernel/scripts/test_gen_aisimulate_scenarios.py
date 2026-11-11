@@ -138,20 +138,6 @@ def main() -> int:
         ck("--check fails on a leftover file for an unemitted scenario",
            r.returncode == 1 and eagle["scenario"] in r.stderr, r.stderr.strip())
 
-    # An extractor that reads nothing fails loudly (X22): an artifact whose slugs no longer match
-    # the extractor's maps gives a corpus of no points, and that must not exit as a clean run.
-    with tempfile.TemporaryDirectory() as tmp:
-        summary = Path(tmp) / "summary.json"
-        summary.write_text(json.dumps({"snapshot": {}, "scope": {}, "totals": {},
-                                       "models": [{"model": "unknown-slug", "workloads": []}]}))
-        out = Path(tmp) / "corpus.json"
-        r = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve().parent /
-                            "extract_aisimulate_e2e.py"), str(summary), "-o", str(out)],
-                           capture_output=True, text=True)
-        ck("an artifact that yields no point is a failure, not a clean run",
-           r.returncode == 1 and "0 points" in r.stderr, f"exit {r.returncode}: {r.stderr.strip()}")
-        ck("and it writes no corpus", not out.exists())
-
     print()
     if FAILURES:
         print(f"FAIL: {len(FAILURES)} failure(s): {FAILURES}")

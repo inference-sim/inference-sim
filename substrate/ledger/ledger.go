@@ -116,22 +116,41 @@ type Source struct {
 	Revision Revision `yaml:"revision"`
 	// Units is the unit list's path under catalog/ledger/, empty while the source has no
 	// ingest tool. Status says why.
-	Units   string  `yaml:"units,omitempty"`
-	Status  string  `yaml:"status,omitempty"`
-	Licence Licence `yaml:"licence"`
+	Units  string `yaml:"units,omitempty"`
+	Status string `yaml:"status,omitempty"`
+	// Artifacts pins each workflow artifact a tool reads from this source's publisher, by run,
+	// attempt and SHA-256 (D3). It holds data no unit list yet carries.
+	Artifacts []Artifact `yaml:"artifacts,omitempty"`
+	Licence   Licence    `yaml:"licence"`
+}
+
+// Artifact is one workflow artifact of a source, pinned to an exact run. Revision.Kind is
+// workflow_artifact.
+type Artifact struct {
+	ID string `yaml:"id"`
+	// Used by says which tool reads it and for what.
+	UsedBy   string   `yaml:"used_by"`
+	Revision Revision `yaml:"revision"`
 }
 
 // Revision is a pinned source revision.
 type Revision struct {
-	// Kind is git_commit, hf_dataset_revision or release_assets.
+	// Kind is git_commit, hf_dataset_revision, release_assets or workflow_artifact.
 	Kind string `yaml:"kind"`
 	// URL locates the source at the revision.
 	URL string `yaml:"url"`
-	// Ref is the commit, dataset revision or release tag.
+	// Ref is the commit, dataset revision or release tag, or, for workflow_artifact, the
+	// workflow run's numeric id.
 	Ref string `yaml:"ref"`
-	// Commit is the full commit a release tag points at; required for release_assets.
+	// Commit is the full commit a release tag points at, required for release_assets, or the
+	// commit the run evaluated, required for workflow_artifact.
 	Commit string `yaml:"commit,omitempty"`
-	// Assets lists each release asset by name and SHA-256.
+	// Artifact names the uploaded artifact of a workflow run; required for workflow_artifact.
+	Artifact string `yaml:"artifact,omitempty"`
+	// RunAttempt is the run's attempt number; required for workflow_artifact.
+	RunAttempt int `yaml:"run_attempt,omitempty"`
+	// Assets lists each release asset, or each file of a workflow artifact (and the artifact's
+	// zip, by the name <artifact>.zip), by name and SHA-256.
 	Assets []Asset `yaml:"assets,omitempty"`
 }
 
@@ -180,6 +199,7 @@ var Unpinned = []string{"latest", "main", "unknown"}
 var (
 	sourceID  = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	gitCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	runID     = regexp.MustCompile(`^[0-9]{1,20}$`)
 	isoDate   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 )
 
@@ -204,6 +224,26 @@ func (s *Sources) Validate() error {
 		}
 		if err := src.Revision.check(at + ".revision"); err != nil {
 			errs = append(errs, err)
+		}
+		seenArt := map[string]bool{}
+		for j, a := range src.Artifacts {
+			aat := fmt.Sprintf("%s.artifacts[%d]", at, j)
+			if !sourceID.MatchString(a.ID) {
+				errs = append(errs, fmt.Errorf("%s.id: %q is not a lowercase slug", aat, a.ID))
+			}
+			if seenArt[a.ID] {
+				errs = append(errs, fmt.Errorf("%s.id: duplicate artifact %q", aat, a.ID))
+			}
+			seenArt[a.ID] = true
+			if a.UsedBy == "" {
+				errs = append(errs, fmt.Errorf("%s.used_by: name the tool that reads the artifact", aat))
+			}
+			if a.Revision.Kind != "workflow_artifact" {
+				errs = append(errs, fmt.Errorf("%s.revision.kind: %q, want workflow_artifact", aat, a.Revision.Kind))
+			}
+			if err := a.Revision.check(aat + ".revision"); err != nil {
+				errs = append(errs, err)
+			}
 		}
 		if src.Units == "" && src.Status == "" {
 			errs = append(errs, fmt.Errorf("%s: a source with no unit list states why in status", at))
@@ -266,10 +306,53 @@ func (r Revision) check(at string) error {
 				errs = append(errs, fmt.Errorf("%s.assets[%d]: needs a name and a 64-digit sha256", at, j))
 			}
 		}
+	case "workflow_artifact":
+		errs = append(errs, r.checkArtifact(at)...)
 	default:
-		errs = append(errs, fmt.Errorf("%s.kind: %q is not git_commit, hf_dataset_revision or release_assets", at, r.Kind))
+		errs = append(errs, fmt.Errorf("%s.kind: %q is not git_commit, hf_dataset_revision, release_assets or workflow_artifact", at, r.Kind))
 	}
 	return errors.Join(errs...)
+}
+
+// checkArtifact is D3 for a workflow artifact: the run is named by its numeric id and attempt,
+// never by "latest" or a branch, the commit it evaluated is a full commit, and the artifact's
+// zip and the one file the extractor reads are each pinned by SHA-256. An artifact is
+// reproducible only if a reader can tell the bytes they downloaded are the ones pinned.
+func (r Revision) checkArtifact(at string) []error {
+	var errs []error
+	if !runID.MatchString(r.Ref) {
+		errs = append(errs, fmt.Errorf("%s.ref: %q is not a workflow run id (decimal digits)", at, r.Ref))
+	}
+	if r.RunAttempt < 1 {
+		errs = append(errs, fmt.Errorf("%s.run_attempt: %d; name the attempt of the run", at, r.RunAttempt))
+	}
+	if err := CheckPinned(at+".artifact", r.Artifact); err != nil {
+		errs = append(errs, err)
+	}
+	if !gitCommit.MatchString(r.Commit) {
+		errs = append(errs, fmt.Errorf("%s.commit: %q is not the full 40-digit commit the run evaluated", at, r.Commit))
+	}
+	if !strings.Contains(r.URL, "/actions/runs/"+r.Ref) {
+		errs = append(errs, fmt.Errorf("%s.url: %q is not the page of run %s", at, r.URL, r.Ref))
+	}
+	want := map[string]bool{r.Artifact + ".zip": false}
+	for j, a := range r.Assets {
+		if a.Name == "" || !hex64.MatchString(a.SHA256) {
+			errs = append(errs, fmt.Errorf("%s.assets[%d]: needs a name and a 64-digit sha256", at, j))
+		}
+		if _, ok := want[a.Name]; ok {
+			want[a.Name] = true
+		}
+	}
+	for name, found := range want {
+		if !found {
+			errs = append(errs, fmt.Errorf("%s.assets: the artifact's zip %q is not pinned by sha256", at, name))
+		}
+	}
+	if len(r.Assets) < 2 {
+		errs = append(errs, fmt.Errorf("%s.assets: pin the artifact's zip and each file read from it", at))
+	}
+	return errs
 }
 
 func (l Licence) check(at string) error {
