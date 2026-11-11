@@ -253,3 +253,21 @@ func TestSortResolutionsOrdersPoolsWithinASetting(t *testing.T) {
 		}
 	}
 }
+
+// The cost model spells the cache dtype request cache_dtype; the engine's setting, and so the
+// Result's, is kv_cache_dtype. A run that asked for fp8 and was served the attention backend's
+// packed record names kv_cache_dtype, and no row is named cache_dtype.
+func TestADeclinedCacheDTypeRequestIsNamedAsTheEngineNamesIt(t *testing.T) {
+	got := ResolutionsOf(kernel.Resolution{Overrides: []kernel.Override{
+		{Field: "cache_dtype", Requested: "fp8", Resolved: "fp8_ds_mla", Reason: "the attention backend serves this cache as fp8_ds_mla"}}})
+	var rows []Resolution
+	for _, x := range got {
+		if strings.Contains(x.Setting, "cache_dtype") {
+			rows = append(rows, x)
+		}
+	}
+	want := []Resolution{{Setting: "kv_cache_dtype", Host: "fp8", Engine: "fp8_ds_mla", Reason: "the attention backend serves this cache as fp8_ds_mla"}}
+	if !reflect.DeepEqual(rows, want) {
+		t.Errorf("rows %+v, want %+v", rows, want)
+	}
+}

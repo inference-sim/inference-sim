@@ -10,9 +10,10 @@ import (
 )
 
 // settingOf names the Result's setting for a field the cost model names in a declined request.
-// The cost model spells the all-reduce request allreduce_backend; the Result's setting is
-// all_reduce_backend, so a declined request lands on the row of the setting it answers and not
-// on a second one. A field with no entry keeps its own name.
+// The cost model spells the all-reduce request allreduce_backend and the cache dtype request
+// cache_dtype; the Result's settings are all_reduce_backend and the engine's own kv_cache_dtype,
+// so a declined request lands on the setting it answers and not on a second one. The map is the
+// smaller change: the cost model's field names are part of kernel.Override, which other callers read. A field with no entry keeps its own name.
 func settingOf(field string) string {
 	if s, ok := settingNames[field]; ok {
 		return s
@@ -20,7 +21,7 @@ func settingOf(field string) string {
 	return field
 }
 
-var settingNames = map[string]string{"allreduce_backend": "all_reduce_backend"}
+var settingNames = map[string]string{"allreduce_backend": "all_reduce_backend", "cache_dtype": "kv_cache_dtype"}
 
 // ResolutionsOf converts the cost model's resolution of a deployment (kernel.Resolved) to the
 // Result's resolutions, sorted by setting.

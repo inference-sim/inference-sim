@@ -492,7 +492,8 @@ The settings the cost model resolves, and what vLLM calls the request each answe
 | `sequence_parallel_moe` | `true` or `false` | None: whether the MoE input is sequence-parallel, from the engine's rule or the model's own, so a request to change it is not a single setting. |
 
 A declined request is recorded under the setting it answers: the cost model's `allreduce_backend`
-request lands on `all_reduce_backend`. A request for another field is recorded under the name the
+request lands on `all_reduce_backend`, and its `cache_dtype` request on `kv_cache_dtype`, the
+engine's name. A request for another field is recorded under the name the
 cost model gives it, which is the engine's own setting name (for example `quantization`). The
 host column is empty for `async_scheduling` and `cascade_attention` unless the cost model
 declines a request for them, which the kernel does not do today.
