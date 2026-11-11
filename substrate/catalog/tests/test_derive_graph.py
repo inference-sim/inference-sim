@@ -5926,6 +5926,7 @@ BOUNDARY_BYTES = {
     # The (hc_mult, hidden) bundle at the activation dtype (deepseek_v4/nvidia/
     # model.py:1406-1424@v0.32.0).
     "deepseek-v4-pro": 4 * 7168 * 2,
+    "deepseek-v4-pro-0813": 4 * 7168 * 2,
     # That bundle plus the (hc_mult,) fp32 pre-mix (deepseek_v41/nvidia/
     # model.py:885-910@v0.32.0).
     "deepseek-v4.1-flash": 4 * 5120 * 2 + 4 * 4,
@@ -6953,3 +6954,257 @@ def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscal
               if d.is_dir() and graph_of(d)["global"].get("weight_scale")
               and graph_of(d)["global"]["weight_dtype"] == "fp8"}
     assert scaled == {"minimax-m3-mxfp8", "deepseek-v4.1-flash"}
+
+
+# --- DSpark stages in a DeepSeek-V4 checkpoint (deepseek-ai/DeepSeek-V4-Pro-0813) ---------
+
+V4_0813 = MODELS / "deepseek-v4-pro-0813"
+# The tensors under mtp.* in the safetensors headers of deepseek-ai/DeepSeek-V4-Pro-0813 at
+# 72e1d3230f6c (66 shards; 7,009 tensors, 41,979,375,900 bytes). (suffix, stored dtype, shape,
+# stages holding it, copies per stage); an expert is counted once per routed expert. The same
+# repository's other 142,773 tensors have the names, and every one of 400 sampled the dtype
+# and shape, of DeepSeek-V4-Pro's, whose MTP stage holds e_proj and h_proj where these hold
+# none: the stages here are DSpark's.
+_ALL = (0, 1, 2)
+V4_0813_MTP = [
+    ("attn.attn_sink", "F32", (128,), _ALL, 1),
+    ("attn.kv_norm.weight", "BF16", (512,), _ALL, 1),
+    ("attn.q_norm.weight", "BF16", (1536,), _ALL, 1),
+    ("attn.wkv.scale", "F8_E8M0", (4, 56), _ALL, 1),
+    ("attn.wkv.weight", "F8_E4M3", (512, 7168), _ALL, 1),
+    ("attn.wo_a.scale", "F8_E8M0", (128, 32), _ALL, 1),
+    ("attn.wo_a.weight", "F8_E4M3", (16384, 4096), _ALL, 1),
+    ("attn.wo_b.scale", "F8_E8M0", (56, 128), _ALL, 1),
+    ("attn.wo_b.weight", "F8_E4M3", (7168, 16384), _ALL, 1),
+    ("attn.wq_a.scale", "F8_E8M0", (12, 56), _ALL, 1),
+    ("attn.wq_a.weight", "F8_E4M3", (1536, 7168), _ALL, 1),
+    ("attn.wq_b.scale", "F8_E8M0", (512, 12), _ALL, 1),
+    ("attn.wq_b.weight", "F8_E4M3", (65536, 1536), _ALL, 1),
+    ("attn_norm.weight", "BF16", (7168,), _ALL, 1),
+    ("ffn.experts.N.w1.scale", "F8_E8M0", (3072, 224), _ALL, 384),
+    ("ffn.experts.N.w1.weight", "I8", (3072, 3584), _ALL, 384),
+    ("ffn.experts.N.w2.scale", "F8_E8M0", (7168, 96), _ALL, 384),
+    ("ffn.experts.N.w2.weight", "I8", (7168, 1536), _ALL, 384),
+    ("ffn.experts.N.w3.scale", "F8_E8M0", (3072, 224), _ALL, 384),
+    ("ffn.experts.N.w3.weight", "I8", (3072, 3584), _ALL, 384),
+    ("ffn.gate.bias", "F32", (384,), _ALL, 1),
+    ("ffn.gate.weight", "BF16", (384, 7168), _ALL, 1),
+    ("ffn.shared_experts.w1.scale", "F8_E8M0", (24, 56), _ALL, 1),
+    ("ffn.shared_experts.w1.weight", "F8_E4M3", (3072, 7168), _ALL, 1),
+    ("ffn.shared_experts.w2.scale", "F8_E8M0", (56, 24), _ALL, 1),
+    ("ffn.shared_experts.w2.weight", "F8_E4M3", (7168, 3072), _ALL, 1),
+    ("ffn.shared_experts.w3.scale", "F8_E8M0", (24, 56), _ALL, 1),
+    ("ffn.shared_experts.w3.weight", "F8_E4M3", (3072, 7168), _ALL, 1),
+    ("ffn_norm.weight", "BF16", (7168,), _ALL, 1),
+    ("hc_attn_base", "F32", (24,), _ALL, 1),
+    ("hc_attn_fn", "F32", (24, 28672), _ALL, 1),
+    ("hc_attn_scale", "F32", (3,), _ALL, 1),
+    ("hc_ffn_base", "F32", (24,), _ALL, 1),
+    ("hc_ffn_fn", "F32", (24, 28672), _ALL, 1),
+    ("hc_ffn_scale", "F32", (3,), _ALL, 1),
+    # mtp.0 alone: the context combiner
+    ("main_norm.weight", "BF16", (7168,), (0,), 1),
+    ("main_proj.scale", "F8_E8M0", (56, 168), (0,), 1),
+    ("main_proj.weight", "F8_E4M3", (7168, 21504), (0,), 1),
+    # mtp.2 alone: the heads
+    ("confidence_head.proj.weight", "BF16", (1, 7680), (2,), 1),
+    ("hc_head_base", "F32", (4,), (2,), 1),
+    ("hc_head_fn", "F32", (4, 28672), (2,), 1),
+    ("hc_head_scale", "F32", (1,), (2,), 1),
+    ("markov_head.markov_w1.weight", "BF16", (129280, 512), (2,), 1),
+    ("markov_head.markov_w2.weight", "BF16", (129280, 512), (2,), 1),
+    ("norm.weight", "BF16", (7168,), (2,), 1),
+]
+_STORED = {"F32": 4, "BF16": 2, "F8_E4M3": 1, "F8_E8M0": 1, "I8": 1}
+
+
+def _prod(shape) -> int:
+    out = 1
+    for x in shape:
+        out *= x
+    return out
+
+
+def v4_0813_graph() -> dict:
+    """The graph the deriver produces from the committed config now, so a change to the
+    handler fails these tests and not only the re-derivation check."""
+    assert V4_0813.is_dir(), "models/deepseek-v4-pro-0813 is missing"
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    return yaml.safe_load(derive_graph.dump(
+        derive_graph.derive(V4_0813 / "config.json", "deepseek-v4-pro-0813")))
+
+
+def test_v4_0813_committed_graph_is_the_derivation():
+    assert graph_of(V4_0813) == v4_0813_graph()
+
+
+def test_v4_0813_dspark_tensor_classes_sum_to_the_checkpoints_header_total():
+    """The classes above are the whole of mtp.*: their count and bytes are the headers'."""
+    count = sum(len(stages) * copies for _, _, _, stages, copies in V4_0813_MTP)
+    nbytes = sum(len(stages) * copies * _prod(shape) * _STORED[dt]
+                 for _, dt, shape, stages, copies in V4_0813_MTP)
+    assert (count, nbytes) == (7009, 41_979_375_900)
+
+
+def test_v4_0813_dspark_draft_charges_the_weights_the_checkpoint_stores():
+    """Each draft layer's matrices, the context combiner and the heads, against mtp.0-2: the
+    dense linears and shared expert FP8, the experts MXFP4, the router BF16, the mHC
+    projections FP32. The drafter's lm_head and embedding alias the target's."""
+    g = v4_0813_graph()
+    glob = g["global"]["weight_dtype"]
+    spec = g["speculator"]
+    drafts = expanded_layers(g, spec["stack"])
+    assert len(drafts) == 3
+    for d, nodes in enumerate(drafts):
+        check_weights(nodes, V4_CHECKPOINT["every_layer"]
+                      + V4_CHECKPOINT["routed_expert"] * 384, f"draft {d}", glob)
+    (context,) = expanded_layers(g, spec["context_stack"])
+    # main_proj (mtp.0) and context_wkv_proj, which holds a second copy of the three wkv.
+    check_weights(context, [(7168, 21504, "fp8"), (3 * 512, 7168, "fp8")], "context", glob)
+    wkv = [c for c in V4_0813_MTP if c[0] == "attn.wkv.weight"][0]
+    assert 3 * _prod(wkv[2]) == 3 * 512 * 7168
+    check_weights(spec["head"], V4_CHECKPOINT["hc_head"], "draft head", glob)
+    (w1,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w1"]
+    (w2,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w2"]
+    assert (w1["rows"], w1["row_bytes"]) == (129280, 512 * 2)
+    assert (w2["n"], w2["k"], w2.get("weight_dtype", "bf16")) == (129280, 512, "bf16")
+    assert [n.get("aliases") for n in spec["head"] if n["op"] == "GEMM" and n["n"] == 129280] \
+        == ["head.lm_head"]
+    assert [n.get("aliases") for n in spec["embedding"] if n["op"] == "Gather"] == [
+        "embedding.embed_tokens"]
+
+
+def test_v4_0813_speculator_states_what_the_config_and_the_engine_say():
+    g, t = v4_0813_graph(), text_config(config_of(V4_0813))
+    spec = g["speculator"]
+    assert spec["method"] == "dspark" and spec["drafting"] == "parallel_block"
+    assert spec["num_spec_tokens"] == t["dspark_block_size"] == 5
+    # dspark_target_layer_ids [58, 59, 60] are used one higher by a deepseek_v4 target
+    # (eagle3_utils.py:100-137@v0.32.0): the state after each of those layers.
+    assert spec["aux_hidden_state_layers"] == [59, 60, 61]
+    assert "aux_hidden_state_bytes_per_token" not in spec
+    (main_proj,) = [n for k in g["layer_kinds"] if k["id"] == "dspark_context"
+                    for n in k["nodes"] if n.get("role") == "dspark_main_proj"]
+    assert (main_proj["n"], main_proj["k"]) == (7168, 3 * 7168)
+    (markov,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w1"]
+    assert markov["row_bytes"] == t["dspark_markov_rank"] * 2
+    # No compressor, indexer or compressed cache in a draft layer: any layer id at or past
+    # num_hidden_layers takes ratio 1 (attention.py:232-235). Each reads its window plus the
+    # block (sparse_swa.py:552-566), 128 + 5, from a 128-token window cache.
+    for nodes in expanded_layers(g, spec["stack"]):
+        (attn,) = [n for n in nodes if n["op"] == "Attention" and n.get("holds_engine_kv")]
+        assert attn["window"] == 128 + 5 and "compress_ratio" not in attn
+        assert [c["name"] for c in attn["caches"]] == ["swa"]
+        assert attn["caches"][0]["window"] == 128
+        assert not [n for n in nodes if "compressor" in n.get("role", "")
+                    or n.get("role") == "block_index_scores"]
+        (router,) = [n for n in nodes if n.get("role") == "router"]
+        assert router["n"] == 384
+        assert not [n for n in nodes if n["op"] == "Gather"], "a draft layer hashes no routes"
+    # The first draft layer takes the full hc_attn_fn on the repeated embedding; the next
+    # two fuse the previous layer's post.
+    first, second, _ = expanded_layers(g, spec["stack"])
+    assert [n["role"] for n in first[:2]] == ["mhc_attn_broadcast_pre", "hc_attn_fn"]
+    assert (first[1]["n"], first[1]["k"]) == (24, 4 * 7168)
+    assert second[0]["role"] == "mhc_attn_post_pre"
+
+
+def test_v4_0813_target_differs_from_the_pro_target_only_in_the_state_rows_the_block_sets():
+    """A decoding request holds 1 + block tokens in flight under DSpark, 1 + 1 under MTP, so
+    the compressor state of the ratio-4 layers is five pages and not four; nothing else in
+    the target changes between the two checkpoints."""
+    a, b = v4_0813_graph(), graph_of(DSV4_PRO)
+
+    def target_kinds(g):
+        return {k["id"]: json.loads(json.dumps(k)) for k in g["layer_kinds"]
+                if k["id"].startswith("csa")}
+
+    ka, kb = target_kinds(a), target_kinds(b)
+    assert ka.keys() == kb.keys() and a["stack"] == b["stack"]
+    rows = {}
+    for kid in ka:
+        for na, nb in zip(ka[kid]["nodes"], kb[kid]["nodes"]):
+            for ca, cb in zip(na.get("caches", []), nb.get("caches", [])):
+                if ca.get("kind") == "state":
+                    rows.setdefault(ca["name"], set()).add((cb["entries"], ca["entries"]))
+                    ca["entries"] = cb["entries"]
+    assert ka == kb
+    assert rows == {"compressor_state": {(16, 20), (144, 144)},
+                    "index_compressor_state": {(16, 20)}}
+    assert a["head"] == b["head"] and a["embedding"] == b["embedding"]
+    assert a["global"] == b["global"]
+
+
+def _v4_0813_raw(**edit) -> dict:
+    raw = json.loads(json.dumps(config_of(V4_0813)))
+    for k, v in edit.items():
+        if v is None:
+            raw.pop(k, None)
+        else:
+            raw[k] = v
+    return raw
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"dspark_draft_topk": 64}, "reads and this handler does not"),
+    ({"dspark_bonus_anchor": True}, "reads and this handler does not"),
+    ({"dspark_markov_rank": None}, "needs"),
+    ({"dspark_noise_token_id": None}, "needs"),
+    ({"dspark_target_layer_ids": None}, "needs"),
+    ({"dspark_block_size": None}, "needs"),
+    ({"n_mtp_layers": 2}, "changes the DSpark draft"),
+    ({"draft_vocab_size": 32000}, "changes the DSpark draft"),
+    ({"enable_confidence_head": False}, "changes the DSpark draft"),
+    ({"sample_from_anchor": False}, "changes the DSpark draft"),
+    ({"dflash_config": {"mask_token_id": 1}}, "changes the DSpark draft"),
+    ({"mask_token_id": 1}, "changes the DSpark draft"),
+    ({"dspark_noise_token_id": 129280}, "outside the vocabulary"),
+    ({"dspark_noise_token_id": -1}, "outside the vocabulary"),
+    ({"dspark_target_layer_ids": [58, 59, 61]}, "distinct layers"),
+    ({"dspark_target_layer_ids": [59, 59, 60]}, "distinct layers"),
+    ({"dspark_target_layer_ids": []}, "distinct layers"),
+    ({"dspark_block_size": 0}, "at least 1"),
+    ({"dspark_markov_rank": 5.5}, "not a whole number"),
+])
+def test_v4_dspark_refuses_a_config_it_has_not_read(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_v4_0813_raw(**edit), tmp_path, "deepseek-v4-pro-0813")
+
+
+def test_v4_dspark_compress_ratios_must_state_the_three_draft_layers_as_zero(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    ratios = config_of(V4_0813)["compress_ratios"]
+    assert len(ratios) == 64 and ratios[61:] == [0, 0, 0]
+    for bad in (ratios[:62], ratios[:61], ratios + [0], ratios[:61] + [0, 4, 0]):
+        with pytest.raises(derive_graph.DeriveError, match="compress_ratios"):
+            _derive_raw(_v4_0813_raw(compress_ratios=bad), tmp_path, "deepseek-v4-pro-0813")
+
+
+def test_v4_without_dspark_keys_still_refuses_the_three_extra_ratio_entries(tmp_path):
+    """The published V4-Pro form is 61 layers and one MTP entry. Sixty-four entries without
+    the dspark_* keys are not that, and MTP is not guessed to cover them."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = _v4_0813_raw(dspark_block_size=None, dspark_markov_rank=None,
+                       dspark_noise_token_id=None, dspark_target_layer_ids=None)
+    with pytest.raises(derive_graph.DeriveError, match="64 entries for 61 layers and 1 draft"):
+        _derive_raw(raw, tmp_path, "deepseek-v4-pro-0813")
+    g = _derive_raw(config_of(DSV4_PRO), tmp_path, "deepseek-v4-pro")
+    assert g["speculator"]["method"] == "mtp"
+
+
+def test_v4_dspark_context_pass_pays_for_the_zeroed_query_per_draft_layer():
+    """_insert_context_kv allocates torch.zeros((tokens, rank heads, head_dim)) for each of
+    the three layers and runs it through the fused norm + RoPE + insert kernel
+    (nvidia/dspark.py:302-349@v0.32.0); V4.1's drafter does not."""
+    g = v4_0813_graph()
+    ctx = {k["id"]: k for k in g["layer_kinds"]}["dspark_context"]
+    dummy = [n for n in ctx["nodes"] if n["role"].startswith("dspark_context_dummy_q_")]
+    assert [n["bytes_per_token"] for n in dummy] == [3 * 128 * 512 * 2] * 3
+    assert {n["tp"] for n in dummy} == {"sharded"}
+    insert = [n for n in ctx["nodes"] if n["role"].startswith("dspark_context_kv_rope_insert_")]
+    assert [n["bytes_per_token"] for n in insert] == [512 * 2 + 584] * 3

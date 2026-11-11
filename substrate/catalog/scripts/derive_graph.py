@@ -2210,6 +2210,26 @@ def v4_expert_width(raw: dict[str, Any], cfg: dict[str, Any], by_expert_dtype: s
     return "nvfp4"
 
 
+# The DSpark draft of a DeepSeek-V4 checkpoint (DSparkDeepseekV4ForCausalLM,
+# models/deepseek_v4/nvidia/dspark.py@v0.32.0) builds `getattr(config, "n_mtp_layers", None)
+# or 3` decoder layers (:110), and the config names no n_mtp_layers; the checkpoint's
+# mtp.0 to mtp.2 are those three. Of the keys the config states, the draft reads
+# dspark_target_layer_ids (:109), dspark_markov_rank (:173-178) and, through the shared
+# speculator, dspark_block_size (config/speculative.py:1481-1490) and dspark_noise_token_id
+# (v1/worker/gpu/spec_decode/utils.py:92-114).
+V4_DSPARK_LAYERS = 3
+V4_DSPARK_KEYS = ("dspark_block_size", "dspark_markov_rank", "dspark_noise_token_id",
+                  "dspark_target_layer_ids")
+# Keys the draft or its speculator reads when present, each changing what the draft is:
+# the layer count (:110), a reduced draft vocabulary (:170-172), the confidence head
+# (:180), the sampling anchor (dspark/speculator.py:49), a reduced-vocabulary top-k
+# (:78), and the mask-token sources that take precedence over dspark_noise_token_id
+# (utils.py:99-109). A config that states one is a draft this handler has not read.
+V4_DSPARK_OVERRIDES = ("n_mtp_layers", "draft_vocab_size", "enable_confidence_head",
+                       "sample_from_anchor", "dflash_config", "mask_token_id",
+                       "pard_token", "ptd_token_id")
+
+
 def handler_deepseek_v4(cfg, raw, model):
     """DeepSeek-V4: compressed sparse MLA at two ratios, each compressed layer with its
     own compressor and caches, an indexer on the ratio-4 layers, mHC on every
@@ -2328,12 +2348,36 @@ def handler_deepseek_v4(cfg, raw, model):
         # (nvidia/mtp.py:267, 281; config/speculative.py:1487-1495).
         raise DeriveError(f"{model}: num_nextn_predict_layers is {spec_layers}; V4's "
                           f"MTP builds one draft layer")
-    if len(ratios) not in (layers, layers + spec_layers):
+    # A config that states any dspark_* key is a DSpark checkpoint: its mtp.* tensors are
+    # DSpark stages (main_proj, markov_head, confidence_head) and carry no e_proj or h_proj,
+    # so the MTP draft cannot load from them and the speculator is DSpark. Every key the
+    # draft reads is stated, and any key it would read that is not, is refused.
+    dspark_stated = sorted(k for k in cfg if k.startswith("dspark_"))
+    dspark = bool(dspark_stated)
+    if dspark:
+        missing = [k for k in V4_DSPARK_KEYS if k not in cfg]
+        unread = sorted(set(dspark_stated) - set(V4_DSPARK_KEYS))
+        overriding = [k for k in V4_DSPARK_OVERRIDES if k in cfg]
+        if missing:
+            raise DeriveError(f"{model}: a DSpark draft needs {missing}, which the config "
+                              f"does not state")
+        if unread:
+            raise DeriveError(f"{model}: the config states {unread}, which the DSpark draft "
+                              f"reads and this handler does not")
+        if overriding:
+            raise DeriveError(f"{model}: the config states {overriding}, each of which "
+                              f"changes the DSpark draft this handler prices")
+    draft_stages = V4_DSPARK_LAYERS if dspark else spec_layers
+    if len(ratios) != layers + draft_stages and (dspark or len(ratios) != layers):
         raise DeriveError(
             f"{model}: compress_ratios has {len(ratios)} entries for {layers} layers and "
-            f"{spec_layers} draft layers")
-    # The draft layer's entry is never read: any layer id at or past num_hidden_layers
-    # takes ratio 1 (attention.py:232-235).
+            f"{draft_stages} draft layers")
+    # The draft layers' entries are never read: any layer id at or past num_hidden_layers
+    # takes ratio 1 (attention.py:232-235). A DSpark checkpoint states them as 0, and an
+    # entry that says otherwise is a statement the engine ignores.
+    if dspark and any(ratios[layers:]):
+        raise DeriveError(f"{model}: compress_ratios gives the draft layers {ratios[layers:]}; "
+                          f"the engine reads none of them and the published form is 0")
     ratios = ratios[:layers]
     unknown = sorted(set(ratios) - {4, 128})
     if unknown:
@@ -2359,6 +2403,23 @@ def handler_deepseek_v4(cfg, raw, model):
     index_heads = positive("index_n_heads")
     index_dim = positive("index_head_dim")
     hc_mult = positive("hc_mult")
+    draft_block = markov = 0
+    targets: list[int] = []
+    if dspark:
+        draft_block = positive("dspark_block_size")
+        markov = positive("dspark_markov_rank")
+        noise = whole(cfg["dspark_noise_token_id"], "dspark_noise_token_id")
+        if not 0 <= noise < positive("vocab_size", concept=True):
+            raise DeriveError(f"{model}: dspark_noise_token_id {noise} is outside the "
+                              f"vocabulary")
+        # main_proj takes one hidden-wide state per target layer, so the ids are checked
+        # as layers of this stack, not just counted (dspark.py:109, 119-126).
+        targets = [whole(i, "an entry of dspark_target_layer_ids")
+                   for i in require_key(cfg, "dspark_target_layer_ids", model)]
+        if (not targets or len(set(targets)) != len(targets)
+                or any(not 0 <= i < layers for i in targets)):
+            raise DeriveError(f"{model}: dspark_target_layer_ids {targets} must be distinct "
+                              f"layers of the target's {layers}")
     if (q_heads * total_dim) % o_groups:
         raise DeriveError(
             f"{model}: o_groups {o_groups} does not divide {q_heads * total_dim}")
@@ -2519,8 +2580,10 @@ def handler_deepseek_v4(cfg, raw, model):
     def state_rows(state_window, block):
         # The rows a decoding request holds of a sliding-window state: cdiv(window - 1
         # + tokens in flight, block) + 1 pages (v1/kv_cache_interface.py:840-866), with
-        # 1 + num_spec_tokens tokens in flight.
-        in_flight = 1 + spec_layers
+        # 1 + num_spec_tokens tokens in flight, which for DSpark is its block
+        # (config/speculative.py:1481-1490 defaults num_speculative_tokens to
+        # dspark_block_size).
+        in_flight = 1 + (draft_block if dspark else spec_layers)
         return (-(-(state_window - 1 + in_flight) // block) + 1) * block
 
     def compressor(ratio):
@@ -2605,12 +2668,12 @@ def handler_deepseek_v4(cfg, raw, model):
         ]
         return nodes
 
-    def main_attention(ratio, extra_caches):
+    def main_attention(ratio, extra_caches, read_window=None):
         node = attention(
             cfg, model,
             kind="sparse_mla",
             latent_width=total_dim,
-            window=window,
+            window=read_window or window,
             compress_ratio=ratio if ratio > 1 else None,
             index_topk=topk if ratio == 4 else None,
         )
@@ -2682,7 +2745,7 @@ def handler_deepseek_v4(cfg, raw, model):
         ]
         return nodes
 
-    def attention_block(ratio):
+    def attention_block(ratio, read_window=None):
         nodes = projections_in()
         extra = []
         if ratio > 1:
@@ -2691,7 +2754,7 @@ def handler_deepseek_v4(cfg, raw, model):
             extra.append(state)
         if ratio == 4:
             nodes += indexer()
-        nodes.append(main_attention(ratio, extra))
+        nodes.append(main_attention(ratio, extra, read_window))
         if ratio > 1:
             # Prefill dequantizes the request's whole compressed stream into a BF16
             # workspace, head_dim values per entry, once per chunk (nvidia/flashmla.py:
@@ -2762,7 +2825,113 @@ def handler_deepseek_v4(cfg, raw, model):
         "head": head,
     }
 
-    if spec_layers:
+    if dspark:
+        # The DSpark draft (DSparkDeepseekV4ForCausalLM, nvidia/dspark.py@v0.32.0): three
+        # decoder layers at ids num_hidden_layers + i (:110, 134-143), the target's own layer
+        # class at ratio 1, so a sliding window and no compressor or indexer
+        # (attention.py:232-235), with the target's experts (384 routed, top 6) and mHC, and
+        # no hash routing. It drafts dspark_block_size positions in ONE pass, and each query
+        # reads its window plus the whole block, non-causally (v1/attention/backends/mla/
+        # sparse_swa.py:552-566, 1250-1262).
+        #
+        # Before that pass the drafter projects the hidden states of dspark_target_layer_ids
+        # through main_proj and main_norm (:119-127, 189-194), and one merged context_wkv_proj
+        # projects the result to every draft layer's K (:146-155, 215-217); each layer then
+        # norms it and inserts it into its window cache (:223-232, 285-349): the context
+        # stack, over the target's scheduled tokens. The checkpoint stores wkv once, inside
+        # each layer's fused_wqa_wkv; the loader yields it a second time into context_wkv_proj
+        # (_duplicate_context_wkv_weights, :76-92), so those 3 x 512 x 7168 FP8 values are
+        # resident twice, and the context node is not an alias.
+        #
+        # Unlike V4.1's drafter, which inserts without a query, _insert_context_kv allocates
+        # a zeroed query of the rank's heads for every layer and passes it through the same
+        # fused norm + RoPE + insert kernel as the main path (:302-349), so the context pass
+        # also writes and re-reads head_dim x heads per rank per token per layer.
+        #
+        # After the pass: the mHC post, the gather under sequence parallelism, the learned
+        # hc_head and the final norm (:257-279, 422-424), then the target's lm_head over every
+        # block position (aliased; has_own_lm_head is False, :352-377). Then the Markov head
+        # once per draft position over one row per request: an embedding of the previous
+        # token and a (vocab, markov_rank) BF16 projection (qwen3_dspark.py:48-93), on its
+        # full path because dspark_draft_topk is not stated. The confidence head
+        # (proj [1, hidden + markov_rank]) is built but consulted only under adaptive
+        # verification, which is off by default; it is resident and not priced.
+        aux_layers = draft_aux_hidden_state_layers({**cfg, "model_type": "deepseek_v4"}, model,
+                                                   layers, states=len(targets))
+        draft_kinds = []
+        for d in range(V4_DSPARK_LAYERS):
+            if d == 0:
+                # The embedding is repeated to hc_mult copies by a materializing expand
+                # (:257), then the first draft layer's standalone pre takes the full
+                # hc_attn_fn on that 3-D stream (nvidia/model.py:1202-1222), unlike target
+                # layer 0, which projects with the matrix summed over its copies.
+                nodes = token_sharded(
+                    traffic("mhc_attn_broadcast_pre", hidden * act + bundle + mhc_pre_bytes,
+                            tp="replicated"),
+                    with_tp(fp32_gemm("hc_attn_fn", mix_hc, hc_mult * hidden), "replicated"))
+            else:
+                nodes = mhc_boundary("attn")
+            nodes += attention_block(1, read_window=window + draft_block)
+            nodes += ffn(False)
+            draft_kinds.append({"id": f"dspark_{d}", "nodes": nodes, "edges": chain(nodes)})
+        kinds += draft_kinds
+        context = [
+            with_tp(gemm("dspark_main_proj", hidden, hidden * len(targets)), "replicated"),
+            with_tp(norm("dspark_main_norm"), "replicated"),
+            with_tp(gemm("dspark_context_wkv", V4_DSPARK_LAYERS * total_dim, hidden),
+                    "replicated"),
+        ]
+        for d in range(V4_DSPARK_LAYERS):
+            context += [
+                traffic(f"dspark_context_kv_norm_{d}", 2 * total_dim * act, tp="replicated"),
+                # The zeroed query: written by torch.zeros, then read and written by the
+                # kernel as the main path's q_rope_kv_insert is (3 passes over the rank's
+                # heads).
+                traffic(f"dspark_context_dummy_q_{d}", 3 * q_heads * total_dim * act,
+                        tp="sharded"),
+                # It writes draft layer d's window cache, which a node of this kind
+                # cannot name, so the record is stated in its traffic.
+                traffic(f"dspark_context_kv_rope_insert_{d}", total_dim * act + record,
+                        tp="replicated"),
+            ]
+        kinds.append({"id": "dspark_context", "nodes": context, "edges": chain(context)})
+        extras["speculator"] = {
+            # config/speculative.py:1432-1453@v0.32.0 resolves method "dspark" to the
+            # DSparkDraftModel architecture for a deepseek_v4 target whose checkpoint ships
+            # the stages under mtp.*. Its default draft length is dspark_block_size, not
+            # num_nextn_predict_layers (:1481-1490).
+            "method": "dspark",
+            "num_spec_tokens": draft_block,
+            "drafting": "parallel_block",
+            # The drafter's own VocabParallelEmbedding, whose weights are the target's
+            # (:113-118), all-reduces its block's tokens across TP.
+            "embedding": [{**embed, "role": "dspark_embed_tokens",
+                           "aliases": "embedding.embed_tokens"},
+                          collective("AllReduce", "dspark_embed_out", EMIT_TENSOR_PARALLEL)],
+            "stack": {"pattern": [k["id"] for k in draft_kinds], "repeat": 1},
+            "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
+            "head": [
+                *token_sharded(traffic("dspark_mhc_final_post", mhc_post_bytes,
+                                       tp="replicated")),
+                {**collective("AllGather", "dspark_head_in", EMIT_SEQUENCE_PARALLEL),
+                 "bytes_per_token": bundle},
+                *mhc_head("dspark_"),
+                norm("dspark_final_norm"),
+                {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                 "aliases": "head.lm_head"},
+            ],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab,
+                 "row_bytes": markov * act, "rows_per_token": 1,
+                 "out_bytes_per_token": markov * act},
+                with_tp(base_gemm("markov_w2", vocab, markov), "replicated"),
+            ],
+            # The target captures idx + 1 in the ids, each the mean of the hc_mult streams
+            # after the layer's mHC post (nvidia/model.py:1482-1490), one hidden-width
+            # activation, the schema's default width.
+            "aux_hidden_state_layers": aux_layers,
+        }
+    elif spec_layers:
         # DeepSeekV4MTP (nvidia/mtp.py:305-, built from the layer and predictor at
         # :83-302): the target's embedding and lm_head
         # (shared, v1/worker/gpu/spec_decode/eagle/utils.py:15-18, 38-118), separate FP8

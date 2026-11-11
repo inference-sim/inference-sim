@@ -146,6 +146,9 @@ COLLECTORS = {
     "dsv4_fp4_b300_vllm.sh": (
         "fp8", "serves the staged checkpoint with no quantization flag, and "
                "--kv-cache-dtype fp8 (line 123)"),
+    "dsv4dspark_fp4_b300_vllm.sh": (
+        "fp8", "serves the staged checkpoint with no quantization flag, and "
+               "--kv-cache-dtype fp8 (line 169)"),
     "glm52_fp4_b300_vllm.sh": (
         "fp8", "serves the staged checkpoint with no quantization flag, and "
                "--kv-cache-dtype fp8 (line 131)"),
