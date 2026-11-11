@@ -125,10 +125,6 @@ func TestTheG1DataIsRefusedWhenMalformed(t *testing.T) {
 			b := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "fedcba9876543210"}
 			r.SelectedEntries.Implementations = map[string][]coefficient.KernelImpl{"gemm": {b, a}}
 		}, "selected_entries.implementations.gemm[1]", "sorted"},
-		{"the run ran a build the exact entry did not price", func(r *Result) {
-			b := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "fedcba9876543210"}
-			r.SelectedEntries.Implementations["gemm"] = append(r.SelectedEntries.Implementations["gemm"], b)
-		}, "selected_entries.coefficients[0].priced", "prices a primitive only when it lists every implementation"},
 		{"an implementation list of a word that is not a primitive", func(r *Result) {
 			r.SelectedEntries.Implementations["warp_drive"] = r.SelectedEntries.Implementations["gemm"]
 		}, "selected_entries.implementations.warp_drive", "not a lowered primitive"},
@@ -172,5 +168,23 @@ func TestAnUnmarkedReportWithoutClosenessDataStillValidates(t *testing.T) {
 	r.SelectedEntries.Coefficients[0].KernelMatch = coefficient.KernelUnkeyed
 	if p := r.Validate(); !p.OK() {
 		t.Fatalf("a marked report with every flag false: %s", p.Error())
+	}
+}
+
+// The operations that read an entry are a subset of the primitive's operations, so a run may have
+// run another build of the primitive for operations the entry is not read by (full attention on
+// one kernel, the sliding-window layers on another): the entry's priced list is then narrower than
+// the primitive's, and valid. A priced build the run did not run is still refused.
+func TestAnEntryMayBePricedOnFewerBuildsThanThePrimitiveRan(t *testing.T) {
+	r := withG1()
+	b := coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "fedcba9876543210"}
+	r.SelectedEntries.Implementations["gemm"] = append(r.SelectedEntries.Implementations["gemm"], b)
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("a primitive that ran another build for other operations is refused: %s", p.Error())
+	}
+	c := &r.SelectedEntries.Coefficients[0]
+	c.Priced = append(c.Priced, coefficient.KernelImpl{Library: "attn-lib", Variant: "decode_v2", CodeHash: "00000000000000ff"})
+	if p := r.Validate(); p.OK() {
+		t.Fatal("a priced build the run did not run was accepted")
 	}
 }

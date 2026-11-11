@@ -218,13 +218,17 @@ type SelectedCoefficient struct {
 	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), or
 	// empty for a name that prices no lowered kernel. Present with closeness_version.
 	Primitive string `yaml:"primitive,omitempty"`
-	// Priced are the implementations of the entry's primitive that ran, with their code hashes:
-	// what the engine lowered that primitive to and the lookup matched whole by library, variant
-	// and code hash (design VAL-8): an exact entry is used only when every implementation that
-	// ran for its primitive is one it lists. Equal to selected_entries.implementations[primitive],
-	// and a subset of kernel_impls. A sibling build the entry is also valid for, and an
-	// implementation of another primitive, is not here. A reader maps each library version a benchmark run recorded to a kernel hash and
-	// compares it with these, not with KernelImpls (design §11.3, G1).
+	// Priced are the implementations of the operations that read the entry, with their code
+	// hashes: the kernels the engine lowered those operations to, matched whole by library,
+	// variant and code hash (design VAL-8, 6.2). The operations that read an entry are those of
+	// the primitive its name prices, narrowed to its kind where the name states one: the
+	// per-kind terms of attention and the recurrent update are read only by the layers of that
+	// kind. An exact entry is used only when every implementation among them is one it lists.
+	// A subset of selected_entries.implementations[primitive] and of kernel_impls. A sibling
+	// build the entry is also valid for, an implementation of another primitive, and a kernel
+	// that runs only operations the entry is not read by, are not here. A reader maps each
+	// library version a benchmark run recorded to a kernel hash and compares it with these, not
+	// with KernelImpls (design §11.3, G1).
 	Priced []coefficient.KernelImpl `yaml:"priced,omitempty"`
 	// KernelMatch says how the entry met the implementations that ran: exact when it lists one
 	// of them, unkeyed when it lists none and so applies to every build without having been

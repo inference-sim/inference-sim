@@ -2,6 +2,7 @@ package latencykernel
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -762,4 +763,123 @@ func TestTheSparsePrefillReadsThePartWidePairWhenItsFamilyIsIncomplete(t *testin
 	if !found {
 		t.Error("the incomplete family's fallback is not recorded")
 	}
+}
+
+// The selected-coefficient report names, as Priced, the kernels of the operations that read the
+// entry, not every kernel that runs its primitive (VAL-8, 6.2, G1): in a pool whose full attention
+// runs kernel A and whose sliding-window layers run kernel B, attention_decode_rate_swa keyed to B
+// reports B alone. The part-wide pair is the fallback for a kind with no pair of its own, so with
+// the sliding-window layers priced from their own pair it is read by the full layers alone and
+// reports A; the Result's implementations for the primitive still list A and B. A part-wide pair
+// whose kind has no pair of its own reports every kernel that falls back to it.
+func TestTheReportedPricedKernelsAreThoseOfTheOperationsThatReadTheEntry(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in Inputs
+	for _, c := range perturbationScenarios(t, d, "gpt-oss-120b") {
+		if strings.HasPrefix(c.label, "gpt-oss-120b/h200/tp") {
+			in = c.in
+			break
+		}
+	}
+	if in.Model == nil {
+		t.Fatal("no gpt-oss-120b scenario builds on h200")
+	}
+	a := plan.KernelImpl{Library: "flashinfer", Variant: "decode_full", CodeHash: "aaaaaaaaaaaa"}
+	b := plan.KernelImpl{Library: "flashinfer", Variant: "decode_window", CodeHash: "bbbbbbbbbbbb"}
+	implA := coefficient.KernelImpl{Library: a.Library, Variant: a.Variant, CodeHash: a.CodeHash}
+	implB := coefficient.KernelImpl{Library: b.Library, Variant: b.Variant, CodeHash: b.CodeHash}
+	kinds := map[string]model.LayerKind{}
+	for _, lk := range in.Model.LayerKinds {
+		kinds[lk.ID] = lk
+	}
+	for i, id := range in.Model.Stack.Expand() {
+		impl := a
+		for _, n := range kinds[id].Nodes {
+			if n.Op == model.OpAttention && n.AttentionKind == model.AttentionSWA {
+				impl = b
+			}
+		}
+		in.Operations = append(in.Operations, plan.Operation{Layer: i, Primitive: plan.PrimAttentionDecode, Impl: impl})
+	}
+	report := func(in Inputs) (map[string]result.SelectedCoefficient, result.SelectedEntries) {
+		k, err := New(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dd, err := load.Embedded()
+		if err != nil {
+			t.Fatal(err)
+		}
+		k.RecordSelected(dd)
+		se := dd.Report().Result()
+		got := map[string]result.SelectedCoefficient{}
+		for _, c := range se.Coefficients {
+			got[c.Name] = c
+		}
+		return got, se
+	}
+	// The sliding-window layers have a pair of their own: the part-wide pair, valid for both
+	// kernels, is read by the full layers alone.
+	keyed := keyMeasured(in, map[string]plan.KernelImpl{"attention_decode_rate_swa": b, "attention_decode_floor_swa": b,
+		"attention_decode_rate": a, "attention_decode_floor": a})
+	got, se := report(keyed)
+	swa, ok := got["attention_decode_rate_swa"]
+	if !ok || !reflect.DeepEqual(swa.Priced, []coefficient.KernelImpl{implB}) || swa.KernelMatch != coefficient.KernelExact {
+		t.Errorf("the sliding-window rate: selected %v, priced %v, match %q; want exact, priced on the windowed kernel alone", ok, swa.Priced, swa.KernelMatch)
+	}
+	for _, name := range []string{"attention_decode_rate", "attention_decode_floor"} {
+		wide, ok := got[name]
+		if !ok || !reflect.DeepEqual(wide.Priced, []coefficient.KernelImpl{implA}) {
+			t.Errorf("%s: selected %v, priced %v; want full attention's kernel alone, the sliding-window layers having a pair of their own", name, ok, wide.Priced)
+		}
+	}
+	if !reflect.DeepEqual(se.Implementations[string(plan.PrimAttentionDecode)], []coefficient.KernelImpl{implA, implB}) {
+		t.Errorf("the Result's implementations for the primitive: %v", se.Implementations)
+	}
+	// Without a pair of their own the sliding-window layers fall back to the part-wide pair,
+	// which then reports both kernels.
+	fallback := keyMeasured(in, map[string]plan.KernelImpl{"attention_decode_rate": a})
+	fallback.Coefficients = dropEntries(fallback.Coefficients, "attention_decode_rate_swa", "attention_decode_floor_swa")
+	fallback.Coefficients = keyEntriesTo(fallback.Coefficients, "attention_decode_rate", implA, implB)
+	got, _ = report(fallback)
+	if wide, ok := got["attention_decode_rate"]; !ok || !reflect.DeepEqual(wide.Priced, []coefficient.KernelImpl{implA, implB}) {
+		t.Errorf("the part-wide rate with no sliding-window pair: selected %v, priced %v; want both kernels", ok, wide.Priced)
+	}
+}
+
+// dropEntries removes every entry of the named coefficients.
+func dropEntries(sets []*coefficient.Set, names ...string) []*coefficient.Set {
+	var out []*coefficient.Set
+	for _, s := range sets {
+		c := *s
+		c.Coefficients = nil
+		for _, e := range s.Coefficients {
+			if !slices.Contains(names, e.Name) {
+				c.Coefficients = append(c.Coefficients, e)
+			}
+		}
+		out = append(out, &c)
+	}
+	return out
+}
+
+// keyEntriesTo states that every measured entry of the named coefficient is valid for the given
+// implementations.
+func keyEntriesTo(sets []*coefficient.Set, name string, impls ...coefficient.KernelImpl) []*coefficient.Set {
+	var out []*coefficient.Set
+	for _, s := range sets {
+		c := *s
+		c.Coefficients = append([]coefficient.Entry(nil), s.Coefficients...)
+		for j, e := range c.Coefficients {
+			if e.Name == name && e.Method == vocab.MethodMeasured {
+				e.KernelImpls = impls
+				c.Coefficients[j] = e
+			}
+		}
+		out = append(out, &c)
+	}
+	return out
 }

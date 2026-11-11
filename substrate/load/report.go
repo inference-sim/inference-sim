@@ -47,7 +47,8 @@ type Selected struct {
 	// KernelImpls, FitRange, Extrapolated and Unidentified are a coefficient's, as the
 	// Result's SelectedCoefficient carries them; zero for a profile.
 	KernelImpls []coefficient.KernelImpl
-	// Priced are the implementations of KernelImpls that run in the pool the entry priced: the
+	// Priced are the implementations of KernelImpls that run the operations that read the entry
+	// in the pool it priced (the primitive's operations, narrowed to the entry's kind): the
 	// lowered implementation, with its code hash. Match says how the entry met them (exact, or
 	// unkeyed when it lists none). MeasuredOn are the implementations a transferred value was
 	// measured on. A sibling implementation the entry is also valid for is in KernelImpls and
@@ -99,8 +100,9 @@ func (d *Data) RecordCoefficient(set, name string, scope coefficient.Scope, meth
 // One Data serves one run: nothing is cleared, so a Data reused for a second run carries the
 // first run's flags into its report.
 //
-// primitive is the lowered primitive the entry prices and priced the implementations the pool
-// runs for it, which a keyed entry matched whole (resolve.Resolved.Primitive and Running);
+// primitive is the lowered primitive the entry prices and priced the implementations of the
+// operations that read it, which a keyed entry matched whole (resolve.Resolved.Primitive and
+// Running);
 // match says how it met them (design VAL-8): a keyed entry is exact and names the build that
 // ran, an unkeyed one applies to every build and names none. Two entries that differ only in the implementations they are valid for are two
 // records.

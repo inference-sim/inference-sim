@@ -938,8 +938,8 @@ func implLess(a, b coefficient.KernelImpl) bool {
 
 // validatePriced checks the implementations a coefficient priced against the ones it is valid
 // for and the ones the run ran for its primitive (design VAL-8, G1). A keyed entry is exact and
-// names, with their code hashes, the implementations that ran for its primitive, all of which it
-// lists; an unkeyed one names none; a transferred one may say what it was measured on, and no
+// names, with their code hashes, the implementations of the operations that read it, all of
+// which it lists and each of which ran for its primitive; an unkeyed one names none; a transferred one may say what it was measured on, and no
 // other method may.
 func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, marked bool, running map[string][]coefficient.KernelImpl) {
 	coefficient.ValidateKernelImpls(p, at+".priced", c.Priced)
@@ -966,9 +966,6 @@ func (c SelectedCoefficient) validatePriced(p *validate.Problems, at string, mar
 		if !ran[k] {
 			p.Field(kat, "%s is not among selected_entries.implementations[%q]: the run did not run it for that primitive", coefficient.DescribeImpls([]coefficient.KernelImpl{k}), c.Primitive)
 		}
-	}
-	if len(c.Priced) > 0 && len(c.Priced) != len(running[c.Primitive]) {
-		p.Field(at+".priced", "names %d implementations, but %d ran for primitive %q: an exact entry prices a primitive only when it lists every implementation that ran for it", len(c.Priced), len(running[c.Primitive]), c.Primitive)
 	}
 	if !marked {
 		return
