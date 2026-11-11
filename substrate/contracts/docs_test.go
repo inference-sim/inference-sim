@@ -28,6 +28,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/router"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 	"github.com/inference-sim/blis-substrate/contracts/spec/trace"
@@ -347,6 +348,8 @@ var documented = map[string]struct {
 	"fields.Estimation":           {typ: reflect.TypeOf(fields.Estimation{})},
 	"fields.ValueClasses":         {typ: reflect.TypeOf(fields.ValueClasses{})},
 	"fields.Threshold":            {typ: reflect.TypeOf(fields.Threshold{})},
+	"routertable.Entry":           {typ: reflect.TypeOf(routertable.Entry{})},
+	"routertable.Citation":        {typ: reflect.TypeOf(routertable.Citation{})},
 	"pointrecord.Record":          {typ: reflect.TypeOf(pointrecord.Record{})},
 	"pointrecord.Identity":        {typ: reflect.TypeOf(pointrecord.Identity{})},
 	"pointrecord.G5Reason":        {typ: reflect.TypeOf(pointrecord.G5Reason{})},

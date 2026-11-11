@@ -650,3 +650,43 @@ func TestRunTheCommittedCatalogPasses(t *testing.T) {
 		t.Fatalf("the committed catalog fails validate-catalog (exit %d):\n%s\n%s", code, out, errb)
 	}
 }
+
+const routerEntry = `kind: RouterMapping
+router: acme
+mode: round-robin
+policy: round-robin
+reason: both rotate over the workers
+evidence:
+  - {side: router, field: mode, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "1-2", claim: x}
+  - {side: router, field: policy, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "3", claim: x}
+  - {side: llm-d, field: policy, repository: inference-sim/llm-d-router, commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go, lines: "5", claim: x}
+`
+
+// The router table is checked: an entry with evidence passes, one without evidence or with a
+// policy llm-d's router does not offer is refused, and so is one router mode mapped twice.
+func TestRouterEntriesAreChecked(t *testing.T) {
+	code, out, errb := exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": routerEntry}))
+	if code != 0 || !strings.Contains(out, "acme-round-robin") {
+		t.Fatalf("a valid entry: code %d\n%s\n%s", code, out, errb)
+	}
+	noEvidence := routerEntry[:strings.Index(routerEntry, "evidence:")] + "evidence: []\n"
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": noEvidence}))
+	if code != 1 || !strings.Contains(errb, "added only with evidence") {
+		t.Errorf("no evidence: code %d, want 1 naming the rule:\n%s", code, errb)
+	}
+	badPolicy := strings.Replace(routerEntry, "policy: round-robin\nreason", "policy: kv-aware\nreason", 1)
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": badPolicy}))
+	if code != 1 || !strings.Contains(errb, "not a policy llm-d's router offers") {
+		t.Errorf("a policy llm-d does not offer: code %d\n%s", code, errb)
+	}
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{
+		"routers/acme-round-robin.yaml": routerEntry, "routers/acme-rr-again.yaml": routerEntry}))
+	if code != 1 || !strings.Contains(errb, "acme-rr-again") || !strings.Contains(errb, `make its name "acme-round-robin"`) {
+		t.Errorf("one router mode mapped twice: code %d\n%s", code, errb)
+	}
+	unknownKey := strings.Replace(routerEntry, "mode: round-robin\n", "mode: round-robin\ncolour: red\n", 1)
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": unknownKey}))
+	if code != 1 || !strings.Contains(errb, "colour") {
+		t.Errorf("an unknown key: code %d\n%s", code, errb)
+	}
+}

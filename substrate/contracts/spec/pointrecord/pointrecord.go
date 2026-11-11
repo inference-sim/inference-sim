@@ -149,6 +149,11 @@ type Substitution struct {
 	// Policy is the llm-d router policy BLIS simulated in place of the run's router. Only
 	// with router_differs, where it is required; Subject is then the router the run used.
 	Policy string `yaml:"policy,omitempty"`
+	// Entry names the router table entry the point used, by its name, the file stem under
+	// catalog/routers. The entry's key is the router, its mode and its session-affinity
+	// setting; its name begins with the router, which is Subject. Only with router_differs,
+	// where it is required.
+	Entry string `yaml:"entry,omitempty"`
 	// Evidence cites the router table's evidence for matching the router to Policy, as the
 	// table entry gives it. Only with router_differs, where it is required.
 	Evidence string `yaml:"evidence,omitempty"`

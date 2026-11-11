@@ -177,7 +177,7 @@ func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 	for _, s := range []Substitution{
 		{Kind: SubClientDifference, Subject: "send_gap", Detail: "the next request is sent after the response stream closes"},
 		{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at 0123456789abcdef0123456789abcdef01234567", Date: "2026-03-02"},
-		{Kind: SubRouterDiffers, Subject: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"},
+		{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"},
 		{Kind: SubResolvedDiffers, Subject: "max_num_batched_tokens", Detail: "the run resolved 8192, the engine resolves 2048"},
 	} {
 		r := valid()
@@ -200,7 +200,7 @@ func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 // that does not take it, and a malformed date.
 func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 	later := Substitution{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at abc", Date: "2026-03-02"}
-	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Policy: "round-robin", Evidence: "catalog/routers/dynamo.yaml"}
+	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"}
 	client := Substitution{Kind: SubClientDifference, Subject: "send_gap", Detail: "x"}
 	resolved := Substitution{Kind: SubResolvedDiffers, Subject: "s", Detail: "x"}
 	with := func(s Substitution, edit func(*Substitution)) func(*Record) {
@@ -219,6 +219,10 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"later_record without the field", with(later, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
 		{"later_record naming a policy", with(later, func(s *Substitution) { s.Policy = "round-robin" }), "substitutions[0].policy", "not a key of later_record"},
 		{"router_differs without a policy", with(router, func(s *Substitution) { s.Policy = "" }), "substitutions[0].policy", "required for router_differs"},
+		{"router_differs without an entry", with(router, func(s *Substitution) { s.Entry = "" }), "substitutions[0].entry", "required for router_differs"},
+		{"router_differs naming an entry of another router", with(router, func(s *Substitution) { s.Entry = "vllm-round-robin" }), "substitutions[0].entry", "begins with its router"},
+		{"router_differs with a policy llm-d does not offer", with(router, func(s *Substitution) { s.Policy = "kv-aware" }), "substitutions[0].policy", "not a policy llm-d's router offers"},
+		{"router_differs with the policy none", with(router, func(s *Substitution) { s.Policy = "none" }), "substitutions[0].policy", "not a policy llm-d's router offers"},
 		{"router_differs without evidence", with(router, func(s *Substitution) { s.Evidence = "" }), "substitutions[0].evidence", "required for router_differs"},
 		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
 		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
@@ -226,6 +230,7 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"client_difference without a detail", with(client, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for client_difference"},
 		{"client_difference naming evidence", with(client, func(s *Substitution) { s.Evidence = "e" }), "substitutions[0].evidence", "not a key of client_difference"},
 		{"resolved_differs without a detail", with(resolved, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for resolved_differs"},
+		{"an estimate naming an entry", func(r *Record) { r.Substitutions[0].Entry = "e" }, "substitutions[0].entry", "not a key of estimated"},
 		{"an estimate naming a policy", func(r *Record) { r.Substitutions[0].Policy = "p" }, "substitutions[0].policy", "not a key of estimated"},
 	} {
 		t.Run(c.name, func(t *testing.T) {

@@ -257,7 +257,7 @@ func catalogOverlayRules() rules {
 	}
 	return rules{patterns: ps, refused: map[string]string{
 		"ledger":       "an overlay may not contain ledger files",
-		"measurements": "an overlay adds models, hardware, devices, networks or workloads; the measurement-source registry is not overlaid",
+		"measurements": "an overlay adds models, hardware, devices, networks, routers or workloads; the measurement-source registry is not overlaid",
 	}, ignored: catalogRules().ignored}
 }
 

@@ -190,3 +190,32 @@ func TestCheckDraftersHoldsInBothDirections(t *testing.T) {
 		}
 	}
 }
+
+// CheckCatalog reads routers/ into the catalog and checks each entry. An entry is named for its
+// key, so a second file cannot map a router mode that another maps.
+func TestCheckCatalogReadsAndChecksTheRouterTable(t *testing.T) {
+	entry := func(extra string) []byte {
+		return []byte(`kind: RouterMapping
+router: acme
+mode: round-robin
+policy: round-robin
+reason: both rotate
+` + extra + `evidence:
+  - {side: router, field: mode, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "1", claim: x}
+  - {side: router, field: policy, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "2", claim: x}
+  - {side: llm-d, field: policy, repository: inference-sim/llm-d-router, commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go, lines: "3", claim: x}
+`)
+	}
+	c, problems := CheckCatalog(map[string][]byte{"routers/acme-round-robin.yaml": entry("")})
+	if len(problems) != 0 || c.Routers["acme-round-robin"] == nil {
+		t.Fatalf("a valid entry: %v, routers %v", problems, c.Routers)
+	}
+	_, problems = CheckCatalog(map[string][]byte{"routers/acme-round-robin.yaml": entry(""), "routers/two.yaml": entry("")})
+	if len(problems) != 1 || !strings.Contains(problems[0].String(), "routers/two.yaml") || !strings.Contains(problems[0].String(), `make its name "acme-round-robin"`) {
+		t.Errorf("a second file stating the same key: %v", problems)
+	}
+	_, problems = CheckCatalog(map[string][]byte{"routers/acme-round-robin-affinity-300.yaml": entry("session_affinity_ttl_s: 300\n")})
+	if len(problems) == 0 || !strings.Contains(problems[0].String(), "session-affinity") {
+		t.Errorf("another affinity setting is another key, but its missing citation is refused: %v", problems)
+	}
+}

@@ -164,6 +164,7 @@ nav:
     - Point record: contracts/reference/point-record.md
     - JSON Schemas: contracts/reference/schemas.md
     - Field list: contracts/reference/fields.md
+    - Router table: contracts/reference/router-table.md
     - Kernel interface: contracts/reference/kernel.md
     - Engine interface: contracts/reference/engine.md
     - Router contract: contracts/reference/embed.md
@@ -203,6 +204,7 @@ nav:
     - Chips: catalog/reference/hardware.md
     - Fabrics: catalog/reference/networks.md
     - Workloads: catalog/reference/workloads.md
+    - Router table: catalog/reference/routers.md
     - Storage tiers: catalog/reference/storage.md
 - Registry:
   - Home: registry/index.md

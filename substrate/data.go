@@ -28,6 +28,7 @@ var CatalogPatterns = []string{
 	"models/*/graph.yaml",
 	"models/*/model.yaml",
 	"networks/*.yaml",
+	"routers/*.yaml",
 	"workloads/*.yaml",
 }
 
@@ -41,7 +42,7 @@ var RegistryPatterns = []string{
 // The go:embed patterns must be literals, so they repeat the two lists above with their
 // directory prefixed. TestEmbedPatternsEqualLoaderPatterns checks that they agree (SUB-9).
 //
-//go:embed catalog/devices/*.yaml catalog/hardware/*.yaml catalog/measurements/sources.yaml catalog/models/*/graph.yaml catalog/models/*/model.yaml catalog/networks/*.yaml catalog/workloads/*.yaml
+//go:embed catalog/devices/*.yaml catalog/hardware/*.yaml catalog/measurements/sources.yaml catalog/models/*/graph.yaml catalog/models/*/model.yaml catalog/networks/*.yaml catalog/routers/*.yaml catalog/workloads/*.yaml
 //go:embed registry/acceptance/*.yaml registry/coefficients/*.yaml registry/routing/*.yaml
 var embedded embed.FS
 

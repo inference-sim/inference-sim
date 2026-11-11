@@ -3,10 +3,12 @@ package pointrecord
 import (
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
@@ -223,27 +225,37 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 	case SubLaterRecord:
 		need["record"], need["date"] = &s.Record, &s.Date
 	case SubRouterDiffers:
-		need["policy"], need["evidence"] = &s.Policy, &s.Evidence
+		need["entry"], need["policy"], need["evidence"] = &s.Entry, &s.Policy, &s.Evidence
 	case SubClientDifference, SubResolvedDiffers:
 		need["detail"] = &s.Detail
 	}
 	why := map[string]string{
 		"record":   "the record the value was taken from, with its revision",
 		"date":     "the date of that record, YYYY-MM-DD",
+		"entry":    "the router table entry used, by name",
 		"policy":   "the llm-d policy BLIS used in place of the run's router",
 		"evidence": "the router table's evidence for the match",
 		"detail":   "what differed",
 	}
-	for _, k := range []string{"record", "date", "policy", "evidence", "detail"} {
+	for _, k := range []string{"record", "date", "entry", "policy", "evidence", "detail"} {
 		if v, ok := need[k]; ok {
 			if *v == "" {
 				p.Field(at+"."+k, "required for %s: %s", s.Kind, why[k])
 			}
 		}
 	}
-	for k, v := range map[string]string{"record": s.Record, "date": s.Date, "policy": s.Policy, "evidence": s.Evidence} {
+	for k, v := range map[string]string{"record": s.Record, "date": s.Date, "entry": s.Entry, "policy": s.Policy, "evidence": s.Evidence} {
 		if _, ok := need[k]; !ok && v != "" {
 			p.Field(at+"."+k, "is not a key of %s", s.Kind)
+		}
+	}
+	if s.Kind == SubRouterDiffers {
+		switch {
+		case s.Policy != "" && (!routertable.Policy(s.Policy).Offered() || routertable.Policy(s.Policy) == routertable.PolicyNone):
+			p.Field(at+".policy", "%q is not a policy llm-d's router offers; a point simulated with a policy names one of %v", s.Policy, routertable.PolicyNames())
+		}
+		if s.Entry != "" && s.Subject != "" && !strings.HasPrefix(s.Entry, s.Subject+"-") {
+			p.Field(at+".entry", "%q is not an entry of the router %q: an entry's name begins with its router", s.Entry, s.Subject)
 		}
 	}
 	if s.Kind == SubLaterRecord && s.Date != "" {

@@ -71,10 +71,11 @@ makes it so (COV-4).
 | `detail` | string | for `client_difference` and `resolved_differs`; else no | What stood in, or what differed. |
 | `record` | string | for `later_record` | The record the value was taken from, with its revision, for example a file and its commit. |
 | `date` | string | for `later_record` | The date of that record, `YYYY-MM-DD`. |
+| `entry` | string | for `router_differs` | The router table entry used, by name. Its name begins with the router, which is `subject`; its key is the router, its mode and its session-affinity setting. |
 | `policy` | string | for `router_differs` | The llm-d router policy BLIS simulated in place of the run's router. |
 | `evidence` | string | for `router_differs` | The router table's evidence for the match, as the table entry cites it. |
 
-The four conditions design §11.3 adds beside the earlier ones name what the point must say:
+Four conditions beside the earlier ones name what the point must say. `client_difference`, `later_record` and `resolved_differs` are in design §11.3 and §11.2; `router_differs` follows the design change in blis-design#1, which is a draft and has not merged:
 
 `client_difference`
 :   The simulated requests differ from the ones the run's client sent (COV-12). `subject`
@@ -85,7 +86,8 @@ The four conditions design §11.3 adds beside the earlier ones name what the poi
     `date` the record's date.
 `router_differs`
 :   The run was measured behind a router BLIS does not host, and the router table maps it to
-    an llm-d policy. `subject` is the router the run used, `policy` the policy BLIS used,
+    an llm-d policy. `subject` is the router the run used, `entry` the table entry (which fixes the mode),
+    `policy` the policy BLIS used, which must be one llm-d's router offers, and
     `evidence` the table's evidence. The point is never G1, and is not presented as if llm-d
     had routed the run.
 `resolved_differs`

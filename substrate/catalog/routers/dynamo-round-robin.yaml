@@ -1,0 +1,78 @@
+# Dynamo's frontend in its round-robin mode, which it runs when its configuration sets none.
+# The entry records that no llm-d policy is close enough, and why. Every citation is a line of the
+# router's own code at the commit named, or of llm-d's router at the commit the module tag
+# v1.0.0-blis.3 of inference-sim/llm-d-router points to.
+kind: RouterMapping
+router: dynamo
+mode: round-robin
+policy: none
+reason: >-
+  llm-d's round-robin policy (a profile with no scorer, so the max-score picker rotates the tied
+  endpoints) is a rotation, as Dynamo's mode is, but the two keep their counters in different
+  places, and which places decides which endpoint serves which request. Dynamo keeps one
+  counter per router object. In the builds the recipes pin it is the counter of a PushRouter, one
+  per endpoint client in each frontend process (push_router.rs); at the later commit cited, the
+  provider builds a fresh picker per call, so every partition and selector keeps its own
+  rotation (router_modes.rs). Every recipe the dashboard read runs several frontends
+  (enable_multiple_frontends), so the sequence the workers see interleaves independent rotations.
+  llm-d keeps one counter per runtime and draws it at every pick of every profile (common.go,
+  picker.go). A run with a prefill and a decode profile, as inference-sim's disaggregating
+  configuration has (examples/llm-d/pd.yaml: a max-score-picker in each of the two profiles),
+  draws two counters per request, so the prefill profile sees the even counters and the decode
+  profile the odd ones. With an even pool size the prefill pool then reaches only the endpoints at
+  even shifts (one endpoint of two), and the decode pool only the odd ones. The measured series
+  are disaggregated, so the policy would distort which endpoint serves a request in exactly the
+  case the table is for. The entry would map to round-robin if the deployment were stated to
+  have one frontend and BLIS drew one counter per request for the pool, or kept a counter per
+  profile; neither is established. Dynamo's order of workers (instance_ids_avail) is not cited
+  either. Until then the mode stays unsupported.
+evidence:
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 33cfa1271c08f1660fc156ab2bc50647a268b87e
+    path: components/src/dynamo/frontend/frontend_args.py
+    lines: "603-604"
+    claim: The frontend's router argument group defaults the mode to round-robin, so a run that sets no router mode runs it.
+  - side: router
+    field: mode
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "357-372"
+    claim: In the build the April 2026 recipes pin, round-robin takes the next value of the router's counter and selects the instance at that value modulo the number of available instances.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 1682167d3c97f0fc8cd405dee51f17288eeaeb55
+    path: lib/runtime/src/pipeline/network/egress/push_router.rs
+    lines: "130-131"
+    claim: The counter is a field of the router object, so each router keeps its own.
+  - side: router
+    field: policy
+    repository: ai-dynamo/dynamo
+    commit: 33cfa1271c08f1660fc156ab2bc50647a268b87e
+    path: lib/router-plugins/builtin/src/router_modes.rs
+    lines: "62-63"
+    claim: The provider builds a fresh picker per call, so every partition and selector keeps its own rotation.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/framework/plugins/scheduling/picker/common.go
+    lines: "79-87"
+    claim: NextCounter returns one monotonically increasing counter.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/framework/plugins/scheduling/picker/common.go
+    lines: "98-104"
+    claim: RandFor returns one source per hosted runtime, shared by every picker of every profile.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: b1ab0ff7c0b84090e40b874f8873e78f2ae6897c
+    path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go
+    lines: "108-117"
+    claim: The max-score picker draws the counter at every pick and rotates each group of tied endpoints by it, so a second profile that picks draws another.

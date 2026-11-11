@@ -29,6 +29,7 @@ def test_loads_every_entry_on_disk(cat):
     assert sorted(cat.chips) == sorted(p.stem for p in (ROOT / "hardware").glob("*.yaml"))
     assert sorted(cat.fabrics) == sorted(p.stem for p in (ROOT / "networks").glob("*.yaml"))
     assert sorted(cat.workloads) == sorted(p.stem for p in (ROOT / "workloads").glob("*.yaml"))
+    assert sorted(cat.routers) == sorted(p.stem for p in (ROOT / "routers").glob("*.yaml"))
 
 
 def test_reads_the_deriver_version_from_the_deriver(cat):
@@ -175,3 +176,31 @@ def test_agentx_mvp_notes_carry_its_provenance(cat):
     assert "agentx-mvp: provenance notes" in notes
     assert "Apache-2.0" in notes and "build_weka_hf_dataset.py" in notes
 
+
+
+def test_router_table_has_one_row_per_entry_and_cites_both_routers(cat):
+    rows = pages.routers_table(cat).splitlines()[2:]
+    assert len(rows) == len(cat.routers) > 0
+    for name, e in cat.routers.items():
+        row = next(r for r in rows if r.startswith(f"| `{name}`"))
+        assert f"`{e['policy']}`" in row
+        sides = {c["side"] for c in e["evidence"]}
+        assert sides == {"router", "llm-d"}, f"{name} must cite both routers"
+
+
+def test_router_entries_link_every_citation_at_its_commit(cat):
+    text = pages.routers_entries(cat)
+    for e in cat.routers.values():
+        for c in e["evidence"]:
+            assert f"/blob/{c['commit']}/{c['path']}#L" in text
+
+
+def test_citation_link_anchors_a_line_and_a_range():
+    base = {"repository": "o/r", "commit": "a" * 40, "path": "p.go"}
+    assert pages.citation_link({**base, "lines": "7"}).endswith(f"/p.go#L7)")
+    assert pages.citation_link({**base, "lines": "7-9"}).endswith(f"/p.go#L7-L9)")
+
+
+def test_router_key_separates_an_affinity_setting():
+    assert pages.router_key({"router": "x", "mode": "kv"}) == "x/kv"
+    assert pages.router_key({"router": "x", "mode": "kv", "session_affinity_ttl_s": 300}) == "x/kv/affinity-ttl-300"

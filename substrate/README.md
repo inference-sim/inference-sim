@@ -7,7 +7,7 @@ the fitted coefficients, and the cost model that prices each engine step.
 | Directory | What it holds | Who imports it |
 |---|---|---|
 | `contracts/` | interfaces (`engine.Engine`, the kernel interface, the router contract), the document types of `contracts/spec`, their validators, and the conformance suites | every Go repository in BLIS |
-| `catalog/` | declared facts: chips, networks, storage devices, workloads, and models, each with its vendor `config.json` and the graph derived from it | inference-sim, through the cost model |
+| `catalog/` | declared facts: chips, networks, storage devices, workloads, the router table, and models, each with its vendor `config.json` and the graph derived from it | inference-sim, through the cost model |
 | `registry/` | coefficient sets, each coefficient with its method, sources and data units, and the scripts that fit them | inference-sim, through the cost model |
 | `kernel/` | the cost model, in Go | inference-sim only |
 | `validate/` | the catalog, registry and measurement validators and their commands | CI, and Python tools through the commands |

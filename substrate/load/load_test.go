@@ -310,3 +310,38 @@ func TestTheEmbeddedCatalogRecordsEveryLicence(t *testing.T) {
 		}
 	}
 }
+
+// The embedded catalog carries the router table, and LookupRouter finds an entry by router,
+// mode and session-affinity setting, and reports a router the table lacks.
+func TestTheEmbeddedCatalogCarriesTheRouterTable(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, ok := d.LookupRouter("dynamo", "round-robin", nil)
+	if !ok || e.Name != "dynamo-round-robin" || e.Policy != "none" {
+		t.Fatalf("LookupRouter(dynamo, round-robin) = %+v, %v", e, ok)
+	}
+	if got, err := d.Router("dynamo-round-robin"); err != nil || got != e {
+		t.Errorf("Router = %v, %v", got, err)
+	}
+	ttl := 300
+	for name, c := range map[string]struct {
+		router, mode string
+		ttl          *int
+	}{
+		"another mode":        {"dynamo", "kv", nil},
+		"another router":      {"vllm", "round-robin", nil},
+		"an affinity setting": {"dynamo", "round-robin", &ttl},
+	} {
+		if e, ok := d.LookupRouter(c.router, c.mode, c.ttl); ok {
+			t.Errorf("%s: found %s; the table has no such entry, so the router stays unsupported", name, e.Name)
+		}
+	}
+	if _, err := d.Router("nope"); err == nil || !strings.Contains(err.Error(), "routers/nope.yaml") {
+		t.Errorf("a missing entry: %v, want the path it belongs at", err)
+	}
+	if len(d.Routers()) == 0 {
+		t.Error("no entries")
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
@@ -58,6 +59,43 @@ func (d *Data) Workload(name string) (*workload.CatalogWorkload, error) {
 		return w, nil
 	}
 	return nil, d.missing(d.Catalog, "workload", name, "workloads/"+name+".yaml", sortedKeys(d.catalog.Workloads))
+}
+
+// Router returns a router-table entry by its name, the file stem under routers/.
+func (d *Data) Router(name string) (*routertable.Entry, error) {
+	if e := d.catalog.Routers[name]; e != nil {
+		return e, nil
+	}
+	return nil, d.missing(d.Catalog, "router entry", name, "routers/"+name+".yaml", sortedKeys(d.catalog.Routers))
+}
+
+// Routers lists the router table's entries, sorted by name.
+func (d *Data) Routers() []*routertable.Entry {
+	var out []*routertable.Entry
+	for _, name := range sortedKeys(d.catalog.Routers) {
+		out = append(out, d.catalog.Routers[name])
+	}
+	return out
+}
+
+// LookupRouter finds the entry for a router, its mode and its session-affinity setting
+// (nil when the run configured none): the entry that says which policy of llm-d's router
+// stands in for it, or that none does. The boolean is false when the table has no entry, and
+// the router then stays unsupported.
+func (d *Data) LookupRouter(router, mode string, affinityTTLS *int) (*routertable.Entry, bool) {
+	for _, e := range d.Routers() {
+		if e.Router != router || e.Mode != mode {
+			continue
+		}
+		if (e.SessionAffinityTTLS == nil) != (affinityTTLS == nil) {
+			continue
+		}
+		if e.SessionAffinityTTLS != nil && *e.SessionAffinityTTLS != *affinityTTLS {
+			continue
+		}
+		return e, true
+	}
+	return nil, false
 }
 
 // Models lists the catalog's models, sorted.

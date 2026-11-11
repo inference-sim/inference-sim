@@ -20,6 +20,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
@@ -108,6 +109,15 @@ func CheckWorkload(rel string, b []byte) (*workload.CatalogWorkload, *validate.P
 	return w, w.Validate(), nil
 }
 
+// CheckRouter checks routers/<name>.yaml, an entry of the router table.
+func CheckRouter(rel string, b []byte) (*routertable.Entry, *validate.Problems, error) {
+	e, err := contracts.ParseRouterEntry(rel, b)
+	if err != nil {
+		return nil, nil, err
+	}
+	return e, e.Validate(), nil
+}
+
 // CheckMeasurementSources checks measurements/sources.yaml as the loader does: the registry is
 // well formed. It does not judge the licence terms (X12); validate-catalog does, through
 // Registry.Validate.
@@ -175,6 +185,7 @@ type Catalog struct {
 	Fabrics    map[string]*hardware.Fabric
 	Devices    []*hardware.StorageDevice
 	Workloads  map[string]*workload.CatalogWorkload
+	Routers    map[string]*routertable.Entry
 	Sources    *measurement.Registry
 }
 
@@ -214,6 +225,7 @@ func CheckCatalog(files map[string][]byte) (*Catalog, []Problem) {
 		Models: map[string]*model.Graph{}, Identities: map[string]*model.Identity{},
 		Chips: map[string]*hardware.Chip{}, Fabrics: map[string]*hardware.Fabric{},
 		Workloads: map[string]*workload.CatalogWorkload{},
+		Routers:   map[string]*routertable.Entry{},
 	}
 	var out []Problem
 	for _, rel := range sortedKeys(files) {
@@ -249,6 +261,11 @@ func CheckCatalog(files map[string][]byte) (*Catalog, []Problem) {
 			v, p, err := CheckWorkload(rel, b)
 			if collect(&out, rel, p, err) {
 				c.Workloads[v.Name()] = v
+			}
+		case dir == "routers":
+			v, p, err := CheckRouter(rel, b)
+			if collect(&out, rel, p, err) {
+				c.Routers[v.Name] = v
 			}
 		case rel == "measurements/sources.yaml":
 			v, p, err := CheckMeasurementSources(rel, b)

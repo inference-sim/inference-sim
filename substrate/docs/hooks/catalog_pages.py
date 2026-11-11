@@ -116,6 +116,7 @@ class Catalog:
     fabric_headers: dict[str, list[str]] = field(default_factory=dict)
     workloads: dict[str, dict[str, Any]] = field(default_factory=dict)
     tiers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    routers: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def source(self, path: str) -> str:
         return f"{REPO_URL}/blob/{self.ref}/catalog/{path}"
@@ -192,6 +193,8 @@ def load(root: Path) -> Catalog:
         cat.fabric_headers[p.stem] = _leading_comments(p)
     for p in sorted((root / "workloads").glob("*.yaml")):
         cat.workloads[p.stem] = _yaml(p)
+    for p in sorted((root / "routers").glob("*.yaml")):
+        cat.routers[p.stem] = _yaml(p)
     storage = root / "devices" / "storage.yaml"
     if storage.is_file():
         # A tier states a description and no number: its rates and latency are registry
@@ -629,6 +632,47 @@ def networks_notes(cat: Catalog) -> str:
         for name, f in sorted(cat.fabrics.items()) if comment_notes(f))
 
 
+def router_key(doc: dict[str, Any]) -> str:
+    """The key a router-table entry is looked up by: router, mode and, when set, the
+    session-affinity timeout (contracts/spec/routertable, Entry.Key)."""
+    key = f"{doc['router']}/{doc['mode']}"
+    if doc.get("session_affinity_ttl_s") is not None:
+        key += f"/affinity-ttl-{doc['session_affinity_ttl_s']}"
+    return key
+
+
+def citation_link(c: dict[str, Any]) -> str:
+    """A citation as a link to its lines at the pinned commit."""
+    first, _, last = str(c["lines"]).partition("-")
+    anchor = f"#L{first}" + (f"-L{last}" if last else "")
+    url = f"https://github.com/{c['repository']}/blob/{c['commit']}/{c['path']}{anchor}"
+    return f"[{c['repository']}@{c['commit'][:12]}:{c['path']}:{c['lines']}]({url})"
+
+
+def routers_table(cat: Catalog) -> str:
+    rows = []
+    for name, e in sorted(cat.routers.items(), key=lambda kv: router_key(kv[1])):
+        ttl = e.get("session_affinity_ttl_s")
+        n = Counter(c["side"] for c in e["evidence"])
+        rows.append([f"`{name}`", e["router"], e["mode"], "—" if ttl is None else str(ttl),
+                     f"`{e['policy']}`", f"{n['router']} / {n['llm-d']}"])
+    return table(["Entry", "Router", "Mode", "Affinity TTL (s)", "llm-d policy",
+                  "Citations (router / llm-d)"], "lllrlr", rows)
+
+
+def routers_entries(cat: Catalog) -> str:
+    """Each entry's reason and its citations, as the file states them."""
+    out = []
+    for name, e in sorted(cat.routers.items(), key=lambda kv: router_key(kv[1])):
+        out.append(f"### `{name}`\n\n{' '.join(str(e['reason']).split())}\n")
+        for side, title in (("router", "The router"), ("llm-d", "llm-d's router")):
+            out.append(f"**{title}**\n")
+            out += [f"- {citation_link(c)}, for the {c['field'].replace('_', ' ')}: {c['claim']}"
+                    for c in e["evidence"] if c["side"] == side]
+            out.append("")
+    return "\n".join(out)
+
+
 def is_replay(doc: dict[str, Any]) -> bool:
     """A file whose top-level key is replay: is a replay workload, not a shape
     (contracts.LoadCatalogWorkload)."""
@@ -736,6 +780,9 @@ def fragments(cat: Catalog) -> dict[str, str]:
         "count.fabrics": str(len(cat.fabrics)),
         "count.workloads": str(len(cat.workloads)),
         "count.tiers": str(len(cat.tiers)),
+        "count.routers": str(len(cat.routers)),
+        "routers.table": routers_table(cat),
+        "routers.entries": routers_entries(cat),
         "count.primitives_used": str(len(primitives)),
         "primitives_used": ", ".join(f"`{p}`" for p in primitives),
         "models.table": models_table(cat),

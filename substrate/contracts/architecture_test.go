@@ -20,7 +20,7 @@ func TestSpecDoesNotDependOnRules(t *testing.T) {
 		"./spec/model", "./spec/hardware", "./spec/coefficient",
 		"./spec/scenario", "./spec/deployment", "./spec/workload",
 		"./spec/evaluation", "./spec/acceptance", "./spec/routing", "./spec/measurement", "./spec/router",
-		"./spec/connector",
+		"./spec/connector", "./spec/routertable",
 		"./spec/result", "./spec/trace", "./spec/pointrecord", "./metrics", "./spec/fields",
 		"./vocab", "./check", "./units", "./engine/plan", "./engine/env",
 	} {

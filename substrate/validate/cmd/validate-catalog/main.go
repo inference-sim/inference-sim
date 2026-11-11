@@ -40,7 +40,7 @@ func main() {
 // namespaces are the catalog subdirectories the validator walks. Their presence is also
 // what tells a catalog root from a mistyped path: a directory with none of them is
 // reported as "not a catalog" rather than silently passing with zero artifacts checked.
-var namespaces = []string{"models", "hardware", "networks", "workloads", "devices", "measurements"}
+var namespaces = []string{"models", "hardware", "networks", "workloads", "devices", "routers", "measurements"}
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
@@ -79,6 +79,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	validateNetworks(r, root)
 	validateDevices(r, root)
 	validateWorkloads(r, root)
+	validateRouters(r, root)
 	validateMeasurements(r, root, chips)
 
 	// A directory can satisfy the namespace gate with an empty or optional namespace (an
@@ -383,6 +384,31 @@ func validateWorkloads(r *reporter, root string) {
 		}
 		r.pass(fmt.Sprintf("%-46s prompt~%d, output~%d tokens",
 			w.Shape.Name, w.Shape.Prompt.Mean, w.Shape.Output.Mean))
+	}
+}
+
+// validateRouters checks routers/*.yaml, the router table: each entry is complete, cites both
+// routers, and is named for its key, so no router mode is mapped twice. The namespace is optional.
+func validateRouters(r *reporter, root string) {
+	paths, err := yamlFiles(filepath.Join(root, "routers"))
+	if err != nil {
+		r.loadFail("routers", "%v", err)
+		return
+	}
+	if len(paths) == 0 {
+		return
+	}
+	r.section("# routers/*.yaml")
+	for _, path := range paths {
+		e, p, err := checkFile(path, path, dataset.CheckRouter)
+		if err != nil {
+			r.loadFail(stem(path), "%v", err)
+			continue
+		}
+		if r.record(e.Name, p) {
+			continue
+		}
+		r.pass(fmt.Sprintf("%-46s %s -> %s", e.Name, e.Key(), e.Policy))
 	}
 }
 
