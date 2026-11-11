@@ -7,6 +7,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 	"github.com/inference-sim/blis-substrate/load"
@@ -382,4 +383,248 @@ func hasSelected(k *Kernel, name string) bool {
 		}
 	}
 	return false
+}
+
+// keyMeasured returns the inputs with every measured entry of the named coefficients keyed to
+// the implementation given for its name.
+func keyMeasured(in Inputs, impls map[string]plan.KernelImpl) Inputs {
+	var sets []*coefficient.Set
+	for _, s := range in.Coefficients {
+		c := *s
+		c.Coefficients = append([]coefficient.Entry(nil), s.Coefficients...)
+		for j, e := range c.Coefficients {
+			if i, ok := impls[e.Name]; ok && e.Method == vocab.MethodMeasured {
+				e.KernelImpls = []coefficient.KernelImpl{{Library: i.Library, Variant: i.Variant, CodeHash: i.CodeHash}}
+				c.Coefficients[j] = e
+			}
+		}
+		sets = append(sets, &c)
+	}
+	in.Coefficients = sets
+	return in
+}
+
+// selectedMatch is how the named coefficient met the implementations that run, and which ones,
+// or ok false when no entry of that name priced the kernel.
+func selectedMatch(k *Kernel, name string) (match string, running string, ok bool) {
+	for _, o := range k.Provenance() {
+		if o.Name == name && o.Set != KernelAssumptionSet {
+			return o.KernelMatch, o.Running, true
+		}
+	}
+	return "", "", false
+}
+
+// One layer can run two nodes of the same primitive: DeepSeek-V4.1's sparse layers run a
+// block-index scorer beside the primary sparse-MLA attention, and the registry prices them apart
+// (attention_decode_*_block_index_scores, attention_decode_rate_sparse_mla). A plan that lowers
+// the scorer to one kernel and the primary to another binds each coefficient to its own node: the
+// scorer's pair to the scorer's kernel, the primary's to the primary's, and a pair keyed to the
+// other node's kernel is not used.
+func TestTheScorerAndThePrimaryOfOneLayerAreBoundToTheirOwnKernels(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in Inputs
+	for _, c := range perturbationScenarios(t, d, "deepseek-v4.1-flash") {
+		if strings.HasPrefix(c.label, "deepseek-v4.1-flash/h200/tp") {
+			in = c.in
+			break
+		}
+	}
+	if in.Model == nil {
+		t.Fatal("no deepseek-v4.1-flash scenario builds on h200")
+	}
+	primary := plan.KernelImpl{Library: "flashmla", Variant: "sparse_decode", CodeHash: "aaaaaaaaaaaa"}
+	scorer := plan.KernelImpl{Library: "deepgemm", Variant: "paged_mqa_logits", CodeHash: "bbbbbbbbbbbb"}
+	kinds := map[string]model.LayerKind{}
+	for _, lk := range in.Model.LayerKinds {
+		kinds[lk.ID] = lk
+	}
+	scored := 0
+	for i, id := range in.Model.Stack.Expand() {
+		in.Operations = append(in.Operations, plan.Operation{Layer: i, Primitive: plan.PrimAttentionDecode, Impl: primary})
+		for _, n := range kinds[id].Nodes {
+			if n.Op == model.OpAttention && !n.ReadsEngineKV() {
+				in.Operations = append(in.Operations, plan.Operation{Layer: i, Scorer: true, Primitive: plan.PrimAttentionDecode, Impl: scorer})
+				scored++
+				break
+			}
+		}
+	}
+	if scored == 0 {
+		t.Fatal("the graph has no block-index scorer")
+	}
+	names := []string{"attention_decode_rate_sparse_mla", "attention_decode_floor_block_index_scores", "attention_decode_rate_block_index_scores"}
+	base, err := New(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, n := range names {
+		_, _, have[n] = selectedMatch(base, n)
+	}
+	if !have[names[0]] || !have[names[1]] {
+		t.Fatalf("the unkeyed registry does not price the sparse layers with %v (selected %v)", names, have)
+	}
+	right := map[string]plan.KernelImpl{names[0]: primary, names[1]: scorer, names[2]: scorer}
+	k, err := New(keyMeasured(in, right))
+	if err != nil {
+		t.Fatalf("each pair keyed to the kernel of its own node: %v", err)
+	}
+	for _, n := range names {
+		if !have[n] {
+			continue
+		}
+		want := primary
+		if n != names[0] {
+			want = scorer
+		}
+		m, run, ok := selectedMatch(k, n)
+		if n == names[2] {
+			// h200 carries this rate under a method that may not state kernels; it must still be
+			// used, matched against the scorer's kernel alone.
+			if !ok || run != want.Library+"/"+want.Variant+"/"+want.CodeHash {
+				t.Errorf("%s: selected %v, matched against %q; want the scorer's kernel", n, ok, run)
+			}
+			continue
+		}
+		if !ok || m != string(coefficient.KernelExact) || run != want.Library+"/"+want.Variant+"/"+want.CodeHash {
+			t.Errorf("%s: selected %v, match %q, matched against %q; want exact against its own node's kernel", n, ok, m, run)
+		}
+	}
+	if pricesOf(k) != pricesOf(base) {
+		t.Error("keying the pairs to the kernels that run them changed a price")
+	}
+	// Swapped: the scorer's pair keyed to the primary's kernel is not used for the scorer.
+	if k, err := New(keyMeasured(in, map[string]plan.KernelImpl{names[1]: primary})); err == nil {
+		if _, _, ok := selectedMatch(k, names[1]); ok {
+			t.Error("the scorer's floor keyed to the primary's kernel priced the scorer")
+		}
+	}
+	// With the pooled form (one set of kernels for the primitive) the same keys are refused, as
+	// the two nodes cannot be told apart.
+	pooled := keyMeasured(in, right)
+	pooled.Operations = nil
+	pooled.Implementations = map[plan.Primitive][]plan.KernelImpl{plan.PrimAttentionDecode: {primary, scorer}}
+	if k, err := New(pooled); err == nil {
+		if _, _, ok := selectedMatch(k, names[0]); ok {
+			t.Error("the pooled form priced the primary from a value valid for one of two kernels")
+		}
+	}
+}
+
+// A GEMM value is bound to the GEMMs of its format: a BF16 ramp keyed to the kernel that runs the
+// BF16 GEMMs is used when an FP8 GEMM runs another kernel, and an FP8-keyed value is not used
+// for the BF16 ones.
+func TestAGemmValueIsBoundToTheKernelOfItsFormat(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in Inputs
+	for _, c := range perturbationScenarios(t, d, "gpt-oss-120b") {
+		if strings.HasPrefix(c.label, "gpt-oss-120b/h200/tp") {
+			in = c.in
+			break
+		}
+	}
+	if in.Model == nil {
+		t.Fatal("no gpt-oss-120b scenario builds on h200")
+	}
+	bf16K := plan.KernelImpl{Library: "cublas", Variant: "gemm_bf16", CodeHash: "aaaaaaaaaaaa"}
+	fp8K := plan.KernelImpl{Library: "cutlass", Variant: "gemm_fp8_block", CodeHash: "bbbbbbbbbbbb"}
+	bf16F := units.QuantFormat{PayloadBits: 16}
+	fp8F := units.QuantFormat{PayloadBits: 8, ScaleBits: 32, BlockElements: 16384}
+	in.Operations = []plan.Operation{
+		{Layer: 0, Primitive: plan.PrimGEMM, Format: bf16F, Impl: bf16K},
+		{Layer: 1, Primitive: plan.PrimGEMM, Format: fp8F, Impl: fp8K},
+	}
+	const bf16Ramp = "gemm_eps_max_bf16"
+	base, err := New(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := selectedMatch(base, bf16Ramp); !ok {
+		t.Fatalf("the unkeyed registry does not price gpt-oss-120b with %s", bf16Ramp)
+	}
+	k, err := New(keyMeasured(in, map[string]plan.KernelImpl{bf16Ramp: bf16K}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, run, ok := selectedMatch(k, bf16Ramp); !ok || m != string(coefficient.KernelExact) || run != "cublas/gemm_bf16/aaaaaaaaaaaa" {
+		t.Errorf("%s keyed to the BF16 GEMMs' kernel: selected %v, match %q, matched against %q", bf16Ramp, ok, m, run)
+	}
+	if pricesOf(k) != pricesOf(base) {
+		t.Error("keying the ramp to the kernel that runs the BF16 GEMMs changed a price")
+	}
+	// Keyed to the kernel that runs the FP8 GEMM, it is not used for the BF16 ones.
+	if k, err := New(keyMeasured(in, map[string]plan.KernelImpl{bf16Ramp: fp8K})); err == nil {
+		if _, _, ok := selectedMatch(k, bf16Ramp); ok {
+			t.Error("the BF16 ramp keyed to the FP8 GEMM's kernel priced the BF16 GEMMs")
+		}
+	}
+	// Pooled, the same key is refused: the primitive runs two kernels.
+	pooled := keyMeasured(in, map[string]plan.KernelImpl{bf16Ramp: bf16K})
+	pooled.Operations = nil
+	pooled.Implementations = map[plan.Primitive][]plan.KernelImpl{plan.PrimGEMM: {bf16K, fp8K}}
+	if k, err := New(pooled); err == nil {
+		if _, _, ok := selectedMatch(k, bf16Ramp); ok {
+			t.Error("the pooled form priced the BF16 ramp from a value valid for one of two kernels")
+		}
+	}
+}
+
+// The part-wide attention pair is the fallback for a kind with no pair of its own
+// (step.go: attentionByKind), so it is read only by the layers whose kind has none. With the
+// sliding-window layers priced from their own pair, a part-wide pair keyed to the kernel that
+// runs full attention alone prices the full layers, and is matched against that kernel only.
+func TestThePartWidePairIsReadOnlyByTheLayersWithNoPairOfTheirOwn(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in Inputs
+	for _, c := range perturbationScenarios(t, d, "gpt-oss-120b") {
+		if strings.HasPrefix(c.label, "gpt-oss-120b/h200/tp") {
+			in = c.in
+			break
+		}
+	}
+	if in.Model == nil {
+		t.Fatal("no gpt-oss-120b scenario builds on h200")
+	}
+	full := plan.KernelImpl{Library: "flashinfer", Variant: "decode_full", CodeHash: "aaaaaaaaaaaa"}
+	win := plan.KernelImpl{Library: "flashinfer", Variant: "decode_window", CodeHash: "bbbbbbbbbbbb"}
+	kinds := map[string]model.LayerKind{}
+	for _, lk := range in.Model.LayerKinds {
+		kinds[lk.ID] = lk
+	}
+	for i, id := range in.Model.Stack.Expand() {
+		impl := full
+		for _, n := range kinds[id].Nodes {
+			if n.Op == model.OpAttention && n.AttentionKind == model.AttentionSWA {
+				impl = win
+			}
+		}
+		in.Operations = append(in.Operations, plan.Operation{Layer: i, Primitive: plan.PrimAttentionDecode, Impl: impl})
+	}
+	base, err := New(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, err := New(keyMeasured(in, map[string]plan.KernelImpl{"attention_decode_rate_swa": win, "attention_decode_floor_swa": win,
+		"attention_decode_rate": full, "attention_decode_floor": full}))
+	if err != nil {
+		t.Fatalf("the part-wide pair keyed to full attention's kernel, the swa pair to the windowed one: %v", err)
+	}
+	for _, name := range []string{"attention_decode_rate", "attention_decode_floor"} {
+		if m, run, ok := selectedMatch(k, name); !ok || m != string(coefficient.KernelExact) || run != "flashinfer/decode_full/aaaaaaaaaaaa" {
+			t.Errorf("%s: selected %v, match %q, matched against %q; want exact against full attention's kernel alone", name, ok, m, run)
+		}
+	}
+	if pricesOf(k) != pricesOf(base) {
+		t.Error("keying the pairs to the kernels that run their layers changed a price")
+	}
 }

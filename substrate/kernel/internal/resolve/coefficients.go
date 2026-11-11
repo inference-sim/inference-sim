@@ -9,7 +9,7 @@ package resolve
 
 import (
 	"fmt"
-	"slices"
+	"maps"
 	"sort"
 	"strings"
 
@@ -40,6 +40,8 @@ type Coefficients struct {
 	refused []ImplRefusal
 	// running is the kernel implementations the lookup was keyed by, by lowered primitive.
 	running map[string][]coefficient.KernelImpl
+	// operations are the lowered operations the lookup was keyed by, when the caller gave them.
+	operations []Operation
 }
 
 // ImplRefusal is an entry that covers the deployment and is not valid for the kernel
@@ -88,6 +90,38 @@ type Resolved struct {
 // lookup is refused, naming the entries the precedence does not order; the registry
 // validator refuses the same pairs at load (dataset.CheckOrdered), from the same code.
 func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
+	if len(scope.Operations) == 0 {
+		return load(sets, scope, func(string) bool { return false }, true)
+	}
+	// Which operations read a part-wide term depends on which classes the registry carries a
+	// pair for, and whether it carries one depends on the operations that read that class's
+	// entry, which depends on the classes before it in their chain. The dependency runs one way
+	// along each chain, so repeating the lookup with what the last one selected settles in at
+	// most the length of the longest chain.
+	have := map[string]bool{}
+	for i := 0; i < 8; i++ {
+		c, _ := load(sets, scope, func(a string) bool { return have[a] }, false)
+		next := map[string]bool{}
+		if c != nil {
+			for name, r := range c.byName {
+				if coefficient.AnchorNeedsExact(coefficient.ClassOf(name)) && r.Match != coefficient.KernelExact {
+					continue
+				}
+				next[name] = true
+			}
+		}
+		if maps.Equal(next, have) {
+			break
+		}
+		have = next
+	}
+	return load(sets, scope, func(a string) bool { return have[a] }, true)
+}
+
+// load is Load for one assumption about which class anchors the registry carries. A lookup that
+// is not strict skips a name it cannot choose, and the absence of any coefficient, instead of
+// failing: it only finds out what is selected.
+func load(sets []*coefficient.Set, scope Scope, have present, strict bool) (*Coefficients, error) {
 	c := &Coefficients{byName: map[string]Resolved{}, byNameFabric: map[string]Resolved{},
 		selected: map[string]Resolved{}}
 	all := map[string][]coefficient.Candidate{}
@@ -102,9 +136,9 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 			if !scope.Admits(e.Scope) {
 				continue
 			}
-			if e.MatchImpls(scope.consuming(e.Name)) == coefficient.KernelRefused {
+			if e.MatchImpls(scope.consuming(e.Name, have)) == coefficient.KernelRefused {
 				c.refused = append(c.refused, ImplRefusal{Set: s.Name, Entry: e,
-					Running: scope.consuming(e.Name)})
+					Running: scope.consuming(e.Name, have)})
 				continue
 			}
 			if _, seen := all[e.Name]; !seen {
@@ -126,11 +160,14 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 			}
 			w, displaced, err := coefficient.Select(cands)
 			if err != nil {
+				if !strict {
+					continue
+				}
 				return err
 			}
 			into[name] = Resolved{Entry: w.Entry, Set: w.Set, Displaced: displaced,
-				Match: w.Entry.MatchImpls(scope.consuming(w.Entry.Name)), Primitive: coefficient.PrimitiveOf(w.Entry.Name),
-				Running: scope.consuming(w.Entry.Name)}
+				Match: w.Entry.MatchImpls(scope.consuming(w.Entry.Name, have)), Primitive: coefficient.PrimitiveOf(w.Entry.Name),
+				Running: scope.consuming(w.Entry.Name, have)}
 		}
 		return nil
 	}
@@ -142,7 +179,8 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 		return nil, err
 	}
 	c.running = scope.PooledImplementations()
-	if len(c.byName) == 0 {
+	c.operations = append([]Operation(nil), scope.Operations...)
+	if len(c.byName) == 0 && strict {
 		return nil, fmt.Errorf("no coefficient in %v applies to %s%s", c.order, scope, c.refusedNote(""))
 	}
 	return c, nil
@@ -152,6 +190,10 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 // the order the sets list them. A reader that asks why a measured entry did not price a term
 // finds it here.
 func (c *Coefficients) Refused() []ImplRefusal { return append([]ImplRefusal(nil), c.refused...) }
+
+// Operations returns the lowered operations the lookup was keyed by, nil when the caller gave
+// only the kernels by primitive.
+func (c *Coefficients) Operations() []Operation { return append([]Operation(nil), c.operations...) }
 
 // Implementations returns the kernel implementations the lookup was keyed by, by primitive.
 func (c *Coefficients) Implementations() map[string][]coefficient.KernelImpl {
@@ -212,36 +254,79 @@ type Scope struct {
 }
 
 // Operation is one lowered operation as the cost model sees it: the primitive, the kernel that
-// executes it, and the classes of work it does within the primitive (the attention kinds a
-// layer runs, the recurrent mixer it runs). A coefficient whose name states a class
-// (coefficient.ClassOf) is consumed only by the operations that list it.
+// executes it, and which of the primitive's classes of coefficient it reads (VAL-8, 6.2).
+//
+// Chain lists, in the order the kernel prefers them, the classes whose terms the operation is
+// priced from when the registry carries them (an attention layer of sliding-window kind: swa; a
+// BF16 GEMM: bf16; an MXFP8 GEMM on a part that serves it weight-only: w8a16_mxfp8, then bf16).
+// The operation reads the part-wide terms of its primitive only for what no class of its chain
+// supplies. An operation with an empty chain reads the part-wide terms alone. Wild marks an
+// operation whose class could not be told (no format stated for a GEMM): it is taken to read
+// every class of its primitive, which is the conservative reading.
 type Operation struct {
 	Primitive string
 	Impl      coefficient.KernelImpl
-	Classes   []string
-	// Draft is true for an operation of the draft model, false for the target's. It does not
-	// narrow a binding by itself: a name is consumed by the operations of its class in either.
+	Chain     []string
+	Wild      bool
+	// Draft is true for an operation of the draft model, false for the target's.
 	Draft bool
+	// Scorer is true for the block-index scorer node of a layer, false for its primary.
+	Scorer bool
 }
 
-// consuming returns the distinct implementations of the operations that consume the named
-// coefficient, sorted. With no Operations it is the pooled list of the primitive the name prices.
-func (s Scope) consuming(name string) []coefficient.KernelImpl {
+// present reports whether a class anchor has been selected, for the fallback rule.
+type present func(anchor string) bool
+
+// reads reports whether the operation reads a coefficient of this name, given which class
+// anchors the registry carries. A name with a class is read by the operations that list the
+// class and for which no earlier class of the chain is carried. A part-wide name is read by
+// the operations for which no class of the chain is carried; the part-wide decode floor is also
+// read where the carried class has a rate and no floor of its own.
+func (op Operation) reads(name, class string, have present) bool {
+	if op.Primitive != coefficient.PrimitiveOf(name) {
+		return false
+	}
+	if class != "" {
+		if op.Wild {
+			return true
+		}
+		for _, c := range op.Chain {
+			if c == class {
+				return true
+			}
+			if have(coefficient.ClassAnchor(op.Primitive, c)) {
+				return false
+			}
+		}
+		return false
+	}
+	if op.Wild {
+		return true
+	}
+	for _, c := range op.Chain {
+		if have(coefficient.ClassAnchor(op.Primitive, c)) {
+			return coefficient.FloorInheritsFromClass(name) && !have(name+"_"+c)
+		}
+	}
+	return true
+}
+
+// consuming returns the distinct implementations of the operations that read the named
+// coefficient, sorted. With no Operations it is the pooled list of the primitive the name
+// prices.
+func (s Scope) consuming(name string, have present) []coefficient.KernelImpl {
 	prim := coefficient.PrimitiveOf(name)
 	if len(s.Operations) == 0 {
 		return s.Implementations[prim]
+	}
+	if prim == "" {
+		return nil
 	}
 	class := coefficient.ClassOf(name)
 	seen := map[coefficient.KernelImpl]bool{}
 	var out []coefficient.KernelImpl
 	for _, op := range s.Operations {
-		if op.Primitive != prim || prim == "" {
-			continue
-		}
-		if class != "" && !slices.Contains(op.Classes, class) {
-			continue
-		}
-		if !seen[op.Impl] {
+		if op.reads(name, class, have) && !seen[op.Impl] {
 			seen[op.Impl] = true
 			out = append(out, op.Impl)
 		}

@@ -221,8 +221,14 @@ func TestClassOf(t *testing.T) {
 		"recurrent_decode_rate_kda": "kda", "recurrent_decode_floor_gdn": "gdn", "recurrent_decode_rate_mamba2": "mamba2",
 		// consumed by every operation of the primitive
 		"attention_decode_rate": "", "attention_decode_floor": "", "attention_prefill_work_scale": "",
-		"attention_decode_rate_block_index_scores": "", "recurrent_kda_packed_decode": "",
-		"gemm_eps_max_bf16": "", "collective_floor_all_reduce_fp16_8rank_h100": "", "host_launch_per_kernel": "",
+		"recurrent_kda_packed_decode":                 "",
+		"collective_floor_all_reduce_fp16_8rank_h100": "", "host_launch_per_kernel": "",
+		// the block-index scorer is a node of its own
+		"attention_decode_rate_block_index_scores": "block_index_scores", "attention_prefill_floor_block_index_scores": "block_index_scores",
+		// the trtllm-gen lane, by the cache format it reads
+		"attention_prefill_floor_trtllm_gen_kv_bf16": "kv_bf16", "attention_prefill_work_scale_trtllm_gen_kv_fp8": "kv_fp8",
+		// a GEMM's ramp, by the weight format
+		"gemm_eps_max_bf16": "bf16", "gemm_m_half_fp8": "fp8", "gemm_k_half_w4a16_mxfp4_grouped": "w4a16_mxfp4_grouped",
 	} {
 		if got := ClassOf(name); got != want {
 			t.Errorf("ClassOf(%q) = %q, want %q", name, got, want)

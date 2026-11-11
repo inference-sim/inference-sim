@@ -22,18 +22,33 @@ documentation describes each set and method.
 A coefficient can list the kernel implementations it is valid for (`kernel_impls`: library,
 variant, code hash; see [the coefficient format](../../contracts/reference/coefficients.md#kernel_impls)).
 The kernel is given the pool's lowered operations in `Inputs.Operations`, which is
-`plan.PoolPlan.Operations()` for a caller that holds the pool's plan: each operation's layer
-(of the target graph or the draft model's), primitive and kernel. A caller that cannot say which
-operation runs which kernel gives `Inputs.Implementations` instead, the kernels by primitive
-(`plan.PoolPlan.ImplementationsByPrimitive()`); with operations given it is derived from them, and
-the two must agree. Each coefficient name prices one primitive (`coefficient.PrimitiveOf`:
-`gemm_*` the GEMMs, `attention_decode_*` the decode attention, `collective_*_all_reduce_*` the
-all-reduce, and so on; host overheads, `hbm_derate`, fabric and memory sizes price none), and a
-name that ends in a kind (`coefficient.ClassOf`: `attention_decode_rate_swa`, `..._mla`,
-`..._sparse_mla`, `recurrent_decode_rate_kda`, `..._mamba2`, `..._gdn`) is read only by the
-operations whose layer runs that kind, in the target or the draft model. Any other name is read by
-every operation of its primitive, the part-wide `attention_decode_rate` among them, because it is
-the fallback for each kind with no fit of its own.
+`plan.PoolPlan.Operations()` for a caller that holds the pool's plan: each operation's layer (of
+the target graph or the draft model's), whether it executes the layer's block-index scorer (`Scorer`), its primitive,
+the stored format of the weight or cache it reads (`PrimitiveShape.Format`) and its kernel. A
+caller that cannot say which operation runs which kernel gives `Inputs.Implementations` instead,
+the kernels by primitive (`plan.PoolPlan.ImplementationsByPrimitive()`); with operations given it
+is derived from them, and the two must agree. Each coefficient name prices one primitive
+(`coefficient.PrimitiveOf`: `gemm_*` the GEMMs, `attention_decode_*` the decode attention,
+`collective_*_all_reduce_*` the all-reduce, and so on; host overheads, `hbm_derate`, fabric and
+memory sizes price none), and is read by the operations of its class (`coefficient.ClassOf`):
+
+- `attention_decode_*_swa`, `_mla`, `_sparse_mla` and `recurrent_decode_*_mamba2`, `_kda`, `_gdn`
+  by the layers of that kind, in the target or the draft model;
+- `attention_*_block_index_scores` by the block-index scorer of a layer, a node beside the
+  layer's primary attention (`Scorer`), so the scorer and the primary of one
+  layer can run different kernels;
+- `attention_prefill_*_trtllm_gen_kv_bf16` and `_kv_fp8` by the prefill of the non-latent layers
+  whose cache has that format;
+- `gemm_*_<ramp>` by the GEMMs whose weight format selects that ramp on this chip (the kernel's
+  own rule and fallbacks, from the format the plan states; a GEMM that states none reads every
+  ramp).
+
+The unsuffixed attention terms are the fallback the kernel uses for what has no pair of its own,
+so they are read only by the operations no pair prices: the part-wide rate by the layers whose
+kind or role has no rate, the part-wide floor also by those that have a rate and no floor (a kind
+may supply a rate alone and inherit the floor). The part-wide prefill pair likewise by what has no
+prefill family and no exact lane pair. A class counts as carried when the registry has its entry
+for the deployment (for the lane, shown valid for the kernel that runs).
 
 An entry that lists implementations is used only for the primitive its name prices, and only when
 every implementation among the operations that read it is one it lists, by library, variant and

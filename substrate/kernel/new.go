@@ -235,7 +235,7 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, fmt.Errorf("resolving the layout: %w", err)
 	}
 
-	ops, err := loweredOperations(g, in.Operations)
+	ops, err := loweredOperations(g, in.Operations, *in.Chip, family)
 	if err != nil {
 		return nil, err
 	}

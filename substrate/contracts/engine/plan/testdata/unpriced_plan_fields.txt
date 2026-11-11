@@ -42,7 +42,6 @@ Layout.Pipeline # not yet priced: the cost model reads a plan in the boundary tr
 Layout.RanksPerNode # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 Layout.Tensor # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Collective # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-LoweredLayer.Layer # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Shape # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 LoweredLayer.Stage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PaddedShape.Launch # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
@@ -62,7 +61,6 @@ PoolPlan.Layout # not yet priced: the cost model reads a plan in the boundary tr
 PoolPlan.Tiers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PoolPlan.Weights # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PrimitiveShape.Experts # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
-PrimitiveShape.Format # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PrimitiveShape.HeadDim # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PrimitiveShape.Heads # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
 PrimitiveShape.K # not yet priced: the cost model reads a plan in the boundary transition's equivalence step

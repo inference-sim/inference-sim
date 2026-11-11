@@ -86,22 +86,32 @@ func PrimitiveOf(name string) string {
 	return ""
 }
 
-// ClassOf returns the class of lowered operation a coefficient of this name is consumed by
-// within its primitive, or "" when the name is consumed by every operation of the primitive.
-// The per-kind decode and prefill terms of attention (`attention_decode_rate_swa`,
-// `..._mla`, `..._sparse_mla`) are read only by the attention layers of that kind, and the
-// per-mixer terms of the recurrent update (`..._mamba2`, `..._kda`, `..._gdn`) only by the
-// layers that run that mixer. The unsuffixed terms (`attention_decode_rate`, the part-wide pair)
-// are the fallback for every kind with no fit of its own, so they are consumed by every
-// operation of the primitive, as are the names of the other primitives and any suffix this list
-// does not name. This is the one place the binding is decided, as PrimitiveOf is for the
+// ClassOf returns the class of lowered operation a coefficient of this name is read by within
+// its primitive, or "" when the name is a part-wide term read by every operation of the
+// primitive that has no class of its own to read instead.
+//
+//   - The per-kind terms of attention and the recurrent update are read by the layers of that
+//     kind: `attention_decode_rate_swa`, `..._mla`, `..._sparse_mla`, `recurrent_decode_rate_kda`,
+//     `..._mamba2`, `..._gdn`.
+//   - `..._block_index_scores` terms are read by the block-index scorer of a layer, a node of its
+//     own beside the layer's primary attention (a lowered operation with that role).
+//   - `attention_prefill_*_trtllm_gen_kv_bf16` and `_kv_fp8` are read by the prefill of the
+//     non-latent layers whose cache has that format (`kv_bf16`, `kv_fp8`).
+//   - `gemm_*_<format>` terms (`bf16`, `fp8`, `fp8_block`, `nvfp4`, `w8a16_mxfp8`,
+//     `w4a16_mxfp4_grouped`, ...) are read by the GEMMs whose weight format selects that ramp.
+//
+// The unsuffixed attention terms are the fallback for every kind or role with no pair of its own
+// (ConsumesFallback). This is the one place the binding is decided, as PrimitiveOf is for the
 // primitive.
 func ClassOf(name string) string {
 	switch PrimitiveOf(name) {
 	case "attention.decode", "attention.prefill":
-		for _, c := range []string{"sparse_mla", "mla", "swa"} {
-			if strings.HasSuffix(name, "_"+c) {
-				return c
+		for _, c := range []struct{ suffix, class string }{
+			{"_trtllm_gen_kv_bf16", "kv_bf16"}, {"_trtllm_gen_kv_fp8", "kv_fp8"},
+			{"_sparse_mla", "sparse_mla"}, {"_block_index_scores", "block_index_scores"},
+			{"_mla", "mla"}, {"_swa", "swa"}} {
+			if strings.HasSuffix(name, c.suffix) {
+				return c.class
 			}
 		}
 	case "recurrent.update":
@@ -110,9 +120,49 @@ func ClassOf(name string) string {
 				return c
 			}
 		}
+	case "gemm", "moe.grouped_gemm":
+		for _, pre := range []string{"gemm_eps_max_", "gemm_m_half_", "gemm_n_half_", "gemm_k_half_"} {
+			if rest, ok := strings.CutPrefix(name, pre); ok {
+				return rest
+			}
+		}
 	}
 	return ""
 }
+
+// ClassAnchor is the coefficient whose presence shows that operations of the class read a pair
+// of their own and so no longer read the part-wide terms of their primitive: the rate of the
+// per-kind decode pair, the rate of the per-kind prefill family, the lane's floor, a GEMM
+// format's asymptote. The kernel prices an operation from its class's terms when the registry
+// carries them and from the part-wide terms otherwise, so the part-wide terms are read only by
+// the operations whose class has no anchor.
+func ClassAnchor(primitive, class string) string {
+	switch primitive {
+	case "attention.decode":
+		return "attention_decode_rate_" + class
+	case "attention.prefill":
+		if strings.HasPrefix(class, "kv_") {
+			return "attention_prefill_floor_trtllm_gen_" + class
+		}
+		return "attention_prefill_rate_" + class
+	case "recurrent.update":
+		return "recurrent_decode_rate_" + class
+	case "gemm", "moe.grouped_gemm":
+		return "gemm_eps_max_" + class
+	}
+	return ""
+}
+
+// AnchorNeedsExact reports whether a class's anchor shadows the part-wide terms only when the
+// entry that carries it is shown to be valid for the implementation that runs (KernelExact):
+// the trtllm-gen lane is priced only then, so an unkeyed lane entry leaves the part-wide pair
+// reading those operations.
+func AnchorNeedsExact(class string) bool { return strings.HasPrefix(class, "kv_") }
+
+// FloorInheritsFromClass reports whether a part-wide term named so is also read by the
+// operations whose class has a rate but no floor of its own: the per-kind decode pair may supply
+// a rate alone and inherit the part-wide floor.
+func FloorInheritsFromClass(name string) bool { return name == "attention_decode_floor" }
 
 // MatchKernels says how the entry meets the implementations that run. running holds them by
 // lowered primitive (a plan.Primitive word), every operation of the primitive pooled; it is the

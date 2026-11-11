@@ -348,44 +348,73 @@ func TestLookupAgreesWithTheValidatorOnKernelKeys(t *testing.T) {
 	}
 }
 
-// The review's counterexample: full attention runs kernel A and sliding-window attention runs
-// kernel B. attention_decode_rate_swa is read only by the sliding-window layers, so an entry
-// keyed to B alone prices it, and one keyed to A alone does not; the part-wide
-// attention_decode_rate, the fallback for every kind with no fit of its own, is read by every
-// attention layer, so it still needs an entry that covers both.
+// A coefficient is matched against the kernels of the operations that read it. The pool: full
+// attention on A, sliding-window attention on B, MLA in the draft model on C, a sparse-MLA
+// primary on D with its block-index scorer on E, a BF16 GEMM on A, an FP8 GEMM on B and an MXFP8
+// GEMM that is priced on its own ramp, then the BF16 one, on D.
 func TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt(t *testing.T) {
-	const swa, mla = "attention_decode_rate_swa", "attention_decode_rate_mla"
-	op := func(prim string, impl coefficient.KernelImpl, draft bool, classes ...string) Operation {
-		return Operation{Primitive: prim, Impl: impl, Classes: classes, Draft: draft}
-	}
-	// Full attention (no class) on A, sliding window on B, MLA in the draft model on C, and the
-	// GEMMs on D.
 	kernelC := coefficient.KernelImpl{Library: "flashinfer", Variant: "mla_decode", CodeHash: "eeeeeeeeeeee"}
+	kernelD := coefficient.KernelImpl{Library: "flashmla", Variant: "sparse_decode", CodeHash: "ffffffffffff"}
+	kernelE := coefficient.KernelImpl{Library: "flashinfer", Variant: "scorer", CodeHash: "abababababab"}
+	op := func(prim string, impl coefficient.KernelImpl, draft bool, chain ...string) Operation {
+		return Operation{Primitive: prim, Impl: impl, Chain: chain, Draft: draft}
+	}
 	pool := Scope{Hardware: "h100", Operations: []Operation{
 		op("attention.decode", kernelA, false),
 		op("attention.decode", kernelB, false, "swa"),
 		op("attention.decode", kernelC, true, "mla"),
-		op("gemm", kernelB, false),
+		op("attention.decode", kernelD, false, "sparse_mla"),
+		{Primitive: "attention.decode", Impl: kernelE, Chain: []string{"block_index_scores"}, Scorer: true},
+		op("gemm", kernelA, false, "bf16"),
+		op("gemm", kernelB, false, "fp8"),
+		op("gemm", kernelD, false, "w8a16_mxfp8", "bf16"),
 	}}
 	named := func(name string, v float64, impls ...coefficient.KernelImpl) coefficient.Entry {
 		return entryNamed(name, vocab.MethodMeasured, v, impls...)
 	}
+	const (
+		swa, mla, sp, blk = "attention_decode_rate_swa", "attention_decode_rate_mla", "attention_decode_rate_sparse_mla", "attention_decode_rate_block_index_scores"
+		bf16, fp8, mx     = "gemm_eps_max_bf16", "gemm_eps_max_fp8", "gemm_eps_max_w8a16_mxfp8"
+		floor             = "attention_decode_floor"
+	)
+	// Every kind and role has a pair of its own, keyed to the kernel that runs it.
+	own := []coefficient.Entry{named(swa, 1, kernelB), named(mla, 1, kernelC), named(sp, 1, kernelD), named(blk, 1, kernelE)}
+	with := func(es ...coefficient.Entry) []*coefficient.Set {
+		return setOf(append(append([]coefficient.Entry(nil), own...), es...)...)
+	}
 	for _, c := range []struct {
 		name   string
-		entry  coefficient.Entry
+		sets   []*coefficient.Set
+		look   string
 		priced bool
 		why    string
 	}{
-		{"swa keyed to the kernel that runs the swa layers", named(swa, 1, kernelB), true, "B runs every swa layer"},
-		{"swa keyed to the kernel that runs full attention", named(swa, 1, kernelA), false, "A runs no swa layer"},
-		{"swa keyed to both", named(swa, 1, kernelA, kernelB), true, "B is among them"},
-		{"mla keyed to the draft model's kernel", named(mla, 1, kernelC), true, "only the draft model has MLA layers"},
-		{"mla keyed to the target's attention kernel", named(mla, 1, kernelA), false, "A runs no MLA layer"},
-		{"the part-wide rate keyed to the full-attention kernel", named(attn, 1, kernelA), false, "every attention layer reads it, swa and MLA included"},
-		{"the part-wide rate keyed to all three", named(attn, 1, kernelA, kernelB, kernelC), true, "it covers every attention layer"},
+		{"swa keyed to the kernel that runs the swa layers", setOf(named(swa, 1, kernelB)), swa, true, "B runs every swa layer"},
+		{"swa keyed to the kernel that runs full attention", setOf(named(swa, 1, kernelA)), swa, false, "A runs no swa layer"},
+		{"mla keyed to the draft model's kernel", setOf(named(mla, 1, kernelC)), mla, true, "only the draft model has MLA layers"},
+		{"mla keyed to the target's attention kernel", setOf(named(mla, 1, kernelA)), mla, false, "A runs no MLA layer"},
+		{"the scorer's pair keyed to the scorer's kernel", setOf(named(blk, 1, kernelE)), blk, true, "E runs the scorer"},
+		{"the scorer's pair keyed to the primary's kernel", setOf(named(blk, 1, kernelD)), blk, false, "D runs no scorer"},
+		{"the sparse pair keyed to the primary, not the scorer", setOf(named(sp, 1, kernelD)), sp, true, "the scorer is a node of its own"},
+		// The part-wide pair is read only by what no pair of its own prices.
+		{"the part-wide rate keyed to full attention, no kind has its own pair", setOf(named(attn, 1, kernelA)), attn, false, "swa, mla, sparse and the scorer all fall back to it"},
+		{"the part-wide rate keyed to full attention, every kind has its own", with(named(attn, 1, kernelA)), attn, true, "only full attention reads it"},
+		{"the part-wide rate keyed to the swa kernel, swa has its own pair", with(named(attn, 1, kernelB)), attn, false, "full attention, on A, reads it"},
+		{"the part-wide floor keyed to full attention, swa has a rate and no floor", with(named(floor, 1, kernelA)), floor, false, "the swa layers inherit the floor"},
+		{"the part-wide floor keyed to full attention and swa, every kind has a rate and none a floor", with(named(floor, 1, kernelA, kernelB)), floor, false, "mla, sparse and the scorer inherit it too"},
+		{"the part-wide floor keyed to every kernel that inherits it", with(named(floor, 1, kernelA, kernelB, kernelC, kernelD, kernelE)), floor, true, "each kind with a rate and no floor inherits it"},
+		{"the part-wide floor keyed to full attention, every kind has a floor", with(named(floor, 1, kernelA),
+			named("attention_decode_floor_swa", 1, kernelB), named("attention_decode_floor_mla", 1, kernelC),
+			named("attention_decode_floor_sparse_mla", 1, kernelD), named("attention_decode_floor_block_index_scores", 1, kernelE)), floor, true, "only full attention reads it"},
+		// GEMMs are read by the operations of the format that selects the ramp.
+		{"bf16 keyed to the BF16 GEMM's kernel, mxfp8 not carried", setOf(named(bf16, 1, kernelA)), bf16, false, "the MXFP8 GEMM on D falls back to the BF16 ramp"},
+		{"bf16 keyed to the BF16 GEMM's kernel, mxfp8 carried", setOf(named(bf16, 1, kernelA), named(mx, 1, kernelD)), bf16, true, "the MXFP8 GEMM has its own ramp"},
+		{"fp8 keyed to the FP8 GEMM's kernel", setOf(named(fp8, 1, kernelB)), fp8, true, "B runs the FP8 GEMM"},
+		{"fp8 keyed to the BF16 GEMM's kernel", setOf(named(fp8, 1, kernelA)), fp8, false, "A runs no FP8 GEMM"},
+		{"mxfp8 keyed to its kernel", setOf(named(mx, 1, kernelD)), mx, true, "D runs the MXFP8 GEMM"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			v, m, err := valueAt(t, c.entry.Name, setOf(c.entry), pool)
+			v, m, err := valueAt(t, c.look, c.sets, pool)
 			switch {
 			case c.priced && (err != nil || v != 1 || m != coefficient.KernelExact):
 				t.Errorf("not priced (%v %q %v): %s", v, m, err, c.why)
@@ -395,26 +424,29 @@ func TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt(t *testing.T) {
 		})
 	}
 	// What the entry was matched against is what consumed it, not the primitive's pool.
-	c, err := Load(setOf(named(swa, 7, kernelB), named(attn, 3, kernelA, kernelB, kernelC)), pool)
+	c, err := Load(with(named(attn, 3, kernelA)), pool)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, _ := c.Entry(swa)
-	if len(r.Running) != 1 || r.Running[0] != kernelB {
-		t.Errorf("the swa entry was matched against %v, want only the sliding-window kernel %v", r.Running, kernelB)
+	for name, want := range map[string]coefficient.KernelImpl{swa: kernelB, attn: kernelA, blk: kernelE} {
+		r, _ := c.Entry(name)
+		if len(r.Running) != 1 || r.Running[0] != want {
+			t.Errorf("%s was matched against %v, want only %v", name, r.Running, want)
+		}
 	}
-	r, _ = c.Entry(attn)
-	if len(r.Running) != 3 {
-		t.Errorf("the part-wide entry was matched against %v, want every attention kernel", r.Running)
-	}
-	// A name no operation consumes (no sliding-window layer) cannot be priced by a keyed entry.
+	// A name no operation reads (no sliding-window layer) cannot be priced by a keyed entry.
 	none := Scope{Hardware: "h100", Operations: []Operation{op("attention.decode", kernelA, false)}}
 	if _, _, err := valueAt(t, swa, setOf(named(swa, 1, kernelA)), none); err == nil {
 		t.Errorf("a keyed swa entry priced a pool with no sliding-window layer")
 	}
+	// A GEMM that states no format reads every ramp.
+	wild := Scope{Hardware: "h100", Operations: []Operation{{Primitive: "gemm", Impl: kernelA, Wild: true}, op("gemm", kernelB, false, "fp8")}}
+	if _, _, err := valueAt(t, fp8, setOf(named(fp8, 1, kernelB)), wild); err == nil {
+		t.Errorf("a GEMM that states no format was left out of the fp8 ramp's consumers")
+	}
 	// The pooled form is the projection of the operations.
 	got := pool.PooledImplementations()
-	if len(got["attention.decode"]) != 3 || len(got["gemm"]) != 1 {
+	if len(got["attention.decode"]) != 5 || len(got["gemm"]) != 3 {
 		t.Errorf("pooled implementations %v", got)
 	}
 	// The recurrent mixers narrow the same way.
@@ -425,5 +457,54 @@ func TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt(t *testing.T) {
 	}
 	if _, _, err := valueAt(t, "recurrent_decode_rate_kda", setOf(named("recurrent_decode_rate_kda", 1, kernelB)), rec); err == nil {
 		t.Errorf("a kda entry keyed to the mamba2 kernel priced the kda layers")
+	}
+}
+
+// The trtllm-gen lane's pair is read by the prefill of the non-latent layers whose cache has its
+// format, and shadows the part-wide prefill pair only where it is carried exact.
+func TestTheLanePairIsReadByTheNonLatentPrefillOfItsCacheFormat(t *testing.T) {
+	lane := func(dtype string) string { return "attention_prefill_floor_trtllm_gen_kv_" + dtype }
+	pre := func(impl coefficient.KernelImpl, chain ...string) Operation {
+		return Operation{Primitive: "attention.prefill", Impl: impl, Chain: chain}
+	}
+	// Non-latent bf16 prefill on B, non-latent fp8 prefill on C, latent prefill on A.
+	kernelC := coefficient.KernelImpl{Library: "flashinfer", Variant: "fp8_prefill", CodeHash: "eeeeeeeeeeee"}
+	pool := Scope{Hardware: "h100", Operations: []Operation{pre(kernelA, "sparse_mla"), pre(kernelB, "kv_bf16"), pre(kernelC, "kv_fp8")}}
+	named := func(name string, impls ...coefficient.KernelImpl) coefficient.Entry {
+		return entryNamed(name, vocab.MethodMeasured, 1, impls...)
+	}
+	for name, c := range map[string]struct {
+		e     coefficient.Entry
+		exact bool
+	}{
+		"the bf16 pair keyed to the bf16 kernel":         {named(lane("bf16"), kernelB), true},
+		"the bf16 pair keyed to the latent kernel":       {named(lane("bf16"), kernelA), false},
+		"the fp8 pair keyed to the fp8 kernel":           {named(lane("fp8"), kernelC), true},
+		"the fp8 pair keyed to the bf16 kernel":          {named(lane("fp8"), kernelB), false},
+		"the bf16 pair keyed to both non-latent kernels": {named(lane("bf16"), kernelB, kernelC), true},
+	} {
+		_, m, err := valueAt(t, c.e.Name, setOf(c.e), pool)
+		if got := err == nil && m == coefficient.KernelExact; got != c.exact {
+			t.Errorf("%s: exact %v (%v)", name, got, err)
+		}
+	}
+	// The part-wide prefill floor keyed to the latent kernel is read by the latent layers; the
+	// non-latent ones are priced from the lane when it is carried exact, and from the part-wide
+	// pair when it is not.
+	wide := named("attention_prefill_floor", kernelA)
+	if _, _, err := valueAt(t, wide.Name, setOf(wide), pool); err == nil {
+		t.Error("the part-wide floor priced non-latent prefill that runs other kernels, with no lane carried")
+	}
+	exactLane := []coefficient.Entry{wide, named(lane("bf16"), kernelB), named(lane("fp8"), kernelC)}
+	if _, m, err := valueAt(t, wide.Name, setOf(exactLane...), pool); err != nil || m != coefficient.KernelExact {
+		t.Errorf("the part-wide floor, with an exact lane for both formats: %v %q", err, m)
+	}
+	unkeyed := []coefficient.Entry{wide, entryNamed(lane("bf16"), vocab.MethodTransferred, 1), entryNamed(lane("fp8"), vocab.MethodTransferred, 1)}
+	for i := 1; i < 3; i++ {
+		unkeyed[i].MeasuredOn = []coefficient.KernelImpl{kernelA}
+		unkeyed[i].TransferredFrom, unkeyed[i].TransferRule, unkeyed[i].Rationale = "hardware=h100", "r", "r"
+	}
+	if _, _, err := valueAt(t, wide.Name, setOf(unkeyed...), pool); err == nil {
+		t.Error("an unkeyed lane shadowed the part-wide floor, which the non-latent layers still read")
 	}
 }

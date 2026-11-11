@@ -21,7 +21,8 @@ change. The engine's reasons cite the vLLM v0.31.0 source in the code beside the
 
 ## The kernel implementations that run are malformed
 
-- `Inputs.Operations` names a layer the graph (the target's, or the draft model's) does not have,
+- `Inputs.Operations` names a layer the graph (the target's, or the draft model's) does not have, a
+  block-index scorer the layer does not run,
   or kernel implementations that differ from `Inputs.Implementations` when both are given.
 - `Inputs.Implementations` lists a primitive with no implementation, or has an implementation with no library, a code hash that is not
   lower-case hexadecimal of at least 12 digits, a code hash with no variant, or two different code

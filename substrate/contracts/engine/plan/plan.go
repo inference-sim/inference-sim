@@ -125,17 +125,25 @@ func ImplementationsOf(ops []Operation) map[Primitive][]KernelImpl {
 }
 
 // Operation is one lowered operation and the kernel implementation that executes it: which
-// layer of which graph (the target's, or the draft model's), which primitive, which kernel. It
-// is the identity the cost model keeps when it binds a coefficient to the kernel that consumes
-// it (design VAL-8, 6.2), so a coefficient read only by the sliding-window layers is matched
-// against the kernel those layers run and not against every kernel that runs any attention.
+// layer of which graph (the target's, or the draft model's), which node of it (Scorer), which
+// primitive, in which stored format, which kernel. It is the identity the cost model keeps when
+// it binds a coefficient to the kernel that consumes it (design VAL-8, 6.2), so a coefficient
+// read only by the sliding-window layers is matched against the kernel those layers run, one
+// read only by the BF16 GEMMs against the kernel that runs those, and one read only by a
+// layer's block-index scorer against the scorer's, and not against every kernel that runs the
+// primitive.
 type Operation struct {
 	// Draft is true for an entry of DraftLayers, whose Layer indexes the draft model's own
 	// stack; false for an entry of Layers, whose Layer indexes the target graph's.
-	Draft     bool
-	Layer     int
+	Draft bool
+	Layer int
+	// Scorer is the node of the layer (LoweredLayer.Scorer); false is the primary.
+	Scorer    bool
 	Primitive Primitive
-	Impl      KernelImpl
+	// Format is the stored format of the weight or the cache the operation reads
+	// (PrimitiveShape.Format); the zero value is not stated.
+	Format units.QuantFormat
+	Impl   KernelImpl
 }
 
 // Operations lists every lowered operation of the pool, the target's then the draft model's, in
@@ -144,10 +152,10 @@ type Operation struct {
 func (p PoolPlan) Operations() []Operation {
 	var out []Operation
 	for _, l := range p.Layers {
-		out = append(out, Operation{Layer: l.Layer, Primitive: l.Primitive, Impl: l.KernelImpl})
+		out = append(out, Operation{Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Impl: l.KernelImpl})
 	}
 	for _, l := range p.DraftLayers {
-		out = append(out, Operation{Draft: true, Layer: l.Layer, Primitive: l.Primitive, Impl: l.KernelImpl})
+		out = append(out, Operation{Draft: true, Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Impl: l.KernelImpl})
 	}
 	return out
 }
@@ -224,6 +232,12 @@ type LoweredLayer struct {
 	Stage int
 	// Primitive is from the fixed list above.
 	Primitive Primitive
+	// Scorer is true when this entry executes the layer's block-index scorer, a node of its own
+	// beside a sparse layer's primary attention, and false for the layer's primary node. A layer
+	// that runs both has two entries for the primitive. The coefficient registry prices the two
+	// apart (attention_decode_*_block_index_scores), so the cost model binds a coefficient to
+	// the kernel of the node that reads it.
+	Scorer bool
 	// KernelImpl is what executes it; the coefficient registry looks coefficients up by this.
 	KernelImpl KernelImpl
 	// Shape is the primitive's geometry.
