@@ -282,6 +282,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: The seed is stored in one CI environment per repository (blis-substrate and accuracy-dashboard) whose branch policy allows only main, available only to the release, select, error and gate jobs
   - `ci`, pull_request: A workflow lint that those jobs check out only main (`ledger: TestLintWorkflows`)
   - `ci`, pull_request: The three published lists are read back and checked against the ledger that drew them: the seed hash and partition version it records, units that exist, one role per unit (`ledger: TestPublishedListsAreCheckedAgainstTheLedger`)
+  - `ci`, pull_request: A release carries all three published lists with the fit and anchor lists nonempty; the release job, the ledger check and the release tool refuse otherwise (`ledger: TestReleaseRefusesAnEmptyPublishedSet`)
   - `new`, pull_request: Their outputs are checked to contain no per-unit rows and no aggregate over fewer than 10 units
 - **D8** (partial; target ci by M2) A quantity BLIS simulates, such as prefix-cache hits or queueing, is never stored.
   - `new`, pull_request: A validator rule refusing such families in the registry without a workload key

@@ -15,6 +15,7 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/blis-substrate/ledger"
 	"github.com/inference-sim/blis-substrate/tools/internal/bot"
 )
 
@@ -628,6 +629,13 @@ func checkStagedTip(env Env, st Step, tip string) error {
 		return err
 	}
 	bad, lerr := env.Lint(wt)
+	// A tip that carries the data ledger must carry its published lists, the fit and anchor
+	// lists nonempty (D7, COV-2): without them the release embeds no anchor unit and the
+	// dashboard cannot score it.
+	var ledgerErr error
+	if _, err := os.Stat(filepath.Join(wt, "catalog", "ledger", "ledger.yaml")); err == nil {
+		ledgerErr = ledger.CheckRelease(filepath.Join(wt, "catalog", "ledger"))
+	}
 	if _, err := gitIn(st.Dir, "worktree", "remove", wt); err != nil {
 		return err
 	}
@@ -636,6 +644,9 @@ func checkStagedTip(env Env, st Step, tip string) error {
 	}
 	if lerr != nil {
 		return fmt.Errorf("%s: module lint of staged tip %s: %w", st.Repo, short(tip), lerr)
+	}
+	if ledgerErr != nil {
+		return fmt.Errorf("%s: staged tip %s does not carry a releasable ledger: %w", st.Repo, short(tip), ledgerErr)
 	}
 	if len(bad) > 0 {
 		return fmt.Errorf("%s: staged tip %s fails the module lint: %s", st.Repo, short(tip), strings.Join(bad, "; "))

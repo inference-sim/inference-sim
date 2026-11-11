@@ -63,6 +63,7 @@ blis-substrate:
   "contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency": [contracts and validators]
   "kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid": [cost model]
   "ledger: TestPublishedListsAreCheckedAgainstTheLedger": [ledger]
+  "ledger: TestReleaseRefusesAnEmptyPublishedSet": [ledger]
   "ci.yml job required": [required]
 blis-vllm:
   "oracle/check_mocks.py": [oracle-tier2]

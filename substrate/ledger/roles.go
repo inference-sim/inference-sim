@@ -37,6 +37,10 @@ func (r Role) Valid() bool {
 // The members of select, validate and held are known only inside the jobs that hold the seed.
 func (r Role) Published() bool { return r == RoleFit || r == RoleAnchor || r == RoleReport }
 
+// mustBeNonempty reports whether a published list of r holds a unit in every release: the
+// fit list, which the fits cite (D1), and the anchor list, which the dashboard scores (COV-2).
+func (r Role) mustBeNonempty() bool { return r == RoleFit || r == RoleAnchor }
+
 // Side is a legacy label: the side of the partition made before the ledger existed.
 type Side string
 

@@ -209,6 +209,14 @@
     status: ci
     test: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
     known_bad: 'ledger: TestPublishedListsAreCheckedAgainstTheLedger'
+  - repo: blis-substrate
+    check: >-
+      A release carries all three published lists with the fit and anchor lists nonempty; the
+      release job, the ledger check and the release tool refuse otherwise
+    runs: pull_request
+    status: ci
+    test: 'ledger: TestReleaseRefusesAnEmptyPublishedSet'
+    known_bad: 'ledger: TestReleaseRefusesAnEmptyPublishedSet'
   - repo: accuracy-dashboard
     check: A workflow lint that those jobs check out only main
     runs: pull_request

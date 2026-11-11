@@ -24,6 +24,13 @@ check `ledger scan-roles` refuses any other committed file that pairs a unit wit
 `published/` does not exist yet. The release job writes it once a ledger owner has created the
 seed. Nothing else may write it.
 
+A tree without the lists can merge, but it cannot be released. `ledger check -release catalog/ledger`
+and the release tool (`tools/release`, at `-tag`) refuse a tree that lacks any of the three lists
+or whose fit or anchor list holds no unit; the release job itself refuses to write such lists.
+The report list may be empty, because the cut-points give the report role no range. The
+fit list is what every fitted coefficient cites (D1) and the anchor list is what the dashboard
+scores (COV-2), so a release without them has nothing to fit from or score.
+
 No other file may sit in this directory. `ledger check` refuses one, so a role list cannot be
 added under another name.
 
@@ -111,8 +118,16 @@ version, in this repository and, with a seed of its own, in accuracy-dashboard (
    against the recorded hash before it draws anything. Its artifact `published` holds
    `fit.yaml`, `anchor.yaml` and `report.yaml`. The release bot commits them under
    `published/` in the release pull request. When that happens, the change also adds the
-   pattern `catalog/ledger/published/*.yaml` to `data.go`, in both the `//go:embed` line and
-   `CatalogPatterns`.
+   pattern `ledger/published/*.yaml` to `CatalogPatterns` and `catalog/ledger/published/*.yaml`
+   to the `//go:embed` line of `data.go`: `go:embed` refuses a pattern that matches no file, so
+   the pattern cannot come first. `TestPublishedListsAreEmbeddedWhenPresent` fails a tree that
+   has the lists without the pattern, and `ledger check -release` fails a tree without them.
+5. Check the result before tagging:
+
+   ```sh
+   go run ./ledger/cmd/ledger check -release catalog/ledger     # exit 0; fit and anchor nonempty
+   go test -count=1 -run 'TestPublishedListsAreEmbeddedWhenPresent|TestEmbedPatterns' .
+   ```
 
 When a partition version is retired, publish its seed in the pull request that retires it,
 so that anyone can check the split against the committed hash.

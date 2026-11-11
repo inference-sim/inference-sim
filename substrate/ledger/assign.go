@@ -126,6 +126,9 @@ func (p *Published) Check(file Role, cfg *Config) error {
 	if p.PartitionVersion != cfg.PartitionVersion {
 		errs = append(errs, fmt.Errorf("partition_version %d, but ledger.yaml is at %d", p.PartitionVersion, cfg.PartitionVersion))
 	}
+	if len(p.Units) == 0 && p.Role.mustBeNonempty() {
+		errs = append(errs, fmt.Errorf("the %s list holds no unit; a list the dashboard or the fits read is never empty (COV-2, D1)", p.Role))
+	}
 	for i, id := range p.Units {
 		switch {
 		case !hex64.MatchString(id):
@@ -137,6 +140,56 @@ func (p *Published) Check(file Role, cfg *Config) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// CheckReleasable is the release gate's check of the three lists (D7, COV-2): all three are
+// present, and the fit list and the anchor list each hold a unit. The anchor list is what the
+// dashboard scores (COV-2); the fit list is what every fitted coefficient cites (D1). The
+// report list may be empty, because the partition's cut-points give the report role no range
+// until a source draws one. A tree that has not yet published its lists is fine to check and
+// to merge; it is not fine to release.
+func CheckReleasable(lists map[Role]*Published) error {
+	var errs []error
+	for _, r := range []Role{RoleFit, RoleAnchor, RoleReport} {
+		p := lists[r]
+		switch {
+		case p == nil:
+			errs = append(errs, fmt.Errorf("the %s list is not published; a release carries fit, anchor and report", r))
+		case len(p.Units) == 0 && r.mustBeNonempty():
+			errs = append(errs, fmt.Errorf("the %s list holds no unit; a release publishes a nonempty %s list", r, r))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// CheckRelease loads the ledger at dir the way a release reads it, without the role-key rules
+// of the ingest tools (ledger check runs those), and applies CheckReleasable to the published
+// lists. A release whose tree holds no lists, or an empty fit or anchor list, is refused.
+func CheckRelease(dir string) error {
+	cfg, err := LoadConfig(dir)
+	if err != nil {
+		return err
+	}
+	srcs, err := LoadSources(dir)
+	if err != nil {
+		return err
+	}
+	units := map[string][]Unit{}
+	for _, src := range srcs.Sources {
+		if src.Units == "" {
+			continue
+		}
+		us, _, err := ReadUnitList(filepath.Join(dir, filepath.FromSlash(src.Units)))
+		if err != nil {
+			return err
+		}
+		units[src.ID] = us
+	}
+	lists, err := LoadPublished(dir, cfg, units)
+	if err != nil {
+		return err
+	}
+	return CheckReleasable(lists)
 }
 
 // LoadPublished reads the lists the release job wrote under dir/published/ and checks them
@@ -223,6 +276,9 @@ func (a *Assigner) Release(cfg *Config, units map[string][]Unit) (map[Role]*Publ
 	}
 	for _, p := range out {
 		sort.Strings(p.Units)
+	}
+	if err := CheckReleasable(out); err != nil {
+		return nil, fmt.Errorf("the release job would publish lists a release refuses: %w", err)
 	}
 	return out, nil
 }

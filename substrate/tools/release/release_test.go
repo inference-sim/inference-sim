@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
+	"github.com/inference-sim/blis-substrate/ledger"
 )
 
 // repo is a local git repository for a test.
@@ -948,4 +951,140 @@ func TestEngineSetNeedsTheInferenceSimCheckout(t *testing.T) {
 			t.Fatalf("want a refusal, got %v", err)
 		}
 	})
+}
+
+// ledgerFiles writes a small data ledger into a staged tip: one source with three units and,
+// unless fit and anchor are both nil, the three published lists. fit and anchor name units by
+// the index digit, "0" to "2"; the report list is empty.
+func ledgerFiles(t *testing.T, r *repo, fit, anchor []string) {
+	t.Helper()
+	seed := strings.Repeat("ab", 32)
+	r.write("catalog/ledger/ledger.yaml", `kind: Ledger
+partition_version: 1
+seed:
+  sha256: `+seed+`
+  generated_by: owner
+  generated_on: 2026-11-04
+  rotation_owner: owner
+rules:
+  s:
+    cut_points:
+      - {role: fit, from: 0, to: 29}
+      - {role: select, from: 30, to: 39}
+      - {role: validate, from: 40, to: 49}
+      - {role: held, from: 50, to: 79}
+      - {role: anchor, from: 80, to: 99}
+`)
+	r.write("catalog/ledger/sources.yaml", `kind: LedgerSources
+sources:
+  - id: s
+    title: t
+    revision:
+      kind: git_commit
+      url: https://github.com/o/r/tree/2f0f4cd8606d580567b253d02f3d699fe36db865
+      ref: 2f0f4cd8606d580567b253d02f3d699fe36db865
+    units: units/s.jsonl.gz
+    licence:
+      spdx: Apache-2.0
+      evidence:
+        - {url: "https://github.com/o/r/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/LICENSE", sha256: "`+strings.Repeat("a", 64)+`", lines: "1", quote: Apache}
+      sign_off: {by: "", on: ""}
+`)
+	var ids []string
+	var units []ledger.Unit
+	for i := 0; i < 3; i++ {
+		id := map[string]any{"n": i}
+		uid, _ := ledger.ID(id)
+		rk, _ := ledger.ID(map[string]any{"k": i})
+		units = append(units, ledger.Unit{UnitID: uid, RoleKey: rk, Identity: id})
+	}
+	sort.Slice(units, func(i, j int) bool { return units[i].UnitID < units[j].UnitID })
+	for _, u := range units {
+		ids = append(ids, u.UnitID)
+	}
+	var gz bytes.Buffer
+	if err := ledger.EncodeUnits(&gz, units); err != nil {
+		t.Fatal(err)
+	}
+	r.write("catalog/ledger/units/s.jsonl.gz", gz.String())
+	list := func(role string, units []string) string {
+		s := "kind: PublishedUnits\nrole: " + role + "\npartition_version: 1\nseed_sha256: " + seed + "\nunits:\n"
+		if len(units) == 0 {
+			return strings.Replace(s, "units:\n", "units: []\n", 1)
+		}
+		for _, u := range units {
+			s += "  - " + u + "\n"
+		}
+		return s
+	}
+	if fit != nil || anchor != nil {
+		resolve := func(idx []string) []string {
+			var out []string
+			for _, i := range idx {
+				n := int(i[0] - '0')
+				out = append(out, ids[n])
+			}
+			sort.Strings(out)
+			return out
+		}
+		r.write("catalog/ledger/published/fit.yaml", list("fit", resolve(fit)))
+		r.write("catalog/ledger/published/anchor.yaml", list("anchor", resolve(anchor)))
+		r.write("catalog/ledger/published/report.yaml", list("report", nil))
+	}
+}
+
+// A staged tip that carries the data ledger must carry its published lists, fit and anchor
+// nonempty (D7, COV-2): the tag is refused for a tree with no lists and for one whose anchor
+// list is empty, and given for a tree whose lists hold units. A tip with no ledger is not asked.
+func TestTagRefusesAStagedTipWithoutReleasableLedgerLists(t *testing.T) {
+	cases := []struct {
+		name        string
+		fit, anchor []string
+		publishNone bool
+		want        string
+	}{
+		{name: "no lists", publishNone: true, want: "fit list is not published"},
+		{name: "an empty anchor list", fit: []string{"0"}, anchor: []string{}, want: "anchor list holds no unit"},
+		{name: "an empty fit list", fit: []string{}, anchor: []string{"1"}, want: "fit list holds no unit"},
+		{name: "nonempty fit and anchor lists", fit: []string{"0"}, anchor: []string{"1"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := env(t, nil)
+			sub := newRepo(t, subMod)
+			sub.git("tag", "v0.11.0")
+			sub.git("checkout", "-q", "-b", "b")
+			if c.publishNone {
+				ledgerFiles(t, sub, nil, nil)
+			} else {
+				ledgerFiles(t, sub, c.fit, c.anchor)
+			}
+			h := sub.commit("Add the ledger")
+			sub.git("checkout", "-q", "main")
+			l, err := ParseStackLock([]byte("set: s\nmilestone: 1\nrepos:\n  - {repo: blis-substrate, branch: b, head: " + h + ", bump: patch}\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			steps, err := Plan(e, l, map[string]string{"blis-substrate": sub.dir}, "main")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := Stage(e, steps, "", false); err != nil {
+				t.Fatal(err)
+			}
+			err = Tag(e, l, steps, "", false)
+			if c.want == "" {
+				if err != nil {
+					t.Fatalf("Tag = %v; want a tag for releasable lists", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "releasable ledger") || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("Tag = %v; want a refusal containing %q", err, c.want)
+			}
+			if strings.Contains(sub.git("tag", "--list"), "v0.11.1") {
+				t.Error("a tag exists after a refusal")
+			}
+		})
+	}
 }

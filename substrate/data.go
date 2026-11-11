@@ -16,8 +16,11 @@ import (
 // deriver, but no runtime code reads it, so it is not data (SUB-3).
 //
 // The ledger's published role lists (catalog/ledger/published/) join this list, and the
-// go:embed line below, when the ledger commits them: go:embed refuses a pattern that matches
-// no file.
+// embed line below, in the change that commits them, with the pattern
+// "ledger/published/*.yaml". The directive refuses a pattern that matches no file, so the
+// pattern cannot come before the files. TestPublishedListsAreEmbeddedWhenPresent fails a tree
+// that has the lists without the pattern, and `ledger check -release` and the release tool
+// refuse a release whose tree has no lists (D7, COV-2).
 var CatalogPatterns = []string{
 	"devices/*.yaml",
 	"hardware/*.yaml",

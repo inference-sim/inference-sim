@@ -3,8 +3,9 @@
 //	ledger ingest-inferencex -rows R -partition P [-revision REV] DIR
 //	    Generate units/inferencex.jsonl.gz, reports/inferencex.yaml, legacy-map.yaml and
 //	    legacy-points.jsonl.gz in DIR from the rows export.sql printed.
-//	ledger check DIR
-//	    Load and check every committed ledger file (D3, D4, D6).
+//	ledger check [-release] DIR
+//	    Load and check every committed ledger file (D3, D4, D6). With -release, also require
+//	    the three published lists a release carries, the fit and anchor lists nonempty.
 //	ledger check-generated -rows R -partition P DIR
 //	    Regenerate into a scratch directory and require each generated file to equal the
 //	    committed one byte for byte (D4).
@@ -239,12 +240,18 @@ func cmdIngest(args []string, stdout io.Writer) error {
 
 func cmdCheck(args []string, stdout io.Writer) error {
 	fs := flags("check")
-	if err := parse(fs, args, 1, "check DIR"); err != nil {
+	release := fs.Bool("release", false, "also require the published lists a release carries, fit and anchor nonempty")
+	if err := parse(fs, args, 1, "check [-release] DIR"); err != nil {
 		return err
 	}
 	l, err := ledger.Load(fs.Arg(0), roleKeys)
 	if err != nil {
 		return err
+	}
+	if *release {
+		if err := ledger.CheckReleasable(l.Published); err != nil {
+			return fmt.Errorf("not releasable: %w", err)
+		}
 	}
 	n := 0
 	for _, us := range l.Units {
