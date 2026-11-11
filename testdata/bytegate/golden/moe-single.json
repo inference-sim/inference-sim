@@ -2074,5 +2074,42 @@
         "total": 161
       }
     }
-  }
+  },
+  "resolutions": [
+    {
+      "setting": "all_reduce_backend",
+      "pool": "colocated",
+      "engine": "custom"
+    },
+    {
+      "setting": "async_scheduling",
+      "pool": "colocated",
+      "engine": "true"
+    },
+    {
+      "setting": "cascade_attention",
+      "pool": "colocated",
+      "engine": "false"
+    },
+    {
+      "setting": "data_parallel_width",
+      "pool": "colocated",
+      "engine": "1"
+    },
+    {
+      "setting": "expert_parallel_width",
+      "pool": "colocated",
+      "engine": "1"
+    },
+    {
+      "setting": "sequence_parallel_moe",
+      "pool": "colocated",
+      "engine": "false"
+    },
+    {
+      "setting": "tensor_parallel_width",
+      "pool": "colocated",
+      "engine": "2"
+    }
+  ]
 }
