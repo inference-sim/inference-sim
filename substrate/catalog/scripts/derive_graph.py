@@ -1402,6 +1402,9 @@ MLA_LAYOUTS = {
     # here rather than relying on which view the lookup happens to read.
     "KimiLinearForCausalLM": {"fused_a": True, "fused_norm": True},
     "Glm5NextForConditionalGeneration": {"fused_a": True, "fused_norm": True},
+    # The K3 DSpark draft layer is Kimi-K3's own MultiHeadLatentAttention
+    # (dspark_mla.py:73-92), so it fuses the two latent norms the same way.
+    "K3DSparkModel": {"fused_a": True, "fused_norm": True},
     # kimi-k2.5 takes the DeepseekV2MLAAttention shape: its text_config declares
     # DeepseekV3ForCausalLM, the registry sends that to deepseek_v2 (registry.py:90),
     # and KimiK25ForConditionalGeneration initializes its text decoder through
@@ -5041,6 +5044,155 @@ def handler_muse_spark_dspark(cfg, raw, model):
     return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
 
 
+# Draft tokens per block for a K3 DSpark drafter whose configuration states none. The engine
+# takes num_speculative_tokens from the deployment and, where it gives none, from the draft
+# config's block_size or dspark_block_size (config/speculative.py:1481-1488@v0.32.0), and
+# Inferact/Kimi-K3-DSpark's config.json names neither. Its model card, at the pinned revision,
+# says the draft is "drafting 7 tokens in a single parallel pass" and reports acceptance "with
+# 7 speculative tokens"; that is recorded here per drafter, with the card as its source, rather
+# than defaulted. A deployment that sets another count prices that many positions.
+K3_DSPARK_BLOCKS = {
+    "kimi-k3-dspark": 7,
+}
+
+
+def handler_k3_dspark(cfg, raw, model):
+    """The dense MLA DSpark drafter of the Kimi-K3 family (K3DSparkModel,
+    vllm/models/kimi_k3/nvidia/dspark_mla.py@v0.32.0; unchanged in structure at v0.34.0rc0),
+    a checkpoint of its own that a deployment names as its speculative draft_model.
+
+    The graph is the drafter, stated as the speculator a kernel prices beside the target.
+    num_hidden_layers dense layers, each Kimi-K3's own latent attention (MultiHeadLatentAttention
+    with no output gate, no NoPE and no QK norm, the three things K3DSparkConfig refuses) and
+    a KimiMLP, draft a block of num_spec_tokens positions per request in ONE parallel pass
+    (anchor-as-first: N query tokens, not 1 + N). Before it, the context stack runs over every
+    token the target schedules: context_proj of the target's hidden states at target_layer_ids
+    (a ReplicatedLinear over one state per captured layer, :150-157), its norm, and the
+    cross-layer context_kv_proj, one GEMM of [kv_lora_rank + qk_rope_head_dim] rows per draft
+    layer (disable_tp, :175-187) followed by the K norm, RoPE and the cache insert
+    (_precompute_fused_context_kv, :263-372). After it come the final norm, the target's lm_head
+    and, once per draft position, the Markov head (DSparkMarkovHead, qwen3_dspark.py:48-94).
+
+    The captured states are the config's target_layer_ids plus one, in the engine's convention
+    (get_eagle3_aux_layers_from_config, eagle3_utils.py:100-137, the dense-DSpark branch).
+
+    NOT PRICED, each small or outside the graph:
+      * the token embedding and the lm_head, which the drafter does not load and shares with
+        the target (has_own_lm_head False, load_dspark_model aliases them; the mapper drops
+        embed_tokens and lm_head from the checkpoint, :435-447). The graph states an lm_head
+        because a graph's speculator head must alias a node of the same graph (validation),
+        and withDrafter then counts it as the drafter's own weight: one vocabulary x hidden
+        table of resident bytes the engine does not hold twice;
+      * the confidence head (`proj`, input hidden_size + markov_rank), loaded and consulted by
+        adaptive verification alone;
+      * the context K/V projection's weights are the layers' kv_a_proj_with_mqa rows loaded a
+        second time (_duplicate_context_kv_weights, :39-58): resident twice, which one node
+        cannot alias at a different shape."""
+    def whole(v, key):
+        if isinstance(v, bool) or int(v) != v:
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return int(v)
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    markov = whole(require_key(cfg, "markov_rank", model), "markov_rank")
+    targets = require_key(cfg, "target_layer_ids", model)
+    target_hidden = whole(require_key(cfg, "target_hidden_size", model), "target_hidden_size")
+    target_layers = whole(require_key(cfg, "target_num_hidden_layers", model),
+                          "target_num_hidden_layers")
+    kv_lora = whole(require(cfg, "kv_lora_rank", model), "kv_lora_rank")
+    rope = whole(require(cfg, "qk_rope_head_dim", model), "qk_rope_head_dim")
+    # K3DSparkConfig raises for each of these (configs/k3_dspark.py:33-72@v0.32.0).
+    for key in ("mla_use_nope", "mla_use_output_gate", "mla_use_qk_norm", "dspark_bonus_anchor"):
+        if cfg.get(key):
+            raise DeriveError(f"{model}: {key} is set; vLLM's MLA DSpark does not support it")
+    if not cfg.get("q_lora_rank"):
+        raise DeriveError(f"{model}: no q_lora_rank; vLLM's MLA DSpark does not support it")
+    if int(cfg.get("draft_vocab_size") or vocab) != vocab:
+        raise DeriveError(f"{model}: draft_vocab_size differs from vocab_size, which vLLM's "
+                          f"MLA DSpark refuses when it shares the target's lm_head")
+    if whole(cfg.get("num_target_layers", -1), "num_target_layers") != len(targets):
+        raise DeriveError(f"{model}: num_target_layers {cfg.get('num_target_layers')} for "
+                          f"{len(targets)} target_layer_ids; vLLM refuses the mismatch")
+    # Not read by the draft model, so a config that turns one on describes another drafter.
+    if int(cfg.get("n_routed_experts") or 0):
+        raise DeriveError(f"{model}: routed experts in a drafter this handler prices as dense")
+    if cfg.get("hidden_act", "silu") != "silu":
+        raise DeriveError(f"{model}: hidden_act {cfg.get('hidden_act')!r}; the draft's KimiMLP "
+                          f"is built without the SiTU betas")
+    if cfg.get("sliding_window") or cfg.get("use_sliding_window") or set(
+            cfg.get("layer_types") or ["full_attention"]) != {"full_attention"}:
+        raise DeriveError(f"{model}: a sliding-window draft layer, which this handler does not "
+                          f"price")
+    if cfg.get("sample_from_anchor", True) is not True:
+        raise DeriveError(f"{model}: sample_from_anchor is off, so the block takes 1 + N query "
+                          f"tokens, which this handler does not price")
+    if cfg.get("markov_head_type", "vanilla") != "vanilla":
+        raise DeriveError(f"{model}: markov_head_type {cfg.get('markov_head_type')!r}; only the "
+                          f"vanilla DSparkMarkovHead is built")
+    block = cfg.get("block_size", cfg.get("dspark_block_size", K3_DSPARK_BLOCKS.get(model)))
+    if block is None:
+        raise DeriveError(f"{model}: the configuration states no block_size, and K3_DSPARK_BLOCKS "
+                          f"records none for this drafter")
+    block = whole(block, "block_size")
+    if not targets or any(not 0 <= int(t) < target_layers for t in targets):
+        raise DeriveError(f"{model}: target_layer_ids {targets} outside the target's "
+                          f"{target_layers} layers")
+    aux_layers = draft_aux_hidden_state_layers(cfg, model, target_layers, states=len(targets))
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    layer = attention_block(cfg, model, hidden, raw=raw)
+    layer += [norm("post_attn_norm"), *dense_mlp(cfg, model, hidden),
+              collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)]
+    # One KV-only GEMM over the five layers' latents, then, per token and layer, the K norm
+    # (read and write kv_lora_rank), RoPE on the rope dims (read and write), and the insert of
+    # the normed latent and rope (read) into the cache (its own bytes are the cache's).
+    latent_bytes = layers * (2 * kv_lora + 2 * rope + (kv_lora + rope)) * act
+    context = [
+        with_tp(gemm("dspark_fc", hidden, target_hidden * len(targets)), "replicated"),
+        traffic("dspark_hidden_norm", 2 * hidden * act, tp="replicated"),
+        with_tp(gemm("dspark_context_kv", layers * (kv_lora + rope), hidden), "replicated"),
+        traffic("dspark_context_kv_insert", latent_bytes, tp="replicated"),
+    ]
+    kinds = [{"id": "dspark_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "dspark_context", "nodes": context, "edges": chain(context)}]
+    head = [norm("final_norm"), with_tp(gemm("lm_head", vocab, hidden), "column")]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "head": head,
+        "speculator": {
+            "method": "dspark",
+            "num_spec_tokens": block,
+            "drafting": "parallel_block",
+            "stack": {"pattern": ["dspark_layer"], "repeat": layers},
+            "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
+            "head": [norm("dspark_final_norm"),
+                     {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"}],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab,
+                 "row_bytes": markov * act, "rows_per_token": 1,
+                 "out_bytes_per_token": markov * act},
+                with_tp(gemm("markov_w2", vocab, markov), "replicated"),
+            ],
+            "aux_hidden_state_layers": aux_layers,
+        },
+    }
+    return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
+
+
 # The target an EAGLE3 drafter checkpoint is served with, for a drafter whose configuration
 # names no capture layers. The engine then asks the TARGET model for its default
 # (get_eagle3_aux_layers_from_config returns None, and the target's
@@ -5239,6 +5391,7 @@ HANDLERS = {
     # vision and audio towers are not priced (modality text_decoder_of_multimodal).
     "MuseSparkForConditionalGeneration": handler_muse_spark,
     "MuseSparkDSparkModel": handler_muse_spark_dspark,
+    "K3DSparkModel": handler_k3_dspark,
     # Kimi-K2.5 is a vision-language model whose TEXT decoder vLLM instantiates as
     # DeepseekV2ForCausalLM over config.text_config
     # (model_executor/models/kimi_k25.py:371-376, architectures=["DeepseekV2ForCausalLM"]),

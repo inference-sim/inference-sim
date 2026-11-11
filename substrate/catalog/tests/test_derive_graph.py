@@ -1283,6 +1283,9 @@ def test_mla_prices_its_low_rank_stages_not_one_fused_projection(d: Path):
             "GlmMoeDsaForCausalLM", "DeepseekV4ForCausalLM",
             "KimiK3ForConditionalGeneration", "KimiLinearForCausalLM",
             "Glm5NextForConditionalGeneration",
+            # The Kimi-K3 DSpark draft layer is kimi_k3's own MultiHeadLatentAttention
+            # (dspark_mla.py:73-92@v0.32.0).
+            "K3DSparkModel",
         }
         arches = (list(config_of(d).get("architectures") or ())
                   + list(t.get("architectures") or ()))
@@ -6777,3 +6780,108 @@ def test_a_dsa_config_on_an_architecture_without_the_path_is_refused(tmp_path):
     raw["architectures"] = ["KimiK3ForConditionalGeneration"]
     with pytest.raises(deriver().DeriveError, match="no vLLM path"):
         _derive_raw(raw, tmp_path, "kimi-k3")
+
+
+# --- Kimi-K3 family DSpark drafters (Inferact/Kimi-K3-DSpark, Inferact/Kimi-K3.1-Pro-DSpark-preview) ---
+
+K3_DSPARK = MODELS / "kimi-k3-dspark"
+K31_DSPARK = MODELS / "kimi-k3.1-dspark"
+
+# Each drafter's safetensors header (one shard each): its total weights, and the tensors the
+# engine does not run as the drafter's own. vLLM drops embed_tokens and lm_head from the
+# checkpoint and shares the target's (K3DSparkForCausalLM.hf_to_vllm_mapper), and keeps the
+# confidence head (7,424 weights and a bias) for adaptive verification alone.
+K3_DSPARK_HEADERS = {
+    # name: (total weights in the header, embed_tokens it holds, attention heads, markov rank)
+    "kimi-k3-dspark": (3_562_312_961, 163840 * 7168, 64, 256),
+    "kimi-k3.1-dspark": (2_686_752_257, 0, 96, 512),
+}
+
+
+def _k3_dspark_graph(name: str) -> dict:
+    return graph_of(MODELS / name)
+
+
+@pytest.mark.parametrize("name", sorted(K3_DSPARK_HEADERS))
+def test_k3_dspark_resident_parameters_equal_the_header_total(name):
+    """Every tensor of the drafter's header is a node, a tensor the engine does not load, or a
+    norm or head no node carries; the graph holds two things the header does not, both named."""
+    total, embed, heads, rank = K3_DSPARK_HEADERS[name]
+    g = _k3_dspark_graph(name)
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    hidden, vocab, ffn = 7168, 163840, 14336
+    params = 0
+    for kind in ("dspark_layer", "dspark_context"):
+        for n in kinds[kind]["nodes"]:
+            if n["op"] == "GEMM":
+                params += n["n"] * n["k"] * (5 if kind == "dspark_layer" else 1)
+    sp = g["speculator"]
+    params += sum(n["n"] * n["k"] for n in sp["head"] if n["op"] == "GEMM")
+    params += sum(n["n"] * n["k"] for n in sp["sequential_head"] if n["op"] == "GEMM")
+    params += sum(n["rows"] * n["row_bytes"] // 2 for n in sp["sequential_head"]
+                  if n["op"] == "Gather")
+    # Held by the graph and not by the header: the lm_head the drafter shares with its target
+    # (its graph must state one for the speculator's head to alias), and the context K/V
+    # projection, whose weights are the layers' kv_a rows loaded a second time.
+    shared_head = vocab * hidden
+    duplicated_kv = 5 * 576 * hidden
+    # Held by the header and not by the graph: the dropped embedding, the confidence head, and
+    # the norm vectors (input, post-attention, q_a and kv_a a layer; context, final).
+    confidence = (hidden + rank) + 1
+    norms = 5 * (2 * hidden + 1536 + 512) + 2 * hidden
+    assert params - shared_head - duplicated_kv + embed + confidence + norms == total
+    attn = [n for n in kinds["dspark_layer"]["nodes"] if n["op"] == "Attention"][0]
+    assert (attn["kind"], attn["n_q"], attn["d_h"]) == ("mla", heads, 576)
+    assert sp["sequential_head"][1]["k"] == rank
+
+
+def test_k3_dspark_states_its_block_its_captures_and_its_target():
+    k3, k31 = _k3_dspark_graph("kimi-k3-dspark"), _k3_dspark_graph("kimi-k3.1-dspark")
+    for g, aux, block in ((k3, [3, 24, 48, 72, 90], 7), (k31, [76, 80, 84, 88, 92], 7)):
+        sp = g["speculator"]
+        assert (sp["method"], sp["drafting"], sp["num_spec_tokens"]) == ("dspark", "parallel_block", block)
+        # target_layer_ids plus one, in the engine's convention, one state per captured layer.
+        assert sp["aux_hidden_state_layers"] == aux
+        fc = [n for n in {k["id"]: k for k in g["layer_kinds"]}["dspark_context"]["nodes"]
+              if n["role"] == "dspark_fc"][0]
+        assert (fc["n"], fc["k"], fc["tp"]) == (7168, 5 * 7168, "replicated")
+        assert sp["head"][1]["aliases"] == "head.lm_head"
+    for drafter, target in (("kimi-k3-dspark", "kimi-k3"), ("kimi-k3.1-dspark", "kimi-k3.1")):
+        identity = yaml.safe_load((MODELS / drafter / "model.yaml").read_text())
+        host = yaml.safe_load((MODELS / target / "model.yaml").read_text())
+        assert identity["targets"] == [target] and drafter in host["drafters"]
+        t = graph_of(MODELS / target)
+        assert len(layer_sequence(t["stack"])) == 93 == (
+            config_of(K3_DSPARK)["target_num_hidden_layers"])
+        assert t["global"]["hidden_size"] == 7168
+
+
+def test_k3_dspark_block_comes_from_the_config_or_the_recorded_card(tmp_path, monkeypatch):
+    d = deriver()
+    raw = config_of(K3_DSPARK)
+    assert "block_size" not in raw
+    assert _derive_raw(raw, tmp_path, "kimi-k3-dspark")["speculator"]["num_spec_tokens"] == 7
+    assert _derive_raw({**raw, "block_size": 5}, tmp_path,
+                       "kimi-k3-dspark")["speculator"]["num_spec_tokens"] == 5
+    with pytest.raises(d.DeriveError, match="K3_DSPARK_BLOCKS"):
+        _derive_raw(raw, tmp_path, "some-other-dspark")
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"mla_use_nope": True}, "mla_use_nope"),
+    ({"mla_use_output_gate": True}, "mla_use_output_gate"),
+    ({"mla_use_qk_norm": True}, "mla_use_qk_norm"),
+    ({"dspark_bonus_anchor": True}, "dspark_bonus_anchor"),
+    ({"q_lora_rank": None}, "q_lora_rank"),
+    ({"draft_vocab_size": 100}, "draft_vocab_size"),
+    ({"num_target_layers": 4}, "num_target_layers"),
+    ({"n_routed_experts": 8}, "routed experts"),
+    ({"hidden_act": "situ"}, "hidden_act"),
+    ({"sliding_window": 4096}, "sliding-window"),
+    ({"sample_from_anchor": False}, "sample_from_anchor"),
+    ({"markov_head_type": "full"}, "markov_head_type"),
+    ({"target_layer_ids": [2, 23, 47, 71, 93]}, "outside the target"),
+])
+def test_k3_dspark_refuses_what_vllm_refuses_or_the_graph_does_not_price(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw({**config_of(K3_DSPARK), **edit}, tmp_path, "kimi-k3-dspark")

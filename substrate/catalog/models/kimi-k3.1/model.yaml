@@ -9,3 +9,4 @@ licence:
   evidence: https://huggingface.co/moonshotai/Kimi-K3.1-Pro/raw/d9e99b0792a5e93b78ea9bea62a68167e36ddd9e/LICENSE
 config:
   sha256: d95037631e3f23bf527a9f476f25209b231b46853a84877b9c56d5672b8d1202
+drafters: [kimi-k3.1-dspark]

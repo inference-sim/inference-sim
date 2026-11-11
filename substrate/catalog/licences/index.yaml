@@ -104,6 +104,12 @@ models:
       - file: LicenseRef-kimi-k3.txt
         source: https://huggingface.co/moonshotai/Kimi-K3/raw/f831ab66814297da540d832a5235f8e904f29d06/LICENSE
         sha256: 20c797ce19af0c17de52c6afb144644768a591c521655f5ebf5712c9850f2887
+  - model: kimi-k3-dspark
+    licence: LicenseRef-kimi-k3
+    texts:
+      - file: LicenseRef-kimi-k3.txt
+        source: https://huggingface.co/Inferact/Kimi-K3-DSpark/raw/cf6b8244620e7ea4b0651d214f28e89eac75bed6/LICENSE
+        sha256: 20c797ce19af0c17de52c6afb144644768a591c521655f5ebf5712c9850f2887
   - model: llama-2-70b-hf
     licence: LicenseRef-llama2
     texts:
