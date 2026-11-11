@@ -5106,6 +5106,21 @@ def speculative_method(arch: str, model: str) -> str:
     return method
 
 
+def vllm_speculative_method(graph_method: str) -> str:
+    """The method name a deployment states for a graph's speculator method.
+
+    The graph names a model's own MTP speculator by family (deepseek_mtp, minimax_m3_mtp,
+    nemotron_h_mtp ...), which is how vLLM's model type for the draft is spelled. A deployment
+    states `method: mtp`: vLLM replaces every model-specific MTP name with mtp
+    (SpeculativeConfig, `if self.method in get_args(MTPModelTypes) and self.method != "mtp":
+    ... self.method = "mtp"`, vllm/config/speculative.py:1141-1145@v0.32.0) and, for a
+    MiniMax-M3 checkpoint, rewrites the model to minimax_m3_mtp with n_predict =
+    num_mtp_modules (:1030-1046). So a deployment's `mtp` is the graph's `*_mtp` speculator, and
+    a lookup that compares the two strings finds no speculator. Any other method (eagle3,
+    dflash, dspark ...) is its own name. blis-latency-kernel's specMethod applies the same rule."""
+    return "mtp" if graph_method.endswith("_mtp") else graph_method
+
+
 def pinned_config_sha256(model_yaml: Path) -> str | None:
     """Return model.yaml's config.sha256, or None when the config.json is committed."""
     if not model_yaml.is_file():

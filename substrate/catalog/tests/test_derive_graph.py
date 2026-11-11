@@ -6239,3 +6239,58 @@ def test_v4_refuses_a_moe_quant_algo_it_cannot_price(tmp_path, quant, expert_dty
     raw["expert_dtype"] = expert_dtype
     with pytest.raises(derive_graph.DeriveError, match=why):
         _derive_raw(raw, tmp_path, "deepseek-v4-pro-nvfp4")
+
+
+# --- A deployment's `mtp` against the graph's family-named MTP speculator -----------------
+
+MINIMAX_M3_ENTRIES = ("minimax-m3", "minimax-m3-mxfp8")
+
+
+@pytest.mark.parametrize("name", MINIMAX_M3_ENTRIES)
+def test_minimax_m3_graphs_declare_the_mtp_speculator_their_config_states(name):
+    """Both MiniMax-M3 entries state a speculator derived from num_mtp_modules, the field vLLM
+    reads as n_predict for this family (config/speculative.py:1043-1046@v0.32.0), at the pinned
+    config. A deployment's `method: mtp` resolves to it through vllm_speculative_method."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    t = text_config(config_of(MODELS / name))
+    sp = graph_of(MODELS / name)["speculator"]
+    assert sp["method"] == "minimax_m3_mtp"
+    assert sp["num_spec_tokens"] == t["num_mtp_modules"] >= 1
+    assert derive_graph.vllm_speculative_method(sp["method"]) == "mtp"
+    assert "speculator" in yaml.safe_load((MODELS / name / "model.yaml").read_text())["drafters"]
+
+
+def test_every_committed_mtp_speculator_resolves_for_a_deployment_that_states_mtp():
+    """The rule, over the whole catalog: a graph speculator named <family>_mtp is what a
+    deployment calls mtp, and the methods of separate drafters keep their own names."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    seen = collections.Counter()
+    for d in sorted(p for p in MODELS.iterdir() if p.is_dir()):
+        sp = graph_of(d).get("speculator")
+        if not sp:
+            continue
+        m = sp["method"]
+        want = "mtp" if m.endswith("_mtp") else m
+        assert derive_graph.vllm_speculative_method(m) == want
+        seen[want] += 1
+    assert seen["mtp"] >= 10 and set(seen) >= {"mtp", "eagle3", "dspark"}, seen
+    assert derive_graph.vllm_speculative_method("eagle3") == "eagle3"
+    assert derive_graph.vllm_speculative_method("mtp") == "mtp"
+
+
+def test_mtp_is_not_declared_for_a_model_whose_config_declares_no_mtp_layers(tmp_path):
+    """Known-bad. MiniMax-M3 takes its draft length from num_mtp_modules; a config without it
+    is refused rather than given a speculator, and a model whose config states no draft layers
+    has no speculator for a deployment's mtp to resolve to."""
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = json.loads(json.dumps(config_of(MODELS / "minimax-m3")))
+    del raw["text_config"]["num_mtp_modules"]
+    with pytest.raises(derive_graph.DeriveError, match="num_mtp_modules"):
+        _derive_raw(raw, tmp_path, "minimax-m3")
+    llama = graph_of(MODELS / "llama-3.1-8b-instruct")
+    assert "speculator" not in llama
+    ymodel = yaml.safe_load((MODELS / "llama-3.1-8b-instruct" / "model.yaml").read_text())
+    assert "speculator" not in (ymodel.get("drafters") or [])

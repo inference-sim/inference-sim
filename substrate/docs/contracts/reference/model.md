@@ -423,6 +423,12 @@ name the target layers it reads is priced with the capture layers the engine tak
 target's own default, which the deriver records per drafter with the target whose depth it is.
 A model run with a drafter the catalog lacks is refused for that drafter, not priced without it.
 
+A graph names its own MTP speculator by family (`deepseek_mtp`, `minimax_m3_mtp`,
+`nemotron_h_mtp`), and a deployment states `method: mtp`: vLLM replaces every model-specific MTP
+name with `mtp` (`vllm/config/speculative.py`, v0.32.0). `derive_graph.vllm_speculative_method`
+is that rule, so a lookup of a deployment's `mtp` against a graph compares the rule's output, not
+the two strings. Methods of separate drafters (`eagle3`, `dflash`, `dspark`) keep their names.
+
 `catalog/scripts/drafter_coverage.py` reports the drafters that published deployments run and the
 catalog lacks (design §12.2). It reads vLLM's recipe files and InferenceX's recipe files, and for
 each speculative configuration checks that the target has an entry, that a named draft checkpoint
