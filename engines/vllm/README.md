@@ -136,24 +136,64 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   or proven-inert field without them): `fields/gen_fields.py --value-classes fields/value_classes.json`
   writes them there. `fields/value_classes.json` stays as the generated basis (the comparisons and traces behind each class), which the tests read, and
   `TestEveryModelledFieldRecordsItsValueClasses` fails if the two disagree.
+- **Value classes under-approximate.** A class edge is a comparison of the field with a literal that the
+  generator finds in the pinned source. It does not find a field read by name through a helper that takes
+  the name as a string (`_scheduler_config_int(vllm_config, "max_num_batched_tokens", 0)`,
+  `vllm/models/deepseek_v4/common/ops/cache_utils.py:812-814@5df63a72`), a comparison with
+  another field (listed under `relations`, 25 of them for `max_num_batched_tokens`), or a threshold made by
+  `min`, `range` or arithmetic (`max_cudagraph_capture_size` also depends on `min(max_num_tokens, ...)`,
+  `vllm/config/vllm.py:2446@5df63a72`). So a field with one class, `max_num_seqs` for one, is a field no
+  scanned comparison singles out, not a field the engine treats alike at every value, and a trace that covers
+  a class shows the port matches vLLM at the values that trace states, not at every value of the class. The
+  `limits` text of `fields/value_classes.json` says the same.
 - **Inertness proofs** (design §7.4, tier T1) are `oracle/inertness/<field>.json`, written by
   `oracle/inertness.py` and named by the field's `proof`. The harness varies the field over one value
   per value class and runs vLLM's own code: the real Scheduler on oracle scenarios (the scenario's
-  `scheduler_config` states the probe), `EngineArgs.create_engine_config()`, and for a front-end field
-  the real `OutputProcessor`. A field is inert only if every run's decisions to the engine are identical
-  across the probes and every read of the field (found by `fields/gen_classes.py --reads`, plus reviewed
-  reads the scan cannot follow) has a disposition that holds: a line coverage hit in a named run, a
-  keyword passed on to a callee that has its own, or one of the three static cases of §7.4. A front-end
-  effect is recorded (`frontend_effect`), not hidden. A variable no file of the serving process names
-  has a proof of kind `unread`. `TestEveryProvenInertFieldHasAPassingProof` holds the list to the files,
-  to the value classes (the probes reach every class) and to the engine's Go code (no non-test file but
-  the listed ones names the field). `oracle/test_inertness.py` shows the harness failing a field that
-  changes the schedule (`enable_chunked_prefill` off), a read it was not told about, a stale read and a
-  variable the source names.
-- **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
-  other checks are M2 work and are not here yet: the inertness proofs that turn each
-  `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every
-  `modelled` field, and the value classes each modelled field's scenarios cover.
+  `scheduler_config` states the probe), `EngineArgs.create_engine_config()` (every field of the resolved
+  scheduler, cache, parallel and compilation config is compared across the probes except the field
+  itself), and for a front-end field the real `OutputProcessor` (the requests it hands back to the engine
+  core to abort are compared). A field is inert only if every run's decisions to the engine are identical
+  across the probes and every Python read of the field (found by `fields/gen_classes.py --reads`, plus
+  reviewed reads the scan cannot follow) has a disposition that holds: a line executed in the named run
+  (coverage is kept per run, and matches a file by its path inside vLLM so it counts the installed wheel CI
+  runs as well as a checkout), or a keyword passed on to a callee that has its own. The other cases §7.4
+  admits (a surface the engine refuses by name, a platform check false on CUDA) are not accepted by the
+  harness yet; a proof naming one fails as an unknown disposition. A front-end effect is recorded
+  (`frontend_effect`), not hidden. The read scan is of Python. A proof may list `named_in`, every file of
+  `vllm/` and `rust/` that names the field, and the check fails when the tree names it in a file the proof
+  does not list; that is how the Rust front end's reads of `stream_interval` (`rust/src/cmd/src/cli.rs:277`,
+  `rust/src/llm/src/lib.rs:97-102`, `rust/src/engine-core-client/src/client/output_channel.rs`) are listed
+  and reviewed without being run, and how the proof shows no file of the engine names it.
+  A variable no file of the serving process names has a proof of kind `unread`. That is a reviewed
+  static fact (`"argument": "reviewed_static_fact"`), not a run: the scan shows no file names the
+  variable, and what the proof says about why it cannot matter is an argument the harness does not check
+  beyond what its `refusal_tests` name. The three `MC_` variables belong to the Mooncake transfer-engine
+  library, which vLLM loads only through a Mooncake connector; a deployment selects one by connector name
+  or through NIXL's `kv_connector_extra_config` backends, and the Go tests the proofs name
+  (`TestAMooncakeConnectorNameIsRefused`, `TestTheConnectorBlockCannotStateWhichBackendNixlLoads`,
+  `TestNoMooncakeConnectorIsServed`) pin that the engine refuses both.
+  `TestEveryProvenInertFieldHasAPassingProof` holds the list to the files, to the value classes (the
+  probes reach every class), to the engine's Go code (no non-test file but the listed ones names the
+  field) and to the refusal tests (each still exists). `oracle/test_inertness.py` (about 4 minutes
+  with the pinned source) shows the harness failing a field that changes the schedule
+  (`enable_chunked_prefill` off), a config run and an output-processor run whose engine-facing result
+  changes, a read it was not told about, a stale read, a run that did not execute the line it is credited
+  with (including when an earlier run did), a file that names the field and is not listed, and a variable the
+  source names.
+  `stream_interval` is proven inert for the engine only. The simulator's delivery stage does not read it
+  yet (inference-sim#2035 is open), so a recorded point that states 20 or 32 is simulated without the
+  grouping its client saw, and the field is not G1-eligible until that stage reads it.
+- **Narrower issues.** Part of what some `not_modelled` fields need is now its own issue; the fields keep
+  the citations they had (the fields.json entry and its status are unchanged here):
+  `api_server_count` (blis-vllm#105), the synthetic `rejection_sample_method` (#106),
+  `default_chat_template_kwargs` and thinking mode (#107), `enable_eplb` (#108), and decode context
+  parallelism and `prefix_match_unit` (#109). `api_server_count` has the estimation rule `none` and is
+  not delivered: stating it changes nothing the engine simulates only for the single-client data-parallel
+  case, because vLLM scales the in-flight routing score, the optimistic increment and each client's scan
+  start by the client count (`vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72`); #105 asks for
+  that model.
+- **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). The
+  perturbation test over every `modelled` field, VLM-3's other check, is not here yet.
 - `TestTheFieldListLoadsAndNamesThisRelease` loads the file with the substrate's strict loader,
   checks it names this release, is in canonical form, and that every cited trace exists.
 
