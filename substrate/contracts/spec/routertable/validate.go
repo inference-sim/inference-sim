@@ -60,6 +60,7 @@ func (e *Entry) Validate() *validate.Problems {
 			p.Field("reason", "required: what the router's mode and the policy do alike and differently")
 		}
 	}
+	e.validateRevisions(p)
 	e.validateEvidence(p)
 	return p
 }
@@ -193,4 +194,59 @@ func (c Citation) validate(p *validate.Problems, at string) {
 	if strings.TrimSpace(c.Claim) == "" {
 		p.Field(at+".claim", "required: what the passage shows")
 	}
+}
+
+// validateRevisions checks the builds an entry is established for, and that the evidence is at
+// them: a passage of the router's code shows the behaviour of the build it is read at, so a
+// router-side citation at a commit the entry does not list proves nothing about the builds it
+// does, and a listed build with no citation has none of its own.
+func (e *Entry) validateRevisions(p *validate.Problems) {
+	if len(e.Revisions) == 0 {
+		p.Field("revisions", "required: the builds of the router the entry is established for, each a full commit. A mapping shown for one build is not inherited by another")
+		return
+	}
+	listed := map[string]bool{}
+	for i, r := range e.Revisions {
+		at := fmt.Sprintf("revisions[%d]", i)
+		switch {
+		case !commit.MatchString(r):
+			p.Field(at, "must be a full 40-character lowercase commit, got %q", r)
+		case listed[r]:
+			p.Field(at, "repeats %s", r)
+		case i > 0 && r < e.Revisions[i-1]:
+			p.Field(at, "revisions are sorted")
+		}
+		listed[r] = true
+	}
+	mode, policy := map[string]bool{}, map[string]bool{}
+	for i, c := range e.Evidence {
+		if c.Side != SideRouter {
+			continue
+		}
+		if !listed[c.Commit] {
+			p.Field(fmt.Sprintf("evidence[%d].commit", i), "the router-side citation is of %s, which is not among the entry's revisions: it shows another build than the ones the entry covers", c.Commit)
+			continue
+		}
+		switch c.Field {
+		case FieldMode:
+			mode[c.Commit] = true
+		case FieldPolicy:
+			policy[c.Commit] = true
+		}
+	}
+	for _, r := range e.Revisions {
+		if listed[r] && commit.MatchString(r) && (!mode[r] || !policy[r]) {
+			p.Field("evidence", "revision %s has no router-side citation for %s: each build the entry covers needs its own", r, missing(mode[r], policy[r]))
+		}
+	}
+}
+
+func missing(mode, policy bool) string {
+	switch {
+	case !mode && !policy:
+		return "its mode and its behaviour"
+	case !mode:
+		return "its mode"
+	}
+	return "its behaviour"
 }

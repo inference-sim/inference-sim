@@ -170,12 +170,31 @@ type Substitution struct {
 	// Evidence cites the router table's evidence for matching the router to Policy, as the
 	// table entry gives it. Only with router_differs, where it is required.
 	Evidence string `yaml:"evidence,omitempty"`
-	// Differed names each key field in which the substrate profile differs from the run's:
-	// model, drafter, speculative_method or num_spec_tokens, sorted, each once. Only with
-	// profile_value, where Subject is the profile; it may be empty, for a profile whose key is
-	// the run's own.
+	// Revision is the build of the router the run used, a full 40-character commit. Only with
+	// router_differs, where it is required: the table's mapping is shown for the builds the entry
+	// lists, so the point says which build it relied on, and Data.CheckRouterSubstitutions
+	// refuses one the entry does not cover.
+	Revision string `yaml:"revision,omitempty"`
+	// ProfileFamily says which kind of substrate profile a profile_value is: acceptance or
+	// routing. The key fields a profile can differ in are the family's own. Only with
+	// profile_value, where it is required.
+	ProfileFamily ProfileFamily `yaml:"profile_family,omitempty"`
+	// Differed names each key field in which the substrate profile differs from the run's,
+	// from the family's key (acceptance.KeyFields, routing.KeyFields), sorted, each once. Only
+	// with profile_value, where Subject is the profile; it may be empty, for a profile whose key
+	// is the run's own.
 	Differed []string `yaml:"differed,omitempty"`
 }
+
+// ProfileFamily is a kind of substrate profile (design D8).
+type ProfileFamily string
+
+const (
+	// ProfileAcceptance: a speculative-acceptance profile, keyed by acceptance.Key.
+	ProfileAcceptance ProfileFamily = "acceptance"
+	// ProfileRouting: an expert-routing imbalance profile, keyed by routing.Key.
+	ProfileRouting ProfileFamily = "routing"
+)
 
 // SubstitutionKind names a condition of design §11.3 that lowers a grade.
 type SubstitutionKind string

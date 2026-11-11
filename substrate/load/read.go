@@ -2,11 +2,13 @@ package load
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
@@ -80,22 +82,12 @@ func (d *Data) Routers() []*routertable.Entry {
 
 // LookupRouter finds the entry for a router, its mode and its session-affinity setting
 // (nil when the run configured none): the entry that says which policy of llm-d's router
-// stands in for it, or that none does. The boolean is false when the table has no entry, and
-// the router then stays unsupported.
-func (d *Data) LookupRouter(router, mode string, affinityTTLS *int) (*routertable.Entry, bool) {
-	for _, e := range d.Routers() {
-		if e.Router != router || e.Mode != mode {
-			continue
-		}
-		if (e.SessionAffinityTTLS == nil) != (affinityTTLS == nil) {
-			continue
-		}
-		if e.SessionAffinityTTLS != nil && *e.SessionAffinityTTLS != *affinityTTLS {
-			continue
-		}
-		return e, true
-	}
-	return nil, false
+// stands in for it, or that none does, on the router build the run used (revision, a full
+// commit). The outcome is routertable.OutcomeMapped only when an entry has the key and covers
+// the revision; for any other outcome the point stays router_unsupported (G5). The entry is
+// returned whenever one has the key, covered or not.
+func (d *Data) LookupRouter(router, mode string, affinityTTLS *int, revision string) (*routertable.Entry, routertable.Outcome) {
+	return routertable.Resolve(d.Routers(), router, mode, affinityTTLS, revision)
 }
 
 // Models lists the catalog's models, sorted.
@@ -174,4 +166,34 @@ func (d *Data) markLoaded(rel string) {
 	d.mu.Lock()
 	d.loaded[rel] = true
 	d.mu.Unlock()
+}
+
+// CheckRouterSubstitutions refuses a point record whose router_differs substitution the router
+// table does not support (design §11.3, §11.4): the entry it names must exist, belong to the
+// router the point names, cover the build of the router the point says the run used, and map to
+// the policy the point says BLIS simulated. A router mapped for one build is not mapped for
+// another, so a record that relies on an entry at a build it does not list is refused.
+func (d *Data) CheckRouterSubstitutions(r *pointrecord.Record) error {
+	var bad []string
+	for i, s := range r.Substitutions {
+		if s.Kind != pointrecord.SubRouterDiffers {
+			continue
+		}
+		at := fmt.Sprintf("substitutions[%d]", i)
+		e, err := d.Router(s.Entry)
+		switch {
+		case err != nil:
+			bad = append(bad, fmt.Sprintf("%s: the router table has no entry %q", at, s.Entry))
+		case e.Router != s.Subject:
+			bad = append(bad, fmt.Sprintf("%s: entry %q is of router %q, not %q", at, s.Entry, e.Router, s.Subject))
+		case !e.Covers(s.Revision):
+			bad = append(bad, fmt.Sprintf("%s: entry %q does not cover revision %s of %s: what the table shows for another build is not inherited, and the point is router_unsupported (G5)", at, s.Entry, s.Revision, s.Subject))
+		case string(e.Policy) != s.Policy:
+			bad = append(bad, fmt.Sprintf("%s: entry %q maps to policy %q, not %q", at, s.Entry, e.Policy, s.Policy))
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("%s", strings.Join(bad, "; "))
+	}
+	return nil
 }

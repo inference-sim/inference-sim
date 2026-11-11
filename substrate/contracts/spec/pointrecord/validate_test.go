@@ -2,11 +2,14 @@ package pointrecord
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 )
 
 var h64 = strings.Repeat("a", 64)
@@ -166,10 +169,11 @@ func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 	for _, s := range []Substitution{
 		{Kind: SubClientDifference, Subject: "send_gap", Detail: "the next request is sent after the response stream closes"},
 		{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at 0123456789abcdef0123456789abcdef01234567", Date: "2026-03-02"},
-		{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"},
+		{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40)},
 		{Kind: SubResolvedDiffers, Subject: "max_num_batched_tokens", Detail: "the run resolved 8192, the engine resolves 2048"},
-		{Kind: SubProfileValue, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat", Differed: []string{"drafter", "num_spec_tokens"}},
-		{Kind: SubProfileValue, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat"},
+		{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat", Differed: []string{"drafter", "num_spec_tokens"}},
+		{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat"},
+		{Kind: SubProfileValue, ProfileFamily: ProfileRouting, Subject: "capture/m/chat/decode/linear/ep8", Differed: []string{"category"}},
 		{Kind: SubUnevaluated, Subject: "kernel_hash"},
 	} {
 		r := valid()
@@ -192,10 +196,10 @@ func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 // that does not take it, and a malformed date.
 func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 	later := Substitution{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at abc", Date: "2026-03-02"}
-	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"}
+	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40)}
 	client := Substitution{Kind: SubClientDifference, Subject: "send_gap", Detail: "x"}
 	resolved := Substitution{Kind: SubResolvedDiffers, Subject: "s", Detail: "x"}
-	profile := Substitution{Kind: SubProfileValue, Subject: "acceptance/mtp:k3", Differed: []string{"drafter", "model"}}
+	profile := Substitution{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:k3", Differed: []string{"drafter", "model"}}
 	unevaluated := Substitution{Kind: SubUnevaluated, Subject: "kernel_hash"}
 	with := func(s Substitution, edit func(*Substitution)) func(*Record) {
 		edit(&s)
@@ -217,6 +221,9 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"router_differs naming an entry of another router", with(router, func(s *Substitution) { s.Entry = "vllm-round-robin" }), "substitutions[0].entry", "begins with its router"},
 		{"router_differs with a policy llm-d does not offer", with(router, func(s *Substitution) { s.Policy = "kv-aware" }), "substitutions[0].policy", "not a policy llm-d's router offers"},
 		{"router_differs with the policy none", with(router, func(s *Substitution) { s.Policy = "none" }), "substitutions[0].policy", "not a policy llm-d's router offers"},
+		{"router_differs without the router's revision", with(router, func(s *Substitution) { s.Revision = "" }), "substitutions[0].revision", "required for router_differs"},
+		{"router_differs at a revision that is not a full commit", with(router, func(s *Substitution) { s.Revision = "1682167" }), "substitutions[0].revision", "40-character"},
+		{"later_record naming a revision", with(later, func(s *Substitution) { s.Revision = strings.Repeat("e", 40) }), "substitutions[0].revision", "not a key of later_record"},
 		{"router_differs without evidence", with(router, func(s *Substitution) { s.Evidence = "" }), "substitutions[0].evidence", "required for router_differs"},
 		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
 		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
@@ -225,7 +232,15 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"client_difference naming evidence", with(client, func(s *Substitution) { s.Evidence = "e" }), "substitutions[0].evidence", "not a key of client_difference"},
 		{"resolved_differs without a detail", with(resolved, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for resolved_differs"},
 		{"profile_value without the profile", with(profile, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
-		{"profile_value naming a field that is not a profile key", with(profile, func(s *Substitution) { s.Differed = []string{"temperature"} }), "substitutions[0].differed[0]", "not one of"},
+		{"profile_value with no family", with(profile, func(s *Substitution) { s.ProfileFamily = "" }), "substitutions[0].profile_family", "required for profile_value"},
+		{"profile_value of an unknown family", with(profile, func(s *Substitution) { s.ProfileFamily = "kv" }), "substitutions[0].profile_family", "acceptance or routing"},
+		{"a routing profile differing in an acceptance field", with(profile, func(s *Substitution) {
+			s.ProfileFamily, s.Differed = ProfileRouting, []string{"drafter"}
+		}), "substitutions[0].differed[0]", "not a key field of the routing profile family"},
+		{"an acceptance profile differing in a routing field", with(profile, func(s *Substitution) { s.Differed = []string{"placement"} }),
+			"substitutions[0].differed[0]", "not a key field of the acceptance profile family"},
+		{"a profile family on a client_difference", with(client, func(s *Substitution) { s.ProfileFamily = ProfileRouting }), "substitutions[0].profile_family", "not a key of client_difference"},
+		{"profile_value naming a field that is not a profile key", with(profile, func(s *Substitution) { s.Differed = []string{"temperature"} }), "substitutions[0].differed[0]", "not a key field of the acceptance"},
 		{"profile_value with the key fields out of order", with(profile, func(s *Substitution) { s.Differed = []string{"model", "drafter"} }), "substitutions[0].differed[1]", "sorted, each once"},
 		{"profile_value naming a key field twice", with(profile, func(s *Substitution) { s.Differed = []string{"drafter", "drafter"} }), "substitutions[0].differed[1]", "sorted, each once"},
 		{"a key field list on a client_difference", with(client, func(s *Substitution) { s.Differed = []string{"model"} }), "substitutions[0].differed", "not a key of client_difference"},
@@ -316,5 +331,73 @@ func TestOneMetricMayAppearAtSeveralScopesButNotTwiceAtOne(t *testing.T) {
 	r.Figures = []Figure{r.Figures[0], at(cluster), at(cluster)}
 	if p := r.Validate(); p.OK() {
 		t.Error("a metric at one basis twice was accepted")
+	}
+}
+
+// The key fields a profile substitution can name are the fields of the profile's own key, no
+// fewer: a routing profile that borrowed another category's curve differs in a field the
+// acceptance vocabulary does not have as its own.
+func TestTheProfileKeyFieldsAreTheFieldsOfEachFamilysKey(t *testing.T) {
+	snake := func(t reflect.Type) []string {
+		var out []string
+		for i := 0; i < t.NumField(); i++ {
+			var b []rune
+			for j, r := range t.Field(i).Name {
+				if j > 0 && r >= 'A' && r <= 'Z' {
+					b = append(b, '_')
+				}
+				b = append(b, r)
+			}
+			out = append(out, strings.ToLower(string(b)))
+		}
+		return out
+	}
+	// SpeculativeMethod is speculative_method and Thinking is thinking in the vocabulary.
+	if got, want := acceptance.KeyFields(), snake(reflect.TypeOf(acceptance.Key{})); !reflect.DeepEqual(got, want) {
+		t.Errorf("acceptance.KeyFields %v, Key has %v", got, want)
+	}
+	if got, want := routing.KeyFields(), snake(reflect.TypeOf(routing.Key{})); !reflect.DeepEqual(got, want) {
+		t.Errorf("routing.KeyFields %v, Key has %v", got, want)
+	}
+}
+
+// A routing profile taken under the scenario's fallback category differs from the run's key in
+// the category, and the point names it. Resolved from a real profile set: the lookup finds no
+// curve for the workload's category and takes the fallback's.
+func TestARoutingFallbackProfileNamesTheCategoryItDiffersIn(t *testing.T) {
+	curve := func(phase routing.Phase) routing.Profile {
+		return routing.Profile{Model: "m", Category: "chat", Phase: phase, Placement: routing.PlacementLinear,
+			ExpertParallel: 8, Method: "measured", Provenance: &routing.Provenance{Source: "hf://example@rev", Hardware: "b200", Tier: 2},
+			Points: []routing.Point{{BatchTokens: 16, TokenImbalance: 1.7, ExpertImbalance: 1.1}}}
+	}
+	set := &routing.ProfileSet{Kind: routing.Kind, Name: "capture", Role: routing.RoleSensitivity,
+		Profiles: []routing.Profile{curve(routing.PhaseDecode), curve(routing.PhasePrefill)}}
+	req := routing.Request{Model: "m", ExpertParallel: 8, Workload: routing.Workload{Category: "coding"},
+		Scenario: &routing.Pin{Profiles: "capture", FallbackCategory: "chat"}, ScenarioSet: set}
+	res, err := routing.Resolve(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	differed := res.Differed()
+	if !reflect.DeepEqual(differed, []string{"category"}) {
+		t.Fatalf("the fallback profile differs in %v, want [category]", differed)
+	}
+	r := valid()
+	r.Substitutions = []Substitution{{Kind: SubProfileValue, ProfileFamily: ProfileRouting,
+		Subject: "capture/" + res.Decode.Key().String(), Differed: differed}}
+	if p := r.Validate(); !p.OK() {
+		t.Errorf("a record naming the category difference was refused:\n%s", p.Error())
+	}
+	// With no fallback the curve is the run's own and nothing differs.
+	req.Workload.Category = "chat"
+	req.Scenario.FallbackCategory = ""
+	exact, err := routing.Resolve(req)
+	if err != nil || exact.Differed() != nil {
+		t.Errorf("an exact routing profile differs in %v (%v)", exact.Differed(), err)
+	}
+	// A routing record cannot name an acceptance field for it.
+	r.Substitutions[0].Differed = []string{"drafter"}
+	if p := r.Validate(); p.OK() {
+		t.Error("a routing profile was said to differ in an acceptance field")
 	}
 }

@@ -198,6 +198,7 @@ func TestCheckCatalogReadsAndChecksTheRouterTable(t *testing.T) {
 		return []byte(`kind: RouterMapping
 router: acme
 mode: round-robin
+revisions: [aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]
 policy: round-robin
 reason: both rotate
 ` + extra + `evidence:

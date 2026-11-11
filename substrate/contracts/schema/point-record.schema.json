@@ -582,7 +582,17 @@
         "policy": {
           "type": "string"
         },
+        "profile_family": {
+          "enum": [
+            "acceptance",
+            "routing"
+          ],
+          "type": "string"
+        },
         "record": {
+          "type": "string"
+        },
+        "revision": {
           "type": "string"
         },
         "subject": {

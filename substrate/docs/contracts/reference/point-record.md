@@ -75,7 +75,9 @@ makes it so (COV-4).
 | `entry` | string | for `router_differs` | The router table entry used, by name. Its name begins with the router, which is `subject`; its key is the router, its mode and its session-affinity setting. |
 | `policy` | string | for `router_differs` | The llm-d router policy BLIS simulated in place of the run's router. |
 | `evidence` | string | for `router_differs` | The router table's evidence for the match, as the table entry cites it. |
-| `differed` | sequence | no, and only for `profile_value` | The key fields in which the profile differs from the run's: `model`, `drafter`, `speculative_method` or `num_spec_tokens`, sorted, each once. Empty when the profile's key is the run's own. |
+| `revision` | string | for `router_differs` | The build of the router the run used, a full 40-character commit. The entry maps the router only at the builds it lists, so `Data.CheckRouterSubstitutions` refuses a record whose entry does not cover it. |
+| `profile_family` | string | for `profile_value` | `acceptance` or `routing`: which kind of substrate profile it is, and so which key fields `differed` can name. |
+| `differed` | sequence | no, and only for `profile_value` | The key fields in which the profile differs from the run's, from its family's key, sorted, each once: for `acceptance`, `model`, `drafter`, `speculative_method`, `num_spec_tokens`, `thinking` or `category`; for `routing`, `model`, `category`, `phase`, `placement` or `expert_parallel`. A routing profile taken under the scenario's fallback category differs in `category` (`routing.Resolution.Differed`). Empty when the profile's key is the run's own. |
 
 Design §11.3 lists thirteen G2 conditions, and the record has one kind for each (a test
 holds the kinds to that list). Six of the kinds name more than a subject:
@@ -90,8 +92,8 @@ holds the kinds to that list). Six of the kinds name more than a subject:
 `router_differs`
 :   The run was measured behind a router BLIS does not host, and the router table maps it to
     an llm-d policy. `subject` is the router the run used, `entry` the table entry (which fixes the mode),
-    `policy` the policy BLIS used, which must be one llm-d's router offers, and
-    `evidence` the table's evidence. The point is never G1, and is not presented as if llm-d
+    `policy` the policy BLIS used, which must be one llm-d's router offers, `revision` the
+    build of the router the run used (the entry must cover it), and `evidence` the table's evidence. The point is never G1, and is not presented as if llm-d
     had routed the run.
 `resolved_differs`
 :   A resolved value the run logged differs from the engine's resolution (design §11.2).
@@ -99,8 +101,9 @@ holds the kinds to that list). Six of the kinds name more than a subject:
 `profile_value`
 :   A workload-dependent value the run did not record, such as the acceptance length of
     speculative decoding, was taken from a substrate profile (design D8, §11.3). `subject` is
-    the profile, as the Result's `workload_properties` names it (its set and key), and `differed`
-    lists each key field in which the profile differs from the run's. A value the run recorded is
+    the profile, as the Result's `workload_properties` or `routing_profiles` names it (its set and
+    key), `profile_family` says which family it is, and `differed` lists each key field of that
+    family in which the profile differs from the run's. A value the run recorded is
     copied as stated and is not this kind.
 `unevaluated`
 :   A condition of G1 could not be evaluated, because the data it needs is not recorded for the

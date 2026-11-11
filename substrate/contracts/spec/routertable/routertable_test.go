@@ -23,7 +23,8 @@ func valid() *Entry {
 	}
 	return &Entry{
 		Kind: Kind, Name: "acme-round-robin", Router: "acme", Mode: "round-robin", Policy: PolicyRoundRobin,
-		Reason: "both rotate over the workers",
+		Revisions: []string{strings.Repeat("a", 40)},
+		Reason:    "both rotate over the workers",
 		Evidence: []Citation{
 			cite(SideRouter, FieldMode, "acme/router"),
 			cite(SideRouter, FieldPolicy, "acme/router"),
@@ -45,7 +46,7 @@ func TestAValidEntryPasses(t *testing.T) {
 	aff := valid()
 	aff.SessionAffinityTTLS = ptr(14400)
 	aff.Evidence = append(aff.Evidence, Citation{Side: SideRouter, Field: FieldSessionAffinityTTLS, Repository: "acme/router",
-		Commit: strings.Repeat("b", 40), Path: "docs/affinity.md", Lines: "40", Claim: "an idle timeout in seconds"})
+		Commit: strings.Repeat("a", 40), Path: "docs/affinity.md", Lines: "40", Claim: "an idle timeout in seconds"})
 	aff.Name = "acme-round-robin-affinity-14400"
 	if p := aff.Validate(); !p.OK() {
 		t.Fatalf("an entry with a session-affinity setting must validate:\n%s", p.Error())
@@ -61,6 +62,16 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		path   string
 		msg    string
 	}{
+		// The revision key (design §11.4): the mapping is bound to the builds it is shown for.
+		{"no revisions", func(e *Entry) { e.Revisions = nil }, "revisions", "required"},
+		{"a revision that is not a full commit", func(e *Entry) { e.Revisions = []string{"abc1234"} }, "revisions[0]", "40-character"},
+		{"a revision twice", func(e *Entry) { e.Revisions = []string{strings.Repeat("a", 40), strings.Repeat("a", 40)} }, "revisions[1]", "repeats"},
+		{"revisions out of order", func(e *Entry) { e.Revisions = []string{strings.Repeat("b", 40), strings.Repeat("a", 40)} }, "revisions[1]", "sorted"},
+		{"a router citation at a build the entry does not cover", func(e *Entry) { e.Evidence[1].Commit = strings.Repeat("c", 40) },
+			"evidence[1].commit", "not among the entry's revisions"},
+		{"a covered build with no citation of its behaviour", func(e *Entry) {
+			e.Revisions = []string{strings.Repeat("a", 40), strings.Repeat("b", 40)}
+		}, "evidence", "has no router-side citation for its mode and its behaviour"},
 		{"wrong kind", func(e *Entry) { e.Kind = "Router" }, "kind", "must be"},
 		{"no router", func(e *Entry) { e.Router = "" }, "router", "required"},
 		{"router in upper case", func(e *Entry) { e.Router = "Dynamo" }, "router", "lower case"},
@@ -165,6 +176,38 @@ func TestTheCommittedEntriesValidate(t *testing.T) {
 		e.Name = strings.TrimSuffix(filepath.Base(path), ".yaml")
 		if p := e.Validate(); !p.OK() {
 			t.Errorf("%s:\n%s", path, p.Error())
+		}
+	}
+}
+
+// A mapping shown for one build of the router is not inherited by another with the same mode
+// (design §11.4): the same router, mode and affinity setting at a revision no entry lists is not
+// scored through the table, and neither is one at a listed revision whose entry says no policy
+// is close enough.
+func TestAnEntryIsNotInheritedByAnUncitedRevision(t *testing.T) {
+	r1, r2 := strings.Repeat("a", 40), strings.Repeat("d", 40)
+	mapped := valid()
+	none := valid()
+	none.Router, none.Policy = "other", PolicyNone
+	entries := []*Entry{mapped, none}
+	for _, c := range []struct {
+		name         string
+		router, mode string
+		ttl          *int
+		rev          string
+		want         Outcome
+		scored       bool
+	}{
+		{"the cited revision", "acme", "round-robin", nil, r1, OutcomeMapped, true},
+		{"the same mode at an uncited revision", "acme", "round-robin", nil, r2, OutcomeRevisionNotCovered, false},
+		{"no revision stated", "acme", "round-robin", nil, "", OutcomeRevisionNotCovered, false},
+		{"a policy of none at its cited revision", "other", "round-robin", nil, r1, OutcomeNoPolicy, false},
+		{"another mode", "acme", "kv", nil, r1, OutcomeNoEntry, false},
+		{"an affinity setting the entry lacks", "acme", "round-robin", ptr(300), r1, OutcomeNoEntry, false},
+	} {
+		e, got := Resolve(entries, c.router, c.mode, c.ttl, c.rev)
+		if got != c.want || got.Scored() != c.scored {
+			t.Errorf("%s: %s (entry %v), want %s", c.name, got, e != nil, c.want)
 		}
 	}
 }

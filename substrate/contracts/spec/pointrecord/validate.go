@@ -3,14 +3,17 @@ package pointrecord
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
+	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/workload"
 )
 
@@ -240,12 +243,15 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 	case SubLaterRecord:
 		need["record"], need["date"] = &s.Record, &s.Date
 	case SubRouterDiffers:
-		need["entry"], need["policy"], need["evidence"] = &s.Entry, &s.Policy, &s.Evidence
+		need["entry"], need["policy"], need["evidence"], need["revision"] = &s.Entry, &s.Policy, &s.Evidence, &s.Revision
 	case SubClientDifference, SubResolvedDiffers:
 		need["detail"] = &s.Detail
 	}
 	if s.Kind != SubProfileValue && len(s.Differed) > 0 {
 		p.Field(at+".differed", "is not a key of %s", s.Kind)
+	}
+	if s.Kind != SubProfileValue && s.ProfileFamily != "" {
+		p.Field(at+".profile_family", "is not a key of %s", s.Kind)
 	}
 	why := map[string]string{
 		"record":   "the record the value was taken from, with its revision",
@@ -253,16 +259,17 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 		"entry":    "the router table entry used, by name",
 		"policy":   "the llm-d policy BLIS used in place of the run's router",
 		"evidence": "the router table's evidence for the match",
+		"revision": "the build of the router the run used, a full commit the entry covers",
 		"detail":   "what differed",
 	}
-	for _, k := range []string{"record", "date", "entry", "policy", "evidence", "detail"} {
+	for _, k := range []string{"record", "date", "entry", "policy", "evidence", "revision", "detail"} {
 		if v, ok := need[k]; ok {
 			if *v == "" {
 				p.Field(at+"."+k, "required for %s: %s", s.Kind, why[k])
 			}
 		}
 	}
-	for k, v := range map[string]string{"record": s.Record, "date": s.Date, "entry": s.Entry, "policy": s.Policy, "evidence": s.Evidence} {
+	for k, v := range map[string]string{"record": s.Record, "date": s.Date, "entry": s.Entry, "policy": s.Policy, "evidence": s.Evidence, "revision": s.Revision} {
 		if _, ok := need[k]; !ok && v != "" {
 			p.Field(at+"."+k, "is not a key of %s", s.Kind)
 		}
@@ -272,16 +279,23 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 		case s.Policy != "" && (!routertable.Policy(s.Policy).Offered() || routertable.Policy(s.Policy) == routertable.PolicyNone):
 			p.Field(at+".policy", "%q is not a policy llm-d's router offers; a point simulated with a policy names one of %v", s.Policy, routertable.PolicyNames())
 		}
+		if s.Revision != "" && !hex40.MatchString(s.Revision) {
+			p.Field(at+".revision", "must be a full 40-character lowercase commit of the router the run used, got %q", s.Revision)
+		}
 		if s.Entry != "" && s.Subject != "" && !strings.HasPrefix(s.Entry, s.Subject+"-") {
 			p.Field(at+".entry", "%q is not an entry of the router %q: an entry's name begins with its router", s.Entry, s.Subject)
 		}
 	}
 	switch s.Kind {
 	case SubProfileValue:
+		fields := s.ProfileFamily.keyFields()
+		if fields == nil {
+			p.Field(at+".profile_family", "required for profile_value, and acceptance or routing: the key fields a profile differs in are its family's, got %q", s.ProfileFamily)
+		}
 		for i, d := range s.Differed {
 			switch {
-			case !result.IsProfileKeyField(d):
-				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not one of %s", d, strings.Join(result.ProfileKeyFields(), ", "))
+			case fields != nil && !slices.Contains(fields, d):
+				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "%q is not a key field of the %s profile family (%s)", d, s.ProfileFamily, strings.Join(fields, ", "))
 			case i > 0 && d <= s.Differed[i-1]:
 				p.Field(fmt.Sprintf("%s.differed[%d]", at, i), "key fields are sorted, each once")
 			}
@@ -392,4 +406,15 @@ func scalar(p *validate.Problems, at string, v any) {
 // basisKey orders figures of one metric: scope, member, aggregate and the scope ranged over.
 func basisKey(b result.Basis) string {
 	return strings.Join([]string{string(b.Scope), b.Member, string(b.Aggregate), string(b.Over)}, "\x00")
+}
+
+// keyFields are the key fields of the family's profile, or nil for a family that is not one.
+func (f ProfileFamily) keyFields() []string {
+	switch f {
+	case ProfileAcceptance:
+		return acceptance.KeyFields()
+	case ProfileRouting:
+		return routing.KeyFields()
+	}
+	return nil
 }

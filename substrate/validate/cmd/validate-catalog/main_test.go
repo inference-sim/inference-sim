@@ -654,6 +654,7 @@ func TestRunTheCommittedCatalogPasses(t *testing.T) {
 const routerEntry = `kind: RouterMapping
 router: acme
 mode: round-robin
+revisions: [aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]
 policy: round-robin
 reason: both rotate over the workers
 evidence:

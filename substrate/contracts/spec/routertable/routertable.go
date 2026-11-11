@@ -42,6 +42,15 @@ type Entry struct {
 	// configuration sets one. Absent means affinity is not configured. Two runs that differ in
 	// it are different keys.
 	SessionAffinityTTLS *int `yaml:"session_affinity_ttl_s,omitempty"`
+	// Revisions are the builds of the router the run used for which the entry's mode, policy and
+	// reason are established, each a full 40-character commit, sorted, each once (design §11.4:
+	// "a citation of both routers' code or documentation at the revisions the runs used"). A
+	// mapping is a claim about the behaviour of a build: an entry shown for one build says
+	// nothing of another with the same mode, so a run on a revision not listed here has no
+	// mapping (Resolve returns OutcomeRevisionNotCovered, and the point stays router_unsupported).
+	// Every citation on the router's side is at one of them, and each has one for the mode and
+	// one for the behaviour.
+	Revisions []string `yaml:"revisions"`
 	// Policy is the llm-d policy BLIS simulates in its place, or PolicyNone when no policy is
 	// close enough and the router stays unsupported.
 	Policy Policy `yaml:"policy"`
@@ -190,4 +199,61 @@ func (e *Entry) Key() string {
 		k += "/affinity-ttl-" + strconv.Itoa(*e.SessionAffinityTTLS)
 	}
 	return k
+}
+
+// Covers reports whether revision, a full commit of the router the run used, is one the entry
+// establishes.
+func (e *Entry) Covers(revision string) bool {
+	for _, r := range e.Revisions {
+		if r == revision {
+			return true
+		}
+	}
+	return false
+}
+
+// Outcome is what the table says about one run's router.
+type Outcome string
+
+const (
+	// OutcomeMapped: an entry with the run's router, mode and affinity setting covers the run's
+	// revision and names a policy llm-d's router offers. The point can be G2 (router_differs).
+	OutcomeMapped Outcome = "mapped"
+	// OutcomeNoPolicy: an entry covers the revision and says no policy is close enough. The point
+	// stays router_unsupported (G5).
+	OutcomeNoPolicy Outcome = "no_policy"
+	// OutcomeRevisionNotCovered: an entry for the router, mode and affinity setting exists and
+	// does not list the run's revision. What it shows is not shown for this build, so it
+	// is not inherited: the point stays router_unsupported (G5).
+	OutcomeRevisionNotCovered Outcome = "revision_not_covered"
+	// OutcomeNoEntry: no entry has the run's router, mode and affinity setting. The point stays
+	// router_unsupported (G5).
+	OutcomeNoEntry Outcome = "no_entry"
+)
+
+// Scored reports whether a point with this outcome can be graded through the table.
+func (o Outcome) Scored() bool { return o == OutcomeMapped }
+
+// Resolve finds what the table says about a run measured behind router in mode with the given
+// session-affinity setting (nil when none is configured), on the router build revision (a full
+// commit). The entry is returned whenever one has the run's key, covered or not, so that a
+// reader can name it; only OutcomeMapped scores the point.
+func Resolve(entries []*Entry, router, mode string, affinityTTLS *int, revision string) (*Entry, Outcome) {
+	for _, e := range entries {
+		if e.Router != router || e.Mode != mode {
+			continue
+		}
+		if (e.SessionAffinityTTLS == nil) != (affinityTTLS == nil) ||
+			(e.SessionAffinityTTLS != nil && *e.SessionAffinityTTLS != *affinityTTLS) {
+			continue
+		}
+		switch {
+		case !e.Covers(revision):
+			return e, OutcomeRevisionNotCovered
+		case e.Policy == PolicyNone:
+			return e, OutcomeNoPolicy
+		}
+		return e, OutcomeMapped
+	}
+	return nil, OutcomeNoEntry
 }

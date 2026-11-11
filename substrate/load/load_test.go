@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 )
 
 // repoDir is this repository's root; a test runs in load/.
@@ -318,9 +320,15 @@ func TestTheEmbeddedCatalogCarriesTheRouterTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, ok := d.LookupRouter("dynamo", "round-robin", nil)
-	if !ok || e.Name != "dynamo-round-robin" || e.Policy != "none" {
-		t.Fatalf("LookupRouter(dynamo, round-robin) = %+v, %v", e, ok)
+	const covered = "1682167d3c97f0fc8cd405dee51f17288eeaeb55"
+	e, out := d.LookupRouter("dynamo", "round-robin", nil, covered)
+	if out != routertable.OutcomeNoPolicy || e.Name != "dynamo-round-robin" || e.Policy != "none" {
+		t.Fatalf("LookupRouter(dynamo, round-robin) = %+v, %v", e, out)
+	}
+	// The same router and mode on a later Dynamo build is not covered by the entry: it stays
+	// router_unsupported rather than inheriting what was shown for the cited build.
+	if _, out := d.LookupRouter("dynamo", "round-robin", nil, "33cfa1271c08f1660fc156ab2bc50647a268b87e"); out != routertable.OutcomeRevisionNotCovered {
+		t.Errorf("a later Dynamo build: %s, want revision_not_covered", out)
 	}
 	if got, err := d.Router("dynamo-round-robin"); err != nil || got != e {
 		t.Errorf("Router = %v, %v", got, err)
@@ -334,8 +342,8 @@ func TestTheEmbeddedCatalogCarriesTheRouterTable(t *testing.T) {
 		"another router":      {"vllm", "round-robin", nil},
 		"an affinity setting": {"dynamo", "round-robin", &ttl},
 	} {
-		if e, ok := d.LookupRouter(c.router, c.mode, c.ttl); ok {
-			t.Errorf("%s: found %s; the table has no such entry, so the router stays unsupported", name, e.Name)
+		if e, out := d.LookupRouter(c.router, c.mode, c.ttl, covered); out != routertable.OutcomeNoEntry {
+			t.Errorf("%s: %s (%v); the table has no such entry, so the router stays unsupported", name, out, e != nil)
 		}
 	}
 	if _, err := d.Router("nope"); err == nil || !strings.Contains(err.Error(), "routers/nope.yaml") {

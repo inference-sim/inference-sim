@@ -132,6 +132,13 @@ type Key struct {
 	Category          string
 }
 
+// KeyFields are the fields of a Key, as a point record's profile substitution names a field in
+// which a profile differs from the run's (design D8, §11.3): model, drafter, speculative_method,
+// num_spec_tokens, thinking and category. A test holds the list equal to the struct.
+func KeyFields() []string {
+	return []string{"model", "drafter", "speculative_method", "num_spec_tokens", "thinking", "category"}
+}
+
 // String renders a key as model/method/k<K>/thinking-<mode>/category, the form
 // transferred_from and error messages use.
 //

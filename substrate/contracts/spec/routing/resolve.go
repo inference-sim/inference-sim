@@ -63,6 +63,17 @@ type Resolution struct {
 	FallbackFrom string
 }
 
+// Differed names each key field in which the profile this resolution used differs from the
+// run's own key (design §11.3, profile_value): "category" when the scenario's fallback category
+// replaced the workload's, and none otherwise, since the lookup keeps the model, the placement
+// and the expert-parallel width, and reads both phases.
+func (r Resolution) Differed() []string {
+	if r.FallbackFrom != "" {
+		return []string{"category"}
+	}
+	return nil
+}
+
 // Lookup is a point read off a resolution, and whether the batch lay outside the curve's
 // measured range (the end value is then held).
 type Lookup struct {

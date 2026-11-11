@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 )
 
 // TestReportConvertsToTheResultWithoutLoss checks the one conversion from the loader's
@@ -431,5 +433,41 @@ func TestAnUnkeyedEntryNamesNoPricedImplementation(t *testing.T) {
 	c := d.Report().Result().Coefficients[0]
 	if len(c.Priced) != 0 || c.KernelMatch != coefficient.KernelUnkeyed {
 		t.Errorf("priced %v, match %q", c.Priced, c.KernelMatch)
+	}
+}
+
+// A router_differs relies on the table's entry at the build of the router the run used. The
+// entry maps the router only at the builds it lists: the same router and mode at another build
+// is refused, as are a missing entry, another router's entry and another policy.
+func TestARouterSubstitutionIsCheckedAgainstTheTableAtTheRoutersBuild(t *testing.T) {
+	d, err := Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const r1, r2 = "1111111111111111111111111111111111111111", "2222222222222222222222222222222222222222"
+	d.catalog.Routers["acme-round-robin"] = &routertable.Entry{Kind: routertable.Kind, Name: "acme-round-robin", Router: "acme",
+		Mode: "round-robin", Policy: routertable.PolicyRoundRobin, Revisions: []string{r1}}
+	rec := func(s pointrecord.Substitution) *pointrecord.Record {
+		s.Kind, s.Subject, s.Evidence = pointrecord.SubRouterDiffers, "acme", "the entry"
+		return &pointrecord.Record{Substitutions: []pointrecord.Substitution{s}}
+	}
+	ok := pointrecord.Substitution{Entry: "acme-round-robin", Policy: "round-robin", Revision: r1}
+	if err := d.CheckRouterSubstitutions(rec(ok)); err != nil {
+		t.Errorf("a substitution at a covered build was refused: %v", err)
+	}
+	for name, c := range map[string]struct {
+		edit func(*pointrecord.Substitution)
+		want string
+	}{
+		"the same router and mode at an uncited build": {func(s *pointrecord.Substitution) { s.Revision = r2 }, "does not cover revision " + r2},
+		"an entry the table lacks":                     {func(s *pointrecord.Substitution) { s.Entry = "acme-kv" }, "no entry"},
+		"another router's entry":                       {func(s *pointrecord.Substitution) { s.Entry = "dynamo-round-robin" }, "is of router"},
+		"another policy":                               {func(s *pointrecord.Substitution) { s.Policy = "default" }, "maps to policy"},
+	} {
+		s := ok
+		c.edit(&s)
+		if err := d.CheckRouterSubstitutions(rec(s)); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: got %v, want an error containing %q", name, err, c.want)
+		}
 	}
 }
