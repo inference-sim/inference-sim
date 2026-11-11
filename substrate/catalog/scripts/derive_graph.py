@@ -6279,6 +6279,10 @@ def main() -> int:
         return 2
 
     written, unchanged, stale, failed = [], [], [], []
+    # Entries that pin config.json by hash and were not fetched: the recorded hash is checked,
+    # the graph is not re-derived, so a hand edit of it is invisible here. Counted apart from
+    # the current ones, never as them.
+    unverified: list[str] = []
     for entry in sorted(p for p in models_dir.iterdir() if p.is_dir()):
         if args.model and entry.name != args.model:
             continue
@@ -6299,7 +6303,7 @@ def main() -> int:
                               f"model.yaml's config.sha256 {pinned}")
                 continue
             if args.fetched is None:
-                unchanged.append(entry.name)
+                unverified.append(entry.name)
                 continue
             cfg = Path(args.fetched) / entry.name / "config.json"
             if not cfg.is_file():
@@ -6355,11 +6359,16 @@ def main() -> int:
         print(f"{name}: {why}", file=sys.stderr)
 
     if args.check:
-        print(f"checked {len(unchanged) + len(stale)} model(s): "
-              f"{len(unchanged)} current, {len(stale)} stale, {len(failed)} failed")
+        print(f"checked {len(unchanged) + len(stale) + len(unverified)} model(s): "
+              f"{len(unchanged)} current, {len(stale)} stale, {len(failed)} failed, "
+              f"{len(unverified)} not re-derivable offline (config.json pinned by hash; "
+              f"pass --fetched to re-derive)")
+        if unverified:
+            print("not re-derived: " + ", ".join(unverified), file=sys.stderr)
     else:
         print(f"derived {len(written) + len(unchanged)} graph(s): "
-              f"{len(written)} written, {len(unchanged)} unchanged, {len(failed)} failed")
+              f"{len(written)} written, {len(unchanged)} unchanged, {len(failed)} failed"
+              + (f", {len(unverified)} pinned by hash and not fetched" if unverified else ""))
     return 1 if (failed or stale) else 0
 
 

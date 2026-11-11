@@ -61,24 +61,111 @@ def test_rederivation_is_stable():
     assert r.returncode == 0, f"re-derivation differs:\n{r.stderr}"
 
 
+@pytest.fixture(scope="module")
+def tree_copy(tmp_path_factory):
+    """One copy of the catalog the hand-edit tests mutate and restore."""
+    import shutil
+    tree = tmp_path_factory.mktemp("edit") / "catalog"
+    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    return tree
+
+
+def _edit_hidden_size(graph_yaml: Path) -> str:
+    original = graph_yaml.read_text()
+    g = yaml.safe_load(original)
+    g["global"]["hidden_size"] = int(g["global"]["hidden_size"]) + 8
+    graph_yaml.write_text(yaml.safe_dump(g, sort_keys=False))
+    return original
+
+
 def test_hand_edit_is_detected(tmp_path):
     """The negative case for the check above: a modified graph must be reported.
 
     A check that cannot fail proves nothing, so this mutates a copy of the tree and
-    asserts the deriver notices."""
+    asserts the deriver notices. The entry is the first, in sorted order, whose config.json
+    is committed: an entry that pins its config by hash cannot be re-derived offline."""
     import shutil
 
     tree = tmp_path / "catalog"
     shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    target = next(p for p in (tree / "models").iterdir() if (p / "graph.yaml").is_file())
-    g = yaml.safe_load((target / "graph.yaml").read_text())
-    g["global"]["hidden_size"] = int(g["global"]["hidden_size"]) + 8
-    (target / "graph.yaml").write_text(yaml.safe_dump(g, sort_keys=False))
+    target = sorted(p for p in (tree / "models").iterdir()
+                    if (p / "graph.yaml").is_file() and (p / "config.json").is_file())[0]
+    _edit_hidden_size(target / "graph.yaml")
 
     r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check"],
                        capture_output=True, text=True)
     assert r.returncode != 0, "a hand-edited graph was not detected"
     assert target.name in r.stderr
+
+
+def test_a_hand_edit_of_any_committed_config_entry_is_detected(tree_copy):
+    """Every entry whose config.json is committed, edited at once: the run names each of them.
+    (One run, not one per entry: the check re-derives every entry and reports all that differ.)"""
+    names = [d.name for d in model_dirs()]
+    saved = {}
+    for name in names:
+        saved[name] = _edit_hidden_size(tree_copy / "models" / name / "graph.yaml")
+    try:
+        r = subprocess.run([sys.executable, str(DERIVER), str(tree_copy), "--check"],
+                           capture_output=True, text=True)
+    finally:
+        for name, text in saved.items():
+            (tree_copy / "models" / name / "graph.yaml").write_text(text)
+    assert r.returncode != 0
+    missed = [n for n in names if f"{n}: graph.yaml differs" not in r.stderr]
+    assert not missed, f"hand edits not detected: {missed}"
+    assert f"{len(names)} stale" in r.stdout, r.stdout
+
+
+def _pin_first_entry(tree: Path) -> tuple[str, Path]:
+    """Turn the first committed-config entry into a hash-pinned one, as the entries whose
+    licence is off the allow-list are, and return its name and the config to fetch."""
+    name = sorted(d.name for d in model_dirs())[0]
+    d = tree / "models" / name
+    import hashlib
+    sha = hashlib.sha256((d / "config.json").read_bytes()).hexdigest()
+    fetched = tree.parent / "fetched" / name
+    fetched.mkdir(parents=True)
+    (fetched / "config.json").write_bytes((d / "config.json").read_bytes())
+    (d / "config.json").unlink()
+    card = yaml.safe_load((d / "model.yaml").read_text())
+    card["config"] = {"sha256": sha}
+    (d / "model.yaml").write_text(yaml.safe_dump(card, sort_keys=False))
+    return name, tree.parent / "fetched"
+
+
+def test_a_hash_pinned_entry_is_reported_as_not_rederivable_offline(tmp_path):
+    """Offline, --check can verify only the recorded hash of a pinned entry, so a hand edit of
+    its graph is invisible; the run says so, and counts the entry apart from the current ones.
+    With --fetched the same edit is detected."""
+    import shutil
+    tree = tmp_path / "catalog"
+    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+    name, fetched = _pin_first_entry(tree)
+    _edit_hidden_size(tree / "models" / name / "graph.yaml")
+
+    # Offline, restricted to the pinned entry: nothing fails, nothing is called current.
+    r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", "--model", name],
+                       capture_output=True, text=True)
+    assert r.returncode == 0
+    assert "0 current" in r.stdout and "1 not re-derivable offline" in r.stdout, r.stdout
+    assert f"not re-derived: {name}" in r.stderr
+
+    # With the fetched file the edit is found.
+    r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check", "--model", name,
+                        "--fetched", str(fetched)], capture_output=True, text=True)
+    assert r.returncode != 0 and name in r.stderr, (r.stdout, r.stderr)
+    assert "1 stale" in r.stdout and "not re-derivable" in r.stdout
+
+
+def test_the_committed_pinned_entries_are_counted_apart_from_the_current_ones():
+    r = subprocess.run([sys.executable, str(DERIVER), str(ROOT), "--check"],
+                       capture_output=True, text=True)
+    pinned = [d.name for d in sorted(MODELS.iterdir())
+              if d.is_dir() and not (d / "config.json").is_file()]
+    assert pinned, "the catalog holds hash-pinned entries"
+    assert f"{len(pinned)} not re-derivable offline" in r.stdout, r.stdout
+    assert r.stderr.strip().endswith(", ".join(pinned)), r.stderr
 
 
 def test_a_failure_names_its_model_once(tmp_path):
