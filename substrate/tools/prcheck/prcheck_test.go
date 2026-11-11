@@ -1083,3 +1083,105 @@ func TestContractsAPIToolIsNotADependency(t *testing.T) {
 		t.Error("apidiff is not pinned to a version and commit")
 	}
 }
+
+// The one automatic rerun: only a first-attempt failure whose every failed job was ended by a
+// runner shutdown. Each known-bad case is a failure that must not be retried.
+func TestDecideRerun(t *testing.T) {
+	kill := FailedJob{Name: "test (workload & cmd)", Annotations: []string{"Process completed with exit code 143.", "The runner has received a shutdown signal. This can happen when the runner service is stopped, or a manually started runner is canceled."}}
+	test := FailedJob{Name: "lint", Annotations: []string{"Process completed with exit code 1."}}
+	for _, c := range []struct {
+		name       string
+		conclusion string
+		attempt    int
+		failed     []FailedJob
+		want       bool
+		why        string
+	}{
+		{"shutdown on attempt 1", "failure", 1, []FailedJob{kill}, true, "rerunning"},
+		{"two shutdowns", "failure", 1, []FailedJob{kill, kill}, true, "rerunning"},
+		{"shutdown on attempt 2", "failure", 2, []FailedJob{kill}, false, "attempt 2"},
+		{"a test failure", "failure", 1, []FailedJob{test}, false, "never rerun"},
+		{"shutdown and a test failure", "failure", 1, []FailedJob{kill, test}, false, `"lint"`},
+		{"no annotations", "failure", 1, []FailedJob{{Name: "x"}}, false, "never rerun"},
+		{"cancelled run", "cancelled", 1, []FailedJob{kill}, false, "not failure"},
+		{"success", "success", 1, nil, false, "not failure"},
+		{"failure with no failed job", "failure", 1, nil, false, "no job"},
+		{"the text only in prose of a non-failure", "failure", 1, []FailedJob{{Name: "y", Annotations: []string{"shutdown signal"}}}, false, "never rerun"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, why := DecideRerun(c.conclusion, c.attempt, c.failed)
+			if got != c.want || !strings.Contains(why, c.why) {
+				t.Errorf("DecideRerun = %v, %q; want %v containing %q", got, why, c.want, c.why)
+			}
+		})
+	}
+}
+
+// rerunGH is a gh that answers the run, its jobs and their annotations from files, and logs
+// every call, so the test can see whether a rerun and a comment were requested.
+func rerunGH(t *testing.T, attempt int, annotation string) (log string) {
+	t.Helper()
+	dir := t.TempDir()
+	log = filepath.Join(dir, "calls.log")
+	script := `#!/bin/sh
+echo "$@" >> ` + log + `
+case "$*" in
+*"-X POST"*) echo '{}' ;;
+*annotations*) cat <<'EOF'
+[{"annotation_level":"failure","message":"` + annotation + `"}]
+EOF
+;;
+*"/jobs?"*) echo '{"jobs":[{"id":7,"name":"test","conclusion":"failure"},{"id":8,"name":"build","conclusion":"success"}]}' ;;
+*) echo '{"conclusion":"failure","run_attempt":` + fmt.Sprint(attempt) + `,"html_url":"https://x/run/1","name":"CI","pull_requests":[{"number":42}]}' ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(dir, "gh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return log
+}
+
+func TestRerunCommandRerunsOnceAndSaysSo(t *testing.T) {
+	log := rerunGH(t, 1, "The runner has received a shutdown signal.")
+	summary := filepath.Join(t.TempDir(), "s.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summary)
+	var out strings.Builder
+	if err := run([]string{"rerun", "-repo", "o/r", "-run", "1"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(log)
+	if !strings.Contains(string(calls), "runs/1/rerun-failed-jobs") || !strings.Contains(string(calls), "issues/42/comments") {
+		t.Errorf("no rerun or no comment requested:\n%s", calls)
+	}
+	if s, _ := os.ReadFile(summary); !strings.Contains(string(s), "rerun once") {
+		t.Errorf("the summary does not say it reran:\n%s", s)
+	}
+}
+
+func TestRerunCommandDoesNotRerunARealFailureOrASecondAttempt(t *testing.T) {
+	for name, c := range map[string]struct {
+		attempt    int
+		annotation string
+	}{
+		"a test failure": {1, "Process completed with exit code 1."},
+		"second attempt": {2, "The runner has received a shutdown signal."},
+	} {
+		t.Run(name, func(t *testing.T) {
+			log := rerunGH(t, c.attempt, c.annotation)
+			summary := filepath.Join(t.TempDir(), "s.md")
+			t.Setenv("GITHUB_STEP_SUMMARY", summary)
+			var out strings.Builder
+			if err := run([]string{"rerun", "-repo", "o/r", "-run", "1"}, &out); err != nil {
+				t.Fatal(err)
+			}
+			calls, _ := os.ReadFile(log)
+			if strings.Contains(string(calls), "POST") {
+				t.Errorf("a rerun or comment was requested:\n%s", calls)
+			}
+			if s, _ := os.ReadFile(summary); !strings.Contains(string(s), "not rerun") {
+				t.Errorf("the refusal is silent:\n%s", s)
+			}
+		})
+	}
+}

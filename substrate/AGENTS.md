@@ -63,6 +63,14 @@ with the files and lines that support the answer, and its approving review count
 protection. After each fix an author agent replies on the review thread with the outcome and the
 commit and resolves the thread (X24); no check waits for a person to do either.
 
+## Reruns
+
+CI reruns a failed run automatically in one case only: the hosted runner was shut down ("The
+runner has received a shutdown signal"), on the first attempt, for every failed job
+(`.github/workflows/rerun-on-runner-shutdown.yml`). It is announced in the job summary and a
+comment. Any other red is a defect or a gate: read the log, fix it, and do not rerun it hoping
+it passes. A flaky test is reported, not quarantined or retried.
+
 ## Where to look next
 
 The design is the target this repository implements; each rule above names its invariant

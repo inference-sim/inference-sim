@@ -76,6 +76,22 @@ request to `main`, so run the full set by hand on a layer you are about to appro
 for the same pull request replaces the one in progress, and the path gates read each check run
 at its newest attempt, so a replaced or re-run attempt does not hold a gate shut or open.
 
+Every job has a `timeout-minutes`, sized from measured runs (the longest, the cost model, takes
+about 500 s), so a hung job fails in minutes and not after six hours. When the Go tests of the
+`contracts and validators` job fail, the log lists the failing tests and the output of each
+failing package.
+
+**The only automatic rerun.** A hosted runner that is shut down under a job ends it with "The
+runner has received a shutdown signal" and exit code 143. That is the infrastructure's failure
+and a rerun of the same commit is its only remedy, so `.github/workflows/rerun-on-runner-shutdown.yml`
+reruns the failed jobs of a failed CI run once, and only when the run is on its first attempt
+and every failed job carries that message. It says what it did in the job summary and, for a
+pull request, in a comment. A failure without the message is never rerun, a second failure is
+never rerun, and `blis` (the description and thread checks) is not listed, because a retry
+would hide a flaky test or a gate. Nothing else reruns automatically, and nothing is added to
+the quarantine list for a test that fails now and then: it is fixed or reported. The decision
+is `DecideRerun` in `tools/prcheck/rerun.go`, with known-bad cases in its tests.
+
 Every validator has a negative test for each way a document can be wrong. A validator that
 cannot fail proves nothing.
 
