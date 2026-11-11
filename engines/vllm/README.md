@@ -174,7 +174,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   `TestNoMooncakeConnectorIsServed`) pin that the engine refuses both.
   `TestEveryProvenInertFieldHasAPassingProof` holds the list to the files, to the value classes (the
   probes reach every class), to the engine's Go code (no non-test file but the listed ones names the
-  field) and to the refusal tests (each still exists). `oracle/test_inertness.py` (about 4 minutes
+  field) and to the refusal tests (each still exists). `oracle/test_inertness.py` (about 5 minutes
   with the pinned source) shows the harness failing a field that changes the schedule
   (`enable_chunked_prefill` off), a config run and an output-processor run whose engine-facing result
   changes, a read it was not told about, a stale read, a run that did not execute the line it is credited
