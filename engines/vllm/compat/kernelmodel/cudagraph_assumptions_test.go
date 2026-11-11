@@ -18,7 +18,7 @@ func openWithEngineLines(t *testing.T, path string, lines ...string) *Model {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := regexp.MustCompile(`(?m)^\s*cudagraph_mode:.*\n`).ReplaceAllString(string(raw), "")
+	body := regexp.MustCompile(`(?m)^\s*compilation_config: \{cudagraph_mode:.*\n`).ReplaceAllString(string(raw), "")
 	re := regexp.MustCompile(`(?m)^(\s*)block_size:`)
 	if !re.MatchString(body) {
 		t.Fatalf("%s states no block_size line to put the keys before", path)
@@ -54,10 +54,10 @@ func TestStatedCUDAGraphSettingsDiscloseTheKernelsPolicy(t *testing.T) {
 	if got := mine(openWithEngineLines(t, fixture)); len(got) != 0 {
 		t.Errorf("a deployment that states neither discloses %v", got)
 	}
-	if got := mine(openWithEngineLines(t, fixture, "cudagraph_mode: NONE")); len(got) != 0 {
+	if got := mine(openWithEngineLines(t, fixture, "compilation_config: {cudagraph_mode: NONE}")); len(got) != 0 {
 		t.Errorf("cudagraph_mode NONE discloses %v; v0.32.0 keeps NONE", got)
 	}
-	got := mine(openWithEngineLines(t, fixture, "cudagraph_mode: FULL", "cudagraph_capture_sizes: [1, 2, 4, 8]"))
+	got := mine(openWithEngineLines(t, fixture, "compilation_config: {cudagraph_mode: FULL}", "cudagraph_capture_sizes: [1, 2, 4, 8]"))
 	if len(got) != 2 || !strings.HasPrefix(got[0], "compilation_config.cudagraph_mode = FULL: ") ||
 		!strings.HasPrefix(got[1], "compilation_config.cudagraph_capture_sizes = [1 2 4 8]: ") {
 		t.Fatalf("a deployment that states both discloses %q, want one assumption for each, naming the value", got)
