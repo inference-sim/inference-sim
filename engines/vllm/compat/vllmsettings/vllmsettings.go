@@ -43,6 +43,15 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 		DCPQReplicate:           e.DCPQReplicate,
 		CPKVCacheInterleaveSize: e.CPKVCacheInterleaveSize,
 		Frontend:                string(e.Frontend),
+		// The kernel-facing settings (design VLM-3): the kernel prices a stated value from a
+		// measured coefficient or refuses it by name, never as the engine's own choice, so each is
+		// handed over as stated. AttentionBackend and CUDAGraphDecoderReplay have no key in the
+		// engine block (a block that states them is refused as an unknown key), so they stay unstated.
+		UseTRTLLMAttention:                 e.UseTRTLLMAttention,
+		MLAPrefillBackend:                  e.MLAPrefillBackend,
+		LinearBackend:                      e.LinearBackend,
+		CustomOps:                          e.CustomOps,
+		DecoderReplayCUDAGraphCaptureSizes: e.DecoderReplayCUDAGraphCaptureSizes,
 	}
 	if e.DBO != nil {
 		s.DBO = &enginesettings.DBO{Enabled: e.DBO.Enabled}
@@ -53,6 +62,7 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 	if e.Speculative != nil {
 		s.Speculative = &enginesettings.Speculative{Method: e.Speculative.Method,
 			NumSpecTokens: e.Speculative.NumSpecTokens, DraftModel: e.Speculative.DraftModel,
+			KVCacheDType: e.Speculative.KVCacheDType,
 			// Tri-state in the engine block, nil being vLLM's default false
 			// (vllm/config/speculative.py:551@5df63a72).
 			EnableAdaptiveVerification: e.Speculative.EnableAdaptiveVerification != nil &&

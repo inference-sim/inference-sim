@@ -666,8 +666,9 @@ func (e *Engine) Assumptions() []string {
 // engine that prices the steps is this one, so the host's own kernel never sees them.
 //
 // The host calls it once per engine instance, right after the instance is built, so every
-// pricing kernel (each instance and each prefill or decode pool) is registered once. A host
-// that calls it twice for one instance registers that instance's kernel twice. A pricer
+// pricing kernel (each instance and each prefill or decode pool) is registered once. Records
+// accumulate across kernels in d, and a flag any kernel raises stays raised; a second call for
+// one instance adds nothing, since d keeps one observer per kernel. A pricer
 // that selects nothing records nothing, and a nil d is ignored. A simulator reads it by
 // type-asserting interface{ RecordSelected(*load.Data) } on the engine.Engine.
 func (e *Engine) RecordSelected(d *load.Data) {

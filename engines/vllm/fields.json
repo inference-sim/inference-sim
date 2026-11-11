@@ -529,6 +529,12 @@
       "evidence": {
         "proof": "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -540,6 +546,12 @@
       "evidence": {
         "proof": "oracle/inertness/MC_SLICE_SIZE.json"
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -550,6 +562,12 @@
       "status": "proven_inert",
       "evidence": {
         "proof": "oracle/inertness/MC_WORKERS_PER_CTX.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -913,6 +931,12 @@
       "status": "proven_inert",
       "evidence": {
         "proof": "oracle/inertness/PYTHONNOUSERSITE.json"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -4635,6 +4659,12 @@
           "core/engine/testdata/golden/t3-async-v2-pp2.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -5078,6 +5108,12 @@
           "core/engine/testdata/golden/t3-async.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -5365,6 +5401,30 @@
         "traces": [
           "core/sched/testdata/golden/evict-order.json",
           "core/sched/testdata/golden/prefix-cache.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 16,
+            "closed": "above"
+          },
+          {
+            "value": 17,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "above"
+          },
+          {
+            "value": 257,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -6118,6 +6178,18 @@
           "core/engine/testdata/golden-dp/dp4-lb.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -6340,6 +6412,12 @@
           "core/sched/testdata/golden/hybrid-disabled.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -6461,6 +6539,12 @@
       "evidence": {
         "traces": [
           "core/engine/testdata/golden-dp/dp2-waves.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -6643,6 +6727,12 @@
           "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json",
           "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json",
           "core/sched/testdata/golden/chunked-prefill-off.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false"
         ]
       },
       "estimation": {
@@ -6943,6 +7033,13 @@
         "traces": [
           "core/sched/testdata/golden/meta-more-kv-small.json",
           "core/sched/testdata/golden/prefix-cache.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
         ]
       },
       "estimation": {
@@ -7750,6 +7847,12 @@
           "core/sched/testdata/golden/kv-events.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -7896,6 +7999,13 @@
           "core/connector/offloading/testdata/golden/offloading-basic.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "NixlConnector",
+          "OffloadingConnector"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -7952,6 +8062,18 @@
         "traces": [
           "core/connector/nixl/testdata/golden/nixl-d-basic.json",
           "core/connector/nixl/testdata/golden/nixl-p-abort.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "kv_producer",
+          "kv_both",
+          "kv_consumer"
+        ],
+        "covered": [
+          "kv_consumer",
+          "kv_producer"
         ]
       },
       "estimation": {
@@ -8110,6 +8232,18 @@
           "core/sched/testdata/golden/long-prefill-chunks.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8121,6 +8255,12 @@
       "evidence": {
         "traces": [
           "core/sched/testdata/golden/knob-long-prefill-adaptive.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
         ]
       },
       "estimation": {
@@ -8335,6 +8475,12 @@
           "core/sched/testdata/golden/lora-max-loras-skip.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8347,6 +8493,26 @@
         "traces": [
           "core/sched/testdata/golden/length-caps.json",
           "core/sched/testdata/golden/model-len-boundary.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 8193,
+            "closed": "above"
+          },
+          {
+            "value": 32769,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
         ]
       },
       "estimation": {
@@ -8362,6 +8528,12 @@
           "core/sched/testdata/golden/knob-max-active-seqs.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8374,6 +8546,18 @@
         "traces": [
           "core/sched/testdata/golden/long-prefill-chunks.json",
           "core/sched/testdata/golden/meta-larger-budget-large.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 129,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -8411,6 +8595,18 @@
           "core/sched/testdata/golden/knob-max-scheduled-tokens.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 8192,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -8423,6 +8619,12 @@
         "traces": [
           "core/sched/testdata/golden/knob-max-active-seqs.json",
           "core/sched/testdata/golden/preempt-fcfs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -8890,6 +9092,18 @@
           "core/engine/testdata/golden/t3-v2-pp2-async-stagger.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -9067,6 +9281,18 @@
         "traces": [
           "core/engine/testdata/golden-dp-async/dp2-throttle-async.json",
           "core/engine/testdata/golden-dp/dp2-throttle.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
         ]
       },
       "estimation": {
@@ -9688,6 +9914,16 @@
           "core/sched/testdata/golden/priority-tie.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "fcfs",
+          "priority"
+        ],
+        "covered": [
+          "priority"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -10032,6 +10268,12 @@
           "vllmengine/testdata/muse-gb200-nvl-tep8-dspark-adaptive.yaml"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -10091,6 +10333,55 @@
           "core/sched/testdata/golden/spec-mtp1.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "ngram",
+          "medusa",
+          "mlp_speculator",
+          "draft_model",
+          "suffix",
+          "custom_class",
+          "eagle",
+          "eagle3",
+          "extract_hidden_states",
+          "deepseek_mtp",
+          "dots3_note_mtp",
+          "mimo_mtp",
+          "mimo_v2_mtp",
+          "glm4_moe_mtp",
+          "glm4_moe_lite_mtp",
+          "glm_ocr_mtp",
+          "ernie_mtp",
+          "nemotron_h_mtp",
+          "exaone_moe_mtp",
+          "exaone4_5_mtp",
+          "qwen3_next_mtp",
+          "qwen4_exp_mtp",
+          "qwen3_5_mtp",
+          "longcat_flash_mtp",
+          "bailing_hybrid_v3_mtp",
+          "minimax_m3_mtp",
+          "bailing_hybrid_mtp",
+          "mtp",
+          "kimi_k3_mtp",
+          "pangu_ultra_moe_mtp",
+          "step3p5_mtp",
+          "hy_v3_mtp",
+          "hy_v4_mtp",
+          "gemma4_mtp",
+          "inkling_mtp",
+          "glm5_next_mtp",
+          "dflash",
+          "ngram_gpu",
+          "dspark"
+        ],
+        "covered": [
+          "dspark",
+          "eagle3",
+          "mtp"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -10103,6 +10394,12 @@
         "traces": [
           "compat/kernelmodel/muse_kvlayers_test.go",
           "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "muse-spark-open-dspark"
         ]
       },
       "estimation": {
@@ -10128,6 +10425,22 @@
         "traces": [
           "core/sched/testdata/golden/spec-eagle3.json",
           "core/sched/testdata/golden/spec-mtp-multi.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
         ]
       },
       "estimation": {
@@ -10383,6 +10696,19 @@
       "evidence": {
         "proof": "oracle/inertness/stream_interval.json"
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -10471,6 +10797,38 @@
       "evidence": {
         "traces": [
           "core/connector/offloading/testdata/golden/offloading-armd-pp2-tp4-dspark7.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          },
+          {
+            "value": 5,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 9,
+            "closed": "above"
+          },
+          {
+            "value": 17,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          2
         ]
       },
       "estimation": {
@@ -10715,6 +11073,12 @@
       "evidence": {
         "traces": [
           "core/sched/testdata/golden/knob-watermark.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
+	subrules "github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
@@ -48,9 +49,10 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 	}
 	// An unstated cache dtype is "auto", which an architecture's own hook can change on the
 	// chip that runs it (GlmMoeDsaForCausalLM on SM10x: fp8_e4m3, rules/v0_32). A stated dtype is
-	// never changed here. Only a graph that names no architecture is resolved here: a
-	// DeepSeek-V4 graph names its own, and the kernel resolves that packed layout itself.
-	if in.Rules != nil && in.Model != nil && in.Model.Global.Architecture == "" && (e.CacheDType == "" || e.CacheDType == "auto") {
+	// never changed here. A DeepSeek-V4 or V4.1 graph is left to the kernel, which resolves that
+	// packed layout itself. Every other graph is resolved here, whether it names its architecture
+	// (the catalog's GLM-5 graphs do since the layer-10 pin) or is named by its config digest.
+	if in.Rules != nil && in.Model != nil && !kernelResolvesCacheDType(in.Model.Global.Architecture) && (e.CacheDType == "" || e.CacheDType == "auto") {
 		fam, _ := in.Chip.CapabilityMajor()
 		if arch := architectureOf(in.Model); arch != "" {
 			if kv := in.Rules.ResolveCacheDType(arch, fam, max(in.Deployment.Pools[in.PoolIndex].Parallel.TP, 1), "auto"); kv != "auto" {
@@ -179,10 +181,17 @@ func (m *Model) EngineSources() map[string]string {
 	return out
 }
 
+// kernelResolvesCacheDType says whether the kernel itself resolves an unstated cache dtype for the
+// architecture: DeepSeek-V4 and V4.1 keep a packed cache whose layout the kernel owns.
+func kernelResolvesCacheDType(architecture string) bool {
+	return architecture == subrules.ArchDeepseekV4 || architecture == subrules.ArchDeepseekV41
+}
+
 // glmMoeDsaConfigs are the sha256 of the vendor config.json each catalog model whose
 // architectures[0] is GlmMoeDsaForCausalLM was derived from (graph.yaml derived_from). The catalog
-// graph of these models states no global.architecture, and the rules key behaviour on it, so the
-// hash names the architecture. TestGLMConfigHashesNameTheArchitecture checks each against the
+// graph of these models stated no global.architecture before the layer-10 pin and states it now;
+// a graph derived from one of these configs that still states none (a copy kept by a user) is
+// named by the hash, since the rules key behaviour on the architecture. TestGLMConfigHashesNameTheArchitecture checks each against the
 // pinned catalog's config.json and that no other catalog model is of the class.
 var glmMoeDsaConfigs = map[string]string{
 	"5ea2d79d3a77fe90836c18893de00996d096cd01516b52b88c6fc18993cb4df8": "glm-5",

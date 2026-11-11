@@ -594,9 +594,9 @@ const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
 var unreadSettings = []unreadSetting{
 	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
 	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
-	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
-	// a stated true or false is a choice.
-	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueBase + "80", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
+	// attention_config.use_trtllm_attention is not listed: the kernel prices a stated true on the
+	// trtllm-gen prefill lane where the registry has it, and refuses a stated false and any chip
+	// without the lane, naming the measurement (the kernel-facing settings, VLM-3).
 	// AttentionConfig.mla_prefill_backend: None, selected automatically (vllm/config/attention.py:81@5df63a72).
 	{"mla_prefill_backend", "attention_config.mla_prefill_backend", issueBase + "80", func(e engineconfig.Engine) bool { return e.MLAPrefillBackend != "" }},
 	// KernelConfig.linear_backend: "auto" (vllm/config/kernel.py:350@5df63a72). A value is lower-cased
@@ -664,6 +664,11 @@ var unreadSettings = []unreadSetting{
 	{"kv_events.topic", "kv_events_config.topic", issueBase + "60",
 		func(e engineconfig.Engine) bool { return e.KVEvents != nil && e.KVEvents.Topic != "" }},
 }
+
+// RefuseUnreadSettings is refuseUnreadSettings for a host that opens the cost model first: the
+// cost model's kernel also refuses a stated kernel-facing setting it cannot price, but by the
+// registry's issue, and the engine refuses these with its own, so the host asks the engine first.
+func RefuseUnreadSettings(e engineconfig.Engine) error { return refuseUnreadSettings(e) }
 
 // refuseUnreadSettings refuses the first key of unreadSettings stated away from vLLM's default,
 // naming the key, the field as vLLM names it and the issue.

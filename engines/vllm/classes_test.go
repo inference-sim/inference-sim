@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -177,6 +178,30 @@ func TestEveryModelledFieldRecordsItsValueClasses(t *testing.T) {
 	}
 	for _, p := range classProblems(l, doc) {
 		t.Error(p)
+	}
+	// fields.json carries the classes themselves (the loader refuses a modelled or proven-inert
+	// field without them); fields/value_classes.json is the basis they were projected from, so
+	// the two must agree field by field.
+	for _, f := range l.Fields {
+		if f.Status != fields.StatusModelled && f.Status != fields.StatusProvenInert {
+			continue
+		}
+		rec, ok := doc.Fields[f.Name]
+		if !ok || f.ValueClasses == nil {
+			continue // classProblems and the loader report these
+		}
+		// Through the one struct, so an absent list and an empty one are the same value.
+		raw, err := json.Marshal(f.ValueClasses)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got substrateClasses
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, rec.ValueClasses) {
+			t.Errorf("%s: value_classes in fields.json differ from fields/value_classes.json\n fields.json: %+v\n basis file:  %+v", f.Name, got, rec.ValueClasses)
+		}
 	}
 }
 

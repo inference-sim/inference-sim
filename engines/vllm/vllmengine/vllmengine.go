@@ -177,6 +177,17 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 		}
 	}
 	repos := kernelmodel.Repos{Scenarios: filepath.Dir(path), Data: data}
+	// The kernel refuses a kernel-facing setting it cannot price, naming the registry's issue. The
+	// settings this engine does not model are refused first, naming this repository's, so the refusal
+	// does not depend on the order of the two checks. A block that does not decode is left to the
+	// checks below, which report it.
+	if node, _, err := poolBlock(path, s.Pool); err == nil {
+		if e, err := engineconfig.Decode(deployment.NewEngineBlock(&node)); err == nil {
+			if err := vllm.RefuseUnreadSettings(e); err != nil {
+				return pool{}, fmt.Errorf("vllmengine: %w", err)
+			}
+		}
+	}
 	m, err := kernelmodel.OpenPool(filepath.Base(path), repos, s.Pool)
 	if err != nil {
 		return pool{}, fmt.Errorf("vllmengine: %w", err)

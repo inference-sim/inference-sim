@@ -384,7 +384,14 @@ func TestKVPoolBlocksAreVLLMsOverTheKVCacheGroups(t *testing.T) {
 		// bf16 (its own dtype), so the pool holds what vLLM sizes for one uniform-type group of
 		// two page sizes: 72893 blocks (oracle/scenarios/dashboard-minimax-m3-fp8-kv-probe, at
 		// d106's bytes, and dashboard-minimax-m3-fp8-kv-pool at the dashboard's b200 TP8).
-		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72893 }},
+		// The catalog's MiniMax-M3 graph now holds the router of each of its 57 MoE layers: a
+		// float32 weight of 128 x 6144, replicated on every rank (MiniMaxM3MoE.gate is a
+		// GateLinear, a ReplicatedLinear with params_dtype float32, vllm/models/minimax_m3/nvidia/
+		// model.py:231-239@5df63a72). That is 57 x 3145728 = 179306496 bytes of weights the KV
+		// budget no longer has: 52667592213 bytes instead of 52846898709. vLLM's own
+		// get_kv_cache_config_from_groups on those bytes and the same layers sizes 72645 blocks
+		// (oracle/run_scheduler.py on the probe scenario with kv_available_bytes 52667592213).
+		{"d106-fp8kv-032.yaml", func(kernelmodel.KVBudget) int64 { return 72645 }},
 	} {
 		t.Run(c.scenario, func(t *testing.T) {
 			t.Parallel()

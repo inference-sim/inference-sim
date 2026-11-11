@@ -175,3 +175,33 @@ func TestPickRankReadsTheFrontEndsInFlight(t *testing.T) {
 		t.Error("PickRank took one in-flight count for a group of two ranks")
 	}
 }
+
+// Add applies engine.Request.Validate first, on the engine, the group and a rank's view of it: an
+// adapter path with no adapter name is refused with that error, and the refused request leaves no
+// trace, so the same ID can be added once the request is valid.
+func TestAddRefusesWhatRequestValidateRefuses(t *testing.T) {
+	bad := req("a", 40, 3)
+	bad.AdapterPath = "/adapters/x"
+	want := bad.Validate()
+	if want == nil {
+		t.Fatal("the substrate's Request.Validate accepts an adapter path with no adapter name")
+	}
+	g := newGroup(t, 2)
+	for name, e := range map[string]engine.Engine{
+		"engine":    newEngine(t),
+		"group":     g,
+		"rank view": g.View(1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := bad
+			bad.ID = name
+			want := bad.Validate()
+			if got := e.Add(bad, 0); got == nil || got.Error() != want.Error() {
+				t.Fatalf("Add of an adapter path with no adapter name returned %v, want %v", got, want)
+			}
+			if err := e.Add(req(name, 40, 3), 0); err != nil {
+				t.Fatalf("the refused request left a trace: adding the same ID, valid, returned %v", err)
+			}
+		})
+	}
+}

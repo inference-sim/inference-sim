@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
@@ -83,8 +85,55 @@ func TestOfFillsEverySetting(t *testing.T) {
 	populate(t, reflect.ValueOf(&e).Elem(), "Engine")
 	var missing []string
 	zeroes(reflect.ValueOf(Of(e)), "Settings", &missing)
-	if len(missing) > 0 {
-		t.Errorf("Of leaves these settings unfilled from a fully stated engine block: %v", missing)
+	// The block has no key for these two settings, so no block states them.
+	// TestTheBlockHasNoKeyForAttentionBackendOrDecoderReplay checks that.
+	var unfilled []string
+	for _, m := range missing {
+		if m != "Settings.AttentionBackend" && m != "Settings.CUDAGraphDecoderReplay" {
+			unfilled = append(unfilled, m)
+		}
+	}
+	if len(unfilled) > 0 {
+		t.Errorf("Of leaves these settings unfilled from a fully stated engine block: %v", unfilled)
+	}
+}
+
+// attention_config.backend and compilation_config.cudagraph_decoder_replay are Settings fields the
+// kernel refuses when stated, but the vLLM engine block has no key for either: a block that states
+// them is refused by the strict decode, naming the key. So Of has nothing to fill them from, and
+// TestOfFillsEverySetting exempts exactly these two.
+func TestTheBlockHasNoKeyForAttentionBackendOrDecoderReplay(t *testing.T) {
+	for _, key := range []string{"attention_backend", "backend", "cudagraph_decoder_replay"} {
+		pool := deployment.Pool{Engine: mustBlock(t, key+": true\n")}
+		if _, err := Decode(pool); err == nil || !strings.Contains(err.Error(), key) {
+			t.Errorf("a block stating %s: Decode returned %v, want a refusal naming the key", key, err)
+		}
+	}
+}
+
+// A stated kernel-facing setting reaches the kernel as stated, each from its own block key: the
+// kernel prices it from a coefficient or refuses it by name, and an unstated one prices as the
+// engine's own choice.
+func TestOfCarriesTheKernelFacingSettings(t *testing.T) {
+	on := true
+	e := engineconfig.Engine{
+		UseTRTLLMAttention:                 &on,
+		MLAPrefillBackend:                  "TRTLLM_RAGGED",
+		LinearBackend:                      "flashinfer_cutlass",
+		CustomOps:                          []string{"+rms_norm"},
+		DecoderReplayCUDAGraphCaptureSizes: []int{8, 16},
+		Speculative:                        &engineconfig.Speculative{Method: "dspark", NumSpecTokens: 7, KVCacheDType: "fp8"},
+	}
+	s := Of(e)
+	if s.UseTRTLLMAttention == nil || !*s.UseTRTLLMAttention || s.MLAPrefillBackend != "TRTLLM_RAGGED" ||
+		s.LinearBackend != "flashinfer_cutlass" || !reflect.DeepEqual(s.CustomOps, []string{"+rms_norm"}) ||
+		!reflect.DeepEqual(s.DecoderReplayCUDAGraphCaptureSizes, []int{8, 16}) || s.Speculative.KVCacheDType != "fp8" {
+		t.Errorf("Of = %+v, want each kernel-facing setting as the block states it", s)
+	}
+	none := Of(engineconfig.Engine{})
+	if none.UseTRTLLMAttention != nil || none.MLAPrefillBackend != "" || none.LinearBackend != "" ||
+		len(none.CustomOps) != 0 || len(none.DecoderReplayCUDAGraphCaptureSizes) != 0 {
+		t.Errorf("an unstated block: Of = %+v, want none of them stated", none)
 	}
 }
 
@@ -179,4 +228,14 @@ func TestOfCarriesAdaptiveVerification(t *testing.T) {
 			t.Errorf("%s: EnableAdaptiveVerification = %v, want %v", c.name, got, c.want)
 		}
 	}
+}
+
+// mustBlock is an engine block written as YAML.
+func mustBlock(t *testing.T, src string) deployment.EngineBlock {
+	t.Helper()
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &n); err != nil {
+		t.Fatal(err)
+	}
+	return deployment.NewEngineBlock(n.Content[0])
 }

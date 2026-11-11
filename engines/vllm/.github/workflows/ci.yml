@@ -291,7 +291,7 @@ jobs:
       - name: the checked-out vLLM is the pinned commit
         run: test "$(git -C vllm-source rev-parse HEAD)" = 5df63a7203cdb9328d824a27b682e77c7b9928be
       - name: fields.json is current for the pinned release
-        run: python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json
+        run: python3 -I fields/gen_fields.py vllm-source fields/status.json --value-classes fields/value_classes.json --check fields.json
       - name: the field-list generator's tests
         run: python3 -I fields/test_gen_fields.py
       - name: fields/value_classes.json is current for the pinned release

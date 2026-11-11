@@ -773,3 +773,51 @@ func TestRunnerStepsCountEmptySchedules(t *testing.T) {
 		t.Fatalf("batches at runner steps %v, want [0 2 4]: an empty schedule is a runner step", steps)
 	}
 }
+
+// Add applies engine.Request.Validate first, as the contract requires: a request with an adapter
+// path and no adapter name is refused with that error, on a single engine and on a data-parallel
+// group, and leaves no trace, so the same ID can be added once the request is valid.
+func TestAddRefusesWhatRequestValidateRefuses(t *testing.T) {
+	bad := req("a", 40, 3)
+	bad.AdapterPath = "/adapters/x"
+	good := req("a", 40, 3)
+	want := bad.Validate()
+	if want == nil {
+		t.Fatal("the substrate's Request.Validate accepts an adapter path with no adapter name")
+	}
+	for name, src := range map[string]string{
+		"engine":   "max_num_batched_tokens: 32\n",
+		"dp group": "max_num_batched_tokens: 32\ndata_parallel_size: 2\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := decodeConfig(block(t, src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			st, err := resolve(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var add func(engine.Request) error
+			if name == "engine" {
+				e, err := newEngine(st, FixedPricer(100))
+				if err != nil {
+					t.Fatal(err)
+				}
+				add = func(r engine.Request) error { return e.Add(r, 0) }
+			} else {
+				g, err := newDPGroup(st, FixedPricer(100))
+				if err != nil {
+					t.Fatal(err)
+				}
+				add = func(r engine.Request) error { return g.Add(r, 0) }
+			}
+			if got := add(bad); got == nil || got.Error() != want.Error() {
+				t.Fatalf("Add of an adapter path with no adapter name returned %v, want %v", got, want)
+			}
+			if err := add(good); err != nil {
+				t.Fatalf("the refused request left a trace: adding the same ID, valid, returned %v", err)
+			}
+		})
+	}
+}

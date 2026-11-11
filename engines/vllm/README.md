@@ -132,8 +132,10 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   covers one site at a time with a reason, and the file's `limits` says so. `fields/test_classes.py`
   fails when a modelled field has no classes, a class is backed by no comparison, or a cited line no
   longer holds it; `TestEveryModelledFieldRecordsItsValueClasses` fails the same way without the
-  source. The substrate's field-list schema has no slot for classes yet, so they are a separate file;
-  they move into `fields.json` when the slot exists.
+  source. `fields.json` carries the classes themselves (the substrate's loader refuses a modelled
+  or proven-inert field without them): `fields/gen_fields.py --value-classes fields/value_classes.json`
+  writes them there. `fields/value_classes.json` stays as the generated basis (the comparisons and traces behind each class), which the tests read, and
+  `TestEveryModelledFieldRecordsItsValueClasses` fails if the two disagree.
 - **Inertness proofs** (design §7.4, tier T1) are `oracle/inertness/<field>.json`, written by
   `oracle/inertness.py` and named by the field's `proof`. The harness varies the field over one value
   per value class and runs vLLM's own code: the real Scheduler on oracle scenarios (the scenario's

@@ -9,7 +9,7 @@ entry, or a status entry names a field vLLM does not have, so the list is comple
 
 Usage:
     python3 -I fields/gen_fields.py <vllm-source> fields/status.json > fields.json
-    python3 -I fields/gen_fields.py <vllm-source> fields/status.json --check fields.json
+    python3 -I fields/gen_fields.py <vllm-source> fields/status.json --value-classes fields/value_classes.json --check fields.json
     python3 -I fields/gen_fields.py <vllm-source> fields/status.json --value-classes fields/value_classes.json
                                     (also write each modelled and proven-inert field's value_classes, VLM-3)
     python3 -I fields/gen_fields.py <vllm-source> --names           (the derived names, one per line)
