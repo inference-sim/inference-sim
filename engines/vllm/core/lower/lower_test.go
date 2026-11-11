@@ -242,7 +242,11 @@ func show(p *int) any {
 }
 
 func TestMaxDecodeQueryLenIsVLLMs(t *testing.T) {
-	for _, c := range loadOracle(t).DecodeLen {
+	o := loadOracle(t)
+	if len(o.DecodeLen) < 20 {
+		t.Fatalf("only %d decode-length cases in the oracle file", len(o.DecodeLen))
+	}
+	for _, c := range o.DecodeLen {
 		if got := MaxDecodeQueryLen(c.Spec, c.Par, c.V2); got != c.Got {
 			t.Errorf("spec %v parallel_drafting %v v2 %v: %d; vLLM %d", show(c.Spec), c.Par, c.V2, got, c.Got)
 		}
@@ -250,7 +254,11 @@ func TestMaxDecodeQueryLenIsVLLMs(t *testing.T) {
 }
 
 func TestGraphContextTokensAreVLLMs(t *testing.T) {
-	for _, c := range loadOracle(t).Context {
+	o := loadOracle(t)
+	if len(o.Context) < 36 {
+		t.Fatalf("only %d graph-context cases in the oracle file", len(o.Context))
+	}
+	for _, c := range o.Context {
 		if got := GraphContextTokens(c.Steps, c.MaxNumTokens, c.Reqs); got != c.Got {
 			t.Errorf("steps %d max %d reqs %d: %d; vLLM %d", c.Steps, c.MaxNumTokens, c.Reqs, got, c.Got)
 		}
@@ -259,6 +267,9 @@ func TestGraphContextTokensAreVLLMs(t *testing.T) {
 
 func TestBreakableArchitecturesAreVLLMs(t *testing.T) {
 	o := loadOracle(t)
+	if len(o.Breakable) < 20 {
+		t.Fatalf("only %d breakable architectures in the oracle file", len(o.Breakable))
+	}
 	if got := BreakableArchitectures(); !slices.Equal(got, o.Breakable) {
 		t.Errorf("breakable architectures %v; vLLM %v", got, o.Breakable)
 	}
@@ -332,24 +343,69 @@ func TestSyncDPIsVLLMs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// An oracle case with no result is not a pass: vLLM's answer is what the case is for.
 			if len(c.Results) == 0 {
-				for i, l := range got {
-					if l.Tokens != 0 {
-						t.Errorf("rank %d launches %d tokens; every rank is idle", i, l.Tokens)
-					}
+				t.Fatalf("the oracle file holds no result for %s; regenerate it (oracle/lower/extract.py)", c.Case.Name)
+			}
+			// vLLM returns the agreement for every rank or for none (None), so the agreements are a slice of
+			// one per rank or nil, and a nil is the answer for one rank and for ranks that all have no work.
+			wantNone := c.Results[0].Sync == nil
+			for _, w := range c.Results {
+				if (w.Sync == nil) != wantNone {
+					t.Fatalf("the oracle's ranks disagree on whether vLLM returned an agreement: %+v", c.Results)
 				}
-				return
+			}
+			if wantNone {
+				if syncs != nil {
+					t.Errorf("syncs %+v; vLLM returns no agreement (None), so the agreements are nil", syncs)
+				}
+			} else if len(syncs) != len(ranks) {
+				t.Fatalf("%d agreements for %d ranks; vLLM returns one for each", len(syncs), len(ranks))
 			}
 			for _, w := range c.Results {
 				if got[w.Rank].Mode.String() != w.Mode || got[w.Rank].Tokens != w.Tokens {
 					t.Errorf("rank %d: %v %d tokens; vLLM %s %d", w.Rank, got[w.Rank].Mode, got[w.Rank].Tokens, w.Mode, w.Tokens)
 				}
-				if w.Sync != nil && (syncs[w.Rank].Eager != w.Sync.Eager || syncs[w.Rank].Reqs != w.Sync.Reqs) {
-					t.Errorf("rank %d sync: eager %v reqs %d; vLLM eager %v reqs %d", w.Rank, syncs[w.Rank].Eager, syncs[w.Rank].Reqs,
-						w.Sync.Eager, w.Sync.Reqs)
+				if w.Sync != nil {
+					s := syncs[w.Rank]
+					if s.Eager != w.Sync.Eager || s.Reqs != w.Sync.Reqs || s.Tokens != w.Sync.Across[w.Rank] {
+						t.Errorf("rank %d sync: eager %v reqs %d tokens %d; vLLM eager %v reqs %d tokens %d", w.Rank, s.Eager, s.Reqs, s.Tokens,
+							w.Sync.Eager, w.Sync.Reqs, w.Sync.Across[w.Rank])
+					}
 				}
 			}
 		})
+	}
+}
+
+// Every rank idle is no agreement, and the agreements are nil, not a slice of zero agreements a caller
+// would take for one that was reached; the launches are the ranks' own, with no tokens. Mutation check:
+// returning the preallocated slice fails it.
+func TestSyncDPAllIdleReturnsNoAgreement(t *testing.T) {
+	cap, err := CaptureSizes(CaptureInput{Mode: GraphFullAndPiecewise, MaxNumSeqs: 256, MaxNumBatchedTokens: 8192})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := NewGraphManager(ManagerInput{Mode: GraphFullAndPiecewise, Capture: cap, MaxNumReqs: 256, DecodeQueryLen: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for n := 1; n <= 3; n++ {
+		launches, syncs, err := SyncDP(m, make([]RankBatch, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if syncs != nil {
+			t.Errorf("%d idle rank(s): agreements %+v, want nil", n, syncs)
+		}
+		if len(launches) != n {
+			t.Fatalf("%d idle rank(s): %d launches", n, len(launches))
+		}
+		for i, l := range launches {
+			if l.Tokens != 0 {
+				t.Errorf("%d idle rank(s): rank %d launches %d tokens", n, i, l.Tokens)
+			}
+		}
 	}
 }
 
@@ -514,6 +570,9 @@ func TestEngramSharingIsVLLMs(t *testing.T) {
 			t.Errorf("%+v: shared %v err %v; vLLM shared %v err %v", c.Case, got, err, c.Resolved, c.Error)
 		}
 	}
+	if len(o.Engram.ParallelSize) < 18 {
+		t.Fatalf("only %d Engram parallel-size cases in the oracle file", len(o.Engram.ParallelSize))
+	}
 	for _, c := range o.Engram.ParallelSize {
 		if got := EngramParallelSize(c.TP, c.DP, c.Across); got != c.Got {
 			t.Errorf("tp %d dp %d across %v: %d; vLLM %d", c.TP, c.DP, c.Across, got, c.Got)
@@ -523,7 +582,11 @@ func TestEngramSharingIsVLLMs(t *testing.T) {
 
 // The shard an Engram table's rank holds is vLLM's _get_shard_info, run as written.
 func TestEngramShardIsVLLMs(t *testing.T) {
-	for _, c := range loadOracle(t).Engram.Shard {
+	shards := loadOracle(t).Engram.Shard
+	if len(shards) < 50 {
+		t.Fatalf("only %d Engram shard cases in the oracle file", len(shards))
+	}
+	for _, c := range shards {
 		s, r := EngramShard(c.Case.TP, c.Case.TPRank, c.Case.EDP, c.Case.DPRank, c.Case.Shared)
 		if s != c.Got[0] || r != c.Got[1] {
 			t.Errorf("%+v: shard %d of %d; vLLM %d of %d", c.Case, r, s, c.Got[1], c.Got[0])

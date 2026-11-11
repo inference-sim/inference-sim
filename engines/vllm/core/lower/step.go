@@ -112,7 +112,9 @@ func SyncDP(m *GraphManager, ranks []RankBatch) ([]Launch, []Sync, error) {
 		minMode = min(minMode, own[i].Mode)
 	}
 	if allZero {
-		return out, syncs, nil
+		// vLLM returns None when no rank has work, and a caller tells "no agreement" by the nil: a
+		// slice of zero agreements (Reqs 0, Tokens 0) would read as one that was reached.
+		return out, nil, nil
 	}
 	if minMode == GraphNone {
 		for i, r := range ranks {
