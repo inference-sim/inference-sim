@@ -15,7 +15,8 @@ import (
 
 // languageModelOnlyFixtures are one committed 0.32.0 deployment of each model class the rule
 // distinguishes: two multimodal checkpoints whose catalog graph holds the text decoder only, and a
-// text-only model.
+// text-only model. (All fourteen multimodal checkpoints of the catalog are in the same class; the
+// table test below covers every one, and these fixtures are the ones with a committed deployment.)
 var languageModelOnlyFixtures = []struct {
 	name, path string
 	towerless  bool
@@ -91,7 +92,9 @@ func TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower(t *testing.T) {
 // For a multimodal checkpoint whose graph holds no tower, stating language_model_only: true
 // prices nothing differently: the same per-rank fixed bytes, KV budget and blocks, KV layers and
 // step times as the deployment without the key. This is the identity the rule rests on: the cost
-// model already prices the text decoder alone. A text-only model is the control.
+// model already prices the text decoder alone. A text-only model is the control. This shows the
+// engine ignores the key; it does not compare the weights with vLLM's under true (see
+// TestTowerlessMultimodalConfigsNameTheCatalogModels for that limit).
 func TestLanguageModelOnlyTrueChangesNoPrice(t *testing.T) {
 	shapes := [][]ReqShape{
 		{{Scheduled: 512, Computed: 0, PromptLen: 512}},
@@ -130,10 +133,19 @@ func TestLanguageModelOnlyTrueChangesNoPrice(t *testing.T) {
 	}
 }
 
-// towerlessMultimodalConfigs names catalog models by the digest of their config.json. Each digest
-// is the one the catalog's graph was derived from, that config.json has a vision_config, and the
-// graph holds no node for a vision tower, projector or patch merge (which is what makes true the
-// identity above). The listed names also cover the catalog id of each model the rule is about.
+// Every catalog model whose config.json has a vision_config is in exactly one of
+// towerlessMultimodalConfigs and pricedTowerConfigs, so a multimodal checkpoint cannot be left
+// without a decision. Each digest is the one the catalog's graph was derived from. A listed
+// model's graph holds no node for a vision tower, projector or patch merge (the name pattern
+// below), which is what makes true the identity TestLanguageModelOnlyTrueChangesNoPrice shows; a
+// model in pricedTowerConfigs must match the pattern.
+//
+// The limit: this is a reading of the catalog graph's node names. It is not a comparison with the
+// weights vLLM keeps resident under language_model_only true, which would need vLLM's model
+// classes built on a meta device, and they do not build without their GPU-side parallel groups
+// on the CPU build the oracle runs on. The catalog holds no checkpoint tensor index to count
+// against either. So the test shows the graph names no tower, not that its weight bytes equal
+// vLLM's.
 func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 	dir, err := substratedata.Catalog()
 	if err != nil {
@@ -141,33 +153,80 @@ func TestTowerlessMultimodalConfigsNameTheCatalogModels(t *testing.T) {
 	}
 	data := repos().Data
 	tower := regexp.MustCompile(`(?i)vision|tower|projector|merger|patch_merge|vit`)
-	seen := map[string]bool{}
-	for sha, name := range towerlessMultimodalConfigs {
-		g, err := data.Model(name)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if g.DerivedFrom.SHA256 != sha {
-			t.Errorf("%s: the catalog graph was derived from %s, the list has %s", name, g.DerivedFrom.SHA256, sha)
-		}
-		cfg, err := os.ReadFile(filepath.Join(dir, "models", name, "config.json"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(cfg), `"vision_config"`) {
-			t.Errorf("%s: config.json has no vision_config, so it is not a multimodal checkpoint", name)
-		}
-		graph, err := os.ReadFile(filepath.Join(dir, "models", name, "graph.yaml"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if m := tower.Find(graph); m != nil {
-			t.Errorf("%s: the graph names %q, so it may price a tower and true is not the identity", name, m)
-		}
-		seen[name] = true
+	entries, err := os.ReadDir(filepath.Join(dir, "models"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{"minimax-m3", "minimax-m3-mxfp8", "kimi-k3"} {
-		if !seen[want] {
+	multimodal := map[string]bool{}
+	for _, e := range entries {
+		cfg, err := os.ReadFile(filepath.Join(dir, "models", e.Name(), "config.json"))
+		if err != nil {
+			continue // a catalog entry without a vendor config (a drafter, say) has no vision_config to find
+		}
+		if strings.Contains(string(cfg), `"vision_config"`) {
+			multimodal[e.Name()] = true
+		}
+	}
+	if len(multimodal) < 15 {
+		t.Fatalf("%d catalog models have a vision_config, the pinned catalog has 15", len(multimodal))
+	}
+	listed := map[string]bool{}
+	for _, table := range []struct {
+		lists map[string]string
+		tower bool
+	}{{towerlessMultimodalConfigs, false}, {pricedTowerConfigs, true}} {
+		for sha, name := range table.lists {
+			if listed[name] {
+				t.Errorf("%s is in both lists", name)
+			}
+			listed[name] = true
+			g, err := data.Model(name)
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			if g.DerivedFrom.SHA256 != sha {
+				t.Errorf("%s: the catalog graph was derived from %s, the list has %s", name, g.DerivedFrom.SHA256, sha)
+			}
+			if !multimodal[name] {
+				t.Errorf("%s: config.json has no vision_config, so it is not a multimodal checkpoint", name)
+			}
+			graph, err := os.ReadFile(filepath.Join(dir, "models", name, "graph.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := tower.Find(graph)
+			if table.tower && m == nil {
+				t.Errorf("%s: listed as pricing a tower, and the graph names none", name)
+			}
+			if !table.tower && m != nil {
+				t.Errorf("%s: the graph names %q, so it may price a tower and true is not the identity", name, m)
+			}
+			// A listed model is disclosed when the key is unset or false, and not when it is true.
+			got := languageModelOnlyAssumptions(g, engineconfig.Engine{})
+			if !table.tower && (len(got) != 1 || !strings.Contains(got[0], name)) {
+				t.Errorf("%s: unset gives assumptions %q, want one naming the model", name, got)
+			}
+			if table.tower && got != nil {
+				t.Errorf("%s: a model that prices a tower was given an assumption %q", name, got)
+			}
+			f := false
+			if got := languageModelOnlyAssumptions(g, engineconfig.Engine{LanguageModelOnly: &f}); !table.tower && (len(got) != 1 || !strings.Contains(got[0], "= false")) {
+				t.Errorf("%s: false gives assumptions %q, want one stating false", name, got)
+			}
+			if got := languageModelOnlyAssumptions(g, engineconfigStating(true)); got != nil {
+				t.Errorf("%s: true gives assumptions %q, want none", name, got)
+			}
+		}
+	}
+	for name := range multimodal {
+		if !listed[name] {
+			t.Errorf("%s has a vision_config and is in neither towerlessMultimodalConfigs nor pricedTowerConfigs", name)
+		}
+	}
+	for _, want := range []string{"minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4", "kimi-k3", "deepseek-v4.1-flash", "glm-5.3-flash", "inkling",
+		"kimi-k2.5", "kimi-k2.6", "llama-4-scout-17b-16e-instruct-fp8-dynamic", "muse-spark-open-816b-a42b",
+		"muse-spark-open-816b-a42b-nvfp4", "qwen3.5-397b-a17b", "qwen3.5-397b-a17b-fp8", "qwen3.6-35b-a3b"} {
+		if !listed[want] {
 			t.Errorf("%s is not in towerlessMultimodalConfigs", want)
 		}
 	}
