@@ -64,6 +64,9 @@ Each identifier is a contracts/metrics registry entry in the pinned blis-substra
 | `request_throughput` | completed requests over the window |
 | `goodput_rps`, `slo_attainment` | with SLO targets: requests meeting every target, per second of the simulated run, and as a fraction of completed |
 
+Schema 3 (blis-substrate layer 11) makes each figure state its `scope`; every figure of this Result is
+at the `cluster` scope, with no member, aggregate or range. A Result holds one figure per metric.
+
 A latency family is stated only when it has a sample: a run that completed nothing states no
 latency rather than a zero. The TPOT family needs a request with two or more output tokens;
 `interactivity_p50` and `interactivity_p90` additionally need that percentile of TPOT to be
@@ -322,6 +325,39 @@ is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill
 `"preemption_policy (decode pool)"`.
 
 A warning on stderr says the same.
+
+### Closeness Data
+
+The Result carries what a scoring harness needs to grade a point against the run it measured
+(design 11.3, G1), in two places.
+
+- Each entry of `selected_entries.coefficients` states, where its registry entry does: `kernel_impls`
+  (the library, the library's own kernel name and the kernel's code hash the value is valid for, a
+  validity list that can name builds the run did not run), `fit_range` (one bound per input
+  dimension the fit covered) and `ci95`. From the run it adds `primitive` (the lowered primitive the
+  entry's name prices), `priced` (the implementations of the operations that read the entry,
+  matched whole by library, variant and code hash) and `kernel_match`. `priced` is a subset of
+  `selected_entries.implementations[primitive]`, the builds the run's cost models ran, and, for an
+  exact entry, of `kernel_impls`: a sibling build the entry is also valid for, or a build that runs
+  only operations that do not read the entry, is not in it. `kernel_match` is `exact` when the entry
+  lists the implementations that ran, and `unkeyed` when it lists none and so applies to every build
+  without having been shown to match the one that ran; the kernel-hash condition of G1 is decided for
+  an exact entry only. An entry that lists implementations is used only when every implementation
+  among those that read it is one it lists. Two flags are evaluated from the steps the run priced:
+  `extrapolated`, true when any priced step read the entry outside its `fit_range` (evaluated only
+  where a `fit_range` is stated), and `unidentified`, true when the entry's interval is unbounded or
+  wider than half its value (evaluated only where a `ci95` is stated). A flag that is absent was not
+  evaluated. Every engine instance of every pool registers its own kernel with the run's data, so a
+  flag any instance raised stays raised. `selected_entries.closeness_version: 2` says the recorder
+  passed on everything each entry states and the implementation each coefficient priced; it does not
+  say that every pool registered, nor that a condition was decided. A registry coefficient that states
+  no `kernel_impls` is `unkeyed`, so the kernel-hash condition cannot be decided for it; at the
+  registry this release pins few coefficients state them (blis-registry#73).
+- `resolutions` lists, for each pool and each setting the cost model resolves, the engine's value
+  beside the host's, with the reason where they differ. A row names its `pool` by the pool's role
+  (`colocated`, `prefill`, `decode`); the engine allows one pool per role. Rows are sorted by
+  setting, then pool. A row names the setting as the engine block and the field list do (the KV
+  cache dtype is `kv_cache_dtype`).
 
 ### Catalog Provenance
 

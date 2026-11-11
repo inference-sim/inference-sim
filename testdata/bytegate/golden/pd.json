@@ -2640,5 +2640,91 @@
       "run": "3",
       "source": "--prefill-instances"
     }
+  ],
+  "resolutions": [
+    {
+      "setting": "all_reduce_backend",
+      "pool": "decode",
+      "engine": "custom"
+    },
+    {
+      "setting": "all_reduce_backend",
+      "pool": "prefill",
+      "engine": "custom"
+    },
+    {
+      "setting": "async_scheduling",
+      "pool": "decode",
+      "engine": "true"
+    },
+    {
+      "setting": "async_scheduling",
+      "pool": "prefill",
+      "engine": "true"
+    },
+    {
+      "setting": "cascade_attention",
+      "pool": "decode",
+      "engine": "false"
+    },
+    {
+      "setting": "cascade_attention",
+      "pool": "prefill",
+      "engine": "false"
+    },
+    {
+      "setting": "data_parallel_width",
+      "pool": "decode",
+      "engine": "1"
+    },
+    {
+      "setting": "data_parallel_width",
+      "pool": "prefill",
+      "engine": "1"
+    },
+    {
+      "setting": "expert_parallel_width",
+      "pool": "decode",
+      "engine": "1"
+    },
+    {
+      "setting": "expert_parallel_width",
+      "pool": "prefill",
+      "engine": "1"
+    },
+    {
+      "setting": "kv_cache_dtype",
+      "pool": "decode",
+      "host": "fp8",
+      "engine": "fp8_ds_mla",
+      "reason": "FLASHMLA_SPARSE serves this cache as fp8_ds_mla (_canonicalize_sparse_mla_kv_cache_dtype, vllm/model_executor/layers/attention/mla_attention.py:358-375)"
+    },
+    {
+      "setting": "kv_cache_dtype",
+      "pool": "prefill",
+      "host": "fp8",
+      "engine": "fp8_ds_mla",
+      "reason": "FLASHMLA_SPARSE serves this cache as fp8_ds_mla (_canonicalize_sparse_mla_kv_cache_dtype, vllm/model_executor/layers/attention/mla_attention.py:358-375)"
+    },
+    {
+      "setting": "sequence_parallel_moe",
+      "pool": "decode",
+      "engine": "false"
+    },
+    {
+      "setting": "sequence_parallel_moe",
+      "pool": "prefill",
+      "engine": "false"
+    },
+    {
+      "setting": "tensor_parallel_width",
+      "pool": "decode",
+      "engine": "8"
+    },
+    {
+      "setting": "tensor_parallel_width",
+      "pool": "prefill",
+      "engine": "8"
+    }
   ]
 }
