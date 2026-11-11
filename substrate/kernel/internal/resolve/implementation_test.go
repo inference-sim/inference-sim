@@ -160,8 +160,11 @@ func TestAnEntryKeyedToOneKernelCannotPriceAPrimitiveLoweredToAnother(t *testing
 	}
 }
 
-// One primitive lowered to two kernels: the kernel resolves one value per name, so an entry
-// valid for A alone cannot price the layers lowered to B. An entry that lists both can.
+// One primitive lowered to two kernels, with the pool given only as the primitive's pooled
+// implementations (a caller that cannot say which operation runs which): the kernel resolves one
+// value per name, so an entry valid for A alone cannot price the layers lowered to B, and an
+// entry that lists both can. A pool given as operations narrows this to the operations that
+// consume the name (TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt).
 func TestAPrimitiveLoweredToTwoKernelsNeedsAnEntryThatCoversBoth(t *testing.T) {
 	both := Scope{Hardware: "h100", Implementations: map[string][]coefficient.KernelImpl{
 		"attention.decode": {kernelA, hashA}}}
@@ -342,5 +345,85 @@ func TestLookupAgreesWithTheValidatorOnKernelKeys(t *testing.T) {
 	}
 	if accepted == 0 || refused == 0 || apart == 0 {
 		t.Fatalf("not exercised: %d accepted, %d refused, %d not matching one running set", accepted, refused, apart)
+	}
+}
+
+// The review's counterexample: full attention runs kernel A and sliding-window attention runs
+// kernel B. attention_decode_rate_swa is read only by the sliding-window layers, so an entry
+// keyed to B alone prices it, and one keyed to A alone does not; the part-wide
+// attention_decode_rate, the fallback for every kind with no fit of its own, is read by every
+// attention layer, so it still needs an entry that covers both.
+func TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt(t *testing.T) {
+	const swa, mla = "attention_decode_rate_swa", "attention_decode_rate_mla"
+	op := func(prim string, impl coefficient.KernelImpl, draft bool, classes ...string) Operation {
+		return Operation{Primitive: prim, Impl: impl, Classes: classes, Draft: draft}
+	}
+	// Full attention (no class) on A, sliding window on B, MLA in the draft model on C, and the
+	// GEMMs on D.
+	kernelC := coefficient.KernelImpl{Library: "flashinfer", Variant: "mla_decode", CodeHash: "eeeeeeeeeeee"}
+	pool := Scope{Hardware: "h100", Operations: []Operation{
+		op("attention.decode", kernelA, false),
+		op("attention.decode", kernelB, false, "swa"),
+		op("attention.decode", kernelC, true, "mla"),
+		op("gemm", kernelB, false),
+	}}
+	named := func(name string, v float64, impls ...coefficient.KernelImpl) coefficient.Entry {
+		return entryNamed(name, vocab.MethodMeasured, v, impls...)
+	}
+	for _, c := range []struct {
+		name   string
+		entry  coefficient.Entry
+		priced bool
+		why    string
+	}{
+		{"swa keyed to the kernel that runs the swa layers", named(swa, 1, kernelB), true, "B runs every swa layer"},
+		{"swa keyed to the kernel that runs full attention", named(swa, 1, kernelA), false, "A runs no swa layer"},
+		{"swa keyed to both", named(swa, 1, kernelA, kernelB), true, "B is among them"},
+		{"mla keyed to the draft model's kernel", named(mla, 1, kernelC), true, "only the draft model has MLA layers"},
+		{"mla keyed to the target's attention kernel", named(mla, 1, kernelA), false, "A runs no MLA layer"},
+		{"the part-wide rate keyed to the full-attention kernel", named(attn, 1, kernelA), false, "every attention layer reads it, swa and MLA included"},
+		{"the part-wide rate keyed to all three", named(attn, 1, kernelA, kernelB, kernelC), true, "it covers every attention layer"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v, m, err := valueAt(t, c.entry.Name, setOf(c.entry), pool)
+			switch {
+			case c.priced && (err != nil || v != 1 || m != coefficient.KernelExact):
+				t.Errorf("not priced (%v %q %v): %s", v, m, err, c.why)
+			case !c.priced && err == nil:
+				t.Errorf("priced: %s", c.why)
+			}
+		})
+	}
+	// What the entry was matched against is what consumed it, not the primitive's pool.
+	c, err := Load(setOf(named(swa, 7, kernelB), named(attn, 3, kernelA, kernelB, kernelC)), pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, _ := c.Entry(swa)
+	if len(r.Running) != 1 || r.Running[0] != kernelB {
+		t.Errorf("the swa entry was matched against %v, want only the sliding-window kernel %v", r.Running, kernelB)
+	}
+	r, _ = c.Entry(attn)
+	if len(r.Running) != 3 {
+		t.Errorf("the part-wide entry was matched against %v, want every attention kernel", r.Running)
+	}
+	// A name no operation consumes (no sliding-window layer) cannot be priced by a keyed entry.
+	none := Scope{Hardware: "h100", Operations: []Operation{op("attention.decode", kernelA, false)}}
+	if _, _, err := valueAt(t, swa, setOf(named(swa, 1, kernelA)), none); err == nil {
+		t.Errorf("a keyed swa entry priced a pool with no sliding-window layer")
+	}
+	// The pooled form is the projection of the operations.
+	got := pool.PooledImplementations()
+	if len(got["attention.decode"]) != 3 || len(got["gemm"]) != 1 {
+		t.Errorf("pooled implementations %v", got)
+	}
+	// The recurrent mixers narrow the same way.
+	rec := Scope{Hardware: "h100", Operations: []Operation{
+		op("recurrent.update", kernelA, false, "kda"), op("recurrent.update", kernelB, false, "mamba2")}}
+	if _, _, err := valueAt(t, "recurrent_decode_rate_kda", setOf(named("recurrent_decode_rate_kda", 1, kernelA)), rec); err != nil {
+		t.Errorf("a kda entry keyed to the kernel that runs the kda layers: %v", err)
+	}
+	if _, _, err := valueAt(t, "recurrent_decode_rate_kda", setOf(named("recurrent_decode_rate_kda", 1, kernelB)), rec); err == nil {
+		t.Errorf("a kda entry keyed to the mamba2 kernel priced the kda layers")
 	}
 }

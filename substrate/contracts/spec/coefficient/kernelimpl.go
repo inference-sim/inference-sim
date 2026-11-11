@@ -86,23 +86,66 @@ func PrimitiveOf(name string) string {
 	return ""
 }
 
+// ClassOf returns the class of lowered operation a coefficient of this name is consumed by
+// within its primitive, or "" when the name is consumed by every operation of the primitive.
+// The per-kind decode and prefill terms of attention (`attention_decode_rate_swa`,
+// `..._mla`, `..._sparse_mla`) are read only by the attention layers of that kind, and the
+// per-mixer terms of the recurrent update (`..._mamba2`, `..._kda`, `..._gdn`) only by the
+// layers that run that mixer. The unsuffixed terms (`attention_decode_rate`, the part-wide pair)
+// are the fallback for every kind with no fit of its own, so they are consumed by every
+// operation of the primitive, as are the names of the other primitives and any suffix this list
+// does not name. This is the one place the binding is decided, as PrimitiveOf is for the
+// primitive.
+func ClassOf(name string) string {
+	switch PrimitiveOf(name) {
+	case "attention.decode", "attention.prefill":
+		for _, c := range []string{"sparse_mla", "mla", "swa"} {
+			if strings.HasSuffix(name, "_"+c) {
+				return c
+			}
+		}
+	case "recurrent.update":
+		for _, c := range []string{"mamba2", "kda", "gdn"} {
+			if strings.HasSuffix(name, "_"+c) {
+				return c
+			}
+		}
+	}
+	return ""
+}
+
 // MatchKernels says how the entry meets the implementations that run. running holds them by
-// lowered primitive (a plan.Primitive word). An entry that lists none is unkeyed. A keyed entry
-// is exact only when its name binds to a primitive (PrimitiveOf), the plan supplies at least one
-// implementation for that primitive, and every one of them is listed by the entry, by library,
-// variant and code hash together. Otherwise it is refused: a different hash, another kernel,
-// nothing supplied for the primitive, or a primitive that also runs a kernel the entry does not
-// cover. The last case is why "every": the kernel resolves one value per coefficient name, so a
-// value valid for kernel A cannot price the layers of the same primitive lowered to kernel B.
+// lowered primitive (a plan.Primitive word), every operation of the primitive pooled; it is the
+// form a caller gives that cannot say which operation runs which. See MatchImpls.
 func (e Entry) MatchKernels(running map[string][]KernelImpl) KernelMatch {
 	if len(e.KernelImpls) == 0 {
 		return KernelUnkeyed
 	}
-	impls := running[PrimitiveOf(e.Name)]
-	if PrimitiveOf(e.Name) == "" || len(impls) == 0 {
+	if PrimitiveOf(e.Name) == "" {
 		return KernelRefused
 	}
-	for _, have := range impls {
+	return e.MatchImpls(running[PrimitiveOf(e.Name)])
+}
+
+// MatchImpls says how the entry meets the implementations of the operations that consume it:
+// the lowered operations of the entry's primitive, narrowed to its class where the name states
+// one (ClassOf). An entry that lists none is unkeyed. A keyed entry is exact only when its name
+// binds to a primitive (PrimitiveOf), at least one consuming operation is supplied, and every
+// implementation among them is listed by the entry, by library, variant and code hash together.
+// Otherwise it is refused: a different hash, another kernel, nothing supplied for its
+// operations, or an operation that consumes the value and runs a kernel the entry does not
+// cover. The last case is why "every": the kernel resolves one value per coefficient name, so a
+// value valid for kernel A cannot price the operations that consume it and run kernel B. An
+// operation that does not consume the name does not count: a sliding-window layer lowered to B
+// does not stop a value valid for A alone from pricing full attention.
+func (e Entry) MatchImpls(consuming []KernelImpl) KernelMatch {
+	if len(e.KernelImpls) == 0 {
+		return KernelUnkeyed
+	}
+	if PrimitiveOf(e.Name) == "" || len(consuming) == 0 {
+		return KernelRefused
+	}
+	for _, have := range consuming {
 		found := false
 		for _, want := range e.KernelImpls {
 			if want == have {

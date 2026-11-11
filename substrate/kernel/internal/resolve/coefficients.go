@@ -9,6 +9,7 @@ package resolve
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -62,8 +63,10 @@ type Resolved struct {
 	// shown to match the one that runs. Never refused: a lookup does not return such an entry.
 	Match coefficient.KernelMatch
 	// Primitive is the lowered primitive the entry's name prices (coefficient.PrimitiveOf), and
-	// Running the implementations the plan supplies for it, which the entry was matched against.
-	// Running is empty when the caller supplied none for the primitive.
+	// Running the implementations of the operations that consume it, which the entry was
+	// matched against: the primitive's operations narrowed to the entry's class where the name
+	// states one (coefficient.ClassOf). Running is empty when the caller supplied no operation
+	// that consumes it.
 	Primitive string
 	Running   []coefficient.KernelImpl
 }
@@ -99,9 +102,9 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 			if !scope.Admits(e.Scope) {
 				continue
 			}
-			if e.MatchKernels(scope.Implementations) == coefficient.KernelRefused {
+			if e.MatchImpls(scope.consuming(e.Name)) == coefficient.KernelRefused {
 				c.refused = append(c.refused, ImplRefusal{Set: s.Name, Entry: e,
-					Running: scope.Implementations[coefficient.PrimitiveOf(e.Name)]})
+					Running: scope.consuming(e.Name)})
 				continue
 			}
 			if _, seen := all[e.Name]; !seen {
@@ -126,8 +129,8 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 				return err
 			}
 			into[name] = Resolved{Entry: w.Entry, Set: w.Set, Displaced: displaced,
-				Match: w.Entry.MatchKernels(scope.Implementations), Primitive: coefficient.PrimitiveOf(w.Entry.Name),
-				Running: scope.Implementations[coefficient.PrimitiveOf(w.Entry.Name)]}
+				Match: w.Entry.MatchImpls(scope.consuming(w.Entry.Name)), Primitive: coefficient.PrimitiveOf(w.Entry.Name),
+				Running: scope.consuming(w.Entry.Name)}
 		}
 		return nil
 	}
@@ -138,10 +141,7 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 	if err := choose(c.byNameFabric, fabric); err != nil {
 		return nil, err
 	}
-	c.running = map[string][]coefficient.KernelImpl{}
-	for p, impls := range scope.Implementations {
-		c.running[p] = append([]coefficient.KernelImpl(nil), impls...)
-	}
+	c.running = scope.PooledImplementations()
 	if len(c.byName) == 0 {
 		return nil, fmt.Errorf("no coefficient in %v applies to %s%s", c.order, scope, c.refusedNote(""))
 	}
@@ -198,15 +198,100 @@ type Scope struct {
 	// single-node cluster. An entry scoped to a fabric applies only over that fabric.
 	Fabric string
 	// Implementations are the kernel implementations that run in the priced pool, by the lowered
-	// primitive each executes (VAL-8). An entry that lists implementations is admitted only when
-	// every implementation supplied for the primitive it prices is one it lists. A primitive
-	// with none supplied admits only entries that list none.
+	// primitive each executes, every operation of the primitive pooled (VAL-8). It is what a
+	// caller gives that cannot say which operation runs which kernel. Operations, when given,
+	// replaces it.
 	Implementations map[string][]coefficient.KernelImpl
+	// Operations are the pool's lowered operations, each with the implementation that executes
+	// it and the classes it belongs to (VAL-8, 6.2). An entry that lists implementations is
+	// admitted only when every implementation among the operations that consume it is one it
+	// lists: the operations of the primitive its name prices, narrowed to its class where the
+	// name states one (coefficient.ClassOf). An operation that does not consume the name does
+	// not count. With no operation that consumes it, only entries that list none are admitted.
+	Operations []Operation
+}
+
+// Operation is one lowered operation as the cost model sees it: the primitive, the kernel that
+// executes it, and the classes of work it does within the primitive (the attention kinds a
+// layer runs, the recurrent mixer it runs). A coefficient whose name states a class
+// (coefficient.ClassOf) is consumed only by the operations that list it.
+type Operation struct {
+	Primitive string
+	Impl      coefficient.KernelImpl
+	Classes   []string
+	// Draft is true for an operation of the draft model, false for the target's. It does not
+	// narrow a binding by itself: a name is consumed by the operations of its class in either.
+	Draft bool
+}
+
+// consuming returns the distinct implementations of the operations that consume the named
+// coefficient, sorted. With no Operations it is the pooled list of the primitive the name prices.
+func (s Scope) consuming(name string) []coefficient.KernelImpl {
+	prim := coefficient.PrimitiveOf(name)
+	if len(s.Operations) == 0 {
+		return s.Implementations[prim]
+	}
+	class := coefficient.ClassOf(name)
+	seen := map[coefficient.KernelImpl]bool{}
+	var out []coefficient.KernelImpl
+	for _, op := range s.Operations {
+		if op.Primitive != prim || prim == "" {
+			continue
+		}
+		if class != "" && !slices.Contains(op.Classes, class) {
+			continue
+		}
+		if !seen[op.Impl] {
+			seen[op.Impl] = true
+			out = append(out, op.Impl)
+		}
+	}
+	sortImpls(out)
+	return out
+}
+
+// PooledImplementations returns the implementations by primitive, every operation of a
+// primitive pooled: Implementations as given, or the projection of Operations.
+func (s Scope) PooledImplementations() map[string][]coefficient.KernelImpl {
+	out := map[string][]coefficient.KernelImpl{}
+	if len(s.Operations) == 0 {
+		for p, impls := range s.Implementations {
+			out[p] = append([]coefficient.KernelImpl(nil), impls...)
+		}
+		return out
+	}
+	seen := map[string]map[coefficient.KernelImpl]bool{}
+	for _, op := range s.Operations {
+		if seen[op.Primitive] == nil {
+			seen[op.Primitive] = map[coefficient.KernelImpl]bool{}
+		}
+		if !seen[op.Primitive][op.Impl] {
+			seen[op.Primitive][op.Impl] = true
+			out[op.Primitive] = append(out[op.Primitive], op.Impl)
+		}
+	}
+	for _, impls := range out {
+		sortImpls(impls)
+	}
+	return out
+}
+
+func sortImpls(impls []coefficient.KernelImpl) {
+	sort.Slice(impls, func(i, j int) bool {
+		a, b := impls[i], impls[j]
+		if a.Library != b.Library {
+			return a.Library < b.Library
+		}
+		if a.Variant != b.Variant {
+			return a.Variant < b.Variant
+		}
+		return a.CodeHash < b.CodeHash
+	})
 }
 
 func (s Scope) String() string {
 	return fmt.Sprintf("hardware=%s model=%s tp=%d ep=%d nodes_spanned=%d fabric=%s implementations=[%s]",
-		s.Hardware, s.Model, s.TP, s.EP, s.NodesSpanned, s.Fabric, describeRunning(s.Implementations))
+		s.Hardware, s.Model, s.TP, s.EP, s.NodesSpanned, s.Fabric, describeRunning(s.PooledImplementations()))
 }
 
 // Admits reports whether an entry's scope covers this deployment (coefficient.Scope.Admits).

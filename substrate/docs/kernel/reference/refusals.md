@@ -21,11 +21,14 @@ change. The engine's reasons cite the vLLM v0.31.0 source in the code beside the
 
 ## The kernel implementations that run are malformed
 
+- `Inputs.Operations` names a layer the graph (the target's, or the draft model's) does not have,
+  or kernel implementations that differ from `Inputs.Implementations` when both are given.
 - `Inputs.Implementations` lists a primitive with no implementation, or has an implementation with no library, a code hash that is not
   lower-case hexadecimal of at least 12 digits, a code hash with no variant, or two different code
   hashes for one library and variant. A pool runs one build of a kernel.
-- A coefficient the cost model needs lists kernel implementations, the pool's implementations for
-  the primitive it prices are not all among them (or none is stated for that primitive), and no
+- A coefficient the cost model needs lists kernel implementations, the implementations of the
+  operations that read it (the primitive it prices, narrowed to its kind where its name states
+  one) are not all among them (or none is stated for that primitive), and no
   less trusted entry of its name covers the deployment. The error names each refused entry, the
   implementation it is valid for, and the primitive and what runs it.
 

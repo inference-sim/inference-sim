@@ -62,7 +62,8 @@ type PoolPlan struct {
 // Implementations are the distinct kernel implementations the pool runs: those of Layers and of
 // DraftLayers, each once, sorted by library, variant, code hash and toolkit: the pool-wide list a
 // Result records. The cost model matches a coefficient against the implementations of the
-// primitive it prices, which ImplementationsByPrimitive gives.
+// primitive it prices, which ImplementationsByPrimitive gives, or against the operations that
+// consume it, which Operations gives.
 func (p PoolPlan) Implementations() []KernelImpl {
 	var all []KernelImpl
 	for _, ls := range [][]LoweredLayer{p.Layers, p.DraftLayers} {
@@ -107,14 +108,46 @@ func distinctSorted(in []KernelImpl) []KernelImpl {
 // the pool runs. A caller building a kernel for this pool passes it as
 // latencykernel.Inputs.Implementations.
 func (p PoolPlan) ImplementationsByPrimitive() map[Primitive][]KernelImpl {
+	return ImplementationsOf(p.Operations())
+}
+
+// ImplementationsOf pools operations by primitive: the distinct implementations of each,
+// sorted as Implementations is.
+func ImplementationsOf(ops []Operation) map[Primitive][]KernelImpl {
 	out := map[Primitive][]KernelImpl{}
-	for _, ls := range [][]LoweredLayer{p.Layers, p.DraftLayers} {
-		for _, l := range ls {
-			out[l.Primitive] = append(out[l.Primitive], l.KernelImpl)
-		}
+	for _, op := range ops {
+		out[op.Primitive] = append(out[op.Primitive], op.Impl)
 	}
 	for prim, impls := range out {
 		out[prim] = distinctSorted(impls)
+	}
+	return out
+}
+
+// Operation is one lowered operation and the kernel implementation that executes it: which
+// layer of which graph (the target's, or the draft model's), which primitive, which kernel. It
+// is the identity the cost model keeps when it binds a coefficient to the kernel that consumes
+// it (design VAL-8, 6.2), so a coefficient read only by the sliding-window layers is matched
+// against the kernel those layers run and not against every kernel that runs any attention.
+type Operation struct {
+	// Draft is true for an entry of DraftLayers, whose Layer indexes the draft model's own
+	// stack; false for an entry of Layers, whose Layer indexes the target graph's.
+	Draft     bool
+	Layer     int
+	Primitive Primitive
+	Impl      KernelImpl
+}
+
+// Operations lists every lowered operation of the pool, the target's then the draft model's, in
+// plan order. A caller building a kernel for this pool passes it as
+// latencykernel.Inputs.Operations.
+func (p PoolPlan) Operations() []Operation {
+	var out []Operation
+	for _, l := range p.Layers {
+		out = append(out, Operation{Layer: l.Layer, Primitive: l.Primitive, Impl: l.KernelImpl})
+	}
+	for _, l := range p.DraftLayers {
+		out = append(out, Operation{Draft: true, Layer: l.Layer, Primitive: l.Primitive, Impl: l.KernelImpl})
 	}
 	return out
 }

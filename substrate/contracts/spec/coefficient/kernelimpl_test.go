@@ -211,3 +211,42 @@ func TestValidateRunning(t *testing.T) {
 		}
 	}
 }
+
+// The class of lowered operation a name is consumed by within its primitive.
+func TestClassOf(t *testing.T) {
+	for name, want := range map[string]string{
+		"attention_decode_rate_swa": "swa", "attention_decode_floor_swa": "swa",
+		"attention_decode_rate_mla": "mla", "attention_prefill_rate_sparse_mla": "sparse_mla",
+		"attention_decode_rate_sparse_mla": "sparse_mla", "attention_decode_floor_mla": "mla",
+		"recurrent_decode_rate_kda": "kda", "recurrent_decode_floor_gdn": "gdn", "recurrent_decode_rate_mamba2": "mamba2",
+		// consumed by every operation of the primitive
+		"attention_decode_rate": "", "attention_decode_floor": "", "attention_prefill_work_scale": "",
+		"attention_decode_rate_block_index_scores": "", "recurrent_kda_packed_decode": "",
+		"gemm_eps_max_bf16": "", "collective_floor_all_reduce_fp16_8rank_h100": "", "host_launch_per_kernel": "",
+	} {
+		if got := ClassOf(name); got != want {
+			t.Errorf("ClassOf(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// MatchImpls meets the entry against the operations that consume it: the ones another
+// primitive or class runs do not count.
+func TestMatchImplsIgnoresOperationsThatDoNotConsumeTheName(t *testing.T) {
+	swa := Entry{Name: "attention_decode_rate_swa", KernelImpls: []KernelImpl{implB}}
+	if got := swa.MatchImpls([]KernelImpl{implB}); got != KernelExact {
+		t.Errorf("the sliding-window kernel: %q", got)
+	}
+	if got := swa.MatchImpls([]KernelImpl{implA, implB}); got != KernelRefused {
+		t.Errorf("a consuming operation on a kernel the entry does not list: %q", got)
+	}
+	if got := swa.MatchImpls(nil); got != KernelRefused {
+		t.Errorf("no consuming operation: %q", got)
+	}
+	if got := (Entry{Name: "attention_decode_rate_swa"}).MatchImpls(nil); got != KernelUnkeyed {
+		t.Errorf("unkeyed: %q", got)
+	}
+	if got := (Entry{Name: "hbm_derate", KernelImpls: []KernelImpl{implA}}).MatchImpls([]KernelImpl{implA}); got != KernelRefused {
+		t.Errorf("a name that prices no primitive: %q", got)
+	}
+}

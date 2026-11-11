@@ -21,24 +21,35 @@ documentation describes each set and method.
 
 A coefficient can list the kernel implementations it is valid for (`kernel_impls`: library,
 variant, code hash; see [the coefficient format](../../contracts/reference/coefficients.md#kernel_impls)).
-The kernel is given the implementations the pool runs for each lowered primitive in
-`Inputs.Implementations`, which is `plan.PoolPlan.ImplementationsByPrimitive()` for a caller that
-holds the pool's plan. Each coefficient name prices one primitive (`coefficient.PrimitiveOf`:
+The kernel is given the pool's lowered operations in `Inputs.Operations`, which is
+`plan.PoolPlan.Operations()` for a caller that holds the pool's plan: each operation's layer
+(of the target graph or the draft model's), primitive and kernel. A caller that cannot say which
+operation runs which kernel gives `Inputs.Implementations` instead, the kernels by primitive
+(`plan.PoolPlan.ImplementationsByPrimitive()`); with operations given it is derived from them, and
+the two must agree. Each coefficient name prices one primitive (`coefficient.PrimitiveOf`:
 `gemm_*` the GEMMs, `attention_decode_*` the decode attention, `collective_*_all_reduce_*` the
-all-reduce, and so on; host overheads, `hbm_derate`, fabric and memory sizes price none). An entry
-that lists implementations is used only for the primitive its name prices, and only when every
-implementation the pool runs for that primitive is one it lists, by library, variant and code hash
-together. A different hash of the same kernel is not used, a kernel that executes another
-primitive is not used, and nothing falls back to a sibling: the lookup takes the next entry by
-method rank, at worst the family's `roofline` or `assumed` entry, and the price reports that
-method. If no entry is left the kernel is not built, and the error names the entries it refused,
-the primitive, and the implementation that runs it. The kernel resolves one value per coefficient
-name, so a primitive lowered to two kernels is priced only by an entry that lists both, or by an
-unkeyed one.
+all-reduce, and so on; host overheads, `hbm_derate`, fabric and memory sizes price none), and a
+name that ends in a kind (`coefficient.ClassOf`: `attention_decode_rate_swa`, `..._mla`,
+`..._sparse_mla`, `recurrent_decode_rate_kda`, `..._mamba2`, `..._gdn`) is read only by the
+operations whose layer runs that kind, in the target or the draft model. Any other name is read by
+every operation of its primitive, the part-wide `attention_decode_rate` among them, because it is
+the fallback for each kind with no fit of its own.
+
+An entry that lists implementations is used only for the primitive its name prices, and only when
+every implementation among the operations that read it is one it lists, by library, variant and
+code hash together. So a pool whose full attention runs kernel A and whose sliding-window layers
+run kernel B prices `attention_decode_rate_swa` from a value keyed to B, and does not price it
+from one keyed to A; the part-wide rate still needs an entry that lists both. A different hash of
+the same kernel is not used, a kernel that executes another primitive is not used, and nothing
+falls back to a sibling: the lookup takes the next entry by method rank, at worst the family's
+`roofline` or `assumed` entry, and the price reports that method. If no entry is left the kernel
+is not built, and the error names the entries it refused, the primitive, and the implementation
+that runs it. The kernel resolves one value per coefficient name, so a name read by operations
+lowered to two kernels is priced only by an entry that lists both, or by an unkeyed one.
 
 Each entry's `KernelMatch` says how it met what runs: `exact` when it lists the implementations
 that run its primitive, `unkeyed` when it lists none. `Primitive` and `Running` name the
-primitive and the implementations it was matched against. An unkeyed entry applies to every
+primitive and the implementations of the operations that read it, which it was matched against. An unkeyed entry applies to every
 implementation and nothing shows it was measured on the one that runs, so a reader asking whether
 a price rests on the running kernel counts only `exact`. For a primitive with no implementation
 stated, only unkeyed entries are used. The committed registry lists no implementation, so every

@@ -359,3 +359,36 @@ func TestImplementationsByPrimitiveKeepsEachKernelWithItsPrimitive(t *testing.T)
 		t.Errorf("a plan with no layers runs nothing")
 	}
 }
+
+// The operations a pool lowers keep the layer, the primitive and which graph they belong to, so
+// a coefficient can be bound to the kernel that consumes it, not to every kernel of its primitive.
+func TestOperationsKeepWhichLayerAndGraphRunsWhichKernel(t *testing.T) {
+	a := KernelImpl{Library: "lib", Variant: "a", CodeHash: "aaaaaaaaaaaa"}
+	b := KernelImpl{Library: "lib", Variant: "b", CodeHash: "bbbbbbbbbbbb"}
+	c := KernelImpl{Library: "lib", Variant: "c", CodeHash: "cccccccccccc"}
+	p := PoolPlan{
+		Layers: []LoweredLayer{
+			{Layer: 0, Primitive: PrimAttentionDecode, KernelImpl: a},
+			{Layer: 1, Primitive: PrimAttentionDecode, KernelImpl: b},
+			{Layer: 1, Primitive: PrimGEMM, KernelImpl: a},
+		},
+		DraftLayers: []LoweredLayer{{Layer: 0, Primitive: PrimAttentionDecode, KernelImpl: c}},
+	}
+	want := []Operation{
+		{Layer: 0, Primitive: PrimAttentionDecode, Impl: a},
+		{Layer: 1, Primitive: PrimAttentionDecode, Impl: b},
+		{Layer: 1, Primitive: PrimGEMM, Impl: a},
+		{Draft: true, Layer: 0, Primitive: PrimAttentionDecode, Impl: c},
+	}
+	if got := p.Operations(); !reflect.DeepEqual(got, want) {
+		t.Errorf("operations %+v, want %+v", got, want)
+	}
+	// The pooled form is the projection of the operations.
+	by := p.ImplementationsByPrimitive()
+	if !reflect.DeepEqual(by[PrimAttentionDecode], []KernelImpl{a, b, c}) || !reflect.DeepEqual(by[PrimGEMM], []KernelImpl{a}) {
+		t.Errorf("by primitive %+v", by)
+	}
+	if !reflect.DeepEqual(ImplementationsOf(want), by) {
+		t.Errorf("ImplementationsOf differs from ImplementationsByPrimitive")
+	}
+}

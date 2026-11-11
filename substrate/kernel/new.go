@@ -74,6 +74,16 @@ type Inputs struct {
 	// supplied uses only coefficients that list no implementation, as every coefficient of the
 	// registry did before any listed one.
 	Implementations map[plan.Primitive][]plan.KernelImpl
+	// Operations are the pool's lowered operations, each with the layer it belongs to, its
+	// primitive and the kernel that executes it: plan.PoolPlan.Operations() for a caller that
+	// holds the pool's plan (design VAL-8, 6.2). A coefficient is then matched against the
+	// kernels of the operations that consume it, not against every kernel that runs its
+	// primitive: a value valid for the kernel that runs the sliding-window layers prices them
+	// whatever runs the full-attention ones. A name that states a class (coefficient.ClassOf)
+	// is consumed by the operations of that class; any other by every operation of its
+	// primitive. When Operations is given, Implementations is derived from it and may be left
+	// empty; if both are given they must name the same implementations.
+	Operations []plan.Operation
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),
 	// resolved by the caller as Routing is. It is read only when the engine enables adaptive
 	// verification (enginesettings.Speculative.EnableAdaptiveVerification), where it is
@@ -149,6 +159,16 @@ func construct(in Inputs) (*Kernel, error) {
 	if err := coefficient.ValidateRunning(running); err != nil {
 		return nil, fmt.Errorf("the kernel implementations that run: %w", err)
 	}
+	if len(in.Operations) > 0 {
+		pooled := runningImpls(plan.ImplementationsOf(in.Operations))
+		if err := coefficient.ValidateRunning(pooled); err != nil {
+			return nil, fmt.Errorf("the kernel implementations that run: %w", err)
+		}
+		if len(running) > 0 && !sameImplementations(running, pooled) {
+			return nil, fmt.Errorf("Inputs.Implementations and Inputs.Operations name different kernel " +
+				"implementations; give the operations alone, and the implementations are derived from them")
+		}
+	}
 	// A deep copy: the engine block's optional settings are pointers, and a kernel that
 	// shared them with the caller's documents would change its answers when the caller
 	// edited a deployment it had already priced -- the config-search shape Inputs exists
@@ -215,11 +235,15 @@ func construct(in Inputs) (*Kernel, error) {
 		return nil, fmt.Errorf("resolving the layout: %w", err)
 	}
 
+	ops, err := loweredOperations(g, in.Operations)
+	if err != nil {
+		return nil, err
+	}
 	coeffs, err := resolve.Load(in.Coefficients, resolve.Scope{
 		Hardware: in.Chip.Name, Model: in.Model.Name,
 		TP: layout.TP, EP: layout.ExpertWidth, NodesSpanned: layout.NodesSpanned,
 		Fabric:          fabricName,
-		Implementations: running,
+		Implementations: running, Operations: ops,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("resolving coefficients: %w", err)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
+	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 	"github.com/inference-sim/blis-substrate/load"
@@ -244,4 +245,141 @@ func TestEveryBoundPrimitiveIsAPlanPrimitive(t *testing.T) {
 			t.Errorf("no committed coefficient binds to %s: the binding table has drifted from the registry's names", p)
 		}
 	}
+}
+
+// The review's counterexample at the pricing boundary: full attention runs kernel A and the
+// sliding-window layers run kernel B. attention_decode_rate_swa is read only by the
+// sliding-window layers, so a value keyed to B prices them; one keyed to A does not. Stating the
+// pool as the primitive's pooled implementations (A and B for every attention coefficient)
+// refuses the B-keyed value, which is the behaviour this binding replaces.
+func TestAValueForTheKernelThatRunsOnlyTheWindowedLayersPricesThem(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in Inputs
+	for _, c := range perturbationScenarios(t, d, "gpt-oss-120b") {
+		if strings.HasPrefix(c.label, "gpt-oss-120b/h200/tp") {
+			in = c.in
+			break
+		}
+	}
+	if in.Model == nil {
+		t.Fatal("no gpt-oss-120b scenario builds on h200")
+	}
+	const swaRate = "attention_decode_rate_swa"
+	kernelA := plan.KernelImpl{Library: "flashinfer", Variant: "decode_full", CodeHash: "aaaaaaaaaaaa"}
+	kernelB := plan.KernelImpl{Library: "flashinfer", Variant: "decode_window", CodeHash: "bbbbbbbbbbbb"}
+	// Every layer's attention runs A, except the layers whose attention is sliding-window, which
+	// run B.
+	kinds := map[string]model.LayerKind{}
+	for _, lk := range in.Model.LayerKinds {
+		kinds[lk.ID] = lk
+	}
+	var ops []plan.Operation
+	windowed := 0
+	for i, id := range in.Model.Stack.Expand() {
+		impl := kernelA
+		for _, n := range kinds[id].Nodes {
+			if n.Op == model.OpAttention && n.AttentionKind == model.AttentionSWA {
+				impl = kernelB
+			}
+		}
+		if impl == kernelB {
+			windowed++
+		}
+		ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionDecode, Impl: impl})
+	}
+	if windowed == 0 || windowed == len(ops) {
+		t.Fatalf("gpt-oss-120b has %d windowed layers of %d; the test needs a mix", windowed, len(ops))
+	}
+	base, err := New(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.Provenance() == nil || !hasSelected(base, swaRate) {
+		t.Fatalf("the unkeyed registry does not price the windowed layers with %s", swaRate)
+	}
+	want := pricesOf(base)
+
+	keyTo := func(impl plan.KernelImpl) Inputs {
+		x := in
+		x.Coefficients = nil
+		for _, s := range in.Coefficients {
+			c := *s
+			c.Coefficients = append([]coefficient.Entry(nil), s.Coefficients...)
+			for j, e := range c.Coefficients {
+				if e.Name == swaRate && e.Method == vocab.MethodMeasured {
+					e.KernelImpls = []coefficient.KernelImpl{{Library: impl.Library, Variant: impl.Variant, CodeHash: impl.CodeHash}}
+					c.Coefficients[j] = e
+				}
+			}
+			x.Coefficients = append(x.Coefficients, &c)
+		}
+		return x
+	}
+	provenance := func(k *Kernel) (coefficient.KernelMatch, string, bool) {
+		for _, o := range k.Provenance() {
+			if o.Name == swaRate && o.Set != KernelAssumptionSet {
+				return coefficient.KernelMatch(o.KernelMatch), o.Running, true
+			}
+		}
+		return "", "", false
+	}
+
+	// Keyed to the kernel that runs the windowed layers: priced, matched against that kernel alone.
+	x := keyTo(kernelB)
+	x.Operations = ops
+	k, err := New(x)
+	if err != nil {
+		t.Fatalf("the value keyed to the windowed layers' kernel: %v", err)
+	}
+	match, running, ok := provenance(k)
+	if !ok || match != coefficient.KernelExact || running != "flashinfer/decode_window/bbbbbbbbbbbb" {
+		t.Errorf("%s: selected %v, match %q, matched against %q; want exact against the windowed kernel alone", swaRate, ok, match, running)
+	}
+	if pricesOf(k) != want {
+		t.Errorf("a value keyed to the kernel that runs the windowed layers changed the price")
+	}
+
+	// Keyed to the kernel that runs full attention: not used for the windowed layers.
+	x = keyTo(kernelA)
+	x.Operations = ops
+	if k, err := New(x); err == nil {
+		if _, _, ok := provenance(k); ok || pricesOf(k) == want {
+			t.Errorf("a value keyed to the full-attention kernel priced the windowed layers")
+		}
+	}
+
+	// The pool stated as pooled implementations: B-keyed is refused because A also runs attention.
+	x = keyTo(kernelB)
+	x.Implementations = map[plan.Primitive][]plan.KernelImpl{plan.PrimAttentionDecode: {kernelA, kernelB}}
+	if k, err := New(x); err == nil {
+		if _, _, ok := provenance(k); ok || pricesOf(k) == want {
+			t.Errorf("the pooled form priced the windowed layers from a value valid for one of two kernels")
+		}
+	}
+
+	// Operations and Implementations that disagree are refused.
+	x = keyTo(kernelB)
+	x.Operations = ops
+	x.Implementations = map[plan.Primitive][]plan.KernelImpl{plan.PrimAttentionDecode: {kernelA}}
+	if _, err := New(x); err == nil || !strings.Contains(err.Error(), "different kernel implementations") {
+		t.Errorf("disagreeing Operations and Implementations: %v", err)
+	}
+	// An operation that names a layer the graph lacks is refused.
+	x = keyTo(kernelB)
+	x.Operations = append(append([]plan.Operation(nil), ops...), plan.Operation{Layer: len(ops), Primitive: plan.PrimGEMM, Impl: kernelA})
+	if _, err := New(x); err == nil || !strings.Contains(err.Error(), "names layer") {
+		t.Errorf("an operation past the graph's last layer: %v", err)
+	}
+}
+
+func hasSelected(k *Kernel, name string) bool {
+	for _, s := range k.selected {
+		if s.Entry.Name == name {
+			return true
+		}
+	}
+	return false
 }
