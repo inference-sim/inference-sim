@@ -394,7 +394,48 @@ type DraftPolicy struct {
 	Chain     int
 	TreeTopK  int
 	TreeSteps int
+	// FirstPassRows and PassRequests state how an autoregressive drafter's passes run: which
+	// rows its first pass processes, and for which requests the head and the later passes run.
+	// They are the engine's execution decisions, resolved by the engine and stated here in
+	// neutral words, so the cost model prices what it is told and resolves nothing (SUB-6).
+	// Empty means not stated; a pool that speculates through an autoregressive drafter and
+	// leaves either empty is refused by the cost model, and a parallel-block drafter, whose
+	// target-wide work is its context stack, needs neither.
+	FirstPassRows FirstPassRows
+	PassRequests  PassRequests
 }
+
+// FirstPassRows is which rows an autoregressive drafter's first pass processes. Every pass
+// after the first processes one row per drafting request.
+type FirstPassRows string
+
+// The words FirstPassRows takes. Empty is not stated.
+const (
+	// FirstPassPerRequest: the first pass processes one row per request, like every later pass.
+	FirstPassPerRequest FirstPassRows = "per_request"
+	// FirstPassScheduled: the first pass processes every token the target scheduled this step on
+	// this rank, prefill tokens included, because the drafter writes its own KV for each.
+	FirstPassScheduled FirstPassRows = "scheduled"
+)
+
+// Valid reports whether r is a stated word.
+func (r FirstPassRows) Valid() bool { return r == FirstPassPerRequest || r == FirstPassScheduled }
+
+// PassRequests is for which requests an autoregressive drafter's head and later passes run.
+type PassRequests string
+
+// The words PassRequests takes. Empty is not stated.
+const (
+	// PassRequestsSampling: the head and the later passes run for the requests that complete
+	// their prompt this step.
+	PassRequestsSampling PassRequests = "sampling"
+	// PassRequestsAll: the head and the later passes run for every request of the step, a
+	// request still in the middle of its prompt included.
+	PassRequestsAll PassRequests = "all"
+)
+
+// Valid reports whether r is a stated word.
+func (r PassRequests) Valid() bool { return r == PassRequestsSampling || r == PassRequestsAll }
 
 // Enabled reports whether any speculation is configured.
 func (d DraftPolicy) Enabled() bool { return d.Chain > 0 || d.TreeTopK > 0 || d.TreeSteps > 0 }

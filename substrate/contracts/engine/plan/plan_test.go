@@ -74,6 +74,8 @@ func TestAPlanThatNoPoolCanHaveIsRefused(t *testing.T) {
 		{"buckets without graphs", func(p *PoolPlan) { p.Graphs.Buckets = []int{1, 2} }, "captures no graphs"},
 		{"a tree with no steps", func(p *PoolPlan) { p.Drafts = DraftPolicy{TreeTopK: 4} }, "a tree has both"},
 		{"a chain and a tree", func(p *PoolPlan) { p.Drafts = DraftPolicy{Chain: 3, TreeTopK: 2, TreeSteps: 2} }, "is both a chain"},
+		{"an unknown first-pass word", func(p *PoolPlan) { p.Drafts = DraftPolicy{Chain: 3, FirstPassRows: "everything"} }, "Drafts.FirstPassRows"},
+		{"an unknown pass-requests word", func(p *PoolPlan) { p.Drafts = DraftPolicy{Chain: 3, PassRequests: "none"} }, "Drafts.PassRequests"},
 		{"a malformed format", func(p *PoolPlan) { p.Weights[0].Format = units.QuantFormat{} }, "Weights[0]"},
 		{"a GPU weight shared", func(p *PoolPlan) { p.Weights[0].Shared = true }, "only a host figure is shared"},
 		{"a buffer with no basis", func(p *PoolPlan) { p.Buffers[0].Basis = "" }, "per rank, per node or for the group"},

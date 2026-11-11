@@ -57,10 +57,12 @@ type Settings struct {
 	// Frontend is the API server: "" or "python" (the default), or "rust".
 	Frontend string
 
-	DBO          *DBO
-	EPLB         *EPLB
-	Speculative  *Speculative
-	EngramConfig *EngramConfig
+	DBO         *DBO
+	EPLB        *EPLB
+	Speculative *Speculative
+	// ServedWeights is the layout the engine serves the checkpoint in, nil for as stored.
+	ServedWeights *ServedWeights
+	EngramConfig  *EngramConfig
 }
 
 // FrontendRust is the Rust API-server frontend.
@@ -95,6 +97,27 @@ type Speculative struct {
 	// (vllm/config/speculative.py:551-553@5df63a72). DSpark only. A plain bool, so a copy of
 	// the struct is a deep copy (Clone).
 	EnableAdaptiveVerification bool
+}
+
+// ServedWeights is the weight layout the engine serves a checkpoint in, class by class, in the
+// catalog's dtype words. The engine model resolves its own quantization setting and states the
+// result here; the kernel proves the target graph stores exactly this layout and refuses
+// otherwise. A class the model does not have is empty. A nil ServedWeights is "the graph as
+// stored".
+type ServedWeights struct {
+	// Linear is the dtype of every dense projection and of the shared experts.
+	Linear string
+	// LinearScaleElements is how many weights share one resident scale byte (32 for MXFP8); zero
+	// for none.
+	LinearScaleElements int
+	// RoutedExperts is the dtype of the routed experts.
+	RoutedExperts string
+	// Router is the dtype of the router, the GEMM with one row per routed expert.
+	Router string
+	// Head is the dtype of the LM head.
+	Head string
+	// Embedding is the dtype of the token embedding table.
+	Embedding string
 }
 
 // EngramConfig is where an Engram table lives. Each nil field is the engine's default.
@@ -148,6 +171,10 @@ func (s Settings) Clone() Settings {
 	if s.Speculative != nil {
 		v := *s.Speculative
 		s.Speculative = &v
+	}
+	if s.ServedWeights != nil {
+		v := *s.ServedWeights
+		s.ServedWeights = &v
 	}
 	if s.EngramConfig != nil {
 		v := *s.EngramConfig

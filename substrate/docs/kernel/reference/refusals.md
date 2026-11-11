@@ -147,6 +147,30 @@ kernel reads no setting and applies no engine default.
   and per-token-head formats.
 - A quantization, CUDA graph mode or decode-context combine backend the kernel does not
   price.
+- A deployment that speculates through an autoregressive drafter, a named EAGLE3 head or the
+  graph's own MTP, when the pool's plan does not state which rows the drafter's first pass
+  processes or for which requests its head and later passes run (`draft_passes_unstated`,
+  naming the drafter and the missing fact), or states a word outside the fixed list
+  (`draft_passes_unknown`). The facts are `plan.DraftPolicy.FirstPassRows` and `PassRequests`;
+  the engine settings carry neither.
+
+## The weight layout the engine says it serves
+
+`Settings.ServedWeights` states, class by class (linear, linear scale, routed experts, router,
+head, embedding), the dtype the engine serves the checkpoint in. The kernel proves the target
+graph stores exactly that and refuses a difference as `served_weights_mismatch`, naming each class
+with both values. A class the graph does not contain is empty, so a graph with its router, head or
+embedding removed cannot match, and a class at another dtype cannot either. The engine model
+resolves its own quantization setting and passes the result.
+
+## A quantization spelling the kernel does not price
+
+The kernel prices the quantization spellings `servedDType` lists (`fp8`, `ptpc_fp8`,
+`fbgemm_fp8`, `modelopt`, `modelopt_fp4`, `nvfp4`, `mxfp4` and the weight-only integer names) and
+refuses any other as "not one this kernel prices". It recognises no engine's own resolution of a
+quantization setting: vLLM's `mxfp8`, `modelopt_mxfp8`, `gpt_oss_mxfp4` and `modelopt_mixed` name
+a method the checkpoint declares, which the engine model reads, so it leaves `Quantization` empty
+for a checkpoint served as stored and states the layout in `ServedWeights` above.
 
 ## A coefficient is missing
 

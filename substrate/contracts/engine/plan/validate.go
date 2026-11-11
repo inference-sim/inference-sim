@@ -128,6 +128,12 @@ func (p PoolPlan) Validate() error {
 	if p.Drafts.Chain > 0 && p.Drafts.TreeTopK > 0 {
 		add("Drafts is both a chain of %d and a tree; it is one", p.Drafts.Chain)
 	}
+	if r := p.Drafts.FirstPassRows; r != "" && !r.Valid() {
+		add("Drafts.FirstPassRows is %q; it is %q or %q, or empty for not stated", r, FirstPassPerRequest, FirstPassScheduled)
+	}
+	if r := p.Drafts.PassRequests; r != "" && !r.Valid() {
+		add("Drafts.PassRequests is %q; it is %q or %q, or empty for not stated", r, PassRequestsSampling, PassRequestsAll)
+	}
 	for i, w := range p.Weights {
 		if _, err := w.Bytes(); err != nil {
 			add("Weights[%d]: %v", i, err)

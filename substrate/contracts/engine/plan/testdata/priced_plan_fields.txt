@@ -5,6 +5,8 @@
 # moves here from the unpriced list in the change that prices it.
 StepShape.DecodeQueryLen # kernel: TestTheDecodeThresholdTheEngineStatesMovesTheStepPrice
 DraftPass.Padded # kernel: TestADrafterPaddedByItsGroupIsPricedAsPadded
+DraftPolicy.FirstPassRows # kernel: TestAnEagle3FirstPassIsChargedOverTheScheduledTokens
+DraftPolicy.PassRequests # kernel: TestTheHeadAndLaterPassesAreChargedForRequestsStillInTheirPrompt
 DraftShape.Passes # kernel: TestADrafterPassIsReadFromTheRankItBelongsTo
 KernelImpl.CodeHash # kernel: TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices
 KernelImpl.Library # kernel: TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices

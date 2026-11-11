@@ -32,7 +32,7 @@ module takes the algorithm of the first entry under its prefix (`:1754-1767`); a
 projection takes the algorithm of its shards, so the fused `qkv_proj` that also holds the
 indexer's two projections is decided by `q_proj`, `k_proj` and `v_proj` (`:1734-1752`,
 `:1769-1795`). A stated `--quantization` must equal the method the checkpoint resolves to,
-which is `modelopt_mixed` (`:1626-1632`).
+which is `modelopt_mixed` (`:1626-1632`); that resolution is vLLM's, made by the engine model.
 
 ## How the deriver places it
 
@@ -55,7 +55,11 @@ shared expert as a node of its own at FP8 (the same split `minimax-m3.1-flash` u
 global width is FP8 with the microscaling scale, the router FP32, the head BF16.
 
 The kernel does not recognise the spelling `modelopt_mixed`: it is vLLM's name, and the cost model
-resolves no engine's setting. The engine model resolves it and refuses what vLLM refuses.
+resolves no engine's setting. The engine model resolves it, refuses what vLLM refuses, and states
+the layout it serves in `Settings.ServedWeights` (for this checkpoint: linear FP8 with one scale
+byte per 32 weights, routed experts NVFP4, router FP32, head BF16, embedding BF16). The kernel
+proves the graph stores exactly that, class by class (`checkServedWeights`); the
+[refusals page](../../kernel/reference/refusals.md) lists what is refused.
 
 ## Reproduce
 

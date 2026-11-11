@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/load"
@@ -24,9 +25,11 @@ func withNamedDrafter(t *testing.T, d *load.Data, target, drafter, chip, method 
 		t.Fatal(err)
 	}
 	in.Draft = dr
-	return withEngine(in, func(e *enginesettings.Settings) {
+	in = withEngine(in, func(e *enginesettings.Settings) {
 		e.Speculative = &enginesettings.Speculative{Method: method, NumSpecTokens: n, DraftModel: drafter}
 	})
+	// How the passes run is the pool plan's statement, not an engine setting.
+	return passesOf(in, plan.FirstPassScheduled, plan.PassRequestsAll)
 }
 
 // strippedOfItsSpeculator is the same inputs with the target graph's own speculator removed
@@ -72,9 +75,9 @@ func TestANamedDrafterPricesInPlaceOfTheTargetsOwnSpeculator(t *testing.T) {
 				// layers (method mtp, no drafter named) prices differently.
 				own := in
 				own.Draft = nil
-				own = withEngine(own, func(e *enginesettings.Settings) {
+				own = passesOf(withEngine(own, func(e *enginesettings.Settings) {
 					e.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 3}
-				})
+				}), plan.FirstPassScheduled, plan.PassRequestsAll)
 				if pricesOf(mustKernel(t, own)) == pricesOf(k) {
 					t.Error("a named EAGLE3 drafter prices exactly as the target's own MTP")
 				}
@@ -96,9 +99,9 @@ func TestWithNoNamedDrafterTheTargetsOwnSpeculatorIsStillPriced(t *testing.T) {
 		t.Fatal(err)
 	}
 	in := quantCase(t, d, "minimax-m3-mxfp8", "b200")
-	in = withEngine(in, func(e *enginesettings.Settings) {
+	in = passesOf(withEngine(in, func(e *enginesettings.Settings) {
 		e.Speculative = &enginesettings.Speculative{Method: "mtp", NumSpecTokens: 1}
-	})
+	}), plan.FirstPassScheduled, plan.PassRequestsAll)
 	k := mustKernel(t, in)
 	if k.plan.Draft == nil || k.plan.Draft.Method != "minimax_m3_mtp" || !k.speculating {
 		t.Fatalf("the target's own MTP is not priced: %+v", k.plan.Draft)
@@ -235,11 +238,10 @@ func TestEveryCatalogDrafterGraftsOntoEachTargetItNames(t *testing.T) {
 	}
 }
 
-// The NVFP4 checkpoint InferenceX serves with an EAGLE3 head names the head: both must hold
-// together, with the head priced in place of the in-graph MTP at the checkpoint's own layout. The
-// engine resolves the checkpoint's quantization method itself and states no quantization to the
-// kernel (the layout it serves is Settings.ServedWeights).
-func TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAtItsOwnLayout(t *testing.T) {
+// The NVFP4 checkpoint InferenceX serves with an EAGLE3 head is served in the mixed layout the
+// engine model states, and names the head: both must hold together, with the head priced in
+// place of the in-graph MTP at the checkpoint's own layout.
+func TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAndItsOwnQuantization(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {
 		t.Fatal(err)
@@ -247,9 +249,13 @@ func TestTheMixedPrecisionTargetPricesWithEitherEagle3HeadAtItsOwnLayout(t *test
 	for _, drafter := range []string{"minimax-m3-eagle3", "minimax-m3-eagle3-gqa"} {
 		for _, chip := range []string{"b200", "b300"} {
 			in := withNamedDrafter(t, d, "minimax-m3-nvfp4", drafter, chip, "eagle3", 3)
-			k := mustKernel(t, in)
+			stated := withEngine(in, func(e *enginesettings.Settings) { e.ServedWeights = &mixedPrecisionServed })
+			k := mustKernel(t, stated)
 			if k.plan.Draft == nil || k.plan.Draft.Method != "eagle3" || !k.speculating {
 				t.Fatalf("%s on %s: the named head is not the priced speculator", drafter, chip)
+			}
+			if got, want := pricesOf(k), pricesOf(mustKernel(t, in)); got != want {
+				t.Errorf("%s on %s: a stated served layout moves the price", drafter, chip)
 			}
 			// The same head on the MXFP8 target prices differently: the experts are the NVFP4 ones.
 			if pricesOf(k) == pricesOf(mustKernel(t, withNamedDrafter(t, d, "minimax-m3-mxfp8", drafter, chip, "eagle3", 3))) {

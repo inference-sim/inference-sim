@@ -5904,9 +5904,10 @@ def handler_llama_eagle3(cfg, raw, model):
 
     NOT PRICED: the first draft pass runs the layer over a row count the engine decides (every
     token the target scheduled, or one per request); the schema states that work as the
-    context stack only for the fc projection. The kernel refuses a deployment that speculates
-    through this drafter until it prices that pass (draft_first_pass_unpriced). The vocabulary
-    mapping a drafter with
+    context stack only for the fc projection. The engine states the count in the pool's plan
+    (plan.DraftPolicy.FirstPassRows and PassRequests) and the kernel refuses a deployment that
+    speculates through this drafter without it (draft_passes_unstated; blis-schemas#60). The
+    vocabulary mapping a drafter with
     draft_vocab_size != vocab_size carries (draft_id_to_target_id) is refused rather than
     priced as free."""
     def whole(v, key):

@@ -426,13 +426,15 @@ A model run with a drafter the catalog lacks is refused for that drafter, not pr
 
 An autoregressive drafter, a named one (the EAGLE3 heads) or the graph's own (MTP), proposes K tokens
 by K passes of its layers. How many rows its first pass processes (one per request, or every token
-the target scheduled, prefill included) and for which requests the head and later passes run are the
-engine's execution decisions, not facts of the graph, and the graph's context stack states only the
-fc projection of that first pass. The kernel does not yet price it, so it refuses every deployment
-that speculates through an autoregressive drafter, with the reason `draft_first_pass_unpriced`,
-rather than price it one row per request and come out short. The refusal names no engine or method.
-A parallel-block drafter (DSpark) is not refused: its context stack carries the work over the
-target's tokens.
+the target scheduled, prefill included) and for which requests the head and later passes run (the
+requests that complete their prompt, or every request) are the engine's execution decisions, not
+facts of the graph. The engine states them in the pool's plan, as `plan.DraftPolicy.FirstPassRows`
+(`per_request` or `scheduled`) and `PassRequests` (`sampling` or `all`); they are not engine
+settings, and the kernel receives them as `Inputs.DraftFirstPassRows` and `DraftPassRequests`. A
+deployment that speculates through an autoregressive drafter with either empty is refused at
+construction with `draft_passes_unstated` (an unknown word with `draft_passes_unknown`). The kernel
+names no engine or method. A parallel-block drafter (DSpark) needs neither: its context stack
+carries the work over the target's tokens.
 
 A graph names its own MTP speculator by family (`deepseek_mtp`, `minimax_m3_mtp`,
 `nemotron_h_mtp`), and a deployment states `method: mtp`: vLLM replaces every model-specific MTP

@@ -26,6 +26,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
@@ -96,6 +97,15 @@ type Kernel struct {
 	draftKVBytesPerToken float64
 	// speculating is a deployment that drafts with a speculator the graph states.
 	speculating bool
+	// statedFirstPassRows and statedPassRequests are what the engine said about an autoregressive
+	// drafter's passes (Inputs.DraftFirstPassRows, DraftPassRequests), as given.
+	statedFirstPassRows plan.FirstPassRows
+	statedPassRequests  plan.PassRequests
+	// draftFirstPass is a drafter whose first pass the engine says runs over every token the
+	// target scheduled, and is charged so; draftAllRequests one whose head and later passes the
+	// engine says run for every request, a request mid-prompt included (liftDraftPasses).
+	draftFirstPass   bool
+	draftAllRequests bool
 	// adaptive is adaptive verification's resolved state, nil when the engine does not enable
 	// it (adaptive.go).
 	adaptive *adaptiveVerify

@@ -103,6 +103,22 @@ in-graph MTP layers are neither priced nor resident, and the layer kinds only th
 the graph. A drafter graph that states no speculator, one whose hidden size is not the
 target's, and a deployment method that is not the drafter's are refused.
 
+An autoregressive drafter proposes its tokens by passes of its layers, and which rows the first
+pass processes is the engine's execution decision, so the engine states it in the pool's plan
+(`plan.DraftPolicy.FirstPassRows` and `PassRequests`, handed to the kernel as
+`Inputs.DraftFirstPassRows` and `DraftPassRequests`) and the cost model prices the statement; it
+reads no engine setting for it and knows no speculative method. With `scheduled` the first pass runs the layers and the draft's
+token lookup over every token the target scheduled that step, prefill tokens included, because
+the drafter writes its own KV for each of them; vLLM v0.32.0 does so for EAGLE, EAGLE3 and MTP
+alike (`_prefill` and `_multi_step_decode`, `vllm/v1/worker/gpu/spec_decode/
+target_dependent_ar/speculator.py`). The kernel charges that pass on the step's own shape and
+one single-row pass fewer, so a step where every request schedules one token is priced as
+before. With `PassRequests all` the head and the later passes run for every request of the step,
+a request still in the middle of its prompt included; with `sampling`, only for the requests that
+complete their prompt. A deployment that speculates through an autoregressive drafter and states
+either word as empty is refused as `draft_passes_unstated`, and an unknown word as
+`draft_passes_unknown`. A parallel-block drafter needs neither.
+
 **Experts.** In a mixture-of-experts layer each token is routed to a few experts. The kernel
 estimates how many distinct experts a batch touches, reads their weights, and prices their
 arithmetic. Unlike every other term, the arithmetic and the reads of the experts are *added*

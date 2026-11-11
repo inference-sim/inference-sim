@@ -84,6 +84,15 @@ type Inputs struct {
 	// primitive. When Operations is given, Implementations is derived from it and may be left
 	// empty; if both are given they must name the same implementations.
 	Operations []plan.Operation
+	// DraftFirstPassRows and DraftPassRequests state how an autoregressive drafter's passes run,
+	// as plan.PoolPlan.Drafts.FirstPassRows and PassRequests for a caller that holds the pool's
+	// plan: the engine resolves them, in neutral words, and the kernel prices what it is told
+	// (SUB-6). A deployment that speculates through an autoregressive drafter, named or the
+	// model graph's own, with either empty is refused (draft_passes_unstated), and an unknown word
+	// is refused (draft_passes_unknown). A parallel-block drafter needs neither; both are ignored
+	// while the deployment does not speculate.
+	DraftFirstPassRows plan.FirstPassRows
+	DraftPassRequests  plan.PassRequests
 	// Acceptance is the run's resolved speculative acceptance (blis-schemas acceptance.Resolve),
 	// resolved by the caller as Routing is. It is read only when the engine enables adaptive
 	// verification (enginesettings.Speculative.EnableAdaptiveVerification), where it is
@@ -204,6 +213,10 @@ func construct(in Inputs) (*Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving the model graph for %s: %w", in.Chip.Name, err)
 	}
+	// The target's own graph, before any drafter joins it: the layout the engine says it serves
+	// is the target's, and the drafter's layers (its own checkpoint, at its own widths) are not
+	// part of it.
+	targetGraph := g
 	// A drafter named by the deployment, a checkpoint of its own, joins the target graph as
 	// its speculator; one named without its graph is refused rather than priced as free.
 	if name := draftModelName(eng); name != "" || in.Draft != nil {
@@ -259,7 +272,8 @@ func construct(in Inputs) (*Kernel, error) {
 	fab.InterNodeEfficiency = fabricEfficiency
 
 	k := &Kernel{layout: layout, fabric: fab, pool: pool, engine: eng, chip: *in.Chip, rules: in.Rules,
-		family: family, architecture: g.Global.Architecture, graph: g}
+		family: family, architecture: g.Global.Architecture, graph: g,
+		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}
 	if in.Fabric != nil && !fabricEfficiencyStated {
 		k.assume("fabric_bandwidth_efficiency", "1",
 			"the scenario's coefficient sets carry no "+fabricEfficiencyName+" scoped to fabric "+
@@ -290,6 +304,11 @@ func construct(in Inputs) (*Kernel, error) {
 			})
 		}
 		quantization = ""
+	}
+	// The layout the engine says it serves is shown against the target's own graph, before a
+	// drafter joins it: the drafter's layers are another checkpoint's.
+	if err := checkServedWeights(targetGraph, eng.ServedWeights); err != nil {
+		return nil, err
 	}
 	served, err := servedDType(in.Model.Global.WeightDType, quantization)
 	if err != nil {
