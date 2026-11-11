@@ -29,6 +29,11 @@ func openEdited(t *testing.T, release string, drop ...string) *Model {
 	}
 	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "`+release+`"`, 1)
 	for _, d := range drop {
+		if add, ok := strings.CutPrefix(d, "+"); ok {
+			// A line to add to the engine block, beside max_num_seqs.
+			body = strings.Replace(body, "      max_num_seqs: 256\n", "      max_num_seqs: 256\n      "+add+"\n", 1)
+			continue
+		}
 		line := "      " + d + "\n"
 		if !strings.Contains(body, line) {
 			t.Fatalf("fixture has no %q", d)
@@ -81,6 +86,40 @@ func TestEngineResolvesUnstatedBatchSettingsAt032(t *testing.T) {
 				case !stated && !strings.Contains(s, "vllm/engine/arg_utils.py"):
 					t.Errorf("%s source %q, want the rule with its citation", name, s)
 				}
+			}
+		})
+	}
+}
+
+// At vLLM 0.32.0 an unstated max_num_batched_tokens is raised to max_model_len when the engine
+// block states enable_chunked_prefill false (vllm/engine/arg_utils.py:3136-3141@5df63a72), and
+// stays the GPU's default when it states true or nothing.
+func TestEngineResolvesTheTokenBudgetFromEnableChunkedPrefill(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		add    string
+		tokens int
+		source string
+	}{
+		{"unstated", "", 8192, ""},
+		{"true", "+enable_chunked_prefill: true", 8192, ""},
+		{"false", "+enable_chunked_prefill: false", 32768, "raised to max_model_len without chunked prefill"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			drop := []string{"max_num_batched_tokens: 8192"}
+			if c.add != "" {
+				drop = append(drop, c.add)
+			}
+			m := openEdited(t, "0.32.0", drop...)
+			e, err := m.Engine()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if e.MaxNumBatchedTokens != c.tokens {
+				t.Errorf("max_num_batched_tokens %d, want %d", e.MaxNumBatchedTokens, c.tokens)
+			}
+			if src := m.EngineSources()["max_num_batched_tokens"]; !strings.Contains(src, c.source) {
+				t.Errorf("source %q, want one naming %q", src, c.source)
 			}
 		})
 	}

@@ -56,6 +56,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"cp_kv_cache_interleave_size":  "--cp-kv-cache-interleave-size",
 		// inference-sim#2021 B9 and accuracy-dashboard#33, all at v0.32.0.
 		"long_prefill_token_threshold_adaptive":  "--long-prefill-token-threshold-adaptive",
+		"enable_chunked_prefill":                 "--enable-chunked-prefill / --no-enable-chunked-prefill",
 		"max_num_scheduled_tokens":               "--max-num-scheduled-tokens",
 		"max_num_active_seqs":                    "--max-num-active-seqs",
 		"watermark":                              "--watermark",

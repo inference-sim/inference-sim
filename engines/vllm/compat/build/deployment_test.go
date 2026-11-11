@@ -270,6 +270,8 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		{"      watermark: 0.02\n", "watermark"},
 		{"      prefix_match_unit: 16\n", "prefix_match_unit"},
 		{"      long_prefill_token_threshold_adaptive: true\n", "long_prefill_token_threshold_adaptive"},
+		{"      enable_chunked_prefill: false\n", "enable_chunked_prefill"},
+		{"      enable_chunked_prefill: true\n", "enable_chunked_prefill"},
 		{"      prefix_cache_retention_interval: 16\n", "prefix_cache_retention_interval"},
 		{"      kv_events:\n        enable_kv_cache_events: true\n", "kv_events"},
 		{"      kv_events:\n        enable_kv_cache_events: false\n", "kv_events"},

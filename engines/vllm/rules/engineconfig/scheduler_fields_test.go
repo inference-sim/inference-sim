@@ -84,7 +84,8 @@ func TestSchedulerAndCacheKnobsRoundTrip(t *testing.T) {
 		PrefillScheduleInterval: 8, DPSyncInterval: 4, DisableHybridKVCacheManager: ptrBool(true),
 		KVCacheMemoryBytes: ptrInt64(1 << 35), StreamInterval: 20, MaxNumActiveSeqs: 16,
 		MaxNumScheduledTokens: 4096, Watermark: ptrFloat(0), LongPrefillTokenThresholdAdaptive: ptrBool(true),
-		PrefixMatchUnit: 128, PrefixCacheRetentionInterval: ptrInt(32768),
+		EnableChunkedPrefill: ptrBool(false),
+		PrefixMatchUnit:      128, PrefixCacheRetentionInterval: ptrInt(32768),
 		KVEvents:  &KVEvents{EnableKVCacheEvents: true, Publisher: "zmq", Topic: "kv-events"},
 		CustomOps: []string{"all"}, DecoderReplayCUDAGraphCaptureSizes: []int{6, 12},
 		UseTRTLLMAttention: ptrBool(true), MLAPrefillBackend: "TRTLLM_RAGGED", IndexerKVDType: "fp8", LinearBackend: "flashinfer_cutlass",
@@ -97,7 +98,7 @@ func TestSchedulerAndCacheKnobsRoundTrip(t *testing.T) {
 	for _, key := range []string{
 		"prefill_schedule_interval", "dp_sync_interval", "disable_hybrid_kv_cache_manager", "kv_cache_memory_bytes",
 		"stream_interval", "max_num_active_seqs", "max_num_scheduled_tokens", "watermark",
-		"long_prefill_token_threshold_adaptive", "prefix_match_unit", "prefix_cache_retention_interval",
+		"long_prefill_token_threshold_adaptive", "enable_chunked_prefill", "prefix_match_unit", "prefix_cache_retention_interval",
 		"kv_events", "custom_ops", "decoder_replay_cudagraph_capture_sizes", "use_trtllm_attention",
 		"mla_prefill_backend", "indexer_kv_dtype", "linear_backend", "env", "max_loras", "max_cpu_loras",
 	} {

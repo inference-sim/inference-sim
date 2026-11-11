@@ -145,6 +145,15 @@ type Engine struct {
 	// threshold is nonzero (vllm/config/scheduler.py:86@5df63a72). Tri-state: nil is the
 	// engine default, false.
 	LongPrefillTokenThresholdAdaptive *bool `yaml:"long_prefill_token_threshold_adaptive,omitempty"`
+	// EnableChunkedPrefill lets a prefill be split across steps, so a waiting request whose
+	// whole prompt does not fit the step's remaining token budget runs the part that fits
+	// (--enable-chunked-prefill / --no-enable-chunked-prefill; SchedulerConfig default True,
+	// vllm/config/scheduler.py:134@5df63a72). Off, such a request waits for a step that has
+	// room (vllm/v1/core/sched/scheduler.py:1161@5df63a72), and an unstated max_num_batched_tokens
+	// is raised to max_model_len (vllm/engine/arg_utils.py:3136-3141@5df63a72). Tri-state: nil is
+	// the engine default for a causal decoder, true. vLLM refuses a stated max_num_batched_tokens
+	// below max_model_len while it is off (vllm/config/scheduler.py:314-327@5df63a72).
+	EnableChunkedPrefill *bool `yaml:"enable_chunked_prefill,omitempty"`
 	// MaxNumScheduledTokens is the most tokens the scheduler may issue in a step, smaller than
 	// max_num_batched_tokens where the model appends tokens to a batch, as speculative decoding
 	// does (vllm/config/scheduler.py:55@5df63a72). Zero means unset: the engine uses

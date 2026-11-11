@@ -62,6 +62,7 @@ var engineKeys = map[string][]string{
 	"max_num_seqs":                             {"max_num_seqs"},
 	"long_prefill_token_threshold":             {"long_prefill_token_threshold"},
 	"long_prefill_token_threshold_adaptive":    {"long_prefill_token_threshold_adaptive"},
+	"enable_chunked_prefill":                   {"enable_chunked_prefill"},
 	"max_num_scheduled_tokens":                 {"max_num_scheduled_tokens"},
 	"max_num_active_seqs":                      {"max_num_active_seqs"},
 	"watermark":                                {"watermark"},

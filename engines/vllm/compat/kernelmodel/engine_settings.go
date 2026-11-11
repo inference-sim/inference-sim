@@ -85,8 +85,8 @@ func resolveEngine(in latencykernel.Inputs, e engineconfig.Engine) resolvedEngin
 		// The deployment schema has no performance_mode, so it is vLLM's default, balanced
 		// (vllm/config/vllm.py:433@5df63a72).
 		ThroughputMode: false,
-		// The v0.32.0 engine runs chunked prefill on (core/vllm config.go).
-		ChunkedPrefill: true,
+		// The stated enable_chunked_prefill, else vLLM's default, on (core/vllm ResolveChunkedPrefill).
+		ChunkedPrefill: vllm.ResolveChunkedPrefill(e.EnableChunkedPrefill),
 		MaxModelLen:    maxLen,
 	})
 	r.engine.MaxNumSeqs, r.engine.MaxNumBatchedTokens = b.MaxNumSeqs, b.MaxNumBatchedTokens

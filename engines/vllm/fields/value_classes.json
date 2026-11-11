@@ -1807,6 +1807,223 @@
     "name": "dp_sync_interval"
    }
   },
+  "enable_chunked_prefill": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "false"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/config/scheduler.py:306",
+       "vllm/config/scheduler.py:317",
+       "vllm/config/vllm.py:1681",
+       "vllm/engine/arg_utils.py:3002",
+       "vllm/engine/arg_utils.py:3012",
+       "vllm/engine/arg_utils.py:3140",
+       "vllm/model_executor/layers/pooler/tokwise/methods.py:67",
+       "vllm/model_executor/models/config.py:694",
+       "vllm/multimodal/encoder_budget.py:169",
+       "vllm/multimodal/processing/processor.py:1104",
+       "vllm/v1/attention/backends/turboquant_attn.py:250",
+       "vllm/v1/core/sched/scheduler.py:1161",
+       "vllm/v1/engine/core.py:166",
+       "vllm/v1/engine/core.py:281"
+      ],
+      "covered_by": [
+       "core/engine/testdata/golden/t3-chunked-prefill-off-async-v2.json",
+       "core/engine/testdata/golden/t3-chunked-prefill-off-async.json",
+       "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json",
+       "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json",
+       "core/sched/testdata/golden/chunked-prefill-off.json"
+      ]
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/config/scheduler.py:306",
+       "vllm/config/scheduler.py:317",
+       "vllm/config/vllm.py:1681",
+       "vllm/engine/arg_utils.py:3002",
+       "vllm/engine/arg_utils.py:3012",
+       "vllm/engine/arg_utils.py:3140",
+       "vllm/model_executor/layers/pooler/tokwise/methods.py:67",
+       "vllm/model_executor/models/config.py:694",
+       "vllm/multimodal/encoder_budget.py:169",
+       "vllm/multimodal/processing/processor.py:1104",
+       "vllm/v1/attention/backends/turboquant_attn.py:250",
+       "vllm/v1/core/sched/scheduler.py:1161",
+       "vllm/v1/engine/core.py:166",
+       "vllm/v1/engine/core.py:281"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/scheduler.py:306",
+      "expr": "self.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/scheduler.py:317",
+      "expr": "not self.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:1681",
+      "expr": "self.scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2611",
+      "expr": "self.enable_chunked_prefill is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2993",
+      "expr": "self.enable_chunked_prefill is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:3002",
+      "expr": "not self.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:3012",
+      "expr": "self.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:3140",
+      "expr": "not self.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/pooler/tokwise/methods.py:67",
+      "expr": "not self.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:694",
+      "expr": "vllm_config.scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/multimodal/encoder_budget.py:169",
+      "expr": "not scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/multimodal/processing/processor.py:1104",
+      "expr": "scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/turboquant_attn.py:250",
+      "expr": "scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/core/sched/scheduler.py:1161",
+      "expr": "not self.scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core.py:166",
+      "expr": "vllm_config.scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/engine/core.py:281",
+      "expr": "vllm_config.scheduler_config.enable_chunked_prefill",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": false,
+      "trace": "core/engine/testdata/golden/t3-chunked-prefill-off-async-v2.json"
+     },
+     {
+      "value": false,
+      "trace": "core/engine/testdata/golden/t3-chunked-prefill-off-async.json"
+     },
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json"
+     },
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json"
+     },
+     {
+      "value": false,
+      "trace": "core/sched/testdata/golden/chunked-prefill-off.json"
+     }
+    ],
+    "name": "enable_chunked_prefill"
+   }
+  },
   "enable_prefix_caching": {
    "value_classes": {
     "type": "boolean",

@@ -316,6 +316,7 @@ func resolve(c Config) (settings, error) {
 	if err := checkMambaCache(c, prefixCaching); err != nil {
 		return settings{}, err
 	}
+	chunked := ResolveChunkedPrefill(e.EnableChunkedPrefill)
 	maxLoRAs := 0
 	if e.MaxLoRAs > 0 {
 		maxLoRAs = e.MaxLoRAs
@@ -328,6 +329,10 @@ func resolve(c Config) (settings, error) {
 	if err := checkKVLayersFit(c, blockSize, maxLen, queue*budget, spec.PrefillLookahead, method); err != nil {
 		return settings{}, err
 	}
+	if err := checkChunkedPrefill(c, chunked, chunkedInput{prefixCaching: prefixCaching, maxModelLen: maxLen,
+		budget: budget, groups: groups, method: method, pp: pp}); err != nil {
+		return settings{}, err
+	}
 	s.sched = sched.Config{
 		MaxNumSeqs:                seqs,
 		MaxNumActiveSeqs:          e.MaxNumActiveSeqs,
@@ -335,9 +340,9 @@ func resolve(c Config) (settings, error) {
 		MaxNumScheduledTokens:     e.MaxNumScheduledTokens,
 		LongPrefillTokenThreshold: e.LongPrefillTokenThreshold,
 		LongPrefillAdaptive:       e.LongPrefillTokenThresholdAdaptive != nil && *e.LongPrefillTokenThresholdAdaptive,
-		// enable_chunked_prefill defaults to true (vllm/config/scheduler.py:134@5df63a72) and the
-		// deployment schema has no field to turn it off.
-		EnableChunkedPrefill: true,
+		// enable_chunked_prefill defaults to true (vllm/config/scheduler.py:134@5df63a72); the
+		// stated value stands (ResolveChunkedPrefill, checkChunkedPrefill).
+		EnableChunkedPrefill: chunked,
 		Policy:               policy,
 		MaxModelLen:          maxLen,
 		BlockSize:            blockSize,

@@ -6635,9 +6635,15 @@
     {
       "name": "enable_chunked_prefill",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#55"
+        "traces": [
+          "core/engine/testdata/golden/t3-chunked-prefill-off-async-v2.json",
+          "core/engine/testdata/golden/t3-chunked-prefill-off-async.json",
+          "core/sched/testdata/golden/chunked-prefill-off-long-prefill.json",
+          "core/sched/testdata/golden/chunked-prefill-off-prefix-cache.json",
+          "core/sched/testdata/golden/chunked-prefill-off.json"
+        ]
       },
       "estimation": {
         "rule": "none"

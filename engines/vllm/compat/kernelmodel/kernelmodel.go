@@ -992,6 +992,7 @@ func unmodelledSettings(e engineconfig.Engine) []string {
 		}
 	}
 	add(e.LongPrefillTokenThresholdAdaptive != nil, "long_prefill_token_threshold_adaptive")
+	add(e.EnableChunkedPrefill != nil, "enable_chunked_prefill")
 	add(e.MaxNumScheduledTokens != 0, "max_num_scheduled_tokens")
 	add(e.MaxNumActiveSeqs != 0, "max_num_active_seqs")
 	add(e.Watermark != nil, "watermark")
