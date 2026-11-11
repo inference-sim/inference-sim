@@ -9,6 +9,9 @@
 # blis-vllm and at the kernel tests' fixtures, and runs `go test` there. Nothing is edited in
 # the substrate or in this checkout.
 #
+# The kernel package's own tests and these take over ten minutes on a CI runner, so the default go test
+# timeout is raised to 30 minutes; a flag given on the command line comes after it and wins.
+#
 # Usage: kerneltests/scripts/run-inpackage.sh [go test flags...]
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,4 +41,4 @@ cd "$work"
 # checkout, at whatever it holds now. go mod tidy adds the requirement the replacement needs.
 go mod edit -replace=github.com/inference-sim/blis-vllm="$repo"
 GOFLAGS=-mod=mod GOWORK=off go mod tidy >/dev/null
-GOFLAGS=-mod=mod GOWORK=off go test -count=1 "$@" ./kernel/
+GOFLAGS=-mod=mod GOWORK=off go test -count=1 -timeout 30m "$@" ./kernel/
