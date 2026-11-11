@@ -116,12 +116,13 @@ def test_the_block_sits_between_its_markers_so_the_writer_can_replace_it():
         assert block.count(f"{name}:") == len(LANE_CHIPS)
 
 
-@pytest.mark.skipif(not DATA.is_dir() or next(DATA.rglob("*.parquet"), None) is None,
-                    reason="AISimulate data not present")
 def test_the_writer_refuses_a_sweep_that_did_not_exercise_the_kernel(tmp_path):
-    """Known-bad input: a context sweep with no trtllm-gen row writes no lane."""
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    """Known-bad input: a context sweep with no trtllm-gen row writes no lane.
+
+    The sweep is built here, so the test needs no AISimulate data: it needs pyarrow, which the
+    registry job installs from the fit lock file, and so it runs on every runner."""
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
 
     sweep = tmp_path / "b200_sxm" / "attention" / "vllm" / "0.25.0"
     sweep.mkdir(parents=True)

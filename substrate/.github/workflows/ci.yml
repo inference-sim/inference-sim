@@ -306,6 +306,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install --require-hashes -r registry/scripts/requirements.txt
+      # pyarrow, from the fit lock file: the lane writer's refusal test builds its own sweep and
+      # needs no data, only the library, so it runs here instead of skipping on every runner.
+      - run: pip install --require-hashes -r registry/scripts/requirements-fit.txt
       # Without the AISimulate, CollectiveX and OperatorX data, the tests that re-derive a
       # value from it skip here, and rederive.yml, a gate on the same paths and nightly,
       # runs them with the data present (SUB-4, SUB-8). Every other skip fails this job
