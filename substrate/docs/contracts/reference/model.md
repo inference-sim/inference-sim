@@ -433,8 +433,13 @@ the two strings. Methods of separate drafters (`eagle3`, `dflash`, `dspark`) kee
 `catalog/scripts/drafter_coverage.py` reports the drafters that published deployments run and the
 catalog lacks (design §12.2). It reads vLLM's recipe files and InferenceX's recipe files, and for
 each speculative configuration checks that the target has an entry, that a named draft checkpoint
-has an entry whose `targets` include the target's, and that the target lists it. Run it with
-checkouts of the two sources; it exits 1 on a missing or unlinked drafter unless `--report-only`.
+has an entry whose `targets` include the target's, and that the target lists it. It also checks
+the method: the graph's `speculator.method` (the target's graph for `speculator`, a drafter's own
+graph for a separate drafter or one shipped in the target's repository) must be the method the
+deployment states, after the `mtp` rule above. An in-graph MTP speculator does not serve an
+`eagle3` deployment, and a same-repository DSpark drafter does not serve an `mtp` one. Run it with
+checkouts of the two sources; it exits 1 on a missing, unlinked or wrong-method drafter unless
+`--report-only`.
 A recipe for a quantisation is read as the checkpoint it names, and a target the catalog lacks is
 reported as a missing model, not a missing drafter.
 

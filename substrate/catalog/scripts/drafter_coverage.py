@@ -17,7 +17,14 @@ deployments and checks that the catalog holds what each of them runs:
 For a deployment that names a draft checkpoint (`model` in the speculative config) the catalog
 needs an entry whose source repository is that checkpoint, that names the target's entry among
 its `targets`, and that the target's entry lists. For one that names none (MTP, or a draft shipped
-inside the checkpoint) the target's entry must list `speculator`. A target the catalog lacks is
+inside the checkpoint) the target's entry must list `speculator`, or list a drafter shipped in
+the target's own repository. Listing is not enough: the draft must run the deployment's method.
+A graph's `speculator.method` states the method it prices (the target's graph for `speculator`,
+the drafter's own graph for a separate drafter), and it is compared with the method the
+deployment states after vLLM's own rewrite of a model-specific MTP name to `mtp`
+(`derive_graph.vllm_speculative_method`). A target whose in-graph speculator is MTP does not
+satisfy an `eagle3` deployment, and a same-repository DSpark drafter does not satisfy an `mtp`
+one. A target the catalog lacks is
 reported apart: it is a missing model, not a missing drafter. A recipe for a quantisation of a
 checkpoint is read as the checkpoint it names; the quantised entries are checked by their own
 recipes.
@@ -36,6 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from derive_graph import vllm_speculative_method
 
 
 @dataclass(frozen=True)
@@ -124,7 +133,9 @@ def read_inferencex(root: Path) -> list[Deployment]:
 
 class Catalog:
     def __init__(self, root: Path):
+        self.root = root
         self.models: dict[str, dict] = {}
+        self._methods: dict[str, str | None] = {}
         self.targets_by_repo: dict[str, str] = {}
         self.drafters_by_repo: dict[str, str] = {}
         for m in sorted((root / "models").glob("*/model.yaml")):
@@ -146,27 +157,59 @@ class Catalog:
         r = repo.casefold()
         return self.drafters_by_repo.get(r) or self.targets_by_repo.get(r)
 
-    def ships_a_draft(self, target: str) -> bool:
-        """Whether a drafter the target lists is shipped inside the target's own repository."""
+    def speculator_method(self, name: str) -> str | None:
+        """The method a model's graph states for its speculator, as a deployment states it
+        (None when the graph has no speculator or no graph is committed)."""
+        if name not in self._methods:
+            self._methods[name] = None
+            graph = self.root / "models" / name / "graph.yaml"
+            if graph.is_file():
+                spec = (yaml.load(graph.read_text(), Loader=_Loader) or {}).get("speculator") or {}
+                if spec.get("method"):
+                    self._methods[name] = vllm_speculative_method(str(spec["method"]))
+        return self._methods[name]
+
+    def shipped_drafters(self, target: str) -> list[str]:
+        """The drafters the target lists that are shipped inside the target's own repository
+        and name the target among their `targets`."""
         repo = ((self.models[target].get("source") or {}).get("repo") or "").casefold()
-        return any(d in self.models and (self.models[d].get("source") or {}).get("repo", "").casefold() == repo
-                   for d in self.models[target].get("drafters") or [] if d != "speculator")
+        return [d for d in self.models[target].get("drafters") or []
+                if d != "speculator" and d in self.models
+                and (self.models[d].get("source") or {}).get("repo", "").casefold() == repo
+                and target in (self.models[d].get("targets") or [])]
+
+    def runs_method_without_a_draft_checkpoint(self, target: str, method: str) -> bool:
+        """Whether the target's entry holds a draft that runs `method` and needs no draft
+        checkpoint named: its own in-graph speculator, or a drafter shipped in its repository."""
+        listed = self.models[target].get("drafters") or []
+        if "speculator" in listed and self.speculator_method(target) == method:
+            return True
+        return any(self.speculator_method(d) == method for d in self.shipped_drafters(target))
+
+
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 
 def check(cat: Catalog, deployments: list[Deployment]) -> dict[str, list[str]]:
     """Gaps by kind, each a sorted list of unique lines."""
     gaps: dict[str, set[str]] = {"missing_model": set(), "missing_drafter": set(),
-                                 "unlinked_drafter": set(), "missing_speculator": set()}
+                                 "unlinked_drafter": set(), "missing_speculator": set(),
+                                 "wrong_method": set()}
     for d in deployments:
         target = cat.entry(d.target)
         if target is None:
             gaps["missing_model"].add(d.target)
             continue
         listed = (cat.models[target].get("drafters") or [])
+        method = vllm_speculative_method(d.method)
         if not d.draft:
-            if "speculator" not in listed and not cat.ships_a_draft(target):
+            if not cat.runs_method_without_a_draft_checkpoint(target, method):
+                held = [cat.speculator_method(target) if "speculator" in listed else None,
+                        *[cat.speculator_method(x) for x in cat.shipped_drafters(target)]]
+                have = sorted({m for m in held if m})
                 gaps["missing_speculator"].add(
-                    f"{d.target}: {d.method} without a draft checkpoint, and {target} lists no speculator")
+                    f"{d.target}: {d.method} without a draft checkpoint, and {target} lists no draft "
+                    f"that runs {method} (it holds {have or 'none'})")
             continue
         drafter = cat.drafter(d.draft)
         if drafter is None:
@@ -176,6 +219,11 @@ def check(cat: Catalog, deployments: list[Deployment]) -> dict[str, list[str]]:
         if target not in names or drafter not in listed:
             gaps["unlinked_drafter"].add(
                 f"{drafter} for {target}: targets {names}, {target} lists {listed}")
+            continue
+        if cat.speculator_method(drafter) != method:
+            gaps["wrong_method"].add(
+                f"{drafter} for {target}: the deployment runs {d.method} with {d.draft}, "
+                f"and {drafter}'s graph states {cat.speculator_method(drafter) or 'no speculator'}")
     return {k: sorted(v) for k, v in gaps.items()}
 
 
@@ -202,7 +250,7 @@ def main() -> int:
         for kind, lines in gaps.items():
             for line in lines:
                 print(f"{kind}: {line}")
-    missing = any(gaps[k] for k in ("missing_drafter", "unlinked_drafter", "missing_speculator"))
+    missing = any(gaps[k] for k in ("missing_drafter", "unlinked_drafter", "missing_speculator", "wrong_method"))
     return 1 if missing and not args.report_only else 0
 
 
