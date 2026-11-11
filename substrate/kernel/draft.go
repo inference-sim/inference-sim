@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
@@ -51,6 +52,9 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 			"the deployment speculates and the model graph states no speculator, so its draft "+
 				"passes cost nothing and its weights are not resident")
 		return nil
+	}
+	if err := refuseUnpricedDraftPasses(d, spec); err != nil {
+		return err
 	}
 	k.speculating = true
 	for _, l := range k.plan.Layers {
@@ -118,6 +122,31 @@ func (k *Kernel) liftDraft(c *resolve.Coefficients, inferred func(price.PlannedL
 	k.draftLayerKV = lift(d.Layers)
 	k.draftContextKV = lift(d.Context)
 	return nil
+}
+
+// refuseUnpricedDraftPasses refuses every deployment that speculates through an autoregressive
+// drafter, named or the model graph's own, until the cost model prices the drafter's first pass.
+// That pass runs the drafter's layers over a row count the engine decides -- one per request, or
+// every token the target scheduled, prefill tokens included -- and the head and the later passes
+// run for the requests the engine decides. The catalog graph states only the fc projection of it
+// (the context stack). Priced as one row per request, a deployment whose engine runs the first
+// pass over the scheduled tokens comes out short by the layers' work over those rows, with
+// nothing in the result to say so. The refusal names neither an engine nor a method: it applies
+// to every autoregressive drafter alike, and the layer that prices the pass lifts it in the same
+// commit. A parallel-block drafter states its target-wide work as its context stack and is not
+// refused.
+func refuseUnpricedDraftPasses(d *price.DraftPlan, spec *enginesettings.Speculative) error {
+	if d.Drafting != model.DraftingAutoregressive {
+		return nil
+	}
+	who := "the model graph's own speculator"
+	if spec.DraftModel != "" {
+		who = "draft_model " + spec.DraftModel
+	}
+	return fmt.Errorf("draft_first_pass_unpriced: %s drafts autoregressively, and the cost model "+
+		"does not yet price the first draft pass over the tokens the target scheduled, so the "+
+		"deployment would be priced short by that pass; no autoregressive drafter can be "+
+		"selected until it is priced", who)
 }
 
 // specMethod is a speculative method's name as vLLM v0.31.0 runs it: every model-specific

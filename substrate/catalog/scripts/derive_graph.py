@@ -5772,10 +5772,11 @@ def handler_llama_eagle3(cfg, raw, model):
     qkv_proj reads their concatenation, 2 x hidden_size wide (:79-92, :111-120). Attention is
     full, the MLP gated; the final norm and the lm_head follow (:251-253, :322-349).
 
-    NOT PRICED: the first draft pass runs the layer over every token the target scheduled,
-    not one position per request; the schema states that work as the context stack only for
-    the fc projection, and the layer's pass over those rows is the kernel's to price from
-    the step (blis-latency-kernel). The vocabulary mapping a drafter with
+    NOT PRICED: the first draft pass runs the layer over a row count the engine decides (every
+    token the target scheduled, or one per request); the schema states that work as the
+    context stack only for the fc projection. The kernel refuses a deployment that speculates
+    through this drafter until it prices that pass (draft_first_pass_unpriced). The vocabulary
+    mapping a drafter with
     draft_vocab_size != vocab_size carries (draft_id_to_target_id) is refused rather than
     priced as free."""
     def whole(v, key):
