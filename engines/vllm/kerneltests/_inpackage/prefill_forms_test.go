@@ -167,7 +167,7 @@ func TestTheSparseMLAPrefillFormReplacesTheGenericPair(t *testing.T) {
 	s := without.shapeOf(b)
 	heads := without.attentionHeads(l.AttnQHeads, l.AttnReplicated, l.AttnKind)
 	generic, _ := without.prefillAttention(sparseCausalFLOPs(s.prefillChunks, l.AttnWindow,
-		l.AttnIndexTopK, l.AttnCompressRatio)*heads*float64(l.AttnHeadDim), &s)
+		l.AttnIndexTopK, l.AttnCompressRatio)*heads*float64(l.AttnHeadDim), &s, l.AttnKind)
 	want := (14.8 + 1.323 + 0.049*8192 + 8192.0*640*584/3159685) * 1e-6
 	got := priceOne(t, with, "csa1_moe", b, nil)[idxSM] -
 		priceOne(t, without, "csa1_moe", b, nil)[idxSM] + generic
@@ -206,7 +206,7 @@ func TestTheIndexerPrefillFormIsTheContracts(t *testing.T) {
 	}
 	pairs := sparseCausalFLOPs(s.prefillChunks, 0, 0, 1) / 2
 	generic, _ := without.prefillAttention(pairs*without.attentionHeads(a.QHeads,
-		a.Replicated, a.Kind)*float64(a.HeadDim), &s)
+		a.Replicated, a.Kind)*float64(a.HeadDim), &s, a.Kind)
 	keys := 8192.0 * (81809 + 90000) / 2
 	want := (4.1 + 0.00466*8192 + keys*132*32/64/7298637) * 1e-6
 	got := priceOne(t, with, "csa1_idx_mask_moe", b, nil)[idxSM] -
