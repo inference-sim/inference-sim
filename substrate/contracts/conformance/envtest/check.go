@@ -28,6 +28,10 @@ type Case struct {
 //     the environment, not priced: nothing is priced at zero because its input was absent.
 //   - Memory and TransferDemand are pure in the same way, and a transfer's demand carries its
 //     payload and at least one link.
+//   - A pull from a peer of no tokens demands zero bytes; a tier move of no tokens is refused.
+//   - A transfer the plan cannot make is refused, not priced: a kind outside the list, and a
+//     move to or from a tier that is not a device in the plan's Tiers. How an engine's
+//     transfer reaches TransferDemand is checked by Boundary, with enginetest.
 func Check(t testing.TB, e env.Environment, cases []Case) {
 	t.Helper()
 	if len(cases) == 0 {
@@ -65,6 +69,40 @@ func Check(t testing.TB, e env.Environment, cases []Case) {
 				t.Errorf("%s: TransferDemand: %v", c.Name, err)
 			case d.Bytes <= 0 || len(d.Links) == 0:
 				t.Errorf("%s: a transfer of %d tokens has demand %+v; it carries a payload over at least one link", c.Name, c.Transfer.Tokens, d)
+			}
+		}
+		// A pull that moves nothing demands zero bytes, and a tier move of nothing is refused.
+		if c.Transfer.Kind == plan.TransferPeer {
+			empty := c.Transfer
+			empty.Tokens = 0
+			d, err := e.TransferDemand(c.Plan, empty)
+			switch {
+			case err != nil:
+				t.Errorf("%s: a pull of no tokens was refused: %v", c.Name, err)
+			case d.Bytes != 0:
+				t.Errorf("%s: a pull of no tokens has demand %+v; it demands zero bytes", c.Name, d)
+			}
+		} else if c.Transfer.Tokens > 0 {
+			empty := c.Transfer
+			empty.Tokens = 0
+			if _, err := e.TransferDemand(c.Plan, empty); err == nil {
+				t.Errorf("%s: a tier move of no tokens was priced", c.Name)
+			}
+		}
+		// A transfer the plan cannot make is refused: a tier that is not a device of the plan, and
+		// a kind outside the list (plan.PoolPlan.CheckTransfer).
+		if c.Transfer.Tokens > 0 {
+			badKind := c.Transfer
+			badKind.Kind = "no-such-kind"
+			if _, err := e.TransferDemand(c.Plan, badKind); err == nil {
+				t.Errorf("%s: a transfer of an unknown kind was priced", c.Name)
+			}
+			if c.Transfer.Kind != plan.TransferPeer {
+				elsewhere := c.Transfer
+				elsewhere.Tier = "no-such-device"
+				if _, err := e.TransferDemand(c.Plan, elsewhere); err == nil {
+					t.Errorf("%s: a transfer to a tier the plan does not list was priced", c.Name)
+				}
 			}
 		}
 		// Padding costs: grow the launched tokens of a priced step and the price does not fall.

@@ -92,9 +92,13 @@ func TestRulesPackagesAreVersioned(t *testing.T) {
 // each engine repository states its own (design VLM-3, SGL-3). It is allowed because the
 // design makes it a method of engine.Engine, and it is the only one: every other package under
 // contracts/ stays out of engine's dependencies.
+//
+// Package units is the second exception. engine.Transfer carries the move as the cost model
+// prices it (engine/plan.Transfer), and a plan's sizes are typed in units, which depends on
+// nothing in this module (TestPlanPackagesStayInTheirLane).
 func TestEngineIsEngineNeutral(t *testing.T) {
 	const mod = "github.com/inference-sim/blis-substrate/contracts/"
-	allowed := map[string]bool{"spec/fields": true, "check": true}
+	allowed := map[string]bool{"spec/fields": true, "check": true, "units": true}
 	for _, pkg := range []string{"./engine", "./conformance/enginetest"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {
@@ -178,14 +182,15 @@ func TestInvariantsImportOnlyTheStandardLibraryAndYAML(t *testing.T) {
 
 // The boundary types import only the units package, so a plan names no document type, no rules
 // pack and no engine (X2, SUB-16); the Environment interface adds only the catalog and cost
-// model types it returns, and the reference implementation adds nothing else.
+// model types it returns, the engine package for DemandFor (which takes an engine.Transfer),
+// and the reference implementation adds nothing else.
 func TestPlanPackagesStayInTheirLane(t *testing.T) {
 	const mod = "github.com/inference-sim/blis-substrate/contracts/"
 	for pkg, allowed := range map[string][]string{
 		"./units":       {"units"},
 		"./engine/plan": {"units", "engine/plan"},
-		"./engine/env": {"units", "engine/plan", "engine/env", "kernel", "check", "vocab",
-			"spec/deployment", "spec/model", "spec/hardware", "spec/acceptance"},
+		"./engine/env": {"units", "engine", "engine/plan", "engine/env", "kernel", "check", "vocab",
+			"spec/deployment", "spec/model", "spec/hardware", "spec/acceptance", "spec/fields"},
 	} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {

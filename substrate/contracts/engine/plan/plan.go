@@ -1,7 +1,8 @@
 // Package plan holds the boundary between an engine and the cost model (design §3.3, §6.3):
 // the PoolPlan an engine hands over once per pool, the StepShape it forms each step, and the
-// Transfer it returns for each KV move. The engine resolves its configuration, lowers the
-// model and sizes its KV budget; the cost model prices what it is given and knows no engine.
+// Transfer it states for each KV move (as the Move of the engine.Transfer it reports). The
+// engine resolves its configuration, lowers the model and sizes its KV budget; the cost model
+// prices what it is given and knows no engine.
 //
 // Three rules shape every type here, and each is a test.
 //
@@ -416,8 +417,26 @@ type DraftPass struct {
 }
 
 // Transfer is one KV move, with enough for the cost model to say what each link must carry.
+// The engine states it, as the Move of the engine.Transfer it reports; the simulator hands it
+// to Environment.TransferDemand unchanged.
+//
+// For a move to or from a tier, both ends are on the node whose memory or storage holds the
+// tier. For a move between pools, each end is in its own pool's numbering: the engine states its
+// own end, and the far end is the peer the request named (engine.Request.Peer).
+//
+// A move between pools may carry no tokens (Tokens 0): a remote prefill can find all of its KV
+// already here. Its demand is zero bytes, with no link and no floor. A move to or from a tier
+// always carries tokens; Validate refuses an empty one.
+//
+// Two limits, both deferred to M3. A Transfer has one From and one To, so a pool that spans
+// nodes cannot say that every node's workers move their own shard at once
+// (inference-sim/blis-substrate#48): today the engine states the node that holds the tier (the
+// pool's first node when each node holds one), and the cost model prices that one node's link.
+// And a Transfer has one Tokens count, so the blocks each KV cache group moves, which differ
+// in a hybrid model, are not stated (inference-sim/blis-substrate#49): they are lost at this
+// boundary, and the demand is for Tokens at the pool's page size.
 type Transfer struct {
-	// Tokens moved, and the pool-relative ranks that send and receive.
+	// Tokens moved, and the node and rack at each end: where the bytes leave and where they land.
 	Tokens units.Tokens
 	From   Endpoint
 	To     Endpoint

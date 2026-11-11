@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
@@ -39,6 +40,30 @@ type Reference struct {
 }
 
 var _ env.Environment = (*Reference)(nil)
+
+// Boundary returns the simulator's side of the transfer boundary for enginetest.Options: each
+// transfer an engine starts goes through env.DemandFor against e, and the demand must carry a
+// payload over at least one link (zero bytes for a move of no tokens), the same laws Check holds
+// an Environment to. It is what a
+// simulator does for every entry of Batch.TransfersStarted.
+func Boundary(e env.Environment) func(plan.PoolPlan, engine.Transfer) error {
+	return func(p plan.PoolPlan, t engine.Transfer) error {
+		d, err := env.DemandFor(e, p, t)
+		if err != nil {
+			return err
+		}
+		if t.Move.Tokens == 0 {
+			if d.Bytes != 0 {
+				return fmt.Errorf("transfer %d moves no tokens and has demand %+v; it demands zero bytes", t.ID, d)
+			}
+			return nil
+		}
+		if d.Bytes <= 0 || len(d.Links) == 0 {
+			return fmt.Errorf("transfer %d of %d tokens has demand %+v; it carries a payload over at least one link", t.ID, t.Tokens, d)
+		}
+		return nil
+	}
+}
 
 // Graph implements env.Environment.
 func (r *Reference) Graph(name string) (*model.Graph, error) {
@@ -95,8 +120,13 @@ func (r *Reference) Price(p plan.PoolPlan, step plan.StepShape) (kernel.StepEsti
 
 // TransferDemand implements env.Environment.
 func (r *Reference) TransferDemand(p plan.PoolPlan, t plan.Transfer) (kernel.TransferDemand, error) {
-	if err := t.Validate(); err != nil {
+	if err := p.CheckTransfer(t); err != nil {
 		return kernel.TransferDemand{}, err
+	}
+	if t.Tokens == 0 {
+		// A pull that finds its KV already here: no payload, no link, and no floor, because the
+		// reference charges no handshake. The design prices none (section 6.2).
+		return kernel.TransferDemand{}, nil
 	}
 	if r.BytesPerSecond <= 0 {
 		return kernel.TransferDemand{}, fmt.Errorf("envtest: no link rate")

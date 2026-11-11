@@ -19,8 +19,12 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 )
 
 // Time is a simulated instant in microseconds since the start of a run. It is a value,
@@ -122,6 +126,18 @@ type Pipelined interface {
 	StageTimes(b Batch) []Duration
 }
 
+// Planned is implemented by every engine that starts a transfer. Plan returns the PoolPlan of
+// the pool the engine models, the plan its transfers are priced against: a simulator asks
+// env.TransferDemand(e.Plan(), t.Move) for each Transfer in a Batch's TransfersStarted (design
+// §6.2; env.DemandFor does exactly that). The plan is the one the engine built with its
+// Environment, with its KV budget filled in, and it is the same on every call.
+//
+// It is a separate interface so that an engine which starts no transfer needs no plan to be
+// driven. enginetest fails an engine that starts a transfer and is not Planned.
+type Planned interface {
+	Plan() plan.PoolPlan
+}
+
 // The wake protocol. NextWake answers one question: with no new input, when could this
 // engine's state change? The simulator owns everything that follows from the answer.
 //
@@ -206,15 +222,30 @@ type Request struct {
 	// TransferLoad among a Batch's TransfersStarted), and runs the request once the simulator
 	// reports that transfer done. An engine that does not disaggregate refuses it.
 	RemotePrefill bool
+	// Peer is where the engine holding the prompt's KV sits, in that engine's own pool: the
+	// node and rack the pull reads from. A host sets it with RemotePrefill, as a P/D proxy hands
+	// a decode engine the address of the prefill it must read from (vLLM's kv_transfer_params);
+	// the decode engine cannot learn it any other way, and the pull's links depend on it. Nil
+	// for every other request.
+	Peer *plan.Endpoint
 }
 
 // Validate reports a request that cannot exist: an adapter path with no adapter to belong
-// to. It does not require the path of a named adapter, because an engine that never hashes
+// to, a remote prefill with no peer to pull from, or a peer on a request that pulls nothing. It does not require the path of a named adapter, because an engine that never hashes
 // it has no use for one; an engine that models vLLM refuses a LoRA request without a path,
 // as vLLM does.
 func (r Request) Validate() error {
 	if r.AdapterPath != "" && r.Adapter == "" {
 		return fmt.Errorf("engine: request %s has adapter path %q and no adapter name", r.ID, r.AdapterPath)
+	}
+	if r.RemotePrefill && r.Peer == nil {
+		return fmt.Errorf("engine: request %s is a remote prefill and states no peer to pull from", r.ID)
+	}
+	if !r.RemotePrefill && r.Peer != nil {
+		return fmt.Errorf("engine: request %s names a peer and is not a remote prefill", r.ID)
+	}
+	if r.Peer != nil && (r.Peer.Node < 0 || r.Peer.Rack < 0) {
+		return fmt.Errorf("engine: request %s: peer %+v", r.ID, *r.Peer)
 	}
 	return nil
 }
@@ -271,18 +302,81 @@ type Scheduled struct {
 	Drafts int
 }
 
-// Transfer is one asynchronous KV transfer an engine started.
+// Transfer is one asynchronous KV transfer an engine started. It is the one report of a move
+// (design §6.2): the simulator reads ID and Request to run the transfer's life, and asks
+// env.TransferDemand(e.Plan(), t.Move) what it asks of the fabric.
+//
+// Move is the same transfer stated in the cost model's terms, and the engine states it: which
+// catalog device a tier name stands for, which node and rack send and receive, and which way
+// the bytes go. Only the engine knows those (a tier name is its configuration's, the ranks are
+// its placement), so the simulator neither derives them nor fills them in. Tokens, Kind and
+// Tier are the engine's own report of the same move and must agree with Move; Validate says
+// how.
 type Transfer struct {
 	ID TransferID
 	// Request is the request the transfer serves.
 	Request string
 	// Kind says which way the KV moves.
 	Kind TransferKind
-	// Tokens and Blocks size the transfer.
+	// Tokens and Blocks size the transfer. Both may be zero for a pull from a peer that finds all
+	// of its KV already here; the move then demands zero bytes. A load or store to a tier moves
+	// at least one token.
 	Tokens int
 	Blocks int
-	// Tier names the offload tier or remote peer as the engine's configuration names it.
+	// Tier names the offload tier as the engine's configuration names it: empty for a move
+	// between pools. Move.Tier is the catalog device this name stands for.
 	Tier string
+	// Move is the transfer as the cost model prices it. It is required: a transfer whose Move
+	// is the zero value is refused by Validate. Two limits are deferred to M3. For a pool that
+	// spans nodes Move names one node, the one that holds the tier, because plan.Transfer has
+	// one From and one To (inference-sim/blis-substrate#48). Move has one token count, so the
+	// per-KV-group sizes of a hybrid model are lost at the boundary and an engine that prices
+	// them itself cannot pass them on (inference-sim/blis-substrate#49).
+	Move plan.Transfer
+}
+
+// Validate reports a transfer whose report and whose Move do not describe the same move, or
+// that the cost model would refuse. It checks what a Transfer can say about itself; whether
+// Move.Tier is a device of the engine's pool needs the plan (plan.PoolPlan.CheckTransfer).
+func (t Transfer) Validate() error {
+	var bad []string
+	if t.Request == "" {
+		bad = append(bad, "no request")
+	}
+	// Tokens 0 is a pull that finds all of its KV already here; Move.Validate allows it for a
+	// move between pools only, so a tier load or store of nothing is refused below.
+	if t.Tokens < 0 {
+		bad = append(bad, fmt.Sprintf("%d tokens", t.Tokens))
+	}
+	if t.Blocks < 0 {
+		bad = append(bad, fmt.Sprintf("%d blocks", t.Blocks))
+	}
+	if err := t.Move.Validate(); err != nil {
+		bad = append(bad, err.Error())
+	}
+	if units.Tokens(t.Tokens) != t.Move.Tokens {
+		bad = append(bad, fmt.Sprintf("reports %d tokens and Move %d", t.Tokens, t.Move.Tokens))
+	}
+	switch t.Kind {
+	case TransferLoad:
+		if t.Move.Kind == plan.TransferToTier {
+			bad = append(bad, "a load whose Move goes to a tier")
+		}
+	case TransferStore:
+		if t.Move.Kind == plan.TransferFromTier {
+			bad = append(bad, "a store whose Move comes from a tier")
+		}
+	default:
+		bad = append(bad, fmt.Sprintf("kind %q", t.Kind))
+	}
+	if (t.Tier == "") != (t.Move.Kind == plan.TransferPeer) {
+		bad = append(bad, fmt.Sprintf("tier %q beside a %s move: a tier name goes with a move to or from a tier, and only with one", t.Tier, t.Move.Kind))
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return fmt.Errorf("engine: transfer %d of request %q: %s", t.ID, t.Request, strings.Join(bad, "; "))
 }
 
 // TransferKind says which way a transfer moves KV.

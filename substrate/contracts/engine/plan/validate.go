@@ -230,7 +230,9 @@ func (s StepShape) Validate(ranks, stages int) error {
 // Validate reports a transfer no engine can start.
 func (t Transfer) Validate() error {
 	var bad []string
-	if t.Tokens <= 0 {
+	// A pull from a peer may move nothing: a remote prefill whose KV is already here. A move
+	// to or from a tier of nothing is a bug in the engine, and is refused.
+	if t.Tokens < 0 || (t.Tokens == 0 && t.Kind != TransferPeer) {
 		bad = append(bad, fmt.Sprintf("%d tokens", t.Tokens))
 	}
 	if !t.Kind.Valid() {
@@ -252,4 +254,29 @@ func (t Transfer) Validate() error {
 	}
 	sort.Strings(bad)
 	return fmt.Errorf("transfer: %s", strings.Join(bad, "; "))
+}
+
+// CheckTransfer reports a transfer this pool cannot make: a move to or from a tier names a
+// device the plan does not list in Tiers, or a node the layout does not have. A move between
+// pools is checked only for its own fields, because its far end is in another pool's plan.
+// An Environment refuses what CheckTransfer refuses (design §6.3).
+func (p PoolPlan) CheckTransfer(t Transfer) error {
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	if t.Kind == TransferPeer {
+		return nil
+	}
+	for _, tier := range p.Tiers {
+		if tier.Device == t.Tier {
+			nodes := max(1, p.Layout.Nodes)
+			for _, e := range []Endpoint{t.From, t.To} {
+				if e.Node >= nodes {
+					return fmt.Errorf("transfer: endpoint node %d of a pool with %d node(s)", e.Node, nodes)
+				}
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("transfer: tier %q is not a device of this pool's plan", t.Tier)
 }
