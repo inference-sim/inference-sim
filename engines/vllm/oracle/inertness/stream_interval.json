@@ -1,7 +1,7 @@
 {
  "field": "stream_interval",
  "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
- "claim": "The engine (scheduler, KV cache, engine core, cost model) makes no decision from stream_interval. It sets how many new tokens the front end's OutputProcessor batches into one delivery to the client (vllm/v1/engine/output_processor.py:324-340); the scheduler and engine core never read it, so every scheduler trace is identical at every value. The grouping changes when tokens reach the client and nothing else; the simulator's delivery stage carries it (inference-sim#2035).",
+ "claim": "The engine (scheduler, KV cache, engine core, cost model) makes no decision from stream_interval. It sets how many new tokens the front end groups into one delivery to the client: in the Python front end the OutputProcessor (vllm/v1/engine/output_processor.py:324-340@5df63a72), in the Rust front end the per-request output channel (rust/src/engine-core-client/src/client/output_channel.rs:65-74@5df63a72), whose source says the engine core ignores the value (rust/src/engine-core-client/src/protocol/sampling.rs:166-168@5df63a72). Scope of the evidence. The read scan (readers) is of Python. The Rust front end reads the setting too (rust/src/cmd/src/cli.rs:277-278, rust/src/llm/src/lib.rs:97-102, rust/src/engine-core-client/src/client.rs:639-646 and the files named_in lists): those reads are listed by file and reviewed, and the harness does not run Rust. named_in lists every file of vllm/ and rust/ (tests excluded for rust) that names the field at all, and the check fails when the tree names it anywhere else, so no file of the engine (vllm/v1/core, vllm/v1/engine/core.py, the workers) reads it. What the runs show: the scheduler traces, the whole resolved scheduler, cache, parallel and compilation config except the field itself, and the requests the OutputProcessor hands back to the engine core to abort are identical at every probe. The delivery to the client differs (frontend_effect_differs), as it should. output_processor.py:255, the request's own interval, runs only for the one scripted request that states 4. What this does not give. The simulator's delivery stage does not read stream_interval yet (inference-sim#2035 is open). The field is inert for the engine, and is not G1-eligible until that stage reads it: a recorded point that states 20 or 32 is simulated without the grouping its client saw (inter-token latency and chunk timing).",
  "probes": [
   {
    "label": "default (1: every token is delivered)",
@@ -42,7 +42,13 @@
     "scheduler_config.enable_chunked_prefill",
     "cache_config.block_size"
    ],
-   "echo": "scheduler_config.stream_interval"
+   "echo": "scheduler_config.stream_interval",
+   "compare": [
+    "scheduler_config",
+    "cache_config",
+    "parallel_config",
+    "compilation_config"
+   ]
   },
   {
    "id": "outputproc",
@@ -289,6 +295,38 @@
    }
   }
  ],
+ "named_in": {
+  "vllm": [
+   "vllm/config/scheduler.py",
+   "vllm/engine/arg_utils.py",
+   "vllm/entrypoints/openai/chat_completion/protocol.py",
+   "vllm/entrypoints/openai/completion/protocol.py",
+   "vllm/sampling_params.py",
+   "vllm/v1/engine/async_llm.py",
+   "vllm/v1/engine/llm_engine.py",
+   "vllm/v1/engine/output_processor.py"
+  ],
+  "rust": [
+   "rust/src/cmd/src/cli.rs",
+   "rust/src/engine-core-client/src/client.rs",
+   "rust/src/engine-core-client/src/client/imp.rs",
+   "rust/src/engine-core-client/src/client/output_channel.rs",
+   "rust/src/engine-core-client/src/client/state.rs",
+   "rust/src/engine-core-client/src/client/stream.rs",
+   "rust/src/engine-core-client/src/protocol/sampling.rs",
+   "rust/src/llm/src/lib.rs",
+   "rust/src/llm/src/output.rs",
+   "rust/src/server/examples/external_engine_openai_qwen.rs",
+   "rust/src/server/src/config.rs",
+   "rust/src/server/src/lib.rs",
+   "rust/src/server/src/routes/openai/chat_completions/convert.rs",
+   "rust/src/server/src/routes/openai/chat_completions/types.rs",
+   "rust/src/server/src/routes/openai/completions/convert.rs",
+   "rust/src/server/src/routes/openai/completions/types.rs",
+   "rust/src/text/src/lower.rs",
+   "rust/src/text/src/request.rs"
+  ]
+ },
  "go_identifiers": [
   "StreamInterval"
  ],
@@ -300,6 +338,10 @@
  "result": {
   "vllm_commit": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
   "problems": [],
+  "named_in": {
+   "rust": 18,
+   "vllm": 8
+  },
   "runs": {
    "sched-prefix-cache": {
     "decisions": {
@@ -316,6 +358,12 @@
      "32 (186 points)": "58a827a9587a61c0ce5e38eaf6f011864975d6bca6e975d67b4c2c409d835004"
     },
     "identical": true,
+    "compared_sections": [
+     "scheduler_config",
+     "cache_config",
+     "parallel_config",
+     "compilation_config"
+    ],
     "resolved": {
      "default (1: every token is delivered)": {
       "scheduler_config.max_num_seqs": 128,
@@ -362,8 +410,7 @@
     "at": "vllm/engine/arg_utils.py:2641",
     "disposition": "run",
     "ran_in": [
-     "config",
-     "outputproc"
+     "config"
     ]
    },
    {
