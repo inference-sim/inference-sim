@@ -41,4 +41,11 @@ cd "$work"
 # checkout, at whatever it holds now. go mod tidy adds the requirement the replacement needs.
 go mod edit -replace=github.com/inference-sim/blis-vllm="$repo"
 GOFLAGS=-mod=mod GOWORK=off go mod tidy >/dev/null
-GOFLAGS=-mod=mod GOWORK=off go test -count=1 -timeout 30m "$@" ./kernel/
+# Only the tests copied in run. The kernel package also holds the substrate's own tests, which the substrate's
+# own CI runs at this commit on every one of its pull requests; running them again here repeated about 350
+# of the 500-odd seconds of this job (two tests alone take 221 and 51 s on a loaded laptop) and proved nothing
+# about this repository, because they import none of it. The helpers they share with the copied tests are still
+# compiled, since the whole package is. A -run on the command line comes after this one and wins, so
+# kerneltests/scripts/run-inpackage.sh -run . runs everything.
+only="^($(grep -hoE '^func (Test[A-Za-z0-9_]*)' "$here"/_inpackage/*_test.go | sed 's/^func //' | sort | paste -sd'|' -))\$"
+GOFLAGS=-mod=mod GOWORK=off go test -count=1 -timeout 30m -run "$only" "$@" ./kernel/
