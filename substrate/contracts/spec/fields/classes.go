@@ -27,7 +27,9 @@ import (
 //     upstream compares the field with, generated from the upstream's comparisons. n
 //     thresholds make n+1 classes, numbered from 0 for the values below the first. Each
 //     threshold says which side takes the value equal to it, because `x > 8` and `x >= 8`
-//     compare differently at 8. CoveredClasses names the classes the evidence sets a value in.
+//     compare differently at 8. An upstream that uses both at 8 makes three classes (below 8,
+//     8, above 8), and the list states both thresholds. CoveredClasses names the classes the
+//     evidence sets a value in.
 //
 // A proven-inert field records the classes its probes cover, and its probes cover every class
 // (a probe in one class shows nothing about another): see Field.Validate.
@@ -41,7 +43,10 @@ type ValueClasses struct {
 	// Covered is the values of a boolean or enumerated field that the evidence sets, as
 	// strings: "true" and "false" for a boolean.
 	Covered []string `json:"covered,omitempty" yaml:"covered,omitempty"`
-	// Thresholds are the values a numeric field is compared with, strictly increasing.
+	// Thresholds are the values a numeric field is compared with, by increasing cut. Two may
+	// share a value when one is closed above (x >= v) and the other below (x > v), the first
+	// listed first: they make three classes at v, the values below it, v itself and the values
+	// above it. No other two share a value.
 	Thresholds []Threshold `json:"thresholds,omitempty" yaml:"thresholds,omitempty"`
 	// CoveredClasses are the numbered classes of a numeric field that the evidence sets a
 	// value in, increasing.
@@ -179,12 +184,26 @@ func (c *ValueClasses) validateDiscrete(p *validate.Problems) {
 func (c *ValueClasses) validateNumeric(p *validate.Problems) {
 	for i, t := range c.Thresholds {
 		at := fmt.Sprintf("value_classes.thresholds[%d]", i)
+		sideOK := t.Closed == SideBelow || t.Closed == SideAbove
 		if math.IsNaN(t.Value) || math.IsInf(t.Value, 0) {
 			p.Field(at+".value", "must be finite")
-		} else if i > 0 && t.Value <= c.Thresholds[i-1].Value {
-			p.Field(at+".value", "thresholds are strictly increasing; %v follows %v", t.Value, c.Thresholds[i-1].Value)
+		} else if i > 0 {
+			prev := c.Thresholds[i-1]
+			switch {
+			case t.Value < prev.Value:
+				p.Field(at+".value", "thresholds are increasing; %v follows %v", t.Value, prev.Value)
+			case t.Value == prev.Value && sideOK && (prev.Closed == SideBelow || prev.Closed == SideAbove):
+				// Two comparisons at one value, x >= v and x > v, cut the line at two places and make
+				// three classes: below v, v itself, above v. The cut of x >= v comes first.
+				switch {
+				case t.Closed == prev.Closed:
+					p.Field(at+".value", "two thresholds at %v closed %q cut the line at one place and make an empty class; state one", t.Value, t.Closed)
+				case prev.Closed == SideBelow:
+					p.Field(at+".closed", "at %v the %q threshold (x >= %v) is listed before the %q one (x > %v): the cuts increase", t.Value, SideAbove, t.Value, SideBelow, t.Value)
+				}
+			}
 		}
-		if t.Closed != SideBelow && t.Closed != SideAbove {
+		if !sideOK {
 			p.Field(at+".closed", "must be %q or %q, got %q", SideBelow, SideAbove, t.Closed)
 		}
 	}

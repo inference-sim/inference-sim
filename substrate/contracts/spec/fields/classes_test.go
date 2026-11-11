@@ -75,8 +75,10 @@ func TestValueClassesAreRefusedWhenWrong(t *testing.T) {
 		{"values on a boolean", rep(boolModelled, `"covered":["true"]`, `"values":["true"],"covered":["true"]`), []string{"value_classes.values", "only an enumerated field"}},
 		{"thresholds on a boolean", rep(boolModelled, `"covered":["true"]`, `"covered":["true"],"thresholds":[{"value":1,"closed":"above"}]`), []string{"thresholds and covered_classes are for a numeric field"}},
 		{"covered values on a numeric field", rep(numericModelled, `"covered_classes":[1,2]`, `"covered_classes":[1,2],"covered":["1"]`), []string{"values and covered are for a boolean or enumerated field"}},
-		{"thresholds out of order", rep(numericModelled, `"value":256`, `"value":0`), []string{"thresholds[1].value", "strictly increasing"}},
-		{"a repeated threshold", rep(numericModelled, `"value":256`, `"value":1`), []string{"thresholds[1].value", "strictly increasing"}},
+		{"thresholds out of order", rep(numericModelled, `"value":256`, `"value":0`), []string{"thresholds[1].value", "increasing; 0 follows 1"}},
+		{"a repeated threshold", rep(numericModelled, `{"value":256,"closed":"below"}`, `{"value":1,"closed":"above"}`), []string{"thresholds[1].value", "empty class"}},
+		{"a repeated threshold closed below", rep(numericModelled, `{"value":1,"closed":"above"}`, `{"value":256,"closed":"below"}`), []string{"thresholds[1].value", "empty class"}},
+		{"x > v listed before x >= v", rep(numericModelled, `{"value":1,"closed":"above"},{"value":256,"closed":"below"}`, `{"value":9,"closed":"below"},{"value":9,"closed":"above"}`), []string{"thresholds[1].closed", "listed before"}},
 		{"a threshold with no side", rep(numericModelled, `{"value":256,"closed":"below"}`, `{"value":256}`), []string{"thresholds[1].closed"}},
 		{"a threshold with an unknown side", rep(numericModelled, `"closed":"below"`, `"closed":"left"`), []string{"thresholds[1].closed", "\"left\""}},
 		{"a numeric field covering no class", rep(numericModelled, `"covered_classes":[1,2]`, `"covered_classes":[]`), []string{"covered_classes", "at least one"}},
@@ -188,14 +190,61 @@ func TestTheDocumentedBoundaryVectors(t *testing.T) {
 	above := &ValueClasses{Type: ValueNumeric, Thresholds: []Threshold{{Value: 8, Closed: SideAbove}}}
 	below := &ValueClasses{Type: ValueNumeric, Thresholds: []Threshold{{Value: 8, Closed: SideBelow}}}
 	two := &ValueClasses{Type: ValueNumeric, Thresholds: []Threshold{{Value: 1, Closed: SideAbove}, {Value: 256, Closed: SideBelow}}}
+	both := &ValueClasses{Type: ValueNumeric, Thresholds: []Threshold{{Value: 8, Closed: SideAbove}, {Value: 8, Closed: SideBelow}}}
 	for _, c := range []struct {
 		vc   *ValueClasses
 		x    float64
 		want int
 	}{{above, 7.999, 0}, {above, 8, 1}, {above, 8.001, 1}, {below, 7.999, 0}, {below, 8, 0}, {below, 8.001, 1},
-		{two, 0, 0}, {two, 1, 1}, {two, 256, 1}, {two, 257, 2}} {
+		{two, 0, 0}, {two, 1, 1}, {two, 256, 1}, {two, 257, 2},
+		{both, 7.999, 0}, {both, 8, 1}, {both, 8.001, 2}} {
 		if got := c.vc.ClassOf(c.x); got != c.want {
 			t.Errorf("%v at %v: class %d, want %d", c.vc.Thresholds, c.x, got, c.want)
 		}
+	}
+}
+
+// An upstream that compares a field with x >= 8 in one place and x > 8 in another sends three
+// values to three different sets of decisions: below 8, 8, and above 8. The list states both
+// thresholds, and the three values are three classes (design VLM-3).
+func TestOneFieldMayUseBothComparisonsAtOneValue(t *testing.T) {
+	both := &ValueClasses{Type: ValueNumeric, Thresholds: []Threshold{{Value: 8, Closed: SideAbove}, {Value: 8, Closed: SideBelow}}}
+	for _, c := range []struct {
+		x    float64
+		want int
+	}{{7.999, 0}, {8, 1}, {8.001, 2}} {
+		if got := both.ClassOf(c.x); got != c.want {
+			t.Errorf("ClassOf(%v) = %d, want %d", c.x, got, c.want)
+		}
+	}
+	doc := func(status, covered string) []byte {
+		evidence := `{"traces":["t.json"]}`
+		if status == "proven_inert" {
+			evidence = `{"proof":"p"}`
+		}
+		return list(`{"name":"n","source":"config","status":"` + status + `","evidence":` + evidence + `,
+		  "value_classes":{"type":"numeric","thresholds":[{"value":8,"closed":"above"},{"value":8,"closed":"below"}],"covered_classes":` + covered + `},
+		  "estimation":{"rule":"none"}}`)
+	}
+	// Modelled and covering only the class at 8: 7 and 9 are outside every covered class.
+	l, err := Parse(doc("modelled", "[1]"))
+	if err != nil {
+		t.Fatalf("both comparisons at one value were refused: %v", err)
+	}
+	vc := l.Fields[0].ValueClasses
+	for _, c := range []struct {
+		x    float64
+		want bool
+	}{{7, false}, {8, true}, {9, false}} {
+		if got, err := vc.Covers(c.x); err != nil || got != c.want {
+			t.Errorf("Covers(%v) = %v, %v; want %v", c.x, got, err, c.want)
+		}
+	}
+	// Proven inert: probes in the classes below and above 8 leave 8 itself untested.
+	if _, err := Parse(doc("proven_inert", "[0,2]")); err == nil || !strings.Contains(err.Error(), "probes cover every class: 2 of 3") {
+		t.Errorf("probes below and above 8 but not at 8 were accepted as covering every class: %v", err)
+	}
+	if _, err := Parse(doc("proven_inert", "[0,1,2]")); err != nil {
+		t.Errorf("probes in all three classes were refused: %v", err)
 	}
 }

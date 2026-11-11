@@ -85,7 +85,7 @@ Exactly the key its status requires is set; any other is an error.
 | `type` | string | yes | One of the value types below. |
 | `values` | list of strings | for a proven-inert enumerated field | Every value an enumerated field accepts. Optional for a modelled one. |
 | `covered` | list of strings | for `boolean` and `enumerated` | The values the evidence sets: `"true"` and `"false"` for a boolean. At least one, none twice. |
-| `thresholds` | list | for `numeric` | The values the upstream compares the field with, strictly increasing, below. |
+| `thresholds` | list | for `numeric` | The values the upstream compares the field with, in increasing order of cut; two may share a value, below. |
 | `covered_classes` | list of integers | for `numeric` | The numbered classes the evidence sets a value in, increasing. At least one. |
 
 A modelled field records the classes of values its evidence covers (design VLM-3), because
@@ -131,16 +131,20 @@ Sides:
 
 The thresholds are generated from the upstream's comparisons of the field, so a comparison
 the engine adds is a class the list must record. `closed` says which class takes the value
-equal to the threshold; it is not interval notation for the class itself. Thresholds are
-strictly increasing, so two comparisons at one value (`x > 8` in one place and `x >= 8` in
-another) cannot both be written. For an integer field, state them at 8 and 9; for a float
-field the list cannot say it, and the engine marks the field not modelled.
+equal to the threshold; it is not interval notation for the class itself. Thresholds
+increase by the place each cuts the line. Two comparisons at one value, `x >= 8` in one place and
+`x > 8` in another, send 7.999, 8 and 8.001 to three different sets of decisions, so the list
+states both, `[8 above, 8 below]` in that order (the cut of `x >= 8` is just below 8 and that of
+`x > 8` just above it), and they make three classes: below 8, 8 itself, above 8. Two thresholds at
+one value with the same side cut the line once and make an empty class, and `[8 below, 8 above]`
+is refused as out of order; each is written one way only.
 
 `ValueClasses.Covers` takes any integer or float width, a `json.Number` or a numeric string,
 and refuses NaN and the infinities. A consumer in another language restates the rule, so these
 vectors, which a test here checks, fix it at a threshold. With thresholds `[8 above]`: 7.999 is
 class 0, 8 is class 1, 8.001 is class 1. With `[8 below]`: 7.999 and 8 are class 0, 8.001 is
-class 1. With `[1 above, 256 below]`: 0 is class 0, 1 and 256 are class 1, 257 is class 2.
+class 1. With `[1 above, 256 below]`: 0 is class 0, 1 and 256 are class 1, 257 is class 2. With
+`[8 above, 8 below]`: 7.999 is class 0, 8 is class 1, 8.001 is class 2.
 
 ### `estimation`
 
