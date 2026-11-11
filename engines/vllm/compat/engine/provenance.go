@@ -34,9 +34,29 @@ type KernelPoolProvenance struct {
 	// enforces, and SkippedRuleFindings what they report on this scenario.
 	SkippedRules        []string      `json:"skipped_rules"`
 	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
+	// Substitutions are the execution modes the cost model prices in place of the one the deployment
+	// states: the deployment asks for one mode (or leaves vLLM's default) and the kernel's graph is
+	// another's. A point with a substitution is not priced in the mode it states, whatever the
+	// kernel's coefficients say, so the grade reads this list and not the assumptions' text.
+	Substitutions []Substitution `json:"substitutions"`
 	// Routing is the pool's resolved expert-parallel routing imbalance: which layer
 	// supplied it, from which set and source, and why the default applied when it did.
 	Routing *RoutingRecord `json:"routing,omitempty"`
+}
+
+// Substituted reports that some setting of the pool is priced in a mode other than the one stated, so the
+// point is not the stated deployment's and must not be graded as if it were.
+func (p KernelPoolProvenance) Substituted() bool { return len(p.Substitutions) > 0 }
+
+// Substitution is one execution mode priced in place of the stated one.
+type Substitution struct {
+	// Setting is the engine setting, such as language_model_only; Stated is what the deployment gives
+	// it ("unset" for an absent key) and Priced the value whose execution the cost model prices.
+	Setting string `json:"setting"`
+	Stated  string `json:"stated"`
+	Priced  string `json:"priced"`
+	// Reason says what differs between the two modes.
+	Reason string `json:"reason"`
 }
 
 // RoutingRecord is the provenance of a pool's routing-imbalance resolution

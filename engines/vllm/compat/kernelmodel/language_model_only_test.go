@@ -1,6 +1,7 @@
 package kernelmodel
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,7 +74,8 @@ func TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower(t *testing.T) {
 		for _, stated := range []string{"", "true", "false"} {
 			t.Run(f.name+"/"+map[string]string{"": "unset"}[stated]+stated, func(t *testing.T) {
 				var got []string
-				for _, a := range openWithLanguageModelOnly(t, f.path, f.chip, stated).EngineAssumptions() {
+				m := openWithLanguageModelOnly(t, f.path, f.chip, stated)
+				for _, a := range m.EngineAssumptions() {
 					if strings.HasPrefix(a, "language_model_only") { // the fixtures state cudagraph_mode, which discloses its own
 						got = append(got, a)
 					}
@@ -81,6 +83,26 @@ func TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower(t *testing.T) {
 				wantDisclosed := f.towerless && stated != "true"
 				if (len(got) == 1) != wantDisclosed || len(got) > 1 {
 					t.Fatalf("assumptions %q, want one: %t", got, wantDisclosed)
+				}
+				// The substitution is also in the Result's provenance, as a record a grade reads, and the
+				// serialised provenance carries it: a point that leaves the key unset on a multimodal checkpoint
+				// is Substituted, one that states true, and a text-only model's, are not.
+				prov := m.Provenance()
+				if prov.Substituted() != wantDisclosed || len(prov.Substitutions) != map[bool]int{true: 1}[wantDisclosed] {
+					t.Fatalf("provenance substitutions %+v, want one: %t", prov.Substitutions, wantDisclosed)
+				}
+				raw, err := json.Marshal(prov)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if has := strings.Contains(string(raw), `"setting":"language_model_only"`); has != wantDisclosed {
+					t.Errorf("the serialised provenance %s: names the substitution %t, want %t", raw, has, wantDisclosed)
+				}
+				if wantDisclosed {
+					want := map[string]string{"": "unset", "false": "false"}[stated]
+					if s := prov.Substitutions[0]; s.Setting != "language_model_only" || s.Stated != want || s.Priced != "true" {
+						t.Errorf("substitution %+v, want language_model_only %s priced as true", s, want)
+					}
 				}
 				if wantDisclosed {
 					for _, frag := range []string{"language_model_only", f.name, "vision tower", "language_model_only: true"} {

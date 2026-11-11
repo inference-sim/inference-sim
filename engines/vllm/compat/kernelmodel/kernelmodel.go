@@ -120,6 +120,9 @@ type Model struct {
 	// assumed are the pricing assumptions this package discloses beside the kernel's own
 	// (EngineAssumptions), each "name = value: reason".
 	assumed []string
+	// substitutions are the execution modes priced in place of the ones the deployment states
+	// (Provenance().Substitutions).
+	substitutions []sim.Substitution
 	// indexerRules resolves the DeepSeek indexer's cache dtype, from the release's rules; nil when
 	// they carry no such rule (indexerKVDTypeRules).
 	indexerRules indexerKVDTypeRules
@@ -397,6 +400,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
 	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine), cudagraphAssumptions(engine)...)
+	if s := languageModelOnlySubstitution(in.Model, engine); s != nil {
+		m.substitutions = append(m.substitutions, *s)
+	}
 	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)

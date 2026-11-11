@@ -5,6 +5,7 @@ package kernelmodel
 import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
+	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
@@ -65,12 +66,16 @@ var pricedTowerConfigs = map[string]string{}
 // scheduler gives the encoder no budget (vllm/v1/core/sched/scheduler.py:271-284@5df63a72).
 //
 // The catalog graph of each model listed in towerlessMultimodalConfigs holds the text decoder
-// only (a reading of the graph, not a comparison with vLLM's resident weights; see that list), so the kernel's resident weights, KV blocks and step time are those of language_model_only
-// true, with or without the key: true is accepted and changes no price. Unset or false is vLLM's
-// default and keeps the tower resident, which the catalog does not price; those runs are accepted
-// and the gap is returned as a disclosed assumption, because refusing them would refuse every
-// committed deployment of these models that does not state the key.
-func languageModelOnlyAssumptions(g *model.Graph, e engineconfig.Engine) []string {
+// only (a reading of the graph, not a comparison with vLLM's resident weights; see that list), so the
+// kernel's resident weights, KV blocks and step time are those of language_model_only true, with or
+// without the key: true is accepted and changes no price. Unset or false is vLLM's default and keeps the
+// tower resident, which the catalog does not price. Those runs are accepted, because refusing them would
+// refuse every committed deployment of these models that does not state the key, and the substitution
+// is recorded where the Result carries it: Provenance().Substitutions, a machine-readable entry naming the
+// setting, what the deployment states and the mode that is priced, which a grade reads (the free text of
+// EngineAssumptions reaches only the host's stderr). State language_model_only: true for the deployment
+// the cost model prices.
+func languageModelOnlySubstitution(g *model.Graph, e engineconfig.Engine) *sim.Substitution {
 	if g == nil {
 		return nil
 	}
@@ -82,8 +87,17 @@ func languageModelOnlyAssumptions(g *model.Graph, e engineconfig.Engine) []strin
 	if e.LanguageModelOnly != nil {
 		stated = "false"
 	}
-	return []string{"language_model_only = " + stated + ": " + name + " is a multimodal checkpoint, so vLLM keeps its vision " +
-		"tower and projector resident and profiles the encoder, which the catalog graph does not price (it holds the text decoder " +
-		"only); the weights, KV blocks and step time are those of language_model_only: true. State language_model_only: true " +
-		"for the deployment the cost model prices"}
+	return &sim.Substitution{Setting: "language_model_only", Stated: stated, Priced: "true",
+		Reason: name + " is a multimodal checkpoint, so vLLM keeps its vision tower and projector resident and profiles the " +
+			"encoder, which the catalog graph does not price (it holds the text decoder only); the weights, KV blocks and " +
+			"step time are those of language_model_only: true"}
+}
+
+// languageModelOnlyAssumptions is the substitution as the human-readable assumption the host reports.
+func languageModelOnlyAssumptions(g *model.Graph, e engineconfig.Engine) []string {
+	s := languageModelOnlySubstitution(g, e)
+	if s == nil {
+		return nil
+	}
+	return []string{s.Setting + " = " + s.Stated + ": " + s.Reason + ". State language_model_only: true for the deployment the cost model prices"}
 }
