@@ -32,7 +32,13 @@ type proofFile struct {
 	Claim       string   `json:"claim"`
 	Identifiers []string `json:"go_identifiers"`
 	Allowed     []string `json:"go_files_allowed"`
-	Probes      []struct {
+	// Refusals are the Go tests that pin the fact a reviewed static proof rests on (the Mooncake
+	// refusal behind the MC_ variables): each must still exist in the file it names.
+	Refusals []struct {
+		File string `json:"file"`
+		Func string `json:"func"`
+	} `json:"refusal_tests"`
+	Probes []struct {
 		Value any `json:"value"`
 	} `json:"probes"`
 	Result struct {
@@ -99,6 +105,7 @@ func proofProblems(l *fields.FieldList, doc valueClassesDoc, dir string) []strin
 		}
 		out = append(out, classCoverage(name, doc, p)...)
 		out = append(out, engineReads(dir, name, p)...)
+		out = append(out, refusalTests(dir, name, p)...)
 	}
 	sort.Strings(out)
 	return out
@@ -146,6 +153,20 @@ func classCoverage(name string, doc valueClassesDoc, p proofFile) []string {
 		}
 	}
 	return nil
+}
+
+// refusalTests: each Go test the proof names as the refusal it rests on is a function of the file named.
+func refusalTests(dir, name string, p proofFile) []string {
+	var out []string
+	for _, r := range p.Refusals {
+		raw, err := os.ReadFile(filepath.Join(dir, r.File))
+		if err != nil {
+			out = append(out, fmt.Sprintf("%s: refusal test file %s: %v", name, r.File, err))
+		} else if !strings.Contains(string(raw), "\nfunc "+r.Func+"(t *testing.T)") {
+			out = append(out, fmt.Sprintf("%s: %s has no test %s", name, r.File, r.Func))
+		}
+	}
+	return out
 }
 
 // engineReads: the proof's identifiers appear in no non-test Go file but the allowed ones.
@@ -207,7 +228,7 @@ func TestTheProofCheckFailsOnEachKnownBadInput(t *testing.T) {
 	copyTree := func() string {
 		dir := t.TempDir()
 		mustCopy(t, "oracle/inertness", filepath.Join(dir, "oracle", "inertness"), ".json")
-		for _, d := range []string{"core", "compat", "vllmengine", "rules"} {
+		for _, d := range []string{"core", "compat", "vllmengine", "rules", "registry"} {
 			mustCopy(t, d, filepath.Join(dir, d), ".go")
 		}
 		return dir
@@ -226,6 +247,11 @@ func TestTheProofCheckFailsOnEachKnownBadInput(t *testing.T) {
 		"an engine file that reads the field": func(dir string) {
 			p := readProof(t, "oracle/inertness/"+name+".json")
 			_ = os.WriteFile(filepath.Join(dir, "core", "reads.go"), []byte("package core\n\nvar _ = "+p.Identifiers[0]+"\n"), 0o644)
+		},
+		"a refusal test the proof names that no longer exists": func(dir string) {
+			p := filepath.Join(dir, "oracle", "inertness", "MC_SLICE_SIZE.json")
+			raw, _ := os.ReadFile(p)
+			_ = os.WriteFile(p, []byte(strings.Replace(string(raw), "TestNoMooncakeConnectorIsServed", "TestRenamed", 1)), 0o644)
 		},
 		"a proof file for a field that is not proven_inert": func(dir string) {
 			_ = os.WriteFile(filepath.Join(dir, "oracle", "inertness", "max_num_seqs.json"), []byte("{}"), 0o644)

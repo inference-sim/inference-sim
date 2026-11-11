@@ -202,6 +202,24 @@ func TestAnUnregisteredConnectorIsNotServed(t *testing.T) {
 	}
 }
 
+// No Mooncake connector is served, for any role: the inertness proofs of the MC_ variables
+// (oracle/inertness/MC_*.json) rest on the engine never loading the Mooncake transfer-engine
+// library, which vLLM reaches only through these connectors
+// (vllm/distributed/kv_transfer/kv_connector/factory.py:225-234@5df63a72).
+func TestNoMooncakeConnectorIsServed(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"MooncakeConnector", "MooncakeStoreConnector"} {
+		for _, role := range []connector.Role{connector.RolePDTransfer, connector.RoleOffload} {
+			if r.Serves(name, role) {
+				t.Errorf("%s is served for %s: the MC_ proofs no longer hold", name, role)
+			}
+		}
+	}
+}
+
 // Load reads the embedded registry: NIXL is served for P/D transfer and nothing else, the
 // OffloadingConnector for offload and nothing else.
 func TestLoadServesTheRegisteredConnectors(t *testing.T) {

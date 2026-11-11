@@ -2,9 +2,24 @@
  "field": "MC_WORKERS_PER_CTX",
  "kind": "unread",
  "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
- "claim": "No file of vLLM v0.32.0's serving process (vllm/, csrc/, rust/) names MC_WORKERS_PER_CTX. It is a variable of the Mooncake transfer-engine library, which vLLM reaches only through the Mooncake connectors; this engine refuses those connectors by name (its connector registry holds NixlConnector and OffloadingConnector), so no configuration the engine accepts loads the library.",
+ "claim": "Reviewed static fact, not a run of vLLM's code: no file of vLLM v0.32.0's serving process (vllm/, csrc/, rust/) names MC_WORKERS_PER_CTX; the result lists the files the scan read. It is a variable of the Mooncake transfer-engine library, which vLLM loads only through a Mooncake connector. A deployment can select one in two ways, and the engine refuses both: by connector name (MooncakeConnector, MooncakeStoreConnector; the engine models NixlConnector and NixlPullConnector and the registry serves those and OffloadingConnector), and through NIXL's kv_connector_extra_config backends (the engine block's kv_transfer has no such key and is decoded with KnownFields(true)). refusal_tests are the Go tests that pin both; the day the engine accepts either, the field is classified again.",
+ "argument": "reviewed_static_fact",
  "names": [
   "MC_WORKERS_PER_CTX"
+ ],
+ "refusal_tests": [
+  {
+   "file": "core/vllm/mooncake_refusal_test.go",
+   "func": "TestAMooncakeConnectorNameIsRefused"
+  },
+  {
+   "file": "core/vllm/mooncake_refusal_test.go",
+   "func": "TestTheConnectorBlockCannotStateWhichBackendNixlLoads"
+  },
+  {
+   "file": "registry/connector_test.go",
+   "func": "TestNoMooncakeConnectorIsServed"
+  }
  ],
  "probes": [
   {
