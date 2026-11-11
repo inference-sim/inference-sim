@@ -12,6 +12,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/load"
 
 	blisvllm "github.com/inference-sim/blis-vllm"
@@ -680,6 +681,29 @@ func streamIntervalOf(m latencyModel) (int, error) {
 		return 0, fmt.Errorf("reading the pool's engine settings: %w", err)
 	}
 	return e.StreamInterval, nil
+}
+
+// Result closeness data (G1): the engine's resolutions, labelled by pool. This reads the pool
+// models, so it is here at the build site.
+
+// engineResolutions is the Result's resolutions: for each pool, the engine's own value of each
+// setting the cost model resolves beside the host's, labelled with the pool (result.PoolLabels
+// of the run's deployment) and sorted by setting, then pool.
+func engineResolutions(models []*engineModel, dep deployment.Deployment) ([]result.Resolution, error) {
+	if len(models) == 0 {
+		return nil, nil
+	}
+	indices, err := build.PoolIndices(kernelScenario, kernelmodel.Repos{Scenarios: kernelScenarioDir, Data: mustRunData()})
+	if err != nil {
+		return nil, err
+	}
+	labels := result.PoolLabels(dep)
+	var out []result.Resolution
+	for _, m := range models {
+		out = append(out, result.ResolutionsOfPool(m.Kernel().Resolved(), labels[indices[m.Role()]])...)
+	}
+	result.SortResolutions(out)
+	return out, nil
 }
 
 // provenanceOf is a pool's kernel evidence as the host's report records it, field for field.

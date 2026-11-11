@@ -304,6 +304,30 @@ is recorded once per pool whose engine stated otherwise, as `"scheduler (prefill
 
 A warning on stderr says the same.
 
+### Closeness Data
+
+The Result carries what a scoring harness needs to grade a point against the run it measured
+(design 11.3, G1), in two places.
+
+- Each entry of `selected_entries.coefficients` states, where its registry entry does: `kernel_impls`
+  (the library, the library's own kernel name and the kernel's code hash the value is valid for),
+  `fit_range` (one bound per input dimension the fit covered) and `ci95`. Two flags are evaluated
+  from the steps the run priced: `extrapolated`, true when any priced step read the entry outside
+  its `fit_range` (evaluated only where a `fit_range` is stated), and `unidentified`, true when the
+  entry's interval is unbounded or wider than half its value (evaluated only where a `ci95` is
+  stated). A flag that is absent was not evaluated. Every engine instance of every pool registers
+  its own kernel with the run's data, so a flag any instance raised stays raised.
+  `selected_entries.closeness_version: 1` says every coefficient that was recorded carries this
+  data; it does not say that every pool registered. A registry coefficient that states no
+  `kernel_impls` reports none, so the kernel-hash condition of G1 cannot be decided for it; at the
+  registry this release pins no coefficient states them (blis-registry#73).
+- `resolutions` lists, for each pool and each setting the cost model resolves, the engine's value
+  beside the host's, with the reason where they differ. A row names its `pool` by the pool's role
+  (`colocated`, `prefill`, `decode`); the engine allows one pool per role. Rows are sorted by
+  setting, then pool. A row names the setting as the cost model does, so the KV cache dtype is
+  `cache_dtype` here though the engine block and the field list call it `kv_cache_dtype`; match
+  the two by that mapping until the substrate names its settings by the field list.
+
 ### Catalog Provenance
 
 The Result records **which model catalog produced it** (#1732) under `data.catalog`: its
