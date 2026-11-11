@@ -25,7 +25,7 @@ FAILURES = []
 # Engine-block keys the generator may write: the run's stated fields, the quantization the
 # corpus's precision column names, and max_model_len, derived from the workload.
 ALLOWED = {"quantization", "block_size", "gpu_memory_utilization", "enable_prefix_caching",
-           "speculative", "method", "num_spec_tokens", "max_model_len"}
+           "speculative_config", "method", "num_speculative_tokens", "max_model_len"}
 
 
 def ck(label, ok, detail=""):
@@ -113,12 +113,12 @@ def main() -> int:
        engine(sweep(stated={}), "enable_prefix_caching") is None)
     mtp = sweep("deepseek-v4-pro", stated={"speculative_method": "mtp", "num_speculative_tokens": 2})
     ck("a stated speculative config is written as stated",
-       (engine(mtp, "method"), engine(mtp, "num_spec_tokens")) == ("mtp", "2"))
+       (engine(mtp, "method"), engine(mtp, "num_speculative_tokens")) == ("mtp", "2"))
     ck("an unstated speculative config is left out",
        engine(sweep("deepseek-v4-pro", stated={}), "method") is None)
     ck("no batch cap, CUDA-graph mode or cache dtype is written",
        all(engine(sweep(stated={}), f) is None
-           for f in ("max_num_seqs", "max_num_batched_tokens", "cudagraph_mode", "cache_dtype")))
+           for f in ("max_num_seqs", "max_num_batched_tokens", "cudagraph_mode", "compilation_config", "kv_cache_dtype", "cache_dtype")))
     ck("max_model_len admits the workload",
        engine(sweep(), "max_model_len") == "32768")
     ck("precision fp4 is written as quantization nvfp4, bf16 as none",

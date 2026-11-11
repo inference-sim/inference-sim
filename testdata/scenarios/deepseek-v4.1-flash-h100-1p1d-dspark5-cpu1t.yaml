@@ -9,7 +9,7 @@ name: deepseek-v4.1-flash-h100-1p1d-dspark5-cpu1t
 engine_version: "0.32.0"
 
 model: deepseek-v4.1-flash
-coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]
 
 cluster:
   hardware: h100
@@ -26,31 +26,27 @@ pools:
     parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}
     engine:
       block_size: 64
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       max_num_seqs: 1024
       max_num_batched_tokens: 8192
       max_model_len: 1048576
       gpu_memory_utilization: 0.8
       engram_config:
         cpu_offload: true
-      speculative:
-        method: dspark
-        num_spec_tokens: 5
+      speculative_config: {method: dspark, num_speculative_tokens: 5}
   - role: decode
     nodes: 1
     parallel: {tp: 8, pp: 1, dp: 1, enable_expert_parallel: true}
     engine:
       block_size: 64
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       max_num_seqs: 1024
       max_num_batched_tokens: 8192
       max_model_len: 1048576
       gpu_memory_utilization: 0.8
       engram_config:
         cpu_offload: true
-      speculative:
-        method: dspark
-        num_spec_tokens: 5
+      speculative_config: {method: dspark, num_speculative_tokens: 5}
 
 offload:
   connector: OffloadingConnector

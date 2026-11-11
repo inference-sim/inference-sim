@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -28,10 +29,9 @@ func streamVariant(t *testing.T, line string) string {
 }
 
 // engine.stream_interval reaches the driver's delivery (sim.EngineDriverConfig.StreamInterval).
-// Stated as 1, vLLM's default, it changes no figure; below 1 it is refused as vLLM refuses it,
-// before any engine is built. The grouping itself, at the values InferenceX states, is tested
-// on the driver (sim.TestEngineDriver_StreamInterval*): the engine this build pins refuses a
-// value above 1, so a run at 20 does not start until the engine accepts the field.
+// Stated as 1, vLLM's default, it changes no figure; a negative value is refused by the
+// scenario's validation, before any engine is built. The grouping itself is tested on the driver
+// (sim.TestEngineDriver_StreamInterval*), and a run at the stated values below.
 func TestStreamInterval_DefaultChangesNothingAndNegativeIsRefused(t *testing.T) {
 	args := append(burst(30, 10, 512, 64), "--num-instances", "1", "--seed", "3")
 	base := capRun(t, runArgs(append([]string{"--scenarios", pdScenarios, "--scenario", capScenario}, args...))...)
@@ -51,7 +51,7 @@ func TestStreamInterval_DefaultChangesNothingAndNegativeIsRefused(t *testing.T) 
 
 // The pool's stated engine.stream_interval is what the driver is configured with: the value the
 // scenario states, 0 when it states none. Opening the model needs no engine, so the stated 20
-// that the pinned engine refuses can still be read here.
+// is read here without building an engine.
 func TestStreamIntervalOf_ReadsTheScenariosValue(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	saved := [4]string{kernelScenario, kernelScenarioDir, catalogPath, registryPath}
@@ -76,6 +76,33 @@ func TestStreamIntervalOf_ReadsTheScenariosValue(t *testing.T) {
 		}
 		if got, err := streamIntervalOf(m); err != nil || got != c.want {
 			t.Errorf("%s: streamIntervalOf = %d, %v; want %d", c.name, got, err, c.want)
+		}
+	}
+}
+
+// At the values InferenceX states (10, 20, 32) a run starts, the engine accepts the field (it
+// changes when a client sees tokens, not what the scheduler does), and every figure the Result
+// reports is that of the run that states none: the grouping is the client's, and TTFT, TPOT and
+// the engine's step intervals do not move. A run at 1 is the same run (vLLM's default).
+func TestStreamInterval_StatedValuesRunAndMoveNoReportedFigure(t *testing.T) {
+	args := append(burst(30, 10, 512, 64), "--num-instances", "1", "--seed", "3")
+	run := func(dir, scenario string) map[string]any {
+		stdout, stderr, err := runKernelCLI(t, runArgs(append([]string{"--scenarios", dir, "--scenario", scenario}, args...))...)
+		if err != nil {
+			t.Fatalf("%v\n%s", err, lastLines(stderr, 5))
+		}
+		return resultDoc(t, stdout)
+	}
+	base := run(pdScenarios, capScenario)
+	if m, _ := base["metrics"].(map[string]any); len(m) < 10 {
+		t.Fatalf("non-vacuity: the Result states %d metrics", len(m))
+	}
+	for _, v := range []string{"1", "10", "20", "32"} {
+		got := run(streamVariant(t, "stream_interval: "+v), "variant.yaml")
+		for _, k := range []string{"metrics", "requests", "engine"} {
+			if !reflect.DeepEqual(got[k], base[k]) {
+				t.Errorf("stream_interval %s moved the Result's %q section", v, k)
+			}
 		}
 	}
 }

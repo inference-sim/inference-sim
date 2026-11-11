@@ -126,6 +126,7 @@ func emitRunResult(p postRun) {
 		NumRequests:    p.run.NumRequests,
 		Overrides:      runOverrides(p.extraOverrides...),
 		GPUs:           runGPUs(cs, docs.Deployment),
+		DecodeGPUs:     runDecodeGPUs(cs, docs.Deployment),
 		GoodputTargets: p.goodputTargets,
 		Saturation:     satFinal,
 		Artifacts:      artifacts,

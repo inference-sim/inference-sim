@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
@@ -46,6 +47,8 @@ type resultInputs struct {
 	Overrides []sim.ScenarioOverride
 	// GPUs is the number of GPUs the run's instances occupy, for output_tok_s_per_gpu.
 	GPUs int
+	// DecodeGPUs is the part of GPUs the decode pool's instances occupy, 0 without a decode pool.
+	DecodeGPUs int
 	// GoodputTargets are the resolved SLO targets, nil without.
 	GoodputTargets map[string]workload.SLODimTargets
 	// Saturation is the final label per detector, nil when no detector ran.
@@ -118,7 +121,7 @@ func buildResult(in resultInputs, out resultMetrics) *result.Result {
 	}
 
 	r.Window = windowOf(m, sum, out.ClockUs, out.HorizonUs)
-	r.Metrics = standardMetrics(sum, m, in.GPUs, r.Window.DurationS)
+	r.Metrics = standardMetrics(sum, m, in.GPUs, in.DecodeGPUs, r.Window.DurationS)
 	r.Breakdowns = breakdownsOf(m, sum, r.Metrics, out.PD)
 	r.Goodput = goodputOf(m, in.GoodputTargets, out.InjectedByClass, r.Metrics)
 	if len(in.Saturation) > 0 {
@@ -177,7 +180,7 @@ func windowRulesOf(m *sim.Metrics, sum sim.MeasuredSummary) windowRules {
 // per-step interval the engine section carried is step_interval_*. Schema 1's itl_* is not
 // the registry's itl, which pools every token gap, and BLIS does not compute that pool yet,
 // so no itl_* figure is written.
-func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus int, windowS float64) map[string]result.Figure {
+func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs int, windowS float64) map[string]result.Figure {
 	out := map[string]result.Figure{}
 	put := func(id string, v float64, n int) { out[id] = result.Figure{Value: v, Samples: n} }
 	n := sum.MeasuredCompletedRequests
@@ -187,6 +190,9 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus int, windowS 
 			put("output_tok_s_per_gpu", sum.OutputThroughputTokS/float64(gpus), n)
 		}
 		put("request_throughput", float64(n)/windowS, n)
+		for id, v := range throughputForms(sum, gpus, decodeGPUs, registryDefines) {
+			put(id, v, n)
+		}
 	}
 	if n > 0 {
 		put("ttft_mean_ms", sum.TTFTMeanMs, n)
@@ -238,7 +244,7 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus int, windowS 
 // throughput and the engine-wide step and preemption figures are not split.
 func splitMetrics(sum sim.MeasuredSummary, defined map[string]result.Figure) map[string]float64 {
 	out := map[string]float64{}
-	for k, f := range standardMetrics(sum, nil, 0, sum.MeasuredWindowS) {
+	for k, f := range standardMetrics(sum, nil, 0, 0, sum.MeasuredWindowS) {
 		if _, ok := defined[k]; ok {
 			out[k] = f.Value
 		}
@@ -471,4 +477,30 @@ func sortedMapKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// The throughput forms InferenceX plots (blis-substrate#52): total tokens (prompt plus output)
+// per second over all the run's GPUs, and for a disaggregated run the output tokens per second
+// over the decode pool's GPUs alone (tput_per_gpu and output_tput_per_gpu of its
+// request_metrics). They are the registry's to define, so a form is stated only when the pinned
+// registry defines its identifier; at a pin that does not, the Result states neither, and
+// `blis metrics` lists whatever the pin defines.
+const (
+	totalTokensPerGPU        = "total_tokens_per_second_per_gpu"
+	outputTokensPerDecodeGPU = "output_tokens_per_second_per_decode_gpu"
+)
+
+// registryDefines reports whether the pinned metric registry defines id.
+func registryDefines(id string) bool { _, ok := metrics.Lookup(id); return ok }
+
+// throughputForms returns the forms above that defined accepts and the run's GPUs allow.
+func throughputForms(sum sim.MeasuredSummary, gpus, decodeGPUs int, defined func(string) bool) map[string]float64 {
+	out := map[string]float64{}
+	if defined(totalTokensPerGPU) && gpus > 0 {
+		out[totalTokensPerGPU] = (sum.InputThroughputTokS + sum.OutputThroughputTokS) / float64(gpus)
+	}
+	if defined(outputTokensPerDecodeGPU) && decodeGPUs > 0 {
+		out[outputTokensPerDecodeGPU] = sum.OutputThroughputTokS / float64(decodeGPUs)
+	}
+	return out
 }

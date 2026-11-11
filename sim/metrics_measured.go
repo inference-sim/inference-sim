@@ -83,6 +83,9 @@ type MeasuredMetrics struct {
 	// Σ OSL / measured window (aiperf output_token_throughput_metrics.py:40-42), and where
 	// the window came from (WindowSourceExplicit or WindowSourceDerived; see MeasuredWindow).
 	OutputThroughputTokS float64 `json:"output_throughput_tok_s"`
+	// InputThroughputTokS is Σ prompt tokens of the same requests / the same window, the input
+	// half of InferenceX's total-token throughput.
+	InputThroughputTokS  float64 `json:"input_throughput_tok_s"`
 	MeasuredWindowS      float64 `json:"measured_window_s"`
 	MeasuredWindowSource string  `json:"measured_window_source"`
 
@@ -236,7 +239,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 	// perUser is summed in sorted order below, as every other mean is, so the aggregate is a
 	// function of the request set and not of the IDs it is iterated in (INV-13).
 	var ttfts, e2es, itls, gateway, perUser []float64
-	var outputTokens int64
+	var outputTokens, inputTokens int64
 	for _, id := range sortedRequestIDs(m.Requests) {
 		rm := m.Requests[id]
 		if !rm.Phase.Measured() {
@@ -266,6 +269,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		e2es = append(e2es, latency)
 		gateway = append(gateway, rm.GatewayQueueDelay*1e3) // ms -> ticks, as the helpers expect
 		outputTokens += int64(rm.OutputTokens)
+		inputTokens += int64(rm.NumPrefillTokens)
 		if m.MeasuredWindow == nil {
 			startUs = min(startUs, completionUs-int64(e2e))
 		}
@@ -332,6 +336,7 @@ func (m *Metrics) buildMeasured() (MeasuredMetrics, measuredLatencies) {
 		lat.startUs, lat.endUs = startUs, endUs
 		out.MeasuredWindowS = float64(endUs-startUs) / 1e6
 		out.OutputThroughputTokS = float64(outputTokens) / out.MeasuredWindowS
+		out.InputThroughputTokS = float64(inputTokens) / out.MeasuredWindowS
 		out.InFlightRequestsMean, out.InFlightRequestsMax = inFlightOver(m.InFlightSamples, startUs, endUs)
 	}
 

@@ -9,18 +9,19 @@
   "data": {
     "catalog": {
       "source": "path",
-      "hash": "2bffc79ee1c01e0cf63236ea266e13834ce542da2afcffa7b8b71a7aa66cd2e8",
-      "combined_hash": "2bffc79ee1c01e0cf63236ea266e13834ce542da2afcffa7b8b71a7aa66cd2e8"
+      "hash": "394a38a536b9a0802551fe614e3a5dec43516640dc5b8f403f4a86a0503ce2c6",
+      "combined_hash": "394a38a536b9a0802551fe614e3a5dec43516640dc5b8f403f4a86a0503ce2c6"
     },
     "registry": {
       "source": "path",
-      "hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d",
-      "combined_hash": "825ec093e745522db9946b1501eb0c95b787cc0983b2db3a66efd65b5e2ef21d"
+      "hash": "ac593a3d3e46c144861a47739343adb3dcfbcbf16fd1c1d87347768fdfd5b4f5",
+      "combined_hash": "ac593a3d3e46c144861a47739343adb3dcfbcbf16fd1c1d87347768fdfd5b4f5"
     },
     "released_data": false,
     "build": "unreleased"
   },
   "selected_entries": {
+    "closeness_version": 1,
     "coefficients": [
       {
         "set": "cost-model-attention",
@@ -335,7 +336,11 @@
             "l40s"
           ]
         },
-        "file": "coefficients/cost-model-host-overheads.yaml"
+        "file": "coefficients/cost-model-host-overheads.yaml",
+        "ci95": [
+          3.1,
+          3.3
+        ]
       },
       {
         "set": "cost-model-host-overheads",
@@ -673,13 +678,15 @@
           },
           "engine": {
             "quantization": "nvfp4",
-            "cache_dtype": "fp8",
+            "kv_cache_dtype": "fp8",
             "block_size": 16,
             "max_num_batched_tokens": 8192,
             "max_num_seqs": 256,
             "max_model_len": 32768,
-            "cudagraph_mode": "PIECEWISE",
-            "gpu_memory_utilization": 0.92
+            "gpu_memory_utilization": 0.92,
+            "compilation_config": {
+              "cudagraph_mode": "PIECEWISE"
+            }
           }
         }
       ]
@@ -768,9 +775,9 @@
   },
   "revisions": {
     "simulator": "(devel)",
-    "substrate": "v0.13.0",
+    "substrate": "v0.13.1-0.20261111044143-f70c6c7503a4",
     "router": "v1.0.0-blis.3",
-    "engine_module": "v0.32.0-blis.2"
+    "engine_module": "v0.32.1-0.20261111132033-96ea750e3a62"
   },
   "window": {
     "start_us": 125000,
@@ -1780,9 +1787,11 @@
           "engram-excludes-dbo",
           "engram-residency-default",
           "enum-values-known",
+          "eplb-needs-expert-parallelism",
           "eviction-policy-known",
           "expert-divisibility-under-eplb",
           "expert-imbalance-without-eplb",
+          "flashinfer-mega-deep-gemm-model",
           "long-prefill-threshold-within-max-model-len",
           "mamba-cache-mode-matches-model",
           "max-model-len-within-context-window",

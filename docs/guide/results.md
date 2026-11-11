@@ -58,6 +58,8 @@ Each identifier is a contracts/metrics registry entry in the pinned blis-substra
 | `interactivity_p50`, `interactivity_p90` | `1000 / tpot_p50_ms`, `1000 / tpot_p90_ms` |
 | `output_tok_s` | output tokens over the window |
 | `output_tok_s_per_gpu` | `output_tok_s` over the GPUs the run's instances occupy |
+| `total_tokens_per_second_per_gpu` | (prompt plus output tokens per second of the measured window) over the GPUs the run's instances occupy: InferenceX's `tput_per_gpu`. Stated only when the pinned metric registry defines it |
+| `output_tokens_per_second_per_decode_gpu` | output tokens per second over the GPUs of the decode pool's instances, for a disaggregated run: InferenceX's `output_tput_per_gpu`. Stated only when the pinned registry defines it |
 | `request_throughput` | completed requests over the window |
 | `goodput_rps`, `slo_attainment` | with SLO targets: requests meeting every target, per second of the simulated run, and as a fraction of completed |
 
