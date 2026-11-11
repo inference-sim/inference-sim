@@ -90,9 +90,15 @@ cases, and the threshold and context rules. The oracle file was regenerated with
 (2.15.0 here; CI pins 2.13.0+cpu in `oracle/requirements.lock`; every answer is an integer or a
 string, so the two agree).
 
-Not run against the release: the KV group pages (`GroupPages` in `core/kv`), which are checked
-against the pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from, and not
-against `get_kv_cache_groups`; the Engram table's rows and the draft-logits buffer, which are sums of
+The oracle also prints vLLM's own KV pool sizing at a cache stored as fp8 (`kv_pool`: the spec classes
+of six architectures, `customize_attention_spec`, `get_kv_cache_groups` and
+`_get_kv_cache_bytes_per_block` under both layouts, 424 cases; `core/kv`'s `pool_oracle_test.go`,
+`vllmengine`'s `pool_oracle_test.go`). Kimi-K3's KDA layers are not built: the engine maps no
+recurrent layer to a KV cache spec.
+
+Not run against the release: the KV group pages (`GroupPages` in `core/kv`) outside those cases, which
+are checked against the pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from;
+the Engram table's rows and the draft-logits buffer, which are sums of
 figures the source states, tested by arithmetic; and the drafter's eager context store, which sits in
 a method that needs a GPU, so its rule over the oracle's recorded graph rows is stated in
 `core/lower` and tested there. What the oracle replaces is in `oracle/lower/replacements.json`,

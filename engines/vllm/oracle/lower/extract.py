@@ -22,6 +22,7 @@ import dataclasses
 import enum
 import itertools
 import json
+import math
 import os
 import sys
 import types
@@ -548,7 +549,164 @@ def context_cases(ns):
     return out
 
 
+# The architectures whose KV pool the fp8 cache dtype sizes, as the KV layers each builds (the
+# "kv_layers" schema of oracle/run_scheduler.py, which builds vLLM's own spec classes from it).
+# Heads are per tensor-parallel rank: Attention holds max(1, total_num_kv_heads // tp)
+# (vllm/model_executor/layers/attention/attention.py), MLA one latent head. A cache stored at fp8
+# is uint8 (kv_cache_dtype_str_to_dtype), one byte an element.
+KV_BLOCK_SIZES = (16, 32, 64, 128, 256)
+KV_DEFAULT_BLOCK = 16
+
+
+def fp8_arches():
+    """name -> (tp values, builder(tp) -> kv_layers). The layer counts and head sizes are the
+    catalog's (the models' config.json files), which the Go tests read back through the engine."""
+    def kv_heads(total, tp):
+        return max(1, total // tp)
+    return {
+        "gpt-oss-120b": ((1, 2, 4, 8), lambda tp: [
+            {"count": 18, "spec": "sliding_window", "sliding_window": 128, "num_kv_heads": kv_heads(8, tp),
+             "head_size": 64, "elem_bytes": 1},
+            {"count": 18, "spec": "full", "num_kv_heads": kv_heads(8, tp), "head_size": 64, "elem_bytes": 1}]),
+        "minimax-m2.5": ((1, 2, 4, 8), lambda tp: [
+            {"count": 62, "spec": "full", "num_kv_heads": kv_heads(8, tp), "head_size": 128, "elem_bytes": 1}]),
+        # The indexer's keys stay at the indexer's own dtype, bfloat16
+        # (vllm/models/minimax_m3/nvidia/model.py:505-509).
+        "minimax-m3": ((2, 4, 8), lambda tp: [
+            {"count": 60, "spec": "full", "num_kv_heads": kv_heads(4, tp), "head_size": 128, "elem_bytes": 1},
+            {"count": 57, "spec": "indexer", "num_kv_heads": 1, "head_size": 128, "elem_bytes": 2}]),
+        # DeepseekV3-style MLA: kv_lora_rank 512 + qk_rope_head_dim 64, one latent head, keys only
+        # (MLAAttentionSpec, vllm/model_executor/layers/attention/mla_attention.py:1350-1368).
+        "kimi-k2.5": ((4, 8), lambda tp: [
+            {"count": 61, "spec": "mla", "num_kv_heads": 1, "head_size": 576, "elem_bytes": 1}]),
+        # Only Kimi-K3's 24 MLA layers (vllm/models/kimi_k3/nvidia/mla.py:417-433). Its KDA layers
+        # build a MambaSpec whose page the engine's hybrid-model config pads
+        # (HybridAttentionMambaModelConfig), which needs the checkpoint's config: not built here.
+        "kimi-k3 (MLA layers only)": ((8,), lambda tp: [
+            {"count": 24, "spec": "mla", "num_kv_heads": 1, "head_size": 576, "elem_bytes": 1}]),
+    }
+
+
+def kv_pool_cases(root):
+    """The bytes one block of the KV pool costs, from vLLM's own spec classes and
+    _get_kv_cache_bytes_per_block, at a cache stored as fp8.
+
+    Per case the layers' specs are built (run_scheduler.layer_specs), each backend's declared
+    kernel block sizes are applied by vLLM's customize_attention_spec
+    (vllm/v1/worker/utils.py:476-486), the layers are grouped by get_kv_cache_groups, and the
+    bytes per block are taken in both layouts: layer-outermost (each layer's page rounded to
+    its own stride alignment, then summed) and block-outermost (the pages summed, rounded once to
+    the lcm of the alignments), vLLM's two rules (kv_cache_utils.py:1515-1552).
+    "per_layer_equals_once" is whether the two agree. "group_pages" lists each group's layers as
+    [layers, page_size_bytes, stride alignment] runs, the inputs of that function."""
+    import importlib.util
+    from dataclasses import replace
+    if root not in sys.path:
+        sys.path.append(root)
+    import torch  # noqa: F401
+    from vllm.config.cache import CacheConfig
+    from vllm.v1.attention.backend import MultipleOf
+    from vllm.v1.attention.backends.utils import (_DEFAULT_LAYOUT_PREFERENCE, _layout_from_name,
+                                                  get_supported_kv_cache_layouts, resolve_kv_cache_layout)
+    from vllm.v1.core.kv_cache_utils import (_get_kv_cache_bytes_per_block, _get_per_layer_spec,
+                                             get_kv_cache_groups)
+    from vllm.v1.core.single_type_kv_cache_manager import register_all_kvcache_specs
+    from vllm.v1.kv_cache_interface import AttentionSpec
+    from vllm.v1.worker.utils import customize_attention_spec
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    ms = importlib.util.spec_from_file_location("run_scheduler", os.path.join(here, "..", "run_scheduler.py"))
+    assert ms is not None and ms.loader is not None
+    rs = importlib.util.module_from_spec(ms)
+    ms.loader.exec_module(rs)
+
+    def backend(*sizes):
+        """A backend that declares these kernel block sizes and customizes nothing: the part of
+        the backends' interface customize_attention_spec reads."""
+        return type("DeclaredBackend", (), {
+            "customize_spec": classmethod(lambda cls, spec: spec),
+            "get_supported_kernel_block_sizes": classmethod(lambda cls, spec=None: list(sizes))})
+
+    variants = [
+        ("no kernel block size", None),
+        ("MultipleOf(16): FlashAttention, TritonMLA, FlashAttnMLA", backend(MultipleOf(16))),
+        ("MultipleOf(64): the sparse MLA kernels off SM100", backend(MultipleOf(64))),
+        ("64: FlashMLA", backend(64)),
+        ("128: CutlassMLA", backend(128)),
+        ("32 or 64: FlashInferMLA", backend(32, 64)),
+    ]
+    supported = [m.name for m in _DEFAULT_LAYOUT_PREFERENCE]
+    from vllm.v1.attention.backends.mla.indexer import DeepseekV4IndexerBackend
+    supported_v4 = [m.name for m in get_supported_kv_cache_layouts([DeepseekV4IndexerBackend])]
+
+    def one(name, tp, block, layers, backend_cls, label, v4, indexer_sparse_logits=False):
+        cfg = {"block_size": block, "kv_layers": layers}
+        specs = rs.layer_specs(cfg)
+        if indexer_sparse_logits:
+            # vllm/models/deepseek_v41/attention.py:1231-1236: the indexer's key cache, with
+            # indexer_sparse_logits on (vllm/config/attention.py:89, default off).
+            for k, sp in specs.items():
+                if sp.head_size == 132:
+                    specs[k] = replace(sp, block_stride_alignment=math.lcm(512, sp.alignment))
+        elif backend_cls is not None:
+            for k, sp in specs.items():
+                if isinstance(sp, AttentionSpec):
+                    specs[k] = customize_attention_spec(backend_cls, sp)
+        cc = CacheConfig(block_size=block, cache_dtype="fp8")
+        vc = types.SimpleNamespace(
+            cache_config=cc, kv_transfer_config=None, speculative_config=None,
+            scheduler_config=types.SimpleNamespace(disable_hybrid_kv_cache_manager=False),
+            attention_config=types.SimpleNamespace(hisparse_config=None),
+            model_config=types.SimpleNamespace(max_model_len=4096),
+            parallel_config=types.SimpleNamespace(decode_context_parallel_size=1, tensor_parallel_size=tp),
+            num_prefill_lookahead_tokens=0)
+        register_all_kvcache_specs(vc)
+        layout = resolve_kv_cache_layout(vc, [supported_v4 if v4 else supported], specs.values())
+        groups = get_kv_cache_groups(vc, specs)
+        lbnhc = _get_kv_cache_bytes_per_block(groups, _layout_from_name("LBNHC"))
+        blhnc = _get_kv_cache_bytes_per_block(groups, _layout_from_name("BLHNC"))
+        runs = []
+        for r, run in enumerate(layers):
+            sp = specs[f"run{r}.layer0"]
+            runs.append(dict(run, page_size_bytes=sp.page_size_bytes, stride_alignment=sp.get_block_stride_alignment()))
+        pages = []
+        for g in groups:
+            rle = []
+            for layer in g.layer_names:
+                sp = _get_per_layer_spec(g, layer)
+                key = [sp.page_size_bytes, sp.get_block_stride_alignment()]
+                if rle and rle[-1][1:] == key:
+                    rle[-1][0] += 1
+                else:
+                    rle.append([1] + key)
+            pages.append(rle)
+        return {"model": name, "tp": tp, "block_size": block, "backend": label, "runs": runs,
+                "layout": layout.name, "groups": [len(g.layer_names) for g in groups], "group_pages": pages,
+                "bytes_per_block": {"LBNHC": lbnhc, "BLHNC": blhnc}, "per_layer_equals_once": lbnhc == blhnc}
+
+    out = []
+    for name, (tps, build) in fp8_arches().items():
+        for tp in tps:
+            for block in KV_BLOCK_SIZES:
+                for label, be in variants:
+                    out.append(one(name, tp, block, build(tp), be, label, False))
+    # DeepSeek V4 and V4.1: the layers the dashboard's deployments register (the pool scenarios
+    # are those specs, with cache_dtype fp8 resolved to fp8_ds_mla by the model's own hook).
+    for name, scenario in (("deepseek-v4-pro", "dashboard-deepseek-v4-pro-pool.json"),
+                           ("deepseek-v4.1-flash", "dashboard-deepseek-v4.1-flash-pool.json")):
+        with open(os.path.join(here, "..", "scenarios", scenario), encoding="utf-8") as f:
+            sc = json.load(f)["config"]
+        layers = sc["kv_layers"]
+        out.append(one(name, 8, sc["block_size"], layers, None, "no kernel block size", True))
+        if any(r.get("head_size") == 132 for r in layers):
+            out.append(one(name, 8, sc["block_size"], layers, None, "indexer_sparse_logits on", True,
+                           indexer_sparse_logits=True))
+    return out
+
+
 def build(root):
+    # Before the other cases: set_cudagraph_sizes installs a stand-in `vllm` module, and these import the real one.
+    kv_pool = kv_pool_cases(root)
     ns = load(root)
     return {
         "dcp_preferences": dcp_preferences(root),
@@ -561,6 +719,7 @@ def build(root):
         "drafter": drafter_cases(ns),
         "engram": engram_cases(ns),
         "dbo": dbo_cases(ns),
+        "kv_pool": kv_pool,
     }
 
 
