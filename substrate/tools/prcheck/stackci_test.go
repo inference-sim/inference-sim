@@ -97,7 +97,7 @@ func stackCIFindings(t *testing.T, files map[string]string) []string {
 		}
 	}
 	// Two runs for one head must not both run, or a cancelled one must be harmless to the gate.
-	for _, f := range []string{"ci.yml", "ledger-candidate.yml"} {
+	for _, f := range []string{"ci.yml", "rederive.yml", "ledger-candidate.yml"} {
 		c, _ := readWorkflow(t, files[f])
 		if c.Concurrency.Group == "" || c.Concurrency.CancelInProgress == nil {
 			add(f, "has no concurrency group that cancels the run a new one replaces")
@@ -148,8 +148,8 @@ func TestStackAwareTriggers(t *testing.T) {
 	t.Run("a layer job named like a required check", func(t *testing.T) {
 		has(t, stackCIFindings(t, mutate("ci-light.yml", "  light-lint:", "  required:")), "named like a required check")
 	})
-	t.Run("ledger-candidate without a concurrency group", func(t *testing.T) {
-		has(t, stackCIFindings(t, mutate("ledger-candidate.yml", "  group: ledger-candidate-", "  xgroup: ledger-candidate-")), "no concurrency group")
+	t.Run("rederive without a concurrency group", func(t *testing.T) {
+		has(t, stackCIFindings(t, mutate("rederive.yml", "  group: rederive-", "  xgroup: rederive-")), "no concurrency group")
 	})
 	t.Run("the private-name scan loses edited", func(t *testing.T) {
 		has(t, stackCIFindings(t, mutate("private-names.yml", "[opened, edited, synchronize, reopened]", "[opened, synchronize, reopened]")), "required on main")

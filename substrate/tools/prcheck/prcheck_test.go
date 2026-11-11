@@ -754,6 +754,12 @@ func TestGateRunsUseTheNewestAttempt(t *testing.T) {
 		{"older success then newer failure is refused", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "failure"), rec(6, "candidate", "completed", "success")}, "concluded failure"},
 		{"a newest attempt still running is no result", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "in_progress", ""), rec(6, "candidate", "completed", "success")}, "has not completed"},
 		{"a missing run is refused", []gateRunRecord{rec(5, "rederive", "completed", "success")}, `no check run "candidate"`},
+		// A workflow's concurrency group cancels the run a newer one replaces. A cancelled run
+		// proves nothing: when a newer run passed it is not the newest and does not matter; when
+		// it is the newest it is a finished run that did not succeed, never a pass.
+		{"an older cancelled run and a newer success passes", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(9, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
+		{"an older success and a newer cancelled run is no pass", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
+		{"a cancelled run alone is no pass", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
 		{"ids compare as numbers", []gateRunRecord{rec(9, "rederive", "completed", "failure"), rec(10, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
 	}
 	for _, c := range cases {

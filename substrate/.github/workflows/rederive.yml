@@ -45,6 +45,15 @@ on:
 permissions:
   contents: read
 
+# One run per head. A push, or a retarget that follows it, can deliver two events for the same
+# commit; the newer run replaces the older one, and the older one's check run concludes
+# `cancelled`. The path gate reads each check run at its newest attempt and refuses a newest
+# attempt that was cancelled, so a cancelled run is never a pass (tools/prcheck/pathgates.go).
+# Nightly and manual runs are never cancelled.
+concurrency:
+  group: rederive-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   rederive:
     runs-on: ubuntu-latest

@@ -198,7 +198,10 @@ type gateRunRecord struct {
 // of an earlier attempt when a workflow is re-run on the same head. A gate protects the current
 // result for the head, so an earlier failure that a later run replaced must not hold it back,
 // and an earlier pass must not hide a later failure. A newest attempt that has not completed
-// stays not done, and a name with no run is absent: CheckGates refuses both.
+// stays not done, and a name with no run is absent: CheckGates refuses both. A newest attempt
+// that was cancelled (a workflow's concurrency group replaces a run with a newer one) is done and
+// did not succeed, so CheckGates refuses it as well: a cancelled run is never a pass, and the
+// newer run that replaced it is the one this reads.
 func foldGateRuns(recs []gateRunRecord) map[string]GateRun {
 	newest := map[string]gateRunRecord{}
 	for _, r := range recs {
