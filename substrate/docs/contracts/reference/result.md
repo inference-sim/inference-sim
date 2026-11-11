@@ -47,6 +47,7 @@ finite](../concepts/contracts.md#numbers-are-finite)).
 | `breakdowns` | mapping | no | The metrics split along the axes the run exercised. |
 | `reports` | mapping | no | Each component's own report, carried as reported. |
 | `overrides` | list | no | Every setting simulated differently from `input`, and what chose it. |
+| `resolutions` | list | no | The engine's own resolution of the settings it resolves, beside `overrides`. |
 | `artifacts` | mapping | no | Bulk outputs by reference, keyed by role, a lowercase slug. |
 | `runtime` | mapping | no | The only part that depends on the host or the wall clock. |
 
@@ -437,6 +438,24 @@ number reads it from `metrics`.
 | `input` | string | no | The value `input` states. |
 | `run` | string | no | The value the run simulated. |
 | `source` | string | yes | What chose it, for example a command-line flag. |
+
+## `resolutions`
+
+<!-- fields: result.Resolution -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `setting` | string | yes | The setting. Listed once each, sorted. The name an `overrides` entry uses for the same setting. |
+| `host` | string | no | The value the host gave the engine: the host's value when `overrides` names this setting, else the input's. Absent when the host gave none and the engine chose one. |
+| `engine` | string | yes | The value the engine resolved to, and the run simulated. |
+| `reason` | string | when it differs | Why `engine` differs from `host`. Only where they differ. |
+
+An override is what the host changed; a resolution is what the engine then did with the value
+it was given. Design §11.2 grades a benchmark point G2 when a resolved value the run logged
+differs from the engine's resolution of the value passed, and this list is where the engine's
+resolution is read, beside the host's value. `result.ResolutionsOf` writes it from the cost
+model's own `kernel.Resolution`: the layout widths and modes, and each request the cost model
+declined.
 
 ## `artifacts`
 

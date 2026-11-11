@@ -126,6 +126,10 @@
   "overrides": [
     { "setting": "scheduler", "input": "fcfs", "run": "priority", "source": "--scheduler" }
   ],
+  "resolutions": [
+    { "setting": "data_parallel_width", "engine": "4" },
+    { "setting": "tensor_parallel_width", "engine": "2" }
+  ],
   "artifacts": {
     "trace": { "ref": "llama-3.1-8b-h100-tp2-dp4.c64-s1.trace.csv", "sha256": "4bf5122f344554c53bde2ebb8cd2b7e3d1600ad631c385a5d7cce23c7785459a", "rows": 6 }
   },

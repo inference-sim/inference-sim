@@ -86,8 +86,14 @@ type Result struct {
 	Reports Reports `yaml:"reports,omitempty"`
 
 	// Overrides lists every setting the run simulated differently from Input, and what
-	// chose the value.
+	// chose the value. These are the host's choices.
 	Overrides []Override `yaml:"overrides,omitempty"`
+	// Resolutions are the engine's own resolution of the settings it resolves: for each, the
+	// value it was asked for and the value it resolved to. They sit beside Overrides: an
+	// override is what the host changed, a resolution is what the engine then did with the
+	// value (design §11.2, which grades a point G2 where a resolved value that a benchmark
+	// run logged differs from the engine's resolution of the value passed).
+	Resolutions []Resolution `yaml:"resolutions,omitempty"`
 	// Artifacts are bulk outputs, by reference.
 	Artifacts map[string]Artifact `yaml:"artifacts,omitempty"`
 
@@ -722,6 +728,21 @@ type Override struct {
 	Run   string `yaml:"run"`
 	// Source is what chose Run, for example a command-line flag.
 	Source string `yaml:"source"`
+}
+
+// Resolution is the engine's resolution of one setting, beside the value the host gave it.
+type Resolution struct {
+	// Setting is the setting's name. It is the same name an Override uses for the same
+	// setting, when the host overrode it.
+	Setting string `yaml:"setting"`
+	// Host is the value the host gave the engine: the host's value when Overrides names this
+	// setting, else Input's. Empty when the host gave none and the engine chose.
+	Host string `yaml:"host,omitempty"`
+	// Engine is the value the engine resolved to, and the run simulated.
+	Engine string `yaml:"engine"`
+	// Reason says why Engine differs from Host. Required exactly when both are set and
+	// differ.
+	Reason string `yaml:"reason,omitempty"`
 }
 
 // Artifact is a bulk output, by path relative to the Result document.

@@ -395,6 +395,7 @@ var documented = map[string]struct {
 	"result.Breakdowns":           {typ: reflect.TypeOf(result.Breakdowns{})},
 	"result.Reports":              {typ: reflect.TypeOf(result.Reports{})},
 	"result.Override":             {typ: reflect.TypeOf(result.Override{})},
+	"result.Resolution":           {typ: reflect.TypeOf(result.Resolution{})},
 	"result.Artifact":             {typ: reflect.TypeOf(result.Artifact{})},
 	"result.Runtime":              {typ: reflect.TypeOf(result.Runtime{})},
 }

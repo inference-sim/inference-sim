@@ -59,6 +59,7 @@ func (r *Result) Validate() *validate.Problems {
 			p.Field(at+".source", "required: what chose the simulated value")
 		}
 	}
+	r.validateResolutions(p)
 	for _, name := range sortedKeys(r.Artifacts) {
 		a := r.Artifacts[name]
 		at := "artifacts." + name
@@ -147,6 +148,41 @@ func hashField(p *validate.Problems, at, v string) {
 		p.Field(at, "required: the content hash, 64 lowercase hex characters")
 	case !lowerHex64.MatchString(v):
 		p.Field(at, "must be 64 lowercase hex characters, got %q", v)
+	}
+}
+
+// validateResolutions checks the engine's resolutions: each names a setting once, in order,
+// resolves to a value, explains a difference from the value the host gave, and starts from
+// the value the host simulated where the host overrode the setting.
+func (r *Result) validateResolutions(p *validate.Problems) {
+	hostRun := map[string]string{}
+	for _, o := range r.Overrides {
+		hostRun[o.Setting] = o.Run
+	}
+	prev := ""
+	for i, x := range r.Resolutions {
+		at := fmt.Sprintf("resolutions[%d]", i)
+		switch {
+		case x.Setting == "":
+			p.Field(at+".setting", "required")
+		case i > 0 && x.Setting <= prev:
+			p.Field(at+".setting", "settings are listed once each, sorted; %q follows %q", x.Setting, prev)
+		}
+		prev = x.Setting
+		if x.Engine == "" {
+			p.Field(at+".engine", "required: the value the engine resolved to")
+		}
+		differs := x.Host != "" && x.Engine != "" && x.Host != x.Engine
+		switch {
+		case differs && x.Reason == "":
+			p.Field(at+".reason", "required: the host gave %q and the engine resolved %q", x.Host, x.Engine)
+		case !differs && x.Reason != "":
+			p.Field(at+".reason", "only where the engine's value differs from the host's")
+		}
+		if run, ok := hostRun[x.Setting]; ok && x.Host != "" && x.Host != run {
+			p.Field(at+".host", "the host overrode %q to %q, so the engine was given that value, not %q",
+				x.Setting, run, x.Host)
+		}
 	}
 }
 

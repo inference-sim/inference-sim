@@ -1243,6 +1243,28 @@
       ],
       "type": "object"
     },
+    "result.Resolution": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "setting": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "setting"
+      ],
+      "type": "object"
+    },
     "result.Result": {
       "additionalProperties": false,
       "properties": {
@@ -1355,6 +1377,12 @@
         },
         "rerun_of": {
           "$ref": "#/$defs/result.Reference"
+        },
+        "resolutions": {
+          "items": {
+            "$ref": "#/$defs/result.Resolution"
+          },
+          "type": "array"
         },
         "revision_changes": {
           "items": {
