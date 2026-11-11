@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel/enginesettings"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-substrate/load"
 )
 
@@ -440,6 +441,173 @@ func TestTheCommittedTRTLLMGenLaneIsNotPricedWithoutAKernelHash(t *testing.T) {
 			if movedBy(t, in, append(laneNames("bf16"), laneNames("fp8")...)) {
 				t.Errorf("%s: an unkeyed lane entry moves a price", chip)
 			}
+		}
+	}
+}
+
+// prefillOps reports the prefill of every layer of the model that has attention as one operation
+// on the given kernel, reading a cache of the given format.
+func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, impl plan.KernelImpl) []plan.Operation {
+	t.Helper()
+	kinds := map[string]model.LayerKind{}
+	for _, lk := range in.Model.LayerKinds {
+		kinds[lk.ID] = lk
+	}
+	var ops []plan.Operation
+	for i, id := range in.Model.Stack.Expand() {
+		for _, n := range kinds[id].Nodes {
+			if n.Op == model.OpAttention && n.ReadsEngineKV() {
+				ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Format: f, Impl: impl})
+				break
+			}
+		}
+	}
+	if len(ops) == 0 {
+		t.Fatal("the model has no attention layer")
+	}
+	return ops
+}
+
+var (
+	bf16Cache = units.QuantFormat{PayloadBits: 16}
+	fp8Cache  = units.QuantFormat{PayloadBits: 8}
+)
+
+// One kernel serves both cache formats, so both pairs list it. The operations state the format
+// of the cache each prefill reads, which picks the pair: bf16 reads the bf16 pair, fp8 the fp8
+// pair, and neither is ambiguous. Two formats among the non-latent prefill are refused.
+func TestOneKernelServingBothCacheFormatsPricesTheLaneOfTheFormatTheOperationsRead(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := laneCase(t, d, "b200")
+	both := keyLaneEntries(raw, map[string]plan.KernelImpl{"bf16": laneBF16, "fp8": laneBF16})
+	pooled := pricesOf(mustKernel(t, raw))
+	bf16, fp8 := laneNames("bf16"), laneNames("fp8")
+	at := func(f units.QuantFormat) Inputs {
+		in := both
+		in.Operations = prefillOps(t, in, f, laneBF16)
+		return in
+	}
+	onBF16, onFP8 := at(bf16Cache), at(fp8Cache)
+	if pricesOf(mustKernel(t, onBF16)) == pooled || pricesOf(mustKernel(t, onFP8)) == pooled {
+		t.Fatal("a kernel both pairs list, reported with the cache format, does not price the lane")
+	}
+	if !movedBy(t, onBF16, bf16) || movedBy(t, onBF16, fp8) {
+		t.Error("a bf16 cache must read the bf16 pair and not the fp8 one")
+	}
+	if !movedBy(t, onFP8, fp8) || movedBy(t, onFP8, bf16) {
+		t.Error("an fp8 cache must read the fp8 pair and not the bf16 one")
+	}
+	// The pooled form cannot tell the formats apart and is refused, as before.
+	pooledForm := both
+	pooledForm.Implementations = map[plan.Primitive][]plan.KernelImpl{plan.PrimAttentionPrefill: {laneBF16}}
+	if _, err := New(pooledForm); err == nil || !strings.Contains(err.Error(), "both list") {
+		t.Errorf("both pairs listing the kernel reported only by primitive: %v", err)
+	}
+	// Two formats among the non-latent prefill.
+	mixed := both
+	ops := prefillOps(t, both, bf16Cache, laneBF16)
+	ops[len(ops)-1].Format = fp8Cache
+	mixed.Operations = ops
+	if _, err := New(mixed); err == nil || !strings.Contains(err.Error(), "formats") {
+		t.Errorf("prefill reading two cache formats: %v", err)
+	}
+	// No format stated: the lane is not priced, and the pooled pair is recorded as pricing.
+	none := both
+	none.Operations = prefillOps(t, both, units.QuantFormat{}, laneBF16)
+	k := mustKernel(t, none)
+	if pricesOf(k) != pooled {
+		t.Error("a prefill that states no cache format priced the lane")
+	}
+	if why, ok := laneAssumed(k); !ok || !strings.Contains(why, "format") {
+		t.Errorf("the unpriced lane is not recorded with its reason: %q", why)
+	}
+}
+
+// A pool with latent and non-latent layers: the non-latent prefill runs trtllm-gen (kernel B)
+// and the latent prefill another kernel (A). The lane's pair lists B alone: it is read by the
+// non-latent layers only, so it is exact, where a union over the primitive's kernels would have
+// refused it.
+func TestALaneEntryForTheNonLatentKernelIsExactBesideALatentPrefillOnAnother(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := laneCase(t, d, "b200")
+	// The model with one of its attention kinds made latent: a graph the catalog does not hold,
+	// since no catalog model mixes the two, but the binding does not depend on that.
+	g, err := raw.Model.ForCapability(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := *g
+	c.LayerKinds = append([]model.LayerKind(nil), g.LayerKinds...)
+	latentKind := ""
+	for i := range c.LayerKinds {
+		c.LayerKinds[i].Nodes = append([]model.Node(nil), g.LayerKinds[i].Nodes...)
+		if latentKind != "" {
+			continue
+		}
+		for j, n := range c.LayerKinds[i].Nodes {
+			if n.Op == model.OpAttention && n.ReadsEngineKV() {
+				c.LayerKinds[i].Nodes[j].AttentionKind, c.LayerKinds[i].Nodes[j].NumKVHeads = model.AttentionMLA, 1
+				latentKind = c.LayerKinds[i].ID
+				break
+			}
+		}
+	}
+	if latentKind == "" {
+		t.Fatal("no attention node to make latent")
+	}
+	in := raw
+	in.Model = &c
+	latentK := plan.KernelImpl{Library: "flashinfer", Variant: "mla_prefill", CodeHash: "abababababab"}
+	var ops []plan.Operation
+	nonLatent, latent := 0, 0
+	for i, id := range c.Stack.Expand() {
+		for _, lk := range c.LayerKinds {
+			if lk.ID != id {
+				continue
+			}
+			for _, n := range lk.Nodes {
+				if n.Op != model.OpAttention || !n.ReadsEngineKV() {
+					continue
+				}
+				impl := laneBF16
+				if id == latentKind {
+					impl = latentK
+					latent++
+				} else {
+					nonLatent++
+				}
+				ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Format: bf16Cache, Impl: impl})
+			}
+		}
+	}
+	if latent == 0 || nonLatent == 0 {
+		t.Fatalf("the pool needs both kinds, has %d latent and %d non-latent layers", latent, nonLatent)
+	}
+	in = keyLaneEntries(in, map[string]plan.KernelImpl{"bf16": laneBF16, "fp8": laneFP8})
+	in.Operations = ops
+	k, err := New(in)
+	if err != nil {
+		t.Fatalf("the catalog graph with an attention kind made latent does not build: %v", err)
+	}
+	if why, ok := laneAssumed(k); ok {
+		t.Fatalf("the non-latent prefill runs the kernel the lane lists, and the lane is not priced: %s", why)
+	}
+	if !k.laneRuns {
+		t.Error("the lane is not priced for the non-latent layers")
+	}
+	// Reported by primitive alone, the primitive runs two kernels and the B-only pair is refused.
+	pooledForm := in
+	pooledForm.Operations = nil
+	pooledForm.Implementations = map[plan.Primitive][]plan.KernelImpl{plan.PrimAttentionPrefill: {laneBF16, latentK}}
+	if k, err := New(pooledForm); err == nil {
+		if _, ok := laneAssumed(k); !ok {
+			t.Error("the pooled form priced the lane from a pair that lists one of two prefill kernels")
 		}
 	}
 }

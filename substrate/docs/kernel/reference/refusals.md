@@ -100,8 +100,16 @@ variant and code hash, VAL-8). The pair that lists it prices; the cache dtype an
 do not choose it. Latent (MLA) layers keep the part's pooled pair, and decode is not priced from
 the lane.
 
-- Two pairs listing the reported implementation are refused, since the cache dtype it serves is
-  then unknown.
+- The pair is chosen by the format of the cache the reported prefill operations read
+  (`PrimitiveShape.Format`): the bf16 pair for a bf16 cache, the fp8 pair for an fp8 one. A
+  kernel that serves both formats may be listed by both pairs and is not ambiguous. Prefill
+  operations that read caches of two formats are refused, since the lane is priced from one pair
+  for the layers of a kind. Operations that state no cache format leave the lane unpriced, with
+  the assumption below. Reported only by primitive (`Inputs.Implementations`), the kernel cannot
+  tell the format, and two pairs listing the reported implementation are refused.
+- The pairs are read by the prefill of the non-latent layers alone. A pool that runs trtllm-gen
+  for them and another kernel for the latent layers accepts a pair that lists the trtllm-gen
+  kernel alone.
 - With no pair listing it (the pairs list none, list another, or nothing was reported for the
   prefill primitive), the part's pooled pair prices the prefill and the assumption
   `trtllm_gen_prefill_lane` records why. A model with no non-latent layer has nothing for the

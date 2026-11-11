@@ -2,6 +2,7 @@ package latencykernel
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -54,8 +55,13 @@ var lanePairs = []string{"bf16", "fp8"}
 // vLLM 0.25.0 and lists none, so on it the lane is not priced.
 //
 //   - A pair is exact: the lane prices the non-latent layers' prefill.
-//   - Both pairs are exact: refused, because the entries do not say which cache dtype the
-//     implementation serves.
+//   - The caller reported operations (Inputs.Operations), which state the cache format each
+//     non-latent prefill reads: the pair of that format is the one considered, so one kernel
+//     that serves both formats, and is listed by both pairs, is not ambiguous. Reported in
+//     two formats, the lane is refused: it is priced from one pair for the layers of a kind.
+//   - Only the kernels by primitive were reported (Inputs.Implementations), and both pairs are
+//     exact: refused, because the entries do not say which cache dtype the implementation
+//     serves.
 //   - No pair is exact: the part's pooled pair prices the prefill. When the sets carry the lane
 //     and the lookup could not show it valid for the reported implementation (it lists none, lists
 //     another, or the caller reported none), the reason is recorded as an assumption, so a reader
@@ -76,7 +82,42 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 	}
 	var exact []string
 	var why []string
-	for _, dtype := range lanePairs {
+	dtypes := lanePairs
+	if ops := c.Operations(); len(ops) > 0 {
+		// The operations state the cache format each non-latent prefill reads, which picks the
+		// pair: the bf16 pair for a bf16 cache and the fp8 pair for an fp8 one. One kernel can
+		// serve both formats and so be listed by both pairs; the format, not the kernel, says
+		// which pair prices.
+		formats := map[string]bool{}
+		for _, op := range ops {
+			if op.Primitive != laneRunningPrimitive || op.Scorer {
+				continue
+			}
+			for _, class := range op.Chain {
+				if f, ok := strings.CutPrefix(class, "kv_"); ok {
+					formats[f] = true
+				}
+			}
+		}
+		switch len(formats) {
+		case 0:
+			dtypes = nil
+			if laneInSets(c) {
+				why = append(why, "no non-latent prefill operation states the format of the cache it reads, so the "+
+					"kernel cannot tell which cache format's pair prices it")
+			}
+		case 1:
+			dtypes = nil
+			for f := range formats {
+				dtypes = []string{f}
+			}
+		default:
+			return fmt.Errorf("the non-latent prefill operations read caches of %d formats (%s), and the trtllm-gen "+
+				"lane is priced from one pair for the layers of a kind; the engine must report one cache format "+
+				"for them", len(formats), strings.Join(slices.Sorted(maps.Keys(formats)), ", "))
+		}
+	}
+	for _, dtype := range dtypes {
 		floor, scale := trtllmGenPrefillFloor+dtype, trtllmGenPrefillScale+dtype
 		if r := laneRefusedByImplementation(c, floor, scale); r != "" {
 			why = append(why, r)
@@ -151,4 +192,20 @@ func laneRefusedByImplementation(c *resolve.Coefficients, names ...string) strin
 		return ""
 	}
 	return strings.Join(out, "; ") + "; a different build or kernel, or a prefill that also runs another, is not priced from it"
+}
+
+// laneInSets reports whether the sets carry the lane's entries for the deployment, admitted or
+// refused for the implementations that run.
+func laneInSets(c *resolve.Coefficients) bool {
+	for _, dtype := range lanePairs {
+		if c.Has(trtllmGenPrefillFloor + dtype) {
+			return true
+		}
+		for _, r := range c.Refused() {
+			if r.Entry.Name == trtllmGenPrefillFloor+dtype {
+				return true
+			}
+		}
+	}
+	return false
 }
