@@ -188,7 +188,7 @@ var pricedByTheKernel = map[string]string{
 	"gpu_memory_utilization":            "gpu_memory_utilization: 0.8\n#73",
 	"enable_dbo":                        "enable_dbo: true\n#74",
 	"enable_eplb":                       "enable_eplb: true\n#108",
-	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#76",
+	"eplb_config.num_redundant_experts": "enable_eplb: true\neplb_config: {num_redundant_experts: 8}\n#108",
 	"engram_config.cpu_offload":         "engram_config: {cpu_offload: false}\n#78",
 	"engram_config.dp_shared_memory":    "engram_config: {dp_shared_memory: true}\n#78",
 	"engram_config.use_thp":             "engram_config: {use_thp: true}\n#78",

@@ -622,7 +622,7 @@ func refuseUnmodelled(e engineconfig.Engine, dataParallel bool) error {
 	case e.PrefixCacheRetentionInterval != nil && *e.PrefixCacheRetentionInterval != 0:
 		// CacheConfig.prefix_cache_retention_interval: 0 (vllm/config/cache.py:159@5df63a72); a stated 0
 		// is the default and keeps only the semantic checkpoints, which this engine builds.
-		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/7)")
+		return fmt.Errorf("vllm: prefix_cache_retention_interval is not modelled (https://github.com/inference-sim/blis-vllm/issues/109)")
 	case e.PrefillScheduleInterval > 1 && !dataParallel:
 		// _should_throttle_prefills is the DP engine core's (vllm/v1/engine/core.py:2318-2325@5df63a72):
 		// EngineCore's never throttles (:652-655), so on one engine the setting has no effect vLLM
@@ -704,12 +704,12 @@ var unreadSettings = []unreadSetting{
 			return e.DBO != nil && e.DBO.PrefillTokenThreshold != nil && *e.DBO.PrefillTokenThreshold != 512
 		}},
 	// EPLBConfig.window_size: 1000 (vllm/config/parallel.py:66@5df63a72).
-	{"eplb.window_size", "eplb_config.window_size", issueBase + "76",
+	{"eplb.window_size", "eplb_config.window_size", issueBase + "108",
 		func(e engineconfig.Engine) bool {
 			return e.EPLB != nil && e.EPLB.WindowSize != 0 && e.EPLB.WindowSize != 1000
 		}},
 	// EPLBConfig.step_interval: 3000 (vllm/config/parallel.py:68@5df63a72).
-	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "76",
+	{"eplb.step_interval", "eplb_config.step_interval", issueBase + "108",
 		func(e engineconfig.Engine) bool {
 			return e.EPLB != nil && e.EPLB.StepInterval != 0 && e.EPLB.StepInterval != 3000
 		}},
