@@ -36300,6 +36300,3129 @@
   {
    "case": {
     "graph_mode": "FULL_AND_PIECEWISE",
+    "max_capture": 64,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 256,
+    "mode": "FULL_AND_PIECEWISE",
+    "name": "stated-max-64"
+   },
+   "dispatch": [
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 1,
+      "tokens": 1,
+      "uniform": 1
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 1,
+      "uniform": null
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 2,
+      "tokens": 2,
+      "uniform": 1
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 2,
+      "uniform": null
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 65,
+      "tokens": 65,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 65,
+      "tokens": 65,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": null
+    }
+   ],
+   "resolved": {
+    "error": null,
+    "max": 64,
+    "sizes": [
+     1,
+     2,
+     4,
+     8,
+     16,
+     24,
+     32,
+     40,
+     48,
+     56,
+     64
+    ]
+   }
+  },
+  {
+   "case": {
+    "graph_mode": "FULL_AND_PIECEWISE",
+    "max_capture": 100,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 256,
+    "mode": "FULL_AND_PIECEWISE",
+    "name": "stated-max-100"
+   },
+   "dispatch": [
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 1,
+      "tokens": 1,
+      "uniform": 1
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 1,
+      "uniform": null
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 2,
+      "tokens": 2,
+      "uniform": 1
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 2,
+      "uniform": null
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 97,
+      "tokens": 97,
+      "uniform": null
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 97,
+      "tokens": 97,
+      "uniform": null
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": null
+    }
+   ],
+   "resolved": {
+    "error": null,
+    "max": 96,
+    "sizes": [
+     1,
+     2,
+     4,
+     8,
+     16,
+     24,
+     32,
+     40,
+     48,
+     56,
+     64,
+     72,
+     80,
+     88,
+     96
+    ]
+   }
+  },
+  {
+   "case": {
+    "graph_mode": "FULL_AND_PIECEWISE",
+    "max_capture": 128,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 256,
+    "mode": "FULL_AND_PIECEWISE",
+    "name": "stated-max-128"
+   },
+   "dispatch": [
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 1,
+      "tokens": 1,
+      "uniform": 1
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 1,
+      "uniform": null
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 2,
+      "tokens": 2,
+      "uniform": 1
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 2,
+      "uniform": null
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 104,
+      "tokens": 104,
+      "uniform": 1
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 104,
+      "uniform": null
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 104,
+      "tokens": 104,
+      "uniform": 1
+     },
+     "reqs": 103,
+     "tokens": 103,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 104,
+      "uniform": null
+     },
+     "reqs": 103,
+     "tokens": 103,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 104,
+      "tokens": 104,
+      "uniform": 1
+     },
+     "reqs": 104,
+     "tokens": 104,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 104,
+      "uniform": null
+     },
+     "reqs": 104,
+     "tokens": 104,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 112,
+      "tokens": 112,
+      "uniform": 1
+     },
+     "reqs": 105,
+     "tokens": 105,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 112,
+      "uniform": null
+     },
+     "reqs": 105,
+     "tokens": 105,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 112,
+      "tokens": 112,
+      "uniform": 1
+     },
+     "reqs": 111,
+     "tokens": 111,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 112,
+      "uniform": null
+     },
+     "reqs": 111,
+     "tokens": 111,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 112,
+      "tokens": 112,
+      "uniform": 1
+     },
+     "reqs": 112,
+     "tokens": 112,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 112,
+      "uniform": null
+     },
+     "reqs": 112,
+     "tokens": 112,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 120,
+      "tokens": 120,
+      "uniform": 1
+     },
+     "reqs": 113,
+     "tokens": 113,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 120,
+      "uniform": null
+     },
+     "reqs": 113,
+     "tokens": 113,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 120,
+      "tokens": 120,
+      "uniform": 1
+     },
+     "reqs": 119,
+     "tokens": 119,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 120,
+      "uniform": null
+     },
+     "reqs": 119,
+     "tokens": 119,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 120,
+      "tokens": 120,
+      "uniform": 1
+     },
+     "reqs": 120,
+     "tokens": 120,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 120,
+      "uniform": null
+     },
+     "reqs": 120,
+     "tokens": 120,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 128,
+      "tokens": 128,
+      "uniform": 1
+     },
+     "reqs": 121,
+     "tokens": 121,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 128,
+      "uniform": null
+     },
+     "reqs": 121,
+     "tokens": 121,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 128,
+      "tokens": 128,
+      "uniform": 1
+     },
+     "reqs": 127,
+     "tokens": 127,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 128,
+      "uniform": null
+     },
+     "reqs": 127,
+     "tokens": 127,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 128,
+      "tokens": 128,
+      "uniform": 1
+     },
+     "reqs": 128,
+     "tokens": 128,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 128,
+      "uniform": null
+     },
+     "reqs": 128,
+     "tokens": 128,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 129,
+      "tokens": 129,
+      "uniform": null
+     },
+     "reqs": 129,
+     "tokens": 129,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 129,
+      "tokens": 129,
+      "uniform": null
+     },
+     "reqs": 129,
+     "tokens": 129,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": null
+    }
+   ],
+   "resolved": {
+    "error": null,
+    "max": 128,
+    "sizes": [
+     1,
+     2,
+     4,
+     8,
+     16,
+     24,
+     32,
+     40,
+     48,
+     56,
+     64,
+     72,
+     80,
+     88,
+     96,
+     104,
+     112,
+     120,
+     128
+    ]
+   }
+  },
+  {
+   "case": {
+    "graph_mode": "FULL_AND_PIECEWISE",
     "max_capture": 1024,
     "max_num_batched_tokens": 1024,
     "max_num_seqs": 256,
@@ -59433,6 +62556,3132 @@
      960,
      976,
      992
+    ]
+   }
+  },
+  {
+   "case": {
+    "blackwell": true,
+    "graph_mode": "FULL_AND_PIECEWISE",
+    "max_capture": 64,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 256,
+    "mode": "FULL_AND_PIECEWISE",
+    "name": "stated-max-64-blackwell"
+   },
+   "dispatch": [
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 1,
+      "tokens": 1,
+      "uniform": 1
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 1,
+      "uniform": null
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 2,
+      "tokens": 2,
+      "uniform": 1
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 2,
+      "uniform": null
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 65,
+      "tokens": 65,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 65,
+      "tokens": 65,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": null
+    }
+   ],
+   "resolved": {
+    "error": null,
+    "max": 64,
+    "sizes": [
+     1,
+     2,
+     4,
+     8,
+     16,
+     24,
+     32,
+     40,
+     48,
+     56,
+     64
+    ]
+   }
+  },
+  {
+   "case": {
+    "blackwell": true,
+    "graph_mode": "FULL_AND_PIECEWISE",
+    "max_capture": 100,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 256,
+    "mode": "FULL_AND_PIECEWISE",
+    "name": "stated-max-100-blackwell"
+   },
+   "dispatch": [
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 1,
+      "tokens": 1,
+      "uniform": 1
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 1,
+      "uniform": null
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 2,
+      "tokens": 2,
+      "uniform": 1
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 2,
+      "uniform": null
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 97,
+      "tokens": 97,
+      "uniform": null
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 97,
+      "tokens": 97,
+      "uniform": null
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": null
+    }
+   ],
+   "resolved": {
+    "error": null,
+    "max": 96,
+    "sizes": [
+     1,
+     2,
+     4,
+     8,
+     16,
+     24,
+     32,
+     40,
+     48,
+     56,
+     64,
+     72,
+     80,
+     88,
+     96
+    ]
+   }
+  },
+  {
+   "case": {
+    "blackwell": true,
+    "graph_mode": "FULL_AND_PIECEWISE",
+    "max_capture": 128,
+    "max_num_batched_tokens": 8192,
+    "max_num_seqs": 256,
+    "mode": "FULL_AND_PIECEWISE",
+    "name": "stated-max-128-blackwell"
+   },
+   "dispatch": [
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 1,
+      "tokens": 1,
+      "uniform": 1
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 1,
+      "uniform": null
+     },
+     "reqs": 1,
+     "tokens": 1,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 2,
+      "tokens": 2,
+      "uniform": 1
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 2,
+      "uniform": null
+     },
+     "reqs": 2,
+     "tokens": 2,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 3,
+     "tokens": 3,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 4,
+      "tokens": 4,
+      "uniform": 1
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 4,
+      "uniform": null
+     },
+     "reqs": 4,
+     "tokens": 4,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 5,
+     "tokens": 5,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 7,
+     "tokens": 7,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 8,
+      "tokens": 8,
+      "uniform": 1
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 8,
+      "uniform": null
+     },
+     "reqs": 8,
+     "tokens": 8,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 9,
+     "tokens": 9,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 15,
+     "tokens": 15,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 16,
+      "tokens": 16,
+      "uniform": 1
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 16,
+      "uniform": null
+     },
+     "reqs": 16,
+     "tokens": 16,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 17,
+     "tokens": 17,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 23,
+     "tokens": 23,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 24,
+      "tokens": 24,
+      "uniform": 1
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 24,
+      "uniform": null
+     },
+     "reqs": 24,
+     "tokens": 24,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 25,
+     "tokens": 25,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 31,
+     "tokens": 31,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 32,
+      "tokens": 32,
+      "uniform": 1
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 32,
+      "uniform": null
+     },
+     "reqs": 32,
+     "tokens": 32,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 33,
+     "tokens": 33,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 39,
+     "tokens": 39,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 40,
+      "tokens": 40,
+      "uniform": 1
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 40,
+      "uniform": null
+     },
+     "reqs": 40,
+     "tokens": 40,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 41,
+     "tokens": 41,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 47,
+     "tokens": 47,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 48,
+      "tokens": 48,
+      "uniform": 1
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 48,
+      "uniform": null
+     },
+     "reqs": 48,
+     "tokens": 48,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 49,
+     "tokens": 49,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 55,
+     "tokens": 55,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 56,
+      "tokens": 56,
+      "uniform": 1
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 56,
+      "uniform": null
+     },
+     "reqs": 56,
+     "tokens": 56,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 57,
+     "tokens": 57,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 63,
+     "tokens": 63,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 64,
+      "tokens": 64,
+      "uniform": 1
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 64,
+      "uniform": null
+     },
+     "reqs": 64,
+     "tokens": 64,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 65,
+     "tokens": 65,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 71,
+     "tokens": 71,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 72,
+      "tokens": 72,
+      "uniform": 1
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 72,
+      "uniform": null
+     },
+     "reqs": 72,
+     "tokens": 72,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 73,
+     "tokens": 73,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 79,
+     "tokens": 79,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 80,
+      "tokens": 80,
+      "uniform": 1
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 80,
+      "uniform": null
+     },
+     "reqs": 80,
+     "tokens": 80,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 81,
+     "tokens": 81,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 87,
+     "tokens": 87,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 88,
+      "tokens": 88,
+      "uniform": 1
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 88,
+      "uniform": null
+     },
+     "reqs": 88,
+     "tokens": 88,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 89,
+     "tokens": 89,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 95,
+     "tokens": 95,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 96,
+      "tokens": 96,
+      "uniform": 1
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 96,
+      "uniform": null
+     },
+     "reqs": 96,
+     "tokens": 96,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 104,
+      "tokens": 104,
+      "uniform": 1
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 104,
+      "uniform": null
+     },
+     "reqs": 97,
+     "tokens": 97,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 104,
+      "tokens": 104,
+      "uniform": 1
+     },
+     "reqs": 103,
+     "tokens": 103,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 104,
+      "uniform": null
+     },
+     "reqs": 103,
+     "tokens": 103,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 104,
+      "tokens": 104,
+      "uniform": 1
+     },
+     "reqs": 104,
+     "tokens": 104,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 104,
+      "uniform": null
+     },
+     "reqs": 104,
+     "tokens": 104,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 112,
+      "tokens": 112,
+      "uniform": 1
+     },
+     "reqs": 105,
+     "tokens": 105,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 112,
+      "uniform": null
+     },
+     "reqs": 105,
+     "tokens": 105,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 112,
+      "tokens": 112,
+      "uniform": 1
+     },
+     "reqs": 111,
+     "tokens": 111,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 112,
+      "uniform": null
+     },
+     "reqs": 111,
+     "tokens": 111,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 112,
+      "tokens": 112,
+      "uniform": 1
+     },
+     "reqs": 112,
+     "tokens": 112,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 112,
+      "uniform": null
+     },
+     "reqs": 112,
+     "tokens": 112,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 120,
+      "tokens": 120,
+      "uniform": 1
+     },
+     "reqs": 113,
+     "tokens": 113,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 120,
+      "uniform": null
+     },
+     "reqs": 113,
+     "tokens": 113,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 120,
+      "tokens": 120,
+      "uniform": 1
+     },
+     "reqs": 119,
+     "tokens": 119,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 120,
+      "uniform": null
+     },
+     "reqs": 119,
+     "tokens": 119,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 120,
+      "tokens": 120,
+      "uniform": 1
+     },
+     "reqs": 120,
+     "tokens": 120,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 120,
+      "uniform": null
+     },
+     "reqs": 120,
+     "tokens": 120,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 128,
+      "tokens": 128,
+      "uniform": 1
+     },
+     "reqs": 121,
+     "tokens": 121,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 128,
+      "uniform": null
+     },
+     "reqs": 121,
+     "tokens": 121,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 128,
+      "tokens": 128,
+      "uniform": 1
+     },
+     "reqs": 127,
+     "tokens": 127,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 128,
+      "uniform": null
+     },
+     "reqs": 127,
+     "tokens": 127,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "FULL",
+      "reqs": 128,
+      "tokens": 128,
+      "uniform": 1
+     },
+     "reqs": 128,
+     "tokens": 128,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "PIECEWISE",
+      "reqs": null,
+      "tokens": 128,
+      "uniform": null
+     },
+     "reqs": 128,
+     "tokens": 128,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 129,
+      "tokens": 129,
+      "uniform": null
+     },
+     "reqs": 129,
+     "tokens": 129,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 129,
+      "tokens": 129,
+      "uniform": null
+     },
+     "reqs": 129,
+     "tokens": 129,
+     "uniform": null
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": 1
+    },
+    {
+     "got": {
+      "max_query_len": null,
+      "mode": "NONE",
+      "reqs": 256,
+      "tokens": 256,
+      "uniform": null
+     },
+     "reqs": 256,
+     "tokens": 256,
+     "uniform": null
+    }
+   ],
+   "resolved": {
+    "error": null,
+    "max": 128,
+    "sizes": [
+     1,
+     2,
+     4,
+     8,
+     16,
+     24,
+     32,
+     40,
+     48,
+     56,
+     64,
+     72,
+     80,
+     88,
+     96,
+     104,
+     112,
+     120,
+     128
     ]
    }
   },

@@ -258,6 +258,11 @@ CAPTURE_CASES = [
     dict(name="stated-max-2048", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=2048),
     dict(name="stated-max-2", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=2),
     dict(name="stated-max-1000", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=1000),
+    # The class [8, 256) of a stated maximum, below the point where vLLM's stride goes from 8 to 16:
+    # a multiple of 8, a value off the stride (vLLM truncates 100 to 96), and the stride's edge.
+    dict(name="stated-max-64", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=64),
+    dict(name="stated-max-100", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=100),
+    dict(name="stated-max-128", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=128),
     dict(name="stated-max-equals-batched-tokens", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=1024, max_capture=1024),
     dict(name="mtp3-stated-max-1000", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=128, max_num_batched_tokens=8192, spec_tokens=3, max_capture=1000),
 ]
@@ -268,6 +273,7 @@ BLACKWELL_TWINS = ("tiny-seqs-ceiling-8", "batched-tokens-off-stride", "seqs-off
                    "piecewise", "full-decode-only", "none", "stated-max", "stated-max-above-batched",
                    "stated-sizes", "mtp3", "mtp1-small", "stated-max-is-the-largest-stated-size",
                    "stated-max-2048", "stated-max-2", "stated-max-1000", "stated-max-equals-batched-tokens",
+                   "stated-max-64", "stated-max-100", "stated-max-128",
                    "mtp3-stated-max-1000")
 CAPTURE_CASES += [dict(c, name=c["name"] + "-blackwell", blackwell=True) for c in CAPTURE_CASES
                   if c["name"] in BLACKWELL_TWINS]

@@ -127,7 +127,8 @@ const unstatedMaxAboveBatchedTokens = "max_cudagraph_capture_size unstated and m
 // The kernel's CUDA graph capture ceiling is vLLM's own for every configuration the oracle holds
 // that an engine block can state, on a Hopper part (h200) and a data-center Blackwell part
 // (b200). The value class: max_cudagraph_capture_size stated as 2048, as 2, off the stride
-// (1000, which vLLM truncates to 992), and equal to max_num_batched_tokens, and cudagraph_mode
+// (1000, which vLLM truncates to 992), equal to max_num_batched_tokens, and in [8, 256), where
+// vLLM's capture stride is 8 (64, 100 which it truncates to 96, and 128), and cudagraph_mode
 // and cudagraph_capture_sizes as stated; or neither stated, where the ceiling is
 // min(max_num_seqs x decode width x 2, 512 or 1024 on Blackwell).
 func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
@@ -135,7 +136,7 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 	if len(cases) < 40 {
 		t.Fatalf("only %d oracle capture cases", len(cases))
 	}
-	var checked, stated2048, stated2, off int
+	var checked, stated2048, stated2, off, small int
 	listed := map[string]bool{}
 	for _, c := range cases {
 		switch {
@@ -197,6 +198,8 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 				stated2++
 			case 1000:
 				off++
+			case 64, 100, 128:
+				small++
 			}
 		}
 	}
@@ -205,7 +208,8 @@ func TestKernelCaptureTokensAreVLLMs(t *testing.T) {
 			t.Errorf("known divergence %q matches no oracle case", name)
 		}
 	}
-	if checked < 40 || stated2048 < 2 || stated2 < 2 || off < 2 {
-		t.Errorf("checked %d cases (2048: %d, 2: %d, 1000: %d); the stated values must run on both parts", checked, stated2048, stated2, off)
+	// 64, 100 and 128 are three values on two parts.
+	if checked < 40 || stated2048 < 2 || stated2 < 2 || off < 2 || small < 6 {
+		t.Errorf("checked %d cases (2048: %d, 2: %d, 1000: %d, 64/100/128: %d); the stated values must run on both parts", checked, stated2048, stated2, off, small)
 	}
 }

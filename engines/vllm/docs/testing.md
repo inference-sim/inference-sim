@@ -80,9 +80,9 @@ groups' pages, the Engram host tables' sharing and shard, and the probabilistic 
 logits buffer, the dual-batch-overlap split rule and the decode-context-parallel defaults. `oracle/lower/extract.py` takes the release's own definitions out of their modules
 by syntax tree and runs them as written, with the data-parallel all-reduce supplied the ranks'
 votes; its answers are `core/lower/testdata/vllm_lower.json`, which CI regenerates and compares
-(`oracle-tier2`). The Go tests compare the port with those answers: 28 capture configurations
+(`oracle-tier2`). The Go tests compare the port with those answers: 57 capture configurations (35, of which 22 are repeated on a data-center Blackwell part)
 (including FULL mode, a request count above the platform ceiling, the recoverSSM kernel and the
-start-up refusals), 2,545 dispatch probes around their sizes, 16 data-parallel cases (including FULL
+start-up refusals), 5,488 dispatch probes around their sizes, 16 data-parallel cases (including FULL
 mode and varlen graphs under ranks that differ), 6 drafter passes through the target's agreement,
 16 Engram sharing cases that include the config's own validator, 50 Engram shard cases, 24
 dual-batch-overlap configurations with 20 step probes each, 36 decode-context-parallel default
@@ -96,7 +96,13 @@ of six architectures, `customize_attention_spec`, `get_kv_cache_groups` and
 `vllmengine`'s `pool_oracle_test.go`) and MoE layouts (`moe_parallel`: `FusedMoEParallelConfig.make`,
 `use_sequence_parallel_moe` and `determine_expert_map` for every rank of 384 tp x pcp x dp layouts;
 `compat/kernelmodel`'s `ep_oracle_test.go`). Kimi-K3's KDA layers are not built: the engine maps no
-recurrent layer to a KV cache spec.
+recurrent layer to a KV cache spec. Two limits of these comparisons: they run through the kernel and
+the rules pack, not through a lowering step of this repository (blis-vllm emits no `plan.Layout.Expert`),
+and the kernel rounds the pool once to the least common multiple of the layers' alignments, because the
+substrate's input has no per-layer alignment field (`TestSubstrateStatesNoPerLayerStrideAlignment`), so
+the layer-outermost rounding is compared on the pool oracle's own arithmetic, not through the kernel. The
+engine block's key for the fp8 setting is `cache_dtype`; `kv_cache_dtype` is the field list's name for it
+until a later rename.
 
 Not run against the release: the KV group pages (`GroupPages` in `core/kv`) outside those cases, which
 are checked against the pool's stride (`kv.PoolBytesPerBlock`), the figure vLLM sizes the pool from;
