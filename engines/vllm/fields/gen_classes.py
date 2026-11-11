@@ -134,6 +134,23 @@ class Source:
                 if sub is not None:
                     self.bases.setdefault(sub, set()).add(fname)
 
+    def frontend_flag(self, name):
+        """The AnnAssign of a FrontendArgs field, or a synthetic one built from its add_argument call."""
+        tree = gf.parse(os.path.join(self.root, "vllm", "entrypoints", "launchers", "cli_args.py"))
+        for n in tree.body:
+            if isinstance(n, ast.ClassDef) and n.name in ("BaseFrontendArgs", "FrontendArgs"):
+                for st in n.body:
+                    if isinstance(st, ast.AnnAssign) and isinstance(st.target, ast.Name) and st.target.id == name:
+                        return st
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "add_argument":
+                lits = [a.value for a in n.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+                if lits and lits[0].lstrip("-").replace("-", "_") == name:
+                    kw = {k.arg: ast.unparse(k.value) for k in n.keywords}
+                    ann = kw.get("type") or ("bool" if kw.get("action", "").strip("'\"").startswith("store_") else "str")
+                    return ast.parse("%s: %s" % (name, ann)).body[0]
+        return None
+
     def class_field(self, cls, leaf):
         for s in self.classes[cls].body:
             if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name) and s.target.id == leaf:
@@ -147,7 +164,12 @@ class Source:
         ea = self.engine_args.get(top)
         cls = None
         if ea is None:
-            raise SystemExit("gen_classes: %s is not an EngineArgs field" % name)
+            # A front-end flag (FrontendArgs, or one make_arg_parser adds itself): read from the parsed
+            # arguments, as args.<name>; it has no configuration class.
+            fe = self.frontend_flag(name)
+            if fe is None:
+                raise SystemExit("gen_classes: %s is neither an EngineArgs field nor a front-end flag" % name)
+            return None, name, name, fe
         if len(parts) == 1:
             val = ast.unparse(ea.value) if ea.value is not None else ""
             m = re.match(r"^([A-Z]\w+)\.(\w+)$", val)
@@ -446,6 +468,9 @@ def scan_scope(m, scope, cls, nodes, ctx, consts, rel, text, sites, relations):
                 sites.extend(truth_sites(v, m, cls, ctx, rel, text))
 
 
+EXTRA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classes_extra.json")
+
+
 def reviewed_sites(root, name):
     """Comparisons a reviewer added because the scan cannot follow the value to them (it crosses a
     function call), from fields/classes_extra.json. Each states the line and the text found there;
@@ -463,11 +488,11 @@ def reviewed_sites(root, name):
     return out
 
 
-def find_sites(m, root):
-    """Every comparison with the field. A site is a dict: path, line, expr, op, values (or None)."""
+def each_scope(m, root, visit):
+    """Call visit(scope, cls, nodes, ctx, consts, rel, text) for every scope of every module that can name
+    the field (the file holds one of its names), with the aliases of that scope resolved."""
     CURRENT_ENUMS.clear()
     CURRENT_ENUMS.update(enum_members(root))
-    sites, relations = reviewed_sites(root, m.name), []
     tokens = [t for t in (m.leaf if m.owner else None, m.ea_name, m.env_name) if t]
     for rel, text, consts, scope_list in parsed_tree(root):
         if not any(t in text for t in tokens):
@@ -484,7 +509,46 @@ def find_sites(m, root):
                         self_aliases[cls].add(n.targets[0].attr)
         for scope, cls, nodes in scope_list:
             ctx = scope_ctx(m, scope, cls, nodes, self_aliases.setdefault(cls, set()))
-            scan_scope(m, scope, cls, nodes, ctx, consts, rel, text, sites, relations)
+            visit(scope, cls, nodes, ctx, consts, rel, text)
+
+
+def find_reads(m, root):
+    """Every place the field is read: an attribute load of it (or of the EngineArgs name on an args
+    object), getattr of it, or an environment read of the variable, as {"at", "to", "expr"} with the
+    first and last line of the expression. A read through a name or attribute the function stored
+    it in is the read that stored it. Reviewed sites (classes_extra.json) are not reads."""
+    reads = []
+
+    def visit(scope, cls, nodes, ctx, consts, rel, text):
+        for n in nodes:
+            if isinstance(n, (ast.Attribute, ast.Call, ast.Subscript)) and isinstance(getattr(n, "ctx", ast.Load()), ast.Load) \
+                    and (m.attr_ref(n, cls, ctx) or m.env_ref(n)):
+                reads.append({"at": "%s:%d" % (rel, n.lineno), "to": n.end_lineno or n.lineno,
+                              "expr": " ".join((ast.get_source_segment(text, n) or ast.unparse(n)).split())})
+
+    each_scope(m, root, visit)
+    seen, out = set(), []
+    for r in reads:
+        k = (r["at"], r["to"], r["expr"])
+        if k not in seen:
+            seen.add(k)
+            out.append(r)
+    return sorted(out, key=lambda r: (site_key(r["at"]), r["expr"]))
+
+
+def site_key(at):
+    path, _, line = at.rpartition(":")
+    return path, int(line)
+
+
+def find_sites(m, root):
+    """Every comparison with the field. A site is a dict: path, line, expr, op, values (or None)."""
+    sites, relations = reviewed_sites(root, m.name), []
+
+    def visit(scope, cls, nodes, ctx, consts, rel, text):
+        scan_scope(m, scope, cls, nodes, ctx, consts, rel, text, sites, relations)
+
+    each_scope(m, root, visit)
     seen, out = set(), []
     for s in sites:
         k = (s["path"], s["line"], s["expr"], s["op"], json.dumps(s.get("values")))
@@ -770,9 +834,13 @@ def class_of(thresholds, x):
 def entry_for(src, root, name, field, repo):
     source = field["source"]
     is_env = source == "env"
+    override = read_json(EXTRA_PATH).get(name, {}).get("kind") if os.path.exists(EXTRA_PATH) else None
     if is_env:
         owner, leaf, ea_name, node = None, name, None, None
         kind, extra, optional = env_kind(root, name)
+        if override == "numeric":
+            # A variable no code compares (or reads): one class, all its values (reviewed, with the reason in the file).
+            kind, extra, optional = "numeric", "int", False
     else:
         owner, leaf, ea_name, node = src.resolve(name)
         kind, extra, optional = src.kind_of(node.annotation)
@@ -800,6 +868,11 @@ def entry_for(src, root, name, field, repo):
     # Which traces state which value (the scenario's own key), and so which class they cover.
     traces = field.get("evidence", {}).get("traces", [])
     stated, cov = [], {}
+    if field["status"] == "proven_inert":
+        # The probes of the proof are the values the evidence states; the Go test holds them to cover every class.
+        proof = field["evidence"]["proof"].split()[0]
+        for pr in read_json(os.path.join(repo, proof))["probes"]:
+            stated.append({"value": pr["value"], "trace": proof})
     for t in traces:
         for v in scenario_values(repo, t).get(name, []):
             stated.append({"value": v, "trace": t})
@@ -954,6 +1027,21 @@ def check_document(doc, fl, root=None):
     return problems
 
 
+def reads_of(root, fields_path, name):
+    """Every read of one field of the list, whatever its status (see find_reads)."""
+    src = Source(root)
+    fl = read_json(fields_path)
+    for f in fl["fields"]:
+        if f["name"] == name:
+            if f["source"] == "env":
+                m = Matcher(src, name, None, name, None, name)
+            else:
+                owner, leaf, ea_name, _ = src.resolve(name)
+                m = Matcher(src, name, owner, leaf, ea_name, None)
+            return find_reads(m, root)
+    raise SystemExit("gen_classes: %s is not in the field list" % name)
+
+
 def build(root, fields_path, repo, only=None):
     src = Source(root)
     fl = read_json(fields_path)
@@ -975,8 +1063,12 @@ def main(argv):
     ap.add_argument("fields")
     ap.add_argument("--check")
     ap.add_argument("--field", nargs="+")
+    ap.add_argument("--reads", metavar="NAME", help="print every read of the field NAME (any status) as JSON")
     a = ap.parse_args(argv)
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if a.reads:
+        sys.stdout.write(json.dumps(reads_of(a.source, a.fields, a.reads), indent=1) + "\n")
+        return 0
     got = build(a.source, a.fields, repo, set(a.field) if a.field else None)
     text = json.dumps(got, indent=1, sort_keys=False, ensure_ascii=False) + "\n"
     if a.check:

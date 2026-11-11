@@ -382,7 +382,10 @@ def build_scheduler(helpers, create_scheduler, model: str, cfg: dict, extra: dic
 
     spec = cfg.get("speculative")
     sched_extra = {k: cfg[k] for k in ("watermark", "max_num_active_seqs", "max_num_scheduled_tokens",
-                                       "long_prefill_token_threshold_adaptive") if k in cfg}
+                                       "long_prefill_token_threshold_adaptive", "enable_chunked_prefill") if k in cfg}
+    # SchedulerConfig fields the scenario states by name (the inertness proofs, oracle/inertness.py,
+    # vary a field this way); vLLM's own class validates them.
+    sched_extra.update(cfg.get("scheduler_config", {}))
     real_vllm_config, real_scheduler_config = helpers.VllmConfig, helpers.SchedulerConfig
 
     built = {}

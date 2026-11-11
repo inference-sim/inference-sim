@@ -134,6 +134,20 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   longer holds it; `TestEveryModelledFieldRecordsItsValueClasses` fails the same way without the
   source. The substrate's field-list schema has no slot for classes yet, so they are a separate file;
   they move into `fields.json` when the slot exists.
+- **Inertness proofs** (design §7.4, tier T1) are `oracle/inertness/<field>.json`, written by
+  `oracle/inertness.py` and named by the field's `proof`. The harness varies the field over one value
+  per value class and runs vLLM's own code: the real Scheduler on oracle scenarios (the scenario's
+  `scheduler_config` states the probe), `EngineArgs.create_engine_config()`, and for a front-end field
+  the real `OutputProcessor`. A field is inert only if every run's decisions to the engine are identical
+  across the probes and every read of the field (found by `fields/gen_classes.py --reads`, plus reviewed
+  reads the scan cannot follow) has a disposition that holds: a line coverage hit in a named run, a
+  keyword passed on to a callee that has its own, or one of the three static cases of §7.4. A front-end
+  effect is recorded (`frontend_effect`), not hidden. A variable no file of the serving process names
+  has a proof of kind `unread`. `TestEveryProvenInertFieldHasAPassingProof` holds the list to the files,
+  to the value classes (the probes reach every class) and to the engine's Go code (no non-test file but
+  the listed ones names the field). `oracle/test_inertness.py` shows the harness failing a field that
+  changes the schedule (`enable_chunked_prefill` off), a read it was not told about, a stale read and a
+  variable the source names.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
   other checks are M2 work and are not here yet: the inertness proofs that turn each
   `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every

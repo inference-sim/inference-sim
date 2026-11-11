@@ -428,6 +428,17 @@ jobs:
       # The committed goldens must be what the pinned vLLM release produces here and now.
       - name: every golden trace is vLLM's own output
         run: python3 -I oracle/compare_goldens.py core/sched/testdata/golden oracle/out/scenarios
+      # Tier 1: every inertness proof (oracle/inertness/*.json) is what the harness computes from vLLM's
+      # own code now, and the harness finds a field that is not inert, a read it was not told about and a
+      # variable the source names.
+      - name: every inertness proof is what the harness computes
+        env:
+          ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+          ORACLE_MODEL_REVISION: 27dcfa74d334bc871f3234de431e71c6eeba5dd6
+          HF_HUB_OFFLINE: "1"
+          VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+          VLLM_SOURCE: ${{ github.workspace }}/vllm-source
+        run: python -I oracle/test_inertness.py
       # Tier 5's goldens too: each metric series re-derived from vLLM's own Prometheus logger
       # on the scenario it was made from.
       - name: every metric golden is vLLM's own series
