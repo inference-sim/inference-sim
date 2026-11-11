@@ -15,7 +15,7 @@ when a key changed. It is idempotent.
   speculative: {method, num_spec_tokens, draft_model, ...}             -> speculative_config: {method,
                                                                           num_speculative_tokens, model, ...}
   frontend: rust                                                       -> env: {VLLM_USE_RUST_FRONTEND: "1"}
-  allreduce_backend                                                    -> refused (no vLLM name)
+  allreduce_backend                                                    -> left alone (the block keeps it)
 
 Usage: python3 -I tools/migrateengineblock/migrate.py [--check] <file-or-dir>...
 --check writes nothing and exits 1 if a file would change.
@@ -112,6 +112,27 @@ def migrate_lines(lines):
     return out
 
 
+def frontend_value(rest):
+    """The value of a `frontend:` line: `rust` or `python`, after a trailing comment and quotes."""
+    v = rest.strip()
+    if v[:1] in ("'", '"'):
+        end = v.find(v[0], 1)
+        if end < 0:
+            raise ValueError(f"frontend: unterminated quote in {rest.strip()!r}")
+        tail = v[end + 1:].strip()
+        v = v[1:end]
+    else:
+        v, _, tail = v.partition(" #")
+        v = v.strip()
+        tail = ("#" + tail) if _ else ""
+    if tail and not tail.startswith("#"):
+        raise ValueError(f"frontend: cannot read the value in {rest.strip()!r}; write rust or python")
+    if v not in ("rust", "python"):
+        raise ValueError(f"frontend: {rest.strip()!r} is neither rust nor python; "
+                         "rust is env: {VLLM_USE_RUST_FRONTEND: \"1\"}, python is no setting")
+    return v
+
+
 def migrate_block(block):
     if not block:
         return block
@@ -134,10 +155,8 @@ def migrate_block(block):
             i += 1
             continue
         key, rest = m.group(2), m.group(3)
-        if key == "allreduce_backend":
-            raise ValueError("allreduce_backend has no vLLM name; state disable_custom_all_reduce instead")
         if key == "frontend":
-            frontend_env = "1" if rest.strip().strip('"') == "rust" else "0"
+            frontend_env = "1" if frontend_value(rest) == "rust" else "0"
             i += 1
             continue
         if key in SIMPLE:

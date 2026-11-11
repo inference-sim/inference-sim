@@ -58,6 +58,24 @@ class Migrate(unittest.TestCase):
     def test_a_second_run_changes_nothing(self):
         self.assertEqual(migrate.migrate_text(NEW), NEW)
 
+    def test_a_frontend_value_is_read_after_its_comment_and_quotes(self):
+        for line in ("rust # keep", "'rust'", '"rust"  # keep'):
+            got = migrate.migrate_text(f"e:\n  engine:\n    frontend: {line}\n    block_size: 16\n")
+            self.assertIn('VLLM_USE_RUST_FRONTEND: "1"', got, line)
+        for line in ("python", "python # keep", "'python'"):
+            got = migrate.migrate_text(f"e:\n  engine:\n    frontend: {line}\n    block_size: 16\n")
+            self.assertNotIn("VLLM_USE_RUST_FRONTEND", got, line)
+            self.assertNotIn("frontend", got, line)
+
+    def test_a_frontend_value_that_is_neither_rust_nor_python_is_refused(self):
+        for line in ("Rust", "rusty # x", "'rust\"", "go"):
+            with self.assertRaises(ValueError, msg=line):
+                migrate.migrate_text(f"e:\n  engine:\n    frontend: {line}\n")
+
+    def test_allreduce_backend_is_left_alone(self):
+        src = "e:\n  engine:\n    allreduce_backend: nccl\n"
+        self.assertEqual(migrate.migrate_text(src), src)
+
     def test_a_block_valued_key_is_refused_not_guessed(self):
         with self.assertRaises(ValueError):
             migrate.migrate_text("e:\n  engine:\n    custom_ops:\n      - x\n")

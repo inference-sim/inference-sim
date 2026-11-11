@@ -171,7 +171,9 @@ written inside it: `compilation_config: {cudagraph_mode: FULL}`, `attention_conf
 `speculative_config: {...}`, `eplb_config: {...}`, `kv_events_config: {...}`; the dotted name in
 `fields.json` is the path. The block's own keys that are not `EngineArgs` names are `env` (a mapping
 of environment variables, named as vLLM reads them) and `allreduce_backend` (the resolved choice,
-which the engine derives and `EngineArgs` has no field for).
+which the engine derives and `EngineArgs` has no field for). `allreduce_backend` is kept as the one
+stated exception: the block still accepts it, two rules read it, and the migration tool leaves it
+alone.
 
 A block written in the earlier names is refused, and the error names the key to use. These changed:
 
