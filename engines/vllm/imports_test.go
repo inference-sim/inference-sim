@@ -22,7 +22,12 @@ import (
 //
 // blis-substrate/load is here for one reason: core/vllm's Engine.RecordSelected(*load.Data), the
 // optional method by which the host registers each engine's pricing kernel with the run's Data. It
-// is retired together with the other cost-model imports.
+// is retired together with the other cost-model imports. The method is optional and is documented
+// on core/vllm's Engine.RecordSelected; no substrate issue defines it.
+//
+// The test reads the import lists of the non-test Go files and reports the package directory that
+// holds each import, not the file; test files are skipped, so a _test.go file may import any
+// substrate package.
 var declaredSubstrateExceptions = []string{
 	"github.com/inference-sim/blis-substrate/kernel compat/kernelmodel",
 	"github.com/inference-sim/blis-substrate/kernel kerneltests/cmd/worked-table",
@@ -33,6 +38,14 @@ var declaredSubstrateExceptions = []string{
 	"github.com/inference-sim/blis-substrate/load core/vllm",
 	"github.com/inference-sim/blis-substrate/load kerneltests/internal/harness",
 	"github.com/inference-sim/blis-substrate/load vllmengine",
+}
+
+const substrateContracts = "github.com/inference-sim/blis-substrate/contracts"
+
+// isContracts reports whether an import path is the substrate's contracts package or one under it.
+// A path that merely contains "/contracts", such as .../kernel/contracts, is not.
+func isContracts(path string) bool {
+	return path == substrateContracts || strings.HasPrefix(path, substrateContracts+"/")
 }
 
 // substrateImportsOutsideContracts lists "<import path> <package dir>" for every non-test Go file under root
@@ -56,7 +69,7 @@ func substrateImportsOutsideContracts(t *testing.T, root string) []string {
 		}
 		for _, im := range f.Imports {
 			v := strings.Trim(im.Path.Value, `"`)
-			if strings.HasPrefix(v, "github.com/inference-sim/blis-substrate/") && !strings.Contains(v, "/contracts") {
+			if strings.HasPrefix(v, "github.com/inference-sim/blis-substrate/") && !isContracts(v) {
 				rel, _ := filepath.Rel(root, filepath.Dir(p))
 				seen[v+" "+filepath.ToSlash(rel)] = true
 			}
@@ -95,9 +108,12 @@ func TestAnUndeclaredSubstrateImportIsFound(t *testing.T) {
 	write("a/a.go", "package a\nimport _ \"github.com/inference-sim/blis-substrate/ledger\"\n")
 	write("b/b.go", "package b\nimport _ \"github.com/inference-sim/blis-substrate/contracts/engine\"\n")
 	write("c/c_test.go", "package c\nimport _ \"github.com/inference-sim/blis-substrate/registry\"\n")
+	write("d/d.go", "package d\nimport _ \"github.com/inference-sim/blis-substrate/contracts\"\n")
+	write("e/e.go", "package e\nimport _ \"github.com/inference-sim/blis-substrate/kernel/contracts\"\n")
 	got := substrateImportsOutsideContracts(t, dir)
-	if len(got) != 1 || got[0] != "github.com/inference-sim/blis-substrate/ledger a" {
-		t.Errorf("found %q, want only the ledger import of package a (contracts/ and test files are not exceptions)", got)
+	want := "github.com/inference-sim/blis-substrate/kernel/contracts e,github.com/inference-sim/blis-substrate/ledger a"
+	if strings.Join(got, ",") != want {
+		t.Errorf("found %q, want %q (contracts and contracts/..., and test files, are not exceptions; kernel/contracts is)", got, want)
 	}
 }
 
