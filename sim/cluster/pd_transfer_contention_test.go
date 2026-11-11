@@ -1,40 +1,43 @@
 package cluster
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 
 	"pgregory.net/rapid"
 
 	sim "github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // INV-P2-2 (#1922): with contention on, concurrent P/D handoffs share the links they cross.
-// The demand is the latency backend's (here a fake shaped like blis-latency-kernel's: the
-// prefill node's NIC egress and the decode node's NIC ingress, each at one rate, and a fixed
-// floor); the arbitration is the simulator's.
+// The demand is the cost model's (here a fake shaped like the kernel's: the prefill node's NIC
+// egress and the decode node's NIC ingress, each at one rate, and a fixed floor), stated by the
+// driver's Environment from the move the decode engine states; the arbitration is the
+// simulator's.
 
 const testNICBytesPerSecond = 1e9
 
 // testDemand is a cross-node handoff: 1000 bytes per token over the sender's egress and the
 // receiver's ingress, with a 50 us floor.
-func testDemand(tokens int64, from, to InstanceID) Flow {
-	return Flow{Bytes: tokens * 1000, FloorNs: 50_000, Links: []Link{
-		{ID: "nic/egress/" + string(from), BytesPerSecond: testNICBytesPerSecond},
-		{ID: "nic/ingress/" + string(to), BytesPerSecond: testNICBytesPerSecond},
+func testDemand(tokens int64, from, to plan.Endpoint) kernel.TransferDemand {
+	return kernel.TransferDemand{Bytes: tokens * 1000, Floor: 50 * time.Microsecond, Links: []kernel.LinkUse{
+		{Link: kernel.LinkID(fmt.Sprintf("nic/egress/node/%d", from.Node)), BytesPerSecond: testNICBytesPerSecond},
+		{Link: kernel.LinkID(fmt.Sprintf("nic/ingress/node/%d", to.Node)), BytesPerSecond: testNICBytesPerSecond},
 	}}
-}
-
-// testDemandPrice is PDTransferTime consistent with testDemand, as the kernel's law requires.
-func testDemandPrice(tokens int64, from, to InstanceID) int64 {
-	return AloneTicks(testDemand(tokens, from, to))
 }
 
 func contentionConfig(numInstances, prefill, decode int, contention bool) DeploymentConfig {
 	cfg := newTestDisaggDeploymentConfig(numInstances, prefill, decode)
-	cfg.PDTransferTime = testDemandPrice
-	cfg.PDTransferDemand = testDemand
+	setPullEnv(&cfg, func(block int64) testutil.PullEnv {
+		return testutil.PullEnv{BlockTokens: block, Pull: testDemand}
+	})
 	cfg.PDTransferContention = contention
 	return cfg
 }
@@ -116,7 +119,7 @@ func TestPDContention_OverlappingHandoffsShareTheDecodeNIC(t *testing.T) {
 	if e2e(on) <= e2e(off) {
 		t.Errorf("total E2E with contention %.0f, without %.0f; contention must raise it", e2e(on), e2e(off))
 	}
-	if peak := on.PDLinkPeakConcurrent(); peak["nic/ingress/instance_2"] != 2 {
+	if peak := on.PDLinkPeakConcurrent(); peak["nic/ingress/node/2"] != 2 {
 		t.Errorf("peak concurrent handoffs per link = %v, want 2 on the decode ingress", peak)
 	}
 }
@@ -183,30 +186,17 @@ func TestPDContention_NeverFasterThanAloneAndConserves(t *testing.T) {
 	})
 }
 
-// Contention is refused without the demand behind each price, and a backend whose demand
-// does not cost its own price alone is refused at the first handoff rather than arbitrated.
-func TestPDContention_RefusesMissingOrInconsistentDemand(t *testing.T) {
-	expectPanic := func(t *testing.T, want string, fn func()) {
-		t.Helper()
-		defer func() {
-			r := recover()
-			if r == nil || !strings.Contains(r.(string), want) {
-				t.Fatalf("panic = %v, want one naming %q", r, want)
-			}
-		}()
-		fn()
-	}
-	t.Run("no demand", func(t *testing.T) {
-		cfg := contentionConfig(2, 1, 1, true)
-		cfg.PDTransferDemand = nil
-		expectPanic(t, "PDTransferDemand", func() { newTestCluster(cfg, NewSliceRequestSource(nil), nil) })
-	})
-	t.Run("demand disagrees with price", func(t *testing.T) {
-		cfg := contentionConfig(2, 1, 1, true)
-		cfg.PDTransferTime = func(tokens int64, f, g InstanceID) int64 { return testDemandPrice(tokens, f, g) + 1 }
-		cs := newTestCluster(cfg, NewSliceRequestSource([]*sim.Request{holdTestRequest("a", 1, 0, 64, 2)}), nil)
-		expectPanic(t, "AloneTime law", func() { _ = cs.Run() })
-	})
+// Contention is refused on a deployment with no prefill pool: there is no handoff to share links.
+func TestPDContention_RefusedWithoutDisaggregation(t *testing.T) {
+	cfg := compatDeployment(pdSimConfig(), 2)
+	cfg.PDTransferContention = true
+	defer func() {
+		r := recover()
+		if r == nil || !strings.Contains(r.(string), "PDTransferContention is set but the deployment is not disaggregated") {
+			t.Fatalf("panic = %v, want one naming the missing disaggregation", r)
+		}
+	}()
+	newTestCluster(cfg, NewSliceRequestSource(nil), nil)
 }
 
 // The link arbiter's wakes stay bounded by the events that need them. A wake is scheduled by a
@@ -225,7 +215,7 @@ func TestPDContention_WakesStayLinearInABurst(t *testing.T) {
 	if cs.transfersCompleted != n {
 		t.Fatalf("fixture: %d of %d handoffs completed", cs.transfersCompleted, n)
 	}
-	if peak := cs.PDLinkPeakConcurrent()["nic/ingress/instance_4"]; peak < 4 {
+	if peak := cs.PDLinkPeakConcurrent()["nic/ingress/node/4"]; peak < 4 {
 		t.Fatalf("fixture: handoffs must overlap on the decode ingress (peak %d)", peak)
 	}
 	finishes := map[int64]bool{}

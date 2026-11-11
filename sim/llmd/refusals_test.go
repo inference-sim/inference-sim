@@ -27,7 +27,7 @@ func TestStartupRefusalMessages(t *testing.T) {
 	pd := func() cluster.DeploymentConfig {
 		dep := testDeployment(4)
 		dep.PrefillInstances, dep.DecodeInstances = 2, 2
-		dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 }
+		setPDPrice(&dep, func(tokens int64) int64 { return 50 })
 		return dep
 	}
 	run := func(dep cluster.DeploymentConfig, o Options) error {

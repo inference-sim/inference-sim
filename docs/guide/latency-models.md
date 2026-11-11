@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout f70c6c7503a47442c4c5d989f8f17b093c14e069
+git -C blis-substrate checkout 565db4d00f46927f1ca3cb863da2100be4675f44
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -144,8 +144,9 @@ run says so on stderr), and refuses priority scheduling for now. The engine bloc
 A scenario with a `prefill` pool and a `decode` pool, run with `--prefill-instances` and
 `--decode-instances`. BLIS builds one kernel per pool, so each pool is priced at its own
 parallelism and engine settings. The KV handoff from a prefill instance to a decode
-instance is priced by the kernel's `PDTransferTime` over the scenario's fabric, between the
-two instances' placements (NVLink when they share a node). Each instance count must not
+instance is priced by the kernel over the scenario's fabric, between the two instances'
+placements (NVLink when they share a node), from the move the decode engine states
+([how a transfer is priced](#how-a-transfer-is-priced)). Each instance count must not
 exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pcp).
 
 List `cost-model-fabric` in the scenario's `coefficients` for a disaggregated deployment. It holds the
@@ -193,11 +194,12 @@ one; any other connector is refused. Three further rules follow from vLLM:
   the decode side never took the request, and at NIXL's 30 s lease expiry if the decode
   instance went away mid-pull.
 - **Contention (INV-P2-2, `--pd-transfer-contention`, default off).** Concurrent handoffs
-  share the links they cross. The links come from the kernel's `PDTransferDemand`: the
-  sender's NIC egress and the receiver's NIC ingress across nodes, or the NVLink domain on
-  one node. Each link is divided max-min fairly and re-divided as handoffs start and finish.
-  The floor is never shared. A handoff alone still takes exactly `PDTransferTime`. With
-  contention off, every handoff is priced as if alone.
+  share the links they cross. The links come from the demand the host's Environment states
+  for the handoff (the kernel's `PDTransferDemand`): the sender's NIC egress and the
+  receiver's NIC ingress across nodes, or the NVLink domain on one node. Each link is divided
+  max-min fairly and re-divided as handoffs start and finish. The floor is never shared. A
+  handoff alone takes exactly its demand's `AloneTime`. With contention off, every handoff is
+  priced as if alone.
 - **Offload tiers (#1940).** The scenario's `offload` block (or `--kv-offload-config`, see
   [KV offload](#kv-offload)) gives every pool its own tier of that size: llm-d's
   MultiConnector of NIXL and the OffloadingConnector. A pool's tier stores
@@ -211,6 +213,66 @@ and p90 durations, the queueing delay contention added (duration minus the uncon
 price), each link's peak concurrent handoffs, the prefill KV hold's peak, and each pool's
 CPU-tier hit rate.
 
+
+## How a transfer is priced
+
+Two kinds of KV transfer have a price: the copy of blocks to or from an offload tier, and a decode
+engine's pull of a prompt's KV from a prefill engine. Both are priced one way (design 6.2, 6.3),
+whichever engine runs them.
+
+**Logic.** The engine decides that a transfer starts, and states it as a *move* in the cost model's
+terms (`engine.Transfer.Move`, a `plan.Transfer`): the tokens, the node and rack at each end, the
+direction, and for a tier the catalog device. A decode engine learns where it pulls from only through
+its request, so the cluster hands it the prefill instance's node and rack when it adds the request
+(`engine.Request.Peer`, from `DeploymentConfig.InstanceEndpoint`). The driver then asks the cost
+model what the move demands of the fabric, `env.DemandFor(Environment, engine.Plan(), t)`, and gets a
+payload, a floor and the links the payload crosses with their full rates. Nothing in the driver or
+the cluster knows a tier name, a rank or a formula. The host's Environment (`cmd/engine_build.go`)
+answers from the kernels the run opened:
+
+| Move | Demand |
+|---|---|
+| Pull between pools | The prefill pool's kernel, `PDTransferDemand`, in whole blocks, between the two placements. Each end of the move is in its own pool's numbering; the Environment adds the pool's first node. |
+| Copy to or from a tier | The blocks' bytes over one link at the rate the kernel prices the device (`TierTime`), with the device's base latency as the floor. |
+
+What the host then does with a demand differs, because the engine and the fabric differ. A pull
+runs alone in `demand.AloneTime()` rounded up to a whole tick, or, under `--pd-transfer-contention`,
+enters the link arbiter, which divides each link max-min fairly among the pulls on it. A tier copy
+runs alone, truncated to a whole tick and at least one, queued behind the copy before it in its
+direction (vLLM's offload worker has one stream per direction); it does not enter the arbiter.
+The two rounding rules are those of the pricers this replaced, kept so that no price moves.
+
+**Limits.**
+
+- A pool that spans nodes is priced on the one node the engine states (blis-substrate#48): the
+  boundary has one `From` and one `To`.
+- A hybrid model's KV groups hold different bytes a block; the boundary has one token count, so a
+  copy is priced at the pool's page size (blis-substrate#49). On the shipped scenarios that equals
+  the group-sized price the engine used before.
+- The engine cannot learn which instance it is, so the host states it: when it builds an instance's
+  engine it calls `SetPlacement` with the pool's placement put on the instance's node and rack
+  (`DeploymentConfig.InstanceEndpoint`, the same endpoint the cluster states to a decode engine as its
+  peer). A pull's near end is therefore the instance's own node, not the pool's first.
+- The Environment answers transfers only. It refuses a step price, memory, a graph, a chip and an
+  acceptance profile by name: the engines open their pools' kernels themselves.
+
+**Reproduce.** The Environment equals the retired prices:
+
+```bash
+go test ./cmd/ -run 'TestTransferEnvironment' -count=1     # about 3 s
+go test ./sim/ -run 'TestEngineDriver_' -count=1            # driver: peer, demand, refusals, rounding
+```
+
+and a run's Result is unchanged outside `revisions` and `runtime`. Build `blis` at the parent commit
+and at this one, run the cases below with the same flags, and compare the two Results with those two
+members removed; the pull request's body lists the cases and their outcome. Each case takes under
+five seconds on a laptop. The scenarios are in `testdata/scenarios`, `testdata/bytegate/scenarios`
+and `testdata/kernel/aisimulate` (generated from blis-substrate's catalog; no other data is read).
+
+**What it does not show.** The comparison covers the shipped scenarios that run: a hybrid KV connector
+(the DeepSeek P/D scenarios) and a drafter beside the offload connector are refused by the engine, so
+no run of them prices a transfer. The equivalence on a hybrid model holds for the gpt-oss scenario
+only.
 
 ## Data and expert parallelism (MoE)
 

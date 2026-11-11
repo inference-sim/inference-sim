@@ -4,13 +4,16 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
 
 	"github.com/inference-sim/blis-vllm/compat/contract"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv"   // the KV store the engine is built with
 	_ "github.com/inference-sim/blis-vllm/compat/lora" // the adapter registry it is built with
+	"github.com/inference-sim/blis-vllm/core/placement"
 
 	"github.com/inference-sim/inference-sim/sim"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // This package's tests build every instance's engine as `blis run` builds a 0.29/0.31 one (cmd's
@@ -101,9 +104,17 @@ func engineConfigIn(c sim.InstanceConfig) simConfig {
 // lockstepRanks consecutive instances, one DPGroup whose rank views the instances drive, rank 0's
 // driver stepping the group.
 func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	return compatEngineFactoryWith(lockstepRanks, func(block int64) env.Environment {
+		return testutil.FixedPull(block, testPDTransferTime)
+	})
+}
+
+// compatEngineFactoryWith is compatEngineFactory with the Environment each driver prices its
+// transfers by, built for the instance's block size (the cost model moves whole blocks).
+func compatEngineFactoryWith(lockstepRanks int, pull func(blockTokens int64) env.Environment) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	driver := func(eng engine.Engine, cfg simConfig) (*sim.EngineDriver, error) {
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
-			ScrapeEngineMetrics: true, ApplyAtStepStart: true}
+			ScrapeEngineMetrics: true, ApplyAtStepStart: true, Environment: pull(cfg.BlockSizeTokens)}
 		if m := cfg.LatencyModel; m != nil {
 			dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 			dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
@@ -125,6 +136,14 @@ func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.
 			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
 			if err != nil {
 				return nil, err
+			}
+			// Instance N sits on node N of its pool (testInstanceEndpoint), so the end of a pull
+			// the decode engine states for itself is its own node, as a deployment places it.
+			if cfg.GPU != "" {
+				if err := eng.SetPlacement(placement.Placement{Hardware: cfg.GPU, Fabric: "test-fabric", Tensor: max(cfg.TP, 1),
+					Data: max(cfg.DP, 1), Nodes: index + 1, Node: index}); err != nil {
+					return nil, err
+				}
 			}
 			return driver(eng, cfg)
 		}

@@ -169,7 +169,7 @@ func TestFastForwardIdle_DeadTimeoutsDoNotBlockIt(t *testing.T) {
 		"disaggregated": func(d *cluster.DeploymentConfig, o *Options) {
 			*d = testDeployment(4)
 			d.PrefillInstances, d.DecodeInstances = 2, 2
-			d.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+			setPDPrice(d, func(tokens int64) int64 { return 50 + tokens/50 })
 			o.PodLabels = roleLabels
 			o.EPPFlags = append(o.EPPFlags, "--config-text="+pdConfig)
 		},

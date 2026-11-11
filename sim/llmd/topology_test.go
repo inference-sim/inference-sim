@@ -41,7 +41,7 @@ func TestGateway_TopologyExtractorChangesDecodeChoice(t *testing.T) {
 		t.Run(string(matchingDecode), func(t *testing.T) {
 			dep := testDeployment(3)
 			dep.PrefillInstances, dep.DecodeInstances = 1, 2
-			dep.PDTransferTime = func(int64, cluster.InstanceID, cluster.InstanceID) int64 { return 50 }
+			setPDPrice(&dep, func(tokens int64) int64 { return 50 })
 			placement := map[cluster.InstanceID]cluster.EndpointTopology{
 				"instance_0": {Hostname: "host-a", NodeCount: 1},
 				"instance_1": {Hostname: "host-b", NodeCount: 1},

@@ -170,7 +170,7 @@ schedulingProfiles:
 func TestPDTopologyNeedsADisaggregatingConfig(t *testing.T) {
 	dep := testDeployment(4)
 	dep.PrefillInstances, dep.DecodeInstances = 2, 2
-	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 }
+	setPDPrice(&dep, func(tokens int64) int64 { return 50 })
 	if err := refusal(t, dep, "", roleLabels); err == nil || !strings.Contains(err.Error(), "disagg-profile-handler") {
 		t.Fatalf("want the default configuration refused on a P/D deployment, got %v", err)
 	}

@@ -6,7 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 	"github.com/inference-sim/inference-sim/sim/cluster"
 	"pgregory.net/rapid"
@@ -20,13 +24,15 @@ import (
 
 const pdDPScenario = "minimax-m2.5-gb200-1p1d-dp2.yaml"
 
-// After DP expansion, transferTime() between prefill replica i and decode replica j, under the
-// cluster's own instance numbering, is the prefill kernel's PDTransferTicks between rank i's and
-// rank j's placements. The ranks are derived independently of rankInPool: a replica's rank is
-// its position among its pool's instances in numeric order. Non-vacuity: the fixture's rack
-// boundary prices the two decode ranks differently, so a pricer that ignored or confused the
-// decode rank would break the law.
-func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
+// After DP expansion, a pull between replica i of the prefill pool and replica j of the decode
+// pool, under the cluster's own instance numbering, is priced by the host's Environment as the
+// prefill kernel's PDTransferTicks between rank i's and rank j's placements: the Environment is
+// handed the endpoints the cluster states for the prefill instance (instanceEndpoint) and the
+// decode engine states for itself, and nothing else. The ranks are derived independently of
+// rankInPool: a replica's rank is its position among its pool's instances in numeric order.
+// Non-vacuity: the fixture's rack boundary prices the two decode ranks differently, so an
+// Environment that ignored or confused the decode rank would break the law.
+func TestTransferEnvironment_APullIsThePlacedPairsPrice(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
 	saved := []any{kernelScenario, kernelScenarioDir, registryPath, kernelOpened,
 		prefillInstances, decodeInstances, numInstances, blockSizeTokens}
@@ -58,7 +64,21 @@ func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 	// Every pool at dp instances, one per rank, as the pricer places them.
 	dp := st.DataParallel
 	prefillInstances, decodeInstances, numInstances = dp, dp, 2*dp
-	price := pools.transferTime()
+	endpointOf := pools.instanceEndpoint()
+	decodeEnv, err := newTransferEnvironment(pools.decode, pools.prefill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodePlan := plan.PoolPlan{Hardware: "decode", Layout: plan.Layout{Tensor: 1, RanksPerNode: 1, Nodes: 8}}
+	price := func(tokens int64, from, to cluster.InstanceID) int64 {
+		d, err := env.DemandFor(decodeEnv, decodePlan, engine.Transfer{ID: 1, Request: "r", Kind: engine.TransferLoad,
+			Tokens: int(tokens), Blocks: int((tokens + blockSizeTokens - 1) / blockSizeTokens),
+			Move: plan.Transfer{Tokens: units.Tokens(tokens), From: endpointOf(from), To: endpointOf(to), Kind: plan.TransferPeer}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cluster.AloneTicks(cluster.FlowOf(d))
+	}
 
 	members := cluster.BuildPoolMembershipFromIndices(numInstances, prefillInstances, decodeInstances, 0, 0)
 	byRole := map[cluster.PoolRole][]string{}
@@ -85,9 +105,11 @@ func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 
 	rapid.Check(t, func(rt *rapid.T) {
 		tokens := rapid.Int64Range(1, int64(st.MaxModelLen)).Draw(rt, "tokens")
+		// The KV moves in whole blocks: the retired path priced the blocks' token capacity.
+		capacity := (tokens + blockSizeTokens - 1) / blockSizeTokens * blockSizeTokens
 		for i, from := range pre {
 			for j, to := range dec {
-				want := pools.prefill.PDTransferTicks(tokens, pools.prefill.PlacementOf(i), pools.decode.PlacementOf(j))
+				want := pools.prefill.PDTransferTicks(capacity, pools.prefill.PlacementOf(i), pools.decode.PlacementOf(j))
 				if got := price(tokens, cluster.InstanceID(from), cluster.InstanceID(to)); got != want {
 					rt.Fatalf("%d tokens %s(prefill rank %d) -> %s(decode rank %d): priced %d, the kernel %d",
 						tokens, from, i, to, j, got, want)
@@ -96,7 +118,7 @@ func TestKernelPools_TransferTime_IsThePlacedPairsPrice(t *testing.T) {
 		}
 	})
 
-	const big = 32768
+	const big = 32768 // a multiple of every block size the fixtures use
 	if a, b := price(big, cluster.InstanceID(pre[0]), cluster.InstanceID(dec[0])),
 		price(big, cluster.InstanceID(pre[0]), cluster.InstanceID(dec[1])); a == b {
 		t.Errorf("fixture lost its point: both decode ranks are priced %d ticks for %d tokens", a, big)

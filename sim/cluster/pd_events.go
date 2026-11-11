@@ -5,6 +5,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/trace"
 )
@@ -135,19 +137,21 @@ func (e *KVTransferStartedEvent) Execute(cs *ClusterSimulator) {
 		return
 	}
 	// The decode engine holds the handoff among its waiting handoffs and starts its pull by its
-	// own admission rule (INV-PD-9): startPull prices it when it starts.
+	// own admission rule (INV-PD-9): startPull runs it when it starts, already priced by the
+	// decode driver's Environment from the move the engine states. The engine learns where it
+	// pulls from only through the request, so the prefill instance's node and rack go with it.
 	if cs.remotePulls == nil {
 		cs.remotePulls = make(map[string]*ParentRequest)
 	}
 	cs.remotePulls[decodeSubReq.ID] = e.parentReq
 	e.parentReq.DecodeWaiting = decodeSubReq
-	decodeInst.AddRemote(decodeSubReq, e.time)
+	decodeInst.AddRemote(decodeSubReq, cs.config.InstanceEndpoint(e.parentReq.PrefillInstanceID), e.time)
 }
 
 // startPull starts the transfer of a handoff whose pull an engine driven through engine.Engine
-// admitted at now, moving pulledTokens of its prompt, as serveDecodeKVWaiters does for the
-// compatibility engine's host loop.
-func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64) {
+// admitted at now, moving pulledTokens of its prompt and demanding demand of the fabric (the
+// Environment's answer to the move the engine stated).
+func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens int64, demand kernel.TransferDemand, now int64) {
 	parent := cs.remotePulls[req.ID]
 	if parent == nil {
 		panic(fmt.Sprintf("startPull: %s is not a handoff waiting for its pull", req.ID))
@@ -166,7 +170,7 @@ func (cs *ClusterSimulator) startPull(req *sim.Request, pulledTokens, now int64)
 	}
 	parent.DecodeSubReq = req
 	parent.PulledKVBlocks = (pulledTokens + cs.config.BlockSizeTokens - 1) / cs.config.BlockSizeTokens
-	scheduleTransferCompletion(cs, parent, now)
+	scheduleTransferCompletion(cs, parent, now, FlowOf(demand))
 }
 
 // dropAtStart records a drop-at-transfer-start outcome: decode pod
@@ -207,33 +211,27 @@ func (e *KVTransferStartedEvent) dropAtStart(cs *ClusterSimulator, outcome NIXLO
 // decode-side reservation fixtures. Production callers always reach
 // this via KVTransferStartedEvent.Execute after a successful decode-side
 // KV reservation.
-func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, startTime int64) {
+//
+// flow is the handoff's demand on the fabric, priced by the decode driver's Environment: the
+// cost model states the payload, the floor and the links, and the cluster owns only when the
+// handoff ends. Without contention every handoff takes its demand alone (AloneTicks, the
+// kernel's AloneTime in whole ticks), as if alone on the fabric; with it, the demand joins the
+// link arbiter, which decides when it completes.
+func scheduleTransferCompletion(cs *ClusterSimulator, parentReq *ParentRequest, startTime int64, flow Flow) {
 	cs.transfersInitiated++
 	parentReq.TransferStartTime = startTime
 
-	// The latency backend prices the handoff (NewClusterSimulator refuses a PD deployment
-	// without one). The KV moves in whole blocks, so the token count priced is the blocks'
-	// capacity. Without contention every handoff takes its price, as if alone on the fabric;
-	// with it, the handoff's demand joins the link arbiter, which decides when it completes.
 	numBlocks := parentReq.PulledKVBlocks
-	tokens := numBlocks * cs.config.BlockSizeTokens
-	duration := max(1, cs.config.PDTransferTime(tokens, parentReq.PrefillInstanceID, parentReq.DecodeInstanceID))
+	duration := AloneTicks(flow)
 	parentReq.TransferAloneTicks = duration
 	if cs.pdLinks != nil {
-		flow := cs.config.PDTransferDemand(tokens, parentReq.PrefillInstanceID, parentReq.DecodeInstanceID)
-		if alone := AloneTicks(flow); alone != duration {
-			// blis-schemas kernel.PDTransferDemand: alone, a demand costs exactly PDTransferTime.
-			panic(fmt.Sprintf("KV handoff of %s: its demand costs %d ticks alone but its price is %d; "+
-				"the latency backend breaks the PDTransferTime == PDTransferDemand.AloneTime law",
-				parentReq.ID, alone, duration))
-		}
 		cs.pdLinkFlows[cs.pdLinks.Start(startTime, flow)] = parentReq
 		logrus.Debugf("[cluster] KV transfer started for %s at %d: %d blocks, %d μs alone, sharing links with %d others",
 			parentReq.ID, startTime, numBlocks, duration, cs.pdLinks.InFlight()-1)
 		cs.scheduleLinkWake()
 		return
 	}
-	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the latency backend)",
+	logrus.Debugf("[cluster] KV transfer started for %s: %d blocks, duration=%d μs (priced by the Environment)",
 		parentReq.ID, numBlocks, duration)
 	cs.schedule(&KVTransferCompletedEvent{time: startTime + duration, parentReq: parentReq}, &cs.kvConnectorSender)
 }

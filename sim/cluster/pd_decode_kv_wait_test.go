@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"math"
 	"sort"
 	"testing"
@@ -151,7 +152,7 @@ func TestPDDecodeKVWait_HeadOfLineBlocks(t *testing.T) {
 // schedule; a dropped pulled count would price a shorter pull.
 func TestPDDecodeKVWait_StartsEveryHandoffTheEngineAdmits(t *testing.T) {
 	config := holdConfig(false, 1000)
-	config.PDTransferTime = func(tokens int64, _, _ InstanceID) int64 { return 1 + tokens }
+	setPDPrice(&config, func(tokens int64, _, _ plan.Endpoint) int64 { return 1 + tokens })
 	blocks := int64(40)
 	editDecode(&config, func(c *simConfig) { c.TotalKVBlocks = blocks })
 	long := holdTestRequest("long", 1, 0, 160, 400) // 10 blocks, grows to 35 while it decodes

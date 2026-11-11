@@ -183,7 +183,9 @@ func windowRulesOf(m *sim.Metrics, sum sim.MeasuredSummary) windowRules {
 // arrive together and the gaps between them are zero.
 func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs int, windowS float64) map[string]result.Figure {
 	out := map[string]result.Figure{}
-	put := func(id string, v float64, n int) { out[id] = result.Figure{Value: v, Samples: n} }
+	put := func(id string, v float64, n int) {
+		out[id] = result.Figure{Value: v, Samples: n, Scope: metrics.ScopeCluster}
+	}
 	n := sum.MeasuredCompletedRequests
 	if windowS > 0 {
 		put("output_tok_s", sum.OutputThroughputTokS, n)
@@ -398,8 +400,8 @@ func goodputOf(m *sim.Metrics, targets map[string]workload.SLODimTargets, inject
 		met += a.Good
 		targeted += int(injectedByClass[cls])
 	}
-	figures["goodput_rps"] = result.Figure{Value: mo.GoodputRPS, Samples: met}
-	figures["slo_attainment"] = result.Figure{Value: mo.SLOAttainment, Samples: targeted}
+	figures["goodput_rps"] = result.Figure{Value: mo.GoodputRPS, Samples: met, Scope: metrics.ScopeCluster}
+	figures["slo_attainment"] = result.Figure{Value: mo.SLOAttainment, Samples: targeted, Scope: metrics.ScopeCluster}
 	return g
 }
 

@@ -5,6 +5,9 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // P/D handoffs through engine.Engine. A disaggregated prefill reaches its engine as
@@ -12,15 +15,20 @@ import (
 // Result.Handoffs, and the host ends the hold with TransferDone (ReleaseHandoff). A decode
 // sub-request reaches its engine as RemotePrefill when its transfer may start (AddRemote): the
 // engine holds it and starts its pull by its own admission rule, a TransferLoad among a batch's
-// TransfersStarted, which the host prices (OnPullStarted); when the pull lands, the host reports
-// it done (LandRemote), and the engine runs the request.
+// TransfersStarted. The driver prices it through the Environment (priceTransfer, from the
+// Move the engine states) and the host shares the links among the pulls in flight
+// (OnPullPriced); when the pull lands, the host reports it done (LandRemote), and the engine runs
+// the request.
 
 // AddRemote hands the engine a decode sub-request whose KV a peer's prefill computed, at now.
-// An engine with no other work admits it at once, as vLLM's idle engine schedules a new request
-// (it is stepped here); one with work admits it in a later schedule.
-func (d *EngineDriver) AddRemote(req *Request, now int64) {
+// peer is where that prefill's workers sit, in the prefill pool's own numbering: the engine
+// learns where it pulls from only through the request (engine.Request.Peer). An engine with no
+// other work admits it at once, as vLLM's idle engine schedules a new request (it is stepped
+// here); one with work admits it in a later schedule.
+func (d *EngineDriver) AddRemote(req *Request, peer plan.Endpoint, now int64) {
 	er := d.engineRequest(req)
 	er.RemotePrefill = true
+	er.Peer = &peer
 	// Whether the engine had other work is read before the handoff reaches it: an engine that
 	// queues the handoff as a waiting request (blis-vllm's v0.32.0 engine) would otherwise count
 	// it as that work, and an idle engine would never be stepped to start the pull.
@@ -45,12 +53,14 @@ func (d *EngineDriver) startTransfers(ts []engine.Transfer, now int64) {
 	d.startTransfersAfter(ts, now, max(now, d.BusyUntil()))
 }
 
-// startTransfersAfter reports the pulls a schedule at now started to the host, and starts its
-// offload-tier copies no earlier than computeEnd, when the compute stream they wait on frees.
+// startTransfersAfter prices every transfer a schedule at now started, through the Environment,
+// hands the pulls to the host with their demand, and starts its offload-tier copies no earlier
+// than computeEnd, when the compute stream they wait on frees.
 func (d *EngineDriver) startTransfersAfter(ts []engine.Transfer, now, computeEnd int64) {
 	for _, t := range ts {
+		demand := d.priceTransfer(t)
 		if t.Tier != "" {
-			d.startTierTransfer(t, computeEnd)
+			d.startTierTransfer(t, demand, computeEnd)
 			continue
 		}
 		req := d.remote[t.Request]
@@ -59,11 +69,44 @@ func (d *EngineDriver) startTransfersAfter(ts []engine.Transfer, now, computeEnd
 				t.Kind, t.Request))
 		}
 		d.pulls[t.Request] = t.ID
-		if d.OnPullStarted == nil {
-			panic(fmt.Sprintf("engine driver: the engine started the pull of %s, and no host prices it", t.Request))
+		if d.OnPullPriced == nil {
+			panic(fmt.Sprintf("engine driver: the engine started the pull of %s, and no host runs it", t.Request))
 		}
-		d.OnPullStarted(req, int64(t.Tokens), now)
+		d.OnPullPriced(req, int64(t.Tokens), demand, now)
 	}
+}
+
+// priceTransfer is what t demands of the fabric: env.DemandFor(Environment, plan, t), where plan
+// is the PoolPlan the engine states (engine.Planned) and the move is the engine's own
+// (engine.Transfer.Move). The driver derives nothing: the tier, the endpoints and the direction
+// are the engine's, the price the cost model's. An engine that starts a transfer and is not
+// Planned, a host with no Environment, and a transfer the contract or the cost model refuses are
+// each a failure of the run, never a transfer priced at zero.
+func (d *EngineDriver) priceTransfer(t engine.Transfer) kernel.TransferDemand {
+	p, ok := d.eng.(engine.Planned)
+	if !ok {
+		panic(fmt.Sprintf("engine driver: the engine started a %s transfer for %q and states no plan "+
+			"(engine.Planned), so the cost model cannot price it", t.Kind, t.Request))
+	}
+	if d.cfg.Environment == nil {
+		panic(fmt.Sprintf("engine driver: the engine started a %s transfer for %q, and the driver has no "+
+			"Environment to price it", t.Kind, t.Request))
+	}
+	demand, err := env.DemandFor(d.cfg.Environment, p.Plan(), t)
+	if err != nil {
+		panic(fmt.Sprintf("engine driver: transfer %d of %q: %v", t.ID, t.Request, err))
+	}
+	return demand
+}
+
+// TierTicks is how long an offload-tier copy takes with its links to itself, in whole ticks
+// (microseconds) truncated and at least one. The truncation is the one the tier copies have
+// always had (the engine priced them as the cost model's TierTime in whole microseconds); a P/D
+// pull is rounded up instead (cluster.AloneTicks), since a pull is not done until its last byte
+// lands. The two rules are kept apart so that moving the pricing to the Environment moves no
+// price.
+func TierTicks(d kernel.TransferDemand) int64 {
+	return max(1, d.AloneTime().Microseconds())
 }
 
 // LandRemote reports that req's pull has landed at now: the engine runs it from here.
@@ -167,8 +210,10 @@ func (d *EngineDriver) noteHandoffs(hs []engine.Handoff) {
 	}
 }
 
-// startTierTransfer prices an engine's load from or store to an offload tier (Transfer.Tier,
-// blis-vllm's OffloadingConnector) by the engine's own pricer, and reports it done when it lands.
+// startTierTransfer runs an engine's load from or store to an offload tier (Transfer.Tier,
+// blis-vllm's OffloadingConnector) for as long as its demand takes alone, and reports it done
+// when it lands. The tier's streams are the engine's (below), so a copy is never slowed by
+// another: its price is the demand with every link to itself.
 // vLLM's CPU offload worker has one handler a direction (store_handler, load_handler), each
 // starting a transfer only after the one before it on that handler ends (stream.wait_event of the
 // last transfer's end event), and every transfer's stream first waits on the compute stream
@@ -177,23 +222,13 @@ func (d *EngineDriver) noteHandoffs(hs []engine.Handoff) {
 // gpu_worker.py:665-670, 834-852@5df63a72): a step's loads are submitted in its post_forward and
 // its stores in the next step's pre_forward, before that step's forward is queued
 // (vllm/v1/worker/gpu/kv_connector.py:81, 131-138; offloading/worker.py:218-236). Loads therefore never overlap each other, nor stores each other, but a load and a
-// store do. An engine that starts one and prices none is refused.
-func (d *EngineDriver) startTierTransfer(t engine.Transfer, after int64) {
-	p, ok := d.eng.(interface {
-		TransferTime(engine.Transfer) (engine.Duration, bool)
-	})
-	if !ok {
-		panic(fmt.Sprintf("engine driver: the engine started a %s transfer to tier %q, and prices none", t.Kind, t.Tier))
-	}
-	dur, ok := p.TransferTime(t)
-	if !ok {
-		panic(fmt.Sprintf("engine driver: the engine started a %s transfer to tier %q, and prices none", t.Kind, t.Tier))
-	}
+// store do.
+func (d *EngineDriver) startTierTransfer(t engine.Transfer, demand kernel.TransferDemand, after int64) {
 	if d.tierFreeAt == nil {
 		d.tierFreeAt = map[engine.TransferKind]int64{}
 	}
 	start := max(after, d.tierFreeAt[t.Kind])
-	d.tierFreeAt[t.Kind] = start + int64(dur)
+	d.tierFreeAt[t.Kind] = start + TierTicks(demand)
 	d.schedule(&driverTierTransferDone{at: d.tierFreeAt[t.Kind], id: t.ID})
 }
 

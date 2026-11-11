@@ -129,9 +129,9 @@ func runEviction(t *testing.T, s evictionSetup) (runResult, map[string]*victim) 
 	if s.pd {
 		dep = testDeployment(4)
 		dep.PrefillInstances, dep.DecodeInstances = 2, 2
-		dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+		setPDPrice(&dep, func(tokens int64) int64 { return 50 + tokens/50 })
 		if s.transferUs > 0 {
-			dep.PDTransferTime = func(int64, cluster.InstanceID, cluster.InstanceID) int64 { return s.transferUs }
+			setPDPrice(&dep, func(tokens int64) int64 { return s.transferUs })
 		}
 		labels = func(id cluster.InstanceID, role cluster.PoolRole) map[string]string {
 			l := map[string]string{"app": "vllm"}

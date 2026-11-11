@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -288,6 +289,7 @@ func TestKernelCLILeg(t *testing.T) {
 	if raw == "" {
 		t.Skip("re-exec target only; driven by runKernelCLI")
 	}
+	installTransferLog()
 	rootCmd.SetArgs(strings.Split(raw, "\x1f"))
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -303,6 +305,12 @@ func runKernelCLI(t *testing.T, args ...string) (stdout, stderr string, err erro
 	full := append(args,
 		"--catalog", catalog, "--registry", registry, "--defaults-filepath", "../defaults.yaml")
 	if !slices.Contains(args, "--scenarios") {
+		// A run that offloads to a storage tier (or replays a trace that did) prices the tier from
+		// registry entries, which the scenario lists as the set cost-model-offload-tiers: the
+		// fixtures do not, so the scenario is run from a copy that does.
+		if i := slices.Index(args, "--scenario"); i >= 0 && i+1 < len(args) {
+			scenarios = scenarioWithOffloadSet(t, scenarios, args[i+1])
+		}
 		full = append(full, "--scenarios", scenarios)
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestKernelCLILeg$")
@@ -483,6 +491,40 @@ func writeOffloadYAML(t *testing.T, body string) string {
 	return path
 }
 
+// scenarioWithOffloadSet returns a directory holding the scenario of dir with the registry set
+// cost-model-offload-tiers added to its coefficients: a storage tier's read rate, write rate and
+// base latency are registry entries, so a run that offloads to a tier needs the set.
+func scenarioWithOffloadSet(t *testing.T, dir, scenario string) string {
+	t.Helper()
+	out, err := scenarioDirWithOffloadSet(dir, scenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// scenarioDirWithOffloadSet is scenarioWithOffloadSet for a caller with no *testing.T (the CLI
+// legs): it writes the scenario with the set into a fresh temporary directory.
+func scenarioDirWithOffloadSet(dir, scenario string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, scenario))
+	if err != nil {
+		return "", err
+	}
+	body := string(raw)
+	if !strings.Contains(body, "cost-model-offload-tiers") {
+		re := regexp.MustCompile(`(?m)^(coefficients: \[[^\]]*)\]`)
+		if !re.MatchString(body) {
+			return "", fmt.Errorf("%s: no coefficients list to add the offload set to", scenario)
+		}
+		body = re.ReplaceAllString(body, "${1}, cost-model-offload-tiers]")
+	}
+	out, err := os.MkdirTemp("", "offload-scenario-")
+	if err != nil {
+		return "", err
+	}
+	return out, os.WriteFile(filepath.Join(out, scenario), []byte(body), 0o644)
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -497,7 +539,7 @@ func readFile(t *testing.T, path string) string {
 // -- or a legacy-tier flag restating the kernel's price -- is refused.
 func TestRunCmd_KernelBackend_KVOffload(t *testing.T) {
 	const scenario = "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml"
-	common := []string{"--scenario", scenario, "--seed", "4", "--horizon", "600000000"}
+	common := []string{"--scenarios", scenarioWithOffloadSet(t, testScenarios, scenario), "--scenario", scenario, "--seed", "4", "--horizon", "600000000"}
 	base := append([]string{"--num-requests", "30", "--rate", "10"}, common...)
 
 	prefix := filepath.Join(t.TempDir(), "trace")
@@ -576,8 +618,9 @@ func TestApplyKernelOffloadPricing_IsTheKernelsTierTime(t *testing.T) {
 		kernelOpened, _ = saved[0].(*kernelmodel.Model)
 		kvCPUBlocks, blockSizeTokens = saved[1].(int64), saved[2].(int64)
 	}()
-	m, err := kernelmodel.Open("gpt-oss-120b-h200-fp4-vllm-tp4.yaml",
-		reposOf(scenarios, catalog, registry))
+	const pricedScenario = "gpt-oss-120b-h200-fp4-vllm-tp4.yaml"
+	m, err := kernelmodel.Open(pricedScenario,
+		reposOf(scenarioWithOffloadSet(t, scenarios, pricedScenario), catalog, registry))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -793,7 +836,7 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		// The scenario's offload block is read (#1910); a field the offload model does not
 		// implement is refused by name rather than dropped.
 		{"a scenario offload block with a prefetch depth", "offload.prefetch_depth",
-			pd(writeScenarioVariant(t, "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
+			pd(writeScenarioVariant(t, "cost-model-fabric]", "cost-model-fabric, cost-model-offload-tiers]", "pd_transfer:", "offload:\n  prefetch_depth: 2\n  tiers:\n    - tier: cpu_dram\n      bytes: 107374182400\npd_transfer:"), topology...)},
 		// qwen3.5's linear-attention layers carry recurrent state, which the v0.32.0 engine maps
 		// to no KV cache spec, so it refuses the model.
 		{"a model with recurrent state", "recurrent state is not mapped to a KV cache spec",
@@ -916,7 +959,8 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 //   - the run's description is not mutated, and the pools share no tier slice.
 func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	dir := writeScenarioVariant(t, "      kv_cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+	dir := writeScenarioVariant(t, "cost-model-fabric]", "cost-model-fabric, cost-model-offload-tiers]",
+		"      kv_cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
 		"      kv_cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer")
 	repos := reposOf(dir, catalog, registry)
 	pools := &kernelPools{connector: "MultiConnector"} // a tier under P/D runs through a MultiConnector

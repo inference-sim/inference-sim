@@ -85,7 +85,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout f70c6c7503a47442c4c5d989f8f17b093c14e069
+git -C blis-substrate checkout 565db4d00f46927f1ca3cb863da2100be4675f44
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -181,7 +181,7 @@ Every run, `--num-instances 1` (the default) included, passes each request throu
 | `--num-instances` | int | 1 | Number of inference instances. 1 = single-instance mode; > 1 = cluster mode behind the llm-d router. Must not exceed the scenario's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)); `testdata/scenarios/llama-3.1-70b-instruct-h200-tp4-4node.yaml` allows up to 8. |
 | `--prefill-instances` | int | 0 | Prefill instances for P/D disaggregation (0 = disabled). Requires a scenario with `prefill` and `decode` pools, and must not exceed the prefill pool's rank capacity (pool `nodes` × `gpus_per_node` / (pp × tp × pcp)). |
 | `--decode-instances` | int | 0 | Decode instances for P/D disaggregation. Same rules, against the decode pool. |
-| `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the kernel's `PDTransferDemand`. A handoff alone still takes exactly `PDTransferTime`. Run and replay alike (INV-13). |
+| `--pd-transfer-contention` | bool | false | Concurrent P/D KV handoffs share the fabric links they cross: each link is divided max-min fairly among the handoffs on it, from the demand the cost model states for the handoff. A handoff alone takes exactly that demand's `AloneTime`. Run and replay alike (INV-13). |
 
 **P/D disaggregation.** Whether a request is disaggregated is the router's decision: the EndpointPickerConfig needs a `disagg-profile-handler` with a P/D decider (`always-disagg-pd-decider` or `prefix-based-pd-decider`); prefill and decode pods carry `llm-d.ai/role` labels automatically. See [Routing](../guide/routing.md). A scenario with `prefill` and `decode` pools runs one kernel per pool; the KV handoff is priced by the kernel's `PDTransferTime` over the scenario's fabric between the two instances' placements. Refused: P/D topology over a colocated scenario; a disaggregated scenario without `--prefill-instances`/`--decode-instances`; pools that differ in block size, `dp` or draft configuration; a `pd_transfer.connector` other than NIXL's (`NixlConnector`, `NixlPullConnector`, `NixlPushConnector`, `MultiConnector`); shared (`--prefill-decode-instances`) or encode instances. The scenario's `offload` block (or `--kv-offload-config`) gives each pool its own tier; see [Latency models](../guide/latency-models.md#prefilldecode-disaggregation) for the handoff (decode-side load, prefill KV hold, contention).
 

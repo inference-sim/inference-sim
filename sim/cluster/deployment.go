@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -80,24 +82,22 @@ type DeploymentConfig struct {
 
 	// PD KV transfer configuration (PR2).
 	//
-	// PDTransferTime prices moving one request's KV from a prefill instance to a decode
-	// instance, in ticks, for the token capacity of the KV blocks being moved. The latency
-	// backend owns the transfer price (blis-latency-kernel's PDTransferTime reads the fabric
-	// and the KV geometry) and the simulator owns only when it happens. Required whenever
-	// PD disaggregation is enabled; NewClusterSimulator refuses a PD deployment without it.
-	PDTransferTime func(tokens int64, from, to InstanceID) int64
+	// InstanceEndpoint is where an instance's workers sit: the node and rack, in the numbering
+	// of the instance's own pool (plan.Endpoint). A decode engine learns where it pulls from only
+	// through its request (engine.Request.Peer), so when a decode sub-request reaches its engine
+	// the cluster states the prefill instance's endpoint. Required whenever PD disaggregation is
+	// enabled; NewClusterSimulator refuses a PD deployment without it. The price of the pull is
+	// not the cluster's: the decode engine states the move (engine.Transfer.Move), and the
+	// driver's Environment prices it (design 6.2); the cluster owns when it ends.
+	InstanceEndpoint func(InstanceID) plan.Endpoint `json:"-" yaml:"-"`
 
 	// PDTransferContention makes concurrent handoffs share the links they cross (#1922,
-	// INV-P2-2): each handoff's demand (PDTransferDemand) enters a LinkArbiter, which
-	// divides every link max-min fairly among the handoffs on it and re-rates them as handoffs
-	// start, drain and finish. A handoff alone still completes at exactly PDTransferTime. False
-	// (the default) prices every handoff as if alone, byte-identical to the behaviour before.
+	// INV-P2-2): each handoff's demand, which the Environment states with the links it crosses
+	// and their full rates, enters a LinkArbiter, which divides every link max-min fairly among
+	// the handoffs on it and re-rates them as handoffs start, drain and finish. A handoff alone
+	// still completes at exactly its demand's AloneTime. False (the default) completes every
+	// handoff as if alone on the fabric.
 	PDTransferContention bool
-	// PDTransferDemand is the demand behind PDTransferTime for the same handoff: payload bytes,
-	// the floor, and the links crossed with their full rates (blis-schemas
-	// kernel.PDTransferDemand). Required when PDTransferContention is set; the simulator invents
-	// no rate, floor or link of its own.
-	PDTransferDemand func(tokens int64, from, to InstanceID) Flow
 
 	// PDPrefillKVHold keeps a finished prefill sub-request's KV blocks allocated on its
 	// prefill instance until the decode side has pulled them, as a NIXL prefill engine does:

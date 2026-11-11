@@ -91,6 +91,9 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		if err != nil {
 			return nil, fmt.Errorf("scenario %q: engine %s: %w", kernelScenario, version, err)
 		}
+		if err := placeInstance(eng, kernelPDOpened, index); err != nil {
+			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
+		}
 		reportAssumptions(eng)
 		if iv := serverSeriesIntervalUs(); iv > 0 {
 			// --server-series-interval-s: the engine bins its own vllm:* series on the simulation
@@ -103,7 +106,8 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			}
 			s.EnableServerSeries(iv)
 		}
-		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval}
+		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: acceptance, StreamInterval: streamInterval,
+			Environment: kernelPDOpened.environmentOf(ic, kernelOpened)}
 		hostOverheads(&cfg, m)
 		return sim.NewEngineDriverWithFrontend(eng, cfg, frontend)
 	}

@@ -101,7 +101,7 @@ schedulingProfiles:
 	reqs := append(append(short, unique...), shared...)
 	dep := testDeployment(4)
 	dep.PrefillInstances, dep.DecodeInstances = 2, 2
-	dep.PDTransferTime = func(tokens int64, _, _ cluster.InstanceID) int64 { return 50 + tokens/50 }
+	setPDPrice(&dep, func(tokens int64) int64 { return 50 + tokens/50 })
 	cs := newCluster(dep, cluster.NewSliceRequestSource(reqs), nil)
 	cs.SetGateway(New(Options{Model: "test-model", PodLabels: roleLabels, EPPFlags: append(DefaultEPPFlags(), "--config-text="+config)}))
 	if err := cs.Run(); err != nil {

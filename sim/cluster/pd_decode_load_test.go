@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	"reflect"
 	"testing"
@@ -46,7 +47,7 @@ func TestPDDecodeLoad_PullsOnlyWhatTheDecodeCacheLacks(t *testing.T) {
 			if p.NumKVBlocks != 16 || p.PulledKVBlocks != tc.wantPulled {
 				t.Fatalf("turn 2: %d prompt blocks, %d pulled; want 16 and %d", p.NumKVBlocks, p.PulledKVBlocks, tc.wantPulled)
 			}
-			if d, want := p.TransferCompleteTime-p.TransferStartTime, testPDTransferTime(tc.wantPulled*16, "", ""); d != want {
+			if d, want := p.TransferCompleteTime-p.TransferStartTime, testPDTransferTime(tc.wantPulled*16, plan.Endpoint{}, plan.Endpoint{}); d != want {
 				t.Errorf("turn 2's handoff took %d ticks, the price of %d pulled blocks is %d", d, tc.wantPulled, want)
 			}
 		})
@@ -112,7 +113,7 @@ func TestPDDecodeLoad_DecodeCPUTierNeverServesAHandoff(t *testing.T) {
 // the last block.
 func TestPDDecodeLoad_InFlightBlocksAreNotAPrefixHit(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(3, 2, 1)
-	cfg.PDTransferTime = func(int64, InstanceID, InstanceID) int64 { return 1_000_000 }
+	setPDPrice(&cfg, func(int64, plan.Endpoint, plan.Endpoint) int64 { return 1_000_000 })
 	a := holdTestRequest("a", 1, 0, 160, 4)
 	b := extend("b", a, 0, 0, 4)
 	c := extend("c", a, 10_000_000, 0, 4)
