@@ -76,7 +76,8 @@ func loweredOperations(g *model.Graph, ops []plan.Operation, chip hardware.Chip,
 				r.Chain = append(r.Chain, c)
 			}
 			if op.Primitive == plan.PrimAttentionPrefill && !latentAttention(kind) {
-				if w := cacheFormatWord(op.Format); w != "" {
+				r.NonLatentPrefill, r.CacheDtype = true, op.Dtype
+				if w := cacheDtypeWord(op.Dtype); w != "" {
 					r.Chain = append(r.Chain, "kv_"+w)
 				}
 			}
@@ -132,14 +133,14 @@ func attentionNodeOf(lk model.LayerKind, scorerNode bool) (model.Node, bool) {
 	return model.Node{}, false
 }
 
-// cacheFormatWord names the cache formats the trtllm-gen lane has a pair for, from the neutral
-// stored format: 16 bits unscaled is bf16, 8 bits unscaled is fp8; anything else is not named.
-func cacheFormatWord(f units.QuantFormat) string {
-	switch {
-	case f.PayloadBits == 16 && f.ScaleBits == 0:
-		return "bf16"
-	case f.PayloadBits == 8 && f.ScaleBits == 0:
-		return "fp8"
+// cacheDtypeWord names the cache element types the trtllm-gen lane has a pair for, from the
+// element type the plan states: the lane was fitted on a bfloat16 cache and on an fp8 one. FP16,
+// INT8 and a type the plan does not state are not named, so such a cache is not priced from the
+// lane; a storage size alone (units.QuantFormat) cannot tell BF16 from FP16.
+func cacheDtypeWord(d string) string {
+	switch d {
+	case "bf16", "fp8":
+		return d
 	}
 	return ""
 }

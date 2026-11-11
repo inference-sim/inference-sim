@@ -447,7 +447,7 @@ func TestTheCommittedTRTLLMGenLaneIsNotPricedWithoutAKernelHash(t *testing.T) {
 
 // prefillOps reports the prefill of every layer of the model that has attention as one operation
 // on the given kernel, reading a cache of the given format.
-func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, impl plan.KernelImpl) []plan.Operation {
+func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, dtype string, impl plan.KernelImpl) []plan.Operation {
 	t.Helper()
 	kinds := map[string]model.LayerKind{}
 	for _, lk := range in.Model.LayerKinds {
@@ -457,7 +457,7 @@ func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, impl plan.KernelIm
 	for i, id := range in.Model.Stack.Expand() {
 		for _, n := range kinds[id].Nodes {
 			if n.Op == model.OpAttention && n.ReadsEngineKV() {
-				ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Format: f, Impl: impl})
+				ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Format: f, Dtype: dtype, Impl: impl})
 				break
 			}
 		}
@@ -466,6 +466,15 @@ func prefillOps(t *testing.T, in Inputs, f units.QuantFormat, impl plan.KernelIm
 		t.Fatal("the model has no attention layer")
 	}
 	return ops
+}
+
+// dtypeOf is the element type a test cache of the format holds: the sizes the tests use are bf16
+// and fp8.
+func dtypeOf(f units.QuantFormat) string {
+	if f.PayloadBits == 8 {
+		return "fp8"
+	}
+	return "bf16"
 }
 
 var (
@@ -487,7 +496,7 @@ func TestOneKernelServingBothCacheFormatsPricesTheLaneOfTheFormatTheOperationsRe
 	bf16, fp8 := laneNames("bf16"), laneNames("fp8")
 	at := func(f units.QuantFormat) Inputs {
 		in := both
-		in.Operations = prefillOps(t, in, f, laneBF16)
+		in.Operations = prefillOps(t, in, f, dtypeOf(f), laneBF16)
 		return in
 	}
 	onBF16, onFP8 := at(bf16Cache), at(fp8Cache)
@@ -508,20 +517,20 @@ func TestOneKernelServingBothCacheFormatsPricesTheLaneOfTheFormatTheOperationsRe
 	}
 	// Two formats among the non-latent prefill.
 	mixed := both
-	ops := prefillOps(t, both, bf16Cache, laneBF16)
-	ops[len(ops)-1].Format = fp8Cache
+	ops := prefillOps(t, both, bf16Cache, "bf16", laneBF16)
+	ops[len(ops)-1].Format, ops[len(ops)-1].Dtype = fp8Cache, "fp8"
 	mixed.Operations = ops
-	if _, err := New(mixed); err == nil || !strings.Contains(err.Error(), "formats") {
+	if _, err := New(mixed); err == nil || !strings.Contains(err.Error(), "element type") {
 		t.Errorf("prefill reading two cache formats: %v", err)
 	}
 	// No format stated: the lane is not priced, and the pooled pair is recorded as pricing.
 	none := both
-	none.Operations = prefillOps(t, both, units.QuantFormat{}, laneBF16)
+	none.Operations = prefillOps(t, both, units.QuantFormat{}, "", laneBF16)
 	k := mustKernel(t, none)
 	if pricesOf(k) != pooled {
 		t.Error("a prefill that states no cache format priced the lane")
 	}
-	if why, ok := laneAssumed(k); !ok || !strings.Contains(why, "format") {
+	if why, ok := laneAssumed(k); !ok || !strings.Contains(why, "element type") {
 		t.Errorf("the unpriced lane is not recorded with its reason: %q", why)
 	}
 }
@@ -582,7 +591,7 @@ func TestALaneEntryForTheNonLatentKernelIsExactBesideALatentPrefillOnAnother(t *
 				} else {
 					nonLatent++
 				}
-				ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Format: bf16Cache, Impl: impl})
+				ops = append(ops, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Format: bf16Cache, Dtype: "bf16", Impl: impl})
 			}
 		}
 	}
@@ -609,5 +618,52 @@ func TestALaneEntryForTheNonLatentKernelIsExactBesideALatentPrefillOnAnother(t *
 		if _, ok := laneAssumed(k); !ok {
 			t.Error("the pooled form priced the lane from a pair that lists one of two prefill kernels")
 		}
+	}
+}
+
+// QuantFormat is a storage size: a bf16 cache and an fp16 cache are both 16 bits. The lane was
+// fitted on a bfloat16 cache, so a float16 cache must not consume the pair that is listed for the
+// kernel that runs it: the lane is left unpriced, the part-wide family prices the prefill, and the
+// assumption names the element type. The same kernel at a bf16 cache is priced from the lane.
+func TestAnFP16CacheDoesNotConsumeTheBF16MeasuredLane(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := laneCase(t, d, "b200")
+	pooled := pricesOf(mustKernel(t, raw))
+	keyed := keyLaneEntries(raw, map[string]plan.KernelImpl{"bf16": laneBF16, "fp8": laneBF16})
+	at := func(dtype string) Inputs {
+		in := keyed
+		in.Operations = prefillOps(t, in, bf16Cache, dtype, laneBF16) // 16 bits whichever element type
+		return in
+	}
+	if pricesOf(mustKernel(t, at("bf16"))) == pooled {
+		t.Fatal("a bf16 cache is not priced from the lane that lists its kernel")
+	}
+	for _, dtype := range []string{"fp16", ""} {
+		k := mustKernel(t, at(dtype))
+		if pricesOf(k) != pooled || k.laneRuns {
+			t.Errorf("a %q cache consumed the bf16-measured lane", dtype)
+		}
+		if dtype == "fp16" {
+			if why, ok := laneAssumed(k); !ok || !strings.Contains(why, "fp16") {
+				t.Errorf("the unpriced lane does not name the element type: %q", why)
+			}
+		}
+	}
+	// 8 bits that are not fp8 are outside the lane too.
+	in := keyed
+	in.Operations = prefillOps(t, in, fp8Cache, "int8", laneBF16)
+	if k := mustKernel(t, in); k.laneRuns || pricesOf(k) != pooled {
+		t.Error("an int8 cache consumed the fp8-measured lane")
+	}
+	// A mix of a lane element type and another is refused: the lane has one pair per kind.
+	mixed := keyed
+	ops := prefillOps(t, keyed, bf16Cache, "bf16", laneBF16)
+	ops[len(ops)-1].Dtype = "fp16"
+	mixed.Operations = ops
+	if _, err := New(mixed); err == nil || !strings.Contains(err.Error(), "more than one element type") {
+		t.Errorf("bf16 and fp16 layers together: %v", err)
 	}
 }

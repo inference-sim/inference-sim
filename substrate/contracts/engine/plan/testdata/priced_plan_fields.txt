@@ -14,3 +14,4 @@ LoweredLayer.KernelImpl # kernel: TestTheKernelImplementationThatRunsDecidesWhic
 LoweredLayer.Primitive # kernel: TestTheKernelImplementationThatRunsDecidesWhichCoefficientPrices
 LoweredLayer.Scorer # kernel: TestTheScorerAndThePrimaryOfOneLayerAreBoundToTheirOwnKernels
 PrimitiveShape.Format # kernel: TestAGemmValueIsBoundToTheKernelOfItsFormat
+PrimitiveShape.Dtype # kernel: TestAnFP16CacheDoesNotConsumeTheBF16MeasuredLane

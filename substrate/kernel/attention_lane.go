@@ -88,33 +88,45 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 		// pair: the bf16 pair for a bf16 cache and the fp8 pair for an fp8 one. One kernel can
 		// serve both formats and so be listed by both pairs; the format, not the kernel, says
 		// which pair prices.
-		formats := map[string]bool{}
+		formats, other := map[string]bool{}, map[string]bool{}
 		for _, op := range ops {
-			if op.Primitive != laneRunningPrimitive || op.Scorer {
+			if !op.NonLatentPrefill {
 				continue
 			}
+			f := ""
 			for _, class := range op.Chain {
-				if f, ok := strings.CutPrefix(class, "kv_"); ok {
-					formats[f] = true
+				if w, ok := strings.CutPrefix(class, "kv_"); ok {
+					f = w
 				}
 			}
-		}
-		switch len(formats) {
-		case 0:
-			dtypes = nil
-			if laneInSets(c) {
-				why = append(why, "no non-latent prefill operation states the format of the cache it reads, so the "+
-					"kernel cannot tell which cache format's pair prices it")
+			if f != "" {
+				formats[f] = true
+			} else {
+				other[op.CacheDtype] = true
 			}
-		case 1:
+		}
+		switch {
+		case len(formats) == 0:
+			dtypes = nil
+			if len(other) > 0 && laneInSets(c) {
+				names := slices.Sorted(maps.Keys(other))
+				why = append(why, fmt.Sprintf("the non-latent prefill reads a cache of element type %q, and the lane is fitted on "+
+					"a bf16 and on an fp8 cache only, so it is not priced from it (the plan states the element type in "+
+					"PrimitiveShape.Dtype)", strings.Join(names, ", ")))
+			}
+		case len(formats) == 1 && len(other) == 0:
 			dtypes = nil
 			for f := range formats {
 				dtypes = []string{f}
 			}
 		default:
-			return fmt.Errorf("the non-latent prefill operations read caches of %d formats (%s), and the trtllm-gen "+
-				"lane is priced from one pair for the layers of a kind; the engine must report one cache format "+
-				"for them", len(formats), strings.Join(slices.Sorted(maps.Keys(formats)), ", "))
+			seen := slices.Sorted(maps.Keys(formats))
+			for _, o := range slices.Sorted(maps.Keys(other)) {
+				seen = append(seen, fmt.Sprintf("%q", o))
+			}
+			return fmt.Errorf("the non-latent prefill operations read caches of more than one element type (%s), and the "+
+				"trtllm-gen lane is priced from one pair for the layers of a kind; the engine must report one cache "+
+				"element type for them", strings.Join(seen, ", "))
 		}
 	}
 	for _, dtype := range dtypes {
@@ -126,18 +138,20 @@ func (k *Kernel) applyAttentionLane(c *resolve.Coefficients, used map[model.Atte
 		if !c.Has(floor) || !c.Has(scale) {
 			continue
 		}
-		pairExact := true
+		// The rule the resolver uses to decide which operations read the part-wide pair: the
+		// whole family carried, each member shown valid for the implementation that runs.
+		isExact := func(n string) bool { r, _ := c.Admitted(n); return r.Match == coefficient.KernelExact }
+		if coefficient.ClassUsable(laneRunningPrimitive, "kv_"+dtype, c.Has, isExact) {
+			exact = append(exact, dtype)
+			continue
+		}
 		for _, name := range []string{floor, scale} {
-			if r, _ := c.Admitted(name); r.Match != coefficient.KernelExact {
-				pairExact = false
+			if !isExact(name) {
 				why = append(why, fmt.Sprintf("%s states no kernel implementation it is valid for (kernel_impls), so it "+
 					"applies to every build of the kernel and nothing shows it was measured on, or moved to, the one the "+
 					"engine runs", name))
 				break
 			}
-		}
-		if pairExact {
-			exact = append(exact, dtype)
 		}
 	}
 	switch {

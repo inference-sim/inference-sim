@@ -278,6 +278,11 @@ type Operation struct {
 	Draft bool
 	// Scorer is true for the block-index scorer node of a layer, false for its primary.
 	Scorer bool
+	// NonLatentPrefill marks the prefill of a non-latent layer's primary attention, the operations
+	// the trtllm-gen lane may price, and CacheDtype the element type of the cache it reads, as the
+	// plan states it ("" when it does not).
+	NonLatentPrefill bool
+	CacheDtype       string
 }
 
 // present reports whether a class has a usable family (classKey), or a coefficient is carried

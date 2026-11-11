@@ -143,7 +143,9 @@ type Operation struct {
 	// Format is the stored format of the weight or the cache the operation reads
 	// (PrimitiveShape.Format); the zero value is not stated.
 	Format units.QuantFormat
-	Impl   KernelImpl
+	// Dtype is the element type of the cache the operation reads (PrimitiveShape.Dtype).
+	Dtype string
+	Impl  KernelImpl
 }
 
 // Operations lists every lowered operation of the pool, the target's then the draft model's, in
@@ -152,10 +154,10 @@ type Operation struct {
 func (p PoolPlan) Operations() []Operation {
 	var out []Operation
 	for _, l := range p.Layers {
-		out = append(out, Operation{Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Impl: l.KernelImpl})
+		out = append(out, Operation{Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Dtype: l.Shape.Dtype, Impl: l.KernelImpl})
 	}
 	for _, l := range p.DraftLayers {
-		out = append(out, Operation{Draft: true, Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Impl: l.KernelImpl})
+		out = append(out, Operation{Draft: true, Layer: l.Layer, Scorer: l.Scorer, Primitive: l.Primitive, Format: l.Shape.Format, Dtype: l.Shape.Dtype, Impl: l.KernelImpl})
 	}
 	return out
 }
@@ -278,8 +280,14 @@ type PrimitiveShape struct {
 	Heads, KVHeads, HeadDim int
 	// Window bounds context-dependent work in tokens; 0 is unbounded.
 	Window int
-	// Format is the stored format of the weight or the cache this primitive reads.
+	// Format is the stored format of the weight or the cache this primitive reads: its size, in
+	// bits and scale blocks. It does not say which number format those bits hold, so BF16 and FP16
+	// are both {PayloadBits 16}, and FP8 and INT8 both 8 bits.
 	Format units.QuantFormat
+	// Dtype is the element type of the cache an attention primitive reads, in the catalog's words
+	// (bf16, fp16, fp8, int8); the zero value is not stated. The cost model prices a coefficient
+	// measured on one element type only for that type, which Format cannot tell.
+	Dtype string
 }
 
 // Collective is a collective's group, message and whether it leaves its node.
