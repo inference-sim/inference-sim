@@ -1,0 +1,112 @@
+name: ci-light
+
+# What keeps a stacked layer buildable. A pull request whose base is main runs the full set,
+# ci.yml, with the `required` check; any other base (a layer of a stack) runs this instead. The
+# full set stays available on any branch by workflow_dispatch (ci.yml, rederive.yml), and runs on
+# the pull request that merges to main.
+#
+# This workflow keeps nothing out of main: no rule requires a check on a layer, and the job ids
+# differ from the required names (`required`, `pr / blis checks`, `scan`) so a layer's check
+# list is not read as the required set. The pull-request description and commit checks
+# (`pr / blis checks`) and the private-name scan (`scan`) run on every pull request, whatever
+# its base (blis.yml, private-names.yml).
+#
+# What a layer does not get, and the main-based pull request does: the race-detector tests, the
+# cost-model suite and its mutation check, the catalog, ledger, registry and docs jobs, rederive,
+# and the candidate predictions. A defect that a later layer repairs or hides is seen by the full
+# set only at the top; run ci.yml by hand on a layer before approving it.
+
+on:
+  pull_request:
+    branches-ignore: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+
+concurrency:
+  group: ci-light-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  light-go:
+    name: light - format, vet, build and changed packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/go-toolchain
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "not gofmt-formatted:"; echo "$unformatted"; exit 1; fi
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go run ./tools/modlint
+      - run: go test -count=1 .
+      # The packages that hold a Go file this layer changes, against the layer's own base (never
+      # main): a layer is judged by its own diff.
+      - name: Tests of the packages this layer changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          mb="$(git merge-base "$BASE" HEAD)"
+          pkgs=""
+          for d in $(git diff --name-only --diff-filter=d "$mb" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u); do
+            if p="$(go list -e -f '{{if or .GoFiles .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' "./$d" 2>/dev/null)" && [ -n "$p" ]; then pkgs="$pkgs ./$d"; fi
+          done
+          if [ -z "$pkgs" ]; then echo "no Go package changed"; exit 0; fi
+          echo "testing:$pkgs"
+          go test -count=1 -timeout 30m $pkgs
+
+  light-lint:
+    name: light - golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/go-toolchain
+      - name: Build golangci-lint v2.14.0
+        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+      - name: Lint what the layer touches
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=HEAD~1; fi
+          rev="$(git merge-base "$BASE" HEAD)"
+          intro="$(git log --diff-filter=A --format=%H -1 -- .golangci.yml)"
+          if [ -n "$intro" ] && ! git merge-base --is-ancestor "$intro" "$rev"; then rev="$intro"; fi
+          "$RUNNER_TEMP/bin/golangci-lint" run --new-from-rev="$rev" ./...
+
+  light-generated:
+    name: light - generated files and data validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/go-toolchain
+      # The AGENTS.md block, the pull-request template and the rendered index match the invariant
+      # registry (design section 13.1).
+      - run: go run ./tools/invariants render -check
+      - run: go run ./validate/cmd/validate-registry registry
+      - run: go run ./validate/cmd/validate-catalog catalog
+      # Python code that restates a Go rule (X15).
+      - name: Python rule lint (X15)
+        run: |
+          set -euo pipefail
+          go run ./tools/prcheck vocab > "$RUNNER_TEMP/vocab.json"
+          python3 -I tools/pyrules/pyrules.py "$RUNNER_TEMP/vocab.json"
+      # The workflow, version, documentation-reference and quarantine rules of the shared check
+      # are run by blis.yml on every pull request; the data-free ones that need no network are
+      # repeated here so a layer fails fast.
+      - run: go run ./tools/prcheck workflows
+      - run: go run ./tools/prcheck versions
+      - run: go run ./tools/prcheck docrefs

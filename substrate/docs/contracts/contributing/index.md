@@ -60,6 +60,22 @@ quotes; and the documentation checks described in
 CI runs the same set, with the race detector, in the `contracts` job of
 `.github/workflows/ci.yml`.
 
+### Which checks run on a pull request
+
+A pull request whose base is `main` runs the full set: `.github/workflows/ci.yml` with its
+`required` check, `.github/workflows/rederive.yml` and
+`.github/workflows/ledger-candidate.yml` where their paths change. A pull request on any other
+base, a layer of a stack, runs `.github/workflows/ci-light.yml`: format, vet, build, the lint
+on what the layer changes, the tests of the Go packages it changes, and the generated-file and
+data checks. The description, commit and private-name checks (`pr / blis checks`, `scan`) run on
+every pull request. The full set runs on any branch by hand (`gh workflow run ci.yml --ref
+<branch>`). Retargeting a pull request to `main` is a change of base, which GitHub reports as
+the pull-request activity `edited`; the full workflows list `edited`, so the retarget starts
+them. A defect that a later layer repairs or hides shows in the full set only on the pull
+request to `main`, so run the full set by hand on a layer you are about to approve. A newer run
+for the same pull request replaces the one in progress, and the path gates read each check run
+at its newest attempt, so a replaced or re-run attempt does not hold a gate shut or open.
+
 Every validator has a negative test for each way a document can be wrong. A validator that
 cannot fail proves nothing.
 

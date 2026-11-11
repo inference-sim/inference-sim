@@ -9,6 +9,13 @@ name: ci
 
 on:
   pull_request:
+    # The full set judges a pull request whose base is main, the pull request that merges. A stacked
+    # layer (any other base) runs ci-light.yml. Retargeting a pull request to main is a change of
+    # its base branch, which GitHub reports as the activity type `edited` (not a default type), so
+    # `edited` is listed: without it the retarget starts no run. ready_for_review is listed so a
+    # draft marked ready is judged too. A new run for the same ref cancels the one in progress.
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
