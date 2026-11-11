@@ -64,6 +64,7 @@ func TestEngineFieldNames(t *testing.T) {
 		"dp_sync_interval":                       "--data-parallel-sync-interval (parallel_config.dp_sync_interval)",
 		"stream_interval":                        "--stream-interval",
 		"disable_hybrid_kv_cache_manager":        "--disable-hybrid-kv-cache-manager / --no-disable-hybrid-kv-cache-manager",
+		"language_model_only":                    "--language-model-only / --no-language-model-only",
 		"kv_cache_memory_bytes":                  "--kv-cache-memory-bytes",
 		"prefix_match_unit":                      "--prefix-match-unit",
 		"prefix_cache_retention_interval":        "--prefix-cache-retention-interval",

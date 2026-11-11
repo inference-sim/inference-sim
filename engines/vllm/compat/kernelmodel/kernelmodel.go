@@ -117,6 +117,9 @@ type Model struct {
 	// prices the settings converted from it (Inputs.Engine), and the simulator's settings and
 	// sizing read the rest (Engine).
 	engine engineconfig.Engine
+	// assumed are the pricing assumptions this package discloses beside the kernel's own
+	// (EngineAssumptions), each "name = value: reason".
+	assumed []string
 
 	decodeThreshold int
 	smBudget        int
@@ -390,6 +393,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	// size, the memory budget and the batch settings the deployment left unstated.
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
+	m.assumed = languageModelOnlyAssumptions(in.Model, engine)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by
@@ -465,6 +469,11 @@ func OpenRole(scenario string, r Repos, role deployment.Role) (*Model, error) {
 	}
 	return OpenPool(scenario, r, index)
 }
+
+// EngineAssumptions are the assumptions this package makes in pricing the pool's engine block,
+// each as "name = value: reason", beside the kernel's own (Provenance). They are empty when the
+// block states everything the price depends on.
+func (m *Model) EngineAssumptions() []string { return append([]string(nil), m.assumed...) }
 
 // Role is the role of the pool this model prices.
 func (m *Model) Role() deployment.Role { return m.id.role }
@@ -1002,6 +1011,7 @@ func unmodelledSettings(e engineconfig.Engine) []string {
 	add(e.PrefillScheduleInterval != 0, "prefill_schedule_interval")
 	add(e.StreamInterval != 0, "stream_interval")
 	add(e.DisableHybridKVCacheManager != nil, "disable_hybrid_kv_cache_manager")
+	add(e.LanguageModelOnly != nil, "language_model_only")
 	add(e.KVCacheMemoryBytes != nil, "kv_cache_memory_bytes")
 	add(e.PrefixMatchUnit != 0, "prefix_match_unit")
 	// The compatibility engine models vLLM's default interval 0, which keeps only the semantic

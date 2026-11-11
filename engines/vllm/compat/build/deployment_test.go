@@ -266,6 +266,7 @@ func TestAdopt_RefusesEngineSettingsTheCompatibilityEngineDoesNotModel(t *testin
 		{"      prefill_schedule_interval: 2\n", "prefill_schedule_interval"},
 		{"      kv_cache_memory_bytes: 1000000000\n", "kv_cache_memory_bytes"},
 		{"      disable_hybrid_kv_cache_manager: true\n", "disable_hybrid_kv_cache_manager"},
+		{"      language_model_only: true\n", "language_model_only"},
 		{"      max_loras: 2\n", "max_loras"},
 		{"      watermark: 0.02\n", "watermark"},
 		{"      prefix_match_unit: 16\n", "prefix_match_unit"},

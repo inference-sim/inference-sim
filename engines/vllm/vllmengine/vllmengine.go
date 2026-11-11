@@ -737,7 +737,7 @@ func (k kernelPricer) Assumptions() []string {
 	for _, a := range k.m.Provenance().Assumptions {
 		out = append(out, a.Name+" = "+a.Scope)
 	}
-	return out
+	return append(out, k.m.EngineAssumptions()...)
 }
 
 // RecordSelected registers this pool's kernel with the host's Data (kernelmodel.Model.RecordSelected),

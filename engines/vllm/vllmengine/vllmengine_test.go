@@ -776,3 +776,35 @@ func TestOneBuildWritesOneReport(t *testing.T) {
 		t.Fatal("the build's lookups are not in the host's Data")
 	}
 }
+
+// A MiniMax-M3 deployment that does not state language_model_only builds, and the engine discloses
+// that the cost model prices the text decoder alone while vLLM keeps the vision tower resident.
+// Stating true is what is priced, so it discloses nothing about it. d116 is minimax-m3 on a b200.
+func TestEngineDisclosesWhatLanguageModelOnlyLeavesUnpriced(t *testing.T) {
+	Register()
+	raw, err := os.ReadFile(filepath.Join("testdata", "d116-032.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		stated    string
+		disclosed bool
+	}{{"", true}, {"      language_model_only: false\n", true}, {"      language_model_only: true\n", false}} {
+		body := strings.Replace(string(raw), "      gpu_memory_utilization: 0.92\n", "      gpu_memory_utilization: 0.92\n"+c.stated, 1)
+		path := filepath.Join(t.TempDir(), "v.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: map[string]string{RootScenario: path}})
+		if err != nil {
+			t.Fatalf("%q: %v", c.stated, err)
+		}
+		found := false
+		for _, a := range e.(interface{ Assumptions() []string }).Assumptions() {
+			found = found || strings.HasPrefix(a, "language_model_only = ")
+		}
+		if found != c.disclosed {
+			t.Errorf("%q: language_model_only assumption disclosed: %t, want %t", c.stated, found, c.disclosed)
+		}
+	}
+}

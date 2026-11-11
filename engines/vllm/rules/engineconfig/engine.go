@@ -189,6 +189,11 @@ type Engine struct {
 	// (vllm/config/scheduler.py:182@5df63a72). Tri-state: nil lets the engine decide from the
 	// environment and the configuration.
 	DisableHybridKVCacheManager *bool `yaml:"disable_hybrid_kv_cache_manager,omitempty"`
+	// LanguageModelOnly is MultiModalConfig.language_model_only (vllm/config/multimodal.py:304@5df63a72):
+	// every modality's limit is 0 (:696-700), and a multimodal model then builds no vision tower
+	// or projector, so their weights are not resident. Tri-state: nil states nothing, which is
+	// vLLM's default, false. A text-only model has no MultiModalConfig and is unaffected.
+	LanguageModelOnly *bool `yaml:"language_model_only,omitempty"`
 	// MaxModelLen is the context length: omitted, auto, or a count. See MaxModelLen.
 	MaxModelLen MaxModelLen `yaml:"max_model_len,omitempty"`
 	// KVCacheMemoryBytes fixes the KV cache's size per GPU in bytes, instead of deriving it

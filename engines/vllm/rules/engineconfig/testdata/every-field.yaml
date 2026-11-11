@@ -30,6 +30,7 @@ dp_sync_interval: 8
 prefill_schedule_interval: 2
 stream_interval: 4
 disable_hybrid_kv_cache_manager: false
+language_model_only: true
 max_model_len: auto
 kv_cache_memory_bytes: 123456789
 prefix_match_unit: 16

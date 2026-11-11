@@ -70,6 +70,7 @@ var engineKeys = map[string][]string{
 	"prefill_schedule_interval":                {"prefill_schedule_interval"},
 	"stream_interval":                          {"stream_interval"},
 	"disable_hybrid_kv_cache_manager":          {"disable_hybrid_kv_cache_manager"},
+	"language_model_only":                      {"language_model_only"},
 	"max_model_len":                            {"max_model_len"},
 	"kv_cache_memory_bytes":                    {"kv_cache_memory_bytes"},
 	"prefix_match_unit":                        {"prefix_match_unit"},
@@ -209,6 +210,14 @@ var pricedByTheKernel = map[string]string{
 	"kv_transfer_config.kv_connector_extra_config": "#89",
 }
 
+// readByTheEngine are the not-modelled keys the engine reads through a rule of its own that depends
+// on the model, so the engine accepts them. Each value is a snippet the d079 deployment (a
+// text-only model) builds with, and the rule's test is named beside it. The entry is unused once
+// the field is classed modelled.
+var readByTheEngine = map[string]struct{ snippet, test string }{
+	"language_model_only": {"language_model_only: true\n", "compat/kernelmodel TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower"},
+}
+
 func fieldList(t *testing.T) []fields.Field {
 	t.Helper()
 	l, err := fields.Load(filepath.Join("..", "fields.json"))
@@ -297,6 +306,10 @@ func TestEveryNotModelledFieldIsRefusedOrExplained(t *testing.T) {
 					t.Errorf("%s: the refusal does not cite %s: %v", name, url, err)
 				}
 			})
+		case readByTheEngine[name].snippet != "":
+			if _, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: withEngine(t, readByTheEngine[name].snippet)}); err != nil {
+				t.Errorf("%s: %s, which %s covers, is refused: %v", name, readByTheEngine[name].snippet, readByTheEngine[name].test, err)
+			}
 		case pricedByTheKernel[name] != "":
 			nPriced++
 			entry := pricedByTheKernel[name]
