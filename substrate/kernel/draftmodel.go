@@ -27,7 +27,9 @@ func draftModelName(e enginesettings.Settings) string {
 // ids can collide, and its aliases are rewritten to match: a drafter node aliasing its own
 // head stays an alias of that node; one aliasing "head.lm_head" names the DRAFTER's head,
 // which is the drafter's own weight (Muse Spark's DSpark carries its own lm_head,
-// has_own_lm_head, vllm/models/muse_spark/common/dspark.py@0f6b2619), not the target's.
+// has_own_lm_head, vllm/models/muse_spark/common/dspark.py@0f6b2619), not the target's. A
+// drafter that ships no head says shares_target_head, and its alias then stays an alias of the
+// target's head, resident once.
 
 // draftKindPrefix keeps a drafter graph's layer kinds apart from the target's.
 const draftKindPrefix = "draft."
@@ -93,7 +95,7 @@ func withDrafter(target, draft *model.Graph) (*model.Graph, error) {
 			case "head":
 				// The drafter's own head, grafted below as the speculator's head: the alias
 				// points at the target head only where the drafter states none of its own.
-				if len(draft.Head) > 0 {
+				if len(draft.Head) > 0 && !sp.SharesTargetHead {
 					out[i].Aliases = ""
 				}
 			case "embedding":
@@ -120,6 +122,16 @@ func withDrafter(target, draft *model.Graph) (*model.Graph, error) {
 			r.Epilogue = append(r.Epilogue, rename(id))
 		}
 		return r
+	}
+	if sp.SharesTargetHead {
+		for _, n := range sp.Head {
+			if strings.HasPrefix(n.Aliases, "head.") {
+				if _, ok := target.AliasTarget(n.Aliases); !ok {
+					return nil, fmt.Errorf("draft_model %s reads its target's %s, and the target %s "+
+						"states no such node", draft.Name, n.Aliases, target.Name)
+				}
+			}
+		}
 	}
 	spec := *sp
 	spec.Stack = renameStack(sp.Stack)

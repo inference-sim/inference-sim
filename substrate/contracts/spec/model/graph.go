@@ -352,6 +352,16 @@ type Speculator struct {
 	// its fp32 stream, 4 x hidden_size bytes (vllm/models/muse_spark/nvidia/
 	// model.py:1705-1722 at vllm-project/vllm 0f6b2619). Only with AuxHiddenStateLayers.
 	AuxHiddenStateBytesPerToken int `yaml:"aux_hidden_state_bytes_per_token,omitempty"`
+	// SharesTargetHead says the drafter ships no LM head and reads its target's: the
+	// engine loads a head into the draft only when the checkpoint holds one
+	// (has_own_lm_head, set by the weight loader when an lm_head tensor is found; DSpark
+	// and EAGLE drafters without one take the target's). A drafter graph is validated as a
+	// model, so it states an lm_head of its own, and its Head names it with aliases
+	// head.<role>. When the drafter is named as a deployment's draft model that alias
+	// means the drafter's own head and its weights are the drafter's resident bytes; with
+	// SharesTargetHead it means the head of the target graph the drafter is grafted onto,
+	// which is already resident once. Requires a GEMM in Head that aliases a head node.
+	SharesTargetHead bool `yaml:"shares_target_head,omitempty"`
 }
 
 // ShardedAtDecode is when a replicated GEMM's output columns split over the tensor-parallel

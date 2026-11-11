@@ -125,6 +125,7 @@ speculator:
   method: dspark
   num_spec_tokens: 7
   drafting: parallel_block
+  shares_target_head: true
   stack:
     pattern:
     - dspark_layer

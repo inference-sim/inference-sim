@@ -7756,3 +7756,20 @@ def test_m31_dspark_weights_and_their_scales_equal_the_drafters_header(tmp_path)
         sc = g["global"]["weight_scale"]
         assert by["fp8"] * sc["bytes"] // sc["elements"] == 52_101_120
 
+
+
+# --- A drafter that ships no lm_head reads its target's -----------------------------------
+
+def test_drafters_without_an_lm_head_tensor_state_that_they_share_their_targets():
+    """The checkpoints of the Kimi-K3, Kimi-K3.1 and MiniMax-M3.1-Flash DSpark drafters hold no
+    lm_head tensor (the engine takes the target's, has_own_lm_head), so each states
+    shares_target_head; Muse Spark's DSpark and the EAGLE3 heads hold their own and do not.
+    Without the flag, grafting the drafter counts a second 200,064 or 163,840 x hidden head as
+    resident."""
+    shares = {"kimi-k3-dspark", "kimi-k3.1-dspark", "minimax-m3.1-flash-dspark"}
+    own = {"muse-spark-open-dspark", "minimax-m3-eagle3", "minimax-m3-eagle3-gqa"}
+    for name in shares | own:
+        sp = graph_of(MODELS / name)["speculator"]
+        assert bool(sp.get("shares_target_head")) == (name in shares), name
+        if name in shares:
+            assert any(n.get("aliases", "").startswith("head.") for n in sp["head"]), name

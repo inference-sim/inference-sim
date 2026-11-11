@@ -131,3 +131,39 @@ func TestADraftersNodesKeepItsOwnDType(t *testing.T) {
 		}
 	}
 }
+
+// A drafter that ships no head says it shares its target's. Grafted, its head alias then stays
+// an alias of the target's head, whose weights are resident once, where an alias without the
+// flag is the drafter's own weight (it is dropped, and the node counts as the drafter's).
+func TestADrafterThatSharesItsTargetsHeadKeepsTheAlias(t *testing.T) {
+	target, draft := draftGraphs()
+	draft.Speculator.SharesTargetHead = true
+	g, err := withDrafter(target, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := g.Speculator.Head[0].Aliases; a != "head.lm_head" {
+		t.Fatalf("shared head alias %q, want head.lm_head", a)
+	}
+	if _, ok := g.AliasTarget(g.Speculator.Head[0].Aliases); !ok {
+		t.Error("the kept alias resolves to no node of the grafted graph")
+	}
+	// The same drafter without the flag owns its head, as before.
+	target, draft = draftGraphs()
+	g, err = withDrafter(target, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := g.Speculator.Head[0].Aliases; a != "" {
+		t.Errorf("an own head aliases %q", a)
+	}
+}
+
+func TestASharedHeadTheTargetLacksIsRefused(t *testing.T) {
+	target, draft := draftGraphs()
+	draft.Speculator.SharesTargetHead = true
+	target.Head = nil
+	if _, err := withDrafter(target, draft); err == nil || !strings.Contains(err.Error(), "states no such node") {
+		t.Fatalf("got %v, want a refusal naming the missing head", err)
+	}
+}

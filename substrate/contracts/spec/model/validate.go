@@ -2,6 +2,7 @@ package model
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/check"
 )
@@ -334,6 +335,18 @@ func (g *Graph) validateSpeculator(p *validate.Problems) {
 	for i, n := range s.Embedding {
 		n.validate(p, fmt.Sprintf("speculator.embedding[%d]", i))
 		validateOutsideLayers(p, fmt.Sprintf("speculator.embedding[%d]", i), n)
+	}
+	if s.SharesTargetHead {
+		aliasesHead := false
+		for _, n := range s.Head {
+			if n.Op == OpGEMM && strings.HasPrefix(n.Aliases, "head.") {
+				aliasesHead = true
+			}
+		}
+		if !aliasesHead {
+			p.Field("speculator.shares_target_head",
+				"set, but no GEMM of speculator.head aliases a head node; there is no head to share")
+		}
 	}
 	for i, n := range s.Head {
 		n.validate(p, fmt.Sprintf("speculator.head[%d]", i))

@@ -4422,6 +4422,9 @@ def handler_minimax_dspark(cfg, raw, model):
             "method": "dspark",
             "num_spec_tokens": block,
             "drafting": "parallel_block",
+            # The checkpoint ships no lm_head, and the engine loads a head into the draft
+            # only when the weights hold one (has_own_lm_head): the draft reads the target's.
+            "shares_target_head": True,
             "stack": {"pattern": ["dspark_layer"], "repeat": layers},
             "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
             "head": [traffic("dspark_final_norm", 2 * hidden * act, tp="replicated"),
@@ -5702,6 +5705,9 @@ def handler_k3_dspark(cfg, raw, model):
             "method": "dspark",
             "num_spec_tokens": block,
             "drafting": "parallel_block",
+            # The checkpoint ships no lm_head, and the engine loads a head into the draft
+            # only when the weights hold one (has_own_lm_head): the draft reads the target's.
+            "shares_target_head": True,
             "stack": {"pattern": ["dspark_layer"], "repeat": layers},
             "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
             "head": [norm("dspark_final_norm"),
