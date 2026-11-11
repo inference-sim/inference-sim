@@ -307,6 +307,34 @@ different response by 2026-11-05, with the same rows and so the same values (h10
 24, h200 0.230 and 61). `fetch_cited_inferencex.py` fetches it with the run bodies, and
 `validator/test_operatorx.py` runs in the gate and is no longer quarantined.
 
+### Offload tiers
+
+A storage tier (`catalog/devices/storage.yaml`) is a name and a description. What a transfer to or from it costs is three coefficients per tier, `offload_tier_<tier>_read_rate`, `_write_rate` (bytes per microsecond, which is MB/s) and `_base_latency` (microseconds per transfer), in `cost-model-offload-tiers.yaml`. The set is separate from `cost-model-primitives` because that set is single-sourced to NVIDIA AISimulate (a test refuses any non-measured entry there that cites another measurement), and these figures are not AISimulate's. A scenario whose deployment offloads to a tier lists the set; the kernel refuses to build when it does not. The kernel's `TierTime` prices a transfer as `max(base_latency, bytes / rate)` for the direction, with the rate held to the chip's `host_link_bandwidth` and divided by the queue depth. They are in the registry because none is a declared fact of a device (design SUB-18, SUB-3): the catalog held them as the tiers' own figures, and every one was either a fit to a single host or a value the simulator's authors chose.
+
+**What each is.** Before this change the catalog stated, for six tiers, a read rate, a write rate and a base latency. The registry now holds the same figures to the digit, for every catalog chip, so no offload price moved (`kernel/tiers_test.go` holds the old figures as a table and prices every tier on every chip against them).
+
+| Tier | Method | Why |
+|---|---|---|
+| `nvme_gen4`, `nvme_gen3`, `sata_ssd`, `s3` | `assumed`, every chip | Representative classes seeded in inference-sim's defaults with no source cited; a class is not a product. |
+| `nvme_gen4_raid0_8x` | `assumed`, DGX H100 node; the same figures `assumed` on the other chips | The drive model is not public. Read is NVIDIA's `> 50 GB/s` design target and 8 x the measured PM1733 rate; write is 8 x the PM1733 datasheet; latency is a sum of cited per-file costs. |
+| `cpu_dram` rates | `transferred`, from the H100 host (`hardware=h100`), on every chip | Fitted to InferenceX CollectiveX `swap_blocks` rows on one H100 host at vLLM v0.27.1; the engine priced issues the same copies from `swap_blocks_batch`, so the engine is not the one measured (design D5, VAL-8) and the large-payload rate carries over by a stated rule. On other chips it is the same figure, now labeled; `TierTime` holds a slower host link to its own `host_link_bandwidth`. |
+| `cpu_dram` base latency | `assumed`, every chip | The small-copy floor of `swap_blocks` does not carry over to a batched call; it is held as a judgement that the floors are alike. |
+
+**Regenerate.** `emit_offload_tiers.py` writes every entry and holds every figure; it needs no data:
+
+```bash
+cd registry
+python scripts/emit_offload_tiers.py          # write
+python scripts/emit_offload_tiers.py --check  # exit 1 if the committed file would change
+python -m pytest validator/test_offload_tiers.py -q
+```
+
+It reads the catalog's chip list, so a chip added there fails `--check` until the writer has run for it. The expected output of `--check` is `cost-model-offload-tiers.yaml already matches` and exit 0. It costs about a second. To add a tier, add its name to `catalog/devices/storage.yaml` and its three figures, method and rationale to `emit_offload_tiers.py`.
+
+**The one fitted source.** The `cpu_dram` rates are the medians `fit_host_link.py` derives for `host_link_bandwidth` (contiguous, payload >= 64 MiB, all block sizes, 26 points per direction: host to device 27,058, device to host 46,089); that script refuses when its median for either direction is not the committed tier rate, so the cap and the tier are one fit. Its data are the InferenceX CollectiveX run bodies cited by sha256 `26cad6ccbdaa` (runs 35158674963 and 36334394602, public InferenceX Data API), which the API no longer serves; the fit cannot be re-derived from public data today, and its gate sits on the quarantine list with the rest of that family (see above). The `cpu_dram` floor (19.3 µs, the mean of the two directions' 19.7 and 18.9) rests on the same rows and is held as an assumption. A held-out check (random layout, payload >= 1 MiB: median absolute error of p50 latency 0.51 host to device and 0.14 device to host, against 0.55 and 0.98 for the 2.0e4 MB/s and 1 µs placeholder it replaced) is on the two rate entries as `validated`.
+
+**What it does not show.** None of the six tiers is timed on the engine and version the kernel prices, on any chip but one H100 host, and that host's rates are not measurements of `swap_blocks_batch`. The `assumed` figures are not bounds: a deep queue on a drive, or a store under load, can sit well below them. The queue-depth rule divides the rate and does not model saturation. The NVMe aggregate is optimistic at low concurrency, because one O_DIRECT stream does not reach the aggregate on md RAID 0. No `cpu_dram` figure exists for a host other than the one H100 DGX host; a Grace host's link is held to its own `host_link_bandwidth`, which says what the link can do and not what the copy engines do over it.
+
 ### Data freshness, checked 2026-10-30
 
 | source | newest public | what the committed sets cite | outcome |
@@ -383,7 +411,8 @@ appears with no owner — so a value that cannot be regenerated cannot be added.
 | `collective_*` (new part) | `insert_collectives_part.py` | same, per operator per lane |
 | `collective_*` (wide groups) | `insert_collectives_wide.py` | same, widths 8 and 16 |
 | descriptors (`vendor_spec`) and A100's `moe_routing_imbalance_median` | `emit_primitives.py --check` (entry-level) | NVIDIA `systems/<sku>.yaml`; AISimulate `moe/sglang/0.5.10` for A100 |
-| `host_link_bandwidth` (measured, six parts) | `fit_host_link.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX swap_blocks, contiguous, payload >= 64 MiB; h100 is the catalog `cpu_dram` fit's larger direction |
+| `host_link_bandwidth` (measured, six parts) | `fit_host_link.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX swap_blocks, contiguous, payload >= 64 MiB; h100 is the larger direction of the `offload_tier_cpu_dram` rates, and the script refuses when it derives a different median for either |
+| `cost-model-offload-tiers`: `offload_tier_<tier>_{read_rate,write_rate,base_latency}` (`assumed`, and `transferred` for the cpu_dram rates; 24 entries) | `emit_offload_tiers.py --check` (no data needed) | the figures the catalog's storage tiers held, now with their method and evidence; see [Offload tiers](#offload-tiers) |
 | `moe_a2a_*_deepep_low_latency_graph_8rank_{h100,h200}` | `fit_deepep_ll_graph.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX deepep-v2 low-latency, EP8 one node |
 | `moe_a2a_*_deepep_{low_latency_graph,v2_graph}_{8,16}rank_gb200_nvl72`, `..._16rank_h200` | `fit_deepep_collectivex.py --check` (`$COLLECTIVEX_DATA`) | InferenceX CollectiveX deepep-v2 low-latency and normal; GB200 EP8/EP16 inside one NVL72, H200 EP16 over two nodes (scoped `fabric: [ib-400g]`) |
 | `gemm_*_nvfp4_grouped` (PARKED, none committed) | `fit_nvfp4_grouped_ramp.py` (`$AISIMULATE_NVFP4_DATA` at aisimulate `8ae6b658`) | AISimulate `moe/vllm/0.30.0` TrtLlmNvFp4ExpertsMonolithic; its held-out error is no better than the dense `nvfp4` ramp's on any part, so the kernel's fallback stands (see the script's docstring) |

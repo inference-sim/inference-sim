@@ -879,14 +879,14 @@ def test_emit_memory_keeps_the_capture_writers_entries():
     assert mod.keep_foreign(stripped) == text
 
 
-def test_the_h100_host_link_is_the_catalog_cpu_tier_fit_not_a_second_number():
-    """host_link_bandwidth caps a CPU tier's transfer rate (kernel TierTime), and blis-catalog's
-    cpu_dram is fitted to the same CollectiveX swap_blocks rows. The cap is that fit's larger
-    direction, so it never binds below a fitted tier rate and the two cannot drift apart."""
-    path = REPO.parent / "catalog" / "devices" / "storage.yaml"
-    tier = yaml.safe_load(path.read_text())["cpu_dram"]
+def test_the_h100_host_link_is_the_cpu_tier_fit_not_a_second_number():
+    """host_link_bandwidth caps a CPU tier's transfer rate (kernel TierTime), and the registry's
+    offload_tier_cpu_dram rates are fitted to the same CollectiveX swap_blocks rows. The cap is
+    that fit's larger direction, so it never binds below a tier rate and the two cannot drift
+    apart. (The tier rates left the catalog's storage.yaml for the registry, SUB-18.)"""
     assert _single("host_link_bandwidth", "h100") == max(
-        tier["read_bandwidth_mb_s"], tier["write_bandwidth_mb_s"])
+        _single("offload_tier_cpu_dram_read_rate", "h100"),
+        _single("offload_tier_cpu_dram_write_rate", "h100"))
 
 
 # --------------------------------------------------------------------------------------

@@ -49,6 +49,8 @@ var FormUnits = []FormUnit{
 	{`^moe_a2a_floor_`, vocab.UnitMicrosecondsPerXfer, "the floor of one all-to-all call, in microseconds"},
 	{`^moe_a2a_rate_`, vocab.UnitBytesPerMicrosecond, "a byte rate"},
 	{`^moe_routing_imbalance_median$`, vocab.UnitDimensionless, "a ratio of the busiest rank's load to the mean"},
+	{`^offload_tier_[a-z0-9_]+_(read|write)_rate$`, vocab.UnitBytesPerMicrosecond, "a byte rate; TierTime divides the transfer's bytes by it"},
+	{`^offload_tier_[a-z0-9_]+_base_latency$`, vocab.UnitMicrosecondsPerXfer, "the floor of one transfer, in microseconds"},
 	{`^recurrent_(decode|prefill)_floor_`, vocab.UnitMicrosecondsPerXfer, "the floor of one scan call, in microseconds"},
 	{`^recurrent_(decode|prefill)_rate_`, vocab.UnitTokens, "tokens per microsecond past the floor; the form divides a token count by it"},
 }

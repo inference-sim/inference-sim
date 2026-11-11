@@ -60,6 +60,8 @@ blis-substrate:
   "contracts/spec/acceptance: TestBorrowingAcrossK; TestTheProportionalRuleDoesNotOverstate; TestBorrowingAnotherDrafter; TestBorrowingAnotherTarget; TestTheTieBreakOrder; TestAmbiguityIsRefused; TestExactOnlyAndRefusal; TestFallbackCategoryPrecedence; TestFallbackWaitsForTheWorkloadsOwnCategory; TestTheSameDrafterUnderAnotherMethodIsNotBorrowed": [contracts and validators]
   "validate/dataset: TestCheckDraftersHoldsInBothDirections": [contracts and validators]
   "contracts/spec/hardware: TestFieldProvenance; TestInheritedProvenanceObeysTheFieldSourceContract; TestCommittedChipsRecordTheirExceptions; TestLosingAnExceptionFailsTheCheck; TestEveryCommittedFactHasASource": [contracts and validators]
+  "contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency": [contracts and validators]
+  "kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid": [cost model]
   "ci.yml job required": [required]
 blis-vllm:
   "oracle/check_mocks.py": [oracle-tier2]

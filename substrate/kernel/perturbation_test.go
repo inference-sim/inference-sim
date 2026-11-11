@@ -39,6 +39,21 @@ func pricesOf(k *Kernel) string {
 		fmt.Fprintf(&b, "step %d %d|", e.Overlap, e.NoOverlap)
 	}
 	fmt.Fprintf(&b, "host %d %d %d|", k.AdmissionOverhead(1024), k.OutputTokenOverhead(), k.CompletionOverhead())
+	// A transfer to and from each tier, at a small and a large size and at two queue depths.
+	tiers := make([]string, 0, len(k.tiers))
+	for name := range k.tiers {
+		tiers = append(tiers, name)
+	}
+	sort.Strings(tiers)
+	for _, tier := range tiers {
+		for _, dir := range []kernel.Direction{kernel.DirectionFromTier, kernel.DirectionToTier} {
+			for _, bytes := range []int64{4096, 1 << 30} {
+				for _, qd := range []int{1, 4} {
+					fmt.Fprintf(&b, "tier %s %s %d %d %d|", tier, dir, bytes, qd, k.TierTime(tier, dir, bytes, qd))
+				}
+			}
+		}
+	}
 	fmt.Fprintf(&b, "pd %d", k.PDTransferTime(4096, kernel.Placement{Node: 0, Pool: deployment.RolePrefill}, kernel.Placement{Node: 1, Pool: deployment.RoleDecode}))
 	return b.String()
 }
@@ -54,7 +69,13 @@ type perturbationCase struct {
 // combination the cost model builds.
 func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturbationCase {
 	t.Helper()
-	sets := "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric]"
+	// Every deployment offloads to every catalog tier, so each tier's three coefficients are
+	// read by a lookup and perturbed with the rest (pricesOf prices a transfer to each).
+	offload := "offload:\n  tiers:\n"
+	for _, dev := range d.StorageDevices() {
+		offload += fmt.Sprintf("    - {tier: %s, bytes: 1073741824}\n", dev.Name)
+	}
+	sets := "[cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory, cost-model-fabric, cost-model-offload-tiers]"
 	var out []perturbationCase
 	for _, m := range d.Models() {
 		if len(only) > 0 && !slices.Contains(only, m) {
@@ -78,7 +99,7 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if ch != nil && ch.GPUsPerNode > 0 {
 						packaging = ""
 					}
-					body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {tp: %d, pp: 1, dp: %d, enable_expert_parallel: %t%s}\n", m, sets, c, nodes, packaging, nodes, tp, dp, ep, ctxPar(lay))
+					body := fmt.Sprintf("kind: Scenario\nname: p\nmodel: %s\ncoefficients: %s\nengine_version: \"0.32.0\"\ncluster:\n  hardware: %s\n  fabric: ib-400g\n  nodes: %d\n%s---\nkind: Deployment\nname: d\npools:\n  - role: colocated\n    nodes: %d\n    parallel: {tp: %d, pp: 1, dp: %d, enable_expert_parallel: %t%s}\n%s", m, sets, c, nodes, packaging, nodes, tp, dp, ep, ctxPar(lay), offload)
 					dir := t.TempDir()
 					if err := os.WriteFile(filepath.Join(dir, "s.yaml"), []byte(body), 0o644); err != nil {
 						t.Fatal(err)

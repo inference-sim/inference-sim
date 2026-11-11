@@ -16,10 +16,13 @@ engines; csrc swap_blocks is unchanged v0.27.1 -> v0.31.0 and swap_blocks_batch 
 descriptor-chunking loop that is a no-op on CUDA with VLLM_KV_OFFLOAD_MAX_BATCH_DESCRIPTORS
 unset, so the LARGE-payload rate transfers (the small-copy floor does not).
 
-ONE FIT, NOT TWO. blis-catalog's cpu_dram (5f6ecab) is fitted to the same h100 rows:
+ONE FIT, NOT TWO. The registry's offload_tier_cpu_dram rates (written by emit_offload_tiers.py;
+the catalog's cpu_dram tier held them before SUB-18 moved them) are the same h100 rows:
 contiguous, payload >= 64 MiB, median payload rate per direction (H2D 27,058, D2H 46,089
 MB/s). The cap over it is that fit's larger direction, so the cap never binds below either
-fitted tier rate and states the link's measured ceiling. Other parts: the only block size
+fitted tier rate and states the link's measured ceiling. This script refuses (exit 1) when
+the median it derives for either direction is not the committed tier rate, so the cap and
+the tier cannot drift apart. Other parts: the only block size
 every part measures is 1 MiB, so the estimator is the same median at 1 MiB blocks; on
 h100 that gives 46,008 against 46,089 (0.2%), so the two estimators agree where both apply.
 
@@ -46,13 +49,16 @@ import statistics
 import sys
 from pathlib import Path
 
+import yaml
+
 HERE = Path(__file__).resolve().parent
 SET_PATH = HERE.parent / "coefficients" / "cost-model-primitives.yaml"
+TIER_PATH = HERE.parent / "coefficients" / "cost-model-offload-tiers.yaml"
 # registry scope -> CollectiveX sku
 PARTS = {"h100": "h100-dgxc", "h200": "h200-dgxc", "b200": "b200-nscale", "b300": "b300",
          "gb200-nvl72": "gb200", "gb300": "gb300"}
 MIN_PAYLOAD = 64 << 20
-H100_ESTIMATOR = "all block sizes"  # the catalog cpu_dram fit's estimator, on its own part
+H100_ESTIMATOR = "all block sizes"  # the offload_tier_cpu_dram fit's estimator, on its own part
 BLOCK = 1 << 20
 
 _spec = importlib.util.spec_from_file_location("coefficient_blocks", HERE / "coefficient_blocks.py")
@@ -104,11 +110,28 @@ def link_entry(part, value, sku, est, h2d, d2h, sha):
         f"over contiguous points of at least 64 MiB ({est}): host-to-device {h2d[0]:,.0f} "
         f"bytes/us (n {h2d[1]}), device-to-host {d2h[0]:,.0f} (n {d2h[1]}); the larger is "
         f"committed, so the cap never binds below either direction's measured rate. The same "
-        f"rows fit blis-catalog's cpu_dram tier (h100), so tier and cap are one fit, not two. "
+        f"rows give the offload_tier_cpu_dram rates (h100), so tier and cap are one fit, not two. "
         f"Only the large-payload rate transfers to v0.31.0's swap_blocks_batch (one "
         f"cuMemcpyBatchAsync over the same copy engines); the per-call floor does not. "
         f"Replaces the descriptor's nominal PCIe rate. Reproduce with scripts/fit_host_link.py.",
     ]
+
+
+def tier_rate_problems(text: str, h2d: float, d2h: float) -> list[str]:
+    """The h100 offload_tier_cpu_dram rates (in cost-model-offload-tiers) must be the medians this
+    script derives.
+
+    They are the same rows (ONE FIT, NOT TWO). The tier entries are written by
+    emit_offload_tiers.py, which holds the rates as constants, so the only thing that keeps
+    them equal to the fit is this comparison."""
+    want = {"offload_tier_cpu_dram_read_rate": h2d, "offload_tier_cpu_dram_write_rate": d2h}
+    got = {}
+    for e in yaml.safe_load(text)["coefficients"]:
+        (name, body), = e.items()
+        if name in want and body["scope"].get("hardware") == ["h100"]:
+            got[name] = body["value"]
+    return [f"{n}: the committed h100 entry is {got.get(n)}, the fit derives {round(v)}"
+            for n, v in want.items() if got.get(n) != float(round(v))]
 
 
 def cited_sha(text: str) -> set[str]:
@@ -159,6 +182,12 @@ def main(argv) -> int:
             alt = max(rate(rs, sku, "h2d", BLOCK)[0], rate(rs, sku, "d2h", BLOCK)[0])
             print(f"h100 at 1 MiB blocks {alt:,.0f} (vs {value:,.0f}: {alt / value - 1:+.1%})")
         print(f"{part:12s} h2d {h2d[0]:9,.0f} (n {h2d[1]:2d}) d2h {d2h[0]:9,.0f} (n {d2h[1]:2d}) -> {value:,.0f}")
+        if part == "h100":
+            problems = tier_rate_problems(TIER_PATH.read_text(encoding="utf-8"), h2d[0], d2h[0])
+            if problems:
+                print("the tier rates are not the fit's medians: " + "; ".join(problems) +
+                      ". Change the rates in emit_offload_tiers.py and re-run it.", file=sys.stderr)
+                return 1
         cb.upsert(blocks, link_entry(part, value, sku, est, h2d, d2h, sha), after=lambda b: False)
     after = cb.join(blocks)
     if args.check:

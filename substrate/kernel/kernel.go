@@ -312,8 +312,18 @@ type Kernel struct {
 	trust      []trustTerm
 	resolution kernel.Resolution
 
-	// tiers maps a tier name to its device facts, for TierTime.
-	tiers map[string]hardware.StorageDevice
+	// tiers maps a tier name to its priced terms, for TierTime. They come from the registry's
+	// offload_tier_<tier>_* coefficients, not from the catalog (liftTiers).
+	tiers map[string]offloadTier
+	// tierEntries names the tier coefficients the deployment's offload block reads, which are the
+	// only ones Provenance lists (buildProvenance).
+	tierEntries map[string]bool
+}
+
+// offloadTier is one tier's three terms as the registry states them, in its units.
+type offloadTier struct {
+	readRate, writeRate float64 // bytes per microsecond, which is MB/s
+	baseLatency         float64 // microseconds per transfer
 }
 
 // collKey identifies one measured collective triple: the primitive AND the group it runs
@@ -1736,11 +1746,11 @@ func (k *Kernel) TierTime(tier string, dir kernel.Direction, bytes int64,
 		// hit look costless, which is the opposite of what an unmodelled tier means.
 		return time.Duration(math.MaxInt64)
 	}
-	rate := dev.ReadBandwidthMBs
+	rate := dev.readRate
 	if dir == kernel.DirectionToTier {
-		rate = dev.WriteBandwidthMBs
+		rate = dev.writeRate
 	}
-	rate *= 1e6 // MB/s to bytes per second
+	rate *= 1e6 // bytes per microsecond to bytes per second
 	// A CPU tier crosses the host link as well as host memory, and the slower of the two
 	// binds. Which one that is depends on the pairing rather than on either alone.
 	if k.hostBytesPerSecond > 0 && rate > k.hostBytesPerSecond {
@@ -1752,7 +1762,7 @@ func (k *Kernel) TierTime(tier string, dir kernel.Direction, bytes int64,
 	if queueDepth > 1 {
 		rate /= float64(queueDepth)
 	}
-	return seconds(price.FloorAndRate(float64(bytes), rate, dev.BaseLatencyUs*1e-6))
+	return seconds(price.FloorAndRate(float64(bytes), rate, dev.baseLatency*1e-6))
 }
 
 // PDTransferTime prices moving one request's KV between pools: its demand, run alone.

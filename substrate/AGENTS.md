@@ -214,9 +214,10 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: Validator rules that catalog peaks are dense figures and that their ratios between data types match the datasheet. The bounds on rates are SUB-5's (`contracts/spec/hardware: TestPeaksAreDenseFigures`)
 - **SUB-17** (new; target ci by M3) A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier.
   - `new`, pull_request: A property test over random placements, in blis-substrate
-- **SUB-18** (partial; target ci by M2) Provenance is recorded per field, not per file.
+- **SUB-18** (ci; target reached) Provenance is recorded per field, not per file.
   - `ci`, pull_request: Validator rules on catalog provenance fields (`contracts/spec/hardware: TestFieldProvenance; TestInheritedProvenanceObeysTheFieldSourceContract; TestCommittedChipsRecordTheirExceptions; TestLosingAnExceptionFailsTheCheck; TestEveryCommittedFactHasASource`)
-  - `new`, pull_request: No catalog field holds a fitted or assumed value: the storage tiers, which catalog/devices/storage.yaml records as representative classes with no source, become datasheet or measured figures, or hardware-scoped coefficients
+  - `ci`, pull_request: No catalog field holds a fitted or assumed value: the storage tiers state no rate or latency, and a file that states one is refused with the reason (`contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency`)
+  - `ci`, pull_request: Each storage tier's terms are hardware-scoped coefficients, present for every catalog tier on every catalog chip at the figures the catalog held, that the kernel's TierTime reads (`kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid`)
 - **SUB-19** (partial; target ci by M1) Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes.
   - `ci`, pull_request: A generator test in blis-substrate that the published schemas match the Go types (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
 - **SUB-20** (partial; target ci by M2) No price, size or engine decision depends on a free-text label.

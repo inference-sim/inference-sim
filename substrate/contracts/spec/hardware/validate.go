@@ -3,6 +3,7 @@ package hardware
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -136,20 +137,15 @@ func (d *StorageDevice) Validate() *validate.Problems {
 	p := &validate.Problems{}
 	if d.Name == "" {
 		p.Field("name", "required")
-	}
-	if p.FiniteField("read_bandwidth_mb_s", d.ReadBandwidthMBs) && d.ReadBandwidthMBs <= 0 {
-		p.Field("read_bandwidth_mb_s", "must be positive")
-	}
-	if p.FiniteField("write_bandwidth_mb_s", d.WriteBandwidthMBs) && d.WriteBandwidthMBs <= 0 {
-		p.Field("write_bandwidth_mb_s", "must be positive")
-	}
-	// Zero base latency would make an arbitrarily small transfer free, which no
-	// device is. It is the term that dominates small transfers.
-	if p.FiniteField("base_latency_us", d.BaseLatencyUs) && d.BaseLatencyUs <= 0 {
-		p.Field("base_latency_us", "must be positive; it dominates small transfers")
+	} else if !tierName.MatchString(d.Name) {
+		p.Field("name", "%q must be lower-case letters, digits and underscores: it is the middle of the tier's coefficient names", d.Name)
 	}
 	return p
 }
+
+// tierName is what a tier's name may be: it is spliced into offload_tier_<name>_read_rate and
+// its two companions, and a coefficient name is lower-case letters, digits and underscores.
+var tierName = regexp.MustCompile(`^[a-z0-9_]+$`)
 
 // IntraToInterRatio returns the bandwidth ratio a cross-node collective pays,
 // given a chip and the fabric it is paired with. It is a method on neither type

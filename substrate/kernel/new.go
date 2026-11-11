@@ -450,11 +450,8 @@ func construct(in Inputs) (*Kernel, error) {
 	}
 	k.noteShardedProjections()
 	k.adoptRouting(in.Routing, k.totalExperts > 0)
-	k.tiers = map[string]hardware.StorageDevice{}
-	for _, d := range in.Devices {
-		if d != nil {
-			k.tiers[d.Name] = *d
-		}
+	if err := k.liftTiers(coeffs, in); err != nil {
+		return nil, err
 	}
 	// The engine behaviour priced here is vLLM v0.31.0's, whatever release the scenario
 	// declares; the rules pack follows the declared release. Where they differ, a behaviour
@@ -2893,6 +2890,11 @@ func (k *Kernel) buildProvenance(c *resolve.Coefficients) {
 	for _, name := range c.Names() {
 		r, ok := c.Admitted(name)
 		if !ok {
+			continue
+		}
+		// A tier the deployment does not offload to is admitted but unread; listing its eighteen
+		// entries on every scenario would dilute what the evidence summary counts (liftTiers).
+		if isOffloadTierEntry(name) && !k.tierEntries[name] {
 			continue
 		}
 		k.origins = append(k.origins, kernel.CoefficientOrigin{

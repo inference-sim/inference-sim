@@ -144,22 +144,37 @@ func TestFabricAndDeviceRejects(t *testing.T) {
 		InterNodeBwGBps: math.NaN()}).Validate(); p.OK() {
 		t.Error("fabric with a NaN inter-node bandwidth: expected rejection")
 	}
-	good := &StorageDevice{Name: "nvme_gen4", ReadBandwidthMBs: 7000,
-		WriteBandwidthMBs: 5000, BaseLatencyUs: 80}
-	if p := good.Validate(); !p.OK() {
+	if p := (&StorageDevice{Name: "nvme_gen4"}).Validate(); !p.OK() {
 		t.Fatalf("nvme_gen4 rejected:\n%s", p.Error())
 	}
-	badDevices := []*StorageDevice{
-		{ReadBandwidthMBs: 7000, WriteBandwidthMBs: 5000, BaseLatencyUs: 80},
-		{Name: "d", WriteBandwidthMBs: 5000, BaseLatencyUs: 80},
-		{Name: "d", ReadBandwidthMBs: 7000, BaseLatencyUs: 80},
-		{Name: "d", ReadBandwidthMBs: 7000, WriteBandwidthMBs: 5000},                           // zero latency
-		{Name: "d", ReadBandwidthMBs: math.Inf(1), WriteBandwidthMBs: 5000, BaseLatencyUs: 80}, // non-finite read
-	}
-	for i, d := range badDevices {
+	// The name is the middle of three coefficient names, so it is what a coefficient name is.
+	for i, d := range []*StorageDevice{{}, {Name: "NVMe"}, {Name: "nvme-gen4"}, {Name: "nvme gen4"}} {
 		if p := d.Validate(); p.OK() {
-			t.Errorf("device case %d: expected rejection", i)
+			t.Errorf("device case %d (%q): expected rejection", i, d.Name)
 		}
+	}
+}
+
+// A storage tier states no rate and no latency: they are coefficients (SUB-18). A file that
+// states one is refused with the reason and the place the value goes, not only as an unknown
+// key, and the refusal does not depend on the value being valid.
+func TestStorageTierStatesNoRateOrLatency(t *testing.T) {
+	for _, key := range []string{"read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"} {
+		var d StorageDevice
+		err := yaml.Unmarshal([]byte(key+": 7000\n"), &d)
+		if err == nil {
+			t.Errorf("%s: accepted", key)
+			continue
+		}
+		for _, want := range []string{key, "coefficient registry", "offload_tier_<tier>_read_rate"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: the refusal does not say %q: %v", key, want, err)
+			}
+		}
+	}
+	var d StorageDevice
+	if err := yaml.Unmarshal([]byte("_comment: \"a class\"\n"), &d); err != nil {
+		t.Errorf("a tier that states only its comment was refused: %v", err)
 	}
 }
 
@@ -246,7 +261,7 @@ func TestCommentNarrowingAppliesToFabricAndDevice(t *testing.T) {
 		}
 	})
 	t.Run("storage device accepts _comment, rejects _mfu", func(t *testing.T) {
-		base := "read_bandwidth_mb_s: 7000\nwrite_bandwidth_mb_s: 5000\nbase_latency_us: 80\n"
+		base := "name: nvme_gen4\n"
 		var d StorageDevice
 		if err := yaml.Unmarshal([]byte(base+`_comment: "prose"`+"\n"), &d); err != nil {
 			t.Fatalf("storage device should accept a _comment key, got: %v", err)

@@ -55,7 +55,7 @@ A fitted or assumed value is none of these. It is a coefficient and belongs in t
 The rule is the aim, and some current entries do not yet meet it. As of this release:
 
 - Every chip's peak rates and HBM bandwidth are vendor datasheet figures, but some memory capacities and SM counts are not, and each chip records which in `FieldProvenance`. The capacities of `b200`, `b300`, `gb200-nvl72`, `gb300`, `h100` and `h200` are what a named device's driver reports. The SM counts of `b300`, `gb200-nvl72` and `gb300` are what the device reports, taken from a published record of one named device. The SM counts of `a100-80`, `a100-sxm` and `b200` are published by NVIDIA outside a datasheet. The `MemoryGiB` of `a100-80`, `a100-sxm` and `l40s` is the datasheet's nominal capacity (80, 80 and 48) read as GiB; the CUDA driver reports less on the devices NVIDIA's published dumps cover (79.1 GiB for an A100-SXM4-80GB, 44.4 GiB for an L40S).
-- The storage tiers are representative device classes chosen by the simulator's authors. They cite no source.
+- A storage tier states no number. Its rates and latency were fitted or chosen by the simulator's authors, so they are coefficients, and they are in the registry.
 - The workload shapes are presets chosen by the simulator's authors. They cite no trace or dataset. The replay workloads cite their corpus by repository, revision and digest.
 
 Each of these files says so in its own comments. A pull request that replaces one of these with a cited declared figure, or moves a chosen number to the registry, is welcome.

@@ -563,16 +563,25 @@
     known_bad: 'contracts/spec/hardware: TestFieldProvenance'
   - repo: blis-substrate
     check: >-
-      No catalog field holds a fitted or assumed value: the storage tiers, which catalog/devices/storage.yaml
-      records as representative classes with no source, become datasheet or measured figures, or hardware-scoped
-      coefficients
+      No catalog field holds a fitted or assumed value: the storage tiers state no rate or latency, and a
+      file that states one is refused with the reason
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency'
+    known_bad: 'contracts/spec/hardware: TestStorageTierStatesNoRateOrLatency'
+  - repo: blis-substrate
+    check: >-
+      Each storage tier's terms are hardware-scoped coefficients, present for every catalog tier on every
+      catalog chip at the figures the catalog held, that the kernel's TierTime reads
+    runs: pull_request
+    status: ci
+    test: 'kernel: TestEveryTierHasItsTermsOnEveryChip; TestTierTimeReadsTheRegistryAndPricesAsTheCatalogDid'
+    known_bad: 'kernel: TestATierWithNoTermsIsRefusedWhereTheDeploymentUsesIt'
   review: null
-  status: partial
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-19
   section: §5
   statement: >-

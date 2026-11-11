@@ -24,7 +24,7 @@ tell which was meant.
 ## A unit is part of the key
 
 Where a number has a unit, the key the author types names it: `ttft_ms`,
-`read_bandwidth_mb_s`, `base_latency_us`, `BwPeakTBs`. A unit stated only in a Go field
+`IntraNodeBwGBps`, `BwPeakTBs`. A unit stated only in a Go field
 name or in a comment is invisible to whoever writes the YAML. An author who copies a
 datasheet figure given in milliseconds into a field that expects microseconds would pass
 every check and be wrong by a factor of a thousand.

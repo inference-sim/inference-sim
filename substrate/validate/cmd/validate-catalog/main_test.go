@@ -339,20 +339,36 @@ InterNodeBwGBps: 0
 	}
 }
 
-// TestRunMalformedStorageDevice: a storage tier that loads but fails validation (a
-// non-positive bandwidth) must be reported, named by tier, and exit 1 — the devices path
-// is new coverage, so a negative test pins that a per-tier failure bubbles up.
+// TestRunStorageTierWithARateIsRefused: a tier that states a rate or a latency is refused,
+// named by tier and by key, and the message says where the value goes (SUB-18): a fitted or
+// assumed value is a coefficient, so the catalog does not hold it.
+func TestRunStorageTierWithARateIsRefused(t *testing.T) {
+	for _, key := range []string{"read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"} {
+		root := catalogWith(t, map[string]string{
+			"devices/storage.yaml": "cpu_dram: {" + key + ": 2.0e4}\n",
+		})
+		code, _, errb := exercise(t, root)
+		if code != 1 {
+			t.Fatalf("%s: exit = %d, want 1\nstderr:\n%s", key, code, errb)
+		}
+		if !strings.Contains(errb, key) || !strings.Contains(errb, "coefficient registry") {
+			t.Errorf("%s: stderr should name the key and say the value belongs in the registry, got: %s", key, errb)
+		}
+	}
+}
+
+// TestRunMalformedStorageDevice: a storage tier whose name cannot be the middle of a
+// coefficient name must be reported, named by tier, and exit 1.
 func TestRunMalformedStorageDevice(t *testing.T) {
 	root := catalogWith(t, map[string]string{
-		"devices/storage.yaml": `cpu_dram: {read_bandwidth_mb_s: -1, write_bandwidth_mb_s: 2.0e4, base_latency_us: 1.0}
-`,
+		"devices/storage.yaml": "Bad-Tier: {_comment: x}\n",
 	})
 	code, _, errb := exercise(t, root)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1\nstderr:\n%s", code, errb)
 	}
-	if !strings.Contains(errb, "read_bandwidth_mb_s") || !strings.Contains(errb, "cpu_dram") {
-		t.Errorf("stderr should name the tier and the offending field, got: %s", errb)
+	if !strings.Contains(errb, "Bad-Tier") || !strings.Contains(errb, "lower-case") {
+		t.Errorf("stderr should name the tier and the rule, got: %s", errb)
 	}
 }
 

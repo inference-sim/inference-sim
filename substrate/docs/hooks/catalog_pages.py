@@ -194,11 +194,10 @@ def load(root: Path) -> Catalog:
         cat.workloads[p.stem] = _yaml(p)
     storage = root / "devices" / "storage.yaml"
     if storage.is_file():
-        # PyYAML follows YAML 1.1, which reads an exponent without a sign (7.0e3) as a
-        # string; the Go loaders follow YAML 1.2 and read it as a number. Convert here
-        # so the pages show what the consumers read.
-        cat.tiers = {name: {k: float(v) for k, v in tier.items()
-                            if not k.startswith("_comment")}
+        # A tier states a description and no number: its rates and latency are registry
+        # coefficients (SUB-18), so only the comment keys are read.
+        cat.tiers = {name: {k: str(v) for k, v in tier.items()
+                            if k.startswith("_comment")}
                      for name, tier in _yaml(storage).items()}
     else:
         raise RuntimeError(f"{storage}: missing; the storage reference has nothing to show")
@@ -703,11 +702,15 @@ def replays_notes(cat: Catalog) -> str:
 
 
 def storage_table(cat: Catalog) -> str:
-    rows = [[f"`{name}`", num(t["read_bandwidth_mb_s"]), num(t["write_bandwidth_mb_s"]),
-             num(t["base_latency_us"])]
-            for name, t in sorted(cat.tiers.items(),
-                                  key=lambda kv: -kv[1]["read_bandwidth_mb_s"])]
-    return table(["Tier", "Read MB/s", "Write MB/s", "Base latency µs"], "lrrr", rows)
+    """Each tier, what it is, and the three registry coefficients that price a transfer to it."""
+    rows = []
+    for name, t in sorted(cat.tiers.items()):
+        what = " ".join(t.get("_comment", "").split())
+        # The description's first sentence is the class; the rest says where its terms are.
+        what = what.split(". ")[0].rstrip(".")
+        rows.append([f"`{name}`", what,
+                     f"`offload_tier_{name}_read_rate`, `_write_rate`, `_base_latency`"])
+    return table(["Tier", "What it is", "Registry coefficients"], "lll", rows)
 
 
 

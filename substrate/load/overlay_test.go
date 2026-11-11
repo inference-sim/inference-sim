@@ -139,7 +139,7 @@ func TestTheSelectedEntryReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := d.Report()
-	if len(r.Selected) != 0 || len(r.Unloaded) != 10 {
+	if len(r.Selected) != 0 || len(r.Unloaded) != 11 {
 		t.Fatalf("a fresh load selects nothing and has loaded no file: %+v", r)
 	}
 	d.RecordCoefficient("cost-model-fabric", "fabric_bandwidth_efficiency", coefficient.Scope{Fabric: []string{"ib-400g"}}, "literature")
@@ -160,7 +160,7 @@ func TestTheSelectedEntryReport(t *testing.T) {
 			t.Errorf("%s was read and is reported unloaded", f)
 		}
 	}
-	if len(r.Unloaded) != 8 || r.Unloaded[len(r.Unloaded)-1] != "routing/servingstudio-dsv41-flash.yaml" {
+	if len(r.Unloaded) != 9 || r.Unloaded[len(r.Unloaded)-1] != "routing/servingstudio-dsv41-flash.yaml" {
 		t.Errorf("unloaded: %v", r.Unloaded)
 	}
 }

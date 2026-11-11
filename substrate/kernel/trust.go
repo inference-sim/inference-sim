@@ -27,6 +27,9 @@ func buildTrust(selected []resolve.Resolved) []trustTerm {
 	terms := make([]trustTerm, 0, len(selected))
 	for i := range selected {
 		e := selected[i].Entry
+		if isOffloadTierEntry(e.Name) {
+			continue // a tier's terms price a transfer (TierTime), not a step
+		}
 		rank, ranked := e.EffectiveRank(false)
 		if !ranked {
 			continue

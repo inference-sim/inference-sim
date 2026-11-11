@@ -1161,35 +1161,39 @@ MemorGiB: 999
 	}
 }
 
-// TestStorageDeviceKeysCarryUnits is #18: the StorageDevice wire keys now carry their units
-// (read_bandwidth_mb_s, write_bandwidth_mb_s, base_latency_us), because a unit stated only in
-// the Go field name or a file comment is not a contract. The rename flows through
-// RejectUnknownKeys by reflection, so the OLD unit-less spelling is now an unknown-field
-// error rather than a silently-ignored field — the desired behaviour, since a file written
-// to the old contract must fail loudly rather than decode to zeros. The new spelling loads.
-func TestStorageDeviceKeysCarryUnits(t *testing.T) {
-	// New spelling: loads, and the facts land on the right fields.
+// TestStorageTiersStateNoNumber: a tier is a name and a description, and the loader refuses a
+// file that states what a transfer to it costs (SUB-18). The three keys the catalog used to
+// carry (#18 gave them their units) are each refused with the place the value goes; any other
+// key, the unit-less spellings included, is an unknown field.
+func TestStorageTiersStateNoNumber(t *testing.T) {
 	okPath := write(t, "storage.yaml", `
-nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}
+nvme_gen4: {_comment: "A PCIe Gen4 NVMe drive."}
+cpu_dram: {}
 `)
 	devices, err := LoadStorageDevices(okPath)
 	if err != nil {
-		t.Fatalf("unit-suffixed keys were rejected: %v", err)
+		t.Fatalf("a tier that states only a comment was rejected: %v", err)
 	}
-	if len(devices) != 1 || devices[0].ReadBandwidthMBs != 7000 ||
-		devices[0].WriteBandwidthMBs != 5000 || devices[0].BaseLatencyUs != 80 {
-		t.Fatalf("facts did not land on the renamed keys: %+v", devices)
+	if len(devices) != 2 || devices[0].Name != "cpu_dram" || devices[1].Name != "nvme_gen4" {
+		t.Fatalf("the tiers did not load by name: %+v", devices)
 	}
 
-	// Old spelling: each unit-less key is now an unknown field. A file written to the old
-	// contract fails rather than loading a tier whose numbers all read as zero.
+	for _, key := range []string{"read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"} {
+		path := write(t, "storage.yaml", "nvme_gen4: {"+key+": 7.0e3}\n")
+		if _, err := LoadStorageDevices(path); err == nil {
+			t.Errorf("%s was accepted in a tier", key)
+		} else if !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "coefficient registry") {
+			t.Errorf("%s: the error should name the key and the registry, got: %v", key, err)
+		}
+	}
+
 	oldPath := write(t, "storage.yaml", `
-nvme_gen4: {read_bandwidth: 7.0e3, write_bandwidth: 5.0e3, base_latency: 80.0}
+nvme_gen4: {read_bandwidth: 7.0e3}
 `)
 	if _, err := LoadStorageDevices(oldPath); err == nil {
-		t.Fatal("the old unit-less keys were accepted; a stale file would load as zeros")
+		t.Fatal("an unit-less key was accepted")
 	} else if !strings.Contains(err.Error(), "read_bandwidth") {
-		t.Errorf("the error should name an offending old key, got: %v", err)
+		t.Errorf("the error should name the offending key, got: %v", err)
 	}
 }
 

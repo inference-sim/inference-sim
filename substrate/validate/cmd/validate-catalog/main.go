@@ -351,8 +351,7 @@ func validateDevices(r *reporter, root string) {
 		if r.record("devices/storage.yaml:"+d.Name, d.Validate()) {
 			continue
 		}
-		r.pass(fmt.Sprintf("%-46s r %g, w %g MB/s, %g us base latency",
-			d.Name, d.ReadBandwidthMBs, d.WriteBandwidthMBs, d.BaseLatencyUs))
+		r.pass(fmt.Sprintf("%-46s a tier; its rates and latency are registry coefficients", d.Name))
 	}
 }
 

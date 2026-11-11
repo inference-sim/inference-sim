@@ -50,19 +50,22 @@ A fabric has no latency field, because vendors state no single figure for it.
 
 ## A storage tier
 
-A storage tier is a place a KV cache can be offloaded to, such as CPU memory or an NVMe drive. All tiers share one file, `devices/storage.yaml`, keyed by tier name:
+A storage tier is a place a KV cache can be offloaded to, such as CPU memory or an NVMe drive. All tiers share one file, `devices/storage.yaml`, keyed by tier name. A tier is a name and a description, and the catalog states no number for it:
 
 ```yaml
-nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}
+nvme_gen4:
+  _comment: "A PCIe Gen4 NVMe drive, as a class and not a product. ..."
 ```
 
-| Key | Unit | Meaning |
-| :--- | :--- | :--- |
-| `read_bandwidth_mb_s` | MB/s | sustained read bandwidth |
-| `write_bandwidth_mb_s` | MB/s | sustained write bandwidth; flash writes more slowly than it reads |
-| `base_latency_us` | µs | fixed cost of one transfer, which dominates small transfers |
+What a transfer to or from a tier costs is a rate in each direction and a fixed cost per transfer. Those are fitted or assumed values, never a datasheet's figure for a named device, so they are coefficients and live in the registry, not here. Each tier has three, for every chip, in the registry set `cost-model-offload-tiers`:
 
-Each key names its unit, so a figure in another unit has to be converted before it can be written down. All three values must be positive. A tier may carry comment keys inside its own mapping, but not at the top level of the file.
+| Coefficient | Unit | Meaning |
+| :--- | :--- | :--- |
+| `offload_tier_<tier>_read_rate` | bytes per µs (equal to MB/s) | rate from the tier to the GPU |
+| `offload_tier_<tier>_write_rate` | bytes per µs | rate from the GPU to the tier; flash writes more slowly than it reads |
+| `offload_tier_<tier>_base_latency` | µs per transfer | fixed cost of one transfer, which dominates small transfers |
+
+To add a tier, add its name and description here, then add the three coefficients for every catalog chip by adding the tier to `registry/scripts/emit_offload_tiers.py` and running it (the [reproduction guide](../../registry/reproducing-coefficients.md#offload-tiers) says how, and what method each kind of figure takes). `TestEveryTierHasItsTermsOnEveryChip` fails until all of them are there. A tier that states `read_bandwidth_mb_s`, `write_bandwidth_mb_s` or `base_latency_us` is refused, with that reason. A tier may carry comment keys inside its own mapping, but not at the top level of the file.
 
 ## Then
 

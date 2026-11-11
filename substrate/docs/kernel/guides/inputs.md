@@ -29,7 +29,7 @@ loaders do, and validates them before building anything.
 | `model: llama-3.1-8b-instruct` | `<catalog>/models/llama-3.1-8b-instruct/graph.yaml`: the model as a graph of operations |
 | `cluster.hardware: h100` | `<catalog>/hardware/h100.yaml`: the chip's peak rates, memory and SM count |
 | `cluster.fabric`, if present | `<catalog>/networks/<fabric>.yaml`: the network between nodes |
-| (always) | `<catalog>/devices/storage.yaml`: the storage tiers offload can use |
+| (always) | `<catalog>/devices/storage.yaml`: the storage tiers offload can use, by name; what a transfer to one costs is read from the `offload_tier_<tier>_*` coefficients of `cost-model-offload-tiers`, which a scenario lists when its deployment offloads |
 | `coefficients: [...]` | `<registry>/coefficients/<set>.yaml`, one file per set |
 | `engine_version` | The engine rules for that version of vLLM, from the caller's `Repos.Rules` (the vLLM rules packs in [blis-vllm](https://github.com/inference-sim/blis-vllm)) |
 

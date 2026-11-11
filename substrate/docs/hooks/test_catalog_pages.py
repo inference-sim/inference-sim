@@ -84,12 +84,15 @@ def test_layer_expansion_matches_every_graph(cat):
         assert set(m.layers) <= {k["id"] for k in m.graph["layer_kinds"]}, m.name
 
 
-def test_storage_figures_are_numbers(cat):
-    # PyYAML reads 7.0e3 as a string; the generator must not.
+def test_storage_tiers_state_no_number(cat):
+    # SUB-18: a tier is a name and a description. Its rates and latency are registry
+    # coefficients, so the page shows the coefficient names and no figure of its own.
     for name, tier in cat.tiers.items():
-        for key in ("read_bandwidth_mb_s", "write_bandwidth_mb_s", "base_latency_us"):
-            assert isinstance(tier[key], float), (name, key)
-    assert cat.tiers["nvme_gen4"]["read_bandwidth_mb_s"] == 7000.0
+        assert set(tier) <= {"_comment"}, (name, tier)
+        assert tier.get("_comment"), name
+    table = pages.storage_table(cat)
+    assert "offload_tier_nvme_gen4_read_rate" in table
+    assert "MB/s" not in table
 
 
 @pytest.mark.parametrize("value,expected", [

@@ -80,13 +80,7 @@ A replay workload states, under `replay:`, a trace-replay scenario that the `Rep
 
 ## Storage tiers
 
-`devices/storage.yaml`, one file holding every tier, keyed by tier name.
-
-| Key | Unit | Meaning |
-| :--- | :--- | :--- |
-| `read_bandwidth_mb_s` | MB/s | sustained read bandwidth; positive |
-| `write_bandwidth_mb_s` | MB/s | sustained write bandwidth; positive |
-| `base_latency_us` | µs | fixed cost of one transfer; positive |
+`devices/storage.yaml`, one file holding every tier, keyed by tier name. A tier is a name and a `_comment` description; it states no number. Its read rate, write rate and fixed cost per transfer are fitted or assumed, so they are registry coefficients (`offload_tier_<tier>_read_rate`, `_write_rate` and `_base_latency`), not catalog facts. A tier that states `read_bandwidth_mb_s`, `write_bandwidth_mb_s` or `base_latency_us` is refused.
 
 ## Measured runs
 

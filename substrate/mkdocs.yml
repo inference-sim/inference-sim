@@ -221,6 +221,7 @@ nav:
       - cost-model-collectives: registry/reference/sets/cost-model-collectives.md
       - cost-model-collectives-inferencex: registry/reference/sets/cost-model-collectives-inferencex.md
       - cost-model-fabric: registry/reference/sets/cost-model-fabric.md
+      - cost-model-offload-tiers: registry/reference/sets/cost-model-offload-tiers.md
       - cost-model-attention: registry/reference/sets/cost-model-attention.md
       - cost-model-recurrent: registry/reference/sets/cost-model-recurrent.md
       - cost-model-host-overheads: registry/reference/sets/cost-model-host-overheads.md

@@ -16,6 +16,7 @@
 package hardware
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -144,9 +145,16 @@ type Fabric struct {
 	RDMA bool `yaml:"RDMA,omitempty"`
 }
 
-// StorageDevice is one offload tier class: CPU memory, an NVMe class, an object
-// store. Read and write bandwidths are separate because they differ materially on
-// flash, and pricing an eviction at read bandwidth understates it.
+// StorageDevice is one offload tier class: CPU memory, an NVMe class, an object store. The
+// catalog names the class and describes it in its _comment; it states no number for it.
+//
+// What a transfer to or from the tier costs is not a declared fact of a device. Every figure
+// the catalog held for a tier was a fit to one host's measurements or a representative value
+// the simulator's authors chose, and a fitted or assumed value is a coefficient (SUB-18). The
+// read rate, the write rate and the fixed cost per transfer are therefore registry entries,
+// scoped to the hardware they describe and named by the tier: see coefficient.OffloadTierReadRate
+// and its two companions. A file that still states read_bandwidth_mb_s, write_bandwidth_mb_s or
+// base_latency_us is refused, with that reason.
 type StorageDevice struct {
 	// Name is NOT tagged `yaml:"-"` like Chip.Name and Fabric.Name, and that is deliberate
 	// (#27): a storage tier has no per-device file whose stem could supply an identity. It
@@ -155,17 +163,16 @@ type StorageDevice struct {
 	// held. So the enforcement differs from a chip's: an in-file `name` here is accepted and
 	// then clobbered by the key rather than rejected, which is harmless because the key — not
 	// the field — always wins. There is no second-source-of-truth risk to reject.
+	//
+	// The name is also the middle of three coefficient names, so it is lower-case letters,
+	// digits and underscores.
 	Name string `yaml:"name"`
-	// The wire keys carry their units — _mb_s, _us — because the YAML key is the only
-	// thing a catalog author writes, and a unit stated only in this Go field name or in a
-	// file comment is not a contract: a device whose datasheet quotes ms, entered as if it
-	// were µs, would make that tier look 1000x faster and pass every validator (#18). The
-	// consumer (blis-latency-kernel) reads BaseLatencyUs as microseconds, so the key says so.
-	ReadBandwidthMBs  float64 `yaml:"read_bandwidth_mb_s"`
-	WriteBandwidthMBs float64 `yaml:"write_bandwidth_mb_s"`
-	// BaseLatencyUs is the fixed per-transfer cost, which dominates small
-	// transfers and is three orders of magnitude apart across the tiers.
-	BaseLatencyUs float64 `yaml:"base_latency_us"`
+}
+
+// retiredTierKeys are the keys a storage tier used to carry. They are named so that a file
+// that still states one is told where the value goes, not only that the key is unknown.
+var retiredTierKeys = map[string]bool{
+	"read_bandwidth_mb_s": true, "write_bandwidth_mb_s": true, "base_latency_us": true,
 }
 
 // UnmarshalYAML accepts the catalog's `_comment`-prefixed comment keys while leaving
@@ -201,6 +208,15 @@ func (f *Fabric) UnmarshalYAML(node *yaml.Node) error {
 
 // UnmarshalYAML accepts the catalog's comment keys, as Chip does.
 func (d *StorageDevice) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if k := node.Content[i].Value; retiredTierKeys[k] {
+				return fmt.Errorf("%s: a storage tier's rates and latency are coefficients, not catalog facts: "+
+					"they belong in the coefficient registry as offload_tier_<tier>_read_rate, "+
+					"offload_tier_<tier>_write_rate and offload_tier_<tier>_base_latency (SUB-18)", k)
+			}
+		}
+	}
 	if err := validate.RejectUnknownKeys(node, StorageDevice{}, validate.IgnoreCatalogComments); err != nil {
 		return err
 	}
