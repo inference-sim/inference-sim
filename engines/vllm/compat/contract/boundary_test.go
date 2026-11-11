@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -116,5 +117,41 @@ func TestAddRefusesWhatTheContractSaysCannotExist(t *testing.T) {
 	}
 	if p := g.Plan(); p.Layout.Data != 2 {
 		t.Errorf("the group's plan %+v, want data width 2", p)
+	}
+}
+
+// Rank k of a lockstep group is an engine of its own, and a Planned one: its plan is the group's, so a P/D pool that is
+// a lockstep group has the plan its pulls are priced against. The group states its ranks' nodes from the pool's
+// placement, and the host that builds one view for each instance states one instance's node.
+func TestARankViewIsPlannedAndPlaced(t *testing.T) {
+	g, err := NewDPGroup([]string{"r0", "r1"}, cengine.SimConfig{
+		Horizon: 1 << 40, KVCacheConfig: cengine.NewKVCacheConfig(64, 16, 0, 0, 0, 0), BatchConfig: cengine.NewBatchConfig(16, 2048, 0),
+		LatencyModel: fixedLatency{}, ModelHardwareConfig: cengine.ModelHardwareConfig{GPU: "h100", TP: 1, DP: 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v engine.Planned = g.View(1)
+	if got, want := v.Plan(), g.Plan(); !reflect.DeepEqual(got, want) || got.Validate() != nil {
+		t.Errorf("a rank's plan %+v, want the group's %+v and valid", got, want)
+	}
+	pool := placement.Placement{Hardware: "h100", Fabric: "ib", Data: 2, Nodes: 2, RanksPerNode: 1, NodeRacks: []int{0, 3}}
+	if err := g.SetPlacement(pool); err != nil {
+		t.Fatal(err)
+	}
+	if a, b := g.ranks[0].pl.Endpoint(), g.ranks[1].pl.Endpoint(); a != (plan.Endpoint{Node: 0, Rack: 0}) || b != (plan.Endpoint{Node: 1, Rack: 3}) {
+		t.Errorf("ranks at %+v and %+v, want node 0 rack 0 and node 1 rack 3", a, b)
+	}
+	one := pool
+	one.Node = 0
+	if err := g.View(1).SetPlacement(one); err != nil {
+		t.Fatal(err)
+	}
+	if g.ranks[1].pl.Endpoint() != (plan.Endpoint{Node: 0, Rack: 0}) || g.ranks[0].pl.Endpoint() != (plan.Endpoint{Node: 0, Rack: 0}) {
+		t.Errorf("a view's SetPlacement moved %+v / %+v; it moves only its own rank", g.ranks[0].pl.Endpoint(), g.ranks[1].pl.Endpoint())
+	}
+	bad := pool
+	bad.Node = 2
+	if err := g.View(0).SetPlacement(bad); err == nil {
+		t.Error("a node the pool lacks was accepted")
 	}
 }

@@ -42,6 +42,7 @@ import (
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
 	"github.com/inference-sim/blis-vllm/core/metrics"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -223,6 +224,30 @@ func (e *Engine) Plan() plan.PoolPlan {
 }
 
 var _ engine.Planned = (*Engine)(nil)
+
+// SetPlacement states where the engine sits, replacing the placement it was built with: the host that builds
+// one engine for each instance states the instance's node (placement.Placeable). The KV tiers are the engine's
+// own and stay. It is refused once a transfer has started, because the transfers started so far were stated
+// against the old place, and a refused placement leaves the engine as it was.
+func (e *Engine) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("vllm: placement: %w", err)
+	}
+	if (e.pd != nil && e.pd.next > 0) || (e.off != nil && e.off.next > 0) {
+		return fmt.Errorf("vllm: placement: the engine has started transfers against its old place")
+	}
+	e.at = p.Endpoint()
+	e.plan = p.Plan(e.plan.Tiers)
+	if e.pd != nil {
+		e.pd.at = e.at
+	}
+	if e.off != nil {
+		e.off.at = e.at
+	}
+	return nil
+}
+
+var _ placement.Placeable = (*Engine)(nil)
 
 // histogramBounds are the bucket bounds vLLM v0.32.0 registers for the request-token,
 // iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128,172-240@5df63a72).

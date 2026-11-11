@@ -4,6 +4,7 @@ package kernelmodel
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
@@ -37,5 +38,31 @@ func TestEnginePlacementIsThePoolsOwnNodes(t *testing.T) {
 		if err := p.Plan(nil).CheckTransfer(move); err != nil {
 			t.Errorf("pool %d: the plan refuses a pull: %v", i, err)
 		}
+	}
+}
+
+// Each replica of a data-parallel pool sits on the node its ranks fill: the Muse GB200 pool of eight single-GPU
+// ranks on two nodes of four has ranks 0 to 3 on node 0 and ranks 4 to 7 on node 1, and everything else of the
+// placement is the pool's.
+func TestEnginePlacementOfAReplicaIsItsOwnNode(t *testing.T) {
+	r := repos()
+	r.Scenarios, _ = filepath.Abs(filepath.Join("..", "..", "vllmengine", "testdata"))
+	m, err := OpenPool("muse-gb200-nvl-dep8-dspark.yaml", r, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := m.EnginePlacement()
+	for rank, node := range []int{0, 0, 0, 0, 1, 1, 1, 1} {
+		p := m.EnginePlacementOf(rank)
+		if p.Node != node {
+			t.Errorf("rank %d is on node %d, want %d", rank, p.Node, node)
+		}
+		p.Node = base.Node
+		if !reflect.DeepEqual(p, base) {
+			t.Errorf("rank %d: the placement differs from rank 0's in more than the node:\n%+v\n%+v", rank, p, base)
+		}
+	}
+	if err := m.EnginePlacementOf(5).Validate(); err != nil {
+		t.Error(err)
 	}
 }

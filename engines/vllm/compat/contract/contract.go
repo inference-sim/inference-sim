@@ -139,7 +139,10 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 // (blis-latency-kernel#84).
 func (e *Engine) Plan() plan.PoolPlan { return e.pl.Plan(nil) }
 
-var _ engine.Planned = (*Engine)(nil)
+var (
+	_ engine.Planned      = (*Engine)(nil)
+	_ placement.Placeable = (*Engine)(nil)
+)
 
 // Add enqueues a request, as the host's QueuedEvent does (EnqueueRequest). A request the engine
 // drops at enqueue (its length guards) is refused.

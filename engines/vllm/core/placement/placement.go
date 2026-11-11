@@ -77,6 +77,19 @@ func (p Placement) EndpointOf(n int) plan.Endpoint {
 	return plan.Endpoint{Node: n, Rack: rack}
 }
 
+// At is the placement with the engine on node n, in rack rack: the host that knows an instance's endpoint states it
+// on the pool's placement and gives the result to SetPlacement. A node the pool lacks makes a placement that
+// Validate (and so SetPlacement) refuses.
+func (p Placement) At(node, rack int) Placement {
+	racks := make([]int, max(p.Nodes, 1, len(p.NodeRacks)))
+	copy(racks, p.NodeRacks)
+	if node >= 0 && node < len(racks) {
+		racks[node] = rack
+	}
+	p.NodeRacks, p.Node = racks, node
+	return p
+}
+
 // ForRank is the placement of data-parallel replica rank, whose workers are ranksPerReplica
 // consecutive ranks of the pool, filling nodes in order (a replica's first rank decides its node).
 func (p Placement) ForRank(rank, ranksPerReplica int) Placement {
@@ -93,4 +106,12 @@ func (p Placement) ForRank(rank, ranksPerReplica int) Placement {
 // (PoolPlan.CheckTransfer). The result shares no memory with the placement.
 func (p Placement) Plan(tiers []plan.KVTier) plan.PoolPlan {
 	return plan.PoolPlan{Hardware: p.Hardware, Fabric: p.Fabric, Layout: p.Layout(), Tiers: append([]plan.KVTier(nil), tiers...)}
+}
+
+// Placeable is an engine whose place the host states: a host that builds one engine for each instance of a pool
+// states the node an instance's workers sit on, which the engine cannot learn (the factory builds every
+// instance from the same engine block, and an instance's index is the host's). It is called before the
+// engine starts a transfer, and a placement the plan would refuse leaves the engine as it was.
+type Placeable interface {
+	SetPlacement(Placement) error
 }

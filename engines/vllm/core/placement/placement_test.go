@@ -49,3 +49,23 @@ func TestPlanSharesNoMemoryWithThePlacement(t *testing.T) {
 		t.Error("the plan's tiers alias the caller's slice")
 	}
 }
+
+func TestAtStatesTheEnginesNodeAndItsRack(t *testing.T) {
+	p := Placement{Hardware: "h100", Fabric: "ib", Nodes: 3, RanksPerNode: 8, NodeRacks: []int{0, 0, 1}}
+	q := p.At(1, 5)
+	if got := q.Endpoint(); got != (plan.Endpoint{Node: 1, Rack: 5}) {
+		t.Errorf("endpoint %+v, want node 1 rack 5", got)
+	}
+	if p.NodeRacks[1] != 0 || p.Node != 0 {
+		t.Error("At changed the placement it was called on")
+	}
+	if err := q.Validate(); err != nil {
+		t.Error(err)
+	}
+	if err := p.At(3, 0).Validate(); err == nil {
+		t.Error("a node the pool lacks was accepted")
+	}
+	if got := (Placement{Hardware: "h100", Nodes: 1}).At(0, 4).Endpoint(); got != (plan.Endpoint{Node: 0, Rack: 4}) {
+		t.Errorf("a one-node pool, endpoint %+v", got)
+	}
+}

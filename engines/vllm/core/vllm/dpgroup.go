@@ -17,6 +17,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -468,6 +469,22 @@ func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
 func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
 
 var _ engine.Planned = (*DPGroup)(nil)
+
+// SetPlacement states where the group sits: each rank is the replica of tensor x pipeline workers that fills the
+// nodes after the ranks before it, so a rank's node follows from the pool's placement (placement.Placeable).
+func (g *DPGroup) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("vllm: placement: %w", err)
+	}
+	for i, r := range g.ranks {
+		if err := r.e.SetPlacement(p.ForRank(i, max(p.Tensor, 1)*max(p.Pipeline, 1))); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var _ placement.Placeable = (*DPGroup)(nil)
 
 // RecordSelected registers the group's pricer with d, as Engine.RecordSelected does. The ranks
 // share one pricer (newDPGroup), so the group registers it once, not once per rank.

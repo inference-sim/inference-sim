@@ -517,7 +517,12 @@ func (m *Model) PlacementOf(rank int) kernel.Placement {
 // scenario names, the parallel widths the kernel resolved, the pool's nodes and the rack of each, and
 // the node of the pool's first replica (PlacementOf(0), counted from the pool's first node). A
 // Placement is what the engine states its transfers against, and the plan they are priced against.
-func (m *Model) EnginePlacement() placement.Placement {
+func (m *Model) EnginePlacement() placement.Placement { return m.EnginePlacementOf(0) }
+
+// EnginePlacementOf is the placement of the pool's rank-th replica: EnginePlacement with the node its ranks fill
+// (PlacementOf), counted from the pool's first node. A host that builds one engine for each instance states it
+// with the engine's SetPlacement (placement.Placeable).
+func (m *Model) EnginePlacementOf(rank int) placement.Placement {
 	r := m.k.Resolved()
 	p := placement.Placement{Hardware: m.id.hardware, Fabric: m.id.fabric, Tensor: m.id.tpRanks,
 		Pipeline: m.PipelineStages(), Data: r.DataParallel(), Expert: r.ExpertParallel(),
@@ -529,7 +534,7 @@ func (m *Model) EnginePlacement() placement.Placement {
 		}
 		p.NodeRacks = append(p.NodeRacks, rack)
 	}
-	p.Node = m.PlacementOf(0).Node - m.id.firstNode
+	p.Node = m.PlacementOf(rank).Node - m.id.firstNode
 	return p
 }
 

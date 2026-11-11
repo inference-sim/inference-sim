@@ -12,6 +12,8 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/units"
+
+	"github.com/inference-sim/blis-vllm/core/placement"
 )
 
 // boundary is the simulator's side of the transfer boundary: every transfer an engine starts goes through
@@ -164,5 +166,99 @@ func TestTheRanksOfAGroupSitOnTheirOwnNodes(t *testing.T) {
 	}
 	if p := dp.Plan(); p.Layout.Data != 2 || p.Hardware != "h100" {
 		t.Errorf("the group's plan %+v, want the pool's layout and chip", p)
+	}
+}
+
+// The host that builds one engine for each instance states the instance's node: SetPlacement moves the engine, its
+// plan and the pulls it states, keeps the KV tiers, is refused for a placement the plan would refuse (leaving the
+// engine as it was) and once a transfer has started.
+func TestTheHostStatesTheInstancesNode(t *testing.T) {
+	var _ placement.Placeable = (*Engine)(nil)
+	d := mustEngine(t, consumer)
+	p := placement.Placement{Hardware: "h100", Fabric: "ib-400g", Nodes: 4, RanksPerNode: 8, Node: 3, NodeRacks: []int{0, 0, 1, 1}}
+	if err := d.SetPlacement(p); err != nil {
+		t.Fatal(err)
+	}
+	if d.Plan().Layout.Nodes != 4 {
+		t.Errorf("plan %+v, want the new placement's layout", d.Plan())
+	}
+	bad := p
+	bad.Node = 4
+	if err := d.SetPlacement(bad); err == nil || d.at != (plan.Endpoint{Node: 3, Rack: 1}) {
+		t.Errorf("a node the pool lacks: %v, endpoint %+v; want a refusal that leaves the engine at node 3 rack 1", err, d.at)
+	}
+	r := req("a", 80, 6)
+	r.RemotePrefill, r.Peer = true, &plan.Endpoint{Node: 0, Rack: 0}
+	if err := d.Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	_, started, _ := runOne(t, d, 500)
+	if len(started) != 1 || started[0].Move.To != (plan.Endpoint{Node: 3, Rack: 1}) {
+		t.Fatalf("started %+v, want one pull that lands on node 3 rack 1", started)
+	}
+	if err := d.SetPlacement(p); err == nil {
+		t.Error("a placement was accepted after a transfer had started")
+	}
+	// The CPU tier stays with the placement.
+	o := mustEngine(t, cpuTier)
+	if err := o.SetPlacement(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := o.Plan().Tiers; len(got) != 1 || got[0].Device != "cpu_dram" {
+		t.Errorf("tiers %+v after SetPlacement, want the CPU tier kept", got)
+	}
+}
+
+// A group states its ranks' nodes from the pool's placement: with one rank to a node, rank 1 is on node 1.
+func TestAGroupStatesItsRanksNodes(t *testing.T) {
+	g, err := build(t, "data_parallel_size: 2\nplacement: {hardware: h100, fabric: ib-400g, data: 2, nodes: 2, ranks_per_node: 2, node_racks: [0, 1]}\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dp := g.(*DPGroup)
+	if dp.ranks[1].e.at != (plan.Endpoint{Node: 0, Rack: 0}) {
+		t.Fatalf("rank 1 starts at %+v; two ranks to a node put it on node 0", dp.ranks[1].e.at)
+	}
+	if err := dp.SetPlacement(placement.Placement{Hardware: "h100", Fabric: "ib-400g", Data: 2, Nodes: 2, RanksPerNode: 1, NodeRacks: []int{0, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if dp.ranks[0].e.at != (plan.Endpoint{Node: 0, Rack: 0}) || dp.ranks[1].e.at != (plan.Endpoint{Node: 1, Rack: 1}) {
+		t.Errorf("ranks at %+v and %+v, want node 0 rack 0 and node 1 rack 1", dp.ranks[0].e.at, dp.ranks[1].e.at)
+	}
+}
+
+// Two engines of one pool placed on different nodes report different moves for the same transfer: a pull of the
+// same request from the same peer lands on each engine's own node, and the plan after the call is the same on every
+// call.
+func TestTwoPlacedEnginesStateDifferentMoves(t *testing.T) {
+	pool := placement.Placement{Hardware: "h100", Fabric: "ib-400g", Nodes: 4, RanksPerNode: 8}
+	pull := func(node, rack int) engine.Transfer {
+		d := mustEngine(t, consumer)
+		if err := d.SetPlacement(pool.At(node, rack)); err != nil {
+			t.Fatal(err)
+		}
+		if a, b := d.Plan(), d.Plan(); !reflect.DeepEqual(a, b) || a.Layout.Nodes != 4 {
+			t.Fatalf("plan %+v then %+v after SetPlacement", a, b)
+		}
+		r := req("a", 80, 6)
+		r.RemotePrefill, r.Peer = true, &plan.Endpoint{Node: 0, Rack: 0}
+		if err := d.Add(r, 0); err != nil {
+			t.Fatal(err)
+		}
+		_, started, _ := runOne(t, d, 500)
+		if len(started) != 1 {
+			t.Fatalf("started %+v", started)
+		}
+		return started[0]
+	}
+	a, b := pull(1, 0), pull(3, 2)
+	if a.Move.To != (plan.Endpoint{Node: 1, Rack: 0}) || b.Move.To != (plan.Endpoint{Node: 3, Rack: 2}) || a.Move.From != b.Move.From {
+		t.Errorf("moves %+v and %+v, want the same peer and different landing nodes", a.Move, b.Move)
+	}
+	if a.Tokens != b.Tokens {
+		t.Errorf("the same transfer has %d and %d tokens", a.Tokens, b.Tokens)
+	}
+	if err := (placement.Placement{Hardware: "h100", Nodes: 1}).At(1, 0).Validate(); err == nil {
+		t.Error("a node the pool lacks passes Validate")
 	}
 }

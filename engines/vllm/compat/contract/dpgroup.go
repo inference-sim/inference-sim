@@ -11,6 +11,7 @@ import (
 
 	"github.com/inference-sim/blis-vllm/compat/dplb"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
+	"github.com/inference-sim/blis-vllm/core/placement"
 )
 
 // DPGroup is a data-parallel replica of the compatibility engine behind engine.Engine: dp ranks,
@@ -440,6 +441,19 @@ func (g *DPGroup) View(k int) *RankView { return &RankView{g: g, k: k} }
 
 var _ engine.Engine = (*RankView)(nil)
 
+// Plan implements engine.Planned: the group's plan, which every rank states its transfers against; the rank's own
+// node is in the transfers it states, not in the plan.
+func (v *RankView) Plan() plan.PoolPlan { return v.g.Plan() }
+
+// SetPlacement states where this rank sits, as the host that builds an engine for each instance states the
+// instance's node (placement.Placeable); the other ranks are not moved.
+func (v *RankView) SetPlacement(p placement.Placement) error { return v.g.ranks[v.k].SetPlacement(p) }
+
+var (
+	_ engine.Planned      = (*RankView)(nil)
+	_ placement.Placeable = (*RankView)(nil)
+)
+
 func (v *RankView) Add(r engine.Request, now engine.Time) error { return v.g.AddToRank(v.k, r, now) }
 
 // Schedule admits the rank's waiting handoffs when it is idle, and on rank 0's view runs the
@@ -539,3 +553,21 @@ func (v *RankView) ServerSeriesBlock(id string, end int64) ([]byte, error) {
 func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].Plan() }
 
 var _ engine.Planned = (*DPGroup)(nil)
+
+// SetPlacement states where the group sits: each rank is the replica of tensor x pipeline workers that fills the
+// nodes after the ranks before it (placement.Placeable). A refused placement leaves every rank as it was.
+func (g *DPGroup) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("contract: %w", err)
+	}
+	for i, r := range g.ranks {
+		pl := p.ForRank(i, max(p.Tensor, 1)*max(p.Pipeline, 1))
+		pl.Data = len(g.ranks)
+		if err := r.SetPlacement(pl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var _ placement.Placeable = (*DPGroup)(nil)
