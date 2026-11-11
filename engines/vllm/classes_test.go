@@ -14,7 +14,7 @@ import (
 )
 
 // valueClassesDoc is fields/value_classes.json: for each modelled or proven-inert field, the
-// value_classes object the substrate's field list records (design VLM-3, blis-vllm#102) and the
+// value_classes object the substrate's field list records (design VLM-3) and the
 // basis it was projected from, generated from the pinned vLLM source by fields/gen_classes.py.
 // The Python test fields/test_classes.py reads the source and checks each cited line; this test
 // needs no source, so a field gaining a status without classes fails go test.

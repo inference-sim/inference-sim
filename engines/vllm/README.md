@@ -121,7 +121,7 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
     every model.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
-- **Value classes** (VLM-3, blis-vllm#102) are in `fields/value_classes.json`, generated from the same
+- **Value classes** (VLM-3) are in `fields/value_classes.json`, generated from the same
   pinned source by `fields/gen_classes.py` for every `modelled` and `proven_inert` field: for a
   boolean or enumerated field the values (a value some comparison singles out is a class, the
   rest are one class); for a numeric field the domain (the field's own `ge`/`gt`/`le`/`lt`) cut at
