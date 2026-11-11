@@ -17,7 +17,8 @@ import (
 // vllm/v1/core/kv_cache_utils.py:578-595@5df63a72), not on lora_int_id. core/kv/testdata/block_hashes.json
 // holds vLLM's own hashes for a name whose path differs from it, and for the same name pointed at
 // another adapter, over the same tokens (oracle/gen_block_hashes.py). The key the engine builds for
-// a request (loraExtraKey, from Adapter and AdapterPath) must reproduce them.
+// a request (loraExtraKey, from Adapter and AdapterPath) must reproduce them. That holds when the
+// host sets AdapterPath; without it the name stands in for the path and the hash differs.
 func TestTheLoRABlockKeyIsVLLMsNameAndPath(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join("..", "kv", "testdata", "block_hashes.json"))
 	if err != nil {
