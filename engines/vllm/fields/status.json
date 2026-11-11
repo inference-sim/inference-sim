@@ -5,6 +5,7 @@
   "config:attention_config.backend": "AD33 \u00a715, explicit attention backend",
   "config:attention_config.indexer_sparse_logits": "AD33 \u00a715, last row",
   "config:speculative_config.synthetic_acceptance_length": "AD33 \u00a715, drafter acceptance",
+    "config:api_server_count": "vllm/entrypoints/cli/serve.py:113-129@5df63a72 defaults api_server_count to the data-parallel size in internal load balancing, which is every stated value of the 131 InferenceX points; the engine runs its data-parallel group as one client (client_count 1, core/engine/dp.go), so the stated count changes nothing it simulates, and DPLBAsyncMPClient takes client_count as the number of API servers (vllm/v1/engine/core_client.py:1639-1640,1671,1685@5df63a72), which is why the field is not proven inert",
     "config:data_parallel_external_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:168@5df63a72), which the engine resolves",
     "config:data_parallel_hybrid_lb": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml has no entry; a run that does not state it leaves vLLM's default, False (vllm/config/parallel.py:175@5df63a72), which the engine resolves",
     "config:data_parallel_size_local": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:90 maps it to parallel.dp_local; a run that does not state it leaves vLLM's default, 1 (vllm/config/parallel.py:149@5df63a72), which the engine resolves",
@@ -240,7 +241,7 @@
   },
   "config:api_server_count": {
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    },
    "evidence": {
     "issue": "inference-sim/blis-vllm#105"

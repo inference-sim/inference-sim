@@ -121,7 +121,8 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   - not a key of the engine block, so a deployment that states it is refused when the block
     is decoded (an unknown key), and a run that does not state it runs vLLM's default: `attention_backend`,
     `attention_config.backend` (blis-vllm#80), `attention_config.indexer_sparse_logits` (#84),
-    `kv_offloading_backend` (#87) and the
+    `api_server_count` (#105; the engine's data-parallel group is one client, which is vLLM's internal-load-balancing count for
+    every value recorded runs state, so a scorer drops a recorded value and leaves it unset), `kv_offloading_backend` (#87) and the
     environment variable `VLLM_USE_SIMPLE_KV_OFFLOAD` (#87, refused by the block's `env`);
   - a deployment field, not a key of the engine block, that the engine reads from the deployment:
     `data_parallel_external_lb` (#86) and `data_parallel_hybrid_lb` (#64), both stated as the pool's
