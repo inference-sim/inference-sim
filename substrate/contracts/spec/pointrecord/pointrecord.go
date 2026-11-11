@@ -125,9 +125,17 @@ const (
 	FieldNotModelled  G5Code = "field_not_modelled"
 	FieldUnclassified G5Code = "field_unclassified"
 	EngineUnsupported G5Code = "engine_unsupported"
-	NotInCatalog      G5Code = "not_in_catalog"
-	FieldNotInRelease G5Code = "field_not_in_release"
-	BuildUnparseable  G5Code = "build_unparseable"
+	// TopologyUnsupported: the run was measured on a deployment the scoring harness cannot
+	// write as a scenario, such as several engines (a prefill and decode split, or a run
+	// across nodes).
+	TopologyUnsupported G5Code = "topology_unsupported"
+	NotInCatalog        G5Code = "not_in_catalog"
+	FieldNotInRelease   G5Code = "field_not_in_release"
+	// ValueConflict: two sources that record the same stage of one field, such as the
+	// launch configuration and the logged passed arguments, give different values
+	// (design §11.2).
+	ValueConflict    G5Code = "value_conflict"
+	BuildUnparseable G5Code = "build_unparseable"
 )
 
 // Substitution is one departure from an exact comparison.

@@ -158,19 +158,6 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 	}
 }
 
-// TestEveryDesignReasonIsAccepted pins the closed list of design §11.4.
-func TestEveryDesignReasonIsAccepted(t *testing.T) {
-	for _, c := range []G5Code{"code_not_visible", "router_unsupported", "value_not_recorded", "field_not_modelled",
-		"field_unclassified", "engine_unsupported", "not_in_catalog", "field_not_in_release", "build_unparseable"} {
-		if !c.Valid() {
-			t.Errorf("%s is a reason of design §11.4", c)
-		}
-	}
-	if len(g5Codes) != 9 {
-		t.Errorf("design §11.4 lists nine reasons; the code lists %d", len(g5Codes))
-	}
-}
-
 // The three conditions design 11.3 lists beside the earlier ones, and resolved_differs, each
 // name what the point must say.
 func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {

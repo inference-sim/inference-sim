@@ -100,7 +100,7 @@ A key belongs to its own kind: a `policy` on a `later_record` is refused.
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `code` | string | yes | One of design §11.4: `code_not_visible`, `router_unsupported`, `value_not_recorded`, `field_not_modelled`, `field_unclassified`, `engine_unsupported`, `not_in_catalog`, `field_not_in_release`, `build_unparseable`. Any other is refused (COV-5). |
+| `code` | string | yes | One of design §11.4: `code_not_visible`, `router_unsupported`, `value_not_recorded`, `field_not_modelled`, `field_unclassified`, `engine_unsupported`, `topology_unsupported`, `not_in_catalog`, `field_not_in_release`, `value_conflict`, `build_unparseable`. Any other is refused (COV-5). |
 | `subject` | string | no | What the reason is about. |
 
 ## Builds

@@ -161,8 +161,10 @@
             "field_not_modelled",
             "field_unclassified",
             "engine_unsupported",
+            "topology_unsupported",
             "not_in_catalog",
             "field_not_in_release",
+            "value_conflict",
             "build_unparseable"
           ],
           "type": "string"
