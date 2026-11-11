@@ -1,0 +1,99 @@
+{
+ "cases": [
+  {
+   "family": 90,
+   "requested": "auto",
+   "resolved": "fp8",
+   "width_v4": 132,
+   "width_v41": 132
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "indexer_kv_dtype='bf16' is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+   },
+   "family": 90,
+   "requested": "bf16"
+  },
+  {
+   "family": 90,
+   "requested": "fp8",
+   "resolved": "fp8",
+   "width_v4": 132,
+   "width_v41": 132
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "indexer_kv_dtype='mxfp4' requires Blackwell datacenter GPUs (sm_10x, e.g. B200/GB200); sm_120 (consumer Blackwell) and earlier architectures are not supported."
+   },
+   "family": 90,
+   "requested": "mxfp4"
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "indexer_kv_dtype='nvfp4' is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+   },
+   "family": 90,
+   "requested": "nvfp4"
+  },
+  {
+   "error": {
+    "class": "ValidationError",
+    "message": "Input should be 'auto', 'bf16', 'fp8', 'mxfp4' or 'nvfp4'",
+    "type": "literal_error"
+   },
+   "family": 90,
+   "requested": "fp8_e4m3"
+  },
+  {
+   "family": 100,
+   "requested": "auto",
+   "resolved": "fp8",
+   "width_v4": 132,
+   "width_v41": 132
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "indexer_kv_dtype='bf16' is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+   },
+   "family": 100,
+   "requested": "bf16"
+  },
+  {
+   "family": 100,
+   "requested": "fp8",
+   "resolved": "fp8",
+   "width_v4": 132,
+   "width_v41": 132
+  },
+  {
+   "family": 100,
+   "requested": "mxfp4",
+   "resolved": "mxfp4",
+   "width_v4": 68,
+   "width_v41": 68
+  },
+  {
+   "error": {
+    "class": "ValueError",
+    "message": "indexer_kv_dtype='nvfp4' is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+   },
+   "family": 100,
+   "requested": "nvfp4"
+  },
+  {
+   "error": {
+    "class": "ValidationError",
+    "message": "Input should be 'auto', 'bf16', 'fp8', 'mxfp4' or 'nvfp4'",
+    "type": "literal_error"
+   },
+   "family": 100,
+   "requested": "fp8_e4m3"
+  }
+ ],
+ "commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "index_head_dim": 128
+}

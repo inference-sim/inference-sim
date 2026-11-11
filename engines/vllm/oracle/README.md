@@ -60,6 +60,19 @@ produces now), `check_manifest.py` (tier 5's manifest against vLLM's live regist
 `mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_offloading.py` (the OffloadingConnector), `mutate_e24.py` (the engine interface) and
 `mutate_metrics.py` (T5).
 
+## Indexer cache dtype oracle
+
+`oracle/indexer/oracle.py` answers what `attention_config.indexer_kv_dtype` does on DeepSeek V4 and
+V4.1: which dtype the sparse indexer's key cache runs in and how many bytes one key record takes.
+It takes `AttentionConfig.resolve_indexer_kv_dtype`, `dsa_indexer_uses_fp4`, V4.1's
+`_indexer_k_cache_head_dim` and V4's record-width statement out of their modules with `ast`, as
+`oracle/lower/extract.py` does, and runs them unmodified over a stub platform
+(`oracle/indexer/replacements.json`; `python3 -I oracle/lower/check_replacements.py
+oracle/indexer/oracle.py oracle/indexer/replacements.json` checks the list). Its table, every dtype on
+SM9x and SM10x, is `rules/v0_32/testdata/vllm_indexer_kv_dtype.json`; CI fails if it differs from
+`python -I oracle/indexer/oracle.py <vllm checkout> check rules/v0_32/testdata/vllm_indexer_kv_dtype.json`
+(`print` writes it), and `TestIndexerKVDTypeIsWhatVLLMsOwnFunctionsGive` compares the pack with it.
+
 ## Block-size oracle
 
 `oracle/blocksize/oracle.py` answers a different question from the tiers above: what block size

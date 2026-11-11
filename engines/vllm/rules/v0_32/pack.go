@@ -215,6 +215,20 @@ func Pack() *pack.Pack {
 			},
 		},
 
+		// attention_config.indexer_kv_dtype for the DeepSeek sparse indexer (V4 and V4.1): the literal
+		// is vllm/config/attention.py:13, the accepted members and the default are
+		// vllm/v1/attention/backends/mla/indexer.py:17,23-27,61, and mxfp4 needs SM10x (:80-84). The
+		// table is compared with vLLM's own functions (oracle/indexer/oracle.py,
+		// testdata/vllm_indexer_kv_dtype.json). v0.31.0's pack has no such rule.
+		DSAIndexer: &pack.DSAIndexerKVDTypes{
+			Architectures: set(rules.ArchDeepseekV4, rules.ArchDeepseekV41),
+			Literal:       []string{"auto", "bf16", "fp8", "mxfp4", "nvfp4"},
+			Accepted:      []string{"fp8", "mxfp4"},
+			Default:       "fp8",
+			FP4:           "mxfp4",
+			FP4Family:     10,
+		},
+
 		SchedulerPolicies: set("fcfs", "priority"),
 
 		// The whole SpeculativeMethod literal of vllm/config/speculative.py with its

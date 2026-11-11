@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -530,6 +531,107 @@ func TestIndexerKVDTypeIsReadForMiniMaxM3OnlyAtItsDefault(t *testing.T) {
 		if err := open(c.fixture, c.dtype); err == nil || !strings.Contains(err.Error(), "blis-vllm/issues/84") {
 			t.Errorf("%s with indexer_kv_dtype %s: %v, want a refusal citing #84", c.fixture, c.dtype, err)
 		}
+	}
+}
+
+// DeepSeek V4 and V4.1 build their indexer cache as an MLA spec, so attention_config.indexer_kv_dtype
+// is neither "read only for MiniMax-M3" nor absent for them: vLLM resolves it
+// (dsa_indexer_uses_fp4, vllm/v1/attention/backends/mla/indexer.py:59-84@5df63a72; the table in
+// rules/v0_32/testdata/vllm_indexer_kv_dtype.json is that function's output). auto and fp8 are the
+// 132-byte record the catalog graph states, so they are accepted and leave the KV layers unchanged;
+// bf16 and nvfp4 are refused with vLLM's reason, fp8_e4m3 is not a member of the dtype's type, and
+// mxfp4 is vLLM's refusal below SM10x and, on SM10x, the kernel's: its 68-byte record is not what
+// the graph (one cache dtype per index record) prices.
+func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
+	open := func(fixture, chip, dtype string) ([]KVLayerRun, error) {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", fixture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(raw)
+		if chip != "" {
+			re := regexp.MustCompile(`(?m)^(\s*hardware:\s*)\S+`)
+			if !re.MatchString(body) {
+				t.Fatalf("%s states no hardware", fixture)
+			}
+			body = re.ReplaceAllString(body, "${1}"+chip)
+		}
+		if dtype != "" {
+			re := regexp.MustCompile(`(?m)^(\s*)cache_dtype:`)
+			if !re.MatchString(body) {
+				t.Fatalf("%s states no cache_dtype line to put the key before", fixture)
+			}
+			body = re.ReplaceAllString(body, "${1}indexer_kv_dtype: "+dtype+"\n${1}cache_dtype:")
+		}
+		r := repos()
+		r.Scenarios = t.TempDir()
+		if err := os.WriteFile(filepath.Join(r.Scenarios, "v.yaml"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		m, err := Open("v.yaml", r)
+		if err != nil {
+			t.Fatalf("%s: %v", fixture, err)
+		}
+		return m.KVLayers()
+	}
+	const (
+		kernel = "latency kernel keys the index record by one cache dtype"
+		vllm   = "is not supported by the DeepSeek sparse indexer (expected one of ('fp8', 'mxfp4'))."
+		sm10   = "requires Blackwell datacenter GPUs"
+	)
+	for _, f := range []struct {
+		name, fixture, chip string
+		blackwell           bool
+	}{
+		{"deepseek-v4-pro h200", "direct/deepseek-v4-pro-h200-fp8-vllm-tp8-cfg1.yaml", "", false},
+		{"deepseek-v4-pro b200", "aisimulate/deepseek-v4-pro-b200-fp4-vllm-tp8.yaml", "", true},
+		{"deepseek-v4.1-flash h200", "deepseek-v41-flash-h200-tp8.yaml", "", false},
+		{"deepseek-v4.1-flash b200", "deepseek-v41-flash-h200-tp8.yaml", "b200", true},
+	} {
+		t.Run(f.name, func(t *testing.T) {
+			base, err := open(f.fixture, f.chip, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			index := 0
+			for _, r := range base {
+				if r.Spec == "mla" && r.HeadSize == 132 {
+					index++
+				}
+			}
+			if index == 0 {
+				t.Fatalf("no 132-byte index run in %+v", base)
+			}
+			for _, dtype := range []string{"auto", "fp8"} {
+				got, err := open(f.fixture, f.chip, dtype)
+				if err != nil || !reflect.DeepEqual(got, base) {
+					t.Errorf("indexer_kv_dtype %s: %v; KV layers differ from the unstated: %t", dtype, err, !reflect.DeepEqual(got, base))
+				}
+			}
+			for _, c := range []struct {
+				dtype string
+				frags []string
+			}{
+				{"bf16", []string{vllm}},
+				{"nvfp4", []string{vllm}},
+				{"fp8_e4m3", []string{"Input should be 'auto', 'bf16', 'fp8', 'mxfp4' or 'nvfp4'"}},
+				{"mxfp4", map[bool][]string{false: {sm10}, true: {kernel, "68 bytes"}}[f.blackwell]},
+			} {
+				_, err := open(f.fixture, f.chip, c.dtype)
+				if err == nil {
+					t.Errorf("indexer_kv_dtype %s: accepted", c.dtype)
+					continue
+				}
+				for _, frag := range append(c.frags, "blis-vllm/issues/84") {
+					if !strings.Contains(err.Error(), frag) {
+						t.Errorf("indexer_kv_dtype %s: %v, want %q", c.dtype, err, frag)
+					}
+				}
+				if strings.Contains(err.Error(), "has none") {
+					t.Errorf("indexer_kv_dtype %s: %v tells a DeepSeek model it has no indexer", c.dtype, err)
+				}
+			}
+		})
 	}
 }
 

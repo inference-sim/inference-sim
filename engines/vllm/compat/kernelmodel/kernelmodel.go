@@ -120,6 +120,9 @@ type Model struct {
 	// assumed are the pricing assumptions this package discloses beside the kernel's own
 	// (EngineAssumptions), each "name = value: reason".
 	assumed []string
+	// indexerRules resolves the DeepSeek indexer's cache dtype, from the release's rules; nil when
+	// they carry no such rule (indexerKVDTypeRules).
+	indexerRules indexerKVDTypeRules
 
 	decodeThreshold int
 	smBudget        int
@@ -394,6 +397,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
 	m.assumed = languageModelOnlyAssumptions(in.Model, engine)
+	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)
 	// The graph the kernel priced: the scenario's, with a drafter named by

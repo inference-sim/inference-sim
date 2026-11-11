@@ -1,0 +1,25 @@
+{
+  "description": "Everything oracle/indexer/oracle.py replaces (design FID-1). Like oracle/lower/replacements.json it is a separate list from oracle/mocks.json on purpose: the digest of that list is the version every golden trace records. The oracle records no trace; its answers are rules/v0_32/testdata/vllm_indexer_kv_dtype.json, regenerated and compared in CI.",
+  "replacements": [
+    {
+      "symbol": "vllm.platforms.current_platform",
+      "kind": "environment",
+      "how": "dsa_indexer_uses_fp4 asks the platform two questions: is_rocm(), answered False (the table is for CUDA), and is_device_capability_family(100), answered from the case (true for family 100, false for 90). The ROCm branch is never run."
+    },
+    {
+      "symbol": "the configuration object dsa_indexer_uses_fp4 reads (vllm_config.attention_config)",
+      "kind": "environment",
+      "how": "a namespace holding attention_config, whose value is an AttentionConfig class made of the one method vLLM defines for it, resolve_indexer_kv_dtype, taken from the source as written, with indexer_kv_dtype set from the case. The rest of AttentionConfig, a pydantic dataclass whose module imports the attention backends, is not built."
+    },
+    {
+      "symbol": "VllmConfig",
+      "kind": "environment",
+      "how": "a type name dsa_indexer_uses_fp4's signature mentions; annotations are evaluated when the definition runs."
+    },
+    {
+      "symbol": "self (the DeepseekV4Indexer the record-width statement reads)",
+      "kind": "environment",
+      "how": "the statement `if self.use_fp4_kv: ... else: ...` of DeepseekV4Indexer.__init__ and the assignment `self.quant_block_size = 128` before it are run as written over a namespace holding use_fp4_kv (from the case's resolution) and head_dim (128, the catalog graphs' d_h of the indexer). The rest of the constructor builds layers and is not run."
+    }
+  ]
+}

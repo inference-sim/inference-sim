@@ -430,6 +430,12 @@ jobs:
         run: |
           python3 -I oracle/lower/check_replacements.py oracle/lower/extract.py oracle/lower/replacements.json
           python3 -I oracle/lower/test_check_replacements.py
+      # The DeepSeek indexer's cache dtype (rules/pack ResolveIndexerKVDType) is held to vLLM's own
+      # resolution and record-width code, run unmodified over a stub platform (FID-1, FID-8).
+      - name: the indexer cache dtype table is vLLM's own
+        run: |
+          python -I oracle/indexer/oracle.py vllm-source check rules/v0_32/testdata/vllm_indexer_kv_dtype.json
+          python3 -I oracle/lower/check_replacements.py oracle/indexer/oracle.py oracle/indexer/replacements.json
       # The scheduler helper's default model, as configuration only (no weights), at a pinned
       # revision, so a change on the Hub cannot change a run.
       - name: fetch the helper model's configuration at its pinned revision
