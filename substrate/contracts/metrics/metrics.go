@@ -13,8 +13,19 @@
 // output tokens of every request with at least two output tokens (inference-sim #1894), as
 // `vllm bench serve` pools them. aiperf's inter-token latency is a per-request mean, a
 // different population, so it is not cited for that family. Output tokens per second follows
-// aiperf. interactivity_p50 and interactivity_p90 are defined by BLIS, as 1000 over the
-// time-per-output-token percentile in milliseconds; neither benchmark client reports them.
+// aiperf. interactivity_p50 and interactivity_p90 are 1000 over the time-per-output-token
+// percentile in milliseconds, and interactivity_of_mean_tpot is 1000 over its mean; neither
+// vllm bench serve nor aiperf reports them, and InferenceX stores them (median_intvty,
+// p90_intvty, mean_intvty). The mean over requests of 1/TPOT, interactivity_mean, is a
+// different and larger number (it is aiperf's per-user rate), so the two means are two
+// metrics and Compare refuses them.
+//
+// Throughput per GPU has three forms that differ by what is counted or what it is divided
+// by, and each is its own metric: output tokens over all GPUs (output_tok_s_per_gpu), prompt
+// plus output tokens over all GPUs (total_tokens_per_second_per_gpu, InferenceX's
+// tput_per_gpu), and output tokens over the decode GPUs only
+// (output_tokens_per_second_per_decode_gpu, InferenceX's output_tput_per_gpu for a
+// disaggregated deployment).
 //
 // A figure is a metric at a scope: the whole cluster, one pool, or one instance (design
 // §8.7). The scope selects which requests, tokens or steps form the population; the formula,
@@ -74,8 +85,9 @@ const (
 	// FormulaUserTPS is a request's (output tokens - 1) / (E2E latency - TTFT): its
 	// output tokens per second after the first.
 	FormulaUserTPS Formula = "user_tps"
-	// FormulaInteractivity is 1000 / a TPOT percentile in milliseconds, tokens per second
-	// per user.
+	// FormulaInteractivity is 1000 / a TPOT statistic in milliseconds, tokens per second
+	// per user: of a percentile, or of the mean (the reciprocal of the mean, which is not
+	// the mean of the reciprocals, FormulaUserTPS).
 	FormulaInteractivity Formula = "interactivity"
 	// FormulaCacheHitRate is prompt tokens served from the prefix cache over prompt tokens
 	// looked up, summed over admissions.
@@ -172,6 +184,10 @@ const (
 	// the scope occupies: the deployment's pools at the cluster, its own at a pool or an
 	// instance.
 	DenominatorWindowAndGPUs Denominator = "window_and_gpus"
+	// DenominatorWindowAndDecodeGPUs: the length of the measured window and the number of
+	// GPUs of the decode pools of the deployment, or all its GPUs when it has no separate
+	// decode pool. The prefill GPUs of a disaggregated deployment are not counted.
+	DenominatorWindowAndDecodeGPUs Denominator = "window_and_decode_gpus"
 )
 
 // Unfinished says how a latency statistic treats requests in flight or queued at the
@@ -313,6 +329,29 @@ func (d Definition) sameMeaning(o Definition) bool {
 const (
 	vllmServe = "vllm v0.32.0 vllm/benchmarks/serve.py:624-634"
 	aiperfTPS = "aiperf 0.12.0 src/aiperf/metrics/types/output_token_throughput_metrics.py:40-78"
+
+	// InferenceX is read at two commits: 08d7a9cd (2026-06-11), where the fixed-sequence
+	// client and its result processor are under utils/, and 96d6fb58 (2026-11-11), where they
+	// are under inferencex-e2e/infx/. Both commits are cited in full.
+	ixOld = "InferenceX 08d7a9cda233099b1d19aa1ba6ea32446d4d18a0"
+	ixNew = "InferenceX 96d6fb58721b9eac4bfd6aec5b6c84e780835d9b"
+
+	// ixTotalPerGPU: the client computes total_token_throughput = (input + output tokens) /
+	// duration, and the result processor divides it by every GPU of the deployment (prefill
+	// and decode in a multi-node run) to give tput_per_gpu.
+	ixTotalPerGPU = ixNew + " inferencex-e2e/infx/bench_serving/benchmark_serving.py:483-484 and " +
+		"inferencex-e2e/infx/results/fixed_sequence.py:139,158,192; " +
+		ixOld + " utils/bench_serving/benchmark_serving.py:466-467 and utils/process_result.py:78,100,120"
+	// ixOutputPerDecodeGPU: output_tput_per_gpu divides output_throughput by the decode GPUs
+	// of a multi-node run, or by the total when there are none.
+	ixOutputPerDecodeGPU = ixNew + " inferencex-e2e/infx/results/fixed_sequence.py:145,159,193; " +
+		ixOld + " utils/process_result.py:84,101,121"
+	// ixIntvty: every *_tpot_ms statistic the client writes becomes a *_intvty of 1000 over
+	// it, so mean_intvty is 1000 / mean_tpot_ms, not the mean of per-request reciprocals; the
+	// agentic processor takes 1 / the statistic likewise.
+	ixIntvty = ixNew + " inferencex-e2e/infx/results/fixed_sequence.py:204-206 and " +
+		"inferencex-e2e/infx/results/agentic/request_metrics.py:71-86; " +
+		ixOld + " utils/process_result.py:129-132"
 )
 
 // registry is every definition, built once by build.
@@ -386,8 +425,12 @@ func build() map[string]Definition {
 		if u == UnitTokensPerS || u == UnitRequestsPerS {
 			d.Denominator = DenominatorWindow
 		}
-		if id == "output_tok_s_per_gpu" {
+		switch id {
+		case "output_tok_s_per_gpu", "total_tokens_per_second_per_gpu":
 			d.Denominator = DenominatorWindowAndGPUs
+		case "output_tokens_per_second_per_decode_gpu":
+			d.Denominator = DenominatorWindowAndDecodeGPUs
+			d.Scopes = []Scope{ScopeCluster}
 		}
 		add(d)
 	}
@@ -397,6 +440,10 @@ func build() map[string]Definition {
 		"output_tok_s over the GPUs of the scope it describes: the deployment's pools at the cluster, a pool's or an instance's own at those scopes.", "")
 	rate("total_tok_s", FormulaTotalThroughput, PopulationRequests, UnitTokensPerS,
 		"Prompt and output tokens of the window's completed requests over the window's length.", vllmServe)
+	rate("total_tokens_per_second_per_gpu", FormulaTotalThroughput, PopulationRequests, UnitTokensPerS,
+		"Prompt and output tokens of the window's completed requests over the window's length and over all the GPUs of the scope it describes, prefill GPUs included: InferenceX's tput_per_gpu.", ixTotalPerGPU)
+	rate("output_tokens_per_second_per_decode_gpu", FormulaOutputThroughput, PopulationRequests, UnitTokensPerS,
+		"Output tokens of the window's completed requests over the window's length and over the decode GPUs of the deployment only, or all its GPUs when it has no decode pool: InferenceX's output_tput_per_gpu. Defined at the cluster, where the decode GPUs are counted.", ixOutputPerDecodeGPU)
 	rate("request_throughput", FormulaRequestThroughput, PopulationRequests, UnitRequestsPerS,
 		"Completed requests over the window's length.", vllmServe)
 	rate("goodput_rps", FormulaGoodput, PopulationTargeted, UnitRequestsPerS,
@@ -413,8 +460,12 @@ func build() map[string]Definition {
 		add(Definition{ID: "interactivity_" + string(st), Formula: FormulaInteractivity, Statistic: st,
 			Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
 			PercentileMethod: PercentileNumpyLinear, Unfinished: UnfinishedExcluded,
-			Description: "1000 over the " + string(st) + " of tpot in milliseconds."})
+			Description: "1000 over the " + string(st) + " of tpot in milliseconds.", Follows: ixIntvty})
 	}
+	add(Definition{ID: "interactivity_of_mean_tpot", Formula: FormulaInteractivity, Statistic: StatMean,
+		Population: PopulationRequestsTwoTokens, Window: WindowMeasured, Unit: UnitTokensPerSUser,
+		Unfinished: UnfinishedExcluded, Follows: ixIntvty,
+		Description: "1000 over the mean of tpot in milliseconds, the reciprocal of the mean and not the mean of the reciprocals (interactivity_mean): InferenceX's mean_intvty."})
 	add(Definition{ID: "preemptions", Formula: FormulaPreemptions, Statistic: StatTotal,
 		Population: PopulationSteps, Window: WindowRun, Unit: UnitCount, Unfinished: UnfinishedNotApplicable,
 		Description: "Preemptions the engines performed over the whole run."})

@@ -48,6 +48,43 @@ between. `Figure.Validate` first validates the figure's definition, then refuses
 no scope, at a scope its metric is not defined at, with an aggregate its metric does not
 admit, or ranging over a scope that is not narrower than its own.
 
+## Throughput per GPU and interactivity
+
+Two quantities have more than one common form, and the registry keeps each form as its own
+metric because a figure of one is not a figure of another. The forms below follow the result
+processor of InferenceX, read at the commits cited in each definition's `Follows`.
+
+Throughput per GPU:
+
+- `output_tok_s_per_gpu`: output tokens over the window, over all the GPUs of the scope.
+- `total_tokens_per_second_per_gpu`: prompt plus output tokens over the window, over all the
+  GPUs of the scope, prefill GPUs included. It is InferenceX's `tput_per_gpu`, the throughput
+  axis of its frontier.
+- `output_tokens_per_second_per_decode_gpu`: output tokens over the window, over the decode
+  GPUs of the deployment only (all its GPUs when it has no separate decode pool). It is
+  InferenceX's `output_tput_per_gpu` for a disaggregated deployment, and is defined at the
+  cluster only, where the decode GPUs are counted.
+
+A worked example: a run with 4 prefill and 4 decode GPUs that completes 3000 prompt tokens and
+1000 output tokens a second reads 125 on the first, 500 on the second and 250 on the third.
+
+Interactivity:
+
+- `interactivity_mean`: the mean over requests of each request's own rate, (output tokens - 1)
+  / (E2E - TTFT), after the first token. It follows aiperf.
+- `interactivity_of_mean_tpot`: 1000 over the mean of `tpot` in milliseconds. It is InferenceX's
+  `mean_intvty`, which divides the mean time per output token into one.
+
+Two requests that take 10 ms and 40 ms per output token give 62.5 tokens per second on the
+first (the mean of 100 and 25) and 40 on the second (1000 over the mean 25 ms). The first is
+never smaller than the second, and the two differ by more as the requests differ more.
+`interactivity_p50` and `interactivity_p90` are 1000 over the percentile of `tpot`, as
+InferenceX publishes its median and p90.
+
+`Compare` refuses any pair across forms and names the field that tells them apart: `formula`
+for total against output tokens and for the two interactivity means, `denominator` for all
+GPUs against decode GPUs.
+
 ## Comparing figures
 
 `metrics.Compare` returns the difference between two figures only when `ComparableFigures`

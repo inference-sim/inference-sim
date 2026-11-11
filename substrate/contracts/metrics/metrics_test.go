@@ -102,6 +102,7 @@ func TestCompareRefusesDifferentDefinitions(t *testing.T) {
 func TestEveryPreviouslyReportedMetricIsDefined(t *testing.T) {
 	for _, id := range []string{
 		"output_tok_s", "output_tok_s_per_gpu", "request_throughput",
+		"total_tokens_per_second_per_gpu", "output_tokens_per_second_per_decode_gpu", "interactivity_of_mean_tpot",
 		"ttft_mean_ms", "ttft_p50_ms", "ttft_p90_ms", "ttft_p95_ms", "ttft_p99_ms",
 		"e2e_mean_ms", "e2e_p50_ms", "e2e_p90_ms", "e2e_p95_ms", "e2e_p99_ms",
 		"tpot_mean_ms", "tpot_p50_ms", "tpot_p90_ms", "tpot_p99_ms",
@@ -233,6 +234,9 @@ func TestRegistryStatesTheScopesDesignNames(t *testing.T) {
 		{"cache_hit_rate", all, both, DirectionHigherIsBetter, AggregateMin},
 		{"interactivity_mean", all, both, DirectionHigherIsBetter, AggregateMin},
 		{"interactivity_p50", all, both, DirectionHigherIsBetter, AggregateMin},
+		{"interactivity_of_mean_tpot", all, both, DirectionHigherIsBetter, AggregateMin},
+		{"total_tokens_per_second_per_gpu", all, both, DirectionHigherIsBetter, AggregateMin},
+		{"output_tokens_per_second_per_decode_gpu", []Scope{ScopeCluster}, nil, DirectionHigherIsBetter, AggregateMin},
 		{"preemptions", all, both, DirectionLowerIsBetter, AggregateMax},
 		{"scheduling_delay_p99_ms", all, both, DirectionLowerIsBetter, AggregateMax},
 		{"gateway_queue_delay_p99_ms", []Scope{ScopeCluster}, nil, DirectionLowerIsBetter, AggregateMax},
@@ -407,5 +411,68 @@ func TestFigureMemberFollowsItsScope(t *testing.T) {
 		if err := c.f.Validate(); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: got %v, want %q", name, err, c.want)
 		}
+	}
+}
+
+// The three throughput-per-GPU forms and the two interactivity means are five metrics with
+// the exact definitions of the InferenceX result processor: total tokens over all
+// GPUs, output tokens over the decode GPUs only, and 1000 over the mean of tpot against the
+// mean of the per-request reciprocals. Each cites the commit and lines it was read at.
+func TestInferenceXDefinitions(t *testing.T) {
+	for _, c := range []struct {
+		id          string
+		formula     Formula
+		stat        Statistic
+		denominator Denominator
+		unit        Unit
+		follows     []string
+	}{
+		{"total_tokens_per_second_per_gpu", FormulaTotalThroughput, StatRate, DenominatorWindowAndGPUs, UnitTokensPerS,
+			[]string{"96d6fb58721b9eac4bfd6aec5b6c84e780835d9b", "08d7a9cda233099b1d19aa1ba6ea32446d4d18a0", "fixed_sequence.py:139,158,192", "benchmark_serving.py:483-484"}},
+		{"output_tokens_per_second_per_decode_gpu", FormulaOutputThroughput, StatRate, DenominatorWindowAndDecodeGPUs, UnitTokensPerS,
+			[]string{"96d6fb58721b9eac4bfd6aec5b6c84e780835d9b", "fixed_sequence.py:145,159,193", "process_result.py:84,101,121"}},
+		{"interactivity_of_mean_tpot", FormulaInteractivity, StatMean, "", UnitTokensPerSUser,
+			[]string{"96d6fb58721b9eac4bfd6aec5b6c84e780835d9b", "fixed_sequence.py:204-206", "request_metrics.py:71-86"}},
+		{"interactivity_mean", FormulaUserTPS, StatMean, "", UnitTokensPerSUser, []string{"aiperf"}},
+	} {
+		d := mustLookup(t, c.id)
+		if d.Formula != c.formula || d.Statistic != c.stat || d.Denominator != c.denominator || d.Unit != c.unit {
+			t.Errorf("%s: formula %s statistic %s denominator %q unit %s", c.id, d.Formula, d.Statistic, d.Denominator, d.Unit)
+		}
+		for _, f := range c.follows {
+			if !strings.Contains(d.Follows, f) {
+				t.Errorf("%s: Follows %q does not cite %q", c.id, d.Follows, f)
+			}
+		}
+	}
+	if d := mustLookup(t, "total_tokens_per_second_per_gpu"); d.Population != PopulationRequests || d.Window != WindowMeasured {
+		t.Errorf("total tokens per GPU: population %s window %s", d.Population, d.Window)
+	}
+}
+
+// Known-bad comparisons: a figure of one form is refused against a figure of
+// another, and the refusal names the field that tells them apart. 1000 output tokens a second
+// over 8 GPUs and 1400 total tokens a second over 8 GPUs are not a difference of 275.
+func TestThroughputAndInteractivityFormsAreNotComparable(t *testing.T) {
+	for _, c := range []struct{ a, b, field string }{
+		{"interactivity_mean", "interactivity_of_mean_tpot", "formula"},
+		{"total_tokens_per_second_per_gpu", "output_tok_s_per_gpu", "formula"},
+		{"total_tokens_per_second_per_gpu", "total_tok_s", "denominator"},
+		{"output_tok_s_per_gpu", "output_tokens_per_second_per_decode_gpu", "denominator"},
+		{"output_tokens_per_second_per_decode_gpu", "total_tokens_per_second_per_gpu", "formula"},
+		{"interactivity_p50", "interactivity_of_mean_tpot", "statistic"},
+	} {
+		da, db := mustLookup(t, c.a), mustLookup(t, c.b)
+		for _, pair := range [][2]Definition{{da, db}, {db, da}} {
+			_, err := Compare(at(pair[0], 10), at(pair[1], 12))
+			if err == nil || !strings.Contains(err.Error(), c.field) {
+				t.Errorf("%s vs %s: got %v, want a refusal naming %s", pair[0].ID, pair[1].ID, err, c.field)
+			}
+		}
+	}
+	// A form is comparable with itself.
+	d := mustLookup(t, "output_tokens_per_second_per_decode_gpu")
+	if diff, err := Compare(at(d, 100), at(d, 130)); err != nil || diff != 30 {
+		t.Errorf("same form: diff %v, err %v", diff, err)
 	}
 }
