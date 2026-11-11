@@ -4439,7 +4439,7 @@ def test_deepseek_v41_draft_layers_charge_the_mtp_weights_at_their_resident_widt
     attention and experts, the context stack main_proj, and the sequential head the
     Markov projection. The context projections and the draft lm_head reuse weights
     another node holds (dspark.py:192, 279-282) and so hold none; the Markov head's
-    embed half is a gather (qwen3_dspark.py:48-93), and the confidence head runs only
+    embed half is a gather (qwen3_dspark.py:48-94), and the confidence head runs only
     under adaptive verification."""
     g, t = v41_graph(), text_config(config_of(V41))
     spec, glob = g["speculator"], g["global"]["weight_dtype"]
@@ -6294,3 +6294,269 @@ def test_mtp_is_not_declared_for_a_model_whose_config_declares_no_mtp_layers(tmp
     assert "speculator" not in llama
     ymodel = yaml.safe_load((MODELS / "llama-3.1-8b-instruct" / "model.yaml").read_text())
     assert "speculator" not in (ymodel.get("drafters") or [])
+
+
+# --- ModelOpt NVFP4 checkpoints placed node by node (nvidia/Kimi-K2.5-NVFP4, nvidia/MiniMax-M2.5-NVFP4) ---
+
+KIMI_K25 = MODELS / "kimi-k2.5"
+KIMI_K25_NVFP4 = MODELS / "kimi-k2.5-nvfp4"
+MINIMAX_M25 = MODELS / "minimax-m2.5"
+MINIMAX_M25_NVFP4 = MODELS / "minimax-m2.5-nvfp4"
+
+# The quantization block both checkpoints carry in config.json (the fields vLLM v0.32.0 reads),
+# with the exclusion lists of the pinned revisions. hf_quant_config.json at the same revisions
+# states the same lists as exclude_modules (64 and 125 entries), which vLLM does not consult when
+# config.json carries a block.
+_NVFP4_GROUPS = {"group_0": {"input_activations": {"dynamic": False, "num_bits": 4, "type": "float",
+                                                    "group_size": 16},
+                             "weights": {"dynamic": False, "num_bits": 4, "type": "float",
+                                         "group_size": 16}, "targets": ["Linear"]}}
+
+
+def _modelopt_block(ignore: list[str]) -> dict:
+    return {"config_groups": _NVFP4_GROUPS, "ignore": ignore, "quant_algo": "NVFP4",
+            "kv_cache_scheme": {"dynamic": False, "num_bits": 8, "type": "float"},
+            "quant_method": "modelopt"}
+
+
+def _kimi_k25_nvfp4_raw(prefix: str = "language_model.model.layers.", **over) -> dict:
+    """moonshotai/Kimi-K2.5's committed configuration with nvidia/Kimi-K2.5-NVFP4's block."""
+    raw = config_of(KIMI_K25)
+    ignore = ["language_model.lm_head"] + [f"{prefix}{i}.self_attn*" for i in range(61)] + [
+        "mm_projector*", "vision_tower*"]
+    raw["quantization_config"] = {**_modelopt_block(ignore), **over}
+    return raw
+
+
+def _minimax_m25_nvfp4_raw(**over) -> dict:
+    raw = config_of(MINIMAX_M25)
+    ignore = ["lm_head"]
+    for i in range(62):
+        ignore += [f"model.layers.{i}.block_sparse_moe.gate", f"model.layers.{i}.self_attn*"]
+    raw["quantization_config"] = {**_modelopt_block(ignore), **over}
+    raw["dtype"] = "bfloat16"
+    return raw
+
+
+def _strip_identity(g: dict) -> dict:
+    g = json.loads(json.dumps(g))
+    g.pop("name")
+    g.pop("derived_from")
+    return g
+
+
+def _nodes_by_role(g: dict) -> dict[str, set]:
+    """Role -> the weight_dtype values it carries across all layer kinds ('-' for none)."""
+    out: dict[str, set] = {}
+    for k in g["layer_kinds"]:
+        for n in k["nodes"]:
+            if n["op"] in ("GEMM", "GroupedGEMM"):
+                out.setdefault(n["role"], set()).add(n.get("weight_dtype", "-"))
+    return out
+
+
+def test_kimi_k25_nvfp4_graph_is_what_its_configuration_derives_to(tmp_path):
+    """The committed graph is the derivation of the pinned configuration's quantization block on
+    the Kimi-K2.5 text decoder. Attention and the head are excluded and stay at the base width;
+    the dense layer's MLP, the shared expert and the routed experts are quantized."""
+    g = graph_of(KIMI_K25_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _nodes_by_role(g) == {
+        "qkv_a_proj": {"-"}, "q_b_proj": {"-"}, "kv_b_proj": {"-"}, "o_proj": {"-"},
+        "mlp_gate_up": {"nvfp4"}, "mlp_down": {"nvfp4"}, "experts": {"nvfp4"}}
+    derived = _derive_raw(_kimi_k25_nvfp4_raw(), tmp_path, "kimi-k2.5-nvfp4")
+    assert _strip_identity(derived) == _strip_identity(g)
+
+
+def test_kimi_k25_nvfp4_differs_from_the_int4_entry_in_widths_only():
+    """Same layers, same nodes, same shapes as kimi-k2.5; only the widths differ."""
+    a, b = graph_of(KIMI_K25), graph_of(KIMI_K25_NVFP4)
+
+    def shapes(g):
+        return [[{k: v for k, v in n.items() if k != "weight_dtype"} for n in kind["nodes"]]
+                for kind in g["layer_kinds"]], g["stack"], g["head"]
+    assert shapes(a) == shapes(b)
+    assert a["global"]["weight_dtype"] == "int4" and b["global"]["weight_dtype"] == "bf16"
+
+
+def test_minimax_m25_nvfp4_quantizes_only_the_experts():
+    g = graph_of(MINIMAX_M25_NVFP4)
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _nodes_by_role(g) == {"qkv_proj": {"-"}, "o_proj": {"-"}, "experts": {"nvfp4"}}
+    base = graph_of(MINIMAX_M25)
+    assert base["global"]["weight_dtype"] == "fp8"
+    assert _nodes_by_role(base)["experts"] == {"-"}
+
+
+# The classes of tensors in the pinned safetensors headers, from the 119 shards of
+# nvidia/Kimi-K2.5-NVFP4 (language_model.* only; the vision tower and projector are not priced)
+# and the 29 of nvidia/MiniMax-M2.5-NVFP4. A NVFP4 weight is a U8 tensor of two elements a byte,
+# its F8_E4M3 weight_scale (one per 16 elements) and F32 weight_scale_2 and input_scale are what
+# the nvfp4 width carries, and k_scale/v_scale are KV-cache scales. MiniMax's attention is stored
+# as F32 and loads into BF16 parameters.
+KIMI_K25_NVFP4_HEADER = {
+    # role: (stored dtype, logical parameters of the text decoder)
+    "qkv_a_proj": ("BF16", 61 * (576 + 1536) * 7168),
+    "q_b_proj": ("BF16", 61 * 12288 * 1536),
+    "kv_b_proj": ("BF16", 61 * 16384 * 512),
+    "o_proj": ("BF16", 61 * 7168 * 8192),
+    # gate_proj, up_proj and down_proj of layer 0 (18432 x 7168 each), then the 60 sparse layers'
+    # 384 routed experts and one shared expert (2048 x 7168 each matrix); a U8 byte holds two
+    # NVFP4 weights, so the stored elements are half these.
+    "mlp": ("U8", 3 * 18432 * 7168),
+    "routed": ("U8", 60 * 384 * 3 * 2048 * 7168),
+    "shared": ("U8", 60 * 3 * 2048 * 7168),
+    "embed_tokens": ("BF16", 163840 * 7168),
+    "lm_head": ("BF16", 163840 * 7168),
+    # Tensors the graph carries no node for.
+    "norms": ("BF16", 61 * 7168 * 2 + 61 * 512 + 61 * 1536 + 7168),
+    "router": ("BF16", 60 * 384 * 7168 + 60 * 384),
+}
+
+
+def _graph_parameters(g: dict) -> dict[str, int]:
+    """Logical parameters per role, summed over every layer the stack runs."""
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    count = collections.Counter(layer_sequence(g["stack"]))
+    out: collections.Counter = collections.Counter()
+    for kid, times in count.items():
+        for n in kinds[kid]["nodes"]:
+            if n["op"] == "GEMM":
+                out[n["role"]] += times * n["n"] * n["k"]
+            elif n["op"] == "GroupedGEMM":
+                out[n["role"]] += times * 3 * n["n"] * n["k"] * n["experts"]
+                if n.get("shared_experts"):
+                    out["shared"] += times * 3 * int(n.get("shared_intermediate_size", n["n"])) \
+                        * n["k"] * n["shared_experts"]
+    for n in g["head"]:
+        if n["op"] == "GEMM":
+            out[n["role"]] += n["n"] * n["k"]
+    return out
+
+
+def test_kimi_k25_nvfp4_resident_parameters_equal_the_header_totals():
+    """Every weight of the text decoder in the 278,341-tensor header is a node, an inferred
+    embedding table, or a norm or router the graph carries no node for; none is missing and none
+    is counted twice, and the width each node states is the dtype its tensors are stored in."""
+    g = graph_of(KIMI_K25_NVFP4)
+    got = _graph_parameters(g)
+    h = KIMI_K25_NVFP4_HEADER
+    for role in ("qkv_a_proj", "q_b_proj", "kv_b_proj", "o_proj", "lm_head"):
+        assert got[role] == h[role][1], role
+    assert got["mlp_gate_up"] + got["mlp_down"] == h["mlp"][1]
+    assert got["experts"] == h["routed"][1]
+    assert got["shared"] == h["shared"][1]
+    # The kernel infers the embedding table as vocab x hidden at the BF16 floor.
+    emb = g["global"]["vocab_size"] * g["global"]["hidden_size"]
+    assert emb == h["embed_tokens"][1]
+    total_header = sum(v[1] for v in h.values())
+    total_graph = sum(got.values()) + emb + h["norms"][1] + h["router"][1]
+    assert total_graph == total_header
+    # U8 tensors are the nvfp4 nodes; BF16 tensors are the base width.
+    wide = {r for r, (dt, _) in h.items() if dt == "U8"}
+    assert wide == {"mlp", "routed", "shared"}
+    assert _nodes_by_role(g)["experts"] == {"nvfp4"} and _nodes_by_role(g)["mlp_gate_up"] == {"nvfp4"}
+
+
+MINIMAX_M25_NVFP4_HEADER = {
+    "qkv_proj": ("F32", 62 * (6144 + 2 * 1024) * 3072),
+    "o_proj": ("F32", 62 * 3072 * 6144),
+    "experts": ("U8", 62 * 256 * 3 * 1536 * 3072),
+    "embed_tokens": ("BF16", 200064 * 3072),
+    "lm_head": ("BF16", 200064 * 3072),
+    # q_norm 6144 and k_norm 1024 a layer, the two layer norms, the final norm; the router
+    # (gate.weight) and its e_score_correction_bias.
+    "norms": ("BF16", 62 * (6144 + 1024 + 2 * 3072) + 3072),
+    "router": ("BF16", 62 * 256 * 3072 + 62 * 256),
+}
+
+
+def test_minimax_m25_nvfp4_resident_parameters_equal_the_header_totals():
+    """The 191,211-tensor header: attention (F32 on disk, loaded into BF16 parameters), 47,616
+    experts' w1/w2/w3 as U8, the embedding and head, and the norms and router with no node."""
+    g = graph_of(MINIMAX_M25_NVFP4)
+    got = _graph_parameters(g)
+    h = MINIMAX_M25_NVFP4_HEADER
+    for role in ("qkv_proj", "o_proj", "experts", "lm_head"):
+        assert got[role] == h[role][1], role
+    emb = g["global"]["vocab_size"] * g["global"]["hidden_size"]
+    assert emb == h["embed_tokens"][1]
+    assert sum(got.values()) + emb + h["norms"][1] + h["router"][1] == sum(v[1] for v in h.values())
+    assert (h["experts"][0], _nodes_by_role(g)["experts"]) == ("U8", {"nvfp4"})
+    assert _nodes_by_role(g)["qkv_proj"] == {"-"}
+
+
+def test_modelopt_legacy_prefix_spelling_reads_as_the_modern_one(tmp_path):
+    """The loader renames "language_model.layers." to "language_model.model.layers." on tensor
+    names and ModelOpt applies the same rename to the exclusion list, so a list written in the
+    legacy spelling excludes the same modules."""
+    modern = _derive_raw(_kimi_k25_nvfp4_raw(), tmp_path, "kimi-k2.5-nvfp4")
+    legacy_raw = _kimi_k25_nvfp4_raw()
+    legacy_raw["quantization_config"]["ignore"] = [
+        p.replace("language_model.model.layers.", "language_model.layers.")
+        for p in legacy_raw["quantization_config"]["ignore"]]
+    assert _strip_identity(_derive_raw(legacy_raw, tmp_path, "kimi-k2.5-nvfp4")) == \
+        _strip_identity(modern)
+
+
+def test_a_list_that_leaves_attention_quantized_prices_it_at_nvfp4(tmp_path):
+    """vLLM quantizes every linear the list does not name; with self_attn off the list the
+    latent projections and the output projection are NVFP4 on every layer."""
+    raw = _kimi_k25_nvfp4_raw()
+    raw["quantization_config"]["ignore"] = ["language_model.lm_head", "vision_tower*"]
+    g = _derive_raw(raw, tmp_path, "kimi-k2.5-nvfp4")
+    assert _nodes_by_role(g)["q_b_proj"] == {"nvfp4"} and _nodes_by_role(g)["o_proj"] == {"nvfp4"}
+
+
+def test_modelopt_names_vllms_modules_not_the_checkpoints(tmp_path):
+    """MiniMax-M2 stores its MoE as block_sparse_moe and vLLM builds it as mlp, so a pattern
+    naming the checkpoint's spelling excludes nothing and the experts are quantized anyway."""
+    raw = _minimax_m25_nvfp4_raw()
+    raw["quantization_config"]["ignore"] += [f"model.layers.{i}.block_sparse_moe*" for i in range(62)]
+    g = _derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4")
+    assert _nodes_by_role(g)["experts"] == {"nvfp4"}
+    # Naming vLLM's module does exclude it, and the experts then stay at the base width.
+    raw["quantization_config"]["ignore"] += [f"model.layers.{i}.mlp*" for i in range(62)]
+    assert _nodes_by_role(_derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4"))["experts"] == {"-"}
+
+
+@pytest.mark.parametrize("make,edit,why", [
+    # One layer's attention left quantized while the others' is excluded: one node cannot price
+    # both. Wildcard exclusion on some layers only.
+    ("kimi", lambda ig: [p for p in ig if p != "language_model.model.layers.7.self_attn*"],
+     "quantized on some of its layers"),
+    # The head quantized: the head is priced at the base width.
+    ("kimi", lambda ig: [p for p in ig if p != "language_model.lm_head"], "lm_head"),
+    # A routed-expert exclusion on one layer.
+    ("minimax", lambda ig: ig + ["model.layers.3.mlp.experts"], "quantized on some of its layers"),
+])
+def test_modelopt_refuses_a_layout_one_node_cannot_price(tmp_path, make, edit, why):
+    raw = _kimi_k25_nvfp4_raw() if make == "kimi" else _minimax_m25_nvfp4_raw()
+    raw["quantization_config"]["ignore"] = edit(raw["quantization_config"]["ignore"])
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "x-nvfp4")
+
+
+def test_modelopt_refuses_what_vllm_reads_differently(tmp_path):
+    d = deriver()
+    # exclude_modules without `ignore`: v0.32.0 reads none of it from config.json.
+    raw = _kimi_k25_nvfp4_raw()
+    raw["quantization_config"]["exclude_modules"] = raw["quantization_config"].pop("ignore")
+    with pytest.raises(d.DeriveError, match="exclude_modules and no `ignore`"):
+        _derive_raw(raw, tmp_path, "x-nvfp4")
+    # MIXED_PRECISION picks the algorithm per layer.
+    with pytest.raises(d.DeriveError, match="MIXED_PRECISION picks the algorithm per layer"):
+        _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="MIXED_PRECISION"), tmp_path, "x-nvfp4")
+    # An algorithm other than NVFP4 is a different layout.
+    with pytest.raises(d.DeriveError, match="only the NVFP4 layout"):
+        _derive_raw(_kimi_k25_nvfp4_raw(quant_algo="FP8"), tmp_path, "x-nvfp4")
+    # A 32-element group is not NVFP4's 16.
+    bad = _kimi_k25_nvfp4_raw()
+    bad["quantization_config"]["config_groups"] = {"group_0": {"weights": {"group_size": 32}}}
+    with pytest.raises(d.DeriveError, match="not 16"):
+        _derive_raw(bad, tmp_path, "x-nvfp4")
+    # No algorithm at all.
+    nothing = _kimi_k25_nvfp4_raw()
+    del nothing["quantization_config"]["quant_algo"]
+    with pytest.raises(d.DeriveError, match="no quant_algo"):
+        _derive_raw(nothing, tmp_path, "x-nvfp4")

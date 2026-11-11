@@ -1,0 +1,11 @@
+name: kimi-k2.5-nvfp4
+source:
+  provider: huggingface
+  repo: nvidia/Kimi-K2.5-NVFP4
+  revision: 0fd0a5e6879298d3476e3b61852a79792a35ae3d
+  retrieved: 2026-11-10
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/nvidia/Kimi-K2.5-NVFP4/raw/0fd0a5e6879298d3476e3b61852a79792a35ae3d/README.md
+config:
+  sha256: c375d7d566b6fa706ba46fec9ef938e829c5ba1accb20541d4f0c75dddefcd8f

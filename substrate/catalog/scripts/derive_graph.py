@@ -370,7 +370,11 @@ def quantized_classes(cfg: dict[str, Any], model: str) -> dict[str, str]:
 
 # Architectures whose handler places each node's width under a ModelOpt quant_algo
 # checkpoint, reading the exclusion list per module (see weight_dtype()).
-MODELOPT_PER_NODE_ARCHS = frozenset({"MuseSparkForConditionalGeneration"})
+MODELOPT_PER_NODE_ARCHS = frozenset({
+    "MuseSparkForConditionalGeneration",
+    "KimiK25ForConditionalGeneration",
+    "MiniMaxM2ForCausalLM",
+})
 
 
 def modelopt_exclusions(quant: dict[str, Any]) -> list[str]:
@@ -405,6 +409,204 @@ def modelopt_excluded(prefix: str, patterns: list[str]) -> bool:
                for p in patterns)
 
 
+# The module names vLLM v0.32.0 builds for the architectures whose ModelOpt checkpoints this
+# deriver places node by node, and the graph role each one prices. A ModelOpt exclusion
+# pattern is matched against these names (is_layer_excluded), not against the names the
+# checkpoint stores its tensors under: MiniMax-M2 stores its MoE under "block_sparse_moe"
+# and vLLM builds it as "mlp" (minimax_m2.py:285-288), so a pattern naming
+# "block_sparse_moe.gate" reaches no module vLLM has.
+#
+#   layer     the decoder layer's prefix, "{i}" the layer index;
+#   head      the lm_head's prefix;
+#   roles     graph role -> module path under the layer;
+#   shared    module paths the experts node's shared experts add (their widths must agree
+#             with the routed experts', or one node cannot price both);
+#   prefix    the loader's orig_to_new_prefix renames, which ModelOpt applies to the
+#             exclusion list (apply_vllm_mapper) as the loader applies it to tensor names;
+#   stacked   the loader's orig_to_new_stacked renames (the same).
+MODELOPT_MODULES: dict[str, dict[str, Any]] = {
+    # The text decoder of a vision-language model is a DeepseekV2ForCausalLM under the
+    # prefix "language_model" (kimi_k25.py:376-381@v0.32.0); the legacy NVFP4 spelling
+    # "language_model.layers." is renamed to "language_model.model.layers." (:311-318). The
+    # latent attention is one module (deepseek_v2.py:1052-1110), a dense layer's MLP is
+    # "mlp" and a sparse layer's experts "mlp.experts" with the shared experts at
+    # "mlp.shared_experts" (DeepseekV2MoE, :291-390). The router is a GateLinear built
+    # without a quant config (:321-326), so it is not a node.
+    "KimiK25ForConditionalGeneration": {
+        "layer": "language_model.model.layers.{i}.",
+        "head": "language_model.lm_head",
+        "roles": {
+            "qkv_a_proj": "self_attn.fused_qkv_a_proj",
+            "q_a_proj": "self_attn.fused_qkv_a_proj",
+            "kv_a_proj": "self_attn.kv_a_proj_with_mqa",
+            "q_b_proj": "self_attn.q_b_proj",
+            "q_proj": "self_attn.q_proj",
+            "kv_b_proj": "self_attn.kv_b_proj",
+            "o_proj": "self_attn.o_proj",
+            "mlp_gate_up": "mlp.gate_up_proj",
+            "mlp_down": "mlp.down_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": ("mlp.shared_experts.gate_up_proj", "mlp.shared_experts.down_proj"),
+        "prefix": {"language_model.layers.": "language_model.model.layers."},
+        "stacked": {},
+    },
+    # MiniMaxM2ForCausalLM: attention is self_attn.qkv_proj and o_proj, the MoE is built
+    # as "mlp" (minimax_m2.py:249-288) whatever the checkpoint calls it, its experts a
+    # FusedMoE at ".experts" and its router a GateLinear with no quant config (:110-117).
+    "MiniMaxM2ForCausalLM": {
+        "layer": "model.layers.{i}.",
+        "head": "lm_head",
+        "roles": {
+            "qkv_proj": "self_attn.qkv_proj",
+            "o_proj": "self_attn.o_proj",
+            "experts": "mlp.experts",
+        },
+        "shared": (),
+        "prefix": {},
+        "stacked": {".q_proj": ".qkv_proj", ".k_proj": ".qkv_proj",
+                    ".v_proj": ".qkv_proj"},
+    },
+}
+
+
+def expand_stack(stack: dict[str, Any]) -> list[str]:
+    """The layer-kind id of every layer, in order."""
+    return (list(stack.get("prologue", [])) + list(stack.get("pattern", []))
+            * int(stack.get("repeat", 0)) + list(stack.get("epilogue", [])))
+
+
+def modelopt_config_exclusions(quant: dict[str, Any], model: str) -> tuple[str, list[str]]:
+    """The quant_algo and exclusion list vLLM v0.32.0 reads from a ModelOpt block that
+    config.json carries, and a refusal for a block it would read differently.
+
+    from_config takes the form with a "quantization" mapping (hf_quant_config.json's) from
+    its exclude_modules, and the config.json form from `ignore` alone
+    (ModelOptQuantConfigBase.from_config, modelopt.py:320-406@v0.32.0). A config.json block
+    that names `exclude_modules` and no `ignore` therefore quantizes every module there,
+    where a vLLM that also reads `exclude_modules` (vllm-project/vllm 0f6b2619) leaves the
+    named ones alone: the same file prices two ways, so it is refused."""
+    if "quantization" in quant:
+        inner = quant["quantization"]
+        if not isinstance(inner, dict):
+            raise DeriveError(f"{model}: quantization_config.quantization is not a mapping")
+        algo, listed = inner.get("quant_algo"), inner.get("exclude_modules", [])
+    else:
+        algo, listed = quant.get("quant_algo"), quant.get("ignore", [])
+        if "exclude_modules" in quant and "ignore" not in quant:
+            raise DeriveError(
+                f"{model}: the ModelOpt block names exclude_modules and no `ignore`; "
+                f"vLLM v0.32.0 reads `ignore` alone from config.json and so quantizes every "
+                f"module, where a later vLLM reads exclude_modules too -- one file, two "
+                f"layouts, so it is not priced")
+    if not algo:
+        raise DeriveError(f"{model}: the ModelOpt block states no quant_algo, which vLLM "
+                          f"refuses")
+    if not isinstance(listed, list) or not all(isinstance(p, str) for p in listed):
+        raise DeriveError(f"{model}: ModelOpt exclusion list {listed!r} is not a list of "
+                          f"names")
+    return str(algo).upper(), listed
+
+
+def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str) -> tuple[str, Any]:
+    """The width a ModelOpt checkpoint's quantized modules store, and a predicate
+    `quantized(prefix)` that answers for a module vLLM names `prefix`.
+
+    The predicate is vLLM's: a module the exclusion list names (is_layer_excluded) stays
+    unquantized, every other linear and every FusedMoE is quantized
+    (ModelOptQuantConfigBase.get_quant_method, modelopt.py:224-262@v0.32.0). Only a
+    uniform NVFP4 layout is read. MIXED_PRECISION chooses the algorithm per layer from a
+    `quantized_layers` map and is not placed here."""
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this "
+                          f"handler reads ModelOpt's layout")
+    algo, listed = modelopt_config_exclusions(quant, model)
+    if algo == "MIXED_PRECISION":
+        raise DeriveError(
+            f"{model}: quant_algo MIXED_PRECISION picks the algorithm per layer from a "
+            f"quantized_layers map, which this handler does not place; only a uniform "
+            f"NVFP4 layout is priced")
+    width = QUANT_ALGOS.get(algo)
+    if width is None:
+        raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is not one this deriver "
+                          f"maps")
+    if width != "nvfp4":
+        raise DeriveError(f"{model}: ModelOpt quant_algo {algo!r} is {width}; only the "
+                          f"NVFP4 layout is placed node by node")
+    # NVFP4 shares an FP8 scale over 16 elements; another group would store other bytes.
+    groups = [(g or {}).get("weights") or {}
+              for g in (quant.get("config_groups") or {}).values()]
+    if any(w.get("group_size") not in (None, 16) for w in groups):
+        raise DeriveError(f"{model}: an NVFP4 weight group of "
+                          f"{sorted({w.get('group_size') for w in groups})}, not 16")
+    spec = MODELOPT_MODULES[arch]
+    patterns = []
+    for p in listed:
+        # The loader's renames reach the list in the order it applies them to a name:
+        # stacked, then prefix (WeightsMapper._map_name_with_shard).
+        for old, new in spec["stacked"].items():
+            if old in p:
+                p = p.replace(old, new, 1)
+        for old, new in spec["prefix"].items():
+            if p.startswith(old):
+                p = p.replace(old, new, 1)
+        patterns.append(p)
+    excluded = modelopt_exclusions({"ignore": patterns})
+    return width, lambda prefix: not modelopt_excluded(prefix, excluded)
+
+
+def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
+                          raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+    """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
+
+    The global width stays the base dtype and a quantized node carries the quantized one,
+    as the node-by-node placement of Muse Spark does. Every layer a kind covers is asked,
+    and a role the list quantizes on some of those layers and not on others is refused:
+    one node cannot price both (a wildcard that excludes a role on some layers only needs
+    a layer kind per outcome, which no committed checkpoint states)."""
+    arch = architecture_of(raw, model)
+    spec = MODELOPT_MODULES[arch]
+    width, quantized = modelopt_placed_width(raw, model, arch)
+    if quantized(spec["head"]):
+        raise DeriveError(f"{model}: the ModelOpt list leaves {spec['head']} quantized; "
+                          f"the head is priced at the base width")
+    layers_of: dict[str, list[int]] = {}
+    for i, kid in enumerate(expand_stack(stack)):
+        layers_of.setdefault(kid, []).append(i)
+    out = []
+    for kind in kinds:
+        idx = layers_of.get(kind["id"], [])
+        nodes = []
+        for node in kind["nodes"]:
+            role = node.get("role")
+            if node["op"] not in ("GEMM", "GroupedGEMM") or not idx:
+                nodes.append(node)
+                continue
+            if role not in spec["roles"]:
+                raise DeriveError(f"{model}: {arch} has no recorded vLLM module for the "
+                                  f"{role!r} node, so the ModelOpt list cannot place it")
+            paths = [spec["roles"][role]]
+            if role == "experts" and node.get("shared_experts"):
+                paths += list(spec["shared"])
+            answers = {}
+            for path in paths:
+                answers[path] = {i: quantized(spec["layer"].format(i=i) + path) for i in idx}
+            flat = {a for per in answers.values() for a in per.values()}
+            if len(flat) != 1:
+                where = {p: sorted(i for i, a in per.items() if a)
+                         for p, per in answers.items()}
+                raise DeriveError(
+                    f"{model}: layer kind {kind['id']!r} runs {role!r} quantized on some "
+                    f"of its layers and not others (quantized layers by module: {where}); "
+                    f"one node cannot price both")
+            if flat == {True}:
+                node = dict(node, weight_dtype=width)
+            nodes.append(node)
+        out.append(dict(kind, nodes=nodes))
+    return out
+
+
 def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     """Return the graph's dtype name for the model's parameters.
 
@@ -424,10 +626,11 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         # ModelOpt states its format as quant_algo beside quant_method "modelopt" and
         # quantizes every module its exclusion list does not name (modelopt_exclusions).
         # Which modules those are is a question about the architecture's module tree, so
-        # one global width is right only where a handler answers it node by node. Muse
-        # Spark's does: its global width is the base, and it carries NVFP4 on the expert
-        # nodes the list leaves quantized. Any other architecture is refused, as it was
-        # before that handler existed, rather than priced at the base throughout.
+        # one global width is right only where a handler answers it node by node
+        # (MODELOPT_PER_NODE_ARCHS). Muse Spark's, Kimi-K2.5's and MiniMax-M2's do: the
+        # global width is the base, and each node carries NVFP4 where the list leaves its
+        # module quantized. Any other architecture is refused rather than priced at the
+        # base throughout.
         if fmt == "modelopt" and quant.get("quant_algo"):
             algo = QUANT_ALGOS.get(str(quant["quant_algo"]).upper())
             if algo is None:
@@ -1837,7 +2040,24 @@ def handler_minimax_m2(cfg, raw, model):
                 f"a uniform stack; a mixed one needs its kinds named and priced rather "
                 f"than collapsed to one"
             )
-    return handler_moe(cfg, raw, model)
+    result = handler_moe(cfg, raw, model)
+    return modelopt_placed(result, raw, model)
+
+
+def modelopt_placed(result, raw, model):
+    """A handler result with the widths a ModelOpt checkpoint stores, or the result as it
+    is for a checkpoint that is not ModelOpt."""
+    quant = raw.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return result
+    kinds = modelopt_place_widths(result[0], result[1], raw, model)
+    return (kinds, *result[1:])
+
+
+def handler_kimi_k25(cfg, raw, model):
+    """Kimi-K2.5: the DeepSeek family's latent attention and routed experts under a vision
+    tower, priced by handler_moe, with a ModelOpt checkpoint's widths placed node by node."""
+    return modelopt_placed(handler_moe(cfg, raw, model), raw, model)
 
 
 # DeepSeek-V4's KV record, the same on SM90 and SM100: 448 FP8 NoPE dims, 64 BF16 RoPE
@@ -3306,7 +3526,7 @@ def handler_deepseek_v41(cfg, raw, model):
     # every block position (aliased, dspark.py:279-282, 341-347). Then the Markov head
     # once per draft position, in order, over one row per request: an embedding of the
     # previous token and a (vocab, markov_rank) BF16 projection (speculator.py:156-199;
-    # model_executor/models/qwen3_dspark.py:48-93), on its full path because
+    # model_executor/models/qwen3_dspark.py:48-94), on its full path because
     # dspark_draft_topk is unset and defaults to None (config/speculative.py:1503-1515).
     # The bias add and sampling over each vocab-wide row are not priced. The confidence
     # head is built but consulted only under adaptive verification
@@ -4495,7 +4715,7 @@ def handler_muse_spark_dspark(cfg, raw, model):
     pre-norm and K/V projection and cache insert, _project_muse_context_kv and
     precompute_and_store_context_kv, dspark.py:205-250); after it, the final norm and the
     drafter's own lm_head (has_own_lm_head, dspark.py:281, 305-309); then the Markov head once
-    per draft position (DSparkMarkovHead, qwen3_dspark.py:48-93), both of whose weights
+    per draft position (DSparkMarkovHead, qwen3_dspark.py:48-94), both of whose weights
     are replicated.
 
     NOT PRICED, each small: the drafter's token embedding, which it does not load and so
@@ -4833,7 +5053,7 @@ HANDLERS = {
     # a dense prologue from first_k_dense_replace. The vision tower is not priced, which the
     # graph records as modality text_decoder_of_multimodal; the corpus's workloads are all
     # text (1024:1024, 1024:8192, 8192:1024), so the tower never runs in these measurements.
-    "KimiK25ForConditionalGeneration": handler_moe,
+    "KimiK25ForConditionalGeneration": handler_kimi_k25,
 }
 
 
