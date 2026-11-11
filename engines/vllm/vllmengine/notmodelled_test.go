@@ -180,29 +180,25 @@ var noDefaultValue = map[string]string{
 // The test checks each really reaches the kernel's settings (vllmsettings.Of), so an entry cannot
 // outlive the kernel reading the key.
 var pricedByTheKernel = map[string]string{
-	"all2all_backend":                               "all2all_backend: allgather_reducescatter\n#75",
-	"disable_custom_all_reduce":                     "disable_custom_all_reduce: true\n#78",
-	"compilation_config.cudagraph_mode":             "cudagraph_mode: FULL\n#78",
-	"max_cudagraph_capture_size":                    "max_cudagraph_capture_size: 512\n#78",
-	"compilation_config.max_cudagraph_capture_size": "max_cudagraph_capture_size: 512\n#78",
-	"cudagraph_capture_sizes":                       "cudagraph_capture_sizes: [1, 2, 4]\n#78",
-	"compilation_config.cudagraph_capture_sizes":    "cudagraph_capture_sizes: [1, 2, 4]\n#78",
-	"disable_cascade_attn":                          "disable_cascade_attn: false\n#78",
-	"quantization":                                  "quantization: fp8\n#78",
-	"kv_cache_dtype":                                "cache_dtype: fp8\n#78",
-	"mamba_cache_dtype":                             "mamba_cache_dtype: float32\n#83",
-	"moe_backend":                                   "moe_backend: triton\n#77",
-	"kernel_config.moe_backend":                     "moe_backend: triton\n#77",
-	"gpu_memory_utilization":                        "gpu_memory_utilization: 0.8\n#73",
-	"enable_dbo":                                    "dbo: {enable_dbo: true}\n#74",
-	"enable_eplb":                                   "eplb: {enable_eplb: true}\n#76",
-	"eplb_config.num_redundant_experts":             "eplb: {enable_eplb: true, num_redundant_experts: 8}\n#76",
-	"engram_config.cpu_offload":                     "engram_config: {cpu_offload: false}\n#78",
-	"engram_config.dp_shared_memory":                "engram_config: {dp_shared_memory: true}\n#78",
-	"engram_config.use_thp":                         "engram_config: {use_thp: true}\n#78",
-	"dcp_comm_backend":                              "dcp_comm_backend: a2a\n#79",
-	"dcp_q_replicate":                               "dcp_q_replicate: true\n#8",
-	"cp_kv_cache_interleave_size":                   "cp_kv_cache_interleave_size: 4\n#8",
+	"all2all_backend":                            "all2all_backend: allgather_reducescatter\n#75",
+	"disable_custom_all_reduce":                  "disable_custom_all_reduce: true\n#78",
+	"compilation_config.cudagraph_mode":          "cudagraph_mode: FULL\n#78",
+	"cudagraph_capture_sizes":                    "cudagraph_capture_sizes: [1, 2, 4]\n#78",
+	"compilation_config.cudagraph_capture_sizes": "cudagraph_capture_sizes: [1, 2, 4]\n#78",
+	"disable_cascade_attn":                       "disable_cascade_attn: false\n#78",
+	"mamba_cache_dtype":                          "mamba_cache_dtype: float32\n#83",
+	"moe_backend":                                "moe_backend: triton\n#77",
+	"kernel_config.moe_backend":                  "moe_backend: triton\n#77",
+	"gpu_memory_utilization":                     "gpu_memory_utilization: 0.8\n#73",
+	"enable_dbo":                                 "dbo: {enable_dbo: true}\n#74",
+	"enable_eplb":                                "eplb: {enable_eplb: true}\n#76",
+	"eplb_config.num_redundant_experts":          "eplb: {enable_eplb: true, num_redundant_experts: 8}\n#76",
+	"engram_config.cpu_offload":                  "engram_config: {cpu_offload: false}\n#78",
+	"engram_config.dp_shared_memory":             "engram_config: {dp_shared_memory: true}\n#78",
+	"engram_config.use_thp":                      "engram_config: {use_thp: true}\n#78",
+	"dcp_comm_backend":                           "dcp_comm_backend: a2a\n#79",
+	"dcp_q_replicate":                            "dcp_q_replicate: true\n#8",
+	"cp_kv_cache_interleave_size":                "cp_kv_cache_interleave_size: 4\n#8",
 	// Reachable only through Spec.Config: a deployment cannot state them, because
 	// deployment.PDTransfer has the connector alone and offload.connector_options refuses all but
 	// blocks_per_chunk (offloadOf). blis-vllm#89.
@@ -214,9 +210,7 @@ var pricedByTheKernel = map[string]string{
 // on the model, so the engine accepts them. Each value is a snippet the d079 deployment (a
 // text-only model) builds with, and the rule's test is named beside it. The entry is unused once
 // the field is classed modelled.
-var readByTheEngine = map[string]struct{ snippet, test string }{
-	"language_model_only": {"language_model_only: true\n", "compat/kernelmodel TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower"},
-}
+var readByTheEngine = map[string]struct{ snippet, test string }{}
 
 func fieldList(t *testing.T) []fields.Field {
 	t.Helper()

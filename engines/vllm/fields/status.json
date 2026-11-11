@@ -799,9 +799,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.mode": {
    "estimation": {
@@ -1595,9 +1599,12 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/ep_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:enable_fault_tolerance": {
    "estimation": {
@@ -2390,9 +2397,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "core/kv/pool_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "vllmengine/pool_oracle_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:kv_cache_dtype_skip_layers": {
    "estimation": {
@@ -2623,9 +2634,11 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#82"
+    "traces": [
+     "compat/kernelmodel/language_model_only_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:limit_mm_per_prompt": {
    "estimation": {
@@ -2879,9 +2892,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:max_log_len": {
    "estimation": {
@@ -3801,9 +3818,12 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/quantization_v4_test.go",
+     "oracle/quantization/resolved.json"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:quantization_config.ignore": {
    "estimation": {

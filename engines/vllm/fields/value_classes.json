@@ -826,6 +826,362 @@
     "name": "block_size"
    }
   },
+  "compilation_config.max_cudagraph_capture_size": {
+   "value_classes": {
+    "type": "numeric",
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 8,
+      "closed": "above"
+     },
+     {
+      "value": 256,
+      "closed": "above"
+     }
+    ],
+    "covered_classes": [
+     1,
+     2,
+     3
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2448"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 8,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2448",
+       "vllm/config/vllm.py:2476"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     },
+     {
+      "lo": 8,
+      "hi": 256,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2476",
+       "vllm/config/vllm.py:2481"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     },
+     {
+      "lo": 256,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2481"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     }
+    ],
+    "relations": [
+     {
+      "at": "vllm/config/compilation.py:1153",
+      "expr": "self.cudagraph_capture_sizes[-1] == self.max_cudagraph_capture_size",
+      "with": "self.cudagraph_capture_sizes[-1]"
+     },
+     {
+      "at": "vllm/config/compilation.py:1540",
+      "expr": "round_up(size, multiple_of) <= self.max_cudagraph_capture_size",
+      "with": "round_up(size, multiple_of)"
+     },
+     {
+      "at": "vllm/config/compilation.py:1544",
+      "expr": "multiple_of <= self.max_cudagraph_capture_size",
+      "with": "multiple_of"
+     },
+     {
+      "at": "vllm/config/vllm.py:2440",
+      "expr": "n * query_len <= max_cudagraph_capture_size",
+      "with": "n * query_len"
+     },
+     {
+      "at": "vllm/config/vllm.py:2443",
+      "expr": "max_num_seqs <= max_cudagraph_capture_size",
+      "with": "max_num_seqs"
+     },
+     {
+      "at": "vllm/config/vllm.py:2474",
+      "expr": "i <= max_cudagraph_capture_size",
+      "with": "i"
+     },
+     {
+      "at": "vllm/config/vllm.py:2488",
+      "expr": "max_num_tokens <= max_cudagraph_capture_size",
+      "with": "max_num_tokens"
+     },
+     {
+      "at": "vllm/config/vllm.py:2508",
+      "expr": "self.compilation_config.max_cudagraph_capture_size != valid_max_size",
+      "with": "valid_max_size"
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:854",
+      "expr": "num_actual_tokens <= self.max_cudagraph_size",
+      "with": "num_actual_tokens"
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashattn_mla.py:230",
+      "expr": "num_decode_tokens <= self.max_cudagraph_size",
+      "with": "num_decode_tokens"
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:100",
+      "expr": "size <= max_size",
+      "with": "size"
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:276",
+      "expr": "num_tokens > max_size",
+      "with": "num_tokens"
+     },
+     {
+      "at": "vllm/v1/worker/gpu/cudagraph_utils.py:323",
+      "expr": "rounded_num_tokens > max_cg_capture_size",
+      "with": "rounded_num_tokens"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/config/compilation.py:1535",
+      "expr": "self.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2354",
+      "expr": "max_cudagraph_capture_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2448",
+      "expr": "max_cudagraph_capture_size >= 1",
+      "op": "GtE",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2476",
+      "expr": "max_cudagraph_capture_size >= 8",
+      "op": "GtE",
+      "values": [
+       8
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2481",
+      "expr": "max_cudagraph_capture_size >= 256",
+      "op": "GtE",
+      "values": [
+       256
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2507",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2797",
+      "expr": "compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:479",
+      "expr": "compilation_config.max_cudagraph_capture_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:755",
+      "expr": "self.max_cudagraph_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:853",
+      "expr": "self.max_cudagraph_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flashinfer.py:797",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/gdn_attn.py:147",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/linear_attn.py:139",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mamba_attn.py:116",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashattn_mla.py:164",
+      "expr": "self.max_cudagraph_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashattn_mla.py:229",
+      "expr": "self.max_cudagraph_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/tokenspeed_mla.py:244",
+      "expr": "config.compilation_config.max_cudagraph_capture_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/short_conv_attn.py:129",
+      "expr": "max_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/ops/dcp.py:1023",
+      "expr": "vllm_config.compilation_config.max_cudagraph_capture_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:75",
+      "expr": "max_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:275",
+      "expr": "max_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/spec_decode/dflash.py:43",
+      "expr": "vllm_config.compilation_config.max_cudagraph_capture_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 2,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 16,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 300,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 1000,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 1024,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 2048,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "compilation_config.max_cudagraph_capture_size"
+   }
+  },
   "data_parallel_size": {
    "value_classes": {
     "type": "numeric",
@@ -2024,6 +2380,548 @@
     "name": "enable_chunked_prefill"
    }
   },
+  "enable_expert_parallel": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/config/model.py:1553",
+       "vllm/config/parallel.py:565",
+       "vllm/config/parallel.py:778",
+       "vllm/config/parallel.py:788",
+       "vllm/config/parallel.py:799",
+       "vllm/config/speculative.py:1775",
+       "vllm/distributed/device_communicators/all2all.py:80",
+       "vllm/lora/model_manager.py:162",
+       "vllm/model_executor/layers/fused_moe/config.py:1191",
+       "vllm/model_executor/model_loader/default_loader.py:435",
+       "vllm/model_executor/models/gpt_oss.py:1016",
+       "vllm/model_executor/models/gpt_oss.py:1039",
+       "vllm/model_executor/models/gpt_oss.py:1056",
+       "vllm/model_executor/models/gpt_oss.py:1212",
+       "vllm/model_executor/models/gpt_oss.py:1225",
+       "vllm/model_executor/models/gpt_oss.py:1238",
+       "vllm/model_executor/models/gpt_oss.py:1249",
+       "vllm/model_executor/models/gpt_oss.py:602",
+       "vllm/model_executor/models/gpt_oss.py:620",
+       "vllm/model_executor/models/gpt_oss.py:650",
+       "vllm/model_executor/models/gpt_oss.py:673",
+       "vllm/model_executor/models/gpt_oss.py:692",
+       "vllm/model_executor/models/gpt_oss.py:712",
+       "vllm/model_executor/models/gpt_oss.py:766",
+       "vllm/model_executor/models/gpt_oss.py:919",
+       "vllm/model_executor/models/gpt_oss.py:957",
+       "vllm/model_executor/models/gpt_oss.py:986",
+       "vllm/models/deepseek_v4/amd/model.py:222",
+       "vllm/models/deepseek_v4/amd/model.py:518",
+       "vllm/models/deepseek_v4/amd/model.py:535",
+       "vllm/models/deepseek_v4/amd/model.py:549",
+       "vllm/models/deepseek_v4/nvidia/model.py:1055",
+       "vllm/models/deepseek_v4/nvidia/model.py:1304",
+       "vllm/models/deepseek_v4/nvidia/model.py:686",
+       "vllm/models/deepseek_v4/xpu/model.py:604",
+       "vllm/models/deepseek_v4/xpu/model.py:970",
+       "vllm/models/deepseek_v41/amd/model.py:426",
+       "vllm/models/deepseek_v41/amd/mono_decode.py:103",
+       "vllm/models/deepseek_v41/nvidia/model.py:253",
+       "vllm/models/deepseek_v41/nvidia/model.py:677",
+       "vllm/models/deepseek_v41/nvidia/ops/mhc.py:64",
+       "vllm/models/glm5next/common/model.py:1319",
+       "vllm/models/inkling/amd/moe.py:272",
+       "vllm/models/inkling/nvidia/moe.py:269",
+       "vllm/models/kimi_k3/nvidia/model.py:1130",
+       "vllm/models/kimi_k3/nvidia/model.py:580",
+       "vllm/models/kimi_k3/nvidia/model.py:599",
+       "vllm/models/kimi_k3/nvidia/model.py:885",
+       "vllm/models/minimax_m3/amd/model.py:400",
+       "vllm/v1/worker/ubatch_utils.py:100"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/config/model.py:1553",
+       "vllm/config/parallel.py:565",
+       "vllm/config/parallel.py:778",
+       "vllm/config/parallel.py:788",
+       "vllm/config/parallel.py:799",
+       "vllm/config/speculative.py:1775",
+       "vllm/distributed/device_communicators/all2all.py:80",
+       "vllm/lora/model_manager.py:162",
+       "vllm/model_executor/layers/fused_moe/config.py:1191",
+       "vllm/model_executor/model_loader/default_loader.py:435",
+       "vllm/model_executor/models/gpt_oss.py:1016",
+       "vllm/model_executor/models/gpt_oss.py:1039",
+       "vllm/model_executor/models/gpt_oss.py:1056",
+       "vllm/model_executor/models/gpt_oss.py:1212",
+       "vllm/model_executor/models/gpt_oss.py:1225",
+       "vllm/model_executor/models/gpt_oss.py:1238",
+       "vllm/model_executor/models/gpt_oss.py:1249",
+       "vllm/model_executor/models/gpt_oss.py:602",
+       "vllm/model_executor/models/gpt_oss.py:620",
+       "vllm/model_executor/models/gpt_oss.py:650",
+       "vllm/model_executor/models/gpt_oss.py:673",
+       "vllm/model_executor/models/gpt_oss.py:692",
+       "vllm/model_executor/models/gpt_oss.py:712",
+       "vllm/model_executor/models/gpt_oss.py:766",
+       "vllm/model_executor/models/gpt_oss.py:919",
+       "vllm/model_executor/models/gpt_oss.py:957",
+       "vllm/model_executor/models/gpt_oss.py:986",
+       "vllm/models/deepseek_v4/amd/model.py:222",
+       "vllm/models/deepseek_v4/amd/model.py:518",
+       "vllm/models/deepseek_v4/amd/model.py:535",
+       "vllm/models/deepseek_v4/amd/model.py:549",
+       "vllm/models/deepseek_v4/nvidia/model.py:1055",
+       "vllm/models/deepseek_v4/nvidia/model.py:1304",
+       "vllm/models/deepseek_v4/nvidia/model.py:686",
+       "vllm/models/deepseek_v4/xpu/model.py:604",
+       "vllm/models/deepseek_v4/xpu/model.py:970",
+       "vllm/models/deepseek_v41/amd/model.py:426",
+       "vllm/models/deepseek_v41/amd/mono_decode.py:103",
+       "vllm/models/deepseek_v41/nvidia/model.py:253",
+       "vllm/models/deepseek_v41/nvidia/model.py:677",
+       "vllm/models/deepseek_v41/nvidia/ops/mhc.py:64",
+       "vllm/models/glm5next/common/model.py:1319",
+       "vllm/models/inkling/amd/moe.py:272",
+       "vllm/models/inkling/nvidia/moe.py:269",
+       "vllm/models/kimi_k3/nvidia/model.py:1130",
+       "vllm/models/kimi_k3/nvidia/model.py:580",
+       "vllm/models/kimi_k3/nvidia/model.py:599",
+       "vllm/models/kimi_k3/nvidia/model.py:885",
+       "vllm/models/minimax_m3/amd/model.py:400",
+       "vllm/v1/worker/ubatch_utils.py:100"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/ep_oracle_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/model.py:1553",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:565",
+      "expr": "not self.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:778",
+      "expr": "self.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:788",
+      "expr": "self.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/parallel.py:799",
+      "expr": "self.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/speculative.py:1775",
+      "expr": "enable_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/distributed/device_communicators/all2all.py:80",
+      "expr": "self.use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/lora/model_manager.py:162",
+      "expr": "vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/fused_moe/config.py:1191",
+      "expr": "vllm_parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/default_loader.py:435",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:602",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:620",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:650",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:673",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:692",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:712",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:766",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:919",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:957",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:986",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1016",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1039",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1056",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1212",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1225",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1238",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/gpt_oss.py:1249",
+      "expr": "use_ep",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/amd/model.py:222",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/amd/model.py:518",
+      "expr": "not parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/amd/model.py:535",
+      "expr": "not parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/amd/model.py:549",
+      "expr": "not parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/model.py:686",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/model.py:1055",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/model.py:1304",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/xpu/model.py:604",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/xpu/model.py:970",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/amd/model.py:426",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/amd/mono_decode.py:103",
+      "expr": "pc.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/nvidia/model.py:253",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/nvidia/model.py:677",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/nvidia/ops/mhc.py:64",
+      "expr": "parallel.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/glm5next/common/model.py:1319",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/inkling/amd/moe.py:272",
+      "expr": "not parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/inkling/nvidia/moe.py:269",
+      "expr": "not parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/model.py:580",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/model.py:599",
+      "expr": "not vllm_config.parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/model.py:885",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/model.py:1130",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/minimax_m3/amd/model.py:400",
+      "expr": "not get_current_vllm_config().parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/ubatch_utils.py:100",
+      "expr": "parallel_config.enable_expert_parallel",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "compat/kernelmodel/ep_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "enable_expert_parallel"
+   }
+  },
   "enable_prefix_caching": {
    "value_classes": {
     "type": "boolean",
@@ -2276,6 +3174,583 @@
      }
     ],
     "name": "enable_prefix_caching"
+   }
+  },
+  "kv_cache_dtype": {
+   "value_classes": {
+    "type": "enumerated",
+    "values": [
+     "auto",
+     "float16",
+     "bfloat16",
+     "fp8",
+     "fp8_e4m3",
+     "fp8_e5m2",
+     "fp8_inc",
+     "fp8_ds_mla",
+     "nvfp4_ds_mla",
+     "turboquant_k8v4",
+     "turboquant_4bit_nc",
+     "turboquant_k3v4_nc",
+     "turboquant_3bit_nc",
+     "ultraquant_4bit",
+     "int4_per_token_head",
+     "int8_per_token_head",
+     "fp8_per_token_head",
+     "nvfp4",
+     "nvfp4_4over6"
+    ],
+    "covered": [
+     "fp8"
+    ]
+   },
+   "basis": {
+    "kind": "enumerated",
+    "classes": [
+     {
+      "values": [
+       "auto"
+      ],
+      "compared_at": [
+       "vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:249",
+       "vllm/model_executor/layers/attention/attention.py:288",
+       "vllm/model_executor/models/config.py:50",
+       "vllm/model_executor/models/extract_hidden_states.py:243",
+       "vllm/models/qwen4_exp/amd/qsa.py:189",
+       "vllm/models/qwen4_exp/nvidia/qsa.py:356",
+       "vllm/platforms/interface.py:876",
+       "vllm/platforms/interface.py:965",
+       "vllm/platforms/xpu.py:347",
+       "vllm/v1/worker/gpu/model_runner.py:213",
+       "vllm/v1/worker/gpu/model_states/encoder_only.py:51"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "bfloat16"
+      ],
+      "compared_at": [
+       "vllm/model_executor/models/config.py:38",
+       "vllm/model_executor/models/extract_hidden_states.py:243",
+       "vllm/models/qwen4_exp/amd/qsa.py:189",
+       "vllm/models/qwen4_exp/nvidia/qsa.py:356",
+       "vllm/platforms/xpu.py:347"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "float16"
+      ],
+      "compared_at": [
+       "vllm/model_executor/models/extract_hidden_states.py:243",
+       "vllm/platforms/xpu.py:347"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "fp8"
+      ],
+      "compared_at": [
+       "vllm/model_executor/layers/attention/attention.py:515",
+       "vllm/models/qwen4_exp/nvidia/qsa.py:356",
+       "vllm/v1/attention/backends/flash_attn.py:306",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:727",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:748",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:804",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla_sparse.py:507"
+      ],
+      "covered_by": [
+       "core/kv/pool_oracle_test.go"
+      ]
+     },
+     {
+      "values": [
+       "fp8_ds_mla"
+      ],
+      "compared_at": [
+       "vllm/model_executor/layers/attention/mla_attention.py:2426",
+       "vllm/models/deepseek_v4/attention.py:910",
+       "vllm/models/deepseek_v4/common/ops/fused_compress_quant_cache.py:1203",
+       "vllm/models/deepseek_v4/compressor.py:183",
+       "vllm/models/deepseek_v4/compressor.py:330",
+       "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:1718",
+       "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:2036",
+       "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:2044",
+       "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:440",
+       "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:930",
+       "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:938",
+       "vllm/models/deepseek_v41/attention.py:1212",
+       "vllm/models/dots3_note/nvidia/model.py:434",
+       "vllm/models/kimi_k3/nvidia/mla.py:1005",
+       "vllm/models/kimi_k3/nvidia/mla.py:376",
+       "vllm/models/kimi_k3/nvidia/mla.py:431",
+       "vllm/models/kimi_k3/nvidia/mla.py:495",
+       "vllm/models/kimi_k3/nvidia/mla.py:741",
+       "vllm/models/kimi_k3/nvidia/mla.py:942",
+       "vllm/v1/attention/backends/mla/flashmla_sparse.py:455",
+       "vllm/v1/attention/backends/mla/sparse_swa.py:120"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "fp8_e4m3"
+      ],
+      "compared_at": [
+       "vllm/model_executor/layers/attention/attention.py:515",
+       "vllm/models/qwen4_exp/nvidia/qsa.py:356",
+       "vllm/v1/attention/backends/flash_attn.py:306",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:727",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla_sparse.py:507"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "fp8_e5m2"
+      ],
+      "compared_at": [
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:727",
+       "vllm/v1/attention/backends/mla/rocm_aiter_mla_sparse.py:507"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "nvfp4_ds_mla"
+      ],
+      "compared_at": [
+       "vllm/models/deepseek_v41/attention.py:1212",
+       "vllm/v1/attention/backends/mla/sparse_swa.py:120"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "ultraquant_4bit"
+      ],
+      "compared_at": [
+       "vllm/platforms/interface.py:984",
+       "vllm/platforms/interface.py:993"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "fp8_inc",
+       "turboquant_k8v4",
+       "turboquant_4bit_nc",
+       "turboquant_k3v4_nc",
+       "turboquant_3bit_nc",
+       "int4_per_token_head",
+       "int8_per_token_head",
+       "fp8_per_token_head",
+       "nvfp4",
+       "nvfp4_4over6"
+      ],
+      "uncompared": true,
+      "compared_at": [],
+      "covered_by": []
+     }
+    ],
+    "enumeration": [
+     "auto",
+     "float16",
+     "bfloat16",
+     "fp8",
+     "fp8_e4m3",
+     "fp8_e5m2",
+     "fp8_inc",
+     "fp8_ds_mla",
+     "nvfp4_ds_mla",
+     "turboquant_k8v4",
+     "turboquant_4bit_nc",
+     "turboquant_k3v4_nc",
+     "turboquant_3bit_nc",
+     "ultraquant_4bit",
+     "int4_per_token_head",
+     "int8_per_token_head",
+     "fp8_per_token_head",
+     "nvfp4",
+     "nvfp4_4over6"
+    ],
+    "relations": [
+     {
+      "at": "vllm/models/deepseek_v41/attention.py:159",
+      "expr": "cache_config.cache_dtype != kv_cache_dtype",
+      "with": "kv_cache_dtype"
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashmla_sparse.py:392",
+      "expr": "cache_config.cache_dtype in QUANTIZED_DS_MLA_CACHE_FORMATS",
+      "with": "QUANTIZED_DS_MLA_CACHE_FORMATS"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py:123",
+      "expr": "vllm_config.cache_config.cache_dtype",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/distributed/kv_transfer/kv_connector/v1/offloading/config.py:249",
+      "expr": "vllm_config.cache_config.cache_dtype == \"auto\"",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/attention/attention.py:288",
+      "expr": "kv_cache_dtype == \"auto\"",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/attention/attention.py:515",
+      "expr": "self.kv_cache_dtype in {\"fp8\", \"fp8_e4m3\"}",
+      "op": "In",
+      "values": [
+       "fp8",
+       "fp8_e4m3"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/attention/mla_attention.py:2426",
+      "expr": "vllm_config.cache_config.cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:38",
+      "expr": "cache_config.cache_dtype == \"bfloat16\"",
+      "op": "Eq",
+      "values": [
+       "bfloat16"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:50",
+      "expr": "cache_config.cache_dtype == \"auto\"",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/extract_hidden_states.py:243",
+      "expr": "kv_cache_dtype in [\"auto\", \"bfloat16\", \"float16\"]",
+      "op": "In",
+      "values": [
+       "auto",
+       "bfloat16",
+       "float16"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/attention.py:910",
+      "expr": "vllm_config.cache_config.cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/common/ops/fused_compress_quant_cache.py:1203",
+      "expr": "cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/compressor.py:183",
+      "expr": "vllm_config.cache_config.cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/compressor.py:330",
+      "expr": "vllm_config.cache_config.cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:440",
+      "expr": "cache_config.cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:930",
+      "expr": "cache_config.cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:938",
+      "expr": "cache_config.cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:1718",
+      "expr": "cache_config.cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:2036",
+      "expr": "cache_config.cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v4/nvidia/ops/sparse_attn_compress_cutedsl.py:2044",
+      "expr": "cache_config.cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/deepseek_v41/attention.py:1212",
+      "expr": "vllm_config.cache_config.cache_dtype in ( \"fp8_ds_mla\", \"nvfp4_ds_mla\", )",
+      "op": "In",
+      "values": [
+       "fp8_ds_mla",
+       "nvfp4_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/dots3_note/nvidia/model.py:434",
+      "expr": "cache_config.cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/mla.py:376",
+      "expr": "self.kv_cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/mla.py:431",
+      "expr": "self.kv_cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/mla.py:495",
+      "expr": "self.kv_cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/mla.py:741",
+      "expr": "self.kv_cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/mla.py:942",
+      "expr": "self.kv_cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/kimi_k3/nvidia/mla.py:1005",
+      "expr": "self.kv_cache_dtype == \"fp8_ds_mla\"",
+      "op": "Eq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/amd/qsa.py:189",
+      "expr": "cache_config.cache_dtype not in (\"auto\", \"bfloat16\")",
+      "op": "NotIn",
+      "values": [
+       "auto",
+       "bfloat16"
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/qsa.py:356",
+      "expr": "cache_config.cache_dtype not in ( \"auto\", \"bfloat16\", \"fp8\", \"fp8_e4m3\", )",
+      "op": "NotIn",
+      "values": [
+       "auto",
+       "bfloat16",
+       "fp8",
+       "fp8_e4m3"
+      ]
+     },
+     {
+      "at": "vllm/platforms/interface.py:876",
+      "expr": "cache_config.cache_dtype != \"auto\"",
+      "op": "NotEq",
+      "values": [
+       "auto"
+      ]
+     },
+     {
+      "at": "vllm/platforms/interface.py:965",
+      "expr": "cache_config.cache_dtype == \"auto\"",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ]
+     },
+     {
+      "at": "vllm/platforms/interface.py:984",
+      "expr": "cache_config.cache_dtype == \"ultraquant_4bit\"",
+      "op": "Eq",
+      "values": [
+       "ultraquant_4bit"
+      ]
+     },
+     {
+      "at": "vllm/platforms/interface.py:993",
+      "expr": "cache_config.cache_dtype == \"ultraquant_4bit\"",
+      "op": "Eq",
+      "values": [
+       "ultraquant_4bit"
+      ]
+     },
+     {
+      "at": "vllm/platforms/xpu.py:347",
+      "expr": "cache_dtype not in (\"auto\", \"float16\", \"bfloat16\")",
+      "op": "NotIn",
+      "values": [
+       "auto",
+       "float16",
+       "bfloat16"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:306",
+      "expr": "vllm_config.cache_config.cache_dtype in ( \"fp8\", \"fp8_e4m3\", )",
+      "op": "In",
+      "values": [
+       "fp8",
+       "fp8_e4m3"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashmla_sparse.py:455",
+      "expr": "cache_config.cache_dtype != \"fp8_ds_mla\"",
+      "op": "NotEq",
+      "values": [
+       "fp8_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:727",
+      "expr": "kv_cache_dtype_str in (\"fp8\", \"fp8_e4m3\", \"fp8_e5m2\")",
+      "op": "In",
+      "values": [
+       "fp8",
+       "fp8_e4m3",
+       "fp8_e5m2"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:748",
+      "expr": "kv_cache_dtype_str == \"fp8\"",
+      "op": "Eq",
+      "values": [
+       "fp8"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/rocm_aiter_mla.py:804",
+      "expr": "kv_cache_dtype_str == \"fp8\"",
+      "op": "Eq",
+      "values": [
+       "fp8"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/rocm_aiter_mla_sparse.py:507",
+      "expr": "kv_cache_dtype_str in (\"fp8\", \"fp8_e4m3\", \"fp8_e5m2\")",
+      "op": "In",
+      "values": [
+       "fp8",
+       "fp8_e4m3",
+       "fp8_e5m2"
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/sparse_swa.py:120",
+      "expr": "self.cache_config.cache_dtype in ( \"fp8_ds_mla\", \"nvfp4_ds_mla\", )",
+      "op": "In",
+      "values": [
+       "fp8_ds_mla",
+       "nvfp4_ds_mla"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/model_runner.py:213",
+      "expr": "self.cache_config.cache_dtype != \"auto\"",
+      "op": "NotEq",
+      "values": [
+       "auto"
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/model_states/encoder_only.py:51",
+      "expr": "cache_config.cache_dtype == \"auto\"",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "fp8",
+      "trace": "core/kv/pool_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "kv_cache_dtype"
    }
   },
   "kv_events_config.enable_kv_cache_events": {
@@ -2970,6 +4445,188 @@
     "name": "kv_transfer_config.kv_role"
    }
   },
+  "language_model_only": {
+   "value_classes": {
+    "type": "boolean",
+    "covered": [
+     "true"
+    ]
+   },
+   "basis": {
+    "kind": "boolean",
+    "classes": [
+     {
+      "values": [
+       false
+      ],
+      "compared_at": [
+       "vllm/config/multimodal.py:699",
+       "vllm/config/vllm.py:1460",
+       "vllm/lora/model_manager.py:264",
+       "vllm/model_executor/models/config.py:948",
+       "vllm/models/qwen4_exp/amd/model.py:857",
+       "vllm/models/qwen4_exp/amd/model.py:880",
+       "vllm/models/qwen4_exp/amd/model.py:934",
+       "vllm/models/qwen4_exp/amd/model.py:996",
+       "vllm/models/qwen4_exp/amd/qsa.py:258",
+       "vllm/models/qwen4_exp/nvidia/model.py:1013",
+       "vllm/models/qwen4_exp/nvidia/model.py:1067",
+       "vllm/models/qwen4_exp/nvidia/model.py:1129",
+       "vllm/models/qwen4_exp/nvidia/model.py:990",
+       "vllm/models/qwen4_exp/nvidia/qsa.py:437"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       true
+      ],
+      "compared_at": [
+       "vllm/config/multimodal.py:699",
+       "vllm/config/vllm.py:1460",
+       "vllm/lora/model_manager.py:264",
+       "vllm/model_executor/models/config.py:948",
+       "vllm/models/qwen4_exp/amd/model.py:857",
+       "vllm/models/qwen4_exp/amd/model.py:880",
+       "vllm/models/qwen4_exp/amd/model.py:934",
+       "vllm/models/qwen4_exp/amd/model.py:996",
+       "vllm/models/qwen4_exp/amd/qsa.py:258",
+       "vllm/models/qwen4_exp/nvidia/model.py:1013",
+       "vllm/models/qwen4_exp/nvidia/model.py:1067",
+       "vllm/models/qwen4_exp/nvidia/model.py:1129",
+       "vllm/models/qwen4_exp/nvidia/model.py:990",
+       "vllm/models/qwen4_exp/nvidia/qsa.py:437"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/language_model_only_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/multimodal.py:699",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:1460",
+      "expr": "self.model_config.multimodal_config.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/lora/model_manager.py:264",
+      "expr": "vllm_config.model_config.multimodal_config.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:948",
+      "expr": "multimodal_config.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/amd/model.py:857",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/amd/model.py:880",
+      "expr": "not self.language_model_only",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/amd/model.py:934",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/amd/model.py:996",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/amd/qsa.py:258",
+      "expr": "mm_config.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/model.py:990",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/model.py:1013",
+      "expr": "not self.language_model_only",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/model.py:1067",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/model.py:1129",
+      "expr": "self.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/qsa.py:437",
+      "expr": "mm_config.language_model_only",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": true,
+      "trace": "compat/kernelmodel/language_model_only_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "language_model_only"
+   }
+  },
   "long_prefill_token_threshold": {
    "value_classes": {
     "type": "numeric",
@@ -3091,6 +4748,370 @@
      }
     ],
     "name": "long_prefill_token_threshold_adaptive"
+   }
+  },
+  "max_cudagraph_capture_size": {
+   "value_classes": {
+    "type": "numeric",
+    "thresholds": [
+     {
+      "value": 1,
+      "closed": "above"
+     },
+     {
+      "value": 8,
+      "closed": "above"
+     },
+     {
+      "value": 256,
+      "closed": "above"
+     }
+    ],
+    "covered_classes": [
+     1,
+     2,
+     3
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": 1,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2448"
+      ],
+      "covered_by": []
+     },
+     {
+      "lo": 1,
+      "hi": 8,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2448",
+       "vllm/config/vllm.py:2476"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     },
+     {
+      "lo": 8,
+      "hi": 256,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2476",
+       "vllm/config/vllm.py:2481"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     },
+     {
+      "lo": 256,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/config/vllm.py:2481"
+      ],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     }
+    ],
+    "relations": [
+     {
+      "at": "vllm/config/compilation.py:1153",
+      "expr": "self.cudagraph_capture_sizes[-1] == self.max_cudagraph_capture_size",
+      "with": "self.cudagraph_capture_sizes[-1]"
+     },
+     {
+      "at": "vllm/config/compilation.py:1540",
+      "expr": "round_up(size, multiple_of) <= self.max_cudagraph_capture_size",
+      "with": "round_up(size, multiple_of)"
+     },
+     {
+      "at": "vllm/config/compilation.py:1544",
+      "expr": "multiple_of <= self.max_cudagraph_capture_size",
+      "with": "multiple_of"
+     },
+     {
+      "at": "vllm/config/vllm.py:2440",
+      "expr": "n * query_len <= max_cudagraph_capture_size",
+      "with": "n * query_len"
+     },
+     {
+      "at": "vllm/config/vllm.py:2443",
+      "expr": "max_num_seqs <= max_cudagraph_capture_size",
+      "with": "max_num_seqs"
+     },
+     {
+      "at": "vllm/config/vllm.py:2474",
+      "expr": "i <= max_cudagraph_capture_size",
+      "with": "i"
+     },
+     {
+      "at": "vllm/config/vllm.py:2488",
+      "expr": "max_num_tokens <= max_cudagraph_capture_size",
+      "with": "max_num_tokens"
+     },
+     {
+      "at": "vllm/config/vllm.py:2508",
+      "expr": "self.compilation_config.max_cudagraph_capture_size != valid_max_size",
+      "with": "valid_max_size"
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:854",
+      "expr": "num_actual_tokens <= self.max_cudagraph_size",
+      "with": "num_actual_tokens"
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashattn_mla.py:230",
+      "expr": "num_decode_tokens <= self.max_cudagraph_size",
+      "with": "num_decode_tokens"
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:100",
+      "expr": "size <= max_size",
+      "with": "size"
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:276",
+      "expr": "num_tokens > max_size",
+      "with": "num_tokens"
+     },
+     {
+      "at": "vllm/v1/worker/gpu/cudagraph_utils.py:323",
+      "expr": "rounded_num_tokens > max_cg_capture_size",
+      "with": "rounded_num_tokens"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/config/compilation.py:1535",
+      "expr": "self.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2354",
+      "expr": "max_cudagraph_capture_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2448",
+      "expr": "max_cudagraph_capture_size >= 1",
+      "op": "GtE",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2476",
+      "expr": "max_cudagraph_capture_size >= 8",
+      "op": "GtE",
+      "values": [
+       8
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2481",
+      "expr": "max_cudagraph_capture_size >= 256",
+      "op": "GtE",
+      "values": [
+       256
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2507",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2796",
+      "expr": "self.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2797",
+      "expr": "compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:479",
+      "expr": "compilation_config.max_cudagraph_capture_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:755",
+      "expr": "self.max_cudagraph_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flash_attn.py:853",
+      "expr": "self.max_cudagraph_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flashinfer.py:797",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/gdn_attn.py:147",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/linear_attn.py:139",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mamba_attn.py:116",
+      "expr": "self.compilation_config.max_cudagraph_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashattn_mla.py:164",
+      "expr": "self.max_cudagraph_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/flashattn_mla.py:229",
+      "expr": "self.max_cudagraph_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/tokenspeed_mla.py:244",
+      "expr": "config.compilation_config.max_cudagraph_capture_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/short_conv_attn.py:129",
+      "expr": "max_capture_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/ops/dcp.py:1023",
+      "expr": "vllm_config.compilation_config.max_cudagraph_capture_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:75",
+      "expr": "max_size is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:275",
+      "expr": "max_size is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/spec_decode/dflash.py:43",
+      "expr": "vllm_config.compilation_config.max_cudagraph_capture_size",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 2,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 16,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 300,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 1000,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 1024,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 2048,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "max_cudagraph_capture_size"
    }
   },
   "max_loras": {
@@ -4675,6 +6696,325 @@
      }
     ],
     "name": "prefill_schedule_interval"
+   }
+  },
+  "quantization": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "deepseek_v4_fp8"
+    ]
+   },
+   "basis": {
+    "kind": "open",
+    "classes": [
+     {
+      "values": [
+       "compressed-tensors"
+      ],
+      "compared_at": [
+       "vllm/config/model.py:2299"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "fp8"
+      ],
+      "compared_at": [
+       "vllm/model_executor/model_loader/weight_utils.py:351"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "humming"
+      ],
+      "compared_at": [
+       "vllm/config/model.py:1405"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "modelopt"
+      ],
+      "compared_at": [
+       "vllm/model_executor/model_loader/weight_utils.py:386"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "modelopt_fp4"
+      ],
+      "compared_at": [
+       "vllm/config/model.py:2287"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "modelopt_mixed"
+      ],
+      "compared_at": [
+       "vllm/config/model.py:2293",
+       "vllm/model_executor/model_loader/weight_utils.py:269",
+       "vllm/model_executor/model_loader/weight_utils.py:386"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "torchao"
+      ],
+      "compared_at": [
+       "vllm/model_executor/model_loader/default_loader.py:486",
+       "vllm/model_executor/model_loader/utils.py:208"
+      ],
+      "covered_by": []
+     },
+     {
+      "other": true,
+      "compared_at": [],
+      "covered_by": [
+       "compat/kernelmodel/quantization_v4_test.go"
+      ]
+     },
+     {
+      "unset": true,
+      "compared_at": [
+       "vllm/config/model.py:1372",
+       "vllm/config/model.py:1441",
+       "vllm/config/model.py:1451",
+       "vllm/config/vllm.py:2033",
+       "vllm/config/vllm.py:789",
+       "vllm/config/vllm.py:892",
+       "vllm/distributed/weight_transfer/m2n_engine.py:255",
+       "vllm/model_executor/model_loader/default_loader.py:508",
+       "vllm/model_executor/model_loader/default_loader.py:517",
+       "vllm/model_executor/model_loader/reload/inplace.py:117",
+       "vllm/model_executor/model_loader/tensorizer.py:298",
+       "vllm/model_executor/model_loader/weight_utils.py:195",
+       "vllm/platforms/xpu.py:337"
+      ],
+      "covered_by": []
+     }
+    ],
+    "relations": [
+     {
+      "at": "vllm/config/model.py:1443",
+      "expr": "self.quantization != quant_method",
+      "with": "quant_method"
+     },
+     {
+      "at": "vllm/config/model.py:1452",
+      "expr": "self.quantization not in supported_quantization",
+      "with": "supported_quantization"
+     },
+     {
+      "at": "vllm/config/model.py:1459",
+      "expr": "self.quantization in me_quant.DEPRECATED_QUANTIZATION_METHODS",
+      "with": "me_quant.DEPRECATED_QUANTIZATION_METHODS"
+     },
+     {
+      "at": "vllm/model_executor/model_loader/weight_utils.py:359",
+      "expr": "model_config.quantization in _ONLINE_SHORTHANDS",
+      "with": "_ONLINE_SHORTHANDS"
+     },
+     {
+      "at": "vllm/model_executor/model_loader/weight_utils.py:371",
+      "expr": "model_config.quantization in _ONLINE_SHORTHANDS",
+      "with": "_ONLINE_SHORTHANDS"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/config/model.py:1372",
+      "expr": "self.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:1405",
+      "expr": "self.quantization == \"humming\"",
+      "op": "Eq",
+      "values": [
+       "humming"
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:1441",
+      "expr": "self.quantization is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:1451",
+      "expr": "self.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:2287",
+      "expr": "self.quantization in (\"modelopt_fp4\",)",
+      "op": "In",
+      "values": [
+       "modelopt_fp4"
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:2293",
+      "expr": "self.quantization == \"modelopt_mixed\"",
+      "op": "Eq",
+      "values": [
+       "modelopt_mixed"
+      ]
+     },
+     {
+      "at": "vllm/config/model.py:2299",
+      "expr": "self.quantization == \"compressed-tensors\"",
+      "op": "Eq",
+      "values": [
+       "compressed-tensors"
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:789",
+      "expr": "model.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:892",
+      "expr": "model_config.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2033",
+      "expr": "self.model_config.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/distributed/weight_transfer/m2n_engine.py:255",
+      "expr": "quantization is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/default_loader.py:486",
+      "expr": "model_config.quantization == \"torchao\"",
+      "op": "Eq",
+      "values": [
+       "torchao"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/default_loader.py:508",
+      "expr": "model_config.quantization is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/default_loader.py:517",
+      "expr": "model_config.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/reload/inplace.py:117",
+      "expr": "model_config.quantization is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/tensorizer.py:298",
+      "expr": "model_config.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/utils.py:208",
+      "expr": "model_config.quantization == \"torchao\"",
+      "op": "Eq",
+      "values": [
+       "torchao"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/weight_utils.py:195",
+      "expr": "model_config.quantization is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/weight_utils.py:269",
+      "expr": "model_config.quantization == \"modelopt_mixed\"",
+      "op": "Eq",
+      "values": [
+       "modelopt_mixed"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/weight_utils.py:351",
+      "expr": "model_config.quantization == \"fp8\"",
+      "op": "Eq",
+      "values": [
+       "fp8"
+      ]
+     },
+     {
+      "at": "vllm/model_executor/model_loader/weight_utils.py:386",
+      "expr": "model_config.quantization in (\"modelopt\", \"modelopt_mixed\")",
+      "op": "In",
+      "values": [
+       "modelopt",
+       "modelopt_mixed"
+      ]
+     },
+     {
+      "at": "vllm/platforms/xpu.py:337",
+      "expr": "model_config.quantization is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "deepseek_v4_fp8",
+      "trace": "compat/kernelmodel/quantization_v4_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "quantization"
    }
   },
   "scheduling_policy": {

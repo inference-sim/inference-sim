@@ -5797,9 +5797,35 @@
     {
       "name": "compilation_config.max_cudagraph_capture_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2,
+          3
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6797,9 +6823,18 @@
     {
       "name": "enable_expert_parallel",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/ep_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -7775,9 +7810,40 @@
     {
       "name": "kv_cache_dtype",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "core/kv/pool_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "vllmengine/pool_oracle_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "float16",
+          "bfloat16",
+          "fp8",
+          "fp8_e4m3",
+          "fp8_e5m2",
+          "fp8_inc",
+          "fp8_ds_mla",
+          "nvfp4_ds_mla",
+          "turboquant_k8v4",
+          "turboquant_4bit_nc",
+          "turboquant_k3v4_nc",
+          "turboquant_3bit_nc",
+          "ultraquant_4bit",
+          "int4_per_token_head",
+          "int8_per_token_head",
+          "fp8_per_token_head",
+          "nvfp4",
+          "nvfp4_4over6"
+        ],
+        "covered": [
+          "fp8"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -8083,9 +8149,17 @@
     {
       "name": "language_model_only",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#82"
+        "traces": [
+          "compat/kernelmodel/language_model_only_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -8413,9 +8487,35 @@
     {
       "name": "max_cudagraph_capture_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 8,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2,
+          3
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -9621,9 +9721,18 @@
     {
       "name": "quantization",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/quantization_v4_test.go",
+          "oracle/quantization/resolved.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "deepseek_v4_fp8"
+        ]
       },
       "estimation": {
         "rule": "none"

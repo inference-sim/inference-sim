@@ -15,6 +15,82 @@
   "kind": "numeric",
   "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
  },
+ "compilation_config.max_cudagraph_capture_size": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [
+     2,
+     16,
+     300,
+     1000,
+     1024,
+     2048
+    ],
+    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
+   }
+  ]
+ },
+ "enable_expert_parallel": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/ep_oracle_test.go",
+    "values": [
+     true
+    ],
+    "why": "the test sets enable_expert_parallel true over tp, dp and all2all backend shapes and compares the layout with vLLM's FusedMoEParallelConfig"
+   }
+  ]
+ },
+ "kv_cache_dtype": {
+  "stated": [
+   {
+    "trace": "core/kv/pool_oracle_test.go",
+    "values": [
+     "fp8"
+    ],
+    "why": "the tests set fp8 for gpt-oss-120b, minimax-m2.5, minimax-m3, kimi-k2.5 and deepseek-v4-pro and compare the pool bytes per block with vLLM's"
+   }
+  ]
+ },
+ "language_model_only": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/language_model_only_test.go",
+    "values": [
+     true
+    ],
+    "why": "the test sets true on the minimax-m3 and kimi-k3 checkpoints, whose catalog graphs price no vision tower, and finds the price, KV budget and layers equal to the unstated deployment's"
+   }
+  ]
+ },
+ "max_cudagraph_capture_size": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [
+     2,
+     16,
+     300,
+     1000,
+     1024,
+     2048
+    ],
+    "why": "the test states these maxima (CAPTURE_CASES of oracle/lower/extract.py: 2, 16 with sizes [8,16], 300, 1000, 1024, 2048) on h200 and b200 and compares the kernel's capture ceiling with vLLM's"
+   }
+  ]
+ },
+ "quantization": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/quantization_v4_test.go",
+    "values": [
+     "deepseek_v4_fp8"
+    ],
+    "why": "the test states deepseek_v4_fp8 on a DeepSeek-V4 FP8 checkpoint and finds the plan equal to the unstated one"
+   }
+  ]
+ },
  "scheduling_policy": {
   "sites": [
    {
