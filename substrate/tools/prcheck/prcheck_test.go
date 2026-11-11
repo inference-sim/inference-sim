@@ -734,6 +734,40 @@ func TestCheckGates(t *testing.T) {
 	})
 }
 
+// The runs of a gate are read at their newest attempt (highest id), so a re-run on the same head
+// is not poisoned by an older failure and an older pass does not hide a newer failure. Known-bad
+// input: failure then success (refused before), success then failure, a running newest attempt,
+// and a run that does not exist.
+func TestGateRunsUseTheNewestAttempt(t *testing.T) {
+	gates := []PathGate{{File: "w/rederive.yml", Paths: []string{"registry/**"}, Jobs: []string{"rederive", "candidate"}}}
+	changed := []string{"registry/a.py"}
+	rec := func(id int64, name, status, concl string) gateRunRecord {
+		return gateRunRecord{ID: id, Name: name, Status: status, Conclusion: concl}
+	}
+	cases := []struct {
+		name string
+		recs []gateRunRecord
+		want string // substring of the finding, or "" for none
+	}{
+		{"older failure then newer success passes", []gateRunRecord{rec(5, "rederive", "completed", "failure"), rec(9, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
+		{"line order does not matter", []gateRunRecord{rec(9, "rederive", "completed", "success"), rec(5, "rederive", "completed", "failure"), rec(6, "candidate", "completed", "success")}, ""},
+		{"older success then newer failure is refused", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "failure"), rec(6, "candidate", "completed", "success")}, "concluded failure"},
+		{"a newest attempt still running is no result", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "in_progress", ""), rec(6, "candidate", "completed", "success")}, "has not completed"},
+		{"a missing run is refused", []gateRunRecord{rec(5, "rederive", "completed", "success")}, `no check run "candidate"`},
+		{"ids compare as numbers", []gateRunRecord{rec(9, "rederive", "completed", "failure"), rec(10, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := CheckGates(gates, changed, foldGateRuns(c.recs))
+			if c.want == "" {
+				none(t, got)
+			} else {
+				has(t, got, c.want)
+			}
+		})
+	}
+}
+
 func TestPathPatterns(t *testing.T) {
 	for _, c := range []struct {
 		pat, path string

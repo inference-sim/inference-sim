@@ -185,26 +185,41 @@ func CheckGates(gates []PathGate, changed []string, runs map[string]GateRun) []s
 	return bad
 }
 
-// ghGateRuns lists a commit's check runs by name. When a name has several runs, one that has
-// not completed, or has not succeeded, wins over a success, so a re-run cannot hide a failure.
+// gateRunRecord is one check run as the API returns it. ID is given when the run is created and
+// grows with time, so it orders the attempts of a name; completed_at is empty until a run ends.
+type gateRunRecord struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+}
+
+// foldGateRuns keeps, for each name, its newest attempt (the highest id). GitHub keeps the runs
+// of an earlier attempt when a workflow is re-run on the same head. A gate protects the current
+// result for the head, so an earlier failure that a later run replaced must not hold it back,
+// and an earlier pass must not hide a later failure. A newest attempt that has not completed
+// stays not done, and a name with no run is absent: CheckGates refuses both.
+func foldGateRuns(recs []gateRunRecord) map[string]GateRun {
+	newest := map[string]gateRunRecord{}
+	for _, r := range recs {
+		if old, ok := newest[r.Name]; !ok || r.ID > old.ID {
+			newest[r.Name] = r
+		}
+	}
+	runs := make(map[string]GateRun, len(newest))
+	for n, r := range newest {
+		runs[n] = GateRun{Done: r.Status == "completed", Conclusion: r.Conclusion}
+	}
+	return runs
+}
+
+// ghGateRuns lists a commit's check runs by name, each at its newest attempt (foldGateRuns).
 func ghGateRuns(repo, sha string) (map[string]GateRun, error) {
 	var res struct {
-		CheckRuns []struct {
-			Name       string `json:"name"`
-			Status     string `json:"status"`
-			Conclusion string `json:"conclusion"`
-		} `json:"check_runs"`
+		CheckRuns []gateRunRecord `json:"check_runs"`
 	}
 	if err := ghJSON(&res, "api", fmt.Sprintf("repos/%s/commits/%s/check-runs?per_page=100", repo, sha)); err != nil {
 		return nil, err
 	}
-	runs := map[string]GateRun{}
-	for _, r := range res.CheckRuns {
-		g := GateRun{Done: r.Status == "completed", Conclusion: r.Conclusion}
-		if old, ok := runs[r.Name]; ok && (!old.Done || old.Conclusion != "success") {
-			continue
-		}
-		runs[r.Name] = g
-	}
-	return runs, nil
+	return foldGateRuns(res.CheckRuns), nil
 }
