@@ -546,6 +546,20 @@ func (m *Model) PDTransferTicks(tokens int64, from, to kernel.Placement) int64 {
 // asks the kernel directly rather than having this adapter grow a passthrough per method.
 func (m *Model) Kernel() kernel.Kernel { return m.k }
 
+// RecordSelected registers the model's kernel with d, as the kernel's own RecordSelected does:
+// d lists the kernel's selected coefficients, and (with a substrate that observes kernels) reads
+// at report time which a priced step used outside its fit range. A host whose kernel is
+// opened inside an engine calls it once per kernel; a nil d, or a kernel without the method,
+// does nothing.
+func (m *Model) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := m.k.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
+}
+
 // StepTime prices one forward pass over the scheduled batch.
 //
 // The kernel reports a band -- Overlap sums the max over resources within each stage,

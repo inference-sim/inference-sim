@@ -22,6 +22,10 @@
 //
 // A scheduling setting this engine does not model is refused when the engine is built
 // (Factory), never ignored; settings that change only cost are the Pricer's: see config.go.
+//
+// Beyond engine.Engine, *Engine and *DPGroup have two optional methods a host reads by type
+// assertion: Assumptions() []string (the pricer's disclosed assumptions) and
+// RecordSelected(*load.Data) (the pricer registers its coefficients with the run's Data).
 package vllm
 
 import (
@@ -32,6 +36,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
@@ -595,6 +600,25 @@ func (e *Engine) Assumptions() []string {
 		return a.Assumptions()
 	}
 	return nil
+}
+
+// RecordSelected is an optional method. It registers the pricer's selected coefficients with the
+// run-level Data d, so the run's report lists them and says which a priced step read outside
+// the range its fit covered. The pricer's kernel is opened by the engine's build, and the
+// engine that prices the steps is this one, so the host's own kernel never sees them.
+//
+// The host calls it once per engine instance, right after the instance is built, so every
+// pricing kernel (each instance and each prefill or decode pool) is registered once. A host
+// that calls it twice for one instance registers that instance's kernel twice. A pricer
+// that selects nothing records nothing, and a nil d is ignored. A simulator reads it by
+// type-asserting interface{ RecordSelected(*load.Data) } on the engine.Engine.
+func (e *Engine) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := e.pricer.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
 }
 
 // Complete implements engine.Engine: the batch's output and update_from_output.

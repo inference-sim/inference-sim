@@ -721,6 +721,10 @@ func (k kernelPricer) Assumptions() []string {
 	return out
 }
 
+// RecordSelected registers this pool's kernel with the host's Data (kernelmodel.Model.RecordSelected),
+// for core/vllm's Engine.RecordSelected and DPGroup.RecordSelected.
+func (k kernelPricer) RecordSelected(d *load.Data) { k.m.RecordSelected(d) }
+
 // shapes is the batch in the kernel's request shapes. The mapping is compat/kernelmodel's
 // (shapeOf): Scheduled is the tokens the forward pass runs, which under speculation is the verify
 // width, and the contract's Tokens already counts the drafts; Computed and PromptLen pass

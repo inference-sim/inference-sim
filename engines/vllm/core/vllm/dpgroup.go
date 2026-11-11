@@ -13,6 +13,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/load"
 
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/sched"
@@ -450,6 +451,17 @@ func (g *DPGroup) Snapshot() engine.State {
 
 // Assumptions are the pricer's disclosed assumptions, as Engine reports them.
 func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
+
+// RecordSelected registers the group's pricer with d, as Engine.RecordSelected does. The ranks
+// share one pricer (newDPGroup), so the group registers it once, not once per rank.
+func (g *DPGroup) RecordSelected(d *load.Data) {
+	if d == nil {
+		return
+	}
+	if r, ok := g.pricer.(interface{ RecordSelected(*load.Data) }); ok {
+		r.RecordSelected(d)
+	}
+}
 
 // EnableKVEvents turns on every rank's KV cache events: the group's results carry them, each
 // rank's in rank order (Complete).
