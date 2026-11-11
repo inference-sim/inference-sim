@@ -219,7 +219,7 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 			p.Field(at+".ci95", "must be an interval [low, high] with low not above high, got [%v, %v]", iv.Low, iv.High)
 		}
 		if len(c.KernelImpls) > 0 && !coefficient.MayStateKernelImpls(c.Method) {
-			p.Field(at+".kernel_impls", "method %q is not measured on a kernel implementation, so the entry states none", c.Method)
+			p.Field(at+".kernel_impls", "method %q states nothing about a kernel implementation, so the entry states none", c.Method)
 		}
 		if len(c.FitRange) > 0 && !coefficient.MayStateFitRange(c.Method) {
 			p.Field(at+".fit_range", "method %q was not fitted to data, so the entry states no fit range", c.Method)

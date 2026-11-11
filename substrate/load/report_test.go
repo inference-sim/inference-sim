@@ -344,7 +344,8 @@ func TestAMethodThatMayNotStateARangeIsRefusedInTheResult(t *testing.T) {
 		t.Errorf("problems %v, want the fit range and the implementations of an assumed entry refused", got)
 	}
 	if coefficient.MayStateFitRange("assumed") || !coefficient.MayStateFitRange("transferred") ||
-		coefficient.MayStateKernelImpls("transferred") || !coefficient.MayStateKernelImpls("measured") {
+		coefficient.MayStateKernelImpls("assumed") || !coefficient.MayStateKernelImpls("transferred") ||
+		!coefficient.MayStateKernelImpls("measured") {
 		t.Error("the shared predicates changed")
 	}
 }
