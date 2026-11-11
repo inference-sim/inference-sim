@@ -21,13 +21,17 @@ name: shared pull-request checks
 #                   codes, no skipped tests, gate trigger paths as declared
 #   versions        X23: version literals outside the sources of versions
 #   doc-references  X26: paths, line ranges and repeated table rows in documentation
-#   threads         X24: every review thread is resolved and states an outcome
+#   threads         X24, informational: lists open review threads and resolved ones with no
+#                   outcome as notices and in the job summary; it never fails
 #   cited-issues    X28: no change closes an issue the tree still cites
 #   quarantine      X25: every quarantined test has an issue and an unexpired date
 #   licence-files   X21: LICENSE, and an engine repository's NOTICE naming its upstream
 #   generated       design §13.1: AGENTS.md and the pull-request template match the registry
 #
-# Every job fails rather than passes when it cannot run (X16).
+# Every job fails rather than passes when it cannot run (X16), with one exception: the threads
+# step is informational. No check waits on a person, or on an agent that has not yet answered a
+# review thread; branch protection is the merge condition for threads, and the author agent
+# satisfies it (AGENTS.md).
 
 on:
   workflow_call:
@@ -115,9 +119,10 @@ jobs:
         if: ${{ !cancelled() }}
         working-directory: repo
         run: prcheck docrefs
-      - name: Review threads (X24)
+      - name: Review threads (X24, informational)
         if: ${{ !cancelled() && (env.PR != '') }}
         working-directory: repo
+        # Prints the open threads and the resolved ones with no outcome; always exits 0.
         run: prcheck threads -repo "${{ github.repository }}" -pr "$PR"
       - name: Cited issues (X28)
         if: ${{ !cancelled() }}

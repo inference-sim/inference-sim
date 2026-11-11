@@ -162,10 +162,10 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 	qs := reg.Questions(repo)
 	if len(qs) > 0 {
 		b.WriteString("\n### Review questions\n\n")
-		b.WriteString("CI lists each question below in the description of a pull request that changes one of\n")
-		b.WriteString("its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or\n")
-		b.WriteString("no in a review comment, with the files and lines that support the answer. No check waits\n")
-		b.WriteString("on a question.\n\n")
+		b.WriteString("Each question below is guidance for the review agent (design §13.2). When a pull request\n")
+		b.WriteString("changes one of its paths, the agent answers it yes or no in a review comment, with the\n")
+		b.WriteString("files and lines that support the answer. No CI job lists, records or waits on a question,\n")
+		b.WriteString("and no person has to answer one.\n\n")
 		for _, q := range qs {
 			fmt.Fprintf(&b, "- **%s** %s Expertise: %s. Applies when: %s. %s\n", q.ID, q.Question, q.Expertise, q.When, triggerText(q.ID, q.AppliesWhen))
 		}
@@ -219,7 +219,7 @@ func renderGuidance(reg *invariants.Registry, repo string) string {
 
 func triggerText(id string, t invariants.Trigger) string {
 	if t.Manual {
-		return "Added by a reviewer with the label `review:" + id + "`."
+		return "The review agent decides whether it applies, and may mark it with the label `review:" + id + "`."
 	}
 	s := "Paths: `" + strings.Join(t.Paths, "`, `") + "`"
 	if len(t.Exclude) > 0 {
@@ -291,7 +291,7 @@ func checklist(reg *invariants.Registry, repo string) []string {
 		{"X12", "No third-party data committed; each derived value cites its source by URL and commit or hash; no private names."},
 		{"X13", "Each behaviour change has a test that fails without it."},
 		{"X14", "The commit hashes listed in this description are the branch heads."},
-		{"X20", "Each commit written with an agent's help has one Assisted-by line and no Co-authored-by line naming a tool; the person responsible adds the DCO sign-off."},
+		{"X20", "Each commit written with an agent's help has one Assisted-by line and no Co-authored-by line naming a tool; the person responsible adds the DCO sign-off, which no check requires."},
 		{"X24", "Every review finding is fixed, filed as a linked issue, or rejected with a reason."},
 		{"X26", "Every path, symbol, issue and supported-feature statement in changed documentation is generated or checked."},
 	}

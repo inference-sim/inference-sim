@@ -2,13 +2,22 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"regexp"
 	"strings"
 )
 
-// The thread-outcome check, run on every pull request (X24): every review thread ends in an
+// The thread-outcome report, run on every pull request (X24): every review thread ends in an
 // outcome before merge. A thread is resolved with a reply that states "Outcome: fixed",
 // "Outcome: filed <issue>" or "Outcome: rejected: <reason>".
+//
+// The step is informational. It lists the threads that are open and the resolved ones with no
+// outcome line, as notices and in the job summary, and it never fails: no check waits on a
+// person, or on an agent that has not yet answered (the maintainer's order of 2026-11-11).
+// The duty sits with the author agent (AGENTS.md: after each fix, reply with the outcome and
+// the commit and resolve the thread), and branch protection, which blocks the merge until
+// every conversation is resolved, is the merge condition an agent satisfies.
 
 var outcome = regexp.MustCompile(`(?mi)^Outcome:\s*(fixed\b.*|filed\s+\S+.*|rejected:\s*\S.*)$`)
 
@@ -19,9 +28,9 @@ type Thread struct {
 	Comments []string
 }
 
-// CheckThreads returns the X24 violations: a thread still open, and a resolved thread with
-// no outcome line.
-func CheckThreads(threads []Thread) []string {
+// ThreadNotes returns the X24 notes: a thread still open, and a resolved thread with no
+// outcome line. They are reported, never counted as failures.
+func ThreadNotes(threads []Thread) []string {
 	var bad []string
 	for _, t := range threads {
 		has := false
@@ -30,9 +39,9 @@ func CheckThreads(threads []Thread) []string {
 		}
 		switch {
 		case !t.Resolved:
-			bad = append(bad, fmt.Sprintf("review thread %s is open; resolve it with an outcome (X24)", t.URL))
+			bad = append(bad, fmt.Sprintf("review thread %s is open; the author agent replies with its outcome and the commit and resolves it (X24)", t.URL))
 		case !has:
-			bad = append(bad, fmt.Sprintf("review thread %s is resolved with no \"Outcome: fixed | filed <issue> | rejected: <reason>\" line (X24)", t.URL))
+			bad = append(bad, fmt.Sprintf("review thread %s is resolved with no \"Outcome: fixed | filed <issue> | rejected: <reason>\" line; the author agent adds it (X24)", t.URL))
 		}
 	}
 	return bad
@@ -49,11 +58,11 @@ type apiThread struct {
 	} `json:"comments"`
 }
 
-// threadsPage is the GraphQL query for one page of a pull request's review threads, with the
+// threadsQuery is the GraphQL query for one page of a pull request's review threads, with the
 // first 50 comments of each.
 const threadsQuery = `query($owner:String!,$name:String!,$pr:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$pr){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{isResolved path comments(first:50){nodes{body url}}}}}}}`
 
-// threadsOf converts API threads to the form CheckThreads reads.
+// threadsOf converts API threads to the form ThreadNotes reads.
 func threadsOf(in []apiThread) []Thread {
 	var out []Thread
 	for _, th := range in {
@@ -106,5 +115,28 @@ func collectThreads(repo string, pr int) ([]Thread, error) {
 			return threadsOf(all), nil
 		}
 		after = rt.PageInfo.EndCursor
+	}
+}
+
+// reportThreads prints the X24 notes as GitHub notices and, when summary names a file (the
+// workflow's GITHUB_STEP_SUMMARY), appends them there as a list. It writes nothing that fails
+// a job: a pull request with an open thread is not red because of this step.
+func reportThreads(w io.Writer, summary string, n int, notes []string) {
+	_, _ = fmt.Fprintf(w, "threads: %d checked, %d to answer (informational; no check waits on a thread)\n", n, len(notes))
+	for _, note := range notes {
+		_, _ = fmt.Fprintf(w, "::notice title=Review thread (X24)::%s\n", note)
+	}
+	if summary == "" {
+		return
+	}
+	f, err := os.OpenFile(summary, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o644)
+	if err != nil {
+		_, _ = fmt.Fprintf(w, "::warning::the job summary could not be written: %v\n", err)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	_, _ = fmt.Fprintf(f, "### Review threads (X24)\n\n%d thread(s) checked; %d to answer. This step never fails.\n\n", n, len(notes))
+	for _, note := range notes {
+		_, _ = fmt.Fprintf(f, "- %s\n", note)
 	}
 }

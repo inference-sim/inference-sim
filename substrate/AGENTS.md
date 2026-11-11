@@ -56,10 +56,12 @@ go run ./tools/prcheck docrefs
 ## Agents may not
 
 Edit a generated file by hand; weaken, skip or delete a check; change a success criterion after
-reading held-out data, or the ledger's cut-points or partition version; approve a merge; cut a
-release; review a change they wrote themselves (design §13.7). An agent may act as the review
-agent: it answers each review question below in a review comment, with the files and lines that
-support the answer.
+reading held-out data, or the ledger's cut-points or partition version; approve a pull request
+they wrote or pushed to; cut a release; review a change they wrote themselves (design §13.7). An
+agent may act as the review agent: it answers each review question below in a review comment,
+with the files and lines that support the answer, and its approving review counts toward branch
+protection. After each fix an author agent replies on the review thread with the outcome and the
+commit and resolves the thread (X24); no check waits for a person to do either.
 
 ## Where to look next
 
@@ -145,7 +147,8 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
 - **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: A pull-request check that refuses a review thread with no outcome (`shared-pr-checks.yml: prcheck threads`)
+  - `new`, pull_request: A pull-request step that lists each review thread that is open or resolved with no outcome, as a notice and in the job summary; it never fails, so no check waits on a thread (`shared-pr-checks.yml: prcheck threads`)
+  - `new`, practice: Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
   - `new`, nightly: A nightly job that reopens an issue closed any other way
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
@@ -273,7 +276,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: A check against the ledger at the pull request's merge base (`ledger: TestCheckAgainstBase`)
   - `ci`, pull_request: A check that no committed file lists roles, other than the three published lists that the release job writes and the legacy labels in legacy-map.yaml (`ledger: TestNoCommittedRoles`)
   - `new`, pull_request: A check that the committed unit list equals the ingest tool's output for the pinned source
-  - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table or by a new partition version a person approved (`ledger: TestCheckAgainstBase`)
+  - `ci`, pull_request: A check that every unit at the merge base keeps its unit_id and role key, or is covered by an alias table, and a new partition version is the next number with a new seed record (`ledger: TestCheckAgainstBase`)
   - `new`, pull_request: A check that each alias table equals the one generated from the merge-base and candidate ingest tools on the same source revision
 - **D5** (new; target ci by M2) A coefficient's fit data exercised the kernel implementation the coefficient is keyed by, meaning the same library, variant and kernel hash (CodeHash).
   - `new`, pull_request: A validator rule that a coefficient's fit units were collected on the kernel implementation it is keyed by
@@ -317,6 +320,7 @@ repository as a whole and confirms it when the repository's settings change (des
 
 - [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
 - [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+- [ ] **X24** Branch protection requires every review conversation to be resolved before a merge; the author agent resolves each thread with its outcome
 - [ ] **LIF-1** Protected tags
 - [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
 
@@ -325,22 +329,22 @@ repository as a whole and confirms it when the repository's settings change (des
 Follow these on every change you write or review. They are not checked by a program
 (design §4.2).
 
-- **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
+- **X24** After each fix, reply on the thread with "Outcome: fixed" and the commit, "Outcome: filed" and the issue, or "Outcome: rejected:" and the reason, and resolve the thread. The author agent does this; no check waits for it and no person has to.
 
 ### Review questions
 
-CI lists each question below in the description of a pull request that changes one of
-its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or
-no in a review comment, with the files and lines that support the answer. No check waits
-on a question.
+Each question below is guidance for the review agent (design §13.2). When a pull request
+changes one of its paths, the agent answers it yes or no in a review comment, with the
+files and lines that support the answer. No CI job lists, records or waits on a question,
+and no person has to answer one.
 
 - **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Expertise: contracts expertise. Applies when: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
 - **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Expertise: expertise in the changed directory. Applies when: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
-- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. The review agent decides whether it applies, and may mark it with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. The review agent decides whether it applies, and may mark it with the label `review:X7`.
 - **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Expertise: expertise in the repository landing the change. Applies when: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
-- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
-- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. Added by a reviewer with the label `review:VAL-11`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. The review agent decides whether it applies, and may mark it with the label `review:DEV-12`.
+- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. The review agent decides whether it applies, and may mark it with the label `review:VAL-11`.
 - **D1** Was this value read from, or tuned against, any measurement? Expertise: registry expertise. Applies when: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
-- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. Added by a reviewer with the label `review:D7`.
+- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. The review agent decides whether it applies, and may mark it with the label `review:D7`.
 <!-- END GENERATED: invariants -->

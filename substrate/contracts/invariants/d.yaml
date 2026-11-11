@@ -121,7 +121,7 @@
   - repo: blis-substrate
     check: >-
       A check that every unit at the merge base keeps its unit_id and role key, or is covered by an
-      alias table or by a new partition version a person approved
+      alias table, and a new partition version is the next number with a new seed record
     runs: pull_request
     status: ci
     test: 'ledger: TestCheckAgainstBase'
