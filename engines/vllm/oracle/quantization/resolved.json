@@ -1,0 +1,39 @@
+{
+ "cases": [
+  {
+   "resolved": "deepseek_v4_fp8",
+   "stated": null
+  },
+  {
+   "resolved": "deepseek_v4_fp8",
+   "stated": "deepseek_v4_fp8"
+  },
+  {
+   "resolved": "deepseek_v4_fp8",
+   "stated": "fp8"
+  },
+  {
+   "resolved": "deepseek_v4_fp8",
+   "stated": "awq"
+  },
+  {
+   "resolved": "deepseek_v4_fp8",
+   "stated": "nvfp4"
+  }
+ ],
+ "checkpoint_quant_method": "fp8",
+ "config_sha256": "5fe4568daee51c208cb8a79538eaeda090ae011ade1dee2c386aa95f569c810e",
+ "control_without_quantization_config": [
+  {
+   "resolved": null,
+   "stated": null
+  },
+  {
+   "resolved": "fp8",
+   "stated": "fp8"
+  }
+ ],
+ "model": "deepseek-v4-pro",
+ "model_type": "deepseek_v4",
+ "vllm": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+}

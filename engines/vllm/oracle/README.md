@@ -102,6 +102,21 @@ It needs vLLM's `requirements/common.txt` and `torch`; it does not need a GPU. A
 release, re-read each model's attention layer (the `LAYERS` table cites the line that builds it)
 and rerun it.
 
+## Quantization oracle
+
+`oracle/quantization/oracle.py` runs vLLM's own `ModelConfig` (`vllm/config/model.py:1370-1412`,
+with `DeepseekV4FP8Config.override_quantization_method`, `vllm/models/deepseek_v4/quant_config.py:140-157`)
+over the catalog's deepseek-v4-pro `config.json` once for each value a deployment can state for
+`quantization`, and over the same file without its `quantization_config` as a control. The
+committed answers are `oracle/quantization/resolved.json`, which
+`compat/kernelmodel/quantization_v4_test.go` holds the kernel's plan to, and CI fails if the file
+differs from what the oracle prints:
+
+```sh
+BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
+  python -I oracle/quantization/oracle.py <vllm checkout> json > oracle/quantization/resolved.json
+```
+
 ## Scenario
 
 ```json
