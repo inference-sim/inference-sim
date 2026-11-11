@@ -58,9 +58,20 @@ var moves = []move{
 // (vllm/envs.py:170@5df63a72); the block's earlier frontend key was a name for it.
 const rustFrontendEnv = "VLLM_USE_RUST_FRONTEND"
 
-// refusedKeys are earlier top-level names that now have another spelling, with what to write.
-var refusedKeys = map[string]string{
-	"frontend": "is vLLM's environment variable " + rustFrontendEnv + ": write env: {" + rustFrontendEnv + ": \"1\"}",
+// refusedKeys are earlier top-level names that now have another spelling, with what to write for
+// the value the block gave.
+var refusedKeys = map[string]func(v *yaml.Node) string{
+	"frontend": func(v *yaml.Node) string {
+		const is = "is vLLM's environment variable " + rustFrontendEnv + ": "
+		switch v.Value {
+		case "python":
+			return is + "python is its default, so omit the key"
+		case "rust":
+			return is + "write env: {" + rustFrontendEnv + ": \"1\"}"
+		}
+		return is + "state rust as env: {" + rustFrontendEnv + ": \"1\"} or omit the key for python; " +
+			"the value " + fmt.Sprintf("%q", v.Value) + " is neither"
+	},
 }
 
 // FromVLLM translates an engine block written in vLLM's setting names into the Go-shaped block
@@ -98,7 +109,7 @@ func FromVLLM(n *yaml.Node) (*yaml.Node, error) {
 		}
 		key := k.Value
 		if why, ok := refusedKeys[key]; ok {
-			return nil, fmt.Errorf("line %d: engine key %q %s", k.Line, key, why)
+			return nil, fmt.Errorf("line %d: engine key %q %s", k.Line, key, why(v))
 		}
 		// A key of the earlier layout: refused with vLLM's name.
 		if m, ok := internal[key]; ok && !strings.Contains(m.internal, ".") {
@@ -315,8 +326,18 @@ func VLLMKeys() (top []string, nested map[string][]string) {
 		}
 		top = append(top, name)
 	}
+	// engram_config is a config object the block holds as it is (no key moves into it), so its
+	// leaves come from EngramConfig's yaml names. embedding_across_dp is not carried (EngramConfig).
+	et := reflect.TypeOf(EngramConfig{})
+	for i := 0; i < et.NumField(); i++ {
+		if leaf, _, _ := strings.Cut(et.Field(i).Tag.Get("yaml"), ","); leaf != "" && leaf != "-" {
+			nested["engram_config"] = append(nested["engram_config"], leaf)
+		}
+	}
 	for g := range nested {
-		top = append(top, g)
+		if g != "engram_config" {
+			top = append(top, g)
+		}
 		sort.Strings(nested[g])
 	}
 	sort.Strings(top)

@@ -111,6 +111,23 @@ func TestAKeyThatIsNotAVLLMNameFails(t *testing.T) {
 			t.Errorf("%s: err %v, want one naming %s", old, err, want)
 		}
 	}
+	// The refusal of frontend depends on its value.
+	for val, want := range map[string]string{
+		"python": "omit the key",
+		"rust":   `env: {VLLM_USE_RUST_FRONTEND: "1"}`,
+	} {
+		var n yaml.Node
+		if err := yaml.Unmarshal([]byte("frontend: "+val), &n); err != nil {
+			t.Fatal(err)
+		}
+		_, err := FromVLLM(n.Content[0])
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("frontend: %s: err %v, want one containing %q", val, err, want)
+		}
+		if val == "python" && err != nil && strings.Contains(err.Error(), `"1"`) {
+			t.Errorf("frontend: python was told to set the variable: %v", err)
+		}
+	}
 	// And a name that is in neither layout is the strict decoder's, naming the line.
 	n := yamlBlock(t, "no_such_setting: 1\n")
 	if _, err := Decode(n); err == nil || !strings.Contains(err.Error(), "no_such_setting") {
@@ -176,5 +193,51 @@ func TestTheTranslationRoundTripsEveryKey(t *testing.T) {
 				t.Errorf("the encoded block lacks %s.%s", g, l)
 			}
 		}
+	}
+}
+
+// Every key of the block is also a name in fields.json, the list of vLLM's settings the estimator
+// classifies (design X1: a name in fields.json is a name in the block). Two block keys are not in
+// it: allreduce_backend (see notVLLMNames) and env, whose own keys are the environment variables
+// fields.json lists with source env. engram_config is a config object; its leaves, which the
+// oracle is asked about, are fields.json names.
+func TestEveryBlockKeyIsAFieldsJSONName(t *testing.T) {
+	raw, err := os.ReadFile("../../fields.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fl struct {
+		Fields []struct {
+			Name string `json:"name"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(raw, &fl); err != nil {
+		t.Fatal(err)
+	}
+	listed := map[string]bool{}
+	for _, f := range fl.Fields {
+		listed[f.Name] = true
+	}
+	top, nested := VLLMKeys()
+	for _, k := range top {
+		if _, ok := notVLLMNames[k]; ok {
+			continue
+		}
+		if nested[k] != nil {
+			continue // a config object: its leaves are checked below
+		}
+		if !listed[k] {
+			t.Errorf("%s: a block key that fields.json does not list", k)
+		}
+	}
+	for g, leaves := range nested {
+		for _, l := range leaves {
+			if !listed[g+"."+l] {
+				t.Errorf("%s.%s: a block key that fields.json does not list", g, l)
+			}
+		}
+	}
+	if !contains(nested["engram_config"], "use_thp") {
+		t.Error("engram_config's leaves are not among the keys asked of vLLM")
 	}
 }
