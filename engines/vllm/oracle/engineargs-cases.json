@@ -1,5 +1,5 @@
 {
- "description": "Engine-block shapes run through EngineArgs.create_engine_config (oracle/run_engineargs.py): accepted, refused by one rule each, and leaving a default to resolve.",
+ "description": "Engine-block shapes run through EngineArgs.create_engine_config (oracle/run_engineargs.py): accepted, refused by one rule each, and leaving a default to resolve. A refused case's \"expect\" is a substring of the message the factory (core/vllm) refuses it with; vLLM's own message is in the trace.",
  "cases": [
   {
    "name": "accepted-base",
@@ -226,7 +226,18 @@
     "block_size": 16,
     "max_num_seqs": 4,
     "max_num_batched_tokens": 2
-   }
+   },
+   "expect": "max_num_batched_tokens 2 is below max_num_seqs 4"
+  },
+  {
+   "name": "refused-budget-one-below-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 3
+   },
+   "expect": "max_num_batched_tokens 3 is below max_num_seqs 4"
   },
   {
    "name": "refused-unknown-policy",
@@ -236,7 +247,8 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "scheduling_policy": "sjf"
-   }
+   },
+   "expect": "accepts fcfs and priority"
   },
   {
    "name": "refused-max-active-above-seqs",
@@ -246,7 +258,19 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "max_num_active_seqs": 9
-   }
+   },
+   "expect": "max_num_active_seqs 9 is above max_num_seqs 4"
+  },
+  {
+   "name": "refused-max-active-one-above-seqs",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "max_num_active_seqs": 5
+   },
+   "expect": "max_num_active_seqs 5 is above max_num_seqs 4"
   },
   {
    "name": "refused-long-prefill-above-max-model-len",
@@ -256,7 +280,19 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "long_prefill_token_threshold": 600
-   }
+   },
+   "expect": "long_prefill_token_threshold 600 is above max_model_len 512"
+  },
+  {
+   "name": "refused-long-prefill-one-above-max-model-len",
+   "args": {
+    "max_model_len": 512,
+    "block_size": 16,
+    "max_num_seqs": 4,
+    "max_num_batched_tokens": 64,
+    "long_prefill_token_threshold": 513
+   },
+   "expect": "long_prefill_token_threshold 513 is above max_model_len 512"
   },
   {
    "name": "refused-zero-seqs",
@@ -265,7 +301,8 @@
     "block_size": 16,
     "max_num_seqs": 0,
     "max_num_batched_tokens": 64
-   }
+   },
+   "expect": "max_num_seqs is stated as 0, below the minimum of 1"
   },
   {
    "name": "refused-negative-seqs",
@@ -274,7 +311,8 @@
     "block_size": 16,
     "max_num_seqs": -1,
     "max_num_batched_tokens": 64
-   }
+   },
+   "expect": "max_num_seqs -1 is negative"
   },
   {
    "name": "refused-zero-budget",
@@ -283,7 +321,8 @@
     "block_size": 16,
     "max_num_seqs": 4,
     "max_num_batched_tokens": 0
-   }
+   },
+   "expect": "max_num_batched_tokens is stated as 0, below the minimum of 1"
   },
   {
    "name": "refused-negative-long-prefill",
@@ -293,7 +332,8 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "long_prefill_token_threshold": -1
-   }
+   },
+   "expect": "long_prefill_token_threshold -1 is negative"
   },
   {
    "name": "refused-watermark-one",
@@ -303,7 +343,8 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "watermark": 1.0
-   }
+   },
+   "expect": "watermark 1 is outside [0, 1)"
   },
   {
    "name": "refused-watermark-above-one",
@@ -313,7 +354,8 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "watermark": 1.5
-   }
+   },
+   "expect": "watermark 1.5 is outside [0, 1)"
   },
   {
    "name": "refused-negative-watermark",
@@ -323,7 +365,8 @@
     "max_num_seqs": 4,
     "max_num_batched_tokens": 64,
     "watermark": -0.1
-   }
+   },
+   "expect": "watermark -0.1 is outside [0, 1)"
   },
   {
    "name": "refused-async-with-ngram-stated",
@@ -337,7 +380,8 @@
      "method": "ngram",
      "num_speculative_tokens": 3
     }
-   }
+   },
+   "expect": "async_scheduling is only supported with EAGLE"
   },
   {
    "name": "refused-negative-max-loras",
@@ -348,7 +392,8 @@
     "max_num_batched_tokens": 64,
     "enable_lora": true,
     "max_loras": -1
-   }
+   },
+   "expect": "max_loras -1 is negative"
   },
   {
    "name": "refused-unknown-speculative-method",
@@ -361,7 +406,8 @@
      "method": "nonsense",
      "num_speculative_tokens": 3
     }
-   }
+   },
+   "expect": "speculative method \"nonsense\" is not built by this factory"
   }
  ]
 }

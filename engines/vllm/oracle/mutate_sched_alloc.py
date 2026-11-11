@@ -16,7 +16,7 @@ import shutil
 import subprocess
 import sys
 
-# (id, the regression, file, exact old text, new text)
+# (id and the regression, file, exact old text, new text)
 MUTANTS = [
     ("S1 whole-sequence copy when a block is hashed", "core/sched/scheduler.go",
      "\t\tr.hashes = append(r.hashes, kv.HashBlock(parent, r.tokenRange(i*blockSize, (i+1)*blockSize), r.Keys.ExtraFor(i)))",

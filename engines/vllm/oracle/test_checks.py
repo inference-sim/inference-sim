@@ -400,5 +400,31 @@ class WallClockGauge(unittest.TestCase):
         self.assertNotEqual(c.first_difference(self.series(key), self.series(other)), "")
         self.assertNotEqual(c.first_difference(self.series(key, 1.0), self.series(key, 0.0)), "")
 
+class MutantsStillApply(unittest.TestCase):
+    """Each committed mutant of a Go source names its text exactly once, so a refactor that moves
+    the text fails here and not by silently turning a sweep into BROKEN lines in CI."""
+
+    ROOT = os.path.join(HERE, "..")
+
+    def check(self, script):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(script, os.path.join(HERE, script + ".py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self.assertGreaterEqual(len(mod.MUTANTS), 2)
+        for mutant in mod.MUTANTS:
+            mid, path, old, new = mutant[0], mutant[-3], mutant[-2], mutant[-1]
+            with open(os.path.join(self.ROOT, path)) as f:
+                text = f.read()
+            self.assertEqual(text.count(old), 1, f"{mid}: {path}")
+            self.assertNotEqual(old, new, mid)
+
+    def test_engineargs_mutants(self):
+        self.check("mutate_engineargs")
+
+    def test_sched_alloc_mutants(self):
+        self.check("mutate_sched_alloc")
+
+
 if __name__ == "__main__":
     unittest.main()

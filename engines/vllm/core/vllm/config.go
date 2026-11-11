@@ -96,6 +96,12 @@ type Config struct {
 	// states it (offload: connector, tiers, eviction_policy); a caller restates it here with the
 	// bytes a block its memory model sizes. Unstated is no offload.
 	KVOffload *offloadConfig `yaml:"kv_offload,omitempty"`
+
+	// statedZero names the scheduler fields the block stated as 0 (max_num_seqs,
+	// max_num_batched_tokens). The settings struct reads 0 as unstated, and a block that states 0
+	// is refused for vLLM's own rule (ge=1) rather than told to state the value it did state.
+	// decodeConfig fills it; a Config built in Go has none.
+	statedZero []string
 }
 
 // decodeConfig reads an engine block strictly: a key that is not a field is an error, as it
@@ -114,7 +120,28 @@ func decodeConfig(node yaml.Node) (Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return c, fmt.Errorf("vllm: engine block: %w", err)
 	}
+	c.statedZero = statedZeroFields(node)
 	return c, nil
+}
+
+// statedZeroFields lists the scheduler fields a block states as 0, which the decoded integer
+// cannot tell from a field left out.
+func statedZeroFields(node yaml.Node) []string {
+	var zero []string
+	if node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		key, val := node.Content[i].Value, node.Content[i+1]
+		if key != "max_num_seqs" && key != "max_num_batched_tokens" {
+			continue
+		}
+		var n int
+		if val.Tag == "!!int" && val.Decode(&n) == nil && n == 0 {
+			zero = append(zero, key)
+		}
+	}
+	return zero
 }
 
 // settings are a Config resolved into the scheduler's and engine core's inputs.
@@ -204,6 +231,11 @@ func resolve(c Config) (settings, error) {
 			c.NumGPUBlocks, maxLen, need, blockSize)
 	}
 	seqs, budget := e.MaxNumSeqs, e.MaxNumBatchedTokens
+	if len(c.statedZero) > 0 {
+		// A stated 0 is not an unstated value: vLLM's SchedulerConfig refuses it (ge=1).
+		return s, fmt.Errorf("vllm: %s is stated as 0, below the minimum of 1, which vLLM refuses "+
+			"(vllm/config/scheduler.py:48,62@5df63a72, ge=1)", strings.Join(c.statedZero, " and "))
+	}
 	if seqs == 0 || budget == 0 {
 		// SchedulerConfig's own defaults, 128 and 2048, are "mainly for convenience when testing"
 		// (vllm/config/scheduler.py:47-66@5df63a72); vllm serve resolves unstated values from the

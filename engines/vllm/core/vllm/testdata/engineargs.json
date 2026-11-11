@@ -359,6 +359,11 @@
   },
   {
    "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, max_num_batched_tokens (3) must be greater than or equal to max_num_seqs (4). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-budget-one-below-seqs"
+  },
+  {
+   "accepted": false,
    "error": "ValidationError: 1 validation error for SchedulerConfig | policy | Input should be 'fcfs' or 'priority' [type=literal_error, input_value='sjf', input_type=str]",
    "name": "refused-unknown-policy"
   },
@@ -369,8 +374,18 @@
   },
   {
    "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, max_num_active_seqs (5) cannot be greater than max_num_seqs (4). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-max-active-one-above-seqs"
+  },
+  {
+   "accepted": false,
    "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, long_prefill_token_threshold (600) cannot be greater than the max_model_len (512). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
    "name": "refused-long-prefill-above-max-model-len"
+  },
+  {
+   "accepted": false,
+   "error": "ValidationError: 1 validation error for SchedulerConfig | Value error, long_prefill_token_threshold (513) cannot be greater than the max_model_len (512). [type=value_error, input_value=ArgsKwargs((), {'runner_t..., 'stream_interval': 1}), input_type=ArgsKwargs] | For further information visit https://errors.pydantic.dev/2.14/v/value_error",
+   "name": "refused-long-prefill-one-above-max-model-len"
   },
   {
    "accepted": false,
@@ -424,7 +439,7 @@
   }
  ],
  "provenance": {
-  "blis_vllm_commit": "bd8d8f47833b0b462e21213d353a996813e34ff7+dirty",
+  "blis_vllm_commit": "79a23776cef9065445f3588d720d882c087129ad+dirty",
   "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
   "mock_version": "gpu-mock/4+420a44386aa4",
   "mocks": [
@@ -461,7 +476,7 @@
   "platform": "darwin-arm64",
   "python": "3.12.13",
   "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
-  "scenario_sha256": "f3d921821c3d32908abe2523f3aaa1e7c23268979cdd54e3c863d73063b72c59",
+  "scenario_sha256": "4132e1e00e6b33c1e1c0e11cd0619192afaeb64cde1ff6c65f5f535d71a3f44d",
   "seed": null,
   "tier": 1,
   "vllm_commit": "5df63a7203cdb9328d824a27b682e77c7b9928be",

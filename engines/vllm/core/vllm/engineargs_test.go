@@ -17,6 +17,8 @@ import (
 type engineArgsCase struct {
 	Name string         `json:"name"`
 	Args map[string]any `json:"args"`
+	// Expect is, for a case vLLM refuses, a substring of the message the factory refuses it with.
+	Expect string `json:"expect"`
 }
 
 type engineArgsTrace struct {
@@ -81,9 +83,11 @@ func itoaAny(v any) string {
 
 // TestEngineArgsAgainstVLLM compares the factory with vLLM's own configuration classes on each
 // engine-block shape in oracle/engineargs-cases.json: it accepts what vLLM accepts, refuses what
-// vLLM refuses, and where both resolve a setting the values are equal. The unstated settings
-// the factory makes the caller state (they belong to the model and the GPU) are checked as
-// refusals, not as values.
+// vLLM refuses (with a message that names the rule, the case's expect), and where both resolve a
+// setting the values are equal. The five shapes that leave a setting unstated, which vLLM
+// resolves from the model and the GPU, are the exception: the factory makes the caller state
+// them, so they are checked as refusals, not as values, and the two disagree on acceptance there
+// by design.
 func TestEngineArgsAgainstVLLM(t *testing.T) {
 	var cases struct {
 		Cases []engineArgsCase `json:"cases"`
@@ -143,8 +147,18 @@ func TestEngineArgsAgainstVLLM(t *testing.T) {
 				t.Fatalf("vLLM accepted=%v (%s); the factory: %v", want.Accepted, want.Error, err)
 			}
 			if err != nil {
+				// Agreeing that a block is refused is not agreeing why: the factory's own message
+				// must name the rule the case was written for.
+				if c.Expect == "" {
+					t.Errorf("a refused case needs an expect, a substring of the factory's message; the factory said: %v", err)
+				} else if !strings.Contains(err.Error(), c.Expect) {
+					t.Errorf("the factory refused with %q, which does not contain %q", err.Error(), c.Expect)
+				}
 				refused++
 				return
+			}
+			if c.Expect != "" {
+				t.Errorf("the case expects the refusal %q, and the factory accepted it", c.Expect)
 			}
 			accepted++
 			r, sc := want.Resolved, got.sched
@@ -170,7 +184,11 @@ func TestEngineArgsAgainstVLLM(t *testing.T) {
 			}
 		})
 	}
-	if accepted < 12 || refused < 12 {
-		t.Errorf("only %d accepted and %d refused cases compared; the file shrank", accepted, refused)
+	// 39 shapes: 17 accepted by both, 17 refused by both, and 5 that leave a setting unstated
+	// which vLLM resolves from the model and GPU and the factory refuses by design
+	// (unstatedRefused). So the two agree on acceptance in 34 of 39, not in all of them.
+	if accepted != 17 || refused != 17 || len(unstatedRefused) != 5 {
+		t.Errorf("%d accepted, %d refused and %d unstated-by-design cases compared; want 17, 17 and 5: the file changed",
+			accepted, refused, len(unstatedRefused))
 	}
 }
