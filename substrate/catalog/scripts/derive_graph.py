@@ -316,7 +316,9 @@ def fp8_unquantized_roles(cfg: dict[str, Any], raw: dict[str, Any], model: str,
         return {}
     if "fp8" not in str(quant.get("quant_method", "")).lower():
         return {}
-    excluded = quant.get("modules_to_not_convert")
+    # MiniMax-style checkpoints name the skipped modules in ignored_layers, which vLLM reads
+    # the same way (modelopt.py:1215-1235@v0.32.0); a list in both is read from the first.
+    excluded = quant.get("modules_to_not_convert") or quant.get("ignored_layers")
     if not excluded:
         return {}
     names = set(excluded)
@@ -844,6 +846,27 @@ def int_group_scale(cfg: dict[str, Any], raw: dict[str, Any],
     return {"elements": sizes.pop(), "bytes": DTYPE_WIDTHS[base_dtype(cfg, raw, model)]}
 
 
+def mxfp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dict[str, int] | None:
+    """The resident scale of an MXFP8 checkpoint, or None.
+
+    MiniMax's `quant_method: mxfp8` checkpoints are read as ModelOpt MXFP8 (ModelOptMxFp8Config,
+    vllm/model_executor/layers/quantization/modelopt.py:1215-1222@v0.32.0): E4M3 weights with a
+    per-32-block E8M0 scale ("MXFP8: e4m3 weights with per-32-block e8m0 scales", :150;
+    MXFP8_BLOCK_SIZE 32 and MXFP8_SCALE_DTYPE uint8, utils/mxfp8_utils.py:10-11). DType.Bytes
+    is payload alone and fp8 defines no scale layout of its own, so without this the graph
+    leaves out one byte in 32 of every fp8 weight, 3.1% (the checkpoint's `weight_scale_inv`
+    tensors are U8 [rows, columns / 32]). A block other than 1 x 32 is refused, as is a scale
+    layout the config does not state."""
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() != "mxfp8":
+        return None
+    block = quant.get("weight_block_size")
+    if block != [1, 32]:
+        raise DeriveError(f"{model}: an mxfp8 checkpoint states weight_block_size {block!r}; "
+                          f"MXFP8 is a 1 x 32 block with one E8M0 scale byte")
+    return {"elements": 32, "bytes": 1}
+
+
 def base_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     """The declared parameter dtype, ignoring any quantization block."""
     declared = pick(cfg, "dtype") or pick(raw, "dtype")
@@ -1227,6 +1250,9 @@ DRAFT_KIND_ID = "mtp_moe"
 # effect of this entry. Until they are, each understates its head by vocab x hidden bytes.
 HEAD_UNQUANTIZED = {
     "Glm5NextForConditionalGeneration": {"lm_head": "lm_head"},
+    # MiniMax-M3-MXFP8 lists lm_head in ignored_layers, and its header holds it BF16
+    # ([200064, 6144]) beside the F8_E4M3 decoder tensors.
+    "MiniMaxM3SparseForConditionalGeneration": {"lm_head": "lm_head"},
 }
 
 
@@ -5499,6 +5525,15 @@ def derive(config_path: Path, model: str) -> dict[str, Any]:
             raise DeriveError(f"{model}: the handler and the quantization config state "
                               f"different weight scales")
         graph["global"]["weight_scale"] = scale
+    mx = mxfp8_scale(cfg, raw, model)
+    if mx:
+        if graph["global"]["weight_dtype"] != "fp8":
+            raise DeriveError(f"{model}: an mxfp8 checkpoint with global width "
+                              f"{graph['global']['weight_dtype']}, not fp8")
+        if graph["global"].get("weight_scale") not in (None, mx):
+            raise DeriveError(f"{model}: the handler and the quantization config state "
+                              f"different weight scales")
+        graph["global"]["weight_scale"] = mx
     if "embedding" in extras:
         graph["embedding"] = extras["embedding"]
 

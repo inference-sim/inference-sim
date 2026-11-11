@@ -6885,3 +6885,71 @@ def test_k3_dspark_block_comes_from_the_config_or_the_recorded_card(tmp_path, mo
 def test_k3_dspark_refuses_what_vllm_refuses_or_the_graph_does_not_price(tmp_path, edit, why):
     with pytest.raises(deriver().DeriveError, match=why):
         _derive_raw({**config_of(K3_DSPARK), **edit}, tmp_path, "kimi-k3-dspark")
+
+
+# --- MXFP8 scales (MiniMax-M3-MXFP8) ----------------------------------------------------
+
+MINIMAX_M3_MXFP8 = MODELS / "minimax-m3-mxfp8"
+# The safetensors headers of MiniMaxAI/MiniMax-M3-MXFP8 at c5454eb03678: 45,838 tensors. The
+# language model holds 423,670,579,200 F8_E4M3 weights; the same count of `weight_scale_inv`
+# tensors is U8 [rows, columns / 32], 13,239,705,600 bytes; lm_head and embed_tokens are BF16
+# [200064, 6144]. (The vision tower's BF16 tensors are not a decoder node.)
+MXFP8_FP8_WEIGHTS = 423_670_579_200
+MXFP8_SCALE_BYTES = 13_239_705_600
+
+
+def _fp8_decoder_params(g: dict) -> int:
+    """Parameters the graph stores at the global fp8 width in its decoder stack (a routed or
+    shared expert is three matrices of n x k)."""
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    st = g["stack"]
+    total = 0
+    for kid in list(st.get("prologue", [])) + list(st["pattern"]) * st["repeat"]:
+        for n in kinds[kid]["nodes"]:
+            if n["op"] == "GEMM" and n.get("weight_dtype", "fp8") == "fp8":
+                total += n["n"] * n["k"]
+            elif n["op"] == "GroupedGEMM":
+                total += (n["experts"] + n.get("shared_experts", 0)) * 3 * n["n"] * n["k"]
+    return total
+
+
+def _mxfp8_graphs(tmp_path):
+    """The committed graph and a fresh derivation of the pinned config: both are held to it."""
+    fresh = _derive_raw(config_of(MINIMAX_M3_MXFP8), tmp_path, "minimax-m3-mxfp8")
+    return [graph_of(MINIMAX_M3_MXFP8), fresh]
+
+
+def test_mxfp8_graph_carries_the_checkpoints_one_in_thirty_two_scale_bytes(tmp_path):
+    for g in _mxfp8_graphs(tmp_path):
+        assert g["global"]["weight_dtype"] == "fp8"
+        assert g["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+        params = _fp8_decoder_params(g)
+        assert params == MXFP8_FP8_WEIGHTS
+        sc = g["global"]["weight_scale"]
+        assert params * sc["bytes"] // sc["elements"] == MXFP8_SCALE_BYTES
+
+
+def test_mxfp8_head_is_bf16_because_the_checkpoint_ignores_it(tmp_path):
+    """lm_head is in ignored_layers and the header holds it BF16, so it is priced at the base
+    width and carries no scale."""
+    for g in _mxfp8_graphs(tmp_path):
+        head = {n["role"]: n for n in g["head"]}
+        assert head["lm_head"]["weight_dtype"] == "bf16"
+
+
+def test_mxfp8_refuses_a_block_it_does_not_price(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    raw = json.loads(json.dumps(config_of(MINIMAX_M3_MXFP8)))
+    raw["quantization_config"]["weight_block_size"] = [128, 128]
+    with pytest.raises(derive_graph.DeriveError, match="1 x 32"):
+        _derive_raw(raw, tmp_path, "minimax-m3-mxfp8")
+
+
+def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscaled():
+    """The 128 x 128 fp32-scaled fp8 graphs carry 4 bytes in 16,384, 0.02%, and state none; the
+    layout belongs to the checkpoint, so a graph states one only where the config does."""
+    scaled = {d.name for d in sorted(MODELS.iterdir())
+              if d.is_dir() and graph_of(d)["global"].get("weight_scale")
+              and graph_of(d)["global"]["weight_dtype"] == "fp8"}
+    assert scaled == {"minimax-m3-mxfp8", "deepseek-v4.1-flash"}

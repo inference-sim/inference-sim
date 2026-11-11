@@ -11,6 +11,9 @@ global:
   tie_word_embeddings: false
   weight_dtype: fp8
   architecture: MiniMaxM3SparseForConditionalGeneration
+  weight_scale:
+    elements: 32
+    bytes: 1
 layer_kinds:
 - id: dense
   nodes:
@@ -154,6 +157,7 @@ head:
   role: lm_head
   n: 200064
   k: 6144
+  weight_dtype: bf16
 speculator:
   method: minimax_m3_mtp
   num_spec_tokens: 1
