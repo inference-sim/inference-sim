@@ -78,24 +78,41 @@ def _edit_hidden_size(graph_yaml: Path) -> str:
     return original
 
 
+# The model the hand-edit test mutates: named, so which entry the catalog sorts first does not
+# decide the test, and small, so the copy is one model and not the catalog.
+HAND_EDIT_MODEL = "qwen2.5-7b-instruct"
+
+
+def one_model_catalog(tmp_path: Path, name: str) -> Path:
+    """A catalog of one model: its committed config.json and graph, and the licence index the
+    deriver reads. Built here, so the test depends on nothing else in the catalog."""
+    import shutil
+    src = MODELS / name
+    assert (src / "config.json").is_file() and (src / "graph.yaml").is_file(), \
+        f"{name} is not a catalog entry with a committed config.json"
+    tree = tmp_path / "catalog"
+    (tree / "models").mkdir(parents=True)
+    shutil.copytree(src, tree / "models" / name)
+    if (ROOT / "licences").is_dir():
+        shutil.copytree(ROOT / "licences", tree / "licences")
+    return tree
+
+
 def test_hand_edit_is_detected(tmp_path):
     """The negative case for the check above: a modified graph must be reported.
 
-    A check that cannot fail proves nothing, so this mutates a copy of the tree and
-    asserts the deriver notices. The entry is the first, in sorted order, whose config.json
-    is committed: an entry that pins its config by hash cannot be re-derived offline."""
-    import shutil
-
-    tree = tmp_path / "catalog"
-    shutil.copytree(ROOT, tree, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-    target = sorted(p for p in (tree / "models").iterdir()
-                    if (p / "graph.yaml").is_file() and (p / "config.json").is_file())[0]
-    _edit_hidden_size(target / "graph.yaml")
+    A check that cannot fail proves nothing, so this mutates a one-model catalog and asserts the
+    deriver notices, after asserting that it passes the unedited copy (so the failure is the edit's)."""
+    tree = one_model_catalog(tmp_path, HAND_EDIT_MODEL)
+    clean = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check"],
+                           capture_output=True, text=True)
+    assert clean.returncode == 0, f"the unedited one-model catalog does not pass:\n{clean.stderr}"
+    _edit_hidden_size(tree / "models" / HAND_EDIT_MODEL / "graph.yaml")
 
     r = subprocess.run([sys.executable, str(DERIVER), str(tree), "--check"],
                        capture_output=True, text=True)
     assert r.returncode != 0, "a hand-edited graph was not detected"
-    assert target.name in r.stderr
+    assert HAND_EDIT_MODEL in r.stderr
 
 
 def test_a_hand_edit_of_any_committed_config_entry_is_detected(tree_copy):
@@ -118,9 +135,9 @@ def test_a_hand_edit_of_any_committed_config_entry_is_detected(tree_copy):
 
 
 def _pin_first_entry(tree: Path) -> tuple[str, Path]:
-    """Turn the first committed-config entry into a hash-pinned one, as the entries whose
+    """Turn a named committed-config entry into a hash-pinned one, as the entries whose
     licence is off the allow-list are, and return its name and the config to fetch."""
-    name = sorted(d.name for d in model_dirs())[0]
+    name = HAND_EDIT_MODEL
     d = tree / "models" / name
     import hashlib
     sha = hashlib.sha256((d / "config.json").read_bytes()).hexdigest()
