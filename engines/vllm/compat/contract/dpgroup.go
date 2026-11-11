@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 
 	"github.com/inference-sim/blis-vllm/compat/dplb"
@@ -61,6 +62,7 @@ func NewDPGroup(ids []string, cfg cengine.SimConfig) (*DPGroup, error) {
 			return nil, err
 		}
 		e.group = g
+		e.pl.Data = dp // the group's ranks are the pool's data-parallel width
 		g.ranks = append(g.ranks, e)
 		g.lbView = append(g.lbView, dpRank{g: g, k: k})
 	}
@@ -117,6 +119,10 @@ func (g *DPGroup) PickRank(now engine.Time, inFlight []int) (int, error) {
 
 // Add routes the request to the rank the balancer picks at now and enqueues it there.
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	// A request that cannot exist is refused before the balancer picks a rank for it.
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	return g.AddToRank(g.lb.Pick(g.lbView, now), r, now)
 }
 
@@ -124,6 +130,9 @@ func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
 // external DP load balancer, every rank its own endpoint). A rank left with work waiting asks
 // the group for a step (the host loop's QueuedEvent).
 func (g *DPGroup) AddToRank(k int, r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if k < 0 || k >= len(g.ranks) {
 		return fmt.Errorf("contract: no rank %d in a group of %d", k, len(g.ranks))
 	}
@@ -524,3 +533,9 @@ func (v *RankView) ServerSeriesSpan() (interval, end int64) {
 func (v *RankView) ServerSeriesBlock(id string, end int64) ([]byte, error) {
 	return v.g.ranks[v.k].ServerSeriesBlock(id, end)
 }
+
+// Plan implements engine.Planned: the pool's plan, which every rank states its transfers against; the
+// ranks share one placement, so any rank's is the group's.
+func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].Plan() }
+
+var _ engine.Planned = (*DPGroup)(nil)

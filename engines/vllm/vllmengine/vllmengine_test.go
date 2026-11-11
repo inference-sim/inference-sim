@@ -13,6 +13,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
@@ -551,13 +552,30 @@ func TestMuseSparkPDPoolsRunThroughTheEngine(t *testing.T) {
 		held = res.Handoffs
 	}
 	dec := r
-	dec.RemotePrefill = true
+	// The host hands the decode engine the prefill's address, as a P/D proxy does (engine.Request.Peer).
+	prefillAt := plan.Endpoint{Node: 0, Rack: 0}
+	dec.RemotePrefill, dec.Peer = true, &prefillAt
 	if err := d.Add(dec, now); err != nil {
 		t.Fatal(err)
 	}
 	b, err := d.Schedule(now)
 	if err != nil || len(b.TransfersStarted) != 1 || b.TransfersStarted[0].Tokens != 8192 {
 		t.Fatalf("decode schedule: %v, transfers %+v, want one pull of 8192 tokens", err, b.TransfersStarted)
+	}
+	// The production pool states its placement (kernelmodel.EnginePlacement), the engine is Planned by it, and
+	// the pull states its move from the prefill to the decode pool's first node against that plan.
+	pl, ok := d.(engine.Planned)
+	if !ok {
+		t.Fatal("the decode engine is not Planned")
+	}
+	if mv := b.TransfersStarted[0].Move; mv.Kind != plan.TransferPeer || mv.From != prefillAt || mv.Tokens != 8192 {
+		t.Errorf("the pull's move is %+v, want a peer move of 8192 tokens from %+v", mv, prefillAt)
+	}
+	if err := pl.Plan().CheckTransfer(b.TransfersStarted[0].Move); err != nil {
+		t.Errorf("the decode plan %+v refuses the pull's move: %v", pl.Plan(), err)
+	}
+	if pl.Plan().Hardware == "" {
+		t.Error("the production pool's plan names no chip")
 	}
 	now += 5000
 	if err := d.TransferDone(b.TransfersStarted[0].ID, true, now); err != nil {

@@ -35,6 +35,7 @@ import (
 	"strconv"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/load"
 
@@ -127,6 +128,10 @@ type Engine struct {
 	pd *pd
 	// off is the engine's KV offload side, nil when it runs none (offload.go).
 	off *offload
+	// plan is the PoolPlan the engine's transfers are priced against, and at the node and rack its
+	// workers sit on (Plan); both are zero for a pool that states no placement.
+	plan plan.PoolPlan
+	at   plan.Endpoint
 	// verified are, for each in-flight batch the pricer trims (VerifyingPricer), by core
 	// batch ID, how many drafts each of its requests had verified; apply caps their acceptance
 	// at it and drops the entry.
@@ -183,18 +188,41 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		pp: max(st.sched.DecodeStagger, 1),
 	}
 	e.core = &core.Core{Sched: s, QueueSize: st.queueSize, GPU: &e.gpu}
-	if e.pd, err = buildConnector(s, st.connector, st.pp, st.sched.Spec, len(st.sched.KVGroups) > 1); err != nil {
+	// A pool that can start a transfer states each one against its placement (engine.Transfer.Move) and
+	// is priced against the plan built from it, so it must say where it sits.
+	if (st.connector != nil || st.offload != nil) && st.placement == nil {
+		return nil, fmt.Errorf("vllm: a pool with kv_transfer or kv_offload starts KV transfers and must state its " +
+			"placement (the chip, network, layout and node): the transfers are priced against it (engine.Planned)")
+	}
+	if st.placement != nil {
+		e.at = st.placement.Endpoint()
+		e.plan = st.placement.Plan(offloadTiers(st.offload))
+	}
+	if e.pd, err = buildConnector(s, st.connector, st.pp, st.sched.Spec, len(st.sched.KVGroups) > 1, e.at); err != nil {
 		return nil, err
 	}
 	e.gpu.pd = e.pd
 	if st.offload != nil {
-		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching); err != nil {
+		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, e.at); err != nil {
 			return nil, err
 		}
 		e.gpu.off = e.off
 	}
 	return e, nil
 }
+
+// Plan implements engine.Planned: the PoolPlan the engine's transfers are priced against, the same on
+// every call. It states the pool's placement and its KV tiers (cpu_dram when kv_offload is configured);
+// the lowered layers, KV groups, graphs and memory breakdown are the cost model's resolution, which is not
+// built here (blis-latency-kernel#84), so a pool that states no placement has the empty plan and starts
+// no transfer.
+func (e *Engine) Plan() plan.PoolPlan {
+	p := e.plan
+	p.Tiers = append([]plan.KVTier(nil), p.Tiers...)
+	return p
+}
+
+var _ engine.Planned = (*Engine)(nil)
 
 // histogramBounds are the bucket bounds vLLM v0.32.0 registers for the request-token,
 // iteration-token, n and preemption histograms (vllm/v1/metrics/buckets.py:107-128,172-240@5df63a72).
@@ -226,8 +254,13 @@ func build125(maxValue int) []float64 {
 	}
 }
 
-// Add implements engine.Engine: add_request, after the input processor's checks.
+// Add implements engine.Engine: add_request, after the input processor's checks. It refuses a
+// request that cannot exist first, with the error of engine.Request.Validate (an adapter path
+// and no adapter name), as the contract's Add requires.
 func (e *Engine) Add(r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}

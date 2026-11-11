@@ -62,6 +62,7 @@ func TestOffloadConformance(t *testing.T) {
 			}
 			kinds := map[engine.TransferKind]int{}
 			tr := enginetest.TestEngine(t, build(t, c.extra), arr, enginetest.Options{
+				Boundary: boundary,
 				TransferTime: func(tr engine.Transfer) engine.Duration {
 					kinds[tr.Kind]++
 					return engine.Duration(50 + 10*tr.Blocks)

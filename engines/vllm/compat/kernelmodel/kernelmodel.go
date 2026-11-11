@@ -71,6 +71,7 @@ import (
 	latencykernel "github.com/inference-sim/blis-substrate/kernel"
 	"github.com/inference-sim/blis-substrate/load"
 	"github.com/inference-sim/blis-vllm/compat/vllmsettings"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	vllmrules "github.com/inference-sim/blis-vllm/rules"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
@@ -163,6 +164,7 @@ type Model struct {
 type identity struct {
 	model         string
 	hardware      string
+	fabric        string
 	memoryGiB     float64
 	smCount       int
 	experts       int
@@ -212,6 +214,7 @@ func identityOf(in latencykernel.Inputs, engine engineconfig.Engine, pk scenario
 	return identity{
 		model:           in.Scenario.Model,
 		hardware:        in.Chip.Name,
+		fabric:          in.Scenario.Cluster.Fabric,
 		memoryGiB:       in.Chip.MemoryGiB,
 		smCount:         in.Chip.SMCount,
 		experts:         experts,
@@ -508,6 +511,26 @@ func (m *Model) PlacementOf(rank int) kernel.Placement {
 		rack = node * m.id.gpusPerNode / m.id.gpusPerRack
 	}
 	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
+}
+
+// EnginePlacement is where the pool sits, in the engine's terms (core/placement): the chip and fabric the
+// scenario names, the parallel widths the kernel resolved, the pool's nodes and the rack of each, and
+// the node of the pool's first replica (PlacementOf(0), counted from the pool's first node). A
+// Placement is what the engine states its transfers against, and the plan they are priced against.
+func (m *Model) EnginePlacement() placement.Placement {
+	r := m.k.Resolved()
+	p := placement.Placement{Hardware: m.id.hardware, Fabric: m.id.fabric, Tensor: m.id.tpRanks,
+		Pipeline: m.PipelineStages(), Data: r.DataParallel(), Expert: r.ExpertParallel(),
+		RanksPerNode: m.id.gpusPerNode, Nodes: m.id.poolNodes}
+	for n := 0; n < m.id.poolNodes; n++ {
+		rack := m.id.firstNode + n
+		if m.id.gpusPerRack > 0 && m.id.gpusPerNode > 0 {
+			rack = (m.id.firstNode + n) * m.id.gpusPerNode / m.id.gpusPerRack
+		}
+		p.NodeRacks = append(p.NodeRacks, rack)
+	}
+	p.Node = m.PlacementOf(0).Node - m.id.firstNode
+	return p
 }
 
 // EndpointPlacement reports whether one simulated engine rank fits on one

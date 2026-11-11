@@ -19,7 +19,10 @@ import (
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+
+	"github.com/inference-sim/blis-vllm/core/placement"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv" // registers the KV store the engine is built with
@@ -70,6 +73,9 @@ type Engine struct {
 	// group is the data-parallel group the engine is a rank of (DPGroup), nil for none: the group
 	// steps its ranks, so a rank's ask for a step is the group's.
 	group *DPGroup
+	// pl is where the engine sits: its chip, layout and node. New states one node of the configuration's
+	// GPU, tensor and data widths; SetPlacement replaces it. Its Plan is what a P/D pull is priced against.
+	pl placement.Placement
 }
 
 type adapterLoad struct {
@@ -108,7 +114,8 @@ func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 		return nil, fmt.Errorf("contract: %s: %w", id, err)
 	}
 	e := &Engine{core: core, rec: &recorder{}, horizon: cfg.Horizon, reqs: map[string]*cengine.Request{},
-		out: map[string]int{}, running: map[string]bool{}, wake: -1}
+		out: map[string]int{}, running: map[string]bool{}, wake: -1,
+		pl: placement.Placement{Hardware: cfg.GPU, Tensor: max(cfg.TP, 1), Data: max(cfg.DP, 1), Nodes: 1}}
 	core.Host = host{e}
 	core.Rec = e.rec
 	return e, nil
@@ -116,9 +123,30 @@ func New(id string, cfg cengine.SimConfig) (*Engine, error) {
 
 var _ engine.Engine = (*Engine)(nil)
 
+// SetPlacement states where the engine sits, when it is not the single node of the configuration's GPU
+// that New assumes; a refused placement leaves the engine as it was.
+func (e *Engine) SetPlacement(p placement.Placement) error {
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("contract: %w", err)
+	}
+	e.pl = p
+	return nil
+}
+
+// Plan implements engine.Planned: the pool's placement, which is what a P/D pull is priced against. The
+// compatibility engine offloads to no tier it reports as a transfer, so the plan lists none; the lowered
+// layers, KV groups and graphs are the cost model's resolution, which is not built here
+// (blis-latency-kernel#84).
+func (e *Engine) Plan() plan.PoolPlan { return e.pl.Plan(nil) }
+
+var _ engine.Planned = (*Engine)(nil)
+
 // Add enqueues a request, as the host's QueuedEvent does (EnqueueRequest). A request the engine
 // drops at enqueue (its length guards) is refused.
 func (e *Engine) Add(r engine.Request, now engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := e.reqs[r.ID]; dup {
 		return fmt.Errorf("contract: request %s added twice", r.ID)
 	}

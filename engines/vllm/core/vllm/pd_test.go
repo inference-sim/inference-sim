@@ -115,7 +115,7 @@ func TestPDThroughTheEngine(t *testing.T) {
 
 	d := mustEngine(t, consumer)
 	r = req("a", 80, 6)
-	r.RemotePrefill = true
+	r.RemotePrefill, r.Peer = true, peer
 	if err := d.Add(r, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestPDFailedPullFollowsTheLoadFailurePolicy(t *testing.T) {
 		}
 		d := mustEngine(t, extra)
 		r := req("a", 80, 6)
-		r.RemotePrefill = true
+		r.RemotePrefill, r.Peer = true, peer
 		if err := d.Add(r, 0); err != nil {
 			t.Fatal(err)
 		}
@@ -218,12 +218,14 @@ func TestPDConformanceWhenEveryPullFails(t *testing.T) {
 	for _, extra := range []string{consumer, "kv_transfer: {connector: NixlConnector, kv_role: kv_consumer, kv_load_failure_policy: recompute}\n"} {
 		// A lone failed pull, whose error finish no result carries, and a mix.
 		lone := req("z", 40, 6)
-		lone.RemotePrefill = true
+		lone.RemotePrefill, lone.Peer = true, peer
 		enginetest.TestEngine(t, build(t, extra), arrivals(lone), enginetest.Options{
+			Boundary:      boundary,
 			TransferFails: func(engine.Transfer) bool { return true }})
 		reqs := []engine.Request{req("a", 40, 6), req("b", 70, 3), req("c", 20, 9)}
-		reqs[0].RemotePrefill, reqs[2].RemotePrefill = true, true
+		reqs[0].RemotePrefill, reqs[0].Peer, reqs[2].RemotePrefill, reqs[2].Peer = true, peer, true, peer
 		enginetest.TestEngine(t, build(t, extra), arrivals(reqs...), enginetest.Options{
+			Boundary:      boundary,
 			TransferTime:  func(engine.Transfer) engine.Duration { return 250 },
 			TransferFails: func(engine.Transfer) bool { return true },
 		})
@@ -238,14 +240,14 @@ func TestPDConformance(t *testing.T) {
 		mark        func(*engine.Request)
 	}{
 		{"prefiller", producer, func(r *engine.Request) { r.RemoteDecode = true }},
-		{"decoder", consumer, func(r *engine.Request) { r.RemotePrefill = true }},
+		{"decoder", consumer, func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 		// The measured Muse P/D arm runs vLLM's default async scheduling: two batches in flight.
 		{"prefiller async", producer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemoteDecode = true }},
-		{"decoder async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemotePrefill = true }},
+		{"decoder async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\n", func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 		{"decoder hybrid async", consumer + "async_scheduling: true\nuse_v2_model_runner: true\nkv_layers:\n" +
 			"- {count: 1, spec: full, num_kv_heads: 1, head_size: 64}\n" +
 			"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n",
-			func(r *engine.Request) { r.RemotePrefill = true }},
+			func(r *engine.Request) { r.RemotePrefill, r.Peer = true, peer }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			reqs := []engine.Request{req("a", 40, 6), req("b", 70, 3), req("c", 20, 9), req("d", 90, 4)}
@@ -258,6 +260,7 @@ func TestPDConformance(t *testing.T) {
 				}
 			}
 			enginetest.TestEngine(t, build(t, c.extra), arrivals(reqs...), enginetest.Options{
+				Boundary:     boundary,
 				TransferTime: func(engine.Transfer) engine.Duration { return 250 },
 			})
 		})
@@ -281,7 +284,7 @@ func TestPDRefusals(t *testing.T) {
 	}
 	plain := mustEngine(t, "")
 	r := req("a", 40, 2)
-	r.RemotePrefill = true
+	r.RemotePrefill, r.Peer = true, peer
 	if err := plain.Add(r, 0); err == nil {
 		t.Error("an engine without a connector accepted a remote prefill")
 	}
@@ -319,7 +322,7 @@ func TestPDPrefillLegSamplesOneToken(t *testing.T) {
 	for i := range legs {
 		legs[i].RemoteDecode = true
 	}
-	enginetest.TestEngine(t, build(t, producer), arrivals(legs...), enginetest.Options{})
+	enginetest.TestEngine(t, build(t, producer), arrivals(legs...), enginetest.Options{Boundary: boundary})
 }
 
 // A hybrid model's handoff holds the prompt's full-attention blocks: every one of its tokens,

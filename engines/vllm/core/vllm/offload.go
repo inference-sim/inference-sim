@@ -7,8 +7,11 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 
 	"github.com/inference-sim/blis-vllm/core/connector/offloading"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 )
 
@@ -79,7 +82,10 @@ type offloadConfig struct {
 type offload struct {
 	conn      *offloading.Scheduler
 	blockSize int
-	next      engine.TransferID
+	// at is the node and rack that hold the CPU tier: the pool's node this engine's workers sit on,
+	// where the bytes of a load or a store start and land.
+	at   plan.Endpoint
+	next engine.TransferID
 	// early are the transfers of flushed jobs already reported complete: their TransferDone is
 	// accepted and changes nothing.
 	early map[engine.TransferID]bool
@@ -106,7 +112,7 @@ type offload struct {
 // model. Each KV cache group is offloaded at its block size, a sliding window with the
 // extra_retained_tokens the drafter's prefill lookahead sets (get_kv_cache_configs,
 // vllm/v1/core/kv_cache_utils.py:2582-2589@5df63a72).
-func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool) (*offload, error) {
+func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method string, prefixCaching bool, at plan.Endpoint) (*offload, error) {
 	if c.Connector != "OffloadingConnector" {
 		return nil, fmt.Errorf("vllm: kv_offload.connector %q is not modelled through the engine (modelled: "+
 			"OffloadingConnector; registry/connectors.yaml)", c.Connector)
@@ -179,7 +185,7 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	if err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
-	o := &offload{conn: conn, blockSize: bs, early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
+	o := &offload{conn: conn, blockSize: bs, at: at, early: map[engine.TransferID]bool{}, jobs: map[engine.TransferID]int{}, ids: map[int]engine.TransferID{},
 		groups: map[engine.TransferID][]int{}, flushed: map[int][]int{}, recv: map[string]bool{}, loadReq: map[int]string{}}
 	// kv_both: the CPU tier is both stored to and loaded from.
 	if err := s.SetConnector(conn, sched.ConnectorConfig{Consumer: true, Producer: true}); err != nil {
@@ -209,8 +215,15 @@ func (o *offload) started(batch int, cb any) []engine.Transfer {
 		for _, n := range j.GroupSizes {
 			widest = max(widest, n)
 		}
+		// Move is the same transfer in the cost model's terms: the catalog device the tier name "cpu" stands
+		// for (cpu_dram), a load from it or a store to it, on the node that holds the tier at both ends.
+		move := plan.Transfer{Tokens: units.Tokens(widest * o.blockSize), From: o.at, To: o.at, Tier: placement.CPUDRAM,
+			Kind: plan.TransferToTier}
+		if kind == engine.TransferLoad {
+			move.Kind = plan.TransferFromTier
+		}
 		out = append(out, engine.Transfer{ID: o.next, Request: j.Req, Kind: kind, Tier: "cpu",
-			Tokens: widest * o.blockSize, Blocks: len(j.GPU)})
+			Tokens: widest * o.blockSize, Blocks: len(j.GPU), Move: move})
 	}
 	for _, j := range m.Loads {
 		o.loadReq[j.ID] = j.Req
@@ -294,4 +307,14 @@ func (o *offload) take(batch int) (jobs []offloading.Completion, recv []string) 
 	sort.Strings(recv)
 	o.completed, o.recv = nil, map[string]bool{}
 	return jobs, recv
+}
+
+// offloadTiers are the KV tiers below GPU memory a pool's offload makes: the CPU tier, the catalog's
+// cpu_dram. Its capacity per rank is cpu_bytes_to_use over the workers, which each hold their share
+// (cpu/spec.py:96-121@5df63a72). A pool with no offload has none.
+func offloadTiers(c *offloadConfig) []plan.KVTier {
+	if c == nil {
+		return nil
+	}
+	return []plan.KVTier{{Device: placement.CPUDRAM, Bytes: units.Rank(units.Bytes(c.CPUBytes / int64(max(c.Workers, 1))))}}
 }

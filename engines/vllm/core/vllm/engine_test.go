@@ -11,6 +11,7 @@ import (
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/rules"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -37,6 +38,11 @@ func block(t testing.TB, extra string) yaml.Node {
 			lines = append(lines, l)
 		}
 	}
+	// A pool that can start a transfer states where it sits (Config.Placement): two nodes of one rack, the
+	// engine on the first, and a prefill on the second.
+	if (strings.Contains(extra, "kv_transfer:") || strings.Contains(extra, "kv_offload:")) && !strings.Contains(extra, "placement:") {
+		extra += "placement: {hardware: h100, fabric: ib-400g, tensor: 1, nodes: 2, ranks_per_node: 8, node: 0, node_racks: [0, 0]}\n"
+	}
 	src := strings.Join(lines, "\n") + "\n" + extra
 	var n yaml.Node
 	if err := yaml.Unmarshal([]byte(src), &n); err != nil {
@@ -50,6 +56,9 @@ func spec(t testing.TB, extra string) engine.Spec {
 }
 
 func fixed(engine.Spec) (Pricer, error) { return FixedPricer(100), nil }
+
+// peer is the prefill a decode engine's request reads from in these tests: node 1 of rack 0.
+var peer = &plan.Endpoint{Node: 1, Rack: 0}
 
 func build(t testing.TB, extra string) func() (engine.Engine, error) {
 	t.Helper()

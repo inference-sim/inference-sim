@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 )
@@ -27,6 +29,8 @@ type handoffs struct {
 	pulls map[engine.TransferID]*cengine.Request
 	held  map[engine.TransferID]*cengine.Request
 	next  engine.TransferID
+	// peer is where each waiting handoff's prefill sits (engine.Request.Peer), the end its pull reads from.
+	peer map[string]plan.Endpoint
 	// started are the transfers the current call started, for the batch it returns.
 	started []engine.Transfer
 	armed   bool
@@ -58,6 +62,10 @@ func (e *Engine) addRemote(r engine.Request, now engine.Time) error {
 		e.ho.armed = true
 		e.core.SetRemoteKVAdmission(func(int64) { e.admitRemote() })
 	}
+	if e.ho.peer == nil {
+		e.ho.peer = map[string]plan.Endpoint{}
+	}
+	e.ho.peer[r.ID] = *r.Peer // Add refused a remote prefill with no peer (engine.Request.Validate)
 	e.ho.waiting = append(e.ho.waiting, req)
 	e.core.SetRemoteKVWaiting(len(e.ho.waiting))
 	return nil
@@ -76,8 +84,10 @@ func (e *Engine) admitRemote() {
 		}
 		e.ho.pulls[id] = a.Req
 		started[a.Req] = true
+		// A pull from a peer: it reads the prefill's node and rack and lands on this engine's, using no tier.
 		e.ho.started = append(e.ho.started, engine.Transfer{ID: id, Request: a.Req.ID, Kind: engine.TransferLoad,
-			Tokens: int(a.PulledTokens)})
+			Tokens: int(a.PulledTokens), Move: plan.Transfer{Tokens: units.Tokens(a.PulledTokens),
+				From: e.ho.peer[a.Req.ID], To: e.pl.Endpoint(), Kind: plan.TransferPeer}})
 	}
 	rest := e.ho.waiting[:0:0]
 	for _, w := range e.ho.waiting {

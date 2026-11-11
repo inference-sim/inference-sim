@@ -7,6 +7,8 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 
 	"github.com/inference-sim/blis-vllm/core/connector/nixl"
 	core "github.com/inference-sim/blis-vllm/core/engine"
@@ -74,11 +76,16 @@ type pd struct {
 	remote, decode map[string]bool
 	// outcome is what the worker reports with the next applied output.
 	outcome sched.TransferOutcome
+	// at is the node and rack this engine's workers sit on, the end of a pull a decode engine receives
+	// at; peer is each remote-prefilled request's prefill, the end the pull reads from
+	// (engine.Request.Peer).
+	at   plan.Endpoint
+	peer map[string]plan.Endpoint
 }
 
 // buildConnector installs the engine block's connector on the scheduler, refusing one it does
 // not model and what vLLM's NIXL worker refuses at start-up for the parallel layout.
-func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.Spec, hybrid bool) (*pd, error) {
+func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.Spec, hybrid bool, at plan.Endpoint) (*pd, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -107,7 +114,8 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 	cfg := nixl.Default()
 	cfg.PrefillBackoff = nixl.Backoff(spec)
 	p := &pd{role: c.Role, nixl: nixl.New(cfg), matched: map[string]int{}, pulls: map[engine.TransferID]string{},
-		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{}}
+		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{},
+		at: at, peer: map[string]plan.Endpoint{}}
 	// is_kv_consumer and is_kv_producer (vllm/config/kv_transfer.py:130-136@5df63a72) set
 	// defer_block_free and requires_kv_delivery beside more than one batch in flight
 	// (vllm/v1/core/sched/scheduler.py:184-194@5df63a72).
@@ -149,7 +157,11 @@ func (p *pd) transferParams(r engine.Request, blockSize int) (*sched.TransferPar
 		if p == nil || p.role != roleConsumer {
 			return nil, fmt.Errorf("vllm: request %s is a disaggregated decode, and this engine is not a kv_consumer", r.ID)
 		}
+		if r.Peer == nil {
+			return nil, fmt.Errorf("vllm: request %s is a disaggregated decode and states no peer to pull from", r.ID)
+		}
 		p.remote[r.ID] = true
+		p.peer[r.ID] = *r.Peer
 		return &sched.TransferParams{DoRemotePrefill: true, HasRemote: true,
 			RemoteBlocks: (len(r.Prompt) + blockSize - 1) / blockSize}, nil
 	}
@@ -170,8 +182,11 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 		p.pulling[id] = true
 		p.next++
 		p.pulls[p.next] = id
+		// A pull from a peer: it reads the prefill's node and rack (engine.Request.Peer) and lands on this
+		// engine's, and uses no tier.
 		out = append(out, engine.Transfer{ID: p.next, Request: id, Kind: engine.TransferLoad, Tokens: p.matched[id],
-			Blocks: len(s.KV.Blocks(id))})
+			Blocks: len(s.KV.Blocks(id)), Move: plan.Transfer{Tokens: units.Tokens(p.matched[id]), From: p.peer[id], To: p.at,
+				Kind: plan.TransferPeer}})
 	}
 	p.nixl.BuildMeta()
 	return out

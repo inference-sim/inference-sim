@@ -19,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 
 	"github.com/inference-sim/blis-vllm/core/engine"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	"github.com/inference-sim/blis-vllm/core/sched"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 	"github.com/inference-sim/blis-vllm/rules/v0_32"
@@ -81,6 +82,12 @@ type Config struct {
 	// num_gpu_blocks from memory: the start-up check then states vLLM's numbers in GiB
 	// (kv_cache_utils.py:1031-1040@5df63a72). Unstated, it states them in blocks.
 	KVAvailableBytes int64 `yaml:"kv_available_bytes,omitempty"`
+	// Placement is where the pool sits: its chip, network, layout and the node this engine is on. The
+	// engine states every transfer it starts against it (engine.Transfer.Move) and builds the plan
+	// those transfers are priced against from it (Plan), so a pool that can start a transfer (a P/D
+	// connector or a KV offload) must state it, and a refusal says so. A pool that starts none needs
+	// no placement, and its Plan is empty.
+	Placement *placement.Placement `yaml:"placement,omitempty"`
 	// KVTransfer is the pool's kv_transfer_config for P/D: the connector and the pool's kv_role.
 	// The deployment states the connector (pd_transfer.connector) and the pool's role; a caller
 	// restates them here. Unstated is no connector.
@@ -122,6 +129,8 @@ type settings struct {
 	// offload is the pool's KV offload, nil for none; specMethod the drafter's method.
 	offload    *offloadConfig
 	specMethod string
+	// placement is where the pool sits, nil when the caller states none (Config.Placement).
+	placement *placement.Placement
 	// dp is the data-parallel group: ranks (1 for one engine), the sync interval, the
 	// coordinator's publish interval and the prefill throttle interval.
 	dp dpSettings
@@ -349,6 +358,12 @@ func resolve(c Config) (settings, error) {
 	s.queueSize, s.v2Runner = queue, v2
 	s.connector, s.pp = c.KVTransfer, pp
 	s.offload, s.specMethod = c.KVOffload, method
+	if c.Placement != nil {
+		if err := c.Placement.Validate(); err != nil {
+			return settings{}, fmt.Errorf("vllm: placement: %w", err)
+		}
+	}
+	s.placement = c.Placement
 	if s.offload != nil && s.connector != nil {
 		// Both at once is vLLM's MultiConnector, which is not modelled.
 		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+

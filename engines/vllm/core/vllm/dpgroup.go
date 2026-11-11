@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/load"
 
@@ -106,7 +107,13 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
 	for i := 0; i < n; i++ {
-		e, err := newEngine(st, pricer)
+		// Each rank is a replica of tensor x pipeline workers, which fill the pool's nodes in order.
+		rst := st
+		if st.placement != nil {
+			pl := st.placement.ForRank(i, max(st.placement.Tensor, 1)*max(st.placement.Pipeline, 1))
+			rst.placement = &pl
+		}
+		e, err := newEngine(rst, pricer)
 		if err != nil {
 			return nil, err
 		}
@@ -140,6 +147,10 @@ func (g *DPGroup) publish(now engine.Time) {
 // Add routes the request with the internal load balancer and hands it to that rank; a request
 // arriving at an idle wave starts the next wave on every rank (core.DP.Add).
 func (g *DPGroup) Add(r engine.Request, now engine.Time) error {
+	// A request that cannot exist is refused before the balancer sees it, so it takes no slot.
+	if err := r.Validate(); err != nil {
+		return err
+	}
 	if _, dup := g.rankOf[r.ID]; dup {
 		return fmt.Errorf("vllm: request %s added twice", r.ID)
 	}
@@ -451,6 +462,12 @@ func (g *DPGroup) Snapshot() engine.State {
 
 // Assumptions are the pricer's disclosed assumptions, as Engine reports them.
 func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
+
+// Plan implements engine.Planned: the pool's plan, which every rank states its transfers against. The
+// ranks differ in the node they sit on, which a transfer states, not in the plan.
+func (g *DPGroup) Plan() plan.PoolPlan { return g.ranks[0].e.Plan() }
+
+var _ engine.Planned = (*DPGroup)(nil)
 
 // RecordSelected registers the group's pricer with d, as Engine.RecordSelected does. The ranks
 // share one pricer (newDPGroup), so the group registers it once, not once per rank.

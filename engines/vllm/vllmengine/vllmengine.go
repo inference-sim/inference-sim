@@ -52,6 +52,7 @@ import (
 	"github.com/inference-sim/blis-substrate/load"
 
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
+	"github.com/inference-sim/blis-vllm/core/placement"
 	vllm "github.com/inference-sim/blis-vllm/core/vllm"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
@@ -582,6 +583,13 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 		// The deployment's offload block as the OffloadingConnector's configuration (offloadOf).
 		setNodeIfAbsent(&block, "kv_offload", cloneNode(p.offload))
 	}
+	if _, kt := mapGet(&block, "kv_transfer"); kt || p.offload != nil {
+		// A pool that can start a transfer states them against its placement and is priced against the plan
+		// built from it (core/vllm Config.Placement; engine.Planned).
+		if n, err := placementNode(p.model.EnginePlacement()); err == nil {
+			setNodeIfAbsent(&block, "placement", n)
+		}
+	}
 	if runs, err := p.model.KVLayers(); err == nil && len(runs) > 0 {
 		// The model's attention layers by the KV cache spec vLLM builds for each, which the
 		// factory groups as get_kv_cache_groups does (vllm/v1/core/kv_cache_utils.py:2159@5df63a72).
@@ -777,4 +785,23 @@ func cloneNode(n *yaml.Node) *yaml.Node {
 		c.Content[i] = cloneNode(ch)
 	}
 	return &c
+}
+
+// mapGet is the value node of key in a mapping node, and whether it is there.
+func mapGet(m *yaml.Node, key string) (*yaml.Node, bool) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1], true
+		}
+	}
+	return nil, false
+}
+
+// placementNode is a placement as the engine block's placement mapping.
+func placementNode(p placement.Placement) (*yaml.Node, error) {
+	var n yaml.Node
+	if err := n.Encode(p); err != nil {
+		return nil, err
+	}
+	return &n, nil
 }
