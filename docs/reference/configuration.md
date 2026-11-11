@@ -23,7 +23,7 @@ CLI flags only override YAML values when explicitly set. BLIS checks whether eac
 
 **Latency** — priced by [blis-latency-kernel](../guide/latency-models.md), the only latency backend. The scenario names the coefficient sets; they are read from the registry in use: the one embedded in the pinned blis-substrate release, or the directory `--registry` / `BLIS_REGISTRY` names (layout of blis-substrate's [`registry/`](https://github.com/inference-sim/blis-substrate/tree/main/registry)). There are no coefficient flags.
 
-**KV cache blocks** — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, `gpu_memory_utilization`, `cache_dtype`, `block_size`), per data-parallel rank. There is no flag to set it.
+**KV cache blocks** — computed by the kernel's memory methods from the scenario (model, hardware, parallelism, `gpu_memory_utilization`, `kv_cache_dtype`, `block_size`), per data-parallel rank. There is no flag to set it.
 
 **Workload parameters** (`--rate`, `--num-requests`, `--prompt-tokens`, etc.):
 
@@ -85,7 +85,7 @@ All internal timestamps in the DES (arrival time, schedule time, completion time
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.13.0
+git -C blis-substrate checkout f70c6c7503a47442c4c5d989f8f17b093c14e069
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -103,7 +103,7 @@ The checkout above is optional; without it the run below reads the embedded cata
 A scenario file holds two YAML documents in the blis-schemas format:
 
 - **Scenario** — `name`, `engine_version`, `model` (a catalog model), `coefficients` (the registry coefficient sets that price it), and `cluster` (`hardware`, `fabric`, `nodes`, `gpus_per_node`). The engine is named `engine: {kind: vllm, version: "0.32.0"}`, or by the deprecated `engine_version: "0.32.0"` (accepted with a warning until M4; blis-schemas v0.10.0's scenario type has only this field, so `engine:` is read by the simulator until the scenario type carries it). This build runs vLLM 0.32.0; a scenario naming another release is refused with the release it asked for, the one this build runs, and the newest inference-sim release that runs the one asked for (v0.15.0 for vLLM 0.29.0 and 0.31.0). See [latency models](../guide/latency-models.md).
-- **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `cache_dtype`, `cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
+- **Deployment** — `pools`, each with a `role` (`colocated`, `prefill` or `decode`), `nodes`, a `parallel` block (`tp`, `pp`, `dp`, `enable_expert_parallel`) and an `engine` block (`block_size`, `max_num_seqs`, `max_num_batched_tokens`, `max_model_len`, `quantization`, `kv_cache_dtype`, `compilation_config.cudagraph_mode`, `gpu_memory_utilization`, `enable_prefix_caching`, `speculative: {method, num_spec_tokens}`); plus optional `offload` and `pd_transfer`.
 
 These settings come from the scenario (and the kernel), and no CLI flag sets them:
 
@@ -118,8 +118,8 @@ These settings come from the scenario (and the kernel), and no CLI flag sets the
 | Token budget per step | Pool `engine.max_num_batched_tokens` |
 | Max sequence length | Pool `engine.max_model_len` — **required** in the scenario, as a count (`auto` is refused) |
 | Prefix caching | Pool `engine.enable_prefix_caching` |
-| KV-cache dtype | Pool `engine.cache_dtype` |
-| Speculative decoding | Pool `engine.speculative.method` / `num_spec_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
+| KV-cache dtype | Pool `engine.kv_cache_dtype` |
+| Speculative decoding | Pool `engine.speculative_config.method` / `num_speculative_tokens` (acceptance is resolved from the registry's profiles, the workload, the scenario's `acceptance` pin or the CLI; see [Latency Models](../guide/latency-models.md#speculative-acceptance-1939)) |
 | Step time, memory, P/D KV transfer, offload tier transfer, host overheads | Priced by blis-latency-kernel with the scenario's registry coefficients |
 
 **Data parallelism (MoE only).** A pool with `dp > 1` becomes one engine per data-parallel rank, each sized as one vLLM EngineCore. The ranks of one instance step in lockstep and the router sees them as one endpoint, balanced across ranks by vLLM's internal DP load balancer; `parallel.data_parallel_load_balancing: external` (blis-schemas#76, per pool; `--dp-load-balancing`, deprecated in v0.16.0 and removed in v0.19.0, is a run-wide override that must agree with every mode a pool states; under P/D every rank is already its own endpoint, so a P/D pool's mode is resolved but changes no routing) instead makes every rank its own endpoint, as vLLM's external-LB modes do ([Latency Models](../guide/latency-models.md#data-and-expert-parallelism-moe), #1909). `dp > 1` on a dense model is refused.

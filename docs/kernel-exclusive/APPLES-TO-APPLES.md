@@ -6,6 +6,10 @@ truth is that run's `mean_ttft` and `mean_tpot` as SemiAnalysis's database dump 
 NVIDIA's artifact. BLIS's are simulated by `blis replay` on the point's main phase. This document
 says exactly what that replay reproduces, how each claim is checked, and what remains approximate.
 
+The numbers the accuracy dashboard publishes are produced by the dashboard's replay, not by this
+harness (COV-1 makes the dashboard the only scorer). This page describes the harness in
+`tools/harness`, and goes with it when #1969 removes it.
+
 ## Sources
 
 Citations are `file:line@commit` in [SemiAnalysisAI/InferenceX](https://github.com/SemiAnalysisAI/InferenceX).
@@ -173,8 +177,10 @@ state, built with existing trace features only. The trace prepends `dp` warm-up 
   router counter has moved by `dp`, so every main request lands on the replica it would land on
   from a fresh counter.
 
-This is the drained warm-up's state, with `dp` copies standing in for `2*CONC`. Three tests check
-that, rather than assume it:
+This is the drained warm-up's state, with `dp` copies standing in for `2*CONC` in this repository's
+harness (`tools/harness`, `copies := max(dp, 1)`). The accuracy dashboard sends the client's own `2*CONC`
+copies (accuracy-dashboard `docs/comparability.md`, Warm-up row). The second test below shows that the
+two give the same main phase. Three tests check that, rather than assume it:
 
 - `TestCheckPrimedRefusesAnUndrainedWarmup`: the scorer refuses a run in which a copy had not
   completed before the main phase, main request 0 did not start with it, or a holder round entered

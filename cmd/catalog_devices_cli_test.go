@@ -348,7 +348,7 @@ func TestRunCmd_KVOffloadRefusalsReachTheCLI(t *testing.T) {
 		want                   []string
 	}{
 		{"a malformed device table", malformed, writeOffloadConfigWithClass(t, "nvme_gen4"),
-			[]string{malformed + " is refused", "decoding " + catalogStorageDevicesRelPath, "did not find expected node content"}},
+			[]string{malformed + " is refused", catalogStorageDevicesRelPath + ": yaml:", "did not find expected node content"}},
 		{"an unknown device class", newDeviceCatalog(t, good), writeOffloadConfigWithClass(t, "floppy"),
 			[]string{`device_class=\"floppy\" is not defined in the catalog storage-device table`, "known: cpu_dram, nvme_gen4"}},
 		{"an invalid kv_offload block", newDeviceCatalog(t, good),

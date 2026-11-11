@@ -30,16 +30,14 @@ pools:
       data_parallel_load_balancing: internal
     engine:
       block_size: 64
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       max_num_seqs: 1024
       max_num_batched_tokens: 32768
       max_model_len: 262144
       gpu_memory_utilization: 0.85
-      cudagraph_mode: FULL_AND_PIECEWISE
       all2all_backend: deepep_high_throughput
       enable_prefix_caching: true
       engram_config:
         cpu_offload: true
-      speculative:
-        method: dspark
-        num_spec_tokens: 5
+      speculative_config: {method: dspark, num_speculative_tokens: 5}
+      compilation_config: {cudagraph_mode: FULL_AND_PIECEWISE}

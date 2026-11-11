@@ -258,17 +258,35 @@ def page_inferencex_agentic(before: Build, after: Build) -> str:
             for r in hard + soft
         ],
     )
+    # The replay states the per-trace idle-gap cap and per-lane warm-up requests since #1971. A
+    # record from a build before it lists them as mismatches; a record from a build with it does
+    # not, and then the page says nothing about them.
+    idle_gap = any("idle-gap cap" in r["setting"] for r in hard)
+    lane_warmup = any("warmup" in r["setting"] for r in hard)
+    exact = [
+        "a run on the vLLM release whose behaviour the kernel prices (v0.31.0), or kernel "
+        "pricing for the nightly that ran",
+        "the aiperf release BLIS transcribes (0.12.0), or a transcription of the fork",
+    ]
+    if idle_gap or lane_warmup:
+        exact.append("a build whose replay states the per-trace idle-gap cap and per-lane "
+                     "warm-up requests (#1971), or a run without them")
+    exact.append("the UNSTATED rows stated by the run")
+    if idle_gap or lane_warmup:
+        L += [
+            f"The idle-gap cap and warm-up rows describe build {after.commit}, whose replay cannot "
+            "state them. The replay states both since #1971 (`trace_idle_gap_cap_s` and "
+            "`warmup` in the workload spec), so a record from a build that has it carries no "
+            "such row; the rows above are a record of that build, not of the current one.",
+            "",
+        ]
     L += [
-        "Population metrics at concurrency ≥ 2 are confounded by the idle-gap cap: it "
-        "raises the offered load the run saw beyond what BLIS replays. The comparison that "
-        "survives every mismatch is the request-level pairing: the same request on both "
-        "sides, with the same number of requests in flight.",
+        ("Population metrics at concurrency ≥ 2 are confounded by the idle-gap cap: it "
+         "raises the offered load the run saw beyond what BLIS replays. " if idle_gap else "")
+        + "The comparison that survives every mismatch is the request-level pairing: the "
+        "same request on both sides, with the same number of requests in flight.",
         "",
-        "**What would make it EXACT:** a run on the vLLM release whose behaviour the "
-        "kernel prices (v0.31.0), or kernel pricing for the nightly that ran; the aiperf "
-        "release BLIS transcribes (0.12.0), or a transcription of the fork; blis-schemas "
-        "Replay support for the per-trace idle-gap cap and per-lane warm-up requests, or a "
-        "run without them; and the UNSTATED rows stated by the run.",
+        "**What would make it EXACT:** " + "; ".join(exact[:-1]) + "; and " + exact[-1] + ".",
         "",
     ]
 

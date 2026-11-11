@@ -31,7 +31,7 @@ To read a checkout instead, pass `--catalog` or set `BLIS_CATALOG`:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.13.0
+git -C blis-substrate checkout f70c6c7503a47442c4c5d989f8f17b093c14e069
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -82,15 +82,15 @@ pools:
     parallel: {tp: 4, pp: 1, dp: 1, enable_expert_parallel: false}
     engine:
       quantization: fp8
-      cache_dtype: fp8
+      kv_cache_dtype: fp8
       block_size: 16
       max_num_batched_tokens: 8192
       max_num_seqs: 256
       max_model_len: 32768   # required
-      cudagraph_mode: PIECEWISE
+      compilation_config: {cudagraph_mode: PIECEWISE}
       gpu_memory_utilization: 0.9
       # enable_prefix_caching: false
-      # speculative: {method: mtp, num_spec_tokens: 3}
+      # speculative_config: {method: mtp, num_speculative_tokens: 3}
 # offload: ...               # optional
 # pd_transfer: {connector: NixlConnector}   # optional, P/D scenarios
 ```
@@ -147,6 +147,13 @@ parallelism and engine settings. The KV handoff from a prefill instance to a dec
 instance is priced by the kernel's `PDTransferTime` over the scenario's fabric, between the
 two instances' placements (NVLink when they share a node). Each instance count must not
 exceed its pool's rank capacity: pool nodes × `gpus_per_node` / (pp × tp × pcp).
+
+List `cost-model-fabric` in the scenario's `coefficients` for a disaggregated deployment. It holds the
+fraction of the fabric's nominal rate a transfer reaches (`fabric_bandwidth_efficiency`, 0.811 on
+`ib-400g`). Without it the engine does not refuse the scenario: it prices every handoff at the
+nominal line rate, which makes the handoff about 23% fast on `ib-400g`, and records the choice in
+the Result as an `assumed` `fabric_bandwidth_efficiency` under `reports.kernel.<pool>.assumptions`.
+Every disaggregated scenario this repository ships lists it, and a test requires that.
 
 At `engine_version: "0.32.0"` each pool's engine is blis-vllm's v0.32.0 engine, which runs vLLM's
 NIXL scheduler as the pool's `kv_role`: `kv_producer` for the prefill pool and `kv_consumer` for the
@@ -218,7 +225,7 @@ true at `dp > 1` (`vllm/config/parallel.py:738-743`), so every MoE layer is a co
 the ranks. BLIS therefore steps the group's ranks together:
 
 - Every rank runs every step. A rank with nothing ready runs vLLM's dummy batch, one uniform
-  decode of `1 + num_spec_tokens` tokens (`execute_dummy_batch`, `core.py:2280-2287`;
+  decode of `1 + num_speculative_tokens` tokens (`execute_dummy_batch`, `core.py:2280-2287`;
   `vllm/v1/worker/gpu_worker.py:1376-1382`).
 - Each rank is priced by the kernel at its own batch padded to the group's largest token
   count, when that count is within the CUDA-graph capture ceiling the kernel resolved
@@ -286,7 +293,7 @@ Known deviations and limits:
 
 ## Speculative Decoding / MTP (#1528)
 
-A pool that states `engine.speculative: {method, num_spec_tokens}` drafts `K` tokens per
+A pool that states `engine.speculative_config: {method, num_speculative_tokens}` drafts `K` tokens per
 step. BLIS does not predict acceptance, since it runs no draft model: it resolves it (below).
 
 ### Speculative acceptance (#1939)

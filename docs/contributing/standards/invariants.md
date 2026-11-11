@@ -715,7 +715,7 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 #### INV-K1: No BLIS-side Draft Cost
 
-**Statement:** For a speculating pool (`engine.speculative.num_spec_tokens = K > 0`), the adapter's step time for a batch equals `max(1, NoOverlap)` of blis-latency-kernel's `StepTime` for the verify-width batch: each decode scheduling `1 + K`, each prefill chunk its own tokens, under a decode threshold of at least `1 + K`. BLIS adds no draft term: the kernel (v0.2.0+) prices the drafter's passes, context stack and head inside `StepTime`, and its weights and caches in `FixedBytes`, so any BLIS-side draft cost would count them twice.
+**Statement:** For a speculating pool (`engine.speculative_config.num_speculative_tokens = K > 0`), the adapter's step time for a batch equals `max(1, NoOverlap)` of blis-latency-kernel's `StepTime` for the verify-width batch: each decode scheduling `1 + K`, each prefill chunk its own tokens, under a decode threshold of at least `1 + K`. BLIS adds no draft term: the kernel (v0.2.0+) prices the drafter's passes, context stack and head inside `StepTime`, and its weights and caches in `FixedBytes`, so any BLIS-side draft cost would count them twice.
 
 **Enforced:** blis-vllm `compat/kernelmodel` `batchOf` (the only place a BLIS batch becomes a kernel batch) and `Model.StepTime`.
 

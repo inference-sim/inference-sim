@@ -776,16 +776,16 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		{"a disaggregated scenario run without a P/D topology", "needs a P/D topology",
 			pd(plain)},
 		{"a pool stating no max_model_len", "states no engine.max_model_len",
-			pd(writeScenarioVariant(t, "      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n  - role: decode",
-				"      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n  - role: decode"), topology...)},
+			pd(writeScenarioVariant(t, "      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode",
+				"      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode"), topology...)},
 		{"pools drafting differently", "one speculative configuration applies to the run",
-			pd(writeScenarioVariant(t, "      gpu_memory_utilization: 0.9\n\npd_transfer",
-				"      gpu_memory_utilization: 0.9\n      speculative:\n        method: mtp\n        num_spec_tokens: 2\n\npd_transfer"), topology...)},
+			pd(writeScenarioVariant(t, "      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+				"      compilation_config: {cudagraph_mode: PIECEWISE}\n      speculative_config: {method: mtp, num_speculative_tokens: 2}\n\npd_transfer"), topology...)},
 		// The decode pool caching bf16 behind an fp8 prefill pool: the handoff would move pages
 		// the decode engine does not hold.
 		{"pools caching KV in different formats", "caches KV as cache_dtype",
-			pd(writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-				"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer"), topology...)},
+			pd(writeScenarioVariant(t, "      kv_cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+				"      kv_cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer"), topology...)},
 		{"pools with no fabric between them", "cluster.fabric",
 			pd(writeScenarioVariant(t, "  fabric: ib-400g\n", ""), topology...)},
 		{"a per-role MoE comm flag", "unknown flag: --decode-moe-comm-backend",
@@ -801,8 +801,8 @@ func TestRunCmd_KernelBackend_DisaggregatedRefusals(t *testing.T) {
 		{"more decode instances than the pool holds", "decode pool holds 1 rank(s)",
 			pd(plain, "--num-instances", "5", "--prefill-instances", "3", "--decode-instances", "2")},
 		{"pools paging in different block sizes", "a P/D handoff moves whole blocks",
-			pd(writeScenarioVariant(t, "      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-				"      block_size: 128\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer"), topology...)},
+			pd(writeScenarioVariant(t, "      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+				"      block_size: 128\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer"), topology...)},
 		{"pools at different dp", "their dp must match",
 			pd(writeScenarioVariant(t, "  - role: decode\n    nodes: 1\n    parallel:\n      tp: 8\n      pp: 1\n      dp: 1\n      enable_expert_parallel: false",
 				"  - role: decode\n    nodes: 1\n    parallel:\n      tp: 4\n      pp: 1\n      dp: 2\n      enable_expert_parallel: true"), topology...)},
@@ -860,10 +860,10 @@ func TestReplayCmd_KernelBackend_ReproducesADisaggregatedRun(t *testing.T) {
 // steps a request takes, never how many tokens it emits), and accepting more of each draft
 // never lengthens mean E2E.
 func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
-	const draft = "      gpu_memory_utilization: 0.9\n      speculative:\n        method: mtp\n        num_spec_tokens: 3\n"
+	const draft = "      compilation_config: {cudagraph_mode: PIECEWISE}\n      speculative_config: {method: mtp, num_speculative_tokens: 3}\n"
 	dir := writeScenarioVariant(t,
-		"      gpu_memory_utilization: 0.9\n  - role: decode", draft+"  - role: decode",
-		"      gpu_memory_utilization: 0.9\n\npd_transfer", draft+"\npd_transfer")
+		"      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode", draft+"  - role: decode",
+		"      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer", draft+"\npd_transfer")
 	common := []string{"--scenarios", dir, "--scenario", "variant.yaml",
 		"--num-instances", "4", "--prefill-instances", "3", "--decode-instances", "1", "--seed", "4",
 		"--horizon", "600000000"}
@@ -916,8 +916,8 @@ func TestRunCmd_KernelBackend_DisaggregatedSpeculation(t *testing.T) {
 //   - the run's description is not mutated, and the pools share no tier slice.
 func TestKernelPools_ApplyOffload_EachPoolByItsOwnKernel(t *testing.T) {
 	_, catalog, registry := kernelRepos(t)
-	dir := writeScenarioVariant(t, "      cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-		"      cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer")
+	dir := writeScenarioVariant(t, "      kv_cache_dtype: fp8\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+		"      kv_cache_dtype: auto\n      block_size: 64\n      max_num_batched_tokens: 8192\n      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer")
 	repos := reposOf(dir, catalog, registry)
 	pools := &kernelPools{connector: "MultiConnector"} // a tier under P/D runs through a MultiConnector
 	for _, c := range []struct {
