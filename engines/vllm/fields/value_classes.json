@@ -6,6 +6,142 @@
  },
  "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed. A comparison with another field is listed under relations and is not a class edge.",
  "fields": {
+  "MC_ENABLE_DEST_DEVICE_AFFINITY": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
+     }
+    ],
+    "name": "MC_ENABLE_DEST_DEVICE_AFFINITY"
+   }
+  },
+  "MC_SLICE_SIZE": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/MC_SLICE_SIZE.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 65536,
+      "trace": "oracle/inertness/MC_SLICE_SIZE.json"
+     }
+    ],
+    "name": "MC_SLICE_SIZE"
+   }
+  },
+  "MC_WORKERS_PER_CTX": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/MC_WORKERS_PER_CTX.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 4,
+      "trace": "oracle/inertness/MC_WORKERS_PER_CTX.json"
+     }
+    ],
+    "name": "MC_WORKERS_PER_CTX"
+   }
+  },
+  "PYTHONNOUSERSITE": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/inertness/PYTHONNOUSERSITE.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "oracle/inertness/PYTHONNOUSERSITE.json"
+     }
+    ],
+    "name": "PYTHONNOUSERSITE"
+   }
+  },
   "VLLM_USE_V2_MODEL_RUNNER": {
    "value_classes": {
     "type": "boolean",
@@ -6260,6 +6396,83 @@
      }
     ],
     "name": "speculative_config.num_speculative_tokens"
+   }
+  },
+  "stream_interval": {
+   "value_classes": {
+    "type": "numeric",
+    "thresholds": [
+     {
+      "value": 2,
+      "closed": "above"
+     }
+    ],
+    "covered_classes": [
+     0,
+     1
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "domain": {
+     "lo": 1,
+     "lo_closed": true,
+     "hi": null,
+     "hi_closed": false
+    },
+    "classes": [
+     {
+      "lo": 1,
+      "hi": 2,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/v1/engine/output_processor.py:324"
+      ],
+      "covered_by": [
+       "oracle/inertness/stream_interval.json"
+      ]
+     },
+     {
+      "lo": 2,
+      "hi": null,
+      "lo_closed": true,
+      "hi_closed": false,
+      "compared_at": [
+       "vllm/v1/engine/output_processor.py:324"
+      ],
+      "covered_by": [
+       "oracle/inertness/stream_interval.json"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/v1/engine/output_processor.py:324",
+      "expr": "self.stream_interval > 1",
+      "op": "Gt",
+      "values": [
+       1
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 1,
+      "trace": "oracle/inertness/stream_interval.json"
+     },
+     {
+      "value": 20,
+      "trace": "oracle/inertness/stream_interval.json"
+     },
+     {
+      "value": 32,
+      "trace": "oracle/inertness/stream_interval.json"
+     }
+    ],
+    "name": "stream_interval"
    }
   },
   "tensor_parallel_size": {

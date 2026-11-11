@@ -523,6 +523,39 @@
       }
     },
     {
+      "name": "MC_ENABLE_DEST_DEVICE_AFFINITY",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_SLICE_SIZE",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/MC_SLICE_SIZE.json"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_WORKERS_PER_CTX",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/MC_WORKERS_PER_CTX.json"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MODELSCOPE_API_TOKEN",
       "source": "env",
       "status": "not_modelled",
@@ -869,6 +902,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/blis-vllm#53"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "PYTHONNOUSERSITE",
+      "source": "env",
+      "status": "proven_inert",
+      "evidence": {
+        "proof": "oracle/inertness/PYTHONNOUSERSITE.json"
       },
       "estimation": {
         "rule": "none"
@@ -10329,9 +10373,9 @@
     {
       "name": "stream_interval",
       "source": "config",
-      "status": "not_modelled",
+      "status": "proven_inert",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2035"
+        "proof": "oracle/inertness/stream_interval.json"
       },
       "estimation": {
         "rule": "none"

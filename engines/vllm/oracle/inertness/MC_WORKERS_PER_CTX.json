@@ -1,0 +1,24 @@
+{
+ "field": "MC_WORKERS_PER_CTX",
+ "kind": "unread",
+ "release": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+ "claim": "No file of vLLM v0.32.0's serving process (vllm/, csrc/, rust/) names MC_WORKERS_PER_CTX. It is a variable of the Mooncake transfer-engine library, which vLLM reaches only through the Mooncake connectors; this engine refuses those connectors by name (its connector registry holds NixlConnector and OffloadingConnector), so no configuration the engine accepts loads the library.",
+ "names": [
+  "MC_WORKERS_PER_CTX"
+ ],
+ "probes": [
+  {
+   "label": "workers per context",
+   "value": 4
+  }
+ ],
+ "result": {
+  "vllm_commit": "v0.32.0 5df63a7203cdb9328d824a27b682e77c7b9928be",
+  "files_scanned": 4120,
+  "occurrences": {
+   "MC_WORKERS_PER_CTX": []
+  },
+  "problems": [],
+  "verdict": "inert"
+ }
+}

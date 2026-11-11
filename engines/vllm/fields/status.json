@@ -16,7 +16,11 @@
     "env:VLLM_USE_SIMPLE_KV_OFFLOAD": "accuracy-dashboard orchestrator/vllm_arg_policy.yaml:348 marks it inert; a run that does not set it leaves vLLM's default, off (vllm/envs.py:2243@5df63a72), which the engine resolves"
   },
  "extra_env": [
-  "NVSHMEM_QP_DEPTH"
+  "MC_ENABLE_DEST_DEVICE_AFFINITY",
+  "MC_SLICE_SIZE",
+  "MC_WORKERS_PER_CTX",
+  "NVSHMEM_QP_DEPTH",
+  "PYTHONNOUSERSITE"
  ],
  "dynamic_reads": {
   "vllm/config/utils.py: envs.is_set(env_name)": {
@@ -4599,9 +4603,9 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/inference-sim#2035"
+    "proof": "oracle/inertness/stream_interval.json"
    },
-   "status": "not_modelled"
+   "status": "proven_inert"
   },
   "config:structured_outputs_config.backend": {
    "estimation": {
@@ -5381,6 +5385,33 @@
    },
    "status": "not_modelled"
   },
+  "env:MC_ENABLE_DEST_DEVICE_AFFINITY": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/MC_ENABLE_DEST_DEVICE_AFFINITY.json"
+   },
+   "status": "proven_inert"
+  },
+  "env:MC_SLICE_SIZE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/MC_SLICE_SIZE.json"
+   },
+   "status": "proven_inert"
+  },
+  "env:MC_WORKERS_PER_CTX": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/MC_WORKERS_PER_CTX.json"
+   },
+   "status": "proven_inert"
+  },
   "env:MODELSCOPE_API_TOKEN": {
    "estimation": {
     "rule": "none"
@@ -5668,6 +5699,15 @@
     "issue": "inference-sim/blis-vllm#53"
    },
    "status": "not_modelled"
+  },
+  "env:PYTHONNOUSERSITE": {
+   "estimation": {
+    "rule": "none"
+   },
+   "evidence": {
+    "proof": "oracle/inertness/PYTHONNOUSERSITE.json"
+   },
+   "status": "proven_inert"
   },
   "env:PYTORCH_ALLOC_CONF": {
    "estimation": {

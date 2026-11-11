@@ -111,7 +111,6 @@ var engineKeys = map[string][]string{
 // refused sets each refused field in the engine block, as YAML under pools[0].engine.
 var refused = map[string]string{
 	"kv_cache_memory_bytes":                                     "kv_cache_memory_bytes: 4294967296\n",
-	"stream_interval":                                           "stream_interval: 8\n",
 	"attention_config.use_trtllm_attention":                     "use_trtllm_attention: true\n",
 	"attention_config.mla_prefill_backend":                      "mla_prefill_backend: FLASHINFER\n",
 	"kernel_config.linear_backend":                              "linear_backend: flashinfer\n",
@@ -141,7 +140,6 @@ var refused = map[string]string{
 // unreadSettings (core/vllm/config.go), each cited there. A key whose default is "unstated" has no
 // such value, and its entry says so.
 var atDefault = map[string]string{
-	"stream_interval":                                           "stream_interval: 1\n",
 	"attention_config.indexer_kv_dtype":                         "indexer_kv_dtype: auto\n",
 	"kernel_config.linear_backend":                              "linear_backend: auto\n",
 	"linear_backend":                                            "linear_backend: auto\n",

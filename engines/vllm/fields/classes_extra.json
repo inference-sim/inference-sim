@@ -1,4 +1,20 @@
 {
+ "MC_ENABLE_DEST_DEVICE_AFFINITY": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "MC_SLICE_SIZE": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "MC_WORKERS_PER_CTX": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
+ "PYTHONNOUSERSITE": {
+  "kind": "numeric",
+  "why": "no file of the serving process names the variable, so nothing compares it: one class holds every value"
+ },
  "scheduling_policy": {
   "sites": [
    {
@@ -40,6 +56,19 @@
      "muse-spark-open-dspark"
     ],
     "why": "the scenario's speculative block names draft_model: muse-spark-open-dspark"
+   }
+  ]
+ },
+ "stream_interval": {
+  "sites": [
+   {
+    "at": "vllm/v1/engine/output_processor.py:324",
+    "expr": "self.stream_interval > 1",
+    "op": "Gt",
+    "values": [
+     1
+    ],
+    "why": "the OutputProcessor sends every token when the interval is 1 and groups them above it; the value reaches it through OutputProcessor(stream_interval=...), a call the scan does not follow"
    }
   ]
  }

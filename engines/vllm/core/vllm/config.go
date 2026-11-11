@@ -589,9 +589,6 @@ const issueBase = "https://github.com/inference-sim/blis-vllm/issues/"
 var unreadSettings = []unreadSetting{
 	// CacheConfig.kv_cache_memory_bytes: None (vllm/config/cache.py:257@5df63a72).
 	{"kv_cache_memory_bytes", "kv_cache_memory_bytes", issueBase + "81", func(e engineconfig.Engine) bool { return e.KVCacheMemoryBytes != nil }},
-	// SchedulerConfig.stream_interval: 1 (vllm/config/scheduler.py:213@5df63a72).
-	{"stream_interval", "stream_interval", "https://github.com/inference-sim/inference-sim/issues/2035",
-		func(e engineconfig.Engine) bool { return e.StreamInterval != 0 && e.StreamInterval != 1 }},
 	// AttentionConfig.use_trtllm_attention: None, auto-detect (vllm/config/attention.py:74@5df63a72);
 	// a stated true or false is a choice.
 	{"use_trtllm_attention", "attention_config.use_trtllm_attention", issueBase + "80", func(e engineconfig.Engine) bool { return e.UseTRTLLMAttention != nil }},
