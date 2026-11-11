@@ -43,7 +43,7 @@ sets, and how a cost model combines them is described under
 | `kernel_impls` | list | no | The kernel implementations the value is valid for ([below](#kernel_impls)): the lookup key. A lookup matches the entry only when one of them is what runs. Allowed on `measured`, `calibrated`, `transferred` and `literature`; not on `vendor_spec`, `roofline`, `assumed` or `not_charged`. |
 | `measured_on` | list | on `transferred` that states `kernel_impls` | The kernel implementations a transferred value was measured on, same form as `kernel_impls`. Evidence only; a lookup never matches it. Only on `transferred`. |
 | `measures` | mapping | no | What the number includes ([below](#measures)). Only on `measured` and `calibrated`. |
-| `fit_range` | list | no | The range of inputs the fit's data covered ([below](#fit_range)). Only on `measured` and `calibrated`. A price that reads the entry outside it is extrapolated and ranks with `transferred`. |
+| `fit_range` | list | no | The range of inputs the fit's data covered ([below](#fit_range)). Only on `measured`, `calibrated` and `transferred` (the rows a transferred value came from). A price that reads the entry outside it is extrapolated and ranks with `transferred`. |
 | `ci95` | `[low, high]` | no | 95% confidence interval. Must contain `value`. |
 | `sources` | list | depends on `method` | Citations, below. If present, not empty. |
 | `rationale` | string | depends on `method` | The reasoning behind a value that was not measured. |

@@ -1081,6 +1081,9 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 	k.attentionPrefillScale = k.optional(c, "attention_prefill_work_scale",
 		len(usedAttn) > 0, "no measured attention prefill scale, so prefill attention "+
 			"is charged on the unmodified GEMM efficiency ramp with no floor")
+	if err := k.applyAttentionLane(c, usedAttn); err != nil {
+		return err
+	}
 
 	k.hostBytesPerSecond = k.optional(c, "host_link_bandwidth", true,
 		"no host-link rate, so an offload transfer is not capped at it") * 1e6

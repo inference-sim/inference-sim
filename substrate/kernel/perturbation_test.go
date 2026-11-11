@@ -114,7 +114,24 @@ func perturbationScenarios(t *testing.T, d *load.Data, only ...string) []perturb
 					if _, err := New(in); err != nil {
 						continue
 					}
-					out = append(out, perturbationCase{fmt.Sprintf("%s/%s/tp%d/dp%d/ep%t/dcp%d/pcp%d/bs%d", m, c, tp, dp, ep, lay.dcp, lay.pcp, st.BlockSize), in})
+					label := fmt.Sprintf("%s/%s/tp%d/dp%d/ep%t/dcp%d/pcp%d/bs%d", m, c, tp, dp, ep, lay.dcp, lay.pcp, st.BlockSize)
+					out = append(out, perturbationCase{label, in})
+					// The same scenario with the trtllm-gen prefill lane priced, where the chip
+					// carries it: the lane's bf16 pair is read at an auto cache and the fp8 pair
+					// only at an fp8 cache, so each is perturbed here. The registry's lane states no
+					// kernel implementation and is not priced (VAL-8), so these cases key it to a
+					// fixture implementation that the pool reports running.
+					laneIn := keyedLane(in, laneBF16)
+					if _, err := New(laneIn); err == nil {
+						out = append(out, perturbationCase{label + "/trtllm", laneIn})
+					} // And at an fp8 cache, which reads the lane's fp8 pair.
+					f8 := st.Clone()
+					f8.CacheDType = "fp8"
+					f8In := keyedLane(in, laneFP8)
+					f8In.Engine = &f8
+					if _, err := New(f8In); err == nil {
+						out = append(out, perturbationCase{label + "/trtllm-fp8", f8In})
+					}
 					built = true
 					break
 				}

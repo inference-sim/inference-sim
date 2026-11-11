@@ -191,6 +191,11 @@ type Kernel struct {
 	// scale means this part has no measured prefill entries and the FLOPs fallback runs.
 	attentionPrefillFloor time.Duration
 	attentionPrefillScale float64
+	// laneRuns is whether the non-latent layers' prefill is priced on the trtllm-gen lane, which
+	// holds only when a pair is shown valid for the implementation the caller reported for the
+	// prefill primitive, and lanePair that pair (applyAttentionLane).
+	laneRuns bool
+	lanePair prefillPair
 
 	// Memory occupancy outside the KV budget, every magnitude from the registry (see
 	// liftMemory): the communicator reservation, the engine workspace, the graph capture,

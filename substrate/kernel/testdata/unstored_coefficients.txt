@@ -21,6 +21,10 @@
 #   recurrent_prefill_rate_*: the kernel charges chunked-scan FLOPs at the GEMM ramp; an entry
 #     needs a fit.
 #   sharded_projection_gather: priced as an NCCL all-gather; an entry needs a measurement.
+#   trtllm_gen_prefill_lane (b200, b300): the lane's entries are transferred from vLLM 0.25.0 and
+#     state no kernel_impls, so they are not shown valid for the build the engine runs and the
+#     pooled pair prices the prefill (VAL-8). The line goes when an engine release publishes the
+#     kernel hash (kernel_impls.json) and the lane entries state it.
 attention_decode_rate_block_index_scores a100-80,a100-sxm,b200,b300,h100,h200,l40s
 attention_decode_rate_mla a100-80,a100-sxm,l40s
 attention_decode_rate_sparse_mla a100-80,a100-sxm,b200,b300,h100,h200,l40s
@@ -40,3 +44,4 @@ recurrent_prefill_rate_gdn a100-80,a100-sxm,b200,b300,h100,h200,l40s
 recurrent_prefill_rate_kda a100-80,a100-sxm,b200,b300,h100,h200,l40s
 recurrent_prefill_rate_mamba2 a100-80,a100-sxm,b200,b300,h100,h200,l40s
 sharded_projection_gather b200,b300
+trtllm_gen_prefill_lane b200,b300

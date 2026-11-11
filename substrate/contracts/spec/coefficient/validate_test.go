@@ -466,6 +466,11 @@ func TestEvidenceRecords(t *testing.T) {
 			e.Measures = &Measures{Time: vocab.TimeDevice, Execution: vocab.ExecutionCaptured, Harness: "aisimulate@2f0f4cd"}
 		}},
 		{"a fit range", func(e *Entry) { e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 8192}} }},
+		{"a fit range on a transferred entry", func(e *Entry) {
+			e.Method, e.Fitted = vocab.MethodTransferred, false
+			e.TransferredFrom, e.TransferRule, e.Rationale = "hardware=h200", "same die", "reason"
+			e.FitRange = []Bound{{Dim: "tokens", Low: 1, High: 8192}}
+		}},
 	}
 	for _, c := range ok {
 		if p := measured(c.mutate).Validate(); !p.OK() {

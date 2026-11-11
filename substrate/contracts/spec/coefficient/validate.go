@@ -296,9 +296,12 @@ func (e Entry) validateEvidenceRecords(p *validate.Problems, at string) {
 			p.Field(bat, "low %v exceeds high %v", b.Low, b.High)
 		}
 	}
-	// The data a measured or calibrated value was fitted to is part of what it claims; a fit
-	// range on any other method would describe data that did not produce the value.
-	if len(e.FitRange) > 0 && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated {
+	// The data a measured, calibrated or transferred value was fitted to is part of what it
+	// claims: a transferred value still has the rows it came from, and a lookup outside them is
+	// extrapolated. A fit range on any other method would describe data that did not produce the
+	// value.
+	if len(e.FitRange) > 0 && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated &&
+		e.Method != vocab.MethodTransferred {
 		p.Field(at+".fit_range", "method %q was not fitted to data, so it states no fit range", e.Method)
 	}
 	if e.Measures != nil && e.Method != vocab.MethodMeasured && e.Method != vocab.MethodCalibrated {

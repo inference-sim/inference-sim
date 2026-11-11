@@ -23,7 +23,7 @@ var FormUnits = []FormUnit{
 	{`^attention_(decode|prefill)_(throughput_|serial_)?rate(_|$)`, vocab.UnitBytesPerMicrosecond, "a byte rate; the form divides KV bytes by it"},
 	{`^attention_(decode|prefill)_per_token_`, vocab.UnitMicrosecondsPerToken, "microseconds per token, times a token count"},
 	{`^attention_prefill_per_request_`, vocab.UnitMicrosecondsPerRequest, "microseconds per request, times a request count"},
-	{`^attention_prefill_work_scale$`, vocab.UnitDimensionless, "a multiplier on the prefill work"},
+	{`^attention_prefill_work_scale(_trtllm_gen_kv_(bf16|fp8))?$`, vocab.UnitDimensionless, "a multiplier on the prefill work"},
 	{`^collective_floor_`, vocab.UnitMicrosecondsPerXfer, "the floor of one collective call, in microseconds"},
 	{`^collective_(peak|transition)_rate_`, vocab.UnitBytesPerMicrosecond, "a byte rate; the form divides message bytes by it"},
 	{`^cudagraph_capture_bytes_per_(mixed|decode)_token_`, vocab.UnitBytesPerToken, "graph-pool bytes on one rank per token of a capture ceiling; the form multiplies it by a token count"},

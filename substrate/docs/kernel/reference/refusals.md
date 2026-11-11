@@ -86,6 +86,41 @@ These are layouts vLLM v0.31.0 refuses at startup.
   its projection cannot replicate a head across ranks (`kv_heads_not_replicated`), as Muse
   Spark's fused QKV and output-gate projection cannot: TP above 16 on its 16 KV heads.
 
+## The prefill lane the engine reports
+
+FlashInfer's trtllm-gen prefill is the one kernel with a
+[pair measured on it](../../registry/reference/sets/cost-model-attention.md): on b200, b300,
+gb200-nvl72 and gb300, `attention_prefill_*_trtllm_gen_kv_bf16` and `_kv_fp8` price the prefill of
+the non-latent layers. The kernel does not work out from any engine setting whether an engine runs
+that kernel, and it reads no engine setting for it: which kernel runs is the engine's to decide
+and to report (design X2, SUB-6). The caller reports the kernel of each lowered operation
+(`Inputs.Operations`, or `Inputs.Implementations` by primitive), and the lane prices the prefill
+only when one pair lists exactly the implementation reported for `attention.prefill` (library,
+variant and code hash, VAL-8). The pair that lists it prices; the cache dtype and the block size
+do not choose it. Latent (MLA) layers keep the part's pooled pair, and decode is not priced from
+the lane.
+
+- Two pairs listing the reported implementation are refused, since the cache dtype it serves is
+  then unknown.
+- With no pair listing it (the pairs list none, list another, or nothing was reported for the
+  prefill primitive), the part's pooled pair prices the prefill and the assumption
+  `trtllm_gen_prefill_lane` records why. A model with no non-latent layer has nothing for the
+  lane to price.
+
+The lookup binds each pair to the primitive its name prices. A pair valid for a decode kernel A
+does not price a prefill that runs B, a pool that reports A for decode and nothing for prefill
+does not admit it, and a prefill that runs two kernels is priced only by a pair that lists both.
+
+The registry's pairs are `transferred` from vLLM 0.25.0 and list no implementation, because no
+engine release publishes kernel hashes yet (`kernel_impls.json`; inference-sim/blis-registry#73).
+So on the committed registry the lane is not priced and an engine's report changes no price. The
+lane is dormant until an entry lists the hash of the prefill kernel and the engine reports it.
+
+A setting that selects a kernel the registry has not measured is the engine model's to refuse:
+it resolves the setting to the implementation that runs, reports it, and decides whether a
+primitive whose reported implementation no entry lists may be priced from the pooled entry. The
+kernel reads no setting and applies no engine default.
+
 ## The kernel cannot price it truthfully
 
 - Pipeline parallelism beside data parallelism or context parallelism (`pcp` or `dcp`
