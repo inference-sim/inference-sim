@@ -42,6 +42,11 @@
       "how": "the typing name _validate_shared_memory's return annotation mentions; annotations are evaluated when the definition runs."
     },
     {
+      "symbol": "get_tensor_model_parallel_rank, get_dp_group, get_pcp_group (moe_parallel_cases), ParallelConfig, ExpertPlacementStrategy",
+      "kind": "environment",
+      "how": "FusedMoEParallelConfig.make asks which rank this process is in the tensor-, data- and prefill-context-parallel groups. moe_parallel_cases runs make once for every rank of a layout and answers each lookup from the rank being run, in a namespace of its own. ParallelConfig (a type name make's signature mentions) and ExpertPlacementStrategy (determine_expert_map's) are placeholders for annotations evaluated when the definition runs. FusedMoEParallelConfig, determine_expert_map and ParallelConfig.use_sequence_parallel_moe (with its property decorator removed) are taken from the source as written."
+    },
+    {
       "symbol": "the attention backends' declared kernel block sizes (kv_pool_cases); CacheConfig, VllmConfig",
       "kind": "environment",
       "how": "get_kv_cache_groups, resolve_kv_cache_layout and _get_kv_cache_bytes_per_block run unmodified on vLLM's own KV cache spec classes (built by oracle/run_scheduler.py layer_specs), a real CacheConfig, and a namespace holding the VllmConfig fields they read (scheduler_config.disable_hybrid_kv_cache_manager, speculative_config None, no connector, no HiSparse, parallel_config sizes). customize_attention_spec is vLLM's own; the backend it is given is a stand-in class that declares only the kernel block sizes the real backend declares (FlashAttention and TritonMLA MultipleOf(16) at flash_attn.py:365 and mla/triton_mla.py:110-111; FlashMLA [64] at mla/flashmla.py:58-59; CutlassMLA [128] at mla/cutlass_mla.py:49-50; FlashInferMLA [32, 64] at mla/flashinfer_mla.py:204-205; the sparse MLA kernels off SM100 MultipleOf(64) at mla/flashmla_sparse.py:165), because those backends import CUDA wheels. It customizes nothing else (the real backends' customize_spec is not run)."

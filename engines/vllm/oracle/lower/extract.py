@@ -704,6 +704,59 @@ def kv_pool_cases(root):
     return out
 
 
+MOE_EXPERTS = (72, 128, 256, 384, 512)
+MOE_BACKENDS = ("allgather_reducescatter", "deepep_low_latency", "deepep_high_throughput", "flashinfer_nvlink_one_sided")
+
+
+def moe_parallel_cases(root, ns):
+    """How a MoE layer splits across ranks: vLLM's own FusedMoEParallelConfig.make
+    (vllm/model_executor/layers/fused_moe/config.py:1108-1236), its use_all2all_kernels
+    (:1025-1029), ParallelConfig.use_sequence_parallel_moe (vllm/config/parallel.py:765-782) and
+    determine_expert_map (expert_map_manager.py:22-98), run for every rank of each tp x pcp x dp
+    layout, with expert parallelism on and off.
+
+    A case reports what every rank agrees on (the expert-parallel width, whether experts are
+    sharded by expert, whether the MoE input is sequence-parallel, whether all2all kernels are
+    built) and, for each expert count, the most and the fewest experts any rank holds. The three
+    group lookups make() asks (the data-parallel and prefill-context-parallel ranks, the
+    tensor-parallel rank) are answered from the rank being run."""
+    fm = types.SimpleNamespace()
+    mns = ns_base()
+    mns.update(torch=ns["torch"], ParallelConfig=object, ExpertPlacementStrategy=str)
+    cfgtree = parse(root, "vllm/model_executor/layers/fused_moe/config.py")
+    run(pick(cfgtree, "FusedMoEParallelConfig"), mns, "fused_moe/config.py")
+    emm = parse(root, "vllm/model_executor/layers/fused_moe/expert_map_manager.py")
+    run(pick(emm, "determine_expert_map"), mns, "fused_moe/expert_map_manager.py")
+    pc = parse(root, "vllm/config/parallel.py")
+    fn = method(pc, "ParallelConfig", "use_sequence_parallel_moe")[0]
+    fn.decorator_list = []
+    run([fn], mns, "vllm/config/parallel.py")
+    mns["get_tensor_model_parallel_rank"] = lambda: fm.tp_rank
+    mns["get_dp_group"] = lambda: types.SimpleNamespace(rank_in_group=fm.dp_rank)
+    mns["get_pcp_group"] = lambda: types.SimpleNamespace(rank_in_group=fm.pcp_rank)
+    out = []
+    for tp, dp, pcp, ep, backend in itertools.product((1, 2, 4, 8), (1, 2, 3, 4, 8, 9), (1, 2), (False, True), MOE_BACKENDS):
+        cfg = types.SimpleNamespace(enable_expert_parallel=ep, all2all_backend=backend, enable_eplb=False,
+                                    tensor_parallel_size=tp, data_parallel_size=dp, prefill_context_parallel_size=pcp)
+        sp = mns["use_sequence_parallel_moe"](cfg)
+        seen = set()
+        counts = {e: [] for e in MOE_EXPERTS}
+        for dp_rank, pcp_rank, tp_rank in itertools.product(range(dp), range(pcp), range(tp)):
+            fm.dp_rank, fm.pcp_rank, fm.tp_rank = dp_rank, pcp_rank, tp_rank
+            c = mns["FusedMoEParallelConfig"].make(tp, pcp, dp, tp if sp else 1, cfg)
+            seen.add((c.ep_size, c.use_ep, c.tp_size, c.is_sequence_parallel, c.use_all2all_kernels))
+            for e in MOE_EXPERTS:
+                counts[e].append(mns["determine_expert_map"](c.ep_size, c.ep_rank, e)[0])
+        assert len(seen) == 1, seen
+        ep_size, use_ep, tp_size, is_sp, a2a = seen.pop()
+        out.append({"tp": tp, "dp": dp, "pcp": pcp, "enable_expert_parallel": ep, "all2all_backend": backend,
+                    "ep_size": ep_size, "use_ep": use_ep, "moe_tp_size": tp_size, "sequence_parallel_moe": is_sp,
+                    "use_all2all_kernels": a2a,
+                    "experts_most": {str(e): max(v) for e, v in counts.items()},
+                    "experts_fewest": {str(e): min(v) for e, v in counts.items()}})
+    return out
+
+
 def build(root):
     # Before the other cases: set_cudagraph_sizes installs a stand-in `vllm` module, and these import the real one.
     kv_pool = kv_pool_cases(root)
@@ -720,6 +773,7 @@ def build(root):
         "engram": engram_cases(ns),
         "dbo": dbo_cases(ns),
         "kv_pool": kv_pool,
+        "moe_parallel": moe_parallel_cases(root, ns),
     }
 
 

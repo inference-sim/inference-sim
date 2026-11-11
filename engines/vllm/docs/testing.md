@@ -93,7 +93,9 @@ string, so the two agree).
 The oracle also prints vLLM's own KV pool sizing at a cache stored as fp8 (`kv_pool`: the spec classes
 of six architectures, `customize_attention_spec`, `get_kv_cache_groups` and
 `_get_kv_cache_bytes_per_block` under both layouts, 424 cases; `core/kv`'s `pool_oracle_test.go`,
-`vllmengine`'s `pool_oracle_test.go`). Kimi-K3's KDA layers are not built: the engine maps no
+`vllmengine`'s `pool_oracle_test.go`) and MoE layouts (`moe_parallel`: `FusedMoEParallelConfig.make`,
+`use_sequence_parallel_moe` and `determine_expert_map` for every rank of 384 tp x pcp x dp layouts;
+`compat/kernelmodel`'s `ep_oracle_test.go`). Kimi-K3's KDA layers are not built: the engine maps no
 recurrent layer to a KV cache spec.
 
 Not run against the release: the KV group pages (`GroupPages` in `core/kv`) outside those cases, which

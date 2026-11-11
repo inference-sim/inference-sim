@@ -93471,5 +93471,9991 @@
    "spec": 7,
    "v2": true
   }
+ ],
+ "moe_parallel": [
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 3,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 3,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 3,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 3,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 3,
+   "experts_fewest": {
+    "128": 42,
+    "256": 85,
+    "384": 128,
+    "512": 170,
+    "72": 24
+   },
+   "experts_most": {
+    "128": 43,
+    "256": 86,
+    "384": 128,
+    "512": 171,
+    "72": 24
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 3,
+   "experts_fewest": {
+    "128": 42,
+    "256": 85,
+    "384": 128,
+    "512": 170,
+    "72": 24
+   },
+   "experts_most": {
+    "128": 43,
+    "256": 86,
+    "384": 128,
+    "512": 171,
+    "72": 24
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 3,
+   "experts_fewest": {
+    "128": 42,
+    "256": 85,
+    "384": 128,
+    "512": 170,
+    "72": 24
+   },
+   "experts_most": {
+    "128": 43,
+    "256": 86,
+    "384": 128,
+    "512": 171,
+    "72": 24
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 3,
+   "experts_fewest": {
+    "128": 42,
+    "256": 85,
+    "384": 128,
+    "512": 170,
+    "72": 24
+   },
+   "experts_most": {
+    "128": 43,
+    "256": 86,
+    "384": 128,
+    "512": 171,
+    "72": 24
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 9,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 9,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 9,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 9,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 9,
+   "experts_fewest": {
+    "128": 14,
+    "256": 28,
+    "384": 42,
+    "512": 56,
+    "72": 8
+   },
+   "experts_most": {
+    "128": 15,
+    "256": 29,
+    "384": 43,
+    "512": 57,
+    "72": 8
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 9,
+   "experts_fewest": {
+    "128": 14,
+    "256": 28,
+    "384": 42,
+    "512": 56,
+    "72": 8
+   },
+   "experts_most": {
+    "128": 15,
+    "256": 29,
+    "384": 43,
+    "512": 57,
+    "72": 8
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 9,
+   "experts_fewest": {
+    "128": 14,
+    "256": 28,
+    "384": 42,
+    "512": 56,
+    "72": 8
+   },
+   "experts_most": {
+    "128": 15,
+    "256": 29,
+    "384": 43,
+    "512": 57,
+    "72": 8
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 9,
+   "experts_fewest": {
+    "128": 14,
+    "256": 28,
+    "384": 42,
+    "512": 56,
+    "72": 8
+   },
+   "experts_most": {
+    "128": 15,
+    "256": 29,
+    "384": 43,
+    "512": 57,
+    "72": 8
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 1,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 2,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 2,
+   "experts_fewest": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "experts_most": {
+    "128": 64,
+    "256": 128,
+    "384": 192,
+    "512": 256,
+    "72": 36
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 6,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 6,
+   "experts_fewest": {
+    "128": 21,
+    "256": 42,
+    "384": 64,
+    "512": 85,
+    "72": 12
+   },
+   "experts_most": {
+    "128": 22,
+    "256": 43,
+    "384": 64,
+    "512": 86,
+    "72": 12
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 18,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 18,
+   "experts_fewest": {
+    "128": 7,
+    "256": 14,
+    "384": 21,
+    "512": 28,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 15,
+    "384": 22,
+    "512": 29,
+    "72": 4
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 2,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 2,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 4,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 4,
+   "experts_fewest": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "experts_most": {
+    "128": 32,
+    "256": 64,
+    "384": 96,
+    "512": 128,
+    "72": 18
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 12,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 12,
+   "experts_fewest": {
+    "128": 10,
+    "256": 21,
+    "384": 32,
+    "512": 42,
+    "72": 6
+   },
+   "experts_most": {
+    "128": 11,
+    "256": 22,
+    "384": 32,
+    "512": 43,
+    "72": 6
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 36,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 36,
+   "experts_fewest": {
+    "128": 3,
+    "256": 7,
+    "384": 10,
+    "512": 14,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 11,
+    "512": 15,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 4,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 4,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 8,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 8,
+   "experts_fewest": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "experts_most": {
+    "128": 16,
+    "256": 32,
+    "384": 48,
+    "512": 64,
+    "72": 9
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 1,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 16,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 16,
+   "experts_fewest": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 4
+   },
+   "experts_most": {
+    "128": 8,
+    "256": 16,
+    "384": 24,
+    "512": 32,
+    "72": 5
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 2,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 24,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 24,
+   "experts_fewest": {
+    "128": 5,
+    "256": 10,
+    "384": 16,
+    "512": 21,
+    "72": 3
+   },
+   "experts_most": {
+    "128": 6,
+    "256": 11,
+    "384": 16,
+    "512": 22,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 48,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 48,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 48,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 48,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 48,
+   "experts_fewest": {
+    "128": 2,
+    "256": 5,
+    "384": 8,
+    "512": 10,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 3,
+    "256": 6,
+    "384": 8,
+    "512": 11,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 48,
+   "experts_fewest": {
+    "128": 2,
+    "256": 5,
+    "384": 8,
+    "512": 10,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 3,
+    "256": 6,
+    "384": 8,
+    "512": 11,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 48,
+   "experts_fewest": {
+    "128": 2,
+    "256": 5,
+    "384": 8,
+    "512": 10,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 3,
+    "256": 6,
+    "384": 8,
+    "512": 11,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 3,
+   "enable_expert_parallel": true,
+   "ep_size": 48,
+   "experts_fewest": {
+    "128": 2,
+    "256": 5,
+    "384": 8,
+    "512": 10,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 3,
+    "256": 6,
+    "384": 8,
+    "512": 11,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 32,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 32,
+   "experts_fewest": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 2
+   },
+   "experts_most": {
+    "128": 4,
+    "256": 8,
+    "384": 12,
+    "512": 16,
+    "72": 3
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 4,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 64,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 64,
+   "experts_fewest": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 2
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 128,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 128,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 128,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 128,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 128,
+   "experts_fewest": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 128,
+   "experts_fewest": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 128,
+   "experts_fewest": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 8,
+   "enable_expert_parallel": true,
+   "ep_size": 128,
+   "experts_fewest": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 72,
+   "pcp": 1,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 72,
+   "experts_fewest": {
+    "128": 1,
+    "256": 3,
+    "384": 5,
+    "512": 7,
+    "72": 1
+   },
+   "experts_most": {
+    "128": 2,
+    "256": 4,
+    "384": 6,
+    "512": 8,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 1,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 144,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 144,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 144,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": false,
+   "ep_size": 1,
+   "experts_fewest": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "experts_most": {
+    "128": 128,
+    "256": 256,
+    "384": 384,
+    "512": 512,
+    "72": 72
+   },
+   "moe_tp_size": 144,
+   "pcp": 2,
+   "sequence_parallel_moe": false,
+   "tp": 8,
+   "use_all2all_kernels": false,
+   "use_ep": false
+  },
+  {
+   "all2all_backend": "allgather_reducescatter",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 144,
+   "experts_fewest": {
+    "128": 0,
+    "256": 1,
+    "384": 2,
+    "512": 3,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_low_latency",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 144,
+   "experts_fewest": {
+    "128": 0,
+    "256": 1,
+    "384": 2,
+    "512": 3,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "deepep_high_throughput",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 144,
+   "experts_fewest": {
+    "128": 0,
+    "256": 1,
+    "384": 2,
+    "512": 3,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  },
+  {
+   "all2all_backend": "flashinfer_nvlink_one_sided",
+   "dp": 9,
+   "enable_expert_parallel": true,
+   "ep_size": 144,
+   "experts_fewest": {
+    "128": 0,
+    "256": 1,
+    "384": 2,
+    "512": 3,
+    "72": 0
+   },
+   "experts_most": {
+    "128": 1,
+    "256": 2,
+    "384": 3,
+    "512": 4,
+    "72": 1
+   },
+   "moe_tp_size": 1,
+   "pcp": 2,
+   "sequence_parallel_moe": true,
+   "tp": 8,
+   "use_all2all_kernels": true,
+   "use_ep": true
+  }
  ]
 }
