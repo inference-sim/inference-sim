@@ -165,6 +165,11 @@ func emitRunResult(p postRun) {
 	// last so it covers every lookup the run made (VAL-6).
 	buildFrame(p.frame, r, windowRulesOf(aggregated, sum), p.numRequestsCap, cs.Horizon())
 	r.SelectedEntries = data.Report().Result()
+	res, err := engineResolutions(pooled(kernelOpened, kernelPDOpened), r.Input.Deployment)
+	if err != nil {
+		logrus.Fatalf("the engine's resolutions: %v", err)
+	}
+	r.Resolutions = res
 	markRerun(r)
 	r.Runtime = resultRuntime(p.started)
 
