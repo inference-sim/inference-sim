@@ -530,7 +530,13 @@
     "pointrecord.Substitution": {
       "additionalProperties": false,
       "properties": {
+        "date": {
+          "type": "string"
+        },
         "detail": {
+          "type": "string"
+        },
+        "evidence": {
           "type": "string"
         },
         "kind": {
@@ -542,10 +548,20 @@
             "value_class",
             "estimated",
             "interim_status",
+            "resolved_differs",
+            "client_difference",
+            "later_record",
+            "router_differs",
             "other_release",
             "changed_functions",
             "nightly_or_custom"
           ],
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "record": {
           "type": "string"
         },
         "subject": {

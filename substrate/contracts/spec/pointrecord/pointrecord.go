@@ -136,8 +136,22 @@ type Substitution struct {
 	// Subject names what was substituted: a field, a coefficient, a library or a build.
 	Subject string `yaml:"subject"`
 	// Detail says what stood in, for example the estimation rule's setting, the
-	// coefficient's method, or the changed functions.
+	// coefficient's method, or the changed functions. Required for client_difference and
+	// resolved_differs, which have no other key to say what differed.
 	Detail string `yaml:"detail,omitempty"`
+	// Record names the record a later_record value was taken from, with the revision that
+	// identifies it, for example a file and its commit. Only with later_record, where it is
+	// required.
+	Record string `yaml:"record,omitempty"`
+	// Date is the date of that record, YYYY-MM-DD. Only with later_record, where it is
+	// required: the point states how long after the run the fact was recorded.
+	Date string `yaml:"date,omitempty"`
+	// Policy is the llm-d router policy BLIS simulated in place of the run's router. Only
+	// with router_differs, where it is required; Subject is then the router the run used.
+	Policy string `yaml:"policy,omitempty"`
+	// Evidence cites the router table's evidence for matching the router to Policy, as the
+	// table entry gives it. Only with router_differs, where it is required.
+	Evidence string `yaml:"evidence,omitempty"`
 }
 
 // SubstitutionKind names a condition of design §11.3 that lowers a grade.
@@ -152,6 +166,10 @@ const (
 	SubValueClass        SubstitutionKind = "value_class"        // a modelled field set outside every covered value class
 	SubEstimated         SubstitutionKind = "estimated"          // a missing or unmodelled value replaced by the engine's estimation rule
 	SubInterimStatus     SubstitutionKind = "interim_status"     // a field whose status a release plan allows only for a time
+	SubResolvedDiffers   SubstitutionKind = "resolved_differs"   // a resolved value the run logged differs from the engine's resolution (design 11.2)
+	SubClientDifference  SubstitutionKind = "client_difference"  // the simulated requests differ from the ones the run's client sent (COV-12)
+	SubLaterRecord       SubstitutionKind = "later_record"       // a cluster fact the run's record lacks was taken from the benchmark's later record of the same runner
+	SubRouterDiffers     SubstitutionKind = "router_differs"     // the run's router, which BLIS does not host, was replaced by an llm-d policy from the router table
 	// Grade G3 and G4 conditions.
 	SubOtherRelease     SubstitutionKind = "other_release"     // the run's engine release is another one
 	SubChangedFunctions SubstitutionKind = "changed_functions" // ported upstream functions changed between the releases

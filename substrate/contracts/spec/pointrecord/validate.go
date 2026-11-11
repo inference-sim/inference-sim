@@ -27,6 +27,7 @@ func (c G5Code) Valid() bool { return g5Codes[c] }
 var substitutionGrade = map[SubstitutionKind]Grade{
 	SubCoefficientMethod: G2, SubCoefficientRange: G2, SubExecutionMode: G2, SubKernelHash: G2,
 	SubValueClass: G2, SubEstimated: G2, SubInterimStatus: G2,
+	SubResolvedDiffers: G2, SubClientDifference: G2, SubLaterRecord: G2, SubRouterDiffers: G2,
 	SubOtherRelease: G3, SubChangedFunctions: G4, SubNightlyBuild: G4,
 }
 
@@ -202,11 +203,52 @@ func (r *Record) validateGrade(p *validate.Problems) {
 		if s.Subject == "" {
 			p.Field(at+".subject", "required: what was substituted")
 		}
+		s.validateKeys(p, at)
 		if i > 0 {
 			prev := r.Substitutions[i-1]
 			if s.Kind < prev.Kind || (s.Kind == prev.Kind && s.Subject <= prev.Subject) {
 				p.Field(at, "substitutions are sorted by kind and subject, each once")
 			}
+		}
+	}
+}
+
+// validateKeys checks the keys a kind names (design 11.3). A later_record names the field, the
+// record and its date; a router_differs the router the run used, the policy BLIS used and the
+// router table's evidence; a client_difference and a resolved_differs say what differed. A key
+// belongs to its own kind only, so a record cannot carry a router's evidence on a coefficient.
+func (s Substitution) validateKeys(p *validate.Problems, at string) {
+	need := map[string]*string{}
+	switch s.Kind {
+	case SubLaterRecord:
+		need["record"], need["date"] = &s.Record, &s.Date
+	case SubRouterDiffers:
+		need["policy"], need["evidence"] = &s.Policy, &s.Evidence
+	case SubClientDifference, SubResolvedDiffers:
+		need["detail"] = &s.Detail
+	}
+	why := map[string]string{
+		"record":   "the record the value was taken from, with its revision",
+		"date":     "the date of that record, YYYY-MM-DD",
+		"policy":   "the llm-d policy BLIS used in place of the run's router",
+		"evidence": "the router table's evidence for the match",
+		"detail":   "what differed",
+	}
+	for _, k := range []string{"record", "date", "policy", "evidence", "detail"} {
+		if v, ok := need[k]; ok {
+			if *v == "" {
+				p.Field(at+"."+k, "required for %s: %s", s.Kind, why[k])
+			}
+		}
+	}
+	for k, v := range map[string]string{"record": s.Record, "date": s.Date, "policy": s.Policy, "evidence": s.Evidence} {
+		if _, ok := need[k]; !ok && v != "" {
+			p.Field(at+"."+k, "is not a key of %s", s.Kind)
+		}
+	}
+	if s.Kind == SubLaterRecord && s.Date != "" {
+		if _, err := time.Parse("2006-01-02", s.Date); err != nil {
+			p.Field(at+".date", "must be YYYY-MM-DD, got %q", s.Date)
 		}
 	}
 }

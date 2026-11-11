@@ -56,7 +56,8 @@ refuses an unknown key in either; `Record.Validate` checks it.
 
 A point takes the highest-numbered grade whose conditions apply. Each substitution sets a
 floor: those of grade G2 (`coefficient_method`, `coefficient_range`, `execution_mode`,
-`kernel_hash`, `value_class`, `estimated`, `interim_status`), `other_release` for G3, and
+`kernel_hash`, `value_class`, `estimated`, `interim_status`, `resolved_differs`,
+`client_difference`, `later_record`, `router_differs`), `other_release` for G3, and
 `changed_functions` and `nightly_or_custom` for G4. A record whose grade is below its
 substitutions' floor is refused, and a G2, G3 or G4 record names the substitution that
 makes it so (COV-4).
@@ -66,8 +67,32 @@ makes it so (COV-4).
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `kind` | string | yes | One of the conditions above. |
-| `subject` | string | yes | What was substituted: a field, a coefficient, a library, a release. |
-| `detail` | string | no | What stood in. |
+| `subject` | string | yes | What was substituted: a field, a coefficient, a library, a release; for `router_differs`, the router the run used. |
+| `detail` | string | for `client_difference` and `resolved_differs`; else no | What stood in, or what differed. |
+| `record` | string | for `later_record` | The record the value was taken from, with its revision, for example a file and its commit. |
+| `date` | string | for `later_record` | The date of that record, `YYYY-MM-DD`. |
+| `policy` | string | for `router_differs` | The llm-d router policy BLIS simulated in place of the run's router. |
+| `evidence` | string | for `router_differs` | The router table's evidence for the match, as the table entry cites it. |
+
+The four conditions design §11.3 adds beside the earlier ones name what the point must say:
+
+`client_difference`
+:   The simulated requests differ from the ones the run's client sent (COV-12). `subject`
+    says which part, for example the send gap; `detail` says how.
+`later_record`
+:   A fact of the cluster the run's own record lacks was taken from the benchmark's later
+    record of the same runner. `subject` is the field, `record` the record and its revision,
+    `date` the record's date.
+`router_differs`
+:   The run was measured behind a router BLIS does not host, and the router table maps it to
+    an llm-d policy. `subject` is the router the run used, `policy` the policy BLIS used,
+    `evidence` the table's evidence. The point is never G1, and is not presented as if llm-d
+    had routed the run.
+`resolved_differs`
+:   A resolved value the run logged differs from the engine's resolution (design §11.2).
+    `subject` is the setting; `detail` gives both values.
+
+A key belongs to its own kind: a `policy` on a `later_record` is refused.
 
 <!-- fields: pointrecord.G5Reason -->
 

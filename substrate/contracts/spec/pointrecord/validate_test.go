@@ -2,6 +2,8 @@ package pointrecord
 
 import (
 	"math"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -166,5 +168,94 @@ func TestEveryDesignReasonIsAccepted(t *testing.T) {
 	}
 	if len(g5Codes) != 9 {
 		t.Errorf("design §11.4 lists nine reasons; the code lists %d", len(g5Codes))
+	}
+}
+
+// The three conditions design 11.3 lists beside the earlier ones, and resolved_differs, each
+// name what the point must say.
+func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
+	for _, s := range []Substitution{
+		{Kind: SubClientDifference, Subject: "send_gap", Detail: "the next request is sent after the response stream closes"},
+		{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at 0123456789abcdef0123456789abcdef01234567", Date: "2026-03-02"},
+		{Kind: SubRouterDiffers, Subject: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml"},
+		{Kind: SubResolvedDiffers, Subject: "max_num_batched_tokens", Detail: "the run resolved 8192, the engine resolves 2048"},
+	} {
+		r := valid()
+		r.Substitutions = []Substitution{s}
+		if p := r.Validate(); !p.OK() {
+			t.Errorf("%s: %s", s.Kind, p.Error())
+		}
+		// Each is a G2 condition: a G1 record naming it is refused.
+		r.Grade = G1
+		if p := r.Validate(); p.OK() {
+			t.Errorf("%s: a G1 record naming it was accepted", s.Kind)
+		}
+		if got := r.Floor(); got != G2 {
+			t.Errorf("%s: floor %s, want G2", s.Kind, got)
+		}
+	}
+}
+
+// A known-bad record per kind and per key (SUB-2): what the point must name, a key on a kind
+// that does not take it, and a malformed date.
+func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
+	later := Substitution{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at abc", Date: "2026-03-02"}
+	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Policy: "round-robin", Evidence: "catalog/routers/dynamo.yaml"}
+	client := Substitution{Kind: SubClientDifference, Subject: "send_gap", Detail: "x"}
+	resolved := Substitution{Kind: SubResolvedDiffers, Subject: "s", Detail: "x"}
+	with := func(s Substitution, edit func(*Substitution)) func(*Record) {
+		edit(&s)
+		return func(r *Record) { r.Substitutions = []Substitution{s} }
+	}
+	for _, c := range []struct {
+		name   string
+		break_ func(*Record)
+		path   string
+		msg    string
+	}{
+		{"later_record without a record", with(later, func(s *Substitution) { s.Record = "" }), "substitutions[0].record", "required for later_record"},
+		{"later_record without a date", with(later, func(s *Substitution) { s.Date = "" }), "substitutions[0].date", "required for later_record"},
+		{"later_record with a malformed date", with(later, func(s *Substitution) { s.Date = "2 March 2026" }), "substitutions[0].date", "YYYY-MM-DD"},
+		{"later_record without the field", with(later, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"later_record naming a policy", with(later, func(s *Substitution) { s.Policy = "round-robin" }), "substitutions[0].policy", "not a key of later_record"},
+		{"router_differs without a policy", with(router, func(s *Substitution) { s.Policy = "" }), "substitutions[0].policy", "required for router_differs"},
+		{"router_differs without evidence", with(router, func(s *Substitution) { s.Evidence = "" }), "substitutions[0].evidence", "required for router_differs"},
+		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
+		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
+		{"router_differs naming a date", with(router, func(s *Substitution) { s.Date = "2026-03-02" }), "substitutions[0].date", "not a key of router_differs"},
+		{"client_difference without a detail", with(client, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for client_difference"},
+		{"client_difference naming evidence", with(client, func(s *Substitution) { s.Evidence = "e" }), "substitutions[0].evidence", "not a key of client_difference"},
+		{"resolved_differs without a detail", with(resolved, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for resolved_differs"},
+		{"an estimate naming a policy", func(r *Record) { r.Substitutions[0].Policy = "p" }, "substitutions[0].policy", "not a key of estimated"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := valid()
+			c.break_(r)
+			p := r.Validate()
+			for _, it := range p.Errors() {
+				if it.Path == c.path && strings.Contains(it.Message, c.msg) {
+					return
+				}
+			}
+			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
+		})
+	}
+}
+
+// The kinds the record lists are the ones the dashboard's grading code emits for G2 (its
+// G2_KINDS), no fewer and no more. The list is restated here because the dashboard is another
+// repository; a change to either side is a change to the other.
+func TestTheG2KindsAreTheOnesTheDashboardEmits(t *testing.T) {
+	var g2 []string
+	for k, g := range substitutionGrade {
+		if g == G2 {
+			g2 = append(g2, string(k))
+		}
+	}
+	sort.Strings(g2)
+	want := []string{"client_difference", "coefficient_method", "coefficient_range", "estimated", "execution_mode",
+		"interim_status", "kernel_hash", "later_record", "resolved_differs", "router_differs", "value_class"}
+	if !reflect.DeepEqual(g2, want) {
+		t.Errorf("G2 kinds %v, want %v", g2, want)
 	}
 }
