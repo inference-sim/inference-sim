@@ -584,6 +584,54 @@ func TestCheckAgainstBase(t *testing.T) {
 	}
 }
 
+// D4, D7: a new partition version is a seed rotation the pull request states, and nobody
+// approves it there (no check waits on a person). It is the next number, with a new seed
+// record, and may carry the cut-points of the new version. Before this change every bump was
+// refused, and the refusal said a ledger owner overrides it through a review question that no
+// longer exists, so a rotation could not merge without an administrator's bypass.
+func TestANewPartitionVersionIsASeedRotationTheCheckAccepts(t *testing.T) {
+	u := func(id, rk string) Unit { return Unit{UnitID: id, RoleKey: rk} }
+	units := map[string][]Unit{"s": {u(hexID(1), hexID(100)), u(hexID(2), hexID(100))}}
+	seed := func(c *Config, tag string, version int) *Config {
+		sum := sha256.Sum256([]byte(tag))
+		c.PartitionVersion = version
+		c.Seed = SeedRecord{SHA256: hex.EncodeToString(sum[:]), GeneratedBy: "owner", GeneratedOn: "2026-11-04", RotationOwner: "owner"}
+		return c
+	}
+	base := &Ledger{Config: seed(testConfig(), "seed one", 1), Units: units}
+	ledgerOf := func(c *Config) *Ledger { return &Ledger{Config: c, Units: units} }
+
+	rotated := seed(testConfig(), "seed two", 2)
+	rotated.Rules["s"].CutPoints[0].To = 24 // the new version states its own cut-points
+	rotated.Rules["s"].CutPoints[1].From = 25
+	if err := CheckAgainstBase(base, ledgerOf(rotated)); err != nil {
+		t.Errorf("the next partition version with a new seed and its cut-points was refused: %v", err)
+	}
+	// The first seed ever recorded needs no version change: nothing was drawn before it.
+	if err := CheckAgainstBase(&Ledger{Config: testConfig(), Units: units}, ledgerOf(seed(testConfig(), "first", 1))); err != nil {
+		t.Errorf("recording the first seed was refused: %v", err)
+	}
+
+	for name, c := range map[string]*Config{
+		"version two ahead":               seed(testConfig(), "seed two", 3),
+		"version back":                    seed(testConfig(), "seed zero", 0),
+		"new version with the same seed":  seed(testConfig(), "seed one", 2),
+		"new version with no seed record": func() *Config { c := testConfig(); c.PartitionVersion = 2; return c }(),
+		"new seed with no new version":    seed(testConfig(), "seed two", 1),
+	} {
+		if err := CheckAgainstBase(base, ledgerOf(c)); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	// Cut-points still change only with the new version.
+	moved := seed(testConfig(), "seed one", 1)
+	moved.Rules["s"].CutPoints[0].To = 24
+	moved.Rules["s"].CutPoints[1].From = 25
+	if err := CheckAgainstBase(base, ledgerOf(moved)); err == nil {
+		t.Error("changed cut-points with no new partition version were accepted")
+	}
+}
+
 // The legacy map: a unit whose records carry both labels takes FIT, and a role key holding
 // both FIT and HELD units gives FIT to its new units.
 func TestBuildLegacy(t *testing.T) {

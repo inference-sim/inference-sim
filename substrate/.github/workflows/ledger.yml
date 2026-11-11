@@ -22,8 +22,9 @@ name: ledger
 #
 # The select job is started by workflow_run when a "ledger candidate" run completes;
 # workflow_run always runs this file from the default branch, so a pull request cannot change
-# these steps. The error and gate jobs are started by a ledger owner on main, and the release
-# job by a ledger owner or the nightly schedule.
+# these steps. The error and gate jobs are started by a dispatch on main, and the release job
+# by a dispatch or the nightly schedule. The dispatch needs write access, not a person: the one
+# step only a ledger owner can take is creating the seed (a release-time step, README).
 # `ledger lint-workflows` (run by ci.yml) refuses any other shape.
 #
 # Operator-level candidates run here. Whole-run candidates run the dashboard's scoring

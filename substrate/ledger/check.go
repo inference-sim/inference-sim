@@ -307,21 +307,34 @@ func LoadAliases(dir string) ([]*AliasTable, error) {
 
 // CheckAgainstBase is D4's check against the ledger at the pull request's merge base. Every
 // unit at the base must still exist with the same role key, or an alias table in the candidate
-// must map it to a unit of the candidate with the role key the alias names. The partition
-// version and the seed hash may change only together with a person's approval, which this
-// check cannot see; it refuses either change, and a new partition version is merged by a
-// ledger owner who overrides it through the review question of D7.
+// must map it to a unit of the candidate with the role key the alias names.
+//
+// The partition version, the seed record and the cut-points change only together, as one new
+// partition version: the next number, with a seed record that is created and differs from the
+// base's, and the cut-points the new version states. Nobody approves it in the pull request
+// (no check waits on a person). What keeps D7 is the seed itself: a ledger owner creates the
+// secret at release time, and every seed-holding job refuses a secret whose SHA-256 is not the
+// one the record states (NewAssigner), so a record without its secret draws no role.
 func CheckAgainstBase(base, cand *Ledger) error {
 	var errs []error
-	if base.Config.PartitionVersion != cand.Config.PartitionVersion {
-		errs = append(errs, fmt.Errorf("partition_version changed from %d to %d; a new partition version is a ledger owner's decision", base.Config.PartitionVersion, cand.Config.PartitionVersion))
+	bc, cc := base.Config, cand.Config
+	newVersion := cc.PartitionVersion != bc.PartitionVersion
+	if newVersion {
+		switch {
+		case cc.PartitionVersion != bc.PartitionVersion+1:
+			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d; a new partition version is the next number, %d", bc.PartitionVersion, cc.PartitionVersion, bc.PartitionVersion+1))
+		case !cc.Seed.Created():
+			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with no seed record; a new partition version records its new seed (D7)", bc.PartitionVersion, cc.PartitionVersion))
+		case cc.Seed == bc.Seed:
+			errs = append(errs, fmt.Errorf("partition_version changed from %d to %d with the same seed record; a new partition version is drawn from a new seed (D7)", bc.PartitionVersion, cc.PartitionVersion))
+		}
 	}
-	if base.Config.Seed.Created() && base.Config.Seed != cand.Config.Seed {
+	if !newVersion && bc.Seed.Created() && bc.Seed != cc.Seed {
 		errs = append(errs, errors.New("seed record changed; a seed is rotated only with a new partition version"))
 	}
-	for src, br := range base.Config.Rules {
-		cr, ok := cand.Config.Rules[src]
-		if !ok || fmt.Sprint(br) != fmt.Sprint(cr) {
+	for src, br := range bc.Rules {
+		cr, ok := cc.Rules[src]
+		if !newVersion && (!ok || fmt.Sprint(br) != fmt.Sprint(cr)) {
 			errs = append(errs, fmt.Errorf("rules.%s changed; cut-points change only with a new partition version", src))
 		}
 	}

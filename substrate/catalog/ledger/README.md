@@ -87,7 +87,9 @@ go run ./ledger/cmd/ledger generate-aliases -source inferencex -reason "..." \
 
 `ledger check-base` requires every added alias table to equal the generated one. It refuses a
 change that would give one new unit or role key two old role keys, which could carry two
-roles; such a change needs a new partition version, which a person approves. A change of
+roles; such a change needs a new partition version: the next number, with a new seed record
+(`ledger check-base` accepts it; no one approves it in the pull request, and the seed itself is a
+ledger owner's release-time step below). A change of
 source revision and a change of identities go in separate pull requests, so the pairing is
 always made on one revision.
 
@@ -98,7 +100,8 @@ version, in this repository and, with a seed of its own, in accuracy-dashboard (
 
 1. In the repository settings, create the environment `ledger`:
    - Deployment branches: selected branches only, with the single rule `main`.
-   - Required reviewers: the ledger owners.
+   - No required reviewers. A reviewer rule would make every seed-holding job wait for a person.
+     The branch policy keeps pull-request code out of the environment.
    - No other secret in it.
 2. On a trusted machine, generate the seed and its hash. Do not echo the seed, keep it in
    shell history, or write it to a file:
@@ -113,7 +116,8 @@ version, in this repository and, with a seed of its own, in accuracy-dashboard (
 3. In a pull request, record the hash and the facts in `ledger.yaml`: `seed.sha256`,
    `seed.generated_by` (the ledger owner's GitHub login), `seed.generated_on` (YYYY-MM-DD)
    and `seed.rotation_owner`. The review question "Was the new seed generated as the ledger
-   records?" (D7) is answered by a second ledger owner.
+   records?" (D7) is guidance for the review agent. The seed-holding jobs refuse a secret whose
+   SHA-256 is not the recorded one, so a record without its secret draws no role.
 4. Run `.github/workflows/ledger.yml` with `job: release` on main. The job checks the seed
    against the recorded hash before it draws anything. Its artifact `published` holds
    `fit.yaml`, `anchor.yaml` and `report.yaml`. The release bot commits them under
@@ -157,9 +161,9 @@ What is not in place yet:
 
 - The operator-level predictor. The candidate job records every unit as not predicted, so
   the seed-holding jobs report nothing.
-- The pre-registration check. A ledger owner starts the gate job by hand on main, for a
-  change they have checked is pre-registered, and records the evaluation count on the pull
-  request (design §10.2).
+- The pre-registration check. Anyone with write access starts the gate job by dispatch on main,
+  for a change whose pre-registration the review agent has checked, and records the evaluation
+  count on the pull request (design §10.2).
 - The consumers' records of units read. The nightly join (D2) fails until at least one
   consumer uploads an artifact named `unit-reads-<consumer>` in the format of `ledger.Reads`. The join reads only artifacts uploaded by a run on main of
   this repository; an artifact from a pull request run or a fork is ignored.
