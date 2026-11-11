@@ -33,6 +33,9 @@ type scenario struct {
 		LongPrefillTokenThreshold int    `json:"long_prefill_token_threshold"`
 		EnablePrefixCaching       bool   `json:"enable_prefix_caching"`
 		SchedulingPolicy          string `json:"scheduling_policy"`
+		// EnableChunkedPrefill is SchedulerConfig.enable_chunked_prefill; unstated is true, the
+		// create_scheduler default the oracle runs.
+		EnableChunkedPrefill *bool `json:"enable_chunked_prefill"`
 		// The knobs vLLM's test helper fixes or omits, passed to its config classes.
 		Watermark             float64 `json:"watermark"`
 		MaxNumActiveSeqs      int     `json:"max_num_active_seqs"`
@@ -138,7 +141,7 @@ func run(t *testing.T, sc scenario) trace {
 	s, err := New(Config{
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
-		EnableChunkedPrefill: true, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
+		EnableChunkedPrefill: c.EnableChunkedPrefill == nil || *c.EnableChunkedPrefill, Policy: Policy(c.SchedulingPolicy), EnablePrefixCaching: c.EnablePrefixCaching,
 		ReserveFullSequence: true, Watermark: c.Watermark, MaxNumActiveSeqs: c.MaxNumActiveSeqs,
 		MaxNumScheduledTokens: c.MaxNumScheduledTokens, LongPrefillAdaptive: c.LongPrefillAdaptive,
 		Spec: spec, MaxLoRAs: c.MaxLoRAs, KVEvents: c.KVEvents,

@@ -158,6 +158,10 @@ MUTANTS = [
     # (dashboard-deepseek-v4-pro-mtp-layers).
     ("M62", "EAGLE block drop across the drafter's spec group", "core/kv/manager.go",
      "\t\t\t\tm.groups[i].eagle = true\n", "\t\t\t\t_ = i\n"),
+    # enable_chunked_prefill false (chunked-prefill-off*, t3-chunked-prefill-off*): a waiting
+    # request whose tokens do not fit the remaining budget waits (scheduler.py:1161).
+    ("M63", "enable_chunked_prefill off", "core/sched/scheduler.go",
+     "if !s.cfg.EnableChunkedPrefill && numNew > room {", "if false && !s.cfg.EnableChunkedPrefill && numNew > room {"),
 ]
 
 
