@@ -1252,6 +1252,9 @@
         "host": {
           "type": "string"
         },
+        "pool": {
+          "type": "string"
+        },
         "reason": {
           "type": "string"
         },
@@ -1484,6 +1487,14 @@
     "result.SelectedCoefficient": {
       "additionalProperties": false,
       "properties": {
+        "ci95": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": "array"
+        },
         "extrapolated": {
           "type": "boolean"
         },
@@ -1545,6 +1556,9 @@
             "$ref": "#/$defs/result.SelectedProfile"
           },
           "type": "array"
+        },
+        "closeness_version": {
+          "type": "integer"
         },
         "coefficients": {
           "items": {

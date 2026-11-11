@@ -157,9 +157,21 @@ type Overlay struct {
 	Hash string `yaml:"hash"`
 }
 
+// ClosenessVersion is the version of the closeness data a SelectedEntries can carry.
+const ClosenessVersion = 1
+
 // SelectedEntries is the selected-entry report (VAL-6). Every reader behind the engine's
 // Environment contributes to it, the acceptance and routing profile readers included.
 type SelectedEntries struct {
+	// ClosenessVersion says the recorder passed on everything each coefficient's entry states:
+	// its kernel implementations, fit range and interval, and the flags found from them. It is
+	// 1 for the layout of this package, and absent in a report written before the data existed
+	// or by a recorder that held only identities. It does not say the conditions were decided.
+	// Under version 1, extrapolated is evaluated only for a coefficient that has a fit_range,
+	// unidentified only for one that has a ci95, and the kernel hash only for one that has
+	// kernel_impls; where the data is absent the entry did not state it, and the flag's false is
+	// "not evaluated". Without the version, nothing is said.
+	ClosenessVersion int `yaml:"closeness_version,omitempty"`
 	// Coefficients are the coefficient entries a lookup returned, each once, sorted by
 	// set, name, method and scope.
 	Coefficients []SelectedCoefficient `yaml:"coefficients,omitempty"`
@@ -194,9 +206,12 @@ type SelectedCoefficient struct {
 	// compare a hash for it.
 	KernelImpls []coefficient.KernelImpl `yaml:"kernel_impls,omitempty"`
 	// FitRange is the range of inputs the entry's fit covered (design VAL-10), copied from
-	// the entry. Empty when the entry records none, and then the run cannot have extrapolated
-	// it.
+	// the entry. Empty when the entry records none, and then the extrapolation condition cannot
+	// be evaluated for it.
 	FitRange []coefficient.Bound `yaml:"fit_range,omitempty"`
+	// CI95 is the entry's 95% interval, copied from the entry. Absent when the entry states
+	// none, and then the identifiability condition cannot be evaluated for it.
+	CI95 *coefficient.Interval `yaml:"ci95,omitempty"`
 	// Extrapolated is true when at least one step the run priced read the entry at an input
 	// outside FitRange. The cost model reports it from the trust verdict of each priced step
 	// (kernel.Estimate.Trust), so a Result written before any step ran says false. It
@@ -204,7 +219,8 @@ type SelectedCoefficient struct {
 	Extrapolated bool `yaml:"extrapolated,omitempty"`
 	// Unidentified is true when the entry's data do not determine it: its 95% interval is
 	// unbounded or wider than half its value (design VAL-10). It is a property of the entry,
-	// known when the cost model is built.
+	// known when the cost model is built. It requires CI95: without an interval the entry has
+	// not said, and false means only that nothing was found.
 	Unidentified bool `yaml:"unidentified,omitempty"`
 }
 
@@ -735,6 +751,12 @@ type Resolution struct {
 	// Setting is the setting's name. It is the same name an Override uses for the same
 	// setting, when the host overrode it.
 	Setting string `yaml:"setting"`
+	// Pool says which pool of the deployment resolved the setting, as PoolLabels names it:
+	// the pool's role, or the role and its position among the pools of that role when
+	// several share one. Absent when the resolution is of the whole deployment, or the
+	// deployment has one pool. A disaggregated run's prefill and decode pools resolve
+	// differently, so each states its own.
+	Pool string `yaml:"pool,omitempty"`
 	// Host is the value the host gave the engine: the host's value when Overrides names this
 	// setting, else Input's. Empty when the host gave none and the engine chose.
 	Host string `yaml:"host,omitempty"`

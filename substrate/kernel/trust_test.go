@@ -161,9 +161,10 @@ func TestTrustKeepsWhichEntriesAnyStepExtrapolated(t *testing.T) {
 	}
 }
 
-// RecordSelected reports the extrapolation of the steps the kernel has priced, and a second
-// call after more steps replaces the first.
-func TestRecordSelectedReportsExtrapolationOfThePricedSteps(t *testing.T) {
+// The selected-entry report says which entries the steps priced so far read outside their fit
+// range: RecordSelected is called once, as OpenPool calls it, and a step priced after it
+// reaches the report.
+func TestTheReportReadsExtrapolationOfTheStepsPricedSoFar(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {
 		t.Fatal(err)
@@ -176,10 +177,11 @@ func TestRecordSelectedReportsExtrapolationOfThePricedSteps(t *testing.T) {
 		FitRange: []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: 4}}}}
 	k.selected = []resolve.Resolved{narrow}
 	k.trust = buildTrust(k.selected)
+	k.RecordSelected(d)
+	k.RecordSelected(d) // once more: the kernel is registered once and the report is unchanged
 	flag := func() bool {
-		d.RecordCoefficient("x", "x", coefficient.Scope{}, "measured") // a distinct entry; must not matter
-		k.RecordSelected(d)
-		for _, c := range d.Report().Result().Coefficients {
+		cs := d.Report().Result().Coefficients
+		for _, c := range cs {
 			if c.Name == "narrow" {
 				return c.Extrapolated
 			}
@@ -196,6 +198,79 @@ func TestRecordSelectedReportsExtrapolationOfThePricedSteps(t *testing.T) {
 	}
 	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}})
 	if !flag() {
-		t.Fatal("a 512-token step is outside 1 to 4, but the entry is not reported extrapolated")
+		t.Fatal("a 512-token step is outside 1 to 4, but the report does not say the entry is extrapolated")
+	}
+}
+
+// Two kernels record into one Data, as two engine instances or a prefill and a decode pool
+// do. Only one of them leaves the range of the entry both selected; the report says so, in
+// either order, and the kernel that did not does not clear it.
+func TestTwoKernelsRecordingIntoOneDataKeepAnExtrapolation(t *testing.T) {
+	narrow := resolve.Resolved{Set: "cost-model-primitives", Entry: coefficient.Entry{
+		Name: "narrow", Method: vocab.MethodMeasured, Value: 1,
+		FitRange: []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: 4}}}}
+	small := kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 1, Computed: 99, PromptLen: 100}}}
+	big := kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}}
+	for name, c := range map[string]struct{ first, second kernel.Batch }{
+		"only the second extrapolated": {small, big},
+		"only the first extrapolated":  {big, small},
+	} {
+		d, err := load.Embedded()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ks [2]*Kernel
+		for i, b := range []kernel.Batch{c.first, c.second} {
+			_, ks[i] = priceOnGB200(t, 8, fewTokens, false)
+			ks[i].selected = []resolve.Resolved{narrow}
+			ks[i].trust = buildTrust(ks[i].selected)
+			ks[i].RecordSelected(d)
+			ks[i].StepTime(b)
+		}
+		// A later call by the clean kernel, after the other recorded, changes nothing.
+		for _, k := range ks {
+			k.RecordSelected(d)
+		}
+		cs := d.Report().Result().Coefficients
+		if len(cs) != 1 || !cs[0].Extrapolated {
+			t.Errorf("%s: %+v, want one entry extrapolated", name, cs)
+		}
+	}
+}
+
+// The observer answers for the entry asked about and no other: two entries of one name that
+// differ in scope, or in method, are told apart.
+func TestTheKernelAnswersExtrapolatedPerEntry(t *testing.T) {
+	_, k := priceOnGB200(t, 8, fewTokens, false)
+	tokens := func(hi float64) []coefficient.Bound {
+		return []coefficient.Bound{{Dim: string(vocab.FitTokens), Low: 1, High: hi}}
+	}
+	scopeA := coefficient.Scope{Hardware: []string{"h100"}}
+	scopeB := coefficient.Scope{Hardware: []string{"h200"}}
+	mk := func(scope coefficient.Scope, m vocab.Method, hi float64) resolve.Resolved {
+		return resolve.Resolved{Set: "s", Entry: coefficient.Entry{Name: "n", Method: m, Value: 1, Scope: scope, FitRange: tokens(hi)}}
+	}
+	k.selected = []resolve.Resolved{
+		mk(scopeA, vocab.MethodMeasured, 4),      // left by a 512-token step
+		mk(scopeB, vocab.MethodMeasured, 1000),   // not left
+		mk(scopeA, vocab.MethodCalibrated, 1000), // same scope as the first, another method, not left
+	}
+	k.trust = buildTrust(k.selected)
+	k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: []kernel.ReqShape{{Scheduled: 512, Computed: 0, PromptLen: 512}}})
+	for _, c := range []struct {
+		scope  coefficient.Scope
+		method vocab.Method
+		want   bool
+	}{
+		{scopeA, vocab.MethodMeasured, true},
+		{scopeB, vocab.MethodMeasured, false},
+		{scopeA, vocab.MethodCalibrated, false},
+	} {
+		if got := k.Extrapolated("s", "n", c.scope, string(c.method)); got != c.want {
+			t.Errorf("Extrapolated(s, n, %s, %s) = %v, want %v", c.scope.Key(), c.method, got, c.want)
+		}
+	}
+	if k.Extrapolated("other", "n", scopeA, string(vocab.MethodMeasured)) || k.Extrapolated("s", "m", scopeA, string(vocab.MethodMeasured)) {
+		t.Error("an entry of another set or name is reported extrapolated")
 	}
 }

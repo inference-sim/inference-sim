@@ -80,6 +80,8 @@ type Data struct {
 	mu       sync.Mutex
 	loaded   map[string]bool // registry files a reader loaded, by path relative to registry/
 	selected map[string]Selected
+	// observers are asked at report time whether a coefficient was read outside its fit range.
+	observers []ExtrapolationObserver
 }
 
 // Embedded opens the embedded catalog and registry with no overlay.

@@ -159,16 +159,21 @@ func (r *Result) validateResolutions(p *validate.Problems) {
 	for _, o := range r.Overrides {
 		hostRun[o.Setting] = o.Run
 	}
+	pools := PoolLabels(r.Input.Deployment)
 	prev := ""
 	for i, x := range r.Resolutions {
 		at := fmt.Sprintf("resolutions[%d]", i)
+		key := x.Setting + "\x00" + x.Pool
 		switch {
 		case x.Setting == "":
 			p.Field(at+".setting", "required")
-		case i > 0 && x.Setting <= prev:
-			p.Field(at+".setting", "settings are listed once each, sorted; %q follows %q", x.Setting, prev)
+		case i > 0 && key <= prev:
+			p.Field(at+".setting", "resolutions are listed once each, sorted by setting and then pool; %q (pool %q) follows %q", x.Setting, x.Pool, strings.ReplaceAll(prev, "\x00", " pool "))
 		}
-		prev = x.Setting
+		prev = key
+		if x.Pool != "" && !contains(pools, x.Pool) {
+			p.Field(at+".pool", "%q is not a pool of the deployment; its pools are %v", x.Pool, pools)
+		}
 		if x.Engine == "" {
 			p.Field(at+".engine", "required: the value the engine resolved to")
 		}
@@ -187,6 +192,9 @@ func (r *Result) validateResolutions(p *validate.Problems) {
 }
 
 func (s SelectedEntries) validate(p *validate.Problems) {
+	if s.ClosenessVersion != 0 && s.ClosenessVersion != ClosenessVersion {
+		p.Field("selected_entries.closeness_version", "must be %d or absent, got %d", ClosenessVersion, s.ClosenessVersion)
+	}
 	read := map[string]bool{}
 	var prev string
 	for i, c := range s.Coefficients {
@@ -207,6 +215,21 @@ func (s SelectedEntries) validate(p *validate.Problems) {
 		read[c.File] = true
 		coefficient.ValidateKernelImpls(p, at+".kernel_impls", c.KernelImpls)
 		coefficient.ValidateFitRange(p, at+".fit_range", c.FitRange)
+		if iv := c.CI95; iv != nil && (math.IsNaN(iv.Low) || math.IsNaN(iv.High) || iv.Low > iv.High) {
+			p.Field(at+".ci95", "must be an interval [low, high] with low not above high, got [%v, %v]", iv.Low, iv.High)
+		}
+		if len(c.KernelImpls) > 0 && !coefficient.MayStateKernelImpls(c.Method) {
+			p.Field(at+".kernel_impls", "method %q is not measured on a kernel implementation, so the entry states none", c.Method)
+		}
+		if len(c.FitRange) > 0 && !coefficient.MayStateFitRange(c.Method) {
+			p.Field(at+".fit_range", "method %q was not fitted to data, so the entry states no fit range", c.Method)
+		}
+		if c.Unidentified && c.CI95 == nil {
+			p.Field(at+".unidentified", "is true, but the entry records no ci95 that leaves it unidentified")
+		}
+		if s.ClosenessVersion == 0 && (len(c.KernelImpls) > 0 || len(c.FitRange) > 0 || c.CI95 != nil || c.Extrapolated || c.Unidentified) {
+			p.Field(at, "states closeness data, but selected_entries.closeness_version is absent: without it a reader cannot tell an omitted flag from false")
+		}
 		if c.Extrapolated && len(c.FitRange) == 0 {
 			p.Field(at+".extrapolated", "is true, but the entry records no fit_range to leave")
 		}

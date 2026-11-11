@@ -12,9 +12,11 @@ import (
 // conditions read, .
 func withG1() *Result {
 	r := valid()
+	r.SelectedEntries.ClosenessVersion = ClosenessVersion
 	c := &r.SelectedEntries.Coefficients[0]
 	c.KernelImpls = []coefficient.KernelImpl{{Library: "attn-lib", Variant: "decode_v2", CodeHash: "0123456789abcdef"}}
 	c.FitRange = []coefficient.Bound{{Dim: "tokens", Low: 1, High: 8192}}
+	c.CI95 = &coefficient.Interval{Low: 0, High: 100}
 	c.Extrapolated = true
 	c.Unidentified = true
 	return r
@@ -71,6 +73,23 @@ func TestTheG1DataIsRefusedWhenMalformed(t *testing.T) {
 		{"fit range twice on one dimension", co(func(c *SelectedCoefficient) {
 			c.FitRange = append(c.FitRange, c.FitRange[0])
 		}), "selected_entries.coefficients[0].fit_range[1].dim", "duplicate"},
+		{"closeness data in an unmarked report", func(r *Result) { r.SelectedEntries.ClosenessVersion = 0 },
+			"selected_entries.coefficients[0]", "closeness_version is absent"},
+		{"an unknown closeness version", func(r *Result) { r.SelectedEntries.ClosenessVersion = 2 },
+			"selected_entries.closeness_version", "must be 1 or absent"},
+		{"unidentified with no interval", co(func(c *SelectedCoefficient) { c.CI95 = nil }),
+			"selected_entries.coefficients[0].unidentified", "no ci95"},
+		{"an interval in an unmarked report", func(r *Result) {
+			r.SelectedEntries.ClosenessVersion = 0
+			c := &r.SelectedEntries.Coefficients[0]
+			c.KernelImpls, c.FitRange, c.Extrapolated, c.Unidentified = nil, nil, false, false
+		}, "selected_entries.coefficients[0]", "closeness_version is absent"},
+		{"an interval backward", co(func(c *SelectedCoefficient) { c.CI95 = &coefficient.Interval{Low: 5, High: 1} }),
+			"selected_entries.coefficients[0].ci95", "low not above high"},
+		{"implementations on an assumed entry", co(func(c *SelectedCoefficient) { c.Method = "assumed" }),
+			"selected_entries.coefficients[0].kernel_impls", "states none"},
+		{"a fit range on a literature entry", co(func(c *SelectedCoefficient) { c.KernelImpls = nil; c.Method = "literature" }),
+			"selected_entries.coefficients[0].fit_range", "not fitted"},
 		{"extrapolated with no fit range", co(func(c *SelectedCoefficient) { c.FitRange = nil }),
 			"selected_entries.coefficients[0].extrapolated", "no fit_range"},
 	}
@@ -86,5 +105,21 @@ func TestTheG1DataIsRefusedWhenMalformed(t *testing.T) {
 			}
 			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
 		})
+	}
+}
+
+// A report written before the closeness data existed carries none of it, is unmarked, and
+// validates: its absent flags mean "not said", which a marked report's absent flags do not.
+func TestAnUnmarkedReportWithoutClosenessDataStillValidates(t *testing.T) {
+	r := valid()
+	if r.SelectedEntries.ClosenessVersion != 0 {
+		t.Fatal("the fixture is meant to be unmarked")
+	}
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("%s", p.Error())
+	}
+	r.SelectedEntries.ClosenessVersion = ClosenessVersion
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("a marked report with every flag false: %s", p.Error())
 	}
 }

@@ -153,16 +153,32 @@ func OpenPool(scenario string, r Repos, poolIndex int) (*Kernel, error) {
 // of each (the kernel implementations it is valid for, its fit range, and whether it is
 // unidentified or was read outside its fit range).
 //
-// OpenPool calls it as soon as the kernel is built, when no step has been priced, so no entry
-// is yet extrapolated. Extrapolation is a fact about the steps a run priced, and the
-// simulator that wants it in the Result calls RecordSelected again when the run ends: the
-// second call replaces the first, entry by entry. A caller that builds a kernel with New
-// from documents it took from d calls it itself.
+// It also registers the kernel with d as an extrapolation observer, so a report read later
+// says which entries a step priced by then read outside their fit range. Extrapolation is a
+// fact about the steps a run priced, and nothing has been priced when OpenPool records the
+// entries; the simulator does not record again at the end of a run. Records accumulate in d
+// (load.Data.RecordEntry), so a simulator that opens one kernel per engine instance or pool
+// calls RecordSelected once per kernel, and a flag any kernel raised stays raised. A caller
+// that builds a kernel with New from documents it took from d calls RecordSelected itself.
 func (k *Kernel) RecordSelected(d *load.Data) {
 	extrapolated := extrapolatedEntries(k.trust)
 	for i, r := range k.selected {
 		d.RecordEntry(r.Set, r.Entry, extrapolated[i])
 	}
+	d.Observe(k)
+}
+
+// Extrapolated implements load.ExtrapolationObserver: whether any step this kernel priced
+// read the selected entry outside the range its fit covered.
+func (k *Kernel) Extrapolated(set, name string, scope coefficient.Scope, method string) bool {
+	extrapolated := extrapolatedEntries(k.trust)
+	for i, r := range k.selected {
+		if extrapolated[i] && r.Set == set && r.Entry.Name == name && r.Entry.Scope.Key() == scope.Key() &&
+			string(r.Entry.Method) == method {
+			return true
+		}
+	}
+	return false
 }
 
 // OpenInputs resolves one pool of a scenario file into the documents New prices it from,

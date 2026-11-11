@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 )
 
 // withResolutions returns the valid Result with an override and two resolutions.
@@ -62,6 +63,15 @@ func TestResolutionsAreRefusedWhenMalformed(t *testing.T) {
 		}, "resolutions[1].reason", "required"},
 		{"a reason for an unchanged value", func(r *Result) { r.Resolutions[1].Host, r.Resolutions[1].Reason = "2", "because" },
 			"resolutions[1].reason", "only where"},
+		{"a pool the deployment lacks", func(r *Result) { r.Resolutions[1].Pool = "prefill" },
+			"resolutions[1].pool", "not a pool of the deployment"},
+		{"one setting resolved twice in one pool", func(r *Result) {
+			r.Resolutions = []Resolution{{Setting: "a", Pool: "colocated", Engine: "1"}, {Setting: "a", Pool: "colocated", Engine: "1"}}
+		}, "resolutions[1].setting", "once each"},
+		{"pools out of order within a setting", func(r *Result) {
+			r.Input.Deployment.Pools = append(r.Input.Deployment.Pools, deployment.Pool{Role: deployment.RoleColocated})
+			r.Resolutions = []Resolution{{Setting: "a", Pool: "colocated-1", Engine: "1"}, {Setting: "a", Pool: "colocated-0", Engine: "1"}}
+		}, "resolutions[1].setting", "sorted by setting and then pool"},
 		{"asked for the input's value after the host overrode it", func(r *Result) { r.Resolutions[0].Host = "true" },
 			"resolutions[0].host", "overrode"},
 	}
@@ -77,6 +87,66 @@ func TestResolutionsAreRefusedWhenMalformed(t *testing.T) {
 			}
 			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
 		})
+	}
+}
+
+func TestPoolLabelsNameEachPoolByRoleAndPositionWhenSeveralShareOne(t *testing.T) {
+	pool := func(role deployment.Role) deployment.Pool { return deployment.Pool{Role: role} }
+	for name, c := range map[string]struct {
+		pools []deployment.Pool
+		want  []string
+	}{
+		"one colocated pool":             {[]deployment.Pool{pool("colocated")}, []string{"colocated"}},
+		"prefill and decode":             {[]deployment.Pool{pool("prefill"), pool("decode")}, []string{"prefill", "decode"}},
+		"two decode pools and a prefill": {[]deployment.Pool{pool("decode"), pool("prefill"), pool("decode")}, []string{"decode-0", "prefill", "decode-1"}},
+	} {
+		if got := PoolLabels(deployment.Deployment{Pools: c.pools}); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// A disaggregated run's pools resolve the same setting differently; each resolution names its
+// pool, and the joined list is in the order a Result requires.
+func TestResolutionsOfPoolNamesThePool(t *testing.T) {
+	for _, x := range ResolutionsOfPool(kernel.Resolution{Overrides: []kernel.Override{{Field: "quantization", Requested: "a", Resolved: "b", Reason: "r"}}}, "decode") {
+		if x.Pool != "decode" {
+			t.Errorf("%s names pool %q, want decode", x.Setting, x.Pool)
+		}
+	}
+	prefill := ResolutionsOfPool(kernel.Resolution{TensorParallelWidth: 1, DataParallelWidth: 1}, "prefill")
+	decode := ResolutionsOfPool(kernel.Resolution{TensorParallelWidth: 4, DataParallelWidth: 1}, "decode")
+	all := append(append([]Resolution(nil), decode...), prefill...)
+	SortResolutions(all)
+	for i := 1; i < len(all); i++ {
+		a, b := all[i-1], all[i]
+		if a.Setting > b.Setting || (a.Setting == b.Setting && a.Pool >= b.Pool) {
+			t.Fatalf("not sorted by setting and pool at %d: %+v then %+v", i, a, b)
+		}
+	}
+	tp := map[string]string{}
+	for _, x := range all {
+		if x.Pool == "" {
+			t.Errorf("%s has no pool", x.Setting)
+		}
+		if x.Setting == "tensor_parallel_width" {
+			tp[x.Pool] = x.Engine
+		}
+	}
+	if !reflect.DeepEqual(tp, map[string]string{"prefill": "1", "decode": "4"}) {
+		t.Errorf("tensor_parallel_width by pool: %v", tp)
+	}
+	// A deployment with those two pools accepts them.
+	r := valid()
+	r.Input.Deployment.Pools = []deployment.Pool{
+		{Role: deployment.RolePrefill, Nodes: 1, Parallel: deployment.Parallelism{TP: 1, PP: 1, DP: 1}},
+		{Role: deployment.RoleDecode, Nodes: 1, Parallel: deployment.Parallelism{TP: 4, PP: 1, DP: 1}},
+	}
+	r.Resolutions = all
+	for _, it := range r.Validate().Errors() {
+		if strings.HasPrefix(it.Path, "resolutions") {
+			t.Errorf("%s: %s", it.Path, it.Message)
+		}
 	}
 }
 
@@ -134,5 +204,52 @@ func TestResolutionsOfRecordsEverySettingWhenNothingWasDeclined(t *testing.T) {
 		"expert_parallel_width", "sequence_parallel_moe", "tensor_parallel_width"}
 	if !reflect.DeepEqual(settings, want) {
 		t.Errorf("settings %v, want %v", settings, want)
+	}
+}
+
+// The cost model spells the all-reduce request allreduce_backend. A declined request lands on
+// the always-present all_reduce_backend row, not on a second row of its own name.
+func TestADeclinedAllReduceRequestLandsOnTheSettingItAnswers(t *testing.T) {
+	got := ResolutionsOf(kernel.Resolution{AllReduceBackend: "nccl", Overrides: []kernel.Override{
+		{Field: "allreduce_backend", Requested: "custom", Resolved: "nccl", Reason: "3 is not a supported rank count"}}})
+	var rows []Resolution
+	for _, x := range got {
+		if strings.Contains(x.Setting, "reduce") {
+			rows = append(rows, x)
+		}
+	}
+	want := []Resolution{{Setting: "all_reduce_backend", Host: "custom", Engine: "nccl", Reason: "3 is not a supported rank count"}}
+	if !reflect.DeepEqual(rows, want) {
+		t.Errorf("rows %+v, want %+v", rows, want)
+	}
+}
+
+// A declined request whose requested value equals the resolved one has nothing to explain: the
+// reason is dropped so the output validates.
+func TestARequestTheEngineKeptCarriesNoReason(t *testing.T) {
+	got := ResolutionsOf(kernel.Resolution{Overrides: []kernel.Override{
+		{Field: "quantization", Requested: "fp8", Resolved: "fp8", Reason: "kept"}}})
+	r := valid()
+	r.Resolutions = got
+	if p := r.Validate(); !p.OK() {
+		t.Fatalf("%s", p.Error())
+	}
+	for _, x := range got {
+		if x.Setting == "quantization" && (x.Reason != "" || x.Host != "fp8") {
+			t.Errorf("%+v", x)
+		}
+	}
+}
+
+// Resolutions of one setting in several pools are ordered by pool, whatever order they arrive in.
+func TestSortResolutionsOrdersPoolsWithinASetting(t *testing.T) {
+	for _, in := range [][]Resolution{
+		{{Setting: "s", Pool: "prefill", Engine: "1"}, {Setting: "s", Pool: "decode", Engine: "1"}, {Setting: "s", Engine: "1"}},
+		{{Setting: "s", Engine: "1"}, {Setting: "s", Pool: "decode", Engine: "1"}, {Setting: "s", Pool: "prefill", Engine: "1"}},
+	} {
+		SortResolutions(in)
+		if in[0].Pool != "" || in[1].Pool != "decode" || in[2].Pool != "prefill" {
+			t.Errorf("order %+v", in)
+		}
 	}
 }
