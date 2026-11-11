@@ -1164,10 +1164,11 @@ def test_the_draft_module_indexes_even_where_the_base_rule_skips():
 def test_kimi_attention_weights_keep_the_width_quantization_skips():
     """A compressed-tensors ignore list naming self_attn keeps those weights at base.
 
-    kimi-k2.5 is globally int4 and kimi-k3 mxfp4, and both name `re:.*self_attn.*` in
-    their compressed-tensors ignore list, so every attention projection stays
-    unquantized at runtime. Pricing them at the global width charges 4 bits for tensors
-    the runtime never quantizes.
+    kimi-k2.5 is globally int4 and names `re:.*self_attn.*` in its compressed-tensors
+    ignore list, so every attention projection stays unquantized at runtime. Pricing them
+    at the global width charges 4 bits for tensors the runtime never quantizes. (The
+    Kimi-K3 family is not here: its global width is the base, see
+    test_kimi_k3_quantizes_its_routed_experts_and_nothing_else.)
 
     This covers the KDA mixer too, not just the latent path: vLLM builds Kimi-K3's KDA
     as `self.self_attn` with prefix "{...}.self_attn" (kimi_k3/nvidia/model.py:888-891),
@@ -1175,7 +1176,7 @@ def test_kimi_attention_weights_keep_the_width_quantization_skips():
     must keep the quantized global width -- that is the half of the distinction a blanket
     override would destroy."""
     checked = 0
-    for name in ("kimi-k2.5", "kimi-k3"):
+    for name in ("kimi-k2.5",):
         d = ROOT / "models" / name
         if not d.is_dir():
             continue
@@ -1943,8 +1944,9 @@ def test_kimi_k3_routed_experts_run_at_the_latent_width():
     hidden = int(t["hidden_size"])
     assert latent != hidden, "this test is about a config whose latent width differs"
 
+    # The shared experts run on the pre-projection states, so only the routed node is latent.
     experts = [n for k in g["layer_kinds"] for n in k["nodes"]
-               if n["op"] == "GroupedGEMM"]
+               if n["op"] == "GroupedGEMM" and not n.get("shared")]
     assert experts, "no routed expert nodes"
     for n in experts:
         assert n.get("latent_size") == latent, (
@@ -6424,7 +6426,7 @@ def _graph_parameters(g: dict) -> dict[str, int]:
             if n["op"] == "GEMM":
                 out[n["role"]] += times * n["n"] * n["k"]
             elif n["op"] == "GroupedGEMM":
-                out[n["role"]] += times * 3 * n["n"] * n["k"] * n["experts"]
+                out[n["role"]] += times * 3 * n["n"] * n.get("latent_size", n["k"]) * n["experts"]
                 if n.get("shared_experts"):
                     out["shared"] += times * 3 * int(n.get("shared_intermediate_size", n["n"])) \
                         * n["k"] * n["shared_experts"]
@@ -6560,3 +6562,86 @@ def test_modelopt_refuses_what_vllm_reads_differently(tmp_path):
     del nothing["quantization_config"]["quant_algo"]
     with pytest.raises(d.DeriveError, match="no quant_algo"):
         _derive_raw(nothing, tmp_path, "x-nvfp4")
+
+
+# --- Kimi-K3 family: experts-only MXFP4 (moonshotai/Kimi-K3, moonshotai/Kimi-K3.1-Pro) ---------
+
+KIMI_K3 = MODELS / "kimi-k3"
+
+
+def _k3_raw(**quant) -> dict:
+    raw = config_of(KIMI_K3)
+    raw["text_config"]["quantization_config"] = {
+        **raw["text_config"]["quantization_config"], **quant}
+    return raw
+
+
+def test_kimi_k3_quantizes_its_routed_experts_and_nothing_else():
+    """vLLM rewrites the compressed-tensors mxfp4-pack-quantized block to its MXFP4 config
+    (KimiK3ForConditionalGenerationConfig), and that config gives every linear layer
+    UnquantizedLinearMethod and only a FusedMoE its quantized method: the attention and KDA
+    projections, the dense MLP, the shared experts, the latent projections and the head are BF16.
+    The checkpoint's header agrees (only experts.*.w{1,2,3}.weight_packed is U8)."""
+    g = graph_of(KIMI_K3)
+    assert g["global"]["weight_dtype"] == "bf16"
+    widths = _nodes_by_role(g)
+    assert widths["experts"] == {"mxfp4"}
+    assert widths["shared_experts"] == {"bf16"}
+    for role in ("routed_expert_down_proj", "routed_expert_up_proj", "mlp_gate_up", "mlp_down"):
+        assert widths[role] <= {"-", "bf16"}, role
+    assert all(n.get("weight_dtype", "bf16") == "bf16" for n in g["head"])
+    assert not any(n.get("shared_experts") for k in g["layer_kinds"] for n in k["nodes"])
+
+
+def test_kimi_k3_refuses_a_block_vllm_does_not_rewrite(tmp_path):
+    """Any other block stays a compressed-tensors config, which quantizes the linears its ignore
+    list does not name: a width this handler does not place."""
+    for edit in ({"format": "pack-quantized"}, {"quant_method": "modelopt"}):
+        with pytest.raises(deriver().DeriveError, match="mxfp4-pack-quantized"):
+            _derive_raw(_k3_raw(**edit), tmp_path, "kimi-k3")
+
+
+# Logical parameters per graph role, and per class the graph carries no node for, from the
+# safetensors headers of the 96 shards of moonshotai/Kimi-K3 (f831ab66) and Kimi-K3.1-Pro
+# (d9e99b07). A weight_packed tensor is U8 with two weights a byte; every other weight is BF16.
+K3_FAMILY_COMMON = {
+    "kda_q_proj": 69 * 12288 * 7168, "kda_k_proj": 69 * 12288 * 7168,
+    "kda_v_proj": 69 * 12288 * 7168, "kda_f_a_proj": 69 * 128 * 7168,
+    "kda_f_b_proj": 69 * 12288 * 128, "kda_b_proj": 69 * 96 * 7168,
+    "kda_g_proj": 69 * 12288 * 7168, "kda_o_proj": 69 * 7168 * 12288,
+    "mlp": 3 * 33792 * 7168,
+    "routed_expert_down_proj": 92 * 3584 * 7168, "routed_expert_up_proj": 92 * 7168 * 3584,
+    "experts": 92 * 3 * 896 * 3072 * 3584, "shared_experts": 92 * 3 * 6144 * 7168,
+    "lm_head": 163840 * 7168,
+}
+K3_FAMILY_MLA = {
+    # q_a_proj + kv_a_proj_with_mqa + the output gate (g_proj) on the layers that are MLA.
+    "qkv_a_proj": 24 * (1536 + 576 + 12288) * 7168,
+    "q_b_proj": 24 * 18432 * 1536, "kv_b_proj": 24 * 24576 * 512, "o_proj": 24 * 7168 * 12288,
+}
+K3_FAMILY_UNPRICED = {
+    "router": 92 * 896 * 7168 + 92 * 896,
+    # input_layernorm, post_attention_layernorm and the four attention-residual vectors per
+    # layer (self_attention_res_{norm,proj}, mlp_res_{norm,proj}), the output pair and the final
+    # norm; the latent norms; the routed expert norm.
+    "norms": 93 * 7168 * 6 + 3 * 7168 + 24 * (1536 + 512) + 92 * 3584,
+    # A_log, dt_bias, q/k/v short convolutions and o_norm of the 69 KDA layers.
+    "kda_small": 69 * (128 + 12288 + 3 * 12288 * 4 + 128),
+}
+
+
+def _k3_graph_total(g: dict) -> tuple[collections.Counter, int]:
+    got = _graph_parameters(g)
+    return got, g["global"]["vocab_size"] * g["global"]["hidden_size"]
+
+
+def test_kimi_k3_resident_parameters_equal_the_header_total():
+    """2,779,484,478,208 weights in the 497,220-tensor header's language model: the nodes, the
+    inferred embedding table, and the tensors no node carries (router, norms, KDA's small
+    state). None is missing and none is counted twice."""
+    got, emb = _k3_graph_total(graph_of(KIMI_K3))
+    want = dict(K3_FAMILY_COMMON, **K3_FAMILY_MLA)
+    for role, n in want.items():
+        have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
+        assert have == n, role
+    assert sum(got.values()) + emb + sum(K3_FAMILY_UNPRICED.values()) == 2_779_484_478_208

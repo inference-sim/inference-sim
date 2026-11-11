@@ -9,7 +9,7 @@ global:
   hidden_size: 7168
   vocab_size: 163840
   tie_word_embeddings: false
-  weight_dtype: mxfp4
+  weight_dtype: bf16
   architecture: KimiK3ForConditionalGeneration
 layer_kinds:
 - id: kda_moe
@@ -89,8 +89,16 @@ layer_kinds:
     k: 7168
     experts: 896
     top_k: 16
-    shared_experts: 2
     latent_size: 3584
+    weight_dtype: mxfp4
+  - op: GroupedGEMM
+    shared: true
+    role: shared_experts
+    n: 3072
+    k: 7168
+    experts: 2
+    top_k: 2
+    weight_dtype: bf16
   - op: GEMM
     role: routed_expert_up_proj
     n: 7168
@@ -134,6 +142,8 @@ layer_kinds:
     - 15
   - - 15
     - 16
+  - - 16
+    - 17
 - id: mla_moe
   nodes:
   - op: Elementwise
@@ -188,8 +198,16 @@ layer_kinds:
     k: 7168
     experts: 896
     top_k: 16
-    shared_experts: 2
     latent_size: 3584
+    weight_dtype: mxfp4
+  - op: GroupedGEMM
+    shared: true
+    role: shared_experts
+    n: 3072
+    k: 7168
+    experts: 2
+    top_k: 2
+    weight_dtype: bf16
   - op: GEMM
     role: routed_expert_up_proj
     n: 7168
@@ -229,6 +247,8 @@ layer_kinds:
     - 13
   - - 13
     - 14
+  - - 14
+    - 15
 - id: kda_dense
   nodes:
   - *id001

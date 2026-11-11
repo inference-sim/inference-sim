@@ -41,7 +41,6 @@ collective_floor_all_reduce_int8_<R>rank_gb300 # never read
 collective_floor_all_reduce_int8_<R>rank_h100 # never read
 collective_floor_all_reduce_int8_<R>rank_h200 # never read
 collective_floor_all_reduce_int8_<R>rank_l40s # never read
-collective_floor_alltoall_fp16_<R>rank_b300 # read but changes no price
 collective_floor_alltoall_int8_<R>rank_a100_80 # never read
 collective_floor_alltoall_int8_<R>rank_a100_sxm # never read
 collective_floor_alltoall_int8_<R>rank_b200 # never read
@@ -81,7 +80,6 @@ collective_peak_rate_all_reduce_int8_<R>rank_gb300 # never read
 collective_peak_rate_all_reduce_int8_<R>rank_h100 # never read
 collective_peak_rate_all_reduce_int8_<R>rank_h200 # never read
 collective_peak_rate_all_reduce_int8_<R>rank_l40s # never read
-collective_peak_rate_alltoall_fp16_<R>rank_b300 # read but changes no price
 collective_peak_rate_alltoall_fp16_<R>rank_h100 # read but changes no price
 collective_peak_rate_alltoall_fp16_<R>rank_l40s # read but changes no price
 collective_peak_rate_alltoall_int8_<R>rank_a100_80 # never read
@@ -128,7 +126,6 @@ collective_transition_rate_all_reduce_int8_<R>rank_gb300 # never read
 collective_transition_rate_all_reduce_int8_<R>rank_h100 # never read
 collective_transition_rate_all_reduce_int8_<R>rank_h200 # never read
 collective_transition_rate_all_reduce_int8_<R>rank_l40s # never read
-collective_transition_rate_alltoall_fp16_<R>rank_b300 # read but changes no price
 collective_transition_rate_alltoall_int8_<R>rank_a100_80 # never read
 collective_transition_rate_alltoall_int8_<R>rank_a100_sxm # never read
 collective_transition_rate_alltoall_int8_<R>rank_b200 # never read

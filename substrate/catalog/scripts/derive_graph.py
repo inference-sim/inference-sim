@@ -607,6 +607,67 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
     return out
 
 
+# Kimi-K3 and K3.1 ship compressed-tensors `mxfp4-pack-quantized` and name every Linear as a
+# target, but vLLM rewrites such a block to quant_method "mxfp4" before the model is built
+# (KimiK3ForConditionalGenerationConfig, model_executor/models/config.py:414-446@v0.32.0), and
+# the MXFP4 config quantizes a FusedMoE's routed experts only: every linear layer gets
+# UnquantizedLinearMethod (Mxfp4Config.get_quant_method, quantization/mxfp4.py:91-113). So the
+# attention and KDA projections, the dense MLP, the shared experts, the latent projections and
+# the head are all BF16 in memory, which the checkpoints' safetensors headers also show: only
+# the routed experts' w1/w2/w3 are stored as packed U8.
+KIMI_K3_ARCHS = frozenset({"KimiK3ForConditionalGeneration",
+                           "KimiK31ForConditionalGeneration"})
+
+
+def kimi_k3_expert_width(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
+    """The width of a Kimi-K3 family checkpoint's routed experts: MXFP4 where the block is
+    the one vLLM rewrites to its MXFP4 config, a refusal where it is not (any other block
+    stays a compressed-tensors config, which quantizes the linears its ignore list does not
+    name, and this handler places no such width)."""
+    quant = cfg.get("quantization_config") or raw.get("quantization_config") or {}
+    if (str(quant.get("quant_method", "")).lower() != "compressed-tensors"
+            or quant.get("format") != "mxfp4-pack-quantized"):
+        raise DeriveError(
+            f"{model}: the quantization block is not compressed-tensors "
+            f"mxfp4-pack-quantized, the one vLLM rewrites to its experts-only MXFP4 config; "
+            f"another block quantizes by its own ignore list, which this handler does not place")
+    return "mxfp4"
+
+
+def kimi_k3_place_widths(kinds: list[dict[str, Any]], cfg: dict[str, Any],
+                         raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+    """Give the routed experts their width and the shared experts the base one.
+
+    The shared experts are a KimiMLP built with the quant config (model.py:627-641) and so
+    unquantized, where the routed experts' FusedMoE is MXFP4; one node cannot price both, so
+    the shared half becomes a node of its own at the base width, running at the full hidden
+    size on the pre-projection states."""
+    width = kimi_k3_expert_width(cfg, raw, model)
+    base = base_dtype(cfg, raw, model)
+    out = []
+    for kind in kinds:
+        nodes = []
+        for node in kind["nodes"]:
+            if node.get("op") == "GroupedGEMM" and node.get("role") == "experts":
+                routed = dict(node, weight_dtype=width)
+                if node.get("shared_experts"):
+                    count = int(node["shared_experts"])
+                    routed.pop("shared_experts")
+                    routed.pop("shared_intermediate_size", None)
+                    nodes.append(routed)
+                    nodes.append({
+                        "op": "GroupedGEMM", "shared": True, "role": "shared_experts",
+                        "n": int(node.get("shared_intermediate_size") or node["n"]),
+                        "k": node["k"], "experts": count, "top_k": count,
+                        "weight_dtype": base,
+                    })
+                    continue
+                node = routed
+            nodes.append(node)
+        out.append(dict(kind, nodes=nodes, edges=chain(nodes)))
+    return out
+
+
 def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     """Return the graph's dtype name for the model's parameters.
 
@@ -615,6 +676,12 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
     per parameter would overstate both occupancy and decode-time traffic."""
     quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
     if isinstance(quant, dict) and quant:
+        # Kimi-K3's family quantizes its routed experts and nothing else, whatever the
+        # block's Linear target says (see kimi_k3_expert_width); the experts carry the
+        # narrow width and the global one is the base.
+        if architecture_of(raw, model) in KIMI_K3_ARCHS:
+            kimi_k3_expert_width(cfg, raw, model)
+            return base_dtype(cfg, raw, model)
         # A checkpoint that enumerates its quantized tensors states a layout rather than
         # a width. The base dtype stays global and the per-tensor widths ride on the
         # nodes they apply to, so the tensors the map IGNORES keep the base.
@@ -4119,7 +4186,7 @@ def handler_kimi_k3(cfg, raw, model):
         sequence.append(f"{mixer}_dense" if i < first_dense else f"{mixer}_moe")
     # A kind no layer uses would be a node a reader has to account for and no step runs.
     kinds = [k for k in kinds if k["id"] in set(sequence)]
-    return kinds, compress(sequence)
+    return kimi_k3_place_widths(kinds, cfg, raw, model), compress(sequence)
 
 
 def handler_glm5_next(cfg, raw, model):
