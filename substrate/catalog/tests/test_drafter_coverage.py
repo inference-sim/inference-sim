@@ -97,6 +97,9 @@ def test_the_committed_catalog_holds_the_minimax_m3_eagle3_heads(tmp_path):
     ds = [dc.Deployment("MiniMaxAI/MiniMax-M3", "eagle3", f"Inferact/MiniMax-M3-EAGLE3{s}", "r")
           for s in ("", "-GQA")]
     ds += [dc.Deployment("MiniMaxAI/MiniMax-M3-MXFP8", "eagle3", "Inferact/MiniMax-M3-EAGLE3-GQA", "r")]
+    # The NVFP4 checkpoint InferenceX serves with both heads (MIXED_PRECISION, minimax-m3-nvfp4).
+    ds += [dc.Deployment("nvidia/MiniMax-M3-NVFP4", "eagle3", f"Inferact/MiniMax-M3-EAGLE3{s}", "r")
+           for s in ("", "-GQA")]
     assert not any(dc.check(cat, ds).values())
     assert not any(dc.check(cat, [dc.Deployment("moonshotai/Kimi-K3", "dspark", "Inferact/Kimi-K3-DSpark", "r")]).values())
     bad = dc.check(cat, [dc.Deployment("moonshotai/Kimi-K3", "dspark", "RedHatAI/Kimi-K3-speculator.dspark", "r")])

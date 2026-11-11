@@ -687,6 +687,14 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         if architecture_of(raw, model) in KIMI_K3_ARCHS:
             kimi_k3_expert_width(cfg, raw, model)
             return base_dtype(cfg, raw, model)
+        # MiniMax-M3's MIXED_PRECISION checkpoint: MXFP8 on every linear and NVFP4 on the
+        # routed experts. Its linears are the global width and the experts carry the narrow
+        # one (minimax_m3_mixed_precision), so this is answered before the generic map below,
+        # which would read the same map as Nemotron's and make the global width the base.
+        if architecture_of(raw, model) in MINIMAX_M3_ARCHS:
+            mixed = minimax_m3_mixed_precision(cfg, raw, model)
+            if mixed:
+                return mixed["linear"]
         # A checkpoint that enumerates its quantized tensors states a layout rather than
         # a width. The base dtype stays global and the per-tensor widths ride on the
         # nodes they apply to, so the tensors the map IGNORES keep the base.
@@ -858,6 +866,13 @@ def mxfp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dict[st
     tensors are U8 [rows, columns / 32]). A block other than 1 x 32 is refused, as is a scale
     layout the config does not state."""
     quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if (architecture_of(raw, model) in MINIMAX_M3_ARCHS
+            and minimax_m3_mixed_precision(cfg, raw, model)):
+        # Every linear of the mixed-precision checkpoint is MXFP8 (ModelOptMxFp8Config, the
+        # method ModelOptMixedPrecisionConfig builds for the algorithm; its linear method
+        # allocates a scale of input_size / MXFP8_BLOCK_SIZE per row, modelopt.py:2279-2326);
+        # the pinned headers store them F8_E4M3 with a U8 scale of columns / 32.
+        return {"elements": 32, "bytes": 1}
     if str(quant.get("quant_method", "")).lower() != "mxfp8":
         return None
     block = quant.get("weight_block_size")
@@ -3979,6 +3994,104 @@ MINIMAX_M3_UNQUANTIZED = frozenset({"lm_head", "model.embed_tokens", "vision_tow
                                     "multi_modal_projector", "patch_merge_mlp"})
 
 
+# The MiniMax-M3 architectures, which share one handler.
+MINIMAX_M3_ARCHS = frozenset({"MiniMaxM3SparseForConditionalGeneration",
+                              "MiniMaxM3SparseForCausalLM"})
+
+
+def minimax_m3_mixed_precision(cfg: dict[str, Any], raw: dict[str, Any],
+                               model: str) -> dict[str, str] | None:
+    """The widths of a MiniMax-M3 ModelOpt MIXED_PRECISION checkpoint, read from its
+    `quantized_layers` map, or None for a checkpoint that is not one.
+
+    ModelOptMixedPrecisionConfig takes each module's algorithm from `quantized_layers`
+    (_resolve_quant_algo, quantization/modelopt.py:1717-1811@v0.32.0): a linear whose prefix is
+    listed gets that algorithm's method, one that is not listed gets UnquantizedLinearMethod
+    (:1851-1854), and a RoutedExperts module is found by the first listed key under its prefix
+    (:1754-1767). A fused projection takes the algorithm of its shards (qkv_proj of q, k and v;
+    gate_up_proj of gate and up; :1734-1752, :1769-1795). So a width is placed only when the
+    map states the same algorithm for every module of a class on every layer that has it, and
+    the map holds exactly the modules the config's layers build; anything else is refused:
+
+      * `linear`  q/k/v/o on every layer, the index_q and index_k projections on every
+                  block-sparse layer (fused into qkv_proj with q, k and v, which therefore
+                  decide their algorithm: the map must agree on all five), the dense MLP's
+                  gate/up/down where a layer is dense, the shared expert's where it is routed;
+                  all MXFP8 (group size 32, a 1 x 32 block; E8M0 scale);
+      * `routed`  every expert's w1, w2 and w3 on every routed layer; all NVFP4, group size 16.
+
+    The router, the embedding, the head and the towers are not listed and so are built
+    unquantized. Reading the exclusion list adds nothing for this algorithm, but the two files
+    vLLM may read state it differently (config.json is read for `ignore`, hf_quant_config.json
+    for `exclude_modules`; :320-406), so a listed module that either list would exclude is
+    refused: the same checkpoint would then price two ways.
+
+    Returns {"linear": "fp8", "routed": "nvfp4"}: the global width and the experts' width."""
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    if str(quant.get("quant_method", "")).lower() != "modelopt":
+        return None
+    if str(quant.get("quant_algo") or "").upper() != "MIXED_PRECISION":
+        return None
+    layers_map = quant.get("quantized_layers")
+    if not isinstance(layers_map, dict) or not layers_map:
+        raise DeriveError(f"{model}: quant_algo MIXED_PRECISION with no quantized_layers map; "
+                          f"vLLM refuses it (modelopt.py:1654-1658@v0.32.0)")
+    if quant.get("kv_cache_quant_algo") or quant.get("kv_cache_scheme"):
+        raise DeriveError(f"{model}: a quantized KV cache is read by the engine and not by "
+                          f"this handler")
+    layers = int(require(cfg, "num_layers", model))
+    sparse = (cfg.get("sparse_attention_config") or {}).get("sparse_attention_freq")
+    moe_freq = cfg.get("moe_layer_freq")
+    if not sparse or not moe_freq or len(sparse) != layers or len(moe_freq) != layers:
+        raise DeriveError(f"{model}: the layer vectors that say which modules a layer builds "
+                          f"are missing or not {layers} long")
+    experts = int(require(cfg, "num_experts", model))
+    shared = int(pick(cfg, "num_shared_experts") or 0)
+    expected: dict[str, str] = {}
+    for i in range(layers):
+        pre = f"language_model.model.layers.{i}."
+        for r in ("q_proj", "k_proj", "v_proj", "o_proj"):
+            expected[pre + "self_attn." + r] = "linear"
+        if sparse[i] == 1:
+            for r in ("index_q_proj", "index_k_proj"):
+                expected[pre + "self_attn." + r] = "linear"
+        if moe_freq[i] == 0:
+            for r in ("gate_proj", "up_proj", "down_proj"):
+                expected[pre + "mlp." + r] = "linear"
+            continue
+        if shared:
+            for r in ("gate_proj", "up_proj", "down_proj"):
+                expected[pre + "block_sparse_moe.shared_experts." + r] = "linear"
+        for e in range(experts):
+            for w in ("w1", "w2", "w3"):
+                expected[f"{pre}block_sparse_moe.experts.{e}.{w}"] = "routed"
+    missing, extra = sorted(set(expected) - set(layers_map)), sorted(set(layers_map) - set(expected))
+    if missing or extra:
+        raise DeriveError(
+            f"{model}: quantized_layers is not the modules this handler places: "
+            f"{len(missing)} missing (e.g. {missing[:2]}), {len(extra)} unplaced "
+            f"(e.g. {extra[:2]}); a layout that differs across layers or roles needs a node "
+            f"per outcome, which no checkpoint states")
+    want = {"linear": ("MXFP8", None), "routed": ("NVFP4", 16)}
+    for name, kind in sorted(expected.items()):
+        spec = layers_map[name]
+        algo = str(spec.get("quant_algo", "")).upper() if isinstance(spec, dict) else ""
+        group = spec.get("group_size") if isinstance(spec, dict) else None
+        extra_keys = set(spec) - {"quant_algo", "group_size"} if isinstance(spec, dict) else {"?"}
+        if (algo, group) != want[kind] or extra_keys:
+            raise DeriveError(
+                f"{model}: {name} is stored as {spec!r}; this handler places {want[kind][0]}"
+                f"{' group ' + str(want[kind][1]) if want[kind][1] else ''} for a {kind} module "
+                f"and nothing else, so a mixed role is refused rather than priced at one width")
+    excluded = (modelopt_exclusions({"ignore": quant.get("ignore") or []})
+                + modelopt_exclusions({"ignore": quant.get("exclude_modules") or []}))
+    hit = [n for n in expected if modelopt_excluded(n, excluded)]
+    if hit:
+        raise DeriveError(f"{model}: the exclusion list names {len(hit)} listed modules (e.g. "
+                          f"{hit[:2]}); the two files vLLM reads would place them differently")
+    return {"linear": "fp8", "routed": "nvfp4"}
+
+
 def minimax_m3_routed_width(raw: dict[str, Any], cfg: dict[str, Any], moe_freq: list[int],
                             model: str) -> str | None:
     """The routed experts' stored width in a MiniMax-M3 checkpoint, when it is not the MXFP8 of
@@ -3989,6 +4102,9 @@ def minimax_m3_routed_width(raw: dict[str, Any], cfg: dict[str, Any], moe_freq: 
     the format is nvfp4-pack-quantized and group_size 16 (:1294-1306). Every other linear is
     MXFP8. A kv_cache_quant_algo is a statement the engine reads (:1301) and this handler
     does not."""
+    mixed = minimax_m3_mixed_precision(cfg, raw, model)
+    if mixed:
+        return mixed["routed"]
     quant = raw_quant(cfg, model) or raw_quant(raw, model)
     algo = str(quant.get("moe_quant_algo") or "").upper()
     if not algo:
@@ -5758,8 +5874,10 @@ def handler_k3_dspark(cfg, raw, model):
 # drafter here rather than defaulted, with the catalog targets whose depth it is. A test holds
 # the depth to each target's committed configuration.
 EAGLE3_TARGETS = {
-    "minimax-m3-eagle3": {"targets": ["minimax-m3", "minimax-m3-mxfp8"], "layers": 60},
-    "minimax-m3-eagle3-gqa": {"targets": ["minimax-m3", "minimax-m3-mxfp8"], "layers": 60},
+    "minimax-m3-eagle3": {"targets": ["minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4"],
+                          "layers": 60},
+    "minimax-m3-eagle3-gqa": {"targets": ["minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4"],
+                              "layers": 60},
 }
 
 

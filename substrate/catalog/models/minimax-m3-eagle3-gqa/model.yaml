@@ -9,4 +9,4 @@ licence:
   evidence: https://huggingface.co/Inferact/MiniMax-M3-EAGLE3-GQA/raw/96692486b5fd38ebf8fd2a5f6bb53427d30819a8/MiniMax%20M3%20LICENSE.txt
 config:
   sha256: d26ea8053832f6df4a399d8abfac5ccbbfb2959f4786c9f069f0a21175d7d6aa
-targets: [minimax-m3, minimax-m3-mxfp8]
+targets: [minimax-m3, minimax-m3-mxfp8, minimax-m3-nvfp4]

@@ -196,6 +196,7 @@ nav:
     - The catalog in BLIS: catalog/concepts/repositories.md
     - Declared, learned, chosen: catalog/concepts/declared-facts.md
     - Model graphs: catalog/concepts/model-graphs.md
+    - Mixed-precision checkpoints: catalog/concepts/mixed-precision.md
     - Glossary: catalog/concepts/glossary.md
   - Reference:
     - catalog/reference/index.md

@@ -10,6 +10,7 @@ hand, which silently decouples it from the config it claims to come from.
 from __future__ import annotations
 
 import collections
+import hashlib
 import json
 import re
 import subprocess
@@ -7057,7 +7058,7 @@ def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscal
     scaled = {d.name for d in sorted(MODELS.iterdir())
               if d.is_dir() and graph_of(d)["global"].get("weight_scale")
               and graph_of(d)["global"]["weight_dtype"] == "fp8"}
-    assert scaled == {"minimax-m3-mxfp8", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
+    assert scaled == {"minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
                       "deepseek-v4.1-flash"}
 
 
@@ -7938,7 +7939,7 @@ def test_modelopt_stacked_loader_rename_excludes_the_fused_projection(tmp_path):
 
 # --- MiniMax-M3 token embedding, in every variant --------------------------------------------
 
-MINIMAX_M3_FAMILY = ("minimax-m3", "minimax-m3-mxfp8")
+MINIMAX_M3_FAMILY = ("minimax-m3", "minimax-m3-mxfp8", "minimax-m3-nvfp4")
 
 
 @pytest.mark.parametrize("name", MINIMAX_M3_FAMILY)
@@ -7963,6 +7964,245 @@ def test_minimax_m3_embedding_follows_the_vocabulary_and_width_of_the_config(tmp
     raw["text_config"]["vocab_size"] = 1000
     g = _derive_raw(raw, tmp_path, "minimax-m3")
     assert g["embedding"][0]["rows"] == 1000 and g["embedding"][0]["row_bytes"] == 12288
+
+
+# --- MiniMax-M3 NVFP4 (nvidia/MiniMax-M3-NVFP4): ModelOpt MIXED_PRECISION ---------------------
+
+M3_NVFP4 = MODELS / "minimax-m3-nvfp4"
+_M3N_STORED = {"F32": 4, "BF16": 2, "F8_E4M3": 1, "U8": 1}
+# Every tensor of the language model in the 88 safetensors headers of nvidia/MiniMax-M3-NVFP4 at
+# 901464083161 (89,091 tensors, 248,357,099,520 bytes; the towers add 523 tensors and
+# 1,734,145,024 bytes): (name under language_model., stored dtype, shape, layers holding it,
+# copies, what the graph does with it). An expert is counted once per expert and matrix.
+# "priced" classes are the graph's GEMM and GroupedGEMM weights (an expert's U8 weight packs two
+# FP4 values to a byte); "scale" classes are block scales and global scales; "small" are norms
+# and the routing bias.
+M3N_CHECKPOINT = [
+    ("L.block_sparse_moe.e_score_correction_bias", "F32", (128,), _ROUTED, 57, "small"),
+    ("L.block_sparse_moe.experts.E.w1.input_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.weight", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w1.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w1.weight_scale_2", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.input_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight", "U8", (6144, 1536), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w2.weight_scale", "F8_E4M3", (6144, 192), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w2.weight_scale_2", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.input_scale", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight", "U8", (3072, 3072), _ROUTED, 7296, "priced"),
+    ("L.block_sparse_moe.experts.E.w3.weight_scale", "F8_E4M3", (3072, 384), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.experts.E.w3.weight_scale_2", "F32", (), _ROUTED, 7296, "scale"),
+    ("L.block_sparse_moe.gate.weight", "F32", (128, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight", "F8_E4M3", (6144, 3072), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.down_proj.weight_scale_inv", "U8", (6144, 96), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.gate_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight", "F8_E4M3", (3072, 6144), _ROUTED, 57, "priced"),
+    ("L.block_sparse_moe.shared_experts.up_proj.weight_scale_inv", "U8", (3072, 192), _ROUTED, 57, "scale"),
+    ("L.input_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.mlp.down_proj.weight", "F8_E4M3", (6144, 12288), _DENSE, 3, "priced"),
+    ("L.mlp.down_proj.weight_scale_inv", "U8", (6144, 384), _DENSE, 3, "scale"),
+    ("L.mlp.gate_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.gate_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.mlp.up_proj.weight", "F8_E4M3", (12288, 6144), _DENSE, 3, "priced"),
+    ("L.mlp.up_proj.weight_scale_inv", "U8", (12288, 192), _DENSE, 3, "scale"),
+    ("L.post_attention_layernorm.weight", "BF16", (6144,), _ATTN, 60, "small"),
+    ("L.self_attn.index_k_norm.weight", "BF16", (128,), _ROUTED, 57, "small"),
+    ("L.self_attn.index_k_proj.weight", "F8_E4M3", (128, 6144), _ROUTED, 57, "priced"),
+    ("L.self_attn.index_k_proj.weight_scale_inv", "U8", (128, 192), _ROUTED, 57, "scale"),
+    ("L.self_attn.index_q_norm.weight", "BF16", (128,), _ROUTED, 57, "small"),
+    ("L.self_attn.index_q_proj.weight", "F8_E4M3", (512, 6144), _ROUTED, 57, "priced"),
+    ("L.self_attn.index_q_proj.weight_scale_inv", "U8", (512, 192), _ROUTED, 57, "scale"),
+    ("L.self_attn.k_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.k_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.k_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.o_proj.weight", "F8_E4M3", (6144, 8192), _ATTN, 60, "priced"),
+    ("L.self_attn.o_proj.weight_scale_inv", "U8", (6144, 256), _ATTN, 60, "scale"),
+    ("L.self_attn.q_norm.weight", "BF16", (128,), _ATTN, 60, "small"),
+    ("L.self_attn.q_proj.weight", "F8_E4M3", (8192, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.q_proj.weight_scale_inv", "U8", (8192, 192), _ATTN, 60, "scale"),
+    ("L.self_attn.v_proj.weight", "F8_E4M3", (512, 6144), _ATTN, 60, "priced"),
+    ("L.self_attn.v_proj.weight_scale_inv", "U8", (512, 192), _ATTN, 60, "scale"),
+    ("lm_head.weight", "BF16", (200064, 6144), None, 1, "head"),
+    ("model.embed_tokens.weight", "BF16", (200064, 6144), None, 1, "embedding"),
+    ("model.norm.weight", "BF16", (6144,), None, 1, "small"),
+]
+_M3N_TOWERS = {"vision_tower": (515, 1_265_382_400), "multi_modal_projector": (4, 91_250_688),
+              "patch_merge_mlp": (4, 377_511_936)}
+
+
+def _m3n_config() -> dict:
+    return json.loads(json.dumps(config_of(M3_NVFP4)))
+
+
+def test_m3_nvfp4_tensor_classes_sum_to_the_checkpoints_header_total():
+    count = sum(c[4] for c in M3N_CHECKPOINT)
+    nbytes = sum(c[4] * _prod(c[2]) * _M3N_STORED[c[1]] for c in M3N_CHECKPOINT)
+    assert (count, nbytes) == (89_091, 248_357_099_520)
+    assert count + sum(n for n, _ in _M3N_TOWERS.values()) == 89_614  # the index's tensor count
+    for name, _, _, span, copies, _ in M3N_CHECKPOINT:
+        per_layer = 128 if ".experts.E." in name else 1
+        assert copies == (1 if span is None else (span[1] - span[0] + 1)) * per_layer, name
+
+
+def test_m3_nvfp4_quantized_layers_agree_with_the_headers():
+    """The map lists 22,422 modules: 21,888 expert matrices (57 layers x 128 x 3) at NVFP4, whose
+    U8 weights and F8_E4M3 block scales are in the headers, and 534 linears at MXFP8, whose
+    F8_E4M3 weights have a U8 scale. Nothing else is listed or quantized."""
+    ql = _m3n_config()["quantization_config"]["quantized_layers"]
+    algos = collections.Counter(v["quant_algo"] for v in ql.values())
+    assert algos == {"NVFP4": 21_888, "MXFP8": 534} and len(ql) == 22_422
+    assert {v["group_size"] for v in ql.values() if v["quant_algo"] == "NVFP4"} == {16}
+    assert all("group_size" not in v for v in ql.values() if v["quant_algo"] == "MXFP8")
+    packed = sum(c[4] for c in M3N_CHECKPOINT if c[1] == "U8" and ".experts.E." in c[0]
+                 and c[0].endswith(".weight"))
+    f8_linears = sum(c[4] for c in M3N_CHECKPOINT if c[1] == "F8_E4M3" and c[0].endswith(".weight"))
+    assert (packed, f8_linears) == (21_888, 534)
+
+
+def _m3n_expected(layer: int) -> list[tuple[int, int, str]]:
+    out = []
+    for name, dt, shape, span, _, role in M3N_CHECKPOINT:
+        if role != "priced" or span is None or not span[0] <= layer <= span[1]:
+            continue
+        rows, cols = shape
+        if dt == "U8":
+            width, cols = "nvfp4", cols * 2
+        else:
+            width = {"F8_E4M3": "fp8", "F32": "fp32", "BF16": "bf16"}[dt]
+        out += [(rows, cols, width)] * (128 if ".experts.E." in name else 1)
+    return out
+
+
+def test_m3_nvfp4_graph_charges_the_weights_the_checkpoint_stores():
+    """Every priced class, layer by layer: the MXFP8 linears at FP8 (attention and the indexer's
+    projections, the dense MLPs, the shared expert), the 128 routed experts at NVFP4, the router
+    at FP32, and the head at BF16 as lm_head.weight stores it. The graph's resident scale
+    matches the headers: one U8 byte per 32 FP8 weights, and per 16 NVFP4 weights one F8_E4M3."""
+    g = graph_of(M3_NVFP4)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+    layers = expanded_layers(g)
+    assert len(layers) == 60
+    for i, nodes in enumerate(layers):
+        check_weights(nodes, _m3n_expected(i), i, "fp8")
+    head = [n for n in g["head"] if n["op"] == "GEMM"]
+    assert [(n["n"], n["k"], n["weight_dtype"]) for n in head] == [(200064, 6144, "bf16")]
+    scale_u8 = sum(c[4] * _prod(c[2]) for c in M3N_CHECKPOINT
+                   if c[1] == "U8" and c[0].endswith("weight_scale_inv"))
+    fp8_params = sum(c[4] * _prod(c[2]) for c in M3N_CHECKPOINT
+                     if c[1] == "F8_E4M3" and c[0].endswith(".weight"))
+    assert fp8_params // 32 == scale_u8
+    scale_f8 = sum(c[4] * _prod(c[2]) for c in M3N_CHECKPOINT
+                   if c[1] == "F8_E4M3" and c[0].endswith("weight_scale"))
+    fp4_params = sum(c[4] * _prod(c[2]) * 2 for c in M3N_CHECKPOINT
+                     if c[1] == "U8" and c[0].endswith(".weight"))
+    assert fp4_params // 16 == scale_f8
+
+
+def test_m3_nvfp4_graph_differs_from_the_mxfp8_one_in_the_expert_widths_only():
+    a, b = graph_of(MODELS / "minimax-m3-mxfp8"), graph_of(M3_NVFP4)
+    assert a["global"] == b["global"] and a["head"] == b["head"] and a["stack"] == b["stack"]
+    assert a["embedding"] == b["embedding"] and a["speculator"] == b["speculator"]
+    ka, kb = {k["id"]: k for k in a["layer_kinds"]}, {k["id"]: k for k in b["layer_kinds"]}
+    assert ka["dense"] == kb["dense"]
+    na, nb = ka["sparse_attn_moe"]["nodes"], kb["sparse_attn_moe"]["nodes"]
+    only_a = [n for n in na if n not in nb]
+    only_b = [n for n in nb if n not in na]
+    assert [n["role"] for n in only_a] == ["experts"] and only_a[0]["shared_experts"] == 1
+    assert [(n["role"], n["weight_dtype"]) for n in only_b] == [("experts", "nvfp4"),
+                                                               ("shared_experts", "fp8")]
+    assert "shared_experts" not in only_b[0]
+
+
+def test_m3_nvfp4_committed_graph_is_the_derivation_of_the_committed_config(tmp_path):
+    """The committed graph equals what the deriver makes of the committed config, apart from the
+    digest, which _derive_raw computes over its own re-serialisation and which the graph records
+    for the file as committed."""
+    committed, fresh = graph_of(M3_NVFP4), _derive_raw(config_of(M3_NVFP4), tmp_path, "minimax-m3-nvfp4")
+    sha = hashlib.sha256((M3_NVFP4 / "config.json").read_bytes()).hexdigest()
+    assert committed["derived_from"]["sha256"] == sha
+    assert sha == "440d22038ffa0bcb93fa01e8d2d555e3840d939167c08eace81b9cce386fb117"
+    committed["derived_from"].pop("sha256")
+    fresh["derived_from"].pop("sha256")
+    assert committed == fresh
+
+
+def test_m3_nvfp4_entry_records_its_source_and_both_drafter_links():
+    card = yaml.safe_load((M3_NVFP4 / "model.yaml").read_text())
+    assert card["source"]["repo"] == "nvidia/MiniMax-M3-NVFP4"
+    assert card["source"]["revision"] == "901464083161bf8612a29ff7ad29914cd4ab4a85"
+    assert card["licence"]["id"] == "LicenseRef-minimax-community"
+    assert card["licence"]["evidence"].startswith(
+        "https://huggingface.co/nvidia/MiniMax-M3-NVFP4/raw/" + card["source"]["revision"])
+    assert card["drafters"] == ["speculator", "minimax-m3-eagle3", "minimax-m3-eagle3-gqa"]
+    for d in ("minimax-m3-eagle3", "minimax-m3-eagle3-gqa"):
+        assert "minimax-m3-nvfp4" in yaml.safe_load((MODELS / d / "model.yaml").read_text())["targets"]
+    index = yaml.safe_load((ROOT / "licences" / "index.yaml").read_text())
+    (lic,) = [e for e in index["models"] if e["model"] == "minimax-m3-nvfp4"]
+    assert lic["texts"][0]["sha256"] == hashlib.sha256(
+        (ROOT / "licences" / "LicenseRef-minimax-community.txt").read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("edit,why", [
+    # one expert matrix of one layer stored at another algorithm: a role mixed across layers
+    (lambda q: q.__setitem__("language_model.model.layers.10.block_sparse_moe.experts.5.w1",
+                             {"quant_algo": "MXFP8"}), "layers.10.block_sparse_moe.experts.5.w1"),
+    # a linear module of the map removed
+    (lambda q: q.pop("language_model.model.layers.7.self_attn.q_proj"), "1 missing"),
+    # a module the config's layers do not build
+    (lambda q: q.__setitem__("language_model.model.layers.2.self_attn.index_q_proj",
+                             {"quant_algo": "MXFP8"}), "1 unplaced"),
+    # NVFP4 at another group size
+    (lambda q: q.__setitem__("language_model.model.layers.4.block_sparse_moe.experts.0.w2",
+                             {"quant_algo": "NVFP4", "group_size": 32}), "experts.0.w2"),
+    # the indexer's projection fuses with q, k and v, so it cannot be at another algorithm
+    (lambda q: q.__setitem__("language_model.model.layers.9.self_attn.index_k_proj",
+                             {"quant_algo": "NVFP4", "group_size": 16}), "index_k_proj"),
+    # an algorithm the handler does not place
+    (lambda q: q.__setitem__("language_model.model.layers.3.mlp.up_proj",
+                             {"quant_algo": "FP8"}), "mlp.up_proj"),
+    (lambda q: q.__setitem__("language_model.model.layers.4.block_sparse_moe.experts.0.w1",
+                             {"quant_algo": "W4A16_NVFP4", "group_size": 16}), "W4A16_NVFP4"),
+])
+def test_m3_nvfp4_refuses_a_layout_that_is_not_regular_per_role(tmp_path, edit, why):
+    raw = _m3n_config()
+    edit(raw["quantization_config"]["quantized_layers"])
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "minimax-m3-nvfp4")
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"quantized_layers": {}}, "no quantized_layers"),
+    ({"kv_cache_quant_algo": "FP8"}, "quantized KV cache"),
+    ({"ignore": ["self_attn.q_proj"]}, "the exclusion list names"),
+    ({"exclude_modules": ["block_sparse_moe.experts"]}, "the exclusion list names"),
+])
+def test_m3_nvfp4_refuses_a_block_the_engine_would_read_differently(tmp_path, edit, why):
+    raw = _m3n_config()
+    raw["quantization_config"].update(edit)
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "minimax-m3-nvfp4")
+
+
+def test_a_mixed_precision_block_is_still_refused_where_the_handler_does_not_place_it(tmp_path):
+    """Known-bad: MIXED_PRECISION on an architecture whose handler places only a uniform ModelOpt
+    layout is refused, as it was; the new reading is MiniMax-M3's alone."""
+    raw = json.loads(json.dumps(config_of(MODELS / "minimax-m2.5-nvfp4"))) \
+        if (MODELS / "minimax-m2.5-nvfp4" / "config.json").exists() else None
+    if raw is None:
+        raw = _minimax_m25_nvfp4_raw()
+    raw["quantization_config"]["quant_algo"] = "MIXED_PRECISION"
+    raw["quantization_config"]["quantized_layers"] = {"model.layers.0.self_attn.o_proj":
+                                                       {"quant_algo": "FP8"}}
+    with pytest.raises(deriver().DeriveError, match="MIXED_PRECISION"):
+        _derive_raw(raw, tmp_path, "minimax-m2.5-nvfp4")
+
+
+def test_only_the_mixed_precision_and_mxfp8_graphs_state_the_microscaling_scale():
+    scaled = {d.name for d in sorted(MODELS.iterdir())
+              if d.is_dir() and graph_of(d)["global"].get("weight_scale")
+              and graph_of(d)["global"]["weight_dtype"] == "fp8"}
+    assert "minimax-m3-nvfp4" in scaled
 
 
 def test_minimax_m31_flash_states_the_same_embedding(tmp_path):

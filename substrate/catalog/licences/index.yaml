@@ -191,6 +191,12 @@ models:
       - file: LicenseRef-minimax-community.txt
         source: https://huggingface.co/MiniMaxAI/MiniMax-M3-MXFP8/raw/c5454eb03678d8710e54a4e0fc681b9f3b4a3dba/LICENSE
         sha256: b53f2fdda3049b0e9013207be51efc2d372cda1fcfdd8bb4bb8b22658ca5db9c
+  - model: minimax-m3-nvfp4
+    licence: LicenseRef-minimax-community
+    texts:
+      - file: LicenseRef-minimax-community.txt
+        source: https://huggingface.co/nvidia/MiniMax-M3-NVFP4/raw/901464083161bf8612a29ff7ad29914cd4ab4a85/LICENSE
+        sha256: b53f2fdda3049b0e9013207be51efc2d372cda1fcfdd8bb4bb8b22658ca5db9c
   - model: muse-spark-open-816b-a42b
     licence: LicenseRef-muse-model-license
     texts:
