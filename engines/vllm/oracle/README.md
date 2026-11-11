@@ -118,6 +118,10 @@ and rerun it.
 `num_blocks` is the KV capacity, fixed so a cost model cannot change admission. `output` is the
 assigned output (the GPU mock samples it, the last token as EOS). `max_tokens`, optional, is a
 client budget.
+`config.enable_chunked_prefill`, optional, is `SchedulerConfig.enable_chunked_prefill` (default
+true; the tier-2 and tier-3 runners and the connector runners read it, the metrics and DP runners do not). With it false vLLM's `SchedulerConfig` refuses a
+`max_num_batched_tokens` below `max_model_len`, so a scenario that turns it off states them equal
+or in that order.
 
 ## Trace
 

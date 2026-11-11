@@ -114,6 +114,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         max_num_batched_tokens=cfg["max_num_batched_tokens"],
         long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
         enable_prefix_caching=cfg.get("enable_prefix_caching", False),
+        enable_chunked_prefill=cfg.get("enable_chunked_prefill", True),
         num_blocks=cfg["num_blocks"],
         block_size=block_size,
         max_model_len=cfg.get("max_model_len"),
