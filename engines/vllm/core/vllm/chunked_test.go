@@ -83,7 +83,7 @@ func TestChunkedPrefillOffRefusals(t *testing.T) {
 		{"a Mamba model with prefix caching", "mamba_model: true\nenable_prefix_caching: true\n",
 			"Chunked prefill is required for mamba cache mode 'align'", "mamba_model: true\nenable_prefix_caching: false\n"},
 		// What the engine does not model with it off.
-		{"speculative decoding", "speculative: {method: eagle3, num_spec_tokens: 3}\n",
+		{"speculative decoding", "speculative_config: {method: eagle3, num_speculative_tokens: 3}\n",
 			"enable_chunked_prefill false with speculative decoding", ""},
 		{"LoRA", "max_loras: 2\n", "enable_chunked_prefill false with max_loras", "max_loras: 0\n"},
 		{"a KV transfer connector", producer, "enable_chunked_prefill false with a KV transfer connector", ""},
@@ -129,7 +129,7 @@ func TestChunkedPrefillOffBuildsWhatTheOracleCovers(t *testing.T) {
 	for name, extra := range map[string]string{
 		"prefix caching":      "enable_prefix_caching: true\n",
 		"long-prefill cap":    "long_prefill_token_threshold: 16\nscheduling_policy: priority\n",
-		"KV events":           "enable_prefix_caching: true\nkv_events: {enable_kv_cache_events: true}\n",
+		"KV events":           "enable_prefix_caching: true\nkv_events_config: {enable_kv_cache_events: true}\n",
 		"async scheduling":    "async_scheduling: true\n",
 		"async on the V2 run": "async_scheduling: true\nuse_v2_model_runner: true\n",
 		"uniform KV layers": "kv_layers: [{count: 4, spec: full, num_kv_heads: 1, head_size: 8}, " +

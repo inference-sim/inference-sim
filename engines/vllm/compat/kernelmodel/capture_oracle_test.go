@@ -59,7 +59,7 @@ func loadCaptureOracle(t *testing.T) []captureOracleCase {
 	return f.Capture
 }
 
-var engineLine = regexp.MustCompile(`(?m)^( +)(max_num_batched_tokens|max_num_seqs|cudagraph_mode): .*\n`)
+var engineLine = regexp.MustCompile(`(?m)^( +)(max_num_batched_tokens|max_num_seqs|compilation_config): .*\n`)
 
 // openCapture opens a committed fixture at vLLM 0.32.0 on a chip with the case's batch limits,
 // cudagraph mode and capture knobs written into its engine block, and returns the kernel. A
@@ -76,11 +76,11 @@ func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencyker
 	}
 	body := strings.Replace(string(raw), `engine_version: "0.29.0"`, `engine_version: "0.32.0"`, 1)
 	if n := len(engineLine.FindAllString(body, -1)); n != 3 {
-		t.Fatalf("fixture states %d of max_num_batched_tokens, max_num_seqs, cudagraph_mode, want 3", n)
+		t.Fatalf("fixture states %d of max_num_batched_tokens, max_num_seqs, compilation_config, want 3", n)
 	}
 	body = engineLine.ReplaceAllString(body, "")
 	indent := "      "
-	add := fmt.Sprintf("%smax_num_batched_tokens: %d\n%smax_num_seqs: %d\n%scudagraph_mode: %s\n",
+	add := fmt.Sprintf("%smax_num_batched_tokens: %d\n%smax_num_seqs: %d\n%scompilation_config: {cudagraph_mode: %s}\n",
 		indent, c.Case.MaxBatched, indent, c.Case.MaxSeqs, indent, c.Case.Mode)
 	if c.Case.MaxCapture != nil {
 		add += fmt.Sprintf("%smax_cudagraph_capture_size: %d\n", indent, *c.Case.MaxCapture)
@@ -91,7 +91,10 @@ func openCapture(t *testing.T, c captureOracleCase, hardware string) *latencyker
 	}
 	body = strings.Replace(body, "      gpu_memory_utilization:", add+"      gpu_memory_utilization:", 1)
 	if c.Case.SpecTokens > 0 {
-		body = strings.Replace(body, "num_spec_tokens: 3", fmt.Sprintf("num_spec_tokens: %d", c.Case.SpecTokens), 1)
+		if !strings.Contains(body, "num_speculative_tokens: 3") {
+			t.Fatal("the GLM-5 MTP fixture states no num_speculative_tokens: 3 to replace")
+		}
+		body = strings.Replace(body, "num_speculative_tokens: 3", fmt.Sprintf("num_speculative_tokens: %d", c.Case.SpecTokens), 1)
 	}
 	body = strings.Replace(body, "hardware: h200", "hardware: "+hardware, 1)
 	r := repos()

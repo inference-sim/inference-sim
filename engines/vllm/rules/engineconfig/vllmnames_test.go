@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
@@ -81,11 +80,6 @@ func TestEveryBlockKeyIsAVLLMName(t *testing.T) {
 			t.Errorf("the trace has %q, which the block no longer takes; regenerate it", k)
 		}
 	}
-}
-
-func hasName(s []string, v string) bool {
-	i := sort.SearchStrings(s, v)
-	return i < len(s) && s[i] == v
 }
 
 // The check can fail: a block key that is not a vLLM name is reported, and the earlier names are

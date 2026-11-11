@@ -560,8 +560,8 @@ func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
 		return err
 	}
 	for _, c := range []struct{ chip, line string }{
-		{"b200", "use_trtllm_attention: true\n"}, {"h200", "use_trtllm_attention: true\n"},
-		{"b200", "use_trtllm_attention: false\n"}, {"h200", "use_trtllm_attention: false\n"},
+		{"b200", "attention_config: {use_trtllm_attention: true}\n"}, {"h200", "attention_config: {use_trtllm_attention: true}\n"},
+		{"b200", "attention_config: {use_trtllm_attention: false}\n"}, {"h200", "attention_config: {use_trtllm_attention: false}\n"},
 	} {
 		err := build(t, c.chip, c.line)
 		if err == nil || !strings.Contains(err.Error(), "attention_config.use_trtllm_attention") ||

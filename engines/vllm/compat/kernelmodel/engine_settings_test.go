@@ -567,11 +567,11 @@ func TestIndexerKVDTypeOnDeepSeekV4IsVLLMsOwnResolution(t *testing.T) {
 			body = re.ReplaceAllString(body, "${1}"+chip)
 		}
 		if dtype != "" {
-			re := regexp.MustCompile(`(?m)^(\s*)cache_dtype:`)
+			re := regexp.MustCompile(`(?m)^(\s*)kv_cache_dtype:`)
 			if !re.MatchString(body) {
-				t.Fatalf("%s states no cache_dtype line to put the key before", fixture)
+				t.Fatalf("%s states no kv_cache_dtype line to put the key before", fixture)
 			}
-			body = re.ReplaceAllString(body, "${1}indexer_kv_dtype: "+dtype+"\n${1}cache_dtype:")
+			body = re.ReplaceAllString(body, "${1}attention_config: {indexer_kv_dtype: "+dtype+"}\n${1}kv_cache_dtype:")
 		}
 		r := repos()
 		r.Scenarios = t.TempDir()
