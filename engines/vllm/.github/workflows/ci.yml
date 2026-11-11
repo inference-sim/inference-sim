@@ -42,6 +42,7 @@ jobs:
     if: always()
     needs: [go-build, go-test-kerneltests, go-test-rest, go-race-guard, go-race]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
@@ -53,6 +54,7 @@ jobs:
 
   go-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -76,6 +78,7 @@ jobs:
   # per-package limit.
   go-test-kerneltests:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -92,6 +95,7 @@ jobs:
   # with -race in go-race.
   go-test-rest:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -119,6 +123,7 @@ jobs:
   # required checks: `go` aggregates them.
   go-race-guard:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       # The same list the legs below run, space separated. Keep the two in step: the guard fails
       # when a package with a primitive is in neither this list nor EXCLUDED, and each leg's
@@ -178,6 +183,7 @@ jobs:
   go-race:
     name: go-race (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -218,6 +224,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -236,6 +243,7 @@ jobs:
   # checked against the tag it describes.
   packs-against-vllm:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -291,6 +299,7 @@ jobs:
   # drops, or a manifest that is not current, fails here.
   metrics-manifest:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
@@ -342,6 +351,7 @@ jobs:
   # A golden trace is vLLM's own output; a commit that changes one must name its reviewer.
   goldens-reviewed:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -362,6 +372,7 @@ jobs:
   # golden is re-derived from vLLM here on every run. The mutation sweeps are mutation.yml's.
   oracle-tier2:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: python

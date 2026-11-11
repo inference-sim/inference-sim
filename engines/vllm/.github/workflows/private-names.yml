@@ -14,9 +14,16 @@ on:
 permissions:
   contents: read
 
+# One scan per pull request: a newer run (a push, or an edit of the title or body, which the scan reads) cancels the
+# one in progress, so a burst of edits leaves one scan, and the last one judges the current text.
+concurrency:
+  group: private-names-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

@@ -41,6 +41,7 @@ jobs:
   light-go:
     name: light - format, vet, build and changed packages
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -76,6 +77,7 @@ jobs:
   light-lint:
     name: light - golangci-lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -93,6 +95,7 @@ jobs:
   light-generated:
     name: light - field list and value classes are generated from the release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: check out vLLM v0.32.0 at its pinned commit
@@ -112,6 +115,7 @@ jobs:
   light-goldens:
     name: light - golden provenance and reviewers
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

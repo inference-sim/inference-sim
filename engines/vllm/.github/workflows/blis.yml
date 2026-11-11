@@ -20,6 +20,12 @@ on:
 permissions:
   contents: read
 
+# A newer push makes the run of the head before it moot; the group is the pull request, a run on the schedule
+# or by hand is never cancelled.
+concurrency:
+  group: blis-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   pr:
     if: github.event_name == 'pull_request'
