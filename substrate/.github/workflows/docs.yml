@@ -33,6 +33,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
     # Deployments of one kind run one at a time. Pushes to main and releases use separate

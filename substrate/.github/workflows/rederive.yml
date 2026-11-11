@@ -58,6 +58,7 @@ concurrency:
 jobs:
   rederive:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       GOTOOLCHAIN: local
       # The AISimulate commit the committed values re-derive at. Pinned by SHA because the

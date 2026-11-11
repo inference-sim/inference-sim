@@ -67,6 +67,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.job == 'release') || github.event_name == 'schedule')
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -91,6 +92,7 @@ jobs:
   select:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_repository.id == github.repository_id
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -141,6 +143,7 @@ jobs:
   error:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.job == 'error'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -201,6 +204,7 @@ jobs:
   gate:
     if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.job == 'gate'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
@@ -259,6 +263,7 @@ jobs:
   gate-nightly:
     if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ledger
     permissions:
       contents: read
