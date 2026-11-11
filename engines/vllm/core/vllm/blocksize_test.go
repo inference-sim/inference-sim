@@ -167,3 +167,29 @@ func TestKVDTypeNamesResolveAsTheOraclesTwoNamesDo(t *testing.T) {
 		}
 	}
 }
+
+// minimax-m2.5-nvfp4 is the same class as minimax-m2.5 with the same attention layer (its config.json,
+// at the revision the catalog pins, states the same heads and head size and no window), and its
+// checkpoint declares an fp8 KV scheme (kv_cache_scheme, read by modelopt.py:344-352 as
+// kv_cache_quant_algo FP8). The table runs every KV dtype name, so the size is the same under auto
+// and fp8, and the nvfp4 rows must equal minimax-m2.5's on every chip and KV dtype name.
+func TestMiniMaxM25NVFP4ResolvesAsMiniMaxM25Does(t *testing.T) {
+	for _, cap := range []string{"9.0", "10.0", "10.3"} {
+		for _, kv := range []string{"auto", "fp8", "fp8_e4m3", "bfloat16", "float16"} {
+			want, werr := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5", Capability: cap, KVCacheDType: kv})
+			got, gerr := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: cap, KVCacheDType: kv})
+			if werr != nil || gerr != nil {
+				t.Errorf("capability %s kv %s: minimax-m2.5 gives %v, minimax-m2.5-nvfp4 gives %v; both must resolve", cap, kv, werr, gerr)
+				continue
+			}
+			if got.Size != want.Size {
+				t.Errorf("capability %s kv %s: minimax-m2.5-nvfp4 resolves to %+v, minimax-m2.5 to %+v", cap, kv, got, want)
+			}
+		}
+	}
+	a, _ := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "auto"})
+	f, _ := ResolveBlockSize(BlockSizeInput{Model: "minimax-m2.5-nvfp4", Capability: "10.0", KVCacheDType: "fp8"})
+	if a.Size != 16 || f.Size != a.Size {
+		t.Errorf("on Blackwell the nvfp4 checkpoint resolves to %d under auto and %d under fp8, want 16 under both", a.Size, f.Size)
+	}
+}

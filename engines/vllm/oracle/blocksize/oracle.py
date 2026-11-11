@@ -53,6 +53,19 @@ LAYERS = {
     "minimax-m2.5": [
         dict(head_size=128, num_heads=48, num_kv_heads=8, has_sink=False, has_sliding_window=False),
     ],
+    # MiniMax-M2.5-NVFP4 (nvidia/MiniMax-M2.5-NVFP4) is the same class, MiniMaxM2ForCausalLM, with
+    # the same attention shape: its config.json, fetched at the catalog's pinned revision and
+    # checked against the catalog's SHA-256 (modelconfig.py), states 48 heads, 8 KV heads, head_dim
+    # 128 and no sliding_window, layer_types or attn_window_size, as minimax-m2.5's does. Its
+    # quantization_config excludes every model.layers.N.self_attn* module and declares
+    # kv_cache_scheme {type: float, num_bits: 8}, which vLLM reads as kv_cache_quant_algo FP8
+    # (modelopt.py:344-352), so the KV cache may be fp8 where the deployment states auto. The
+    # selector's inputs are the layer's shape, bfloat16 and the KV dtype name, and the table runs
+    # every KV dtype name: it is the same size under auto and fp8, so the checkpoint's KV scheme
+    # changes no size.
+    "minimax-m2.5-nvfp4": [
+        dict(head_size=128, num_heads=48, num_kv_heads=8, has_sink=False, has_sliding_window=False),
+    ],
     # MiniMax-M2.7 is the same class with the same attention shape (config.json: 48 heads, 8 KV
     # heads, head_dim 128, no sliding window).
     "minimax-m2.7": [
