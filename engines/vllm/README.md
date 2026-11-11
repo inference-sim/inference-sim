@@ -100,6 +100,20 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
   its issue. The keys the latency kernel reads and prices at vLLM v0.31.0's policy (`blis-vllm#73`
   to `#80`, `#83`, `#8`) are the walk's allow-list.
 
+  Those fields stay `not_modelled` in M2, and the list is the M3 scope: the kernel accepts and prices a stated value of
+  each at its vLLM v0.31.0 policy, and updating that policy to v0.32.0's is M3 (blis-vllm#78 holds the date), four
+  fields at a time. `cudagraph_mode` and `cudagraph_capture_sizes` are the exception: they are `modelled`, with the
+  divergence disclosed in the engine's assumptions. A point that states one of the others is priced at the
+  kernel's v0.31.0 policy, and its substitution list should say so. The fields, with the kernel site that
+  prices each: `all2all_backend` (`kernel.go:798`), `disable_custom_all_reduce` (`internal/resolve/layout.go:208`),
+  `disable_cascade_attn` (`new.go:2868`), `gpu_memory_utilization` (`pipeline.go:573`), `mamba_cache_dtype`
+  (`new.go:270`), `moe_backend` (`step_terms.go:393`), `enable_dbo` (`new.go:708`), `enable_eplb` and
+  `eplb_config.num_redundant_experts` (`new.go:1353`), the three `engram_config` keys (`draft.go:432`),
+  `dcp_comm_backend` (`new.go:550`), `dcp_q_replicate` (`new.go:533`), `cp_kv_cache_interleave_size`
+  (`internal/resolve/dcp.go:88`) and `attention_config.use_trtllm_attention` (`settings_priced.go:203`, which prices
+  `true` on one lane and refuses `false`). The sites are in blis-substrate's `kernel` package; they were read at
+  the pinned layer and are not diffed against v0.32.0.
+
   Every `not_modelled` field with the rule `leave_unset` is named below, with what a deployment that
   states it gets, so leaving it unset gives vLLM's default (`TestReadmeNamesEveryLeaveUnsetField`
   fails when this list and fields.json differ):
