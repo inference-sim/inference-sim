@@ -4,10 +4,28 @@ on:
   push:
     branches: [main]
   pull_request:
+    # The full set judges a pull request whose base is main, the one that merges. A layer of a stack
+    # (any other base) runs ci-light.yml; the full set stays available on any branch by
+    # workflow_dispatch. Retargeting a pull request to main is a change of its base branch, which
+    # GitHub reports as the activity type `edited` (not a default type), so `edited` is listed:
+    # without it the retarget starts no run. ready_for_review is listed so a draft marked ready is
+    # judged too. (Editing the title or body of a main-based pull request starts a run as well, and
+    # the newer run replaces the one in progress.)
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# A newer push to a pull request makes the run of the head before it moot, and each run is 17 jobs and about an
+# hour of runner time, so a pull request's run is cancelled by the next one. The group is the pull request, so the
+# stack's other pull requests and the runs on main are not touched; a run on main or by hand is never cancelled.
+# Branch protection does not read the cancelled run: the superseding push starts a fresh run of the same checks
+# for the new head, and the `go` job fails, not passes, if a job it needs was cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # setup-go v5 caches the module download cache (GOMODCACHE) and the build cache (GOCACHE),
