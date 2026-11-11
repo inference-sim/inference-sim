@@ -10,6 +10,11 @@
    "custom_ops": true,
    "decoder_replay_cudagraph_capture_sizes": true
   },
+  "engram_config": {
+   "cpu_offload": true,
+   "dp_shared_memory": true,
+   "use_thp": true
+  },
   "eplb_config": {
    "num_redundant_experts": true,
    "step_interval": true,
