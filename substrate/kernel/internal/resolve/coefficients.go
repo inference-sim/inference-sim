@@ -103,11 +103,17 @@ func Load(sets []*coefficient.Set, scope Scope) (*Coefficients, error) {
 		c, _ := load(sets, scope, func(a string) bool { return have[a] }, false)
 		next := map[string]bool{}
 		if c != nil {
-			for name, r := range c.byName {
-				if coefficient.AnchorNeedsExact(coefficient.ClassOf(name)) && r.Match != coefficient.KernelExact {
-					continue
+			for name := range c.byName {
+				next[nameKey(name)] = true
+			}
+			carried := func(n string) bool { _, ok := c.byName[n]; return ok }
+			exact := func(n string) bool { return c.byName[n].Match == coefficient.KernelExact }
+			for _, op := range scope.Operations {
+				for _, class := range op.Chain {
+					if coefficient.ClassUsable(op.Primitive, class, carried, exact) {
+						next[classKey(op.Primitive, class)] = true
+					}
 				}
-				next[name] = true
 			}
 		}
 		if maps.Equal(next, have) {
@@ -274,8 +280,12 @@ type Operation struct {
 	Scorer bool
 }
 
-// present reports whether a class anchor has been selected, for the fallback rule.
-type present func(anchor string) bool
+// present reports whether a class has a usable family (classKey), or a coefficient is carried
+// (nameKey), for the fallback rule.
+type present func(key string) bool
+
+func classKey(primitive, class string) string { return "class:" + primitive + "|" + class }
+func nameKey(name string) string              { return "name:" + name }
 
 // reads reports whether the operation reads a coefficient of this name, given which class
 // anchors the registry carries. A name with a class is read by the operations that list the
@@ -294,7 +304,7 @@ func (op Operation) reads(name, class string, have present) bool {
 			if c == class {
 				return true
 			}
-			if have(coefficient.ClassAnchor(op.Primitive, c)) {
+			if have(classKey(op.Primitive, c)) {
 				return false
 			}
 		}
@@ -304,8 +314,8 @@ func (op Operation) reads(name, class string, have present) bool {
 		return true
 	}
 	for _, c := range op.Chain {
-		if have(coefficient.ClassAnchor(op.Primitive, c)) {
-			return coefficient.FloorInheritsFromClass(name) && !have(name+"_"+c)
+		if have(classKey(op.Primitive, c)) {
+			return coefficient.FloorInheritsFromClass(name) && !have(nameKey(name+"_"+c))
 		}
 	}
 	return true

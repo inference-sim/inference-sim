@@ -130,34 +130,52 @@ func ClassOf(name string) string {
 	return ""
 }
 
-// ClassAnchor is the coefficient whose presence shows that operations of the class read a pair
-// of their own and so no longer read the part-wide terms of their primitive: the rate of the
-// per-kind decode pair, the rate of the per-kind prefill family, the lane's floor, a GEMM
-// format's asymptote. The kernel prices an operation from its class's terms when the registry
-// carries them and from the part-wide terms otherwise, so the part-wide terms are read only by
-// the operations whose class has no anchor.
-func ClassAnchor(primitive, class string) string {
+// ClassFamily lists the coefficients of a class that must ALL be carried for the kernel to price
+// an operation from the class: the kernel uses a class's terms only when its whole family is
+// present, and otherwise reads the part-wide terms. A per-kind decode pair needs its rate (the
+// floor may be inherited); the sparse-MLA and scorer prefill forms their rate, floor and
+// per-token terms (and the sparse form its per-request term), fitted jointly; the trtllm-gen lane
+// its floor and work scale; a recurrent mixer its floor and rate; a GEMM ramp its asymptote and
+// half-max. Nil for a class the kernel has no terms for.
+func ClassFamily(primitive, class string) []string {
 	switch primitive {
 	case "attention.decode":
-		return "attention_decode_rate_" + class
+		return []string{"attention_decode_rate_" + class}
 	case "attention.prefill":
-		if strings.HasPrefix(class, "kv_") {
-			return "attention_prefill_floor_trtllm_gen_" + class
+		switch {
+		case strings.HasPrefix(class, "kv_"):
+			return []string{"attention_prefill_floor_trtllm_gen_" + class, "attention_prefill_work_scale_trtllm_gen_" + class}
+		case class == "sparse_mla":
+			return []string{"attention_prefill_rate_" + class, "attention_prefill_floor_" + class,
+				"attention_prefill_per_token_" + class, "attention_prefill_per_request_" + class}
+		case class == "block_index_scores":
+			return []string{"attention_prefill_rate_" + class, "attention_prefill_floor_" + class,
+				"attention_prefill_per_token_" + class}
 		}
-		return "attention_prefill_rate_" + class
 	case "recurrent.update":
-		return "recurrent_decode_rate_" + class
+		return []string{"recurrent_decode_floor_" + class, "recurrent_decode_rate_" + class}
 	case "gemm", "moe.grouped_gemm":
-		return "gemm_eps_max_" + class
+		return []string{"gemm_eps_max_" + class, "gemm_m_half_" + class}
 	}
-	return ""
+	return nil
 }
 
-// AnchorNeedsExact reports whether a class's anchor shadows the part-wide terms only when the
-// entry that carries it is shown to be valid for the implementation that runs (KernelExact):
-// the trtllm-gen lane is priced only then, so an unkeyed lane entry leaves the part-wide pair
-// reading those operations.
-func AnchorNeedsExact(class string) bool { return strings.HasPrefix(class, "kv_") }
+// ClassUsable is the one rule for whether a class prices its operations: every member of its
+// family is carried (have), and, for the trtllm-gen lane, every member is shown valid for the
+// implementation that runs (exact). The resolver's decision of which operations read the
+// part-wide terms, applyAttentionLane and the prefill forms all use it.
+func ClassUsable(primitive, class string, have, exact func(name string) bool) bool {
+	fam := ClassFamily(primitive, class)
+	if len(fam) == 0 {
+		return false
+	}
+	for _, n := range fam {
+		if !have(n) || (strings.HasPrefix(class, "kv_") && !exact(n)) {
+			return false
+		}
+	}
+	return true
+}
 
 // FloorInheritsFromClass reports whether a part-wide term named so is also read by the
 // operations whose class has a rate but no floor of its own: the per-kind decode pair may supply

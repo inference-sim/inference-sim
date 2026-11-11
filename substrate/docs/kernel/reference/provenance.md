@@ -47,8 +47,12 @@ The unsuffixed attention terms are the fallback the kernel uses for what has no 
 so they are read only by the operations no pair prices: the part-wide rate by the layers whose
 kind or role has no rate, the part-wide floor also by those that have a rate and no floor (a kind
 may supply a rate alone and inherit the floor). The part-wide prefill pair likewise by what has no
-prefill family and no exact lane pair. A class counts as carried when the registry has its entry
-for the deployment (for the lane, shown valid for the kernel that runs).
+prefill family and no exact lane pair. A class counts as carried only when its whole family is: the kernel prices an operation from a
+class's terms only then and reads the part-wide terms otherwise (a prefill form needs its rate,
+floor and per-token terms, and per-request for sparse MLA; the lane its floor and work scale, each
+shown valid for the kernel that runs; a GEMM ramp its asymptote and half-max; a recurrent mixer its
+floor and rate). One rule, `coefficient.ClassUsable`, decides it for the resolver, the prefill forms
+and the lane, so an incomplete family leaves its operations among the readers of the part-wide terms.
 
 An entry that lists implementations is used only for the primitive its name prices, and only when
 every implementation among the operations that read it is one it lists, by library, variant and

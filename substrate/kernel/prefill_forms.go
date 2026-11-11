@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
@@ -42,14 +43,14 @@ func (k *Kernel) liftPrefillForms(c *resolve.Coefficients, layers []price.Planne
 	}
 	for kind := range kinds {
 		suffix := string(kind)
-		if f, ok := k.prefillFamily(c, suffix, true,
+		if f, ok := k.prefillFamily(c, suffix,
 			"no measured prefill form for "+suffix+" attention, so its prefill is priced "+
 				"with the part-wide prefill pair on the attention FLOPs"); ok {
 			k.attentionPrefillByKind[kind] = f
 		}
 	}
 	for role := range roles {
-		if f, ok := k.prefillFamily(c, role, false,
+		if f, ok := k.prefillFamily(c, role,
 			"no measured prefill form for the "+role+" kernel, so its prefill is priced "+
 				"with the part-wide prefill pair on its scoring FLOPs"); ok {
 			k.attentionPrefillByRole[role] = f
@@ -71,21 +72,17 @@ func (k *Kernel) liftPrefillForms(c *resolve.Coefficients, layers []price.Planne
 }
 
 // prefillFamily reads one prefill family by its suffix, recording the rate's absence as
-// optional does and a partial family as a fallback. perRequest is whether the family has a
-// per-request member.
-func (k *Kernel) prefillFamily(c *resolve.Coefficients, suffix string, perRequest bool,
+// optional does and a partial family as a fallback.
+func (k *Kernel) prefillFamily(c *resolve.Coefficients, suffix string,
 	without string) (prefillForm, bool) {
 	rate := k.optional(c, "attention_prefill_rate_"+suffix, true, without)
 	if rate <= 0 {
 		return prefillForm{}, false
 	}
-	members := []string{"attention_prefill_floor_" + suffix,
-		"attention_prefill_per_token_" + suffix}
-	if perRequest {
-		members = append(members, "attention_prefill_per_request_"+suffix)
-	}
+	// The same rule the resolver uses to decide which operations read the part-wide pair:
+	// the form is used only when its whole family is carried.
 	var missing []string
-	for _, m := range members {
+	for _, m := range coefficient.ClassFamily("attention.prefill", suffix) {
 		if !c.Has(m) {
 			missing = append(missing, m)
 		}

@@ -628,3 +628,76 @@ func TestThePartWidePairIsReadOnlyByTheLayersWithNoPairOfTheirOwn(t *testing.T) 
 		t.Error("keying the pairs to the kernels that run their layers changed a price")
 	}
 }
+
+// A per-kind prefill family is used only when whole. DeepSeek-V4.1's sparse-MLA prefill family
+// loses its per-request term: the kernel falls back to the part-wide pair for those layers, so
+// the part-wide pair keyed to the sparse layers' kernel is exact, matched against it, and the
+// fallback is recorded. With the family whole the part-wide pair is not read by them.
+func TestTheSparsePrefillReadsThePartWidePairWhenItsFamilyIsIncomplete(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in Inputs
+	for _, c := range perturbationScenarios(t, d, "deepseek-v4.1-flash") {
+		if strings.HasPrefix(c.label, "deepseek-v4.1-flash/h200/tp") {
+			in = c.in
+			break
+		}
+	}
+	if in.Model == nil {
+		t.Fatal("no deepseek-v4.1-flash scenario builds on h200")
+	}
+	sparse := plan.KernelImpl{Library: "flashmla", Variant: "sparse_prefill", CodeHash: "aaaaaaaaaaaa"}
+	kinds := map[string]model.LayerKind{}
+	for _, lk := range in.Model.LayerKinds {
+		kinds[lk.ID] = lk
+	}
+	for i, id := range in.Model.Stack.Expand() {
+		for _, n := range kinds[id].Nodes {
+			if n.Op == model.OpAttention && n.ReadsEngineKV() {
+				in.Operations = append(in.Operations, plan.Operation{Layer: i, Primitive: plan.PrimAttentionPrefill, Impl: sparse})
+				break
+			}
+		}
+	}
+	other := plan.KernelImpl{Library: "other", Variant: "prefill", CodeHash: "bbbbbbbbbbbb"}
+	wide := map[string]plan.KernelImpl{"attention_prefill_floor": other, "attention_prefill_work_scale": other}
+	// Whole family: the sparse layers read it, so a part-wide pair keyed to another kernel is not
+	// refused for them, and one keyed to the sparse kernel alone is not used.
+	if k, err := New(keyMeasured(in, wide)); err != nil {
+		t.Fatalf("the part-wide pair keyed to a kernel no prefill runs, family whole: %v", err)
+	} else if m, _, ok := selectedMatch(k, "attention_prefill_floor"); ok && m == string(coefficient.KernelExact) {
+		t.Error("a part-wide pair keyed to a kernel no prefill runs was exact")
+	}
+	// Per-request term dropped: the family is incomplete, the sparse layers read the part-wide pair.
+	var sets []*coefficient.Set
+	for _, s := range in.Coefficients {
+		c := *s
+		c.Coefficients = nil
+		for _, e := range s.Coefficients {
+			if e.Name != "attention_prefill_per_request_sparse_mla" {
+				c.Coefficients = append(c.Coefficients, e)
+			}
+		}
+		sets = append(sets, &c)
+	}
+	broken := in
+	broken.Coefficients = sets
+	k, err := New(keyMeasured(broken, map[string]plan.KernelImpl{"attention_prefill_floor": sparse, "attention_prefill_work_scale": sparse}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"attention_prefill_floor", "attention_prefill_work_scale"} {
+		if m, run, ok := selectedMatch(k, n); !ok || m != string(coefficient.KernelExact) || run != "flashmla/sparse_prefill/aaaaaaaaaaaa" {
+			t.Errorf("%s with the sparse family incomplete: selected %v, match %q, matched against %q; want exact against the sparse kernel", n, ok, m, run)
+		}
+	}
+	found := false
+	for _, a := range k.assumptions {
+		found = found || a.Name == "attention_prefill_sparse_mla"
+	}
+	if !found {
+		t.Error("the incomplete family's fallback is not recorded")
+	}
+}

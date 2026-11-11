@@ -408,7 +408,8 @@ func TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt(t *testing.T) {
 			named("attention_decode_floor_sparse_mla", 1, kernelD), named("attention_decode_floor_block_index_scores", 1, kernelE)), floor, true, "only full attention reads it"},
 		// GEMMs are read by the operations of the format that selects the ramp.
 		{"bf16 keyed to the BF16 GEMM's kernel, mxfp8 not carried", setOf(named(bf16, 1, kernelA)), bf16, false, "the MXFP8 GEMM on D falls back to the BF16 ramp"},
-		{"bf16 keyed to the BF16 GEMM's kernel, mxfp8 carried", setOf(named(bf16, 1, kernelA), named(mx, 1, kernelD)), bf16, true, "the MXFP8 GEMM has its own ramp"},
+		{"bf16 keyed to the BF16 GEMM's kernel, mxfp8 carried whole", setOf(named(bf16, 1, kernelA), named(mx, 1, kernelD), named("gemm_m_half_w8a16_mxfp8", 1, kernelD)), bf16, true, "the MXFP8 GEMM has its own ramp"},
+		{"bf16 keyed to the BF16 GEMM's kernel, mxfp8 asymptote with no half-max", setOf(named(bf16, 1, kernelA), named(mx, 1, kernelD)), bf16, false, "the kernel needs both and falls back to the BF16 ramp"},
 		{"fp8 keyed to the FP8 GEMM's kernel", setOf(named(fp8, 1, kernelB)), fp8, true, "B runs the FP8 GEMM"},
 		{"fp8 keyed to the BF16 GEMM's kernel", setOf(named(fp8, 1, kernelA)), fp8, false, "A runs no FP8 GEMM"},
 		{"mxfp8 keyed to its kernel", setOf(named(mx, 1, kernelD)), mx, true, "D runs the MXFP8 GEMM"},
@@ -461,9 +462,11 @@ func TestAnEntryIsMatchedAgainstTheOperationsThatConsumeIt(t *testing.T) {
 }
 
 // The trtllm-gen lane's pair is read by the prefill of the non-latent layers whose cache has its
-// format, and shadows the part-wide prefill pair only where it is carried exact.
+// format, and shadows the part-wide prefill pair only where its whole family (floor and work
+// scale) is carried exact.
 func TestTheLanePairIsReadByTheNonLatentPrefillOfItsCacheFormat(t *testing.T) {
 	lane := func(dtype string) string { return "attention_prefill_floor_trtllm_gen_kv_" + dtype }
+	scale := func(dtype string) string { return "attention_prefill_work_scale_trtllm_gen_kv_" + dtype }
 	pre := func(impl coefficient.KernelImpl, chain ...string) Operation {
 		return Operation{Primitive: "attention.prefill", Impl: impl, Chain: chain}
 	}
@@ -473,38 +476,85 @@ func TestTheLanePairIsReadByTheNonLatentPrefillOfItsCacheFormat(t *testing.T) {
 	named := func(name string, impls ...coefficient.KernelImpl) coefficient.Entry {
 		return entryNamed(name, vocab.MethodMeasured, 1, impls...)
 	}
+	pair := func(dtype string, impls ...coefficient.KernelImpl) []coefficient.Entry {
+		return []coefficient.Entry{named(lane(dtype), impls...), named(scale(dtype), impls...)}
+	}
 	for name, c := range map[string]struct {
-		e     coefficient.Entry
+		es    []coefficient.Entry
 		exact bool
 	}{
-		"the bf16 pair keyed to the bf16 kernel":         {named(lane("bf16"), kernelB), true},
-		"the bf16 pair keyed to the latent kernel":       {named(lane("bf16"), kernelA), false},
-		"the fp8 pair keyed to the fp8 kernel":           {named(lane("fp8"), kernelC), true},
-		"the fp8 pair keyed to the bf16 kernel":          {named(lane("fp8"), kernelB), false},
-		"the bf16 pair keyed to both non-latent kernels": {named(lane("bf16"), kernelB, kernelC), true},
+		"the bf16 pair keyed to the bf16 kernel":         {pair("bf16", kernelB), true},
+		"the bf16 pair keyed to the latent kernel":       {pair("bf16", kernelA), false},
+		"the fp8 pair keyed to the fp8 kernel":           {pair("fp8", kernelC), true},
+		"the fp8 pair keyed to the bf16 kernel":          {pair("fp8", kernelB), false},
+		"the bf16 pair keyed to both non-latent kernels": {pair("bf16", kernelB, kernelC), true},
 	} {
-		_, m, err := valueAt(t, c.e.Name, setOf(c.e), pool)
+		_, m, err := valueAt(t, c.es[0].Name, setOf(c.es...), pool)
 		if got := err == nil && m == coefficient.KernelExact; got != c.exact {
 			t.Errorf("%s: exact %v (%v)", name, got, err)
 		}
 	}
-	// The part-wide prefill floor keyed to the latent kernel is read by the latent layers; the
-	// non-latent ones are priced from the lane when it is carried exact, and from the part-wide
-	// pair when it is not.
-	wide := named("attention_prefill_floor", kernelA)
-	if _, _, err := valueAt(t, wide.Name, setOf(wide), pool); err == nil {
+	// The part-wide prefill pair is read by the latent layers; the non-latent ones are priced
+	// from the lane when its whole family is carried exact, and from the part-wide pair when it
+	// is not.
+	wide := []coefficient.Entry{named("attention_prefill_floor", kernelA), named("attention_prefill_work_scale", kernelA)}
+	wideOnly := func(extra ...coefficient.Entry) []*coefficient.Set {
+		return setOf(append(append([]coefficient.Entry(nil), wide...), extra...)...)
+	}
+	if _, _, err := valueAt(t, wide[0].Name, wideOnly(), pool); err == nil {
 		t.Error("the part-wide floor priced non-latent prefill that runs other kernels, with no lane carried")
 	}
-	exactLane := []coefficient.Entry{wide, named(lane("bf16"), kernelB), named(lane("fp8"), kernelC)}
-	if _, m, err := valueAt(t, wide.Name, setOf(exactLane...), pool); err != nil || m != coefficient.KernelExact {
-		t.Errorf("the part-wide floor, with an exact lane for both formats: %v %q", err, m)
+	both := append(pair("bf16", kernelB), pair("fp8", kernelC)...)
+	for _, w := range wide {
+		if _, m, err := valueAt(t, w.Name, wideOnly(both...), pool); err != nil || m != coefficient.KernelExact {
+			t.Errorf("%s, with an exact lane for both formats: %v %q", w.Name, err, m)
+		}
 	}
-	unkeyed := []coefficient.Entry{wide, entryNamed(lane("bf16"), vocab.MethodTransferred, 1), entryNamed(lane("fp8"), vocab.MethodTransferred, 1)}
-	for i := 1; i < 3; i++ {
-		unkeyed[i].MeasuredOn = []coefficient.KernelImpl{kernelA}
-		unkeyed[i].TransferredFrom, unkeyed[i].TransferRule, unkeyed[i].Rationale = "hardware=h100", "r", "r"
+	// An incomplete lane family does not shadow: the floor without the work scale is not used by
+	// the kernel, so the non-latent prefill still reads the part-wide pair, and an entry of it
+	// keyed to the latent kernel alone is refused.
+	floorOnly := []coefficient.Entry{named(lane("bf16"), kernelB), named(lane("fp8"), kernelC)}
+	if _, _, err := valueAt(t, wide[0].Name, wideOnly(floorOnly...), pool); err == nil {
+		t.Error("a lane with a floor and no work scale shadowed the part-wide pair, which the kernel then reads")
 	}
-	if _, _, err := valueAt(t, wide.Name, setOf(unkeyed...), pool); err == nil {
+	// ... and one keyed to every prefill kernel is exact, being read by all of them.
+	all := []coefficient.Entry{named("attention_prefill_floor", kernelA, kernelB, kernelC), named("attention_prefill_work_scale", kernelA, kernelB, kernelC)}
+	if _, m, err := valueAt(t, "attention_prefill_floor", setOf(append(all, floorOnly...)...), pool); err != nil || m != coefficient.KernelExact {
+		t.Errorf("the part-wide floor keyed to every prefill kernel beside an incomplete lane: %v %q", err, m)
+	}
+	// An unkeyed lane shadows nothing either.
+	unkeyed := []coefficient.Entry{wide[0], wide[1]}
+	for _, d := range []string{"bf16", "fp8"} {
+		for _, n := range []string{lane(d), scale(d)} {
+			e := entryNamed(n, vocab.MethodTransferred, 1)
+			e.MeasuredOn = []coefficient.KernelImpl{kernelA}
+			e.TransferredFrom, e.TransferRule, e.Rationale = "hardware=h100", "r", "r"
+			unkeyed = append(unkeyed, e)
+		}
+	}
+	if _, _, err := valueAt(t, wide[0].Name, setOf(unkeyed...), pool); err == nil {
 		t.Error("an unkeyed lane shadowed the part-wide floor, which the non-latent layers still read")
+	}
+}
+
+// A per-kind prefill family is used only when whole (rate, floor, per-request and per-token for
+// sparse MLA): a rate alone is rejected by the kernel, which then reads the part-wide pair, so the
+// sparse layers still read it and an entry of it keyed to another kernel is refused.
+func TestAnIncompletePerKindPrefillFamilyDoesNotShadowThePartWidePair(t *testing.T) {
+	pre := func(impl coefficient.KernelImpl, chain ...string) Operation {
+		return Operation{Primitive: "attention.prefill", Impl: impl, Chain: chain}
+	}
+	pool := Scope{Hardware: "h100", Operations: []Operation{pre(kernelA), pre(kernelB, "sparse_mla")}}
+	named := func(name string, impls ...coefficient.KernelImpl) coefficient.Entry {
+		return entryNamed(name, vocab.MethodMeasured, 1, impls...)
+	}
+	rate := named("attention_prefill_rate_sparse_mla", kernelB)
+	if _, _, err := valueAt(t, "attention_prefill_floor", setOf(named("attention_prefill_floor", kernelA), rate), pool); err == nil {
+		t.Error("a sparse rate with no floor, per-token or per-request term shadowed the part-wide floor")
+	}
+	whole := []coefficient.Entry{rate, named("attention_prefill_floor_sparse_mla", kernelB), named("attention_prefill_per_token_sparse_mla", kernelB),
+		named("attention_prefill_per_request_sparse_mla", kernelB)}
+	if _, m, err := valueAt(t, "attention_prefill_floor", setOf(append(whole, named("attention_prefill_floor", kernelA))...), pool); err != nil || m != coefficient.KernelExact {
+		t.Errorf("the part-wide floor beside a whole sparse family: %v %q", err, m)
 	}
 }
