@@ -4208,6 +4208,238 @@ def handler_minimax_m3(cfg, raw, model):
     return kinds, compress(sequence)
 
 
+# The keys a MiniMax-M3.1 DSpark draft config states that the engine reads, and the ones it states
+# that it does not (models/minimax_m3/common/dspark.py, model_executor/models/qwen3_dspark.py and
+# qwen3_dflash.py, config/speculative.py:1219-1233 at v0.34.0rc0). The engine promotes text_config
+# to the draft's config, copies quantization_config onto it, and sets dflash_config.causal to
+# False when the file does not state it, so every layer attends non-causally.
+MINIMAX_DSPARK_KEYS = frozenset({
+    "dspark_block_size", "dspark_markov_rank", "dspark_markov_head_type",
+    "dspark_aux_gemm_precision", "dspark_noise_token_id", "dspark_use_dense_ffn",
+    "dspark_ffn_hidden_size", "dspark_target_layer_ids", "dspark_config",
+    "dspark_hybrid_context_fusion"})
+# Keys that, present, change the draft: a reduced draft vocabulary and its id map, the
+# reduced-vocabulary top-k, a draft that carries its own embedding or head, a causal or
+# sink-biased or value-scaled attention, an interleaved RoPE, a rewritten window, and the
+# sources of the mask token that outrank dspark_noise_token_id.
+MINIMAX_DSPARK_OVERRIDES = frozenset({
+    "draft_vocab_size", "dspark_draft_topk", "has_own_lm_head", "is_causal", "is_neox_style",
+    "add_swa_attention_sink_bias", "attention_bias", "use_aux_hidden_state", "eagle_config",
+    "eagle_aux_hidden_state_layer_ids", "mask_token_id", "target_hidden_size", "logit_scale",
+    "sample_from_anchor", "use_swa"})
+
+
+def handler_minimax_dspark(cfg, raw, model):
+    """MiniMax-M3.1-Flash's DSpark drafter (DSparkMiniMaxDraftModel, models/minimax_m3/common/
+    dspark.py@v0.34.0rc0), shipped in the target's repository under dspark/ and named by a
+    deployment as its speculative draft model.
+
+    The graph is the drafter, and states itself as the speculator a kernel prices beside the
+    target: five dense MiniMax-M3 layers (Gemma norms, per-head QK norm, partial RoPE, a
+    SwiGLU-OAI MLP of dspark_ffn_hidden_size), each sliding-window attention over
+    sliding_window tokens, that draft dspark_block_size tokens in ONE pass. Its attention is
+    non-causal because the engine sets dflash_config.causal to False when the file does not
+    state it (config/speculative.py:1226-1227), so each query reads its window plus the block.
+
+    Before the pass, the context stack runs over the target's scheduled tokens: the fc
+    projection of one captured state per target layer (a BF16 replicated linear, named in
+    the exclusion list), the hidden norm, and one MXFP8 projection of every layer's K and V
+    (_make_mxfp8_context_kv_proj, qwen3_dflash.py:456-478), whose rows the loader reads from the
+    layers' own k_proj and v_proj a second time, so they are resident twice; then each layer's
+    K norm, RoPE and cache insert. After the pass: the final norm and the target's lm_head,
+    which the checkpoint does not ship (has_own_lm_head is not set); then the Markov head once
+    per draft position (DSparkMarkovHead, qwen3_dspark.py:48-93), both of whose weights are
+    BF16 and replicated.
+
+    NOT PRICED, each small: the drafter's token lookup, which reads the target's table; the
+    confidence head (proj [1, hidden + markov_rank] with a bias), consulted under adaptive
+    verification alone; the Gemma norms' weight vectors. THE HEAD IS THE TARGET'S: the
+    graph states one lm_head, as every graph must, and so counts its 200064 x 6144 BF16 matrix
+    as resident in the drafter, where the engine shares the target's. The schema has no way
+    to alias a node of another graph."""
+    def whole(v, key):
+        if isinstance(v, bool) or not isinstance(v, int):
+            raise DeriveError(f"{model}: {key} is {v!r}, not a whole number")
+        return v
+
+    def positive(key):
+        v = whole(require_key(cfg, key, model), key)
+        if v < 1:
+            raise DeriveError(f"{model}: {key} is {v}; this architecture needs at least 1")
+        return v
+
+    hidden = whole(require(cfg, "hidden_size", model), "hidden_size")
+    layers = whole(require(cfg, "num_layers", model), "num_hidden_layers")
+    nq = whole(require(cfg, "num_q_heads", model), "num_attention_heads")
+    nkv = whole(require(cfg, "num_kv_heads", model), "num_key_value_heads")
+    dh = head_dim(cfg, model)
+    vocab = whole(require(cfg, "vocab_size", model), "vocab_size")
+    window = positive("sliding_window")
+    block = positive("dspark_block_size")
+    markov = positive("dspark_markov_rank")
+    ffn = positive("dspark_ffn_hidden_size")
+
+    stated = sorted(k for k in cfg if k.startswith("dspark_"))
+    unread = sorted(set(stated) - MINIMAX_DSPARK_KEYS)
+    if unread:
+        raise DeriveError(f"{model}: the config states {unread}, which the DSpark draft reads "
+                          f"and this handler does not")
+    overriding = sorted(k for k in MINIMAX_DSPARK_OVERRIDES if cfg.get(k) is not None)
+    if overriding:
+        raise DeriveError(f"{model}: the config states {overriding}, each of which changes the "
+                          f"DSpark draft this handler prices")
+    if cfg.get("dspark_use_dense_ffn") is not True:
+        raise DeriveError(f"{model}: dspark_use_dense_ffn is not true; the engine builds a dense "
+                          f"draft MLP only (dspark.py:286-287)")
+    # Stated in a nested block as well as flat: the two must agree, since the engine reads one.
+    nested = cfg.get("dspark_config") or {}
+    for flat, inner in (("dspark_markov_rank", "markov_rank"),
+                        ("dspark_markov_head_type", "markov_head_type"),
+                        ("dspark_noise_token_id", "mask_token_id"),
+                        ("dspark_hybrid_context_fusion", "hybrid_context_fusion"),
+                        ("dspark_aux_gemm_precision", "aux_gemm_precision"),
+                        ("dspark_use_dense_ffn", "use_dense_ffn"),
+                        ("dspark_ffn_hidden_size", "ffn_hidden_size")):
+        if inner in nested and nested[inner] != cfg.get(flat):
+            raise DeriveError(f"{model}: dspark_config.{inner} {nested[inner]!r} and {flat} "
+                              f"{cfg.get(flat)!r} differ")
+    if cfg.get("dspark_markov_head_type") != "vanilla":
+        raise DeriveError(f"{model}: dspark_markov_head_type {cfg.get('dspark_markov_head_type')!r}; "
+                          f"the engine builds one Markov head, whose weights are w1 and w2")
+    if cfg.get("dspark_hybrid_context_fusion") not in (False, None):
+        raise DeriveError(f"{model}: dspark_hybrid_context_fusion is on; the engine reads no such "
+                          f"key and this handler prices the plain fc projection")
+    if cfg.get("dspark_aux_gemm_precision") not in ("bf16", None):
+        raise DeriveError(f"{model}: dspark_aux_gemm_precision {cfg.get('dspark_aux_gemm_precision')!r}; "
+                          f"the fc projection is a BF16 linear in the checkpoint")
+
+    dflash = cfg.get("dflash_config")
+    if not isinstance(dflash, dict):
+        raise DeriveError(f"{model}: no dflash_config; the engine reads the capture layers, the "
+                          f"mask token and the window from it")
+    if dflash.get("causal") is not None or dflash.get("use_swa") or dflash.get("attention_sink_bias") \
+            or dflash.get("attention_value_scale") is not None or "swa_window_size" in dflash:
+        raise DeriveError(f"{model}: dflash_config states {sorted(dflash)}; this handler reads "
+                          f"target_layer_ids, mask_token_id, block_size, layer_types, sliding_window "
+                          f"and num_target_layers, and prices the non-causal window the engine "
+                          f"defaults to")
+    targets = dflash.get("target_layer_ids")
+    if cfg.get("dspark_target_layer_ids") != targets:
+        raise DeriveError(f"{model}: dspark_target_layer_ids and dflash_config.target_layer_ids "
+                          f"differ; the engine reads the second")
+    if dflash.get("mask_token_id") != cfg.get("dspark_noise_token_id") or \
+            not 0 <= whole(cfg["dspark_noise_token_id"], "dspark_noise_token_id") < vocab:
+        raise DeriveError(f"{model}: the mask token is not dspark_noise_token_id within the "
+                          f"vocabulary")
+    if dflash.get("block_size", block) != block or dflash.get("sliding_window", window) != window:
+        raise DeriveError(f"{model}: dflash_config block_size or sliding_window differs from the "
+                          f"top-level one")
+    if dflash.get("num_hidden_layers", layers) != layers:
+        raise DeriveError(f"{model}: dflash_config.num_hidden_layers differs from the config's")
+    target_layers = whole(dflash.get("num_target_layers"), "dflash_config.num_target_layers")
+    # The capture points the engine resolves: dflash_config.target_layer_ids plus one
+    # (eagle3_utils.py:100-137), the state entering each next layer. The fc takes one hidden-wide
+    # state per id (qwen3_dflash.py:111-119).
+    aux_layers = draft_aux_hidden_state_layers(cfg, model, target_layers, states=len(targets))
+    layer_types = cfg.get("layer_types")
+    if layer_types is not None and (set(layer_types) != {"sliding_attention"}
+                                    or len(layer_types) != layers):
+        raise DeriveError(f"{model}: layer_types {sorted(set(layer_types))}; every draft layer "
+                          f"is sliding-window attention here")
+    if layer_types is None or dflash.get("layer_types", layer_types) != layer_types:
+        raise DeriveError(f"{model}: layer_types missing or differing from dflash_config's; a "
+                          f"layer without a type is full attention in the engine")
+    base = base_dtype(cfg, raw, model)
+    act = DTYPE_WIDTHS[base]
+    fp32 = DTYPE_WIDTHS["fp32"]
+    if raw_quant(cfg, model) or raw_quant(raw, model):
+        quant = raw_quant(cfg, model) or raw_quant(raw, model)
+        if str(quant.get("quant_method", "")).lower() != "mxfp8":
+            raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; this handler "
+                              f"places MXFP8 linears and the excluded fc, Markov head and "
+                              f"confidence head")
+        want = {"language_model.model.dspark.fc", "language_model.model.dspark.markov_head."
+                "markov_w1", "language_model.model.dspark.markov_head.markov_w2",
+                "language_model.model.dspark.confidence_head.proj"}
+        ignored = set(quant.get("ignored_layers") or ())
+        # The target's own exclusions are copied into the draft's list (the router gates of the
+        # target's routed layers, the embedding and head, the towers); none names a draft module.
+        named = {x for x in ignored if ".dspark." in x}
+        if named != want:
+            raise DeriveError(f"{model}: ignored_layers names the draft modules {sorted(named)}; "
+                              f"this handler places exactly {sorted(want)} unquantized")
+        gates = {x for x in ignored if ".dspark." not in x}
+        if any(not (x in MINIMAX_M3_UNQUANTIZED or x.endswith(".block_sparse_moe.gate"))
+               for x in gates):
+            raise DeriveError(f"{model}: ignored_layers names a module this handler does not "
+                              f"place")
+
+    def traffic(role, nbytes, tp=None):
+        node = dict(norm(role), bytes_per_token=int(nbytes))
+        if tp:
+            node["tp"] = tp
+        return node
+
+    def with_tp(node, tp):
+        node["tp"] = tp
+        return node
+
+    def bf16_gemm(role, n, k):
+        node = gemm(role, n, k)
+        node["weight_dtype"] = base
+        return node
+
+    attention = {"op": "Attention", "holds_engine_kv": True, "kind": "swa", "n_q": nq,
+                 "n_kv": nkv, "d_h": dh, "window": window + block}
+    layer = [
+        norm("input_norm"),
+        gemm("qkv_proj", (nq + 2 * nkv) * dh, hidden),
+        # The fused per-head QK norm, partial RoPE and cache insert over q, k and v.
+        traffic("qk_norm_rope_insert", 2 * (nq + 2 * nkv) * dh * act),
+        attention,
+        gemm("o_proj", hidden, nq * dh),
+        collective("AllReduce", "attn_out", EMIT_TENSOR_PARALLEL),
+        norm("post_attn_norm"),
+        gemm("mlp_gate_up", 2 * ffn, hidden),
+        gemm("mlp_down", hidden, ffn),
+        collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL),
+    ]
+    context = [
+        with_tp(bf16_gemm("dspark_fc", hidden, hidden * len(targets)), "replicated"),
+        traffic("dspark_hidden_norm", 2 * hidden * act, tp="replicated"),
+        gemm("dspark_context_kv", layers * 2 * nkv * dh, hidden),
+    ]
+    for d in range(layers):
+        # The K norm, RoPE and the cache insert over the projected K and V.
+        context.append(traffic(f"dspark_context_kv_insert_{d}", 2 * 2 * nkv * dh * act))
+    kinds = [{"id": "dspark_layer", "nodes": layer, "edges": chain(layer)},
+             {"id": "dspark_context", "nodes": context, "edges": chain(context)}]
+    head = [traffic("final_norm", 2 * hidden * act, tp="replicated"),
+            with_tp(bf16_gemm("lm_head", vocab, hidden), "column")]
+    extras = {
+        "global": {"architecture": raw["architectures"][0]},
+        "head": head,
+        "speculator": {
+            "method": "dspark",
+            "num_spec_tokens": block,
+            "drafting": "parallel_block",
+            "stack": {"pattern": ["dspark_layer"], "repeat": layers},
+            "context_stack": {"pattern": ["dspark_context"], "repeat": 1},
+            "head": [traffic("dspark_final_norm", 2 * hidden * act, tp="replicated"),
+                     {**with_tp(gemm("dspark_lm_head", vocab, hidden), "column"),
+                      "aliases": "head.lm_head"}],
+            "sequential_head": [
+                {"op": "Gather", "role": "markov_w1", "rows": vocab,
+                 "row_bytes": markov * act, "rows_per_token": 1,
+                 "out_bytes_per_token": markov * act},
+                with_tp(bf16_gemm("markov_w2", vocab, markov), "replicated"),
+            ],
+            "aux_hidden_state_layers": aux_layers,
+        },
+    }
+    return kinds, {"pattern": ["dspark_layer"], "repeat": layers}, extras
+
+
 def handler_qwen3_5_moe(cfg, raw, model):
     """Qwen3.5-MoE: a Gated DeltaNet linear-attention layer on most layers, full attention
     on every fourth, and a routed expert MLP with a shared expert on all of them.
@@ -5687,6 +5919,7 @@ HANDLERS = {
     "MuseSparkForConditionalGeneration": handler_muse_spark,
     "MuseSparkDSparkModel": handler_muse_spark_dspark,
     "K3DSparkModel": handler_k3_dspark,
+    "DSparkMiniMaxDraftModel": handler_minimax_dspark,
     # Kimi-K2.5 is a vision-language model whose TEXT decoder vLLM instantiates as
     # DeepseekV2ForCausalLM over config.text_config
     # (model_executor/models/kimi_k25.py:371-376, architectures=["DeepseekV2ForCausalLM"]),

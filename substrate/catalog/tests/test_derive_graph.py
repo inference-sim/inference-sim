@@ -6953,7 +6953,8 @@ def test_only_the_mxfp8_graph_gains_a_scale_and_the_other_fp8_blocks_stay_unscal
     scaled = {d.name for d in sorted(MODELS.iterdir())
               if d.is_dir() and graph_of(d)["global"].get("weight_scale")
               and graph_of(d)["global"]["weight_dtype"] == "fp8"}
-    assert scaled == {"minimax-m3-mxfp8", "minimax-m3.1-flash", "deepseek-v4.1-flash"}
+    assert scaled == {"minimax-m3-mxfp8", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
+                      "deepseek-v4.1-flash"}
 
 
 # --- DSpark stages in a DeepSeek-V4 checkpoint (deepseek-ai/DeepSeek-V4-Pro-0813) ---------
@@ -7478,3 +7479,237 @@ def test_m31_states_the_one_byte_per_32_weights_that_its_mxfp8_scales_hold():
                  if c[1] == "U8" and c[5] == "scale")
     assert scales * 32 == fp8
     assert graph_of(M31)["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
+
+
+# --- MiniMax-M3.1-Flash's DSpark drafter (dspark/ in the same repository) ------------------
+
+M31_DSPARK = MODELS / "minimax-m3.1-flash-dspark"
+
+
+def _m31ds_cfg(**edit) -> dict:
+    """The keys of dspark/config.json at ce7f4df87d2e that the deriver reads (the file is
+    pinned by hash and not committed, as for its target)."""
+    layers = 5
+    ids = [3, 17, 31, 45, 59]
+    text = {
+        "architectures": ["DSparkMiniMaxDraftModel"], "dtype": "bfloat16",
+        "hidden_size": 6144, "intermediate_size": 3072, "num_hidden_layers": layers,
+        "num_attention_heads": 64, "num_key_value_heads": 4, "head_dim": 128,
+        "vocab_size": 200064, "max_position_embeddings": 1048576, "rms_norm_eps": 1e-06,
+        "use_gemma_norm": True, "attention_output_gate": False, "rope_theta": 10000000,
+        "rotary_dim": 64, "partial_rotary_factor": 0.5, "hidden_act": "swigluoai",
+        "use_qk_norm": True, "tie_word_embeddings": False, "dense_intermediate_size": 12288,
+        "shared_intermediate_size": 3072, "num_local_experts": 128, "num_experts_per_tok": 4,
+        "n_shared_experts": 1, "scoring_func": "sigmoid", "use_routing_bias": True,
+        "moe_layer_freq": [0] * layers, "qk_norm_type": "per_head", "swiglu_alpha": 1.702,
+        "swiglu_limit": 7.0, "routed_scaling_factor": 2.0, "sparse_attention_config": None,
+        "dspark_block_size": 7, "dspark_markov_rank": 256, "dspark_markov_head_type": "vanilla",
+        "dspark_aux_gemm_precision": "bf16", "dspark_noise_token_id": 200058,
+        "dspark_use_dense_ffn": True, "dspark_ffn_hidden_size": 12288,
+        "dspark_target_layer_ids": list(ids),
+        "dspark_config": {"markov_rank": 256, "markov_head_type": "vanilla",
+                          "mask_token_id": 200058, "hybrid_context_fusion": False,
+                          "aux_gemm_precision": "bf16", "use_dense_ffn": True,
+                          "ffn_hidden_size": 12288},
+        "dspark_hybrid_context_fusion": False,
+        "dflash_config": {"num_hidden_layers": layers, "num_target_layers": 60,
+                          "context_source": "target_layers", "block_size": 7,
+                          "mask_token_id": 200058, "target_layer_ids": list(ids),
+                          "layer_types": ["sliding_attention"] * layers,
+                          "sliding_window": 4096},
+        "enable_confidence_head": True, "confidence_head_with_markov": True,
+        "num_nextn_predict_layers": 0, "use_mtp": False, "num_mtp_modules": 0,
+        "layer_types": ["sliding_attention"] * layers, "sliding_window": 4096,
+        "v_head_dim": 128, "swa_head_dim": 128, "swa_v_head_dim": 128,
+    }
+    dspark_modules = [f"language_model.model.dspark.{m}" for m in (
+        "confidence_head.proj", "fc", "markov_head.markov_w1", "markov_head.markov_w2")]
+    quant = {
+        "quant_method": "mxfp8", "activation_scheme": "dynamic", "weight_block_size": [1, 32],
+        "group_size": 16, "moe_quant_algo": "NVFP4", "moe_quant_format": "nvfp4-pack-quantized",
+        "ignored_layers": sorted(
+            dspark_modules + ["lm_head", "model.embed_tokens", "vision_tower",
+                              "multi_modal_projector", "patch_merge_mlp"]
+            + [f"language_model.model.layers.{i}.block_sparse_moe.gate" for i in range(3, 60)]),
+    }
+    raw = {"architectures": ["DSparkMiniMaxDraftModel"], "model_type": "minimax_m3_vl",
+           "dtype": "bfloat16", "tie_word_embeddings": False,
+           "text_config": text, "quantization_config": quant}
+    for key, value in edit.items():
+        where, _, name = key.rpartition("__")
+        target = {"": raw, "text": text, "dflash": text["dflash_config"],
+                  "quant": quant}[where]
+        if value is None:
+            target.pop(name, None)
+        else:
+            target[name] = value
+    return raw
+
+
+def _m31ds_graph(tmp_path) -> dict:
+    return _derive_raw(_m31ds_cfg(), tmp_path, "minimax-m3.1-flash-dspark")
+
+
+def test_m31_dspark_committed_graph_is_the_derivation_of_the_pinned_keys(tmp_path):
+    committed = graph_of(M31_DSPARK)
+    derived = _m31ds_graph(tmp_path)
+    pin = yaml.safe_load((M31_DSPARK / "model.yaml").read_text())["config"]["sha256"]
+    assert committed["derived_from"]["sha256"] == pin
+    committed["derived_from"].pop("sha256")
+    derived["derived_from"].pop("sha256")
+    assert committed == derived
+
+
+def test_m31_dspark_and_its_target_name_each_other_and_agree_on_the_stack():
+    """The drafter names the target, the target lists the drafter (and no in-graph speculator,
+    which it has none of), the drafter's source is its own file in the target's repository, and
+    the shapes the drafter states of its target are the target graph's."""
+    d = yaml.safe_load((M31_DSPARK / "model.yaml").read_text())
+    t = yaml.safe_load((M31 / "model.yaml").read_text())
+    tg, dg = graph_of(M31), graph_of(M31_DSPARK)
+    assert d["targets"] == [t["name"]] and t["drafters"] == [d["name"]]
+    assert "speculator" not in tg
+    assert (d["source"]["repo"], d["source"]["revision"]) == (t["source"]["repo"],
+                                                              t["source"]["revision"])
+    assert d["source"]["path"] == "dspark/config.json" and "path" not in t["source"]
+    assert d["config"]["sha256"] != t["config"]["sha256"]
+    assert len(layer_sequence(tg["stack"])) == 60          # dflash_config.num_target_layers
+    assert dg["global"]["hidden_size"] == tg["global"]["hidden_size"]   # fc takes 5 states
+    assert dg["global"]["vocab_size"] == tg["global"]["vocab_size"]     # the head is the target's
+    (fc,) = [n for k in dg["layer_kinds"] for n in k["nodes"] if n.get("role") == "dspark_fc"]
+    assert fc["k"] == 5 * tg["global"]["hidden_size"]
+
+
+# Every tensor of dspark/ in its safetensors header (97 tensors, 2,301,852,674 bytes):
+# (module under language_model.model.dspark., stored dtype, shape, copies, what the graph does).
+M31_DSPARK_CHECKPOINT = [
+    ("layers.N.decoder_layer.self_attn.q_proj.weight", "F8_E4M3", (8192, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.k_proj.weight", "F8_E4M3", (512, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.v_proj.weight", "F8_E4M3", (512, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.o_proj.weight", "F8_E4M3", (6144, 8192), 5, "priced"),
+    ("layers.N.decoder_layer.mlp.gate_proj.weight", "F8_E4M3", (12288, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.mlp.up_proj.weight", "F8_E4M3", (12288, 6144), 5, "priced"),
+    ("layers.N.decoder_layer.mlp.down_proj.weight", "F8_E4M3", (6144, 12288), 5, "priced"),
+    ("layers.N.decoder_layer.self_attn.q_proj.weight_scale_inv", "U8", (8192, 192), 5, "scale"),
+    ("layers.N.decoder_layer.self_attn.k_proj.weight_scale_inv", "U8", (512, 192), 5, "scale"),
+    ("layers.N.decoder_layer.self_attn.v_proj.weight_scale_inv", "U8", (512, 192), 5, "scale"),
+    ("layers.N.decoder_layer.self_attn.o_proj.weight_scale_inv", "U8", (6144, 256), 5, "scale"),
+    ("layers.N.decoder_layer.mlp.gate_proj.weight_scale_inv", "U8", (12288, 192), 5, "scale"),
+    ("layers.N.decoder_layer.mlp.up_proj.weight_scale_inv", "U8", (12288, 192), 5, "scale"),
+    ("layers.N.decoder_layer.mlp.down_proj.weight_scale_inv", "U8", (6144, 384), 5, "scale"),
+    ("layers.N.decoder_layer.input_layernorm.weight", "BF16", (6144,), 5, "small"),
+    ("layers.N.decoder_layer.post_attention_layernorm.weight", "BF16", (6144,), 5, "small"),
+    ("layers.N.decoder_layer.self_attn.q_norm.weight", "BF16", (128,), 5, "small"),
+    ("layers.N.decoder_layer.self_attn.k_norm.weight", "BF16", (128,), 5, "small"),
+    ("fc.weight", "BF16", (6144, 30720), 1, "priced"),
+    ("hidden_norm.weight", "BF16", (6144,), 1, "small"),
+    ("final_norm.weight", "BF16", (6144,), 1, "small"),
+    ("markov_head.markov_w1.weight", "BF16", (200064, 256), 1, "priced"),
+    ("markov_head.markov_w2.weight", "BF16", (200064, 256), 1, "priced"),
+    ("confidence_head.proj.weight", "BF16", (1, 6400), 1, "small"),
+    ("confidence_head.proj.bias", "BF16", (1,), 1, "small"),
+]
+
+
+def test_m31_dspark_tensor_classes_sum_to_the_headers_total():
+    count = sum(c[3] for c in M31_DSPARK_CHECKPOINT)
+    nbytes = sum(c[3] * _prod(c[2]) * _M31_STORED[c[1]] for c in M31_DSPARK_CHECKPOINT)
+    assert (count, nbytes) == (97, 2_301_852_674)
+
+
+def test_m31_dspark_graph_charges_the_weights_the_checkpoint_stores(tmp_path):
+    """Each draft layer's seven matrices at FP8, the fc at BF16, the Markov weights at BF16;
+    the context K/V projection holds a second copy of every layer's K and V rows; and the
+    head's lm_head is the TARGET's matrix, which the checkpoint does not ship and the graph
+    must still state once (a drafter's graph is validated as a model)."""
+    g = _m31ds_graph(tmp_path)
+    spec = g["speculator"]
+    layers = expanded_layers(g)
+    assert len(layers) == 5
+    layer_mats = [(c[2][0], c[2][1], "fp8") for c in M31_DSPARK_CHECKPOINT
+                  if c[4] == "priced" and c[0].startswith("layers.N.")]
+    assert len(layer_mats) == 7
+    for i, nodes in enumerate(layers):
+        check_weights(nodes, layer_mats, i, "fp8")
+    (context,) = expanded_layers(g, spec["context_stack"])
+    k_v = [c for c in M31_DSPARK_CHECKPOINT if c[0].endswith(("k_proj.weight", "v_proj.weight"))]
+    kv_rows = sum(5 * c[2][0] for c in k_v)            # five layers' K rows and V rows
+    check_weights(context, [(6144, 30720, "bf16"), (kv_rows, 6144, "fp8")], "context", "fp8")
+    assert kv_rows == 5 * 2 * 4 * 128
+    (w1,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w1"]
+    (w2,) = [n for n in spec["sequential_head"] if n["role"] == "markov_w2"]
+    assert (w1["rows"], w1["row_bytes"]) == (200064, 256 * 2)
+    assert (w2["n"], w2["k"], w2["weight_dtype"]) == (200064, 256, "bf16")
+    (head,) = [n for n in g["head"] if n["op"] == "GEMM"]
+    assert (head["n"], head["k"], head["weight_dtype"]) == (200064, 6144, "bf16")
+    assert [n.get("aliases") for n in spec["head"] if n["op"] == "GEMM"] == ["head.lm_head"]
+    assert not [n for n in g.get("embedding", [])], "the token lookup is the target's"
+
+
+def test_m31_dspark_speculator_states_what_the_config_and_the_engine_say(tmp_path):
+    g = _m31ds_graph(tmp_path)
+    spec = g["speculator"]
+    assert spec["method"] == "dspark" and spec["drafting"] == "parallel_block"
+    assert spec["num_spec_tokens"] == 7
+    # dflash_config.target_layer_ids [3, 17, 31, 45, 59], one higher for the engine.
+    assert spec["aux_hidden_state_layers"] == [4, 18, 32, 46, 60]
+    assert "aux_hidden_state_bytes_per_token" not in spec
+    # No file states dflash_config.causal, so the engine sets it False: each query reads its
+    # window plus the block, 4096 + 7.
+    (attn,) = [n for n in expanded_layers(g)[0] if n["op"] == "Attention"]
+    assert (attn["kind"], attn["window"], attn["n_kv"]) == ("swa", 4096 + 7, 4)
+    assert g["stack"] == spec["stack"] == {"pattern": ["dspark_layer"], "repeat": 5}
+    assert not [n for k in g["layer_kinds"] for n in k["nodes"]
+                if n["op"] in ("GroupedGEMM",)], "the draft layers are dense"
+    (insert,) = [n for k in g["layer_kinds"] for n in k["nodes"]
+                 if n.get("role") == "dspark_context_kv_insert_0"]
+    assert insert["bytes_per_token"] == 2 * 2 * 4 * 128 * 2
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"text__dspark_extra_knob": 1}, "reads and this handler does not"),
+    ({"text__dspark_draft_topk": 64}, "reads and this handler does not"),
+    ({"text__draft_vocab_size": 32000}, "changes the DSpark draft"),
+    ({"text__is_causal": True}, "changes the DSpark draft"),
+    ({"text__has_own_lm_head": True}, "changes the DSpark draft"),
+    ({"text__mask_token_id": 5}, "changes the DSpark draft"),
+    ({"text__use_aux_hidden_state": False}, "changes the DSpark draft"),
+    ({"text__dspark_use_dense_ffn": False}, "dense"),
+    ({"text__dspark_markov_head_type": "lowrank"}, "dspark_markov_head_type"),
+    ({"text__dspark_hybrid_context_fusion": True}, "dspark_hybrid_context_fusion"),
+    ({"text__dspark_aux_gemm_precision": "fp8"}, "dspark_aux_gemm_precision"),
+    ({"text__dspark_markov_rank": 128}, "dspark_config.markov_rank"),
+    ({"text__dspark_target_layer_ids": [3, 17, 31, 45, 58]}, "differ"),
+    ({"text__dspark_noise_token_id": 200064, "dflash__mask_token_id": 200064}, "differ"),
+    ({"text__dspark_noise_token_id": 200064, "dflash__mask_token_id": 200064,
+      "text__dspark_config": {**_m31ds_cfg()["text_config"]["dspark_config"],
+                              "mask_token_id": 200064}}, "mask token"),
+    ({"dflash__mask_token_id": 7}, "mask token"),
+    ({"dflash__causal": True}, "non-causal window"),
+    ({"dflash__use_swa": True}, "non-causal window"),
+    ({"dflash__swa_window_size": 128}, "non-causal window"),
+    ({"dflash__num_target_layers": 59}, "reach past"),
+    ({"dflash__target_layer_ids": [3, 3, 31, 45, 59], "text__dspark_target_layer_ids": [3, 3, 31, 45, 59]},
+     "repeat"),
+    ({"text__layer_types": ["full_attention"] * 5}, "sliding-window attention"),
+    ({"text__layer_types": None}, "layer_types"),
+    ({"text__sliding_window": 2048}, "sliding_window"),
+    ({"quant__quant_method": "fp8"}, "places MXFP8"),
+    ({"quant__ignored_layers": ["lm_head"]}, "places exactly"),
+    ({"quant__ignored_layers": _m31ds_cfg()["quantization_config"]["ignored_layers"]
+      + ["language_model.model.dspark.layers.0.decoder_layer.self_attn"]}, "places exactly"),
+])
+def test_m31_dspark_refuses_a_config_it_has_not_read(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph  # noqa: E402
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(_m31ds_cfg(**edit), tmp_path, "minimax-m3.1-flash-dspark")
+
+
+def test_m31_dspark_states_the_one_byte_per_32_weights_that_its_mxfp8_scales_hold():
+    fp8 = sum(c[3] * _prod(c[2]) for c in M31_DSPARK_CHECKPOINT
+              if c[1] == "F8_E4M3" and c[4] == "priced")
+    scales = sum(c[3] * _prod(c[2]) for c in M31_DSPARK_CHECKPOINT
+                 if c[1] == "U8" and c[4] == "scale")
+    assert scales * 32 == fp8
+    assert graph_of(M31_DSPARK)["global"]["weight_scale"] == {"elements": 32, "bytes": 1}
