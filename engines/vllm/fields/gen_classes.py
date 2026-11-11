@@ -132,6 +132,18 @@ class Source:
                         v = n.value
                         if isinstance(v, ast.Subscript) and ast.unparse(v.value).endswith("Literal"):
                             self.aliases[n.targets[0].id] = v
+        # An annotation that names an enum.Enum class of the config package (CUDAGraphMode) is an
+        # enumeration of its member names, the strings the field is stated with.
+        self.enums = {}
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".py"):
+                for n in gf.parse(os.path.join(d, f)).body:
+                    if isinstance(n, ast.ClassDef) and any(
+                            ast.unparse(b).split(".")[-1] in ("Enum", "IntEnum", "StrEnum") for b in n.bases):
+                        members = [t.id for st in n.body if isinstance(st, ast.Assign)
+                                   for t in st.targets if isinstance(t, ast.Name) and not t.id.startswith("_")]
+                        if members:
+                            self.enums[n.name] = members
         self.bases = {}  # class name -> attribute names VllmConfig-like classes hold it under
         for node in self.classes.values():
             for fname, ann in gf.class_fields(node):
@@ -216,6 +228,9 @@ class Source:
         m = re.search(r"Literal\[(.*)\]", text)
         if m:
             return "enumerated", list(ast.literal_eval("[" + m.group(1) + "]")), optional
+        for enum, members in self.enums.items():
+            if re.search(r"\b%s\b" % enum, text):
+                return "enumerated", list(members), optional
         if re.search(r"\bbool\b", text):
             return "boolean", None, optional
         if re.search(r"\bint\b", text):

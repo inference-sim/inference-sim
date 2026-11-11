@@ -72,7 +72,12 @@ func TestLanguageModelOnlyIsDisclosedWhereTheGraphPricesNoTower(t *testing.T) {
 	for _, f := range languageModelOnlyFixtures {
 		for _, stated := range []string{"", "true", "false"} {
 			t.Run(f.name+"/"+map[string]string{"": "unset"}[stated]+stated, func(t *testing.T) {
-				got := openWithLanguageModelOnly(t, f.path, f.chip, stated).EngineAssumptions()
+				var got []string
+				for _, a := range openWithLanguageModelOnly(t, f.path, f.chip, stated).EngineAssumptions() {
+					if strings.HasPrefix(a, "language_model_only") { // the fixtures state cudagraph_mode, which discloses its own
+						got = append(got, a)
+					}
+				}
 				wantDisclosed := f.towerless && stated != "true"
 				if (len(got) == 1) != wantDisclosed || len(got) > 1 {
 					t.Fatalf("assumptions %q, want one: %t", got, wantDisclosed)

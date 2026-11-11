@@ -5584,9 +5584,19 @@
     {
       "name": "compilation_config.cudagraph_capture_sizes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -5628,9 +5638,30 @@
     {
       "name": "compilation_config.cudagraph_mode",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "NONE",
+          "PIECEWISE",
+          "FULL",
+          "FULL_DECODE_ONLY",
+          "FULL_AND_PIECEWISE"
+        ],
+        "covered": [
+          "FULL",
+          "FULL_AND_PIECEWISE",
+          "FULL_DECODE_ONLY",
+          "NONE",
+          "PIECEWISE"
+        ]
       },
       "estimation": {
         "rule": "none"
@@ -6105,9 +6136,19 @@
     {
       "name": "cudagraph_capture_sizes",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/blis-vllm#78"
+        "traces": [
+          "compat/kernelmodel/capture_oracle_test.go",
+          "core/lower/testdata/vllm_lower.json",
+          "rules/pack/cudagraph_test.go"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
         "rule": "none"

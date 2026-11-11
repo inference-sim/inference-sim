@@ -396,7 +396,7 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	// size, the memory budget and the batch settings the deployment left unstated.
 	m.resolved = resolveEngine(in, engine)
 	m.engine = m.resolved.engine
-	m.assumed = languageModelOnlyAssumptions(in.Model, engine)
+	m.assumed = append(languageModelOnlyAssumptions(in.Model, engine), cudagraphAssumptions(engine)...)
 	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)

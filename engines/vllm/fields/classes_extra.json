@@ -27,6 +27,33 @@
    }
   ]
  },
+ "compilation_config.cudagraph_mode": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": ["NONE", "PIECEWISE", "FULL", "FULL_DECODE_ONLY", "FULL_AND_PIECEWISE"],
+    "why": "the capture oracle (CAPTURE_CASES of oracle/lower/extract.py, 57 cases) states each of the five modes on h200 and b200 and compares the kernel's capture ceiling and sizes with vLLM's own VllmConfig._set_cudagraph_sizes and its dispatcher; the kernel's step price per mode follows the v0.31.0 policy, as the entry's note says"
+   }
+  ]
+ },
+ "compilation_config.cudagraph_capture_sizes": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [8, 16, 64, 100000],
+    "why": "the capture oracle states these sizes as elements of the lists it gives (a list is one value of the field, and the evidence's classes are the single class that holds every value): [8, 16] and [64, 8, 8, 16, 100000] sorted by the resolver; the kernel's resolved sizes and ceiling equal vLLM's VllmConfig._set_cudagraph_sizes"
+   }
+  ]
+ },
+ "cudagraph_capture_sizes": {
+  "stated": [
+   {
+    "trace": "compat/kernelmodel/capture_oracle_test.go",
+    "values": [8, 16, 64, 100000],
+    "why": "the capture oracle states these sizes as elements of the lists it gives (a list is one value of the field, and the evidence's classes are the single class that holds every value): [8, 16] and [64, 8, 8, 16, 100000] sorted by the resolver; the kernel's resolved sizes and ceiling equal vLLM's VllmConfig._set_cudagraph_sizes"
+   }
+  ]
+ },
  "compilation_config.max_cudagraph_capture_size": {
   "stated": [
    {

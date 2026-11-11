@@ -902,6 +902,609 @@
     "name": "block_size"
    }
   },
+  "compilation_config.cudagraph_capture_sizes": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/compilation.py:1152",
+      "expr": "self.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1532",
+      "expr": "not self.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2454",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2512",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2527",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/distributed/device_communicators/flashinfer_pcie_ipc_all_reduce.py:228",
+      "expr": "not capture_sizes",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2790",
+      "expr": "compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/quantization/modelopt_block_quant.py:323",
+      "expr": "config.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:478",
+      "expr": "compilation_config.cudagraph_capture_sizes is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/warmup/kernel_warmup.py:199",
+      "expr": "compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/model.py:753",
+      "expr": "vllm_config.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/b12x.py:499",
+      "expr": "vllm_config.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/triton_attn.py:136",
+      "expr": "capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/turboquant_attn.py:487",
+      "expr": "sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/ops/flydsl_turboquant_decode.py:163",
+      "expr": "sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/ops/flydsl_ultraquant_decode.py:179",
+      "expr": "sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:78",
+      "expr": "capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:188",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:213",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/cudagraph_utils.py:254",
+      "expr": "capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:757",
+      "expr": "self.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:924",
+      "expr": "cg_sizes is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 8,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 16,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 64,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 100000,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "compilation_config.cudagraph_capture_sizes"
+   }
+  },
+  "compilation_config.cudagraph_mode": {
+   "value_classes": {
+    "type": "enumerated",
+    "values": [
+     "NONE",
+     "PIECEWISE",
+     "FULL",
+     "FULL_DECODE_ONLY",
+     "FULL_AND_PIECEWISE"
+    ],
+    "covered": [
+     "FULL",
+     "FULL_AND_PIECEWISE",
+     "FULL_DECODE_ONLY",
+     "NONE",
+     "PIECEWISE"
+    ]
+   },
+   "basis": {
+    "kind": "enumerated",
+    "classes": [
+     {
+      "values": [
+       0
+      ],
+      "compared_at": [
+       "vllm/compilation/backends.py:1305",
+       "vllm/compilation/wrapper.py:267",
+       "vllm/config/compilation.py:1239",
+       "vllm/config/compilation.py:1383",
+       "vllm/config/vllm.py:2071",
+       "vllm/config/vllm.py:2344",
+       "vllm/config/vllm.py:3144",
+       "vllm/config/vllm.py:3175",
+       "vllm/config/vllm.py:698",
+       "vllm/platforms/rocm.py:1350",
+       "vllm/platforms/xpu.py:372",
+       "vllm/v1/worker/gpu/cudagraph_utils.py:889",
+       "vllm/v1/worker/gpu/pcp_manager.py:173",
+       "vllm/v1/worker/gpu_model_runner.py:3830",
+       "vllm/v1/worker/gpu_model_runner.py:5193",
+       "vllm/v1/worker/gpu_model_runner.py:6483",
+       "vllm/v1/worker/gpu_model_runner.py:758",
+       "vllm/v1/worker/gpu_worker.py:703",
+       "vllm/v1/worker/gpu_worker.py:922"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       1
+      ],
+      "compared_at": [
+       "vllm/config/compilation.py:1210",
+       "vllm/config/compilation.py:1216",
+       "vllm/config/vllm.py:3119"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       2
+      ],
+      "compared_at": [
+       "vllm/config/vllm.py:1816"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "NONE",
+       "PIECEWISE",
+       "FULL",
+       "FULL_DECODE_ONLY",
+       "FULL_AND_PIECEWISE"
+      ],
+      "uncompared": true,
+      "compared_at": [],
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     }
+    ],
+    "enumeration": [
+     "NONE",
+     "PIECEWISE",
+     "FULL",
+     "FULL_DECODE_ONLY",
+     "FULL_AND_PIECEWISE"
+    ],
+    "relations": [
+     {
+      "at": "vllm/config/compilation.py:1211",
+      "expr": "self.cudagraph_mode == CUDAGraphMode.FULL_AND_PIECEWISE",
+      "with": "CUDAGraphMode.FULL_AND_PIECEWISE"
+     },
+     {
+      "at": "vllm/config/compilation.py:1226",
+      "expr": "self.cudagraph_mode == CUDAGraphMode.FULL_AND_PIECEWISE",
+      "with": "CUDAGraphMode.FULL_AND_PIECEWISE"
+     },
+     {
+      "at": "vllm/config/vllm.py:1888",
+      "expr": "self.compilation_config.cudagraph_mode not in (CUDAGraphMode.NONE, CUDAGraphMode.FULL_DECODE_ONLY)",
+      "with": "(CUDAGraphMode.NONE, CUDAGraphMode.FULL_DECODE_ONLY)"
+     },
+     {
+      "at": "vllm/v1/attention/backends/triton_attn.py:117",
+      "expr": "self.vllm_config.compilation_config.cudagraph_mode in ( CUDAGraphMode.FULL_AND_PIECEWISE, CUDAGraphMode.FULL_DECODE_ONLY, CUDAGraphMode.FULL, )",
+      "with": "( CUDAGraphMode.FULL_AND_PIECEWISE, CUDAGraphMode.FULL_DECODE_ONLY, CUDAGraphMode.FULL, )"
+     }
+    ],
+    "sites": [
+     {
+      "at": "vllm/compilation/backends.py:1305",
+      "expr": "self.compilation_config.cudagraph_mode == CUDAGraphMode.NONE",
+      "op": "Eq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/compilation/wrapper.py:267",
+      "expr": "self.vllm_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1210",
+      "expr": "self.cudagraph_mode == CUDAGraphMode.PIECEWISE",
+      "op": "Eq",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1216",
+      "expr": "self.cudagraph_mode == CUDAGraphMode.PIECEWISE",
+      "op": "Eq",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1239",
+      "expr": "self.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1383",
+      "expr": "cudagraph_mode == CUDAGraphMode.NONE",
+      "op": "Eq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1383",
+      "expr": "cudagraph_mode is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:698",
+      "expr": "self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:1816",
+      "expr": "self.compilation_config.cudagraph_mode == CUDAGraphMode.FULL",
+      "op": "Eq",
+      "values": [
+       2
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2071",
+      "expr": "self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2344",
+      "expr": "self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:3119",
+      "expr": "self.compilation_config.cudagraph_mode == CUDAGraphMode.PIECEWISE",
+      "op": "Eq",
+      "values": [
+       1
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:3144",
+      "expr": "self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:3175",
+      "expr": "compilation_config.cudagraph_mode == CUDAGraphMode.NONE",
+      "op": "Eq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:1059",
+      "expr": "compilation_config.cudagraph_mode is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/platforms/rocm.py:1350",
+      "expr": "cc.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/platforms/xpu.py:372",
+      "expr": "compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/flex_attention.py:997",
+      "expr": "mode is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/linear_attn.py:235",
+      "expr": "cudagraph_mode is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/mla/indexer.py:252",
+      "expr": "vllm_config.compilation_config.cudagraph_mode",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/cudagraph_utils.py:889",
+      "expr": "runner.compilation_config.cudagraph_mode == CUDAGraphMode.NONE",
+      "op": "Eq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/pcp_manager.py:173",
+      "expr": "cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:758",
+      "expr": "self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:3830",
+      "expr": "self.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:5190",
+      "expr": "cudagraph_mode is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:5193",
+      "expr": "cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:6483",
+      "expr": "self.compilation_config.cudagraph_mode == CUDAGraphMode.NONE",
+      "op": "Eq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:703",
+      "expr": "self.vllm_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:922",
+      "expr": "self.vllm_config.compilation_config.cudagraph_mode != CUDAGraphMode.NONE",
+      "op": "NotEq",
+      "values": [
+       0
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": "NONE",
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "PIECEWISE",
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "FULL",
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "FULL_DECODE_ONLY",
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "FULL_AND_PIECEWISE",
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "compilation_config.cudagraph_mode"
+   }
+  },
   "compilation_config.max_cudagraph_capture_size": {
    "value_classes": {
     "type": "numeric",
@@ -1271,6 +1874,241 @@
      }
     ],
     "name": "compilation_config.max_cudagraph_capture_size"
+   }
+  },
+  "cudagraph_capture_sizes": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "kind": "numeric",
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "compat/kernelmodel/capture_oracle_test.go"
+      ]
+     }
+    ],
+    "relations": [],
+    "sites": [
+     {
+      "at": "vllm/config/compilation.py:1152",
+      "expr": "self.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/config/compilation.py:1532",
+      "expr": "not self.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2454",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2512",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/config/vllm.py:2527",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/distributed/device_communicators/flashinfer_pcie_ipc_all_reduce.py:228",
+      "expr": "not capture_sizes",
+      "op": "Truth",
+      "values": [
+       false
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2789",
+      "expr": "self.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/engine/arg_utils.py:2790",
+      "expr": "compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/layers/quantization/modelopt_block_quant.py:323",
+      "expr": "config.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/model_executor/models/config.py:478",
+      "expr": "compilation_config.cudagraph_capture_sizes is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/model_executor/warmup/kernel_warmup.py:199",
+      "expr": "compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/models/qwen4_exp/nvidia/model.py:753",
+      "expr": "vllm_config.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/b12x.py:499",
+      "expr": "vllm_config.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/triton_attn.py:136",
+      "expr": "capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/backends/turboquant_attn.py:487",
+      "expr": "sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/ops/flydsl_turboquant_decode.py:163",
+      "expr": "sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/attention/ops/flydsl_ultraquant_decode.py:179",
+      "expr": "sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:78",
+      "expr": "capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:188",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/cudagraph_dispatcher.py:213",
+      "expr": "self.compilation_config.cudagraph_capture_sizes is not None",
+      "op": "IsNot",
+      "values": [
+       null
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu/cudagraph_utils.py:254",
+      "expr": "capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_model_runner.py:757",
+      "expr": "self.compilation_config.cudagraph_capture_sizes",
+      "op": "Truth",
+      "values": [
+       true
+      ]
+     },
+     {
+      "at": "vllm/v1/worker/gpu_worker.py:924",
+      "expr": "cg_sizes is None",
+      "op": "Is",
+      "values": [
+       null
+      ]
+     }
+    ],
+    "stated": [
+     {
+      "value": 8,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 16,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 64,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     },
+     {
+      "value": 100000,
+      "trace": "compat/kernelmodel/capture_oracle_test.go",
+      "reviewed": true
+     }
+    ],
+    "name": "cudagraph_capture_sizes"
    }
   },
   "data_parallel_size": {

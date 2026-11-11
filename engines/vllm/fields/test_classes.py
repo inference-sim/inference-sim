@@ -41,12 +41,14 @@ FILES = {
         class EngineArgs:
             max_num_seqs: int | None = None
             policy_name: SchedulerPolicy = SchedulerConfig.policy
+            graph_mode: GraphMode = SchedulerConfig.graph_mode
             enable_thing: bool = SchedulerConfig.enable_thing
             speculative_config: dict[str, Any] | None = None
             def add_cli_args(parser):
                 sched = get_kwargs(SchedulerConfig)
                 parser.add_argument("--max-num-seqs", **sched["max_num_seqs"])
                 parser.add_argument("--policy-name")
+                parser.add_argument("--graph-mode")
                 parser.add_argument("--enable-thing")
                 parser.add_argument("--speculative-config")
         class AsyncEngineArgs(EngineArgs):
@@ -63,11 +65,18 @@ FILES = {
     "vllm/config/scheduler.py": """
         from typing import Literal
         from vllm.config.utils import config
+        import enum
         SchedulerPolicy = Literal["fcfs", "priority", "other"]
+        class GraphMode(enum.Enum):
+            NONE = 0
+            FULL = 1
+            def helper(self):
+                return 1
         @config
         class SchedulerConfig:
             max_num_seqs: int = Field(default=128, ge=1)
             policy: SchedulerPolicy = "fcfs"
+            graph_mode: GraphMode = None
             enable_thing: bool = False
             def check(self):
                 if self.max_num_seqs > 256:
@@ -153,13 +162,13 @@ class SyntheticTree(unittest.TestCase):
         write_tree(self.root, FILES)
         # The repository the traces live in: one golden trace, whose scenario states the values.
         write_tree(self.root, {"oracle/scenarios/t1.json": json.dumps({"config": {
-            "max_num_seqs": 100, "policy_name": "priority", "enable_thing": True,
+            "max_num_seqs": 100, "policy_name": "priority", "enable_thing": True, "graph_mode": "FULL",
             "speculative.method": "eagle", "speculative.num_speculative_tokens": 3}})})
         gc._PARSED.clear()
         gc.ENUM_MEMBERS.clear()
         t = ["core/x/testdata/golden/t1.json"]
         self.fl = {"kind": "FieldList", "engine": {"kind": "vllm", "version": "0.32.0"},
-                   "fields": [field("max_num_seqs", traces=t), field("policy_name", traces=t), field("enable_thing", traces=t),
+                   "fields": [field("max_num_seqs", traces=t), field("policy_name", traces=t), field("graph_mode", traces=t), field("enable_thing", traces=t),
                               field("speculative_config.method", traces=t),
                               field("speculative_config.num_speculative_tokens", traces=t)]}
         path = os.path.join(self.root, "fields.json")
@@ -193,11 +202,16 @@ class SyntheticTree(unittest.TestCase):
         self.assertEqual([c.get("values") for c in cl], [["priority"], ["fcfs", "other"]])
         self.assertTrue(cl[1]["uncompared"])
 
+    def test_a_field_annotated_with_an_enum_class_is_an_enumeration_of_its_member_names(self):
+        # CUDAGraphMode is an enum.Enum, not a Literal; its members (not its methods) are the values.
+        vc = self.doc["fields"]["graph_mode"]["value_classes"]
+        self.assertEqual((vc["type"], vc["values"], vc["covered"]), ("enumerated", ["NONE", "FULL"], ["FULL"]))
+
     def test_a_boolean_has_both_values_as_classes_backed_by_its_truth_test(self):
         cl = self.doc["fields"]["enable_thing"]["basis"]["classes"]
         self.assertEqual([c["values"] for c in cl], [[False], [True]])
         for c in cl:
-            self.assertEqual(c["compared_at"], ["vllm/config/scheduler.py:15"])
+            self.assertEqual(c["compared_at"], ["vllm/config/scheduler.py:22"])
 
     def test_a_string_field_has_a_class_per_compared_value_and_an_other_class_and_an_unset_class(self):
         cl = self.doc["fields"]["speculative_config.method"]["basis"]["classes"]

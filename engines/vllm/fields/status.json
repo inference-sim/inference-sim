@@ -613,9 +613,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.cudagraph_copy_inputs": {
    "estimation": {
@@ -649,9 +653,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:compilation_config.cudagraph_num_of_warmups": {
    "estimation": {
@@ -1022,9 +1030,13 @@
     "rule": "none"
    },
    "evidence": {
-    "issue": "inference-sim/blis-vllm#78"
+    "traces": [
+     "compat/kernelmodel/capture_oracle_test.go",
+     "core/lower/testdata/vllm_lower.json",
+     "rules/pack/cudagraph_test.go"
+    ]
    },
-   "status": "not_modelled"
+   "status": "modelled"
   },
   "config:cudagraph_metrics": {
    "estimation": {
