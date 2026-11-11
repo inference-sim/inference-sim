@@ -55,6 +55,7 @@ func TestASpeculativeDecodeIsPricedAtItsVerifyWidth(t *testing.T) {
 	prefill := []*sim.Request{{InputTokens: make([]sim.TokenID, 2048), NumNewTokens: 512}}
 	plain := openSpeculative(t, scenario, 0)
 	prev := plain.StepTime(decodeAt(2100, 1))
+	prevPrefill := plain.StepTime(prefill)
 	for _, k := range []int{1, 2, 3} {
 		m := openSpeculative(t, scenario, k)
 		price := m.StepTime(decodeAt(2100, 1))
@@ -84,9 +85,20 @@ func TestASpeculativeDecodeIsPricedAtItsVerifyWidth(t *testing.T) {
 			t.Errorf("k=%d: the first decode after the prompt priced %d, no more than a plain decode's %d", k,
 				atBoundary, plainBoundary)
 		}
-		if got, want := m.StepTime(prefill), plain.StepTime(prefill); got != want {
-			t.Errorf("k=%d: a prefill chunk priced %d with a draft configuration, %d without", k, got, want)
+		// The drafter's own passes run in a prefill step too: its first pass covers every
+		// scheduled token (it writes its own KV for each) and the passes after it run for the
+		// step's requests, a request still in the middle of its prompt included, because vLLM's
+		// target-dependent speculator proposes for every request of the step. So a prefill chunk
+		// costs more with a draft configuration than without, and no less for a longer draft.
+		got, want := m.StepTime(prefill), plain.StepTime(prefill)
+		if got <= want {
+			t.Errorf("k=%d: a prefill chunk priced %d with a draft configuration, %d without; "+
+				"the drafter's passes over the chunk were not priced", k, got, want)
 		}
+		if got < prevPrefill {
+			t.Errorf("k=%d: a prefill chunk priced %d, below the shorter draft's %d", k, got, prevPrefill)
+		}
+		prevPrefill = got
 	}
 	if last := openSpeculative(t, scenario, 3).StepTime(decodeAt(2100, 1)); last <= plain.StepTime(decodeAt(2100, 1)) {
 		t.Errorf("a 3-token draft's decode priced %d, no more than a plain decode's %d; the verify width did not reach the kernel",

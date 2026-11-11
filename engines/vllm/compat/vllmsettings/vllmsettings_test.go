@@ -9,6 +9,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
@@ -85,11 +86,14 @@ func TestOfFillsEverySetting(t *testing.T) {
 	populate(t, reflect.ValueOf(&e).Elem(), "Engine")
 	var missing []string
 	zeroes(reflect.ValueOf(Of(e)), "Settings", &missing)
-	// The block has no key for these two settings, so no block states them.
-	// TestTheBlockHasNoKeyForAttentionBackendOrDecoderReplay checks that.
+	noKey := map[string]bool{
+		// ServedWeights is the layout the engine serves a checkpoint in, resolved from the
+		// checkpoint's quantization (vLLM's ModelConfig._verify_quantization), not read from
+		// an engine block key. Of does not resolve it yet, so the kernel prices the graph as stored.
+		"Settings.ServedWeights": true}
 	var unfilled []string
 	for _, m := range missing {
-		if m != "Settings.AttentionBackend" && m != "Settings.CUDAGraphDecoderReplay" {
+		if !noKey[m] {
 			unfilled = append(unfilled, m)
 		}
 	}
@@ -98,42 +102,17 @@ func TestOfFillsEverySetting(t *testing.T) {
 	}
 }
 
-// attention_config.backend and compilation_config.cudagraph_decoder_replay are Settings fields the
-// kernel refuses when stated, but the vLLM engine block has no key for either: a block that states
-// them is refused by the strict decode, naming the key. So Of has nothing to fill them from, and
-// TestOfFillsEverySetting exempts exactly these two.
-func TestTheBlockHasNoKeyForAttentionBackendOrDecoderReplay(t *testing.T) {
-	for _, key := range []string{"attention_backend", "backend", "cudagraph_decoder_replay"} {
+// The kernel reads no attention backend, linear backend, custom-op list, decoder-replay setting or
+// drafter cache dtype: which kernel runs is the engine's to resolve and report (VAL-8), and this engine
+// refuses a block that states one of them (core/vllm's unreadSettings). The block has no key at all
+// for the attention backend, the decoder-replay switch, the MSA decode backend or the per-kind and
+// per-quantization backends: a block that states one is refused by the strict decode, naming the key.
+func TestTheBlockHasNoKeyForTheBackendsTheKernelNoLongerReads(t *testing.T) {
+	for _, key := range []string{"attention_backend", "backend", "cudagraph_decoder_replay", "minimax_m3_msa_decode_backend", "backend_per_kind", "linear_backend_per_quant"} {
 		pool := deployment.Pool{Engine: mustBlock(t, key+": true\n")}
 		if _, err := Decode(pool); err == nil || !strings.Contains(err.Error(), key) {
 			t.Errorf("a block stating %s: Decode returned %v, want a refusal naming the key", key, err)
 		}
-	}
-}
-
-// A stated kernel-facing setting reaches the kernel as stated, each from its own block key: the
-// kernel prices it from a coefficient or refuses it by name, and an unstated one prices as the
-// engine's own choice.
-func TestOfCarriesTheKernelFacingSettings(t *testing.T) {
-	on := true
-	e := engineconfig.Engine{
-		UseTRTLLMAttention:                 &on,
-		MLAPrefillBackend:                  "TRTLLM_RAGGED",
-		LinearBackend:                      "flashinfer_cutlass",
-		CustomOps:                          []string{"+rms_norm"},
-		DecoderReplayCUDAGraphCaptureSizes: []int{8, 16},
-		Speculative:                        &engineconfig.Speculative{Method: "dspark", NumSpecTokens: 7, KVCacheDType: "fp8"},
-	}
-	s := Of(e)
-	if s.UseTRTLLMAttention == nil || !*s.UseTRTLLMAttention || s.MLAPrefillBackend != "TRTLLM_RAGGED" ||
-		s.LinearBackend != "flashinfer_cutlass" || !reflect.DeepEqual(s.CustomOps, []string{"+rms_norm"}) ||
-		!reflect.DeepEqual(s.DecoderReplayCUDAGraphCaptureSizes, []int{8, 16}) || s.Speculative.KVCacheDType != "fp8" {
-		t.Errorf("Of = %+v, want each kernel-facing setting as the block states it", s)
-	}
-	none := Of(engineconfig.Engine{})
-	if none.UseTRTLLMAttention != nil || none.MLAPrefillBackend != "" || none.LinearBackend != "" ||
-		len(none.CustomOps) != 0 || len(none.DecoderReplayCUDAGraphCaptureSizes) != 0 {
-		t.Errorf("an unstated block: Of = %+v, want none of them stated", none)
 	}
 }
 
@@ -238,4 +217,28 @@ func mustBlock(t *testing.T, src string) deployment.EngineBlock {
 		t.Fatal(err)
 	}
 	return deployment.NewEngineBlock(n.Content[0])
+}
+
+// vLLM v0.32.0 runs EAGLE, EAGLE3 and MTP through one speculator: its first pass covers every
+// scheduled token and the head and later passes run for every request of the step. Any other
+// method, and no speculation, is left unstated, so the kernel refuses an autoregressive drafter this
+// engine model has not read (draft_passes_unstated) rather than pricing a guess; a parallel-block
+// drafter ignores both fields.
+func TestDraftPassesAreStatedForTheSpeculatorVLLMSharesOnly(t *testing.T) {
+	for _, method := range []string{"eagle", "eagle3", "mtp"} {
+		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
+		rows, reqs := DraftPasses(e)
+		if rows != plan.FirstPassScheduled || reqs != plan.PassRequestsAll {
+			t.Errorf("%s: FirstPassRows %q, PassRequests %q; want scheduled and all", method, rows, reqs)
+		}
+	}
+	for _, method := range []string{"dspark", "draft_model", "ngram", "dflash", ""} {
+		e := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: method, NumSpecTokens: 3}}
+		if rows, reqs := DraftPasses(e); rows != "" || reqs != "" {
+			t.Errorf("%q: states FirstPassRows %q, PassRequests %q; want neither", method, rows, reqs)
+		}
+	}
+	if rows, reqs := DraftPasses(engineconfig.Engine{}); rows != "" || reqs != "" {
+		t.Errorf("no speculation: %q, %q; want neither", rows, reqs)
+	}
 }

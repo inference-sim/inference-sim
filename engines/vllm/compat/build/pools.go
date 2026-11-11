@@ -463,9 +463,9 @@ func tierTicks(m *kernelmodel.Model, tier string, toTier bool, bytes int64, inSe
 	d := m.Kernel().TierTime(tier, dir, bytes, inService)
 	if d >= time.Duration(math.MaxInt64/2) {
 		return 0, fmt.Errorf("the kernel cannot price a %d-byte transfer %s storage tier %q: "+
-			"either the catalog's %s defines no such device, or it states no bandwidth in that "+
-			"direction", bytes, map[bool]string{true: "to", false: "from"}[toTier],
-			tier, CatalogStorageDevicesRelPath)
+			"either the catalog's %s names no such tier, or the scenario's coefficient sets carry "+
+			"no offload_tier_%s_* entries for the hardware (the set cost-model-offload-tiers)",
+			bytes, map[bool]string{true: "to", false: "from"}[toTier], tier, CatalogStorageDevicesRelPath, tier)
 	}
 	return max(1, (d.Nanoseconds()+999)/1000), nil
 }

@@ -46,8 +46,7 @@ func TestResolveKVOffloadDevices_NeedsTheCatalogOnlyWhenATierNamesADevice(t *tes
 // prices a tier from its catalog device, so a second source for the same physics is not
 // taken. Each of the three fields alone is enough.
 func TestResolveKVOffloadFile_RefusesExplicitTierPhysics(t *testing.T) {
-	locate := mustDataWithStorageDevices(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n")
+	locate := mustDataWithStorageDevices(t, "nvme_gen4: {}\n")
 	tier := "kv_offload:\n  cpu_bytes_to_use: 1073741824\n  secondary_tiers:\n" +
 		"    - type: fs\n      root_dir: /mnt/kv\n      direct_io: true\n      device_class: nvme_gen4\n"
 	write := func(extra string) string {

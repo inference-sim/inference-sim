@@ -14,32 +14,11 @@ import (
 	"github.com/inference-sim/blis-vllm/compat/kernelmodel"
 )
 
-// historicalKVOffloadDevices is the pre-#1770 defaults.yaml `kv_offload_devices:` table,
-// transcribed verbatim from that block, and is the INV-6 reference for BC-2. It is a
-// FROZEN golden: it must not be regenerated from whatever the catalog currently says,
-// because the whole point is to detect the catalog table drifting away from the numbers
-// runs used to get. Changing a number here is a deliberate physics change and must be
-// argued on its own.
-func historicalKVOffloadDevices() map[string]KVOffloadDevice {
-	return map[string]KVOffloadDevice{
-		"nvme_gen4": {ReadBandwidth: 7.0e3, WriteBandwidth: 5.0e3, BaseLatency: 80.0},
-		"nvme_gen3": {ReadBandwidth: 3.5e3, WriteBandwidth: 3.0e3, BaseLatency: 100.0},
-		"sata_ssd":  {ReadBandwidth: 5.5e2, WriteBandwidth: 5.0e2, BaseLatency: 150.0},
-		"cpu_dram":  {ReadBandwidth: 2.0e4, WriteBandwidth: 2.0e4, BaseLatency: 1.0},
-		"s3":        {ReadBandwidth: 1.0e3, WriteBandwidth: 1.0e3, BaseLatency: 30000.0},
-	}
-}
-
-// catalogKVOffloadDevices is the table the substrate catalog must state: the frozen
-// historical block with the deliberate changes since, each argued in the catalog entry's
-// own _comment (blis-catalog 5f6ecab): cpu_dram refitted to the H100 host link (InferenceX
-// CollectiveX swap_blocks) and the assumed DGX H100 NVMe RAID0 class added.
-func catalogKVOffloadDevices() map[string]KVOffloadDevice {
-	t := historicalKVOffloadDevices()
-	t["cpu_dram"] = KVOffloadDevice{ReadBandwidth: 27058.0, WriteBandwidth: 46089.0, BaseLatency: 19.3}
-	t["nvme_gen4_raid0_8x"] = KVOffloadDevice{ReadBandwidth: 5.0e4, WriteBandwidth: 3.0e4, BaseLatency: 100.0}
-	return t
-}
+// catalogDeviceClasses are the tier classes the substrate catalog names. It states no rate for
+// any of them: a tier's read rate, write rate and fixed cost are registry coefficients
+// (offload_tier_<tier>_read_rate, _write_rate, _base_latency), and blis-substrate's own tests hold
+// the figures the catalog used to carry to the digit.
+var catalogDeviceClasses = []string{"cpu_dram", "nvme_gen3", "nvme_gen4", "nvme_gen4_raid0_8x", "s3", "sata_ssd"}
 
 // dataWithStorageDevices is the default data with devices/storage.yaml replaced by body,
 // through a catalog overlay, opened and checked by blis-substrate's loader as a run's data is.
@@ -81,58 +60,37 @@ func defaultData(t *testing.T) *load.Data {
 // BC-1: the table lives at <catalog>/devices/storage.yaml
 // ---------------------------------------------------------------------------
 
-// TestBundledCatalogDevices_MatchHistoricalDefaultsBlock is the cutover's INV-6 guard at
-// the data layer: the bundled catalog's table must be class-for-class identical to the
-// deleted defaults.yaml block, including the optional #1581 device-model fields (all
-// absent, so ramp/jitter stay off). Same numbers in ⇒ same numbers out, whatever the
-// simulator does with them — which is why this comparison, not a run-level diff, is the
-// load-bearing equivalence check.
-func TestBundledCatalogDevices_MatchHistoricalDefaultsBlock(t *testing.T) {
+// TestBundledCatalogDevices_NameTheClassesAndStateNoRate: the bundled catalog names exactly the
+// tier classes runs resolve, and a class resolves to a name alone, with no rate, since the kernel
+// prices every catalog-class tier from the registry. A class that carried a rate here would be a
+// second source for a figure the registry owns.
+func TestBundledCatalogDevices_NameTheClassesAndStateNoRate(t *testing.T) {
 	got, err := StorageDevices(defaultData(t))
 	if err != nil {
 		t.Fatalf("the substrate catalog's device table must load: %v", err)
 	}
-	want := catalogKVOffloadDevices()
-
-	if !reflect.DeepEqual(got, want) {
-		// Report per class so a single drifted number is obvious.
-		names := map[string]bool{}
-		for n := range got {
-			names[n] = true
+	var names []string
+	for n, d := range got {
+		names = append(names, n)
+		if !reflect.DeepEqual(d, KVOffloadDevice{}) {
+			t.Errorf("class %q resolved to %+v; a catalog class states no rate", n, d)
 		}
-		for n := range want {
-			names[n] = true
-		}
-		sorted := make([]string, 0, len(names))
-		for n := range names {
-			sorted = append(sorted, n)
-		}
-		sort.Strings(sorted)
-		for _, n := range sorted {
-			g, gok := got[n]
-			w, wok := want[n]
-			switch {
-			case !gok:
-				t.Errorf("class %q was in the pre-#1770 defaults.yaml block but is missing from the catalog table", n)
-			case !wok:
-				t.Errorf("class %q is new in the catalog table (not in the pre-#1770 defaults.yaml block)", n)
-			case !reflect.DeepEqual(g, w):
-				t.Errorf("class %q drifted from the pre-#1770 numbers:\n got  %+v\n want %+v", n, g, w)
-			}
-		}
+	}
+	sort.Strings(names)
+	if !reflect.DeepEqual(names, catalogDeviceClasses) {
+		t.Errorf("the catalog names the classes %v, want %v", names, catalogDeviceClasses)
 	}
 }
 
-// TestResolveKVOffload_CatalogClassResolvesHistoricalTriple is the same guard one layer
-// up, through the real resolver: a tier naming each historical class resolves to exactly
-// that class's triple with the device model off. This is the value an offload run
-// actually consumes, so it is what INV-6 is about.
-func TestResolveKVOffload_CatalogClassResolvesHistoricalTriple(t *testing.T) {
+// TestResolveKVOffload_CatalogClassResolvesToANameForTheKernelToPrice: a tier naming each class
+// resolves to that class with the device model off and no rate of its own. The price comes from
+// the kernel (priceOffload), which TestPoolsPriceOffload reaches.
+func TestResolveKVOffload_CatalogClassResolvesToANameForTheKernelToPrice(t *testing.T) {
 	devices, err := StorageDevices(defaultData(t))
 	if err != nil {
 		t.Fatalf("the substrate catalog's device table must load: %v", err)
 	}
-	for class, want := range catalogKVOffloadDevices() {
+	for _, class := range catalogDeviceClasses {
 		cfg, err := ResolveKVOffload(rampBlock(class, true), devices, 16)
 		if err != nil {
 			t.Fatalf("class %q must resolve: %v", class, err)
@@ -141,10 +99,9 @@ func TestResolveKVOffload_CatalogClassResolvesHistoricalTriple(t *testing.T) {
 		if tr.DeviceClass != class {
 			t.Errorf("class %q: resolved device_class = %q", class, tr.DeviceClass)
 		}
-		if tr.ReadBandwidth != want.ReadBandwidth || tr.WriteBandwidth != want.WriteBandwidth || tr.BaseLatency != want.BaseLatency {
-			t.Errorf("class %q: resolved triple (%v, %v, %v), want (%v, %v, %v)",
-				class, tr.ReadBandwidth, tr.WriteBandwidth, tr.BaseLatency,
-				want.ReadBandwidth, want.WriteBandwidth, want.BaseLatency)
+		if tr.ReadBandwidth != 0 || tr.WriteBandwidth != 0 || tr.BaseLatency != 0 {
+			t.Errorf("class %q: resolved rates (%v, %v, %v), want none: the kernel prices the tier",
+				class, tr.ReadBandwidth, tr.WriteBandwidth, tr.BaseLatency)
 		}
 		if tr.SaturationQueueDepth != 1 || tr.SingleTransferFraction != 1.0 || tr.LatencyJitterStddev != 0 {
 			t.Errorf("class %q: device model must be off (Qsat=%d f1=%v sigma=%v)",
@@ -195,12 +152,12 @@ func TestResolveKVOffload_UnknownDeviceClassNamesCatalogTable(t *testing.T) {
 func TestAnUnusableDeviceTableIsRefused(t *testing.T) {
 	for _, tc := range []struct{ name, body, wantFrag string }{
 		{"no classes", "{}\n", "storage tier"},
-		{"malformed yaml", "nvme_gen4: {read_bandwidth_mb_s: [unclosed\n", "devices/storage.yaml"},
-		// R10: a misspelled key must be refused, never decoded to zero bandwidth.
-		{"unknown physics key", "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwith_mb_s: 5.0e3, base_latency_us: 80.0}\n", "write_bandwith"},
-		// R9/R10: an omitted required field is refused, not decoded to 0; a missing
-		// base_latency would otherwise resolve to zero-latency physics.
-		{"missing required field", "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3}\n", "base_latency"},
+		{"malformed yaml", "nvme_gen4: {name: [unclosed\n", "devices/storage.yaml"},
+		// R10: a misspelled key must be refused, never decoded to nothing.
+		{"unknown key", "nvme_gen4: {nmae: nvme_gen4}\n", "nmae"},
+		// A table that still states a rate is refused, and told where the value goes: the rates
+		// are registry coefficients, so a second copy in the catalog would be a second source.
+		{"a rate in the catalog", "nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n", "offload_tier_<tier>_read_rate"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d, err := dataWithStorageDevices(t, tc.body)

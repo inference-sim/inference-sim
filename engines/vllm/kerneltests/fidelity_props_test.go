@@ -3,6 +3,7 @@
 package latencykernel_test
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	. "github.com/inference-sim/blis-substrate/kernel"
 
 	"strings"
@@ -119,6 +120,7 @@ func TestDraftPassesAreDeviceWork(t *testing.T) {
 	ar := step(func(in *Inputs) {
 		bare(in)
 		in.Model.Speculator.Drafting = model.DraftingAutoregressive
+		in.DraftFirstPassRows, in.DraftPassRequests = plan.FirstPassScheduled, plan.PassRequestsAll
 		// An autoregressive draft reads only its ring: its read window is the ring's.
 		editNodes(in.Model, func(n model.Node) bool { return len(n.Caches) > 0 },
 			func(n *model.Node) {

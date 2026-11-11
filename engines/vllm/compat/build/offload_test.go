@@ -44,10 +44,10 @@ func validBlock() *KVOffloadBlock {
 }
 
 // T4 (#1770: retargeted from defaults.yaml to the catalog): a catalog
-// devices/storage.yaml parses through the real reader and a device resolves to a triple.
+// devices/storage.yaml parses through the real reader and a device resolves to a class name
+// that states no rate (the kernel prices it).
 func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
-	devices, err := StorageDevices(mustDataWithStorageDevices(t,
-		"nvme_gen4: {read_bandwidth_mb_s: 7.0e3, write_bandwidth_mb_s: 5.0e3, base_latency_us: 80.0}\n"))
+	devices, err := StorageDevices(mustDataWithStorageDevices(t, "nvme_gen4: {}\n"))
 	if err != nil {
 		t.Fatalf("catalog storage device table must load: %v", err)
 	}
@@ -55,8 +55,8 @@ func TestKVOffloadDevices_CatalogStorageYAMLParses(t *testing.T) {
 	if !ok {
 		t.Fatalf("nvme_gen4 device class must parse from %s", CatalogStorageDevicesRelPath)
 	}
-	if dev.ReadBandwidth != 7000 || dev.WriteBandwidth != 5000 || dev.BaseLatency != 80 {
-		t.Errorf("device triple mismatch: %+v", dev)
+	if dev != (KVOffloadDevice{}) {
+		t.Errorf("a catalog class states no rate, got %+v", dev)
 	}
 }
 

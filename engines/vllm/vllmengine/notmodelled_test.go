@@ -112,6 +112,7 @@ var engineKeys = map[string][]string{
 // refused sets each refused field in the engine block, as YAML under pools[0].engine.
 var refused = map[string]string{
 	"kv_cache_memory_bytes":                                     "kv_cache_memory_bytes: 4294967296\n",
+	"attention_config.use_trtllm_attention":                     "use_trtllm_attention: true\n",
 	"attention_config.mla_prefill_backend":                      "mla_prefill_backend: FLASHINFER\n",
 	"kernel_config.linear_backend":                              "linear_backend: flashinfer\n",
 	"linear_backend":                                            "linear_backend: flashinfer\n",
@@ -162,10 +163,11 @@ var atDefault = map[string]string{
 // noDefaultValue lists the refused keys that vLLM leaves unstated (None), so no stated value is the
 // default and every stated one is a choice. Each cites the line that makes it None.
 var noDefaultValue = map[string]string{
-	"kv_cache_memory_bytes":                "vllm/config/cache.py:257@5df63a72",
-	"attention_config.mla_prefill_backend": "vllm/config/attention.py:81@5df63a72",
-	"speculative_config.kv_cache_dtype":    "vllm/config/speculative.py:428@5df63a72",
-	"prefix_match_unit":                    "vllm/config/cache.py:90@5df63a72",
+	"kv_cache_memory_bytes":                 "vllm/config/cache.py:257@5df63a72",
+	"attention_config.use_trtllm_attention": "vllm/config/attention.py:74@5df63a72",
+	"attention_config.mla_prefill_backend":  "vllm/config/attention.py:81@5df63a72",
+	"speculative_config.kv_cache_dtype":     "vllm/config/speculative.py:428@5df63a72",
+	"prefix_match_unit":                     "vllm/config/cache.py:90@5df63a72",
 }
 
 // pricedByTheKernel is the allow-list: keys the latency kernel reads and prices from blis-substrate's
@@ -200,9 +202,6 @@ var pricedByTheKernel = map[string]string{
 	"dcp_comm_backend":                              "dcp_comm_backend: a2a\n#79",
 	"dcp_q_replicate":                               "dcp_q_replicate: true\n#8",
 	"cp_kv_cache_interleave_size":                   "cp_kv_cache_interleave_size: 4\n#8",
-	// The kernel prices a stated true on the trtllm-gen prefill lane and refuses a stated false and
-	// a chip without the lane, naming the measurement (TestTheKernelDecidesUseTRTLLMAttention).
-	"attention_config.use_trtllm_attention": "use_trtllm_attention: true\n#80",
 	// Reachable only through Spec.Config: a deployment cannot state them, because
 	// deployment.PDTransfer has the connector alone and offload.connector_options refuses all but
 	// blocks_per_chunk (offloadOf). blis-vllm#89.
@@ -502,11 +501,13 @@ func TestPrepareStatesMambaModelOnlyForARecurrentModel(t *testing.T) {
 	}
 }
 
-// attention_config.use_trtllm_attention is read by the kernel, not refused by the engine: a stated
-// true builds on a part whose registry carries the trtllm-gen prefill pair (b200 here), is refused
-// on one that does not (h200), and a stated false is refused on every part, each refusal naming
-// the field and the measurement the kernel needs.
-func TestTheKernelDecidesUseTRTLLMAttention(t *testing.T) {
+// attention_config.use_trtllm_attention is refused whatever its value, on every part. Which prefill
+// kernel runs is the engine's to resolve and to report as the implementation of attention.prefill
+// (VAL-8); this engine reports none yet, which needs the code hash of the trtllm-gen prefill kernel of
+// its FlashInfer pin, published by an engine release's kernel_impls.json (inference-sim/blis-registry#73).
+// The kernel reads no such setting, so a stated value would be priced as the default and dropped
+// without a word; the engine says so first, citing blis-vllm#80.
+func TestTheEngineRefusesUseTRTLLMAttentionWhateverItsValue(t *testing.T) {
 	Register()
 	build := func(t *testing.T, chip, line string) error {
 		t.Helper()
@@ -522,16 +523,14 @@ func TestTheKernelDecidesUseTRTLLMAttention(t *testing.T) {
 		_, err = engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.32.0", Roots: roots})
 		return err
 	}
-	if err := build(t, "b200", "use_trtllm_attention: true\n"); err != nil {
-		t.Errorf("true on b200: %v, want the kernel to price it", err)
-	}
-	for _, c := range []struct{ chip, line, want string }{
-		{"h200", "use_trtllm_attention: true\n", "no prefill measurement of the trtllm-gen kernel"},
-		{"b200", "use_trtllm_attention: false\n", "no measurement that prices it"},
+	for _, c := range []struct{ chip, line string }{
+		{"b200", "use_trtllm_attention: true\n"}, {"h200", "use_trtllm_attention: true\n"},
+		{"b200", "use_trtllm_attention: false\n"}, {"h200", "use_trtllm_attention: false\n"},
 	} {
 		err := build(t, c.chip, c.line)
-		if err == nil || !strings.Contains(err.Error(), "attention_config.use_trtllm_attention") || !strings.Contains(err.Error(), c.want) {
-			t.Errorf("%s on %s: %v, want a refusal naming the field and %q", strings.TrimSpace(c.line), c.chip, err, c.want)
+		if err == nil || !strings.Contains(err.Error(), "attention_config.use_trtllm_attention") ||
+			!strings.Contains(err.Error(), "blis-vllm/issues/80") {
+			t.Errorf("%s on %s: %v, want a refusal naming the field and blis-vllm#80", strings.TrimSpace(c.line), c.chip, err)
 		}
 	}
 }

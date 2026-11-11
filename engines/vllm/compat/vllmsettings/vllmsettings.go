@@ -10,6 +10,7 @@
 package vllmsettings
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 
@@ -43,15 +44,6 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 		DCPQReplicate:           e.DCPQReplicate,
 		CPKVCacheInterleaveSize: e.CPKVCacheInterleaveSize,
 		Frontend:                string(e.Frontend),
-		// The kernel-facing settings (design VLM-3): the kernel prices a stated value from a
-		// measured coefficient or refuses it by name, never as the engine's own choice, so each is
-		// handed over as stated. AttentionBackend and CUDAGraphDecoderReplay have no key in the
-		// engine block (a block that states them is refused as an unknown key), so they stay unstated.
-		UseTRTLLMAttention:                 e.UseTRTLLMAttention,
-		MLAPrefillBackend:                  e.MLAPrefillBackend,
-		LinearBackend:                      e.LinearBackend,
-		CustomOps:                          e.CustomOps,
-		DecoderReplayCUDAGraphCaptureSizes: e.DecoderReplayCUDAGraphCaptureSizes,
 	}
 	if e.DBO != nil {
 		s.DBO = &enginesettings.DBO{Enabled: e.DBO.Enabled}
@@ -62,7 +54,6 @@ func Of(e engineconfig.Engine) enginesettings.Settings {
 	if e.Speculative != nil {
 		s.Speculative = &enginesettings.Speculative{Method: e.Speculative.Method,
 			NumSpecTokens: e.Speculative.NumSpecTokens, DraftModel: e.Speculative.DraftModel,
-			KVCacheDType: e.Speculative.KVCacheDType,
 			// Tri-state in the engine block, nil being vLLM's default false
 			// (vllm/config/speculative.py:551@5df63a72).
 			EnableAdaptiveVerification: e.Speculative.EnableAdaptiveVerification != nil &&
@@ -88,4 +79,24 @@ func OfPool(dep *deployment.Deployment, pool int) (enginesettings.Settings, erro
 // Decode is a pool's engine block as blis-vllm decodes it (engineconfig.Decode).
 func Decode(pool deployment.Pool) (engineconfig.Engine, error) {
 	return engineconfig.Decode(pool.Engine)
+}
+
+// DraftPasses states how vLLM v0.32.0 runs the passes of an autoregressive drafter, in the plan's
+// neutral words, for the kernel to price (latencykernel.Inputs.DraftFirstPassRows, DraftPassRequests).
+// EAGLE, EAGLE3 and MTP share one speculator class
+// (vllm/v1/worker/gpu/spec_decode/target_dependent_ar/speculator.py): its first pass runs over every
+// token the target scheduled this step, prefill tokens included (`_prefill` over `num_tokens`,
+// :432-478), and the head and later passes run for every request of the step (`propose`, :165-364).
+// A method that does not share the class, or no speculation, is left unstated, so the kernel refuses
+// an autoregressive drafter this engine model has not read (draft_passes_unstated); a parallel-block
+// drafter ignores both fields.
+func DraftPasses(e engineconfig.Engine) (plan.FirstPassRows, plan.PassRequests) {
+	if e.Speculative == nil {
+		return "", ""
+	}
+	switch e.Speculative.Method {
+	case "eagle", "eagle3", "mtp":
+		return plan.FirstPassScheduled, plan.PassRequestsAll
+	}
+	return "", ""
 }

@@ -372,6 +372,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		settings.MaxNumBatchedTokens = r.engine.MaxNumBatchedTokens
 	}
 	in.Engine = &settings
+	// How an autoregressive drafter's passes run is the engine's to state (SUB-6): vLLM v0.32.0's
+	// speculator for eagle, eagle3 and mtp; any other method is left unstated and the kernel refuses it.
+	in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(engine)
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return nil, err

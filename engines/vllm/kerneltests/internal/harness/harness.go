@@ -40,7 +40,21 @@ type Repos = latencykernel.Repos
 // tests are the kernel's own callers, so they take the packs from the engine model's rules
 // module like any other caller; the library itself never imports it.
 func Open(scenario string, r Repos) (*latencykernel.Kernel, error) {
-	return latencykernel.Open(scenario, WithVLLMRules(r))
+	r = WithVLLMRules(r)
+	in, err := latencykernel.OpenInputs(scenario, r, 0)
+	if err != nil {
+		return nil, err
+	}
+	// How an autoregressive drafter's passes run is the engine's to state: vLLM v0.32.0's.
+	if e, err := vllmsettings.Decode(in.Deployment.Pools[in.PoolIndex]); err == nil {
+		in.DraftFirstPassRows, in.DraftPassRequests = vllmsettings.DraftPasses(e)
+	}
+	k, err := latencykernel.New(in)
+	if err != nil {
+		return nil, err
+	}
+	k.RecordSelected(r.Data)
+	return k, nil
 }
 
 // WithVLLMRules returns r with the vLLM rules packs (github.com/inference-sim/blis-vllm/rules)
