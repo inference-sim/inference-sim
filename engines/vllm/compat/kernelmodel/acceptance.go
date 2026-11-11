@@ -32,6 +32,9 @@ type AcceptanceOverrides struct {
 	FallbackCategory string
 }
 
+// resolveRequest is acceptance.Resolve; a test replaces it to see the request a pool makes.
+var resolveRequest = acceptance.Resolve
+
 // acceptanceOverrides is set by the command layer before a pool opens (SetAcceptanceOverrides).
 var acceptanceOverrides AcceptanceOverrides
 
@@ -55,6 +58,8 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 	}
 	req := acceptance.Request{
 		Model:             in.Scenario.Model,
+		Drafter:           e.Speculative.DraftModel,
+		Architecture:      targetArchitecture(in, data),
 		SpeculativeMethod: e.Speculative.Method,
 		NumSpecTokens:     e.Speculative.NumSpecTokens,
 		Hardware:          in.Chip.Name,
@@ -71,13 +76,31 @@ func resolveAcceptance(in latencykernel.Inputs, e engineconfig.Engine, data *loa
 	if pin := req.Scenario; pin != nil && pin.Profiles != "" {
 		req.ScenarioSet = FindAcceptanceSet(sets, pin.Profiles)
 	}
-	r, err := acceptance.Resolve(req)
+	r, err := resolveRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("speculative.enable_adaptive_verification sizes the verify budget from the run's "+
 			"acceptance, and it does not resolve: %w", err)
 	}
 	data.RecordAcceptance(&r)
 	return &r, nil
+}
+
+// targetArchitecture is the architecture of the pool's target model as its graph records it
+// (global.architecture): the key a lookup that borrows across targets reads (acceptance.Request
+// Architecture). It is empty when the graph cannot be had, which skips the borrowing step and so
+// can only make a lookup refuse, never resolve to another target's value.
+func targetArchitecture(in latencykernel.Inputs, data *load.Data) string {
+	if in.Model != nil {
+		return in.Model.Global.Architecture
+	}
+	if data == nil {
+		return ""
+	}
+	g, err := data.Model(in.Scenario.Model)
+	if err != nil || g == nil {
+		return ""
+	}
+	return g.Global.Architecture
 }
 
 // bindingAcceptanceTerms is what a scenario's workload binding states about acceptance.
