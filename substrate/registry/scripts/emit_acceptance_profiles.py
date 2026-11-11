@@ -266,6 +266,10 @@ def catalog_models(root: Path) -> dict[str, str]:
     models = {}
     for p in sorted((root / "models").glob("*/model.yaml")):
         d = yaml.safe_load(p.read_text())
+        # A separate drafter is not what a collector's model key names, and one may share its
+        # target's repository (MiniMax-M3.1-Flash ships its DSpark drafter under dspark/).
+        if d.get("targets"):
+            continue
         models[d["name"]] = d["source"]["repo"]
     if not models:
         raise SystemExit(f"no catalog models under {root / 'models'}")

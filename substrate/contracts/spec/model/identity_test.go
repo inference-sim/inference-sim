@@ -107,6 +107,32 @@ func TestIdentityValidateLeavesTheLicenceToCI(t *testing.T) {
 	}
 }
 
+// A source may name the config's path inside the repository, for a model shipped in a
+// directory of its own. The path is a relative .json file; nothing that leaves the repository.
+func TestSourcePathNamesAFileInsideTheRepository(t *testing.T) {
+	src := func(path string) *Identity {
+		return &Identity{Name: "m", Source: &Source{Provider: "huggingface", Repo: "o/m", Revision: "r", Path: path}}
+	}
+	for _, ok := range []string{"", "config.json", "dspark/config.json", "a/b/c.json"} {
+		if p := src(ok).Validate(); !p.OK() {
+			t.Errorf("path %q was refused:\n%s", ok, p.Error())
+		}
+	}
+	for _, bad := range []string{"/config.json", "../config.json", "a/../config.json", "a//b.json", "./config.json",
+		"dspark/", "dspark/config.txt", "dspark\\config.json"} {
+		p := src(bad).Validate()
+		if p.OK() || !strings.Contains(p.Error(), "source.path") {
+			t.Errorf("path %q was accepted: %v", bad, p)
+		}
+	}
+	if got := (&Source{}).ConfigPath(); got != "config.json" {
+		t.Errorf("the default path is %q, not config.json", got)
+	}
+	if got := (&Source{Path: "dspark/config.json"}).ConfigPath(); got != "dspark/config.json" {
+		t.Errorf("a stated path became %q", got)
+	}
+}
+
 // A drafter list and a target are checked for what a file can know about itself: no empty or
 // repeated name, no model that drafts for itself, and a separate drafter lists none of its own.
 // The links between files are the catalog check's (validate/dataset).

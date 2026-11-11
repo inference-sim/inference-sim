@@ -459,6 +459,7 @@ K of zero or less is refused for every method (:393, :1826-1830). The rule is th
 | `provider` | string | yes | The hosting service, such as `huggingface`. |
 | `repo` | string | yes | The repository on that service. |
 | `revision` | string | yes | The exact revision the configuration was taken at. |
+| `path` | string | no | Where the configuration sits in the repository: a relative `.json` file with no `..` element. Omitted, `config.json` at the root. A checkpoint that ships a second model in a directory of its own, such as a drafter under `dspark/`, names that file here. |
 | `retrieved` | string | no | The date it was fetched. |
 
 ### `licence`

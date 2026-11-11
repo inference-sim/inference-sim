@@ -100,6 +100,12 @@ type Source struct {
 	// upstream move under a fixed graph, which is the drift the digest in the graph's
 	// derived_from exists to catch; this pins the other end of that comparison.
 	Revision string `yaml:"revision"`
+	// Path is where the vendor config sits in the repository. Omitted, it is config.json at the
+	// root. A checkpoint that ships a second model in a directory of its own, such as a
+	// speculative drafter under dspark/, names that directory's config here, so the nightly
+	// fetch reads the file the entry's digest pins. Relative, with no ".." element, and a
+	// .json file.
+	Path string `yaml:"path,omitempty"`
 	// Retrieved is the date the config was fetched, as provenance. Optional: it is not
 	// part of the identity the catalog's gate enforces, so it is recorded where present
 	// and never required.
@@ -237,5 +243,34 @@ func (s *Source) Validate() *validate.Problems {
 	if s.Revision == "" {
 		p.Field("revision", "required")
 	}
+	if s.Path != "" {
+		if err := checkConfigPath(s.Path); err != "" {
+			p.Field("path", "%q %s", s.Path, err)
+		}
+	}
 	return p
+}
+
+// ConfigPath is where the config sits in the repository: Path, or config.json at the root.
+func (s *Source) ConfigPath() string {
+	if s.Path == "" {
+		return "config.json"
+	}
+	return s.Path
+}
+
+// checkConfigPath returns why a path cannot name a file in the repository, or "".
+func checkConfigPath(p string) string {
+	if strings.HasPrefix(p, "/") || strings.Contains(p, "\\") {
+		return "must be relative to the repository root, with / separators"
+	}
+	for _, el := range strings.Split(p, "/") {
+		if el == "" || el == "." || el == ".." {
+			return "must not contain an empty, . or .. element"
+		}
+	}
+	if !strings.HasSuffix(p, ".json") {
+		return "must name a .json file"
+	}
+	return ""
 }

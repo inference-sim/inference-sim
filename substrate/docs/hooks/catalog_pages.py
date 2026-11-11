@@ -468,6 +468,7 @@ def draft(m: Model) -> str:
 def model_page(cat: Catalog, m: Model) -> str:
     g, src = m.graph, m.identity["source"]
     repo, rev = src["repo"], src["revision"]
+    config_path = src.get("path", "config.json")
     multimodal = g.get("modality") == "text_decoder_of_multimodal"
     lines = [
         # The page is reached from the models table, not the sidebar, so the sidebar's
@@ -481,7 +482,7 @@ def model_page(cat: Catalog, m: Model) -> str:
         "",
         (f"[`{repo}`]({HF_URL}/{repo}/tree/{rev}), architecture `{m.architecture}`: "
          f"{len(m.layers)} layers, weights in {weights(m)}. The graph below is derived "
-         f"from the model's [`config.json`]({HF_URL}/{repo}/blob/{rev}/config.json) at "
+         f"from the model's [`{config_path}`]({HF_URL}/{repo}/blob/{rev}/{config_path}) at "
          f"revision `{rev[:12]}`; [Model graphs](../../concepts/model-graphs.md) explains "
          f"how to read it, and the [glossary](../../concepts/glossary.md) defines its "
          f"terms."),

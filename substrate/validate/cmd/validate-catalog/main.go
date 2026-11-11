@@ -441,6 +441,9 @@ func summarizeSource(s *model.Source) string {
 	if len(rev) > 12 {
 		rev = rev[:12]
 	}
+	if s.Path != "" {
+		return fmt.Sprintf("%s %s@%s %s", s.Provider, s.Repo, rev, s.Path)
+	}
 	return fmt.Sprintf("%s %s@%s", s.Provider, s.Repo, rev)
 }
 

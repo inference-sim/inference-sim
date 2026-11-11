@@ -169,3 +169,18 @@ def test_an_unreviewed_collector_fails_rather_than_its_precision_going_unstated(
     golden = _mutated(tmp_path, "glm5.2_mtp", "glm52_fp4_b300_vllm.sh", "glm53_fp4_b300_vllm.sh")
     with pytest.raises(SystemExit, match="not in COLLECTORS"):
         emit.collect(golden, CATALOG)
+
+
+def test_a_drafter_in_its_targets_repository_is_not_a_model_key(tmp_path):
+    """MiniMax-M3.1-Flash ships its DSpark drafter under dspark/ in the same repository, so
+    two catalog entries share `source.repo`. A collector's model key names the served model,
+    never the drafter, so the key resolves to the target and not to an ambiguity."""
+    for name, extra in (("m31", ""), ("m31-dspark", "targets: [m31]\n")):
+        d = tmp_path / "models" / name
+        d.mkdir(parents=True)
+        (d / "model.yaml").write_text(
+            f"name: {name}\nsource:\n  provider: huggingface\n  repo: Org/Model-3.1\n"
+            f"  revision: r\n{extra}")
+    models = emit.catalog_models(tmp_path)
+    assert models == {"m31": "Org/Model-3.1"}
+    assert emit.catalog_name("model-3.1", models) == ("m31", None)
