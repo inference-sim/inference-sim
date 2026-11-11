@@ -4,7 +4,7 @@
   "kind": "vllm",
   "version": "0.32.0"
  },
- "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed. A comparison with another field is listed under relations and is not a class edge.",
+ "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed. A comparison with another field is listed under relations and is not a class edge. The classes under-approximate what the engine does with the field: a field read by name through a helper that takes the name as a string (for example _scheduler_config_int(vllm_config, \"max_num_batched_tokens\", 0)), and a threshold produced by min, range or arithmetic, are not found, so a field with one class is one that no scanned comparison singles out, not one the engine treats alike at every value.",
  "fields": {
   "MC_ENABLE_DEST_DEVICE_AFFINITY": {
    "value_classes": {

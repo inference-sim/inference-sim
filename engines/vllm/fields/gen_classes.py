@@ -1,5 +1,5 @@
 # Original to blis-vllm.
-"""Write fields/classes.json: the value classes of each modelled or proven-inert field (VLM-3, #102).
+"""Write fields/value_classes.json: the value classes of each modelled or proven-inert field (VLM-3).
 
 VLM-3: "a field marked modelled records the value classes its evidence covers: for a boolean or
 enumerated field, the values its evidence sets; for an ordered numeric field, the range its
@@ -35,8 +35,8 @@ found, and a threshold it carries is not a class edge. The limit is stated in th
 "limits" so a reader of fields.json knows what "generated from the upstream's comparisons" means.
 
 Usage:
-    python3 -I fields/gen_classes.py <vllm-source> fields.json                   > fields/classes.json
-    python3 -I fields/gen_classes.py <vllm-source> fields.json --check fields/classes.json
+    python3 -I fields/gen_classes.py <vllm-source> fields.json                   > fields/value_classes.json
+    python3 -I fields/gen_classes.py <vllm-source> fields.json --check fields/value_classes.json
     python3 -I fields/gen_classes.py <vllm-source> fields.json --field NAME ...  (any field, to stdout)
 """
 
@@ -76,7 +76,12 @@ LIMITS = (
     "Comparisons are found where the field, or a name the same function assigned from it, is compared "
     "with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A "
     "value passed to another function, stored in a container or computed before the comparison is not "
-    "followed. A comparison with another field is listed under relations and is not a class edge."
+    "followed. A comparison with another field is listed under relations and is not a class edge. "
+    "The classes under-approximate what the engine does with the field: a field read by name through a "
+    "helper that takes the name as a string (for example _scheduler_config_int(vllm_config, "
+    "\"max_num_batched_tokens\", 0)), and a threshold produced by min, range or arithmetic, are not found, so "
+    "a field with one class is one that no scanned comparison singles out, not one the engine treats "
+    "alike at every value."
 )
 
 ARGS_BASES = {"args", "engine_args", "parsed_args"}
@@ -927,7 +932,7 @@ def edge_values(c, is_int):
 
 def check_document(doc, fl, root=None):
     """The problems of a classes document against the field list and, when root is given, the
-    pinned source. The rules (VLM-3, #102):
+    pinned source. The rules (VLM-3):
       - every modelled or proven-inert field has an entry with at least one class, and no other
         field has one;
       - the classes of a numeric field are in order, touch and do not overlap; those of a boolean

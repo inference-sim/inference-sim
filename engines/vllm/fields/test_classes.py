@@ -1,14 +1,14 @@
 # Original to blis-vllm.
-"""Tests for fields/gen_classes.py and for fields/classes.json (VLM-3, #102).
+"""Tests for fields/gen_classes.py and for fields/value_classes.json (VLM-3).
 
 Run: python3 -I fields/test_classes.py
 With the pinned vLLM source (CI sets both): VLLM_SOURCE=<checkout> VLLM_SOURCE_REQUIRED=1 python3 -I fields/test_classes.py
 
   - A synthetic vLLM tree gives the classes the comparisons in it imply (every shape the generator reads).
-  - The committed fields/classes.json holds classes for every modelled or proven-inert field of
+  - The committed fields/value_classes.json holds classes for every modelled or proven-inert field of
     fields.json, and for no other, and each class is backed by a comparison of the entry.
   - With the pinned source, each place a class cites holds the comparison the entry states, and the
-    generator writes classes.json byte for byte.
+    generator writes value_classes.json byte for byte.
   - The checker fails on each known-bad document: a modelled field without classes, a class no
     comparison backs, a cited line the source does not hold, classes that overlap.
 """
