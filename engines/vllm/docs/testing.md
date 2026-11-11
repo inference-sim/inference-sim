@@ -150,7 +150,7 @@ The engine interface (`core/vllm`) is checked in two ways. blis-schemas' `engine
   matrix row cites a mutant of its own feature: the scheduler knobs `watermark`,
   `long_prefill_token_threshold_adaptive` and `max_num_scheduled_tokens` have M52-M54, which
   touch only that knob. The tier-3, tier-4 and engine-interface sweeps are
-  `oracle/mutate_t3.py`, `mutate_t4.py` and `mutate_e24.py`; the metrics model's is
+  `oracle/mutate_t3.py`, `mutate_t4.py` and `mutate_e24.py`; the scheduler's decode-step allocation test has two mutants in `oracle/mutate_sched_alloc.py` (a whole-sequence copy when a block is hashed, and on every Update); the metrics model's is
   `oracle/mutate_metrics.py` (X1-X17, run against the 22 scenarios' metric goldens and the 4000
   metric fuzz traces); the tier-1 rules' is `oracle/mutate_rules.py` (C1-C28: the `dcp-divides-tp`
   rule, C1-C5; the data v0.32.0 changed, C6-C11; the new `moe-ep-backend-binds-passthrough`
