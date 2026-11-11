@@ -81,7 +81,7 @@ blis-substrate (or keep a directory with the layout of its `catalog/`) and name 
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout f70c6c7503a47442c4c5d989f8f17b093c14e069
+git -C blis-substrate checkout 2b580843afd0d6eb585553b0770679eb8d080213
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->

@@ -150,9 +150,23 @@ type KernelPoolProvenance struct {
 	// enforces, and SkippedRuleFindings what they report on this scenario.
 	SkippedRules        []string      `json:"skipped_rules"`
 	SkippedRuleFindings []RuleFinding `json:"skipped_rule_findings"`
+	// Substitutions are the execution modes the cost model prices in place of the one the
+	// deployment states, machine-readable: a point with one is not priced in the mode it states,
+	// and a grade reads this list and not the assumptions' text. Absent when there is none.
+	Substitutions []Substitution `json:"substitutions,omitempty"`
 	// Routing is the pool's resolved expert-parallel routing imbalance: which layer
 	// supplied it, from which set and source, and why the default applied when it did.
 	Routing *RoutingRecord `json:"routing,omitempty"`
+}
+
+// Substitution is one execution mode priced in place of the stated one: Setting is the engine
+// setting (language_model_only), Stated what the deployment gives it ("unset" for an absent key),
+// Priced the value whose execution the cost model prices, and Reason what differs between the two.
+type Substitution struct {
+	Setting string `json:"setting"`
+	Stated  string `json:"stated"`
+	Priced  string `json:"priced"`
+	Reason  string `json:"reason"`
 }
 
 // RoutingRecord is the provenance of a pool's routing-imbalance resolution

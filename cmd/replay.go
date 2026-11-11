@@ -459,7 +459,7 @@ Example:
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
 		// DeploymentConfig literal). See docs/contributing/standards/invariants.md INV-13.
 		requireKernelCapacity(kernelPD)
-		pdTransferTime, pdTransferDemand := kernelPD.handoffPricing(pdTransferContention)
+		requirePullPricing(kernelPD, pdTransferContention)
 		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)
 		if topologyErr != nil {
 			logrus.Fatalf("scenario endpoint placement: %v", topologyErr)
@@ -476,9 +476,8 @@ Example:
 			DecodeInstances:            decodeInstances,
 			SharedInstances:            prefillDecodeInstances,
 			EncodeInstances:            encodeInstances,
-			PDTransferTime:             pdTransferTime,
+			InstanceEndpoint:           kernelPD.instanceEndpoint(),
 			PDTransferContention:       pdTransferContention,
-			PDTransferDemand:           pdTransferDemand,
 			PDPrefillKVHold:            kernelPD.holdsPrefillKV(),
 			PDPrefillSamplesFirstToken: true,
 			Roles:                      rolesOf(runEngine, prefillOverrides, decodeOverrides),

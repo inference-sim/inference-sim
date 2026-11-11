@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
 	"github.com/inference-sim/inference-sim/sim"
 )
 
@@ -476,15 +479,17 @@ func (i *InstanceSimulator) EvictRequest(req *sim.Request, now int64) bool {
 }
 
 // AddRemote hands the instance's engine a decode sub-request whose transfer may start, at now
-// (sim.EngineDriver.AddRemote): the engine holds it and starts its pull by its own admission rule.
-func (i *InstanceSimulator) AddRemote(req *sim.Request, now int64) {
-	i.drv.AddRemote(req, now)
+// (sim.EngineDriver.AddRemote): the engine holds it and starts its pull by its own admission
+// rule, from the prefill instance at peer.
+func (i *InstanceSimulator) AddRemote(req *sim.Request, peer plan.Endpoint, now int64) {
+	i.drv.AddRemote(req, peer, now)
 }
 
-// setPullStarted installs the cluster's pricing of a pull the instance's engine starts.
-func (i *InstanceSimulator) setPullStarted(f func(req *sim.Request, pulledTokens, at int64)) {
+// setPullPriced installs the cluster's handling of a pull the instance's engine starts, which the
+// driver has already priced.
+func (i *InstanceSimulator) setPullPriced(f func(req *sim.Request, pulledTokens, blocks int64, demand kernel.TransferDemand, at int64)) {
 	if i.drv != nil {
-		i.drv.OnPullStarted = f
+		i.drv.OnPullPriced = f
 	}
 }
 

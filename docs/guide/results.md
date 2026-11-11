@@ -285,6 +285,12 @@ BLIS enforces, and `skipped_rule_findings` what those rules report when the pack
 report-only. `evidence_source` is `kernel` when the counts are the kernel's `Evidence()`. A run
 no kernel priced states an empty map.
 
+`substitutions`, present only when there is one, lists the execution modes the cost model prices in
+place of the one the deployment states: each entry names the engine `setting` (for example
+`language_model_only`), what the deployment `stated` (`unset` for an absent key), the value
+`priced`, and a `reason`. A point with a substitution is not priced in the mode it states, so a
+grade reads this list and not the stderr text.
+
 ### Scheduling Delay
 
 Scheduling delay isolates the WaitQ wait time from compute time. High scheduling delay + low preemptions = **queue saturation** (add instances). Low scheduling delay + high TTFT = **compute saturation** (reduce batch size or use chunked prefill).

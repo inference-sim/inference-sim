@@ -16,10 +16,19 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // EngineDriverConfig is the host side of an engine-driven instance.
 type EngineDriverConfig struct {
+	// Environment is the cost model the driver asks what each transfer the engine starts
+	// demands of the fabric (design 6.2, 6.3): for every engine.Transfer in a batch's
+	// TransfersStarted the driver calls env.DemandFor(Environment, engine.Plan(), t), so an
+	// offload-tier copy and a P/D pull are priced by one path, from the Move the engine states.
+	// Required by an engine that starts a transfer, which must also implement engine.Planned;
+	// an engine that starts none may leave it nil.
+	Environment env.Environment
 	// Horizon ends the run: no event after it runs.
 	Horizon int64
 	// PostDecodeFixedOverhead is the host's fixed per-request work at completion, in µs (the
@@ -151,12 +160,14 @@ type EngineDriver struct {
 
 	// P/D handoffs (engine_driver_handoff.go): remote are the decode sub-requests the engine
 	// holds before their pull lands, pulls the pulls in flight, and holds the KV the engine keeps
-	// for a peer's pull, all by request ID. OnPullStarted is the host's pricing of a pull the
-	// engine started, at the instant it started.
-	remote        map[string]*Request
-	pulls         map[string]engine.TransferID
-	holds         map[string]engine.Handoff
-	OnPullStarted func(req *Request, pulledTokens int64, at int64)
+	// for a peer's pull, all by request ID. OnPullPriced receives a pull the engine started,
+	// already priced: its demand on the fabric (the Environment's answer to the engine's Move),
+	// which the host shares among the pulls in flight and completes (LandRemote). The driver
+	// prices; the host only decides when the pull ends.
+	remote       map[string]*Request
+	pulls        map[string]engine.TransferID
+	holds        map[string]engine.Handoff
+	OnPullPriced func(req *Request, pulledTokens, blocks int64, demand kernel.TransferDemand, at int64)
 
 	// stalledSteps counts the steps since one last emitted a token or finished a request, and
 	// stallErr is the watchdog's error once the count passes the limit (SIM-7).

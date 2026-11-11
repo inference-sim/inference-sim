@@ -6,7 +6,11 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 	"github.com/inference-sim/blis-vllm/core/vllm"
+
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // decoder is blis-vllm's v0.32.0 engine as a NIXL kv_consumer under policy, at a fixed step price.
@@ -14,6 +18,7 @@ func decoder(t *testing.T, policy string) *vllm.Engine {
 	t.Helper()
 	src := "block_size: 16\nmax_num_seqs: 4\nmax_num_batched_tokens: 64\nmax_model_len: 512\nnum_gpu_blocks: 64\n" +
 		"use_v2_model_runner: false\nasync_scheduling: false\npipeline_parallel_size: 1\n" +
+		"placement: {hardware: H100, tensor: 1, ranks_per_node: 8, nodes: 1}\n" +
 		"kv_transfer: {connector: NixlConnector, kv_role: kv_consumer, kv_load_failure_policy: " + policy + "}\n"
 	var n yaml.Node
 	if err := yaml.Unmarshal([]byte(src), &n); err != nil {
@@ -40,11 +45,12 @@ func TestEngineDriver_AHandoffTheHostEndsMidPullHoldsNothing(t *testing.T) {
 	for _, policy := range []string{"fail", "recompute"} {
 		for _, how := range []string{"abort", "fail"} {
 			eng := decoder(t, policy)
-			d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40})
+			env := testutil.FixedPull(16, func(tokens int64, _, _ plan.Endpoint) int64 { return 100 })
+			d := NewEngineDriver(eng, EngineDriverConfig{Horizon: 1 << 40, Environment: env})
 			started := 0
-			d.OnPullStarted = func(*Request, int64, int64) { started++ }
+			d.OnPullPriced = func(*Request, int64, int64, kernel.TransferDemand, int64) { started++ }
 			req := &Request{ID: "a", InputTokens: tokens(80), OutputTokens: tokens(6), State: StateWaitingForRemoteKVs}
-			d.AddRemote(req, 0)
+			d.AddRemote(req, plan.Endpoint{Node: 1}, 0)
 			if started != 1 {
 				t.Fatalf("%s/%s: %d pulls started, want 1", policy, how, started)
 			}

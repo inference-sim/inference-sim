@@ -56,7 +56,25 @@ func setupKernelTestFixturesWithDefaults(t *testing.T) (catalogDir, defaultsPath
 func kernelScenariosDir(t *testing.T) string {
 	t.Helper()
 	scenarios, _, _ := kernelRepos(t)
-	return scenarios
+	// The scenarios are a copy in which the one the tests run lists the registry set a storage
+	// tier is priced from (cost-model-offload-tiers), as an offload run needs.
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(scenarios)); err != nil {
+		t.Fatal(err)
+	}
+	with, err := scenarioDirWithOffloadSet(scenarios, kernelTestScenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(with) }()
+	raw, err := os.ReadFile(filepath.Join(with, kernelTestScenario))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, kernelTestScenario), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func kernelRegistryDir(t *testing.T) string {

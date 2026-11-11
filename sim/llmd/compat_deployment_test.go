@@ -4,15 +4,41 @@ import (
 	"fmt"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 
 	"github.com/inference-sim/blis-vllm/compat/contract"
 	cengine "github.com/inference-sim/blis-vllm/compat/engine"
 	_ "github.com/inference-sim/blis-vllm/compat/kv"   // the KV store the engine is built with
 	_ "github.com/inference-sim/blis-vllm/compat/lora" // the adapter registry it is built with
 
+	"github.com/inference-sim/blis-vllm/core/placement"
+
 	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/sim/cluster"
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
+
+// pdTicks is the price of a KV handoff of tokens (the blocks' capacity): the setup cost plus a
+// per-token term most PD tests inject, so a larger handoff takes longer and none takes less than
+// a tick. The decode engine states the move and the driver's Environment prices it.
+func pdTicks(tokens int64) int64 { return 50 + tokens/50 }
+
+// instanceEndpoint places instance_N on node N of its pool.
+func instanceEndpoint(id cluster.InstanceID) plan.Endpoint {
+	var n int
+	if _, err := fmt.Sscanf(string(id), "instance_%d", &n); err != nil {
+		panic(fmt.Sprintf("instanceEndpoint: %q", id))
+	}
+	return plan.Endpoint{Node: n}
+}
+
+// setPDPrice makes every handoff of d take ticks(tokens) alone, and gives d the endpoints a PD
+// deployment needs.
+func setPDPrice(d *cluster.DeploymentConfig, ticks func(tokens int64) int64) {
+	d.InstanceEndpoint = instanceEndpoint
+	d.NewEngine = compatEngineFactoryWith(d.DPLockstepRanks, ticks)
+}
 
 // This package's tests build every instance's engine as `blis run` builds a 0.29/0.31 one: the
 // compatibility engine behind engine.Engine (blis-vllm compat/contract), driven by a
@@ -67,9 +93,16 @@ func newCluster(d cluster.DeploymentConfig, src cluster.RequestSource, onRequest
 // compat/contract.Engine per instance, or one DPGroup per run of lockstepRanks instances, whose
 // rank views the instances drive, rank 0's driver stepping the group.
 func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
+	return compatEngineFactoryWith(lockstepRanks, pdTicks)
+}
+
+// compatEngineFactoryWith is compatEngineFactory with the price each driver's Environment gives a
+// handoff.
+func compatEngineFactoryWith(lockstepRanks int, ticks func(tokens int64) int64) func(int, sim.InstanceConfig) (*sim.EngineDriver, error) {
 	driver := func(eng engine.Engine, cfg cengine.SimConfig, f sim.FrontendConfig) (*sim.EngineDriver, error) {
+		var pull env.Environment = testutil.FixedPull(cfg.BlockSizeTokens, func(tokens int64, _, _ plan.Endpoint) int64 { return ticks(tokens) })
 		dcfg := sim.EngineDriverConfig{Horizon: cfg.Horizon, ResumeGapFromLastToken: true,
-			ScrapeEngineMetrics: true, ApplyAtStepStart: true}
+			ScrapeEngineMetrics: true, ApplyAtStepStart: true, Environment: pull}
 		if m := cfg.LatencyModel; m != nil {
 			dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 			dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
@@ -88,6 +121,14 @@ func compatEngineFactory(lockstepRanks int) func(int, sim.InstanceConfig) (*sim.
 			eng, err := contract.New(fmt.Sprintf("instance_%d", index), cfg)
 			if err != nil {
 				return nil, err
+			}
+			// Instance N sits on node N of its pool, so the end of a pull the decode engine
+			// states for itself is its own node.
+			if cfg.GPU != "" {
+				if err := eng.SetPlacement(placement.Placement{Hardware: cfg.GPU, Fabric: "test-fabric", Tensor: max(cfg.TP, 1),
+					Data: max(cfg.DP, 1), Nodes: index + 1, Node: index}); err != nil {
+					return nil, err
+				}
 			}
 			return driver(eng, cfg, ic.Frontend)
 		}

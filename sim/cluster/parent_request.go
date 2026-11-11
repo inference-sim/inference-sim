@@ -31,7 +31,7 @@ type ParentRequest struct {
 	TransferStartTime    int64
 	TransferCompleteTime int64
 	// TransferAloneTicks is what the handoff would take alone on the fabric
-	// (DeploymentConfig.PDTransferTime). TransferCompleteTime - TransferStartTime exceeds it
+	// (the Environment's demand for the pull, alone). TransferCompleteTime - TransferStartTime exceeds it
 	// only by the time contended links added (INV-P2-2): the handoff's queueing delay.
 	TransferAloneTicks int64
 	DecodeEnqueueTime  int64

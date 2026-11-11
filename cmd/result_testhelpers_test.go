@@ -290,6 +290,24 @@ func simulated(t *testing.T, stdout string) string {
 	return string(data)
 }
 
+// simulatedFigures is simulated without the selected-entry report. A tier the scenario states is
+// priced from the registry's tier entries, and a CPU tier a flag states is not, so the two runs
+// read different entries and simulate the same thing: the figures, requests and breakdowns
+// compare, the list of entries read does not.
+func simulatedFigures(t *testing.T, stdout string) string {
+	t.Helper()
+	var view map[string]any
+	if err := json.Unmarshal([]byte(simulated(t, stdout)), &view); err != nil {
+		t.Fatal(err)
+	}
+	delete(view, "selected_entries")
+	data, err := json.MarshalIndent(view, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 // withoutRuntimeOrArtifactPaths is withoutRuntime with each artifact's ref cleared, for two
 // runs that write their files to different temporary directories: the digests and row counts,
 // what the files hold, still compare.

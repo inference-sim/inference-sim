@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -29,6 +30,11 @@ func writeOffloadScenario(t *testing.T, dir, name, marker, offload string) strin
 	default:
 		t.Fatalf("fixture %s has no %q", name, marker)
 	}
+	// A tier's rates are registry entries: the scenario that states a tier lists their set.
+	if !strings.Contains(body, "cost-model-offload-tiers") {
+		re := regexp.MustCompile(`(?m)^(coefficients: \[[^\]]*)\]`)
+		body = re.ReplaceAllString(body, "${1}, cost-model-offload-tiers]")
+	}
 	out := t.TempDir()
 	if err := os.WriteFile(filepath.Join(out, name), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -45,6 +51,7 @@ func writeOffloadScenario(t *testing.T, dir, name, marker, offload string) strin
 // 0-byte tier is refused by the schema. A scenario-offload run replays byte-identically.
 func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 	scenarios, _, _ := kernelRepos(t)
+	scenarios = scenarioWithOffloadSet(t, scenarios, "llama-3.1-70b-instruct-h200-fp8-vllm-tp4.yaml")
 	const tier = "offload:\n  connector: OffloadingConnector\n  spec: TieringOffloadingSpec\n  eviction_policy: lru\n  tiers:\n    - tier: cpu_dram\n      bytes: 1099511627776\n"
 	file := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 1099511627776\n")
 	other := writeOffloadYAML(t, "kv_offload:\n  cpu_bytes_to_use: 2199023255552\n")
@@ -73,7 +80,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if err != nil {
 				t.Fatalf("flag offload run: %v\n%s", err, lastLines(stderr, 3))
 			}
-			if simulated(t, scen) != simulated(t, flag) {
+			if simulatedFigures(t, scen) != simulatedFigures(t, flag) {
 				t.Errorf("the scenario's offload block and the equivalent --kv-offload-config differ\n--- scenario\n%s\n--- flag\n%s", scen, flag)
 			}
 			hs, hf := readFile(t, filepath.Join(tmp, "scen.yaml")), readFile(t, filepath.Join(tmp, "flag.yaml"))
@@ -81,7 +88,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 				t.Errorf("trace headers differ or carry no kv_offload:\n--- scenario\n%s\n--- flag\n%s", hs, hf)
 			}
 			both, stderr, err := run(withBlock, filepath.Join(tmp, "both"), "--kv-offload-config", file)
-			if err != nil || simulated(t, both) != simulated(t, scen) {
+			if err != nil || simulatedFigures(t, both) != simulatedFigures(t, scen) {
 				t.Errorf("an agreeing flag beside the scenario block must change nothing: err=%v\n%s", err, lastLines(stderr, 3))
 			}
 			// The scenario cannot state blocks_per_chunk (no blis-schemas field), so a flag beside
@@ -94,7 +101,7 @@ func TestRunCmd_ScenarioOffloadBlock(t *testing.T) {
 			if h := readFile(t, filepath.Join(tmp, "c4.yaml")); !strings.Contains(h, "blocks_per_chunk: 4") {
 				t.Errorf("the trace header does not record blocks_per_chunk 4:\n%s", h)
 			}
-			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || simulated(t, alone) != simulated(t, c4) {
+			if alone, _, err := run(tc.src, filepath.Join(tmp, "c4flag"), "--kv-offload-config", chunked); err != nil || simulatedFigures(t, alone) != simulatedFigures(t, c4) {
 				t.Errorf("blocks_per_chunk 4 from the flag alone differs from the flag beside the scenario block: err=%v", err)
 			}
 			if rep, stderr, err := runKernelCLI(t, append(append([]string{"replay", "--trace-header", filepath.Join(tmp, "c4.yaml"),

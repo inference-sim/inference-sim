@@ -80,7 +80,7 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 		d.NumInstances = numInstances
 		d.PrefillInstances = prefill
 		d.DecodeInstances = decode
-		d.PDTransferTime = testPDTransferTime
+		d.InstanceEndpoint = testInstanceEndpoint
 		return d
 	}()
 }
@@ -89,14 +89,14 @@ func newTestDisaggDeploymentConfig(numInstances, prefill, decode int) Deployment
 // formula of its own to fall back to, so a missing one must not surface mid-run (R1).
 func TestNewClusterSimulator_PDWithoutTransferPricer_Panics(t *testing.T) {
 	cfg := newTestDisaggDeploymentConfig(2, 1, 1)
-	cfg.PDTransferTime = nil
+	cfg.InstanceEndpoint = nil
 	defer func() {
 		r := recover()
 		if r == nil {
-			t.Fatal("expected a panic for a PD deployment with no PDTransferTime, got none")
+			t.Fatal("expected a panic for a PD deployment with no InstanceEndpoint, got none")
 		}
-		if msg, ok := r.(string); !ok || !strings.Contains(msg, "PDTransferTime") {
-			t.Errorf("panic must name the missing PDTransferTime; got %v", r)
+		if msg, ok := r.(string); !ok || !strings.Contains(msg, "InstanceEndpoint") {
+			t.Errorf("panic must name the missing InstanceEndpoint; got %v", r)
 		}
 	}()
 	newTestCluster(cfg, NewSliceRequestSource(nil), nil)

@@ -35,9 +35,10 @@
 # KV transfer pricing
 # ============================================================================
 #
-#   There are no transfer flags. blis-latency-kernel prices each KV handoff
-#   (PDTransferTime) over the scenario's fabric between the two instances'
-#   placements; the scenario's pd_transfer block names the connector.
+#   There are no transfer flags. The decode engine states each KV pull as a move
+#   (which node and rack it reads from, which it lands on, how many tokens); the
+#   cost model prices it over the scenario's fabric; the scenario's pd_transfer
+#   block names the connector.
 #
 # ============================================================================
 # P/D deciders (llm-d plugins)

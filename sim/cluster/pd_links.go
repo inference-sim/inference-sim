@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
 // LinkArbiter shares fabric links among concurrent transfers (P/D KV handoffs, #1922). It is
@@ -50,6 +52,16 @@ type Flow struct {
 	Bytes   int64
 	FloorNs int64
 	Links   []Link
+}
+
+// FlowOf is a kernel.TransferDemand as the arbiter takes it: the payload, the floor in
+// nanoseconds, and the links with their full rates.
+func FlowOf(d kernel.TransferDemand) Flow {
+	f := Flow{Bytes: d.Bytes, FloorNs: d.Floor.Nanoseconds()}
+	for _, l := range d.Links {
+		f.Links = append(f.Links, Link{ID: string(l.Link), BytesPerSecond: l.BytesPerSecond})
+	}
+	return f
 }
 
 // FlowID names a transfer within one arbiter.

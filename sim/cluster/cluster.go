@@ -260,26 +260,25 @@ func BuildClusterSimulator(config DeploymentConfig, requestSource RequestSource,
 		}
 	}
 
-	// A KV handoff is priced by the latency backend (DeploymentConfig.PDTransferTime); the
-	// simulator owns only when it happens and has no transfer formula of its own. Refuse a
-	// PD-enabled deployment without a pricer here, so KVTransferStartedEvent never meets one
-	// at runtime (R1). Covers pure-shared clusters too (issue #1276): a shared-role pod can
-	// perform prefill and therefore source a KV transfer.
+	// A KV handoff is priced by the decode driver's Environment from the move its engine states
+	// (engine.Transfer.Move); the simulator owns only when it happens and has no transfer
+	// formula of its own. But the decode engine learns where it pulls from only through its
+	// request (engine.Request.Peer), so refuse a PD-enabled deployment that cannot say where a
+	// prefill instance sits here, so KVTransferStartedEvent never meets that at runtime (R1).
+	// Covers pure-shared clusters too (issue #1276): a shared-role pod can perform prefill and
+	// therefore source a KV transfer.
 	if config.PrefillInstances > 0 || config.SharedInstances > 0 {
-		if config.PDTransferTime == nil {
-			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.PDTransferTime: " +
-				"the latency backend prices the KV handoff, and the simulator has no formula of its own")
+		if config.InstanceEndpoint == nil {
+			panic("ClusterSimulator: PD disaggregation requires DeploymentConfig.InstanceEndpoint: " +
+				"a decode engine pulls from the prefill instance's node and rack, which only the " +
+				"deployment knows, and the simulator has no placement of its own")
 		}
 	}
-	// With contention on, concurrent handoffs share the links they cross (INV-P2-2, #1922), so
-	// each needs the demand behind its price; the simulator has no link model of its own.
+	// With contention on, concurrent handoffs share the links their demands cross (INV-P2-2,
+	// #1922); the links and their rates are the Environment's, and the simulator has none of its own.
 	if config.PDTransferContention {
 		if config.PrefillInstances == 0 && config.SharedInstances == 0 {
 			panic("ClusterSimulator: PDTransferContention is set but the deployment is not disaggregated")
-		}
-		if config.PDTransferDemand == nil {
-			panic("ClusterSimulator: PDTransferContention requires DeploymentConfig.PDTransferDemand: " +
-				"the latency backend states each handoff's links and rates, and the simulator has none of its own")
 		}
 	}
 
@@ -603,7 +602,7 @@ func (cs *ClusterSimulator) wireInstance(inst *InstanceSimulator) {
 		return nil // don't inject locally — route through cluster pipeline
 	}
 	inst.SetCallbacks(onFirstToken, onRequestDone)
-	inst.setPullStarted(cs.startPull)
+	inst.setPullPriced(cs.startPull)
 	inst.onTransition = func(inst *InstanceSimulator) {
 		if cs.gateway != nil {
 			cs.gateway.OnInstanceChange(inst)
