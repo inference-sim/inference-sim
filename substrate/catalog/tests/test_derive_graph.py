@@ -6645,3 +6645,135 @@ def test_kimi_k3_resident_parameters_equal_the_header_total():
         have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
         assert have == n, role
     assert sum(got.values()) + emb + sum(K3_FAMILY_UNPRICED.values()) == 2_779_484_478_208
+
+
+# --- Kimi-K3.1: the same decoder with a DSA indexer on its latent layers (moonshotai/Kimi-K3.1-Pro) ---
+
+KIMI_K31 = MODELS / "kimi-k3.1"
+K31_DSA_LAYERS = list(range(4, 93, 4)) + [93]
+
+
+def _k31_raw(**dsa) -> dict:
+    """Kimi-K3's committed configuration with the pinned K3.1 revision's architecture and
+    dsa_config (the rest of its text_config is K3's, bar two ignore patterns that name modules
+    the graph prices at BF16 either way)."""
+    raw = config_of(KIMI_K3)
+    raw["architectures"] = ["KimiK31ForConditionalGeneration"]
+    raw["model_type"] = "kimi_k31"
+    raw["text_config"]["dsa_config"] = {
+        "dsa_layers": K31_DSA_LAYERS, "index_topk": 2048, "index_head_dim": 128,
+        "index_num_heads": 32, "index_rope_dim": 0, "index_k_norm_type": "layernorm",
+        "index_topk_freq": 1, "index_skip_topk_offset": 1, **dsa}
+    return raw
+
+
+def test_kimi_k31_graph_is_what_its_configuration_derives_to(tmp_path):
+    derived = _derive_raw(_k31_raw(), tmp_path, "kimi-k3.1")
+    assert _strip_identity(derived) == _strip_identity(graph_of(KIMI_K31))
+
+
+def test_kimi_k31_runs_dsa_on_the_declared_latent_layers():
+    """The 24 latent layers (4, 8, ..., 92, 93) are sparse: a selection of index_topk 2048 over
+    a 32-head, 128-wide indexer whose query reads the latent rank and whose key and weights come
+    from one unquantized projection of the hidden state. The 69 KDA layers are unchanged."""
+    g = graph_of(KIMI_K31)
+    seq = layer_sequence(g["stack"])
+    assert [i + 1 for i, k in enumerate(seq) if k.startswith("dsa")] == K31_DSA_LAYERS
+    assert collections.Counter(k.split("_")[0] for k in seq) == {"kda": 69, "dsa": 24}
+    kind = {k["id"]: k for k in g["layer_kinds"]}["dsa_moe"]
+    attn = _node(kind, "block_index_scores")
+    assert (attn["n_q"], attn["n_kv"], attn["d_h"], attn["holds_engine_kv"]) == (32, 1, 128, False)
+    main = [n for n in kind["nodes"] if n["op"] == "Attention" and n["holds_engine_kv"]][0]
+    assert (main["kind"], main["index_topk"], main["d_h"], main["n_q"]) == ("sparse_mla", 2048, 576, 96)
+    wq = _node(kind, "index_wq_b")
+    assert (wq["n"], wq["k"]) == (32 * 128, 1536)
+    # The key and weights projection ride in the A-projection's launch (pack_projections), so
+    # there is no node of their own: [q_a | kv_a | wk | weights_proj] is one GEMM.
+    assert not [n for n in kind["nodes"] if n.get("role") == "index_wk_weights_proj"]
+    a = _node(kind, "qkv_a_wk_weights_proj")
+    assert (a["n"], a["k"], a["weight_dtype"]) == (1536 + 576 + 128 + 32, 7168, "bf16")
+    # The output gate is its own projection here, not rows of the fused A-projection.
+    assert _node(kind, "mla_g_proj")["n"] == 96 * 128
+    assert not [n for n in kind["nodes"] if n.get("role") == "qkv_a_proj"]
+    # The key norm is folded into the cache insert, so only the latent norm's traffic holds it.
+    assert _node(kind, "qkv_a_layernorm")["bytes_per_token"] == 2 * (1536 + 512 + 128) * 2
+    assert not [n for n in kind["nodes"] if n.get("role") == "index_k_norm"]
+    assert "dsa_moe" not in {k["id"] for k in graph_of(KIMI_K3)["layer_kinds"]}
+
+
+def test_kimi_k31_resident_parameters_equal_the_header_total():
+    """2,779,663,004,416 weights in the 497,340-tensor header's language model: the Kimi-K3
+    total, and the indexer (wq_b, wk, weights_proj) with its key norm's 6,144 beside it."""
+    got, emb = _k3_graph_total(graph_of(KIMI_K31))
+    want = dict(K3_FAMILY_COMMON,
+                qkv_a_wk_weights_proj=24 * (1536 + 576 + 128 + 32) * 7168,
+                mla_g_proj=24 * 12288 * 7168,
+                q_b_proj=24 * 18432 * 1536, kv_b_proj=24 * 24576 * 512,
+                o_proj=24 * 7168 * 12288,
+                index_wq_b=24 * 4096 * 1536)
+    for role, n in want.items():
+        have = got[role] if role != "mlp" else got["mlp_gate_up"] + got["mlp_down"]
+        assert have == n, role
+    unpriced = dict(K3_FAMILY_UNPRICED, index_k_norm=24 * 2 * 128)
+    assert sum(got.values()) + emb + sum(unpriced.values()) == 2_779_663_004_416
+    widths = _nodes_by_role(graph_of(KIMI_K31))
+    assert widths["experts"] == {"mxfp4"} and widths["shared_experts"] == {"bf16"}
+
+
+def test_kimi_k31_states_the_projections_vllm_builds_replicated():
+    """fused_qkv_a_proj and wkv_index are MergedColumnParallelLinear with disable_tp=True and
+    wq_index a ReplicatedLinear (vllm/models/kimi_k3/nvidia/dsa.py:150-166, 469-475 at
+    v0.34.0rc0): every rank holds and runs each whole. The cost model does not infer that (it
+    shards a GEMM whose k is the hidden size by output width and any other by reduction), so the
+    graph states it; the column- and row-parallel projections state nothing."""
+    kind = {k["id"]: k for k in graph_of(KIMI_K31)["layer_kinds"]}["dsa_moe"]
+    tp = {n["role"]: n.get("tp") for n in kind["nodes"] if n["op"] == "GEMM"}
+    assert tp["qkv_a_wk_weights_proj"] == "replicated" and tp["index_wq_b"] == "replicated"
+    for role in ("mla_g_proj", "q_b_proj", "kv_b_proj", "o_proj"):
+        assert tp[role] is None, role
+
+
+def test_kimi_k31_packs_the_a_projection_with_the_indexers_key_projections():
+    """pack_projections fuses [q_a | kv_a | wk | weights_proj] into one weight and runs one GEMM;
+    the gate is a launch of its own. The graph has one A node of the summed width, the gate
+    beside it, and the query group (column-parallel q_b with replicated wq_index, which one node
+    cannot state) as two nodes: five GEMMs in front of the attention, not the six the unpacked
+    forward makes."""
+    kind = {k["id"]: k for k in graph_of(KIMI_K31)["layer_kinds"]}["dsa_moe"]
+    front = [n["role"] for n in kind["nodes"] if n["op"] == "GEMM"][:6]
+    assert front == ["qkv_a_wk_weights_proj", "mla_g_proj", "q_b_proj", "index_wq_b",
+                     "kv_b_proj", "o_proj"]
+
+
+@pytest.mark.parametrize("served", ["fp8", "mxfp4"])
+def test_kimi_k31_refuses_projections_the_packed_forward_does_not_cover(tmp_path, monkeypatch, served):
+    """The packed forward needs every packed linear unquantized (pack_projections checks
+    UnquantizedLinearMethod on all four); a checkpoint whose served width reaches any of them
+    runs the wrapper forward with separate launches, which the handler does not price. No
+    committed config reaches this (the K3 handler refuses other quantization blocks and
+    Mxfp4Config leaves every linear unquantized), so the global width is changed under it."""
+    d = deriver()
+    monkeypatch.setattr(d, "weight_dtype", lambda *a, **k: served)
+    with pytest.raises(d.DeriveError, match="not served unquantized"):
+        _derive_raw(_k31_raw(), tmp_path, "kimi-k3.1")
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"index_topk_freq": 2}, "index_topk_freq"),
+    ({"index_rope_dim": 64}, "index_rope_dim"),
+    ({"index_k_norm_type": "rmsnorm"}, "LayerNorm"),
+    ({"dsa_layers": [1, 4]}, "not latent-attention layers"),
+    ({"dsa_layers": []}, "not latent-attention layers"),
+])
+def test_kimi_k31_refuses_a_dsa_layout_it_does_not_price(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_raw(_k31_raw(**edit), tmp_path, "kimi-k3.1")
+
+
+def test_a_dsa_config_on_an_architecture_without_the_path_is_refused(tmp_path):
+    """vLLM v0.32.0's Kimi-K3 has no DSA attention, so a dsa_config there would be ignored and
+    its layers priced as dense latent attention."""
+    raw = _k31_raw()
+    raw["architectures"] = ["KimiK3ForConditionalGeneration"]
+    with pytest.raises(deriver().DeriveError, match="no vLLM path"):
+        _derive_raw(raw, tmp_path, "kimi-k3")
