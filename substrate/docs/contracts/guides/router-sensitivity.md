@@ -128,7 +128,7 @@ Each table is one comparison: the ratio between `round-robin` and one alternativ
 shapes, at each concurrency. The catalog entries state the largest over the four concurrencies, per workload kind, for the
 four figures shown; the sweep also records `e2e_p50_ms` and `request_throughput`.
 
-**Against the random picker** (the other policy that ignores load):
+**Round-robin against the random picker** (the other policy that ignores load; the same numbers bound the random entry from the other side):
 
 | Figure | Workload | 16 | 64 | 256 | 1024 |
 |---|---|---:|---:|---:|---:|
@@ -262,6 +262,22 @@ One result of the same check is **unexplained and not about round-robin**. With 
 endpoints and 4 clients, two of 500 requests did not complete in seeds 42 and 43 (`timed_out`, requests 55 and 56 of session users 3 and 2, round 14) and the rate was 12.7
 requests per second against 16.8 for round-robin. It is in `alternation.csv`; `runs.csv` has no run with a request that did not complete. To reproduce:
 `blis run --scenarios <work>/scn --scenario s_2P3D_least-active-requests.yaml --num-instances 5 --prefill-instances 2 --decode-instances 3 --concurrency 4 --num-requests 500 --seed 42 --prompt-tokens 8192 --prompt-tokens-min 8192 --prompt-tokens-max 8192 --prompt-tokens-stdev 0 --output-tokens 16 --output-tokens-min 16 --output-tokens-max 16 --output-tokens-stdev 0`.
+
+## How a point uses the bound
+
+There is no numeric cutoff. A point whose router resolves to an entry with outcome `mapped` and that has a bound
+row whose regime matches the point's (the metric; the workload kind from the run's prompt and output lengths; a
+concurrency within the range; the same model and hardware; a pool shape the row lists) is G2 `router_differs`,
+whatever the ratio. A point whose regime matches no row of the entry's bound stays G5 `router_unsupported`, with the
+reason "no bound for this regime". The dashboard prints the ratio with the figure and flags `bound_wide` when any
+relevant ratio exceeds 1.25. The table and the point record carry the numbers; the rule is applied by the scoring
+harness, not by this repository.
+
+Which policy each Dynamo mode maps to: `round-robin` to `round-robin` (a rotation with a counter), `random` to
+`random-picker` (llm-d's uniform draw with no counter, `picker/random/picker.go`, a policy BLIS hosts and the sweep
+ran), `kv` to none. For the random entry the first group of ratios is the sensitivity between the random picker and
+round-robin; for the round-robin entry it is the same pair seen from the other side, so the two are equal, and each
+entry's second group is against the policies that read load.
 
 ## Cost
 

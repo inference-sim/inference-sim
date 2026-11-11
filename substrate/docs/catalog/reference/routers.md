@@ -21,6 +21,7 @@ A policy is a composition of the router's scheduling plugins that it runs withou
 | Policy | Meaning |
 |---|---|
 | `round-robin` | every endpoint is treated alike |
+| `random-picker` | an endpoint is picked uniformly at random |
 | `least-active-requests` | the endpoint with the fewest in-flight requests is preferred |
 | `default` | the router's built-in configuration when none is given |
 | `none` | no policy is close enough |

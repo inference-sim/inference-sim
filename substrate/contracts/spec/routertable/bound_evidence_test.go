@@ -332,3 +332,30 @@ func TestTheKVEntryQuotesTheSpreadTheEvidenceGives(t *testing.T) {
 		t.Errorf("dynamo-kv must be a none entry quoting the spread: %+v", e)
 	}
 }
+
+// Each Dynamo mode maps to the nearest policy: round-robin to the rotation, random to the random
+// picker, and kv to none. The random picker is a policy of the closed list with its defining file, and
+// the random entry cites that file, so the table does not map a memoryless draw to a rotation.
+func TestTheDynamoModesMapToTheirNearestPolicy(t *testing.T) {
+	entries := loadCommitted(t)
+	for name, want := range map[string]Policy{"dynamo-round-robin": PolicyRoundRobin, "dynamo-random": PolicyRandomPicker, "dynamo-kv": PolicyNone} {
+		e := entries[name]
+		if e == nil || e.Policy != want {
+			t.Errorf("%s maps to %v, want %s", name, e, want)
+		}
+	}
+	cited := false
+	for _, c := range entries["dynamo-random"].Evidence {
+		cited = cited || (c.Side == SideLLMD && c.Path == "pkg/epp/framework/plugins/scheduling/picker/random/picker.go")
+	}
+	if !cited {
+		t.Error("dynamo-random does not cite the random picker's file")
+	}
+	// The bound of the random entry is the sensitivity between the random picker and round-robin
+	// first: its first group of ratios is against round-robin, and none is against itself.
+	for i, r := range entries["dynamo-random"].Bound.Ratios[:12] {
+		if len(r.Against) != 1 || r.Against[0] != "round-robin" {
+			t.Errorf("ratios[%d] is against %v, want round-robin", i, r.Against)
+		}
+	}
+}

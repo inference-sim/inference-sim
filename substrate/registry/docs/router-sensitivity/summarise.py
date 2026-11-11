@@ -60,11 +60,13 @@ def check(cells):
 
 
 # The rows a catalog entry carries: four figures, each for the three workload kinds, against the
-# other load-blind policy and against the three policies that read load. One regime for every
+# other load-blind policy (round-robin and random-picker stand for each other) and against the three
+# policies that read load. One regime for every
 # row: all the concurrencies swept and all four pool shapes.
 BOUND_METRICS = ["ttft_p50_ms", "ttft_p99_ms", "tpot_p50_ms", "output_tok_s"]
 BOUND_WORKLOADS = ["balanced", "prefill-bound", "decode-bound"]
-BOUND_GROUPS = [["random-picker"], ["default", "least-active-requests", "queue-scorer"]]
+LOAD_READING = ["default", "least-active-requests", "queue-scorer"]
+OTHER_LOAD_BLIND = {"round-robin": "random-picker", "random-picker": "round-robin"}
 MODEL, HARDWARE = "minimax-m2.5", "gb200-nvl72"
 
 
@@ -72,7 +74,7 @@ def emit(cells, policy):
     concs = sorted({k[2] for k in cells})
     shapes = sorted({k[0] for k in cells})
     print("  ratios:")
-    for group in BOUND_GROUPS:
+    for group in ([OTHER_LOAD_BLIND[policy]], LOAD_READING):
         for w in BOUND_WORKLOADS:
             for m in BOUND_METRICS:
                 best = max(ratio(cells, policy, o, m, w, concs[0], concs[-1])[0] for o in group)

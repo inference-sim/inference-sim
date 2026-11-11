@@ -123,6 +123,8 @@ type Policy string
 const (
 	// PolicyRoundRobin is the policy that treats every endpoint alike.
 	PolicyRoundRobin Policy = "round-robin"
+	// PolicyRandomPicker is the policy that picks uniformly at random among the candidates.
+	PolicyRandomPicker Policy = "random-picker"
 	// PolicyLeastActiveRequests is the policy that prefers the endpoint with the fewest
 	// in-flight requests.
 	PolicyLeastActiveRequests Policy = "least-active-requests"
@@ -137,7 +139,7 @@ const (
 // Policies lists the policies llm-d's router offers, in the order they are documented. It does
 // not include PolicyNone, which is the absence of one.
 func Policies() []Policy {
-	return []Policy{PolicyRoundRobin, PolicyLeastActiveRequests, PolicyDefault}
+	return []Policy{PolicyRoundRobin, PolicyRandomPicker, PolicyLeastActiveRequests, PolicyDefault}
 }
 
 // PolicyNames lists the names of the policies llm-d's router offers.
