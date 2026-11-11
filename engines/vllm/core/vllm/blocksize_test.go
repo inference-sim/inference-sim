@@ -78,13 +78,6 @@ func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
 	}
 }
 
-func firstKey(m map[string]int) string {
-	for k := range m {
-		return k
-	}
-	return ""
-}
-
 // One case per branch of the resolver: a resolved combination returns the oracle's size with a
 // source that cites vLLM; everything else is refused naming issue 68.
 func TestResolveBlockSize(t *testing.T) {
