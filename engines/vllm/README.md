@@ -121,6 +121,19 @@ through `inference-sim fields`, and hold no list of their own (COV-3, CFG-3).
     every model.
   The two CUDA-graph switches `cudagraph_decoder_replay` (decoder-replay graphs,
   blis-vllm#80) and `cudagraph_specialize_lora` (blis-vllm#78) are `not_modelled` with `none`.
+- **Value classes** (VLM-3, blis-vllm#102) are in `fields/value_classes.json`, generated from the same
+  pinned source by `fields/gen_classes.py` for every `modelled` and `proven_inert` field: for a
+  boolean or enumerated field the values (a value some comparison singles out is a class, the
+  rest are one class); for a numeric field the domain (the field's own `ge`/`gt`/`le`/`lt`) cut at
+  every number the source compares it with. Each class cites the file and line of the comparisons
+  that form it and lists the traces whose scenario states a value in it (`covered_by`; a key a scenario leaves out runs the runner's default and is not counted). The
+  generator finds a comparison where the field, or a name the same function assigned from it, meets a
+  literal; it does not follow a value passed to another function, which `fields/classes_extra.json`
+  covers one site at a time with a reason, and the file's `limits` says so. `fields/test_classes.py`
+  fails when a modelled field has no classes, a class is backed by no comparison, or a cited line no
+  longer holds it; `TestEveryModelledFieldRecordsItsValueClasses` fails the same way without the
+  source. The substrate's field-list schema has no slot for classes yet, so they are a separate file;
+  they move into `fields.json` when the slot exists.
 - **`inert_unproven` is a transition status**, allowed only until M2 (release plan §3.3). VLM-3's
   other checks are M2 work and are not here yet: the inertness proofs that turn each
   `inert_unproven` field into `proven_inert` or reclassify it, the perturbation test over every

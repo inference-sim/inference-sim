@@ -241,6 +241,29 @@ class GenFieldsTest(unittest.TestCase):
         self.assertIn("modelled", diff)
         self.assertIn("regenerate", err)
 
+    def test_value_classes_are_written_after_the_evidence_for_a_modelled_field_and_for_no_other(self):
+        self.status["fields"]["config:max_num_seqs"] = {
+            "status": "modelled", "evidence": {"traces": ["a.json"]}, "estimation": {"rule": "none"}}
+        self.write_status()
+        vc = {"max_num_seqs": {"type": "numeric", "covered_classes": [1],
+                               "thresholds": [{"closed": "above", "value": 8}]}}
+        path = os.path.join(self.src, "vc.json")
+        with open(path, "w") as f:
+            json.dump({"fields": {"max_num_seqs": {"value_classes": vc["max_num_seqs"]}}}, f)
+        code, out, _ = self.run_main(self.src, self.status_path, "--value-classes", path)
+        self.assertEqual(code, 0)
+        doc = json.loads(out)
+        by = {f["name"]: f for f in doc["fields"]}
+        self.assertEqual(list(by["max_num_seqs"]), ["name", "source", "status", "evidence", "value_classes", "estimation"])
+        self.assertEqual(list(by["max_num_seqs"]["value_classes"]), ["type", "thresholds", "covered_classes"])
+        self.assertEqual(list(by["max_num_seqs"]["value_classes"]["thresholds"][0]), ["value", "closed"])
+        self.assertNotIn("value_classes", by["block_size"])
+        # A modelled field with no classes is refused.
+        with open(path, "w") as f:
+            json.dump({"fields": {}}, f)
+        code, _, _ = self.run_main(self.src, self.status_path, "--value-classes", path)
+        self.assertIn("max_num_seqs", str(code))
+
     def test_a_field_vllm_reads_without_a_status_is_refused(self):
         del self.status["fields"]["config:block_size"]
         self.write_status()

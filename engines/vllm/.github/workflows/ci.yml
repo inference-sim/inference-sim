@@ -294,6 +294,12 @@ jobs:
         run: python3 -I fields/gen_fields.py vllm-source fields/status.json --check fields.json
       - name: the field-list generator's tests
         run: python3 -I fields/test_gen_fields.py
+      - name: fields/value_classes.json is current for the pinned release
+        run: python3 -I fields/gen_classes.py vllm-source fields.json --check fields/value_classes.json
+      - name: the value-class generator's tests, and every class cites a comparison the pinned source holds
+        env:
+          VLLM_SOURCE: ${{ github.workspace }}/vllm-source
+        run: python3 -I fields/test_classes.py
       - name: the manifest is current for the pinned release
         run: |
           set -o pipefail

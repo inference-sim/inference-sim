@@ -1,0 +1,46 @@
+{
+ "scheduling_policy": {
+  "sites": [
+   {
+    "at": "vllm/v1/core/sched/request_queue.py:202",
+    "expr": "policy == SchedulingPolicy.PRIORITY",
+    "op": "Eq",
+    "values": [
+     "priority"
+    ],
+    "why": "Scheduler converts the field with SchedulingPolicy(self.scheduler_config.policy) and passes it to create_request_queue as `policy`"
+   },
+   {
+    "at": "vllm/v1/core/sched/request_queue.py:204",
+    "expr": "policy == SchedulingPolicy.FCFS",
+    "op": "Eq",
+    "values": [
+     "fcfs"
+    ],
+    "why": "the same call"
+   }
+  ]
+ },
+ "speculative_config.enable_adaptive_verification": {
+  "stated": [
+   {
+    "trace": "vllmengine/testdata/muse-gb200-nvl-tep8-dspark-adaptive.yaml",
+    "values": [
+     true
+    ],
+    "why": "the scenario's speculative block states enable_adaptive_verification: true"
+   }
+  ]
+ },
+ "speculative_config.model": {
+  "stated": [
+   {
+    "trace": "testdata/scenarios/muse-h100-pp2tp8-dspark.yaml",
+    "values": [
+     "muse-spark-open-dspark"
+    ],
+    "why": "the scenario's speculative block names draft_model: muse-spark-open-dspark"
+   }
+  ]
+ }
+}

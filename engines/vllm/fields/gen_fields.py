@@ -10,6 +10,8 @@ entry, or a status entry names a field vLLM does not have, so the list is comple
 Usage:
     python3 -I fields/gen_fields.py <vllm-source> fields/status.json > fields.json
     python3 -I fields/gen_fields.py <vllm-source> fields/status.json --check fields.json
+    python3 -I fields/gen_fields.py <vllm-source> fields/status.json --value-classes fields/value_classes.json
+                                    (also write each modelled and proven-inert field's value_classes, VLM-3)
     python3 -I fields/gen_fields.py <vllm-source> --names           (the derived names, one per line)
     python3 -I fields/gen_fields.py <vllm-source> --env-reads       (each variable read, and where)
 
@@ -551,7 +553,7 @@ def key(source, name):
     return source + ":" + name
 
 
-def build(src, status):
+def build(src, status, value_classes=None):
     derived = [("config", n) for n in config_names(src)] + [("env", n) for n in env_names(src, status.get("extra_env", []), status.get("dynamic_reads", {}))]
     entries = status["fields"]
     missing = [key(s, n) for s, n in derived if key(s, n) not in entries]
@@ -566,13 +568,18 @@ def build(src, status):
     fields = []
     for source, name in sorted(derived, key=lambda x: (x[1], x[0])):
         e = entries[key(source, name)]
-        fields.append({
+        f = {
             "name": name,
             "source": source,
             "status": e["status"],
             "evidence": e["evidence"],
             "estimation": e["estimation"],
-        })
+        }
+        if value_classes is not None and e["status"] in ("modelled", "proven_inert"):
+            if name not in value_classes:
+                raise SystemExit("gen_fields: %s is %s and fields/value_classes.json has no classes for it" % (name, e["status"]))
+            f["value_classes"] = value_classes[name]
+        fields.append(f)
     return {"kind": "FieldList", "engine": {"kind": ENGINE_KIND, "version": status["engine_version"]}, "fields": fields}
 
 
@@ -581,7 +588,9 @@ def build(src, status):
 ORDER = {
     "list": ("kind", "engine", "fields"),
     "engine": ("kind", "version"),
-    "field": ("name", "source", "status", "evidence", "estimation"),
+    "field": ("name", "source", "status", "evidence", "value_classes", "estimation"),
+    "value_classes": ("type", "values", "covered", "thresholds", "covered_classes"),
+    "threshold": ("value", "closed"),
     "evidence": ("traces", "proof", "issue", "note"),
     "estimation": ("rule", "setting", "reason"),
 }
@@ -598,6 +607,11 @@ def canonical(doc):
     for f in doc["fields"]:
         g = ordered(f, "field")
         g["evidence"] = ordered(f["evidence"], "evidence")
+        if "value_classes" in f:
+            vc = ordered(f["value_classes"], "value_classes")
+            if "thresholds" in vc:
+                vc["thresholds"] = [ordered(t, "threshold") for t in vc["thresholds"]]
+            g["value_classes"] = vc
         est = ordered(f["estimation"], "estimation")
         if "setting" in est:
             est["setting"] = json.loads(json.dumps(est["setting"], sort_keys=True))
@@ -619,6 +633,8 @@ def main(argv):
     ap.add_argument("vllm_source")
     ap.add_argument("status", nargs="?")
     ap.add_argument("--check", metavar="FIELDS_JSON")
+    ap.add_argument("--value-classes", metavar="VALUE_CLASSES_JSON",
+                    help="write each modelled and proven-inert field's value_classes from fields/gen_classes.py's file")
     ap.add_argument("--names", action="store_true", help="print the derived names and exit")
     ap.add_argument("--env-reads", action="store_true", help="print every variable read (READ RULE) and where, then exit")
     a = ap.parse_args(argv)
@@ -639,7 +655,11 @@ def main(argv):
         ap.error("status.json is required")
     with open(a.status, encoding="utf-8") as f:
         status = json.load(f)
-    out = render(build(a.vllm_source, status))
+    classes = None
+    if a.value_classes:
+        with open(a.value_classes, encoding="utf-8") as f:
+            classes = {n: r["value_classes"] for n, r in json.load(f)["fields"].items()}
+    out = render(build(a.vllm_source, status, classes))
     if a.check:
         with open(a.check, encoding="utf-8") as f:
             have = f.read()
