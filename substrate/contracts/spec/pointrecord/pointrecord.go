@@ -16,6 +16,7 @@ package pointrecord
 
 import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 )
 
 // Kind is the value of Record.Kind.
@@ -177,6 +178,14 @@ type Substitution struct {
 	// lists, so the point says which build it relied on, and Data.CheckRouterSubstitutions
 	// refuses one the entry does not cover.
 	Revision string `yaml:"revision,omitempty"`
+	// Difference is the router table entry's statements of how the run's router and Policy
+	// differ, copied from the entry as it stood when the point was scored, so a later edit to
+	// the entry does not rewrite the point. Only with router_differs, where it is required.
+	Difference []routertable.Statement `yaml:"difference,omitempty"`
+	// Bound is the entry's measured bound on how far the choice of policy moves each figure,
+	// copied the same way. Only with router_differs, where it is required. A reader decides from
+	// it whether the substitution is small enough for a figure: the grade is G2 either way.
+	Bound *routertable.Bound `yaml:"bound,omitempty"`
 	// ProfileFamily says which kind of substrate profile a profile_value is: acceptance or
 	// routing. The key fields a profile can differ in are the family's own. Only with
 	// profile_value, where it is required.

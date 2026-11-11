@@ -657,6 +657,16 @@ mode: round-robin
 revisions: [aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]
 policy: round-robin
 reason: both rotate over the workers
+difference:
+  - {aspect: counter, text: x, evidence: [0, 2]}
+bound:
+  evidence: {file: registry/docs/x.csv, sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc, producer: acme/sim, commit: dddddddddddddddddddddddddddddddddddddddd, command: run}
+  ratios:
+    - metric: ttft_p50_ms
+      against: [random-picker]
+      regime: {workload: balanced, concurrency_min: 16, concurrency_max: 64, model: m, hardware: h, shapes: [1P1D]}
+      max_ratio: 1.1
+  not_measured: [x]
 evidence:
   - {side: router, field: mode, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "1-2", claim: x}
   - {side: router, field: policy, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "3", claim: x}
@@ -670,10 +680,15 @@ func TestRouterEntriesAreChecked(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "acme-round-robin") {
 		t.Fatalf("a valid entry: code %d\n%s\n%s", code, out, errb)
 	}
-	noEvidence := routerEntry[:strings.Index(routerEntry, "evidence:")] + "evidence: []\n"
+	noEvidence := routerEntry[:strings.LastIndex(routerEntry, "\nevidence:\n")+1] + "evidence: []\n"
 	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": noEvidence}))
 	if code != 1 || !strings.Contains(errb, "added only with evidence") {
 		t.Errorf("no evidence: code %d, want 1 naming the rule:\n%s", code, errb)
+	}
+	noBound := strings.Replace(routerEntry, "bound:", "unbound:", 1)
+	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": noBound}))
+	if code != 1 || !strings.Contains(errb, "unbound") {
+		t.Errorf("a key the entry does not have: code %d\n%s", code, errb)
 	}
 	badPolicy := strings.Replace(routerEntry, "policy: round-robin\nreason", "policy: kv-aware\nreason", 1)
 	code, _, errb = exercise(t, catalogWith(t, map[string]string{"routers/acme-round-robin.yaml": badPolicy}))

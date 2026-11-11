@@ -9,6 +9,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
+	"github.com/inference-sim/blis-substrate/contracts/spec/routertable"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 )
 
@@ -167,13 +168,29 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 	}
 }
 
+// routerDiffers is a router_differs substitution every rule accepts: the entry's differences and
+// bound are copied onto the point, as the scoring harness copies them.
+func routerDiffers() Substitution {
+	return Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin",
+		Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40),
+		Difference: []routertable.Statement{
+			{Aspect: "counter", Text: "Dynamo keeps one counter per frontend process; llm-d keeps one per runtime."}},
+		Bound: &routertable.Bound{
+			Evidence: routertable.BoundEvidence{File: "registry/docs/router-sensitivity/runs.csv", SHA256: strings.Repeat("a", 64),
+				Producer: "inference-sim/inference-sim", Commit: strings.Repeat("b", 40), Command: "python3 -I sweep.py"},
+			Ratios: []routertable.Ratio{{Metric: "tpot_p50_ms", Against: []string{"random-picker"},
+				Regime: routertable.Regime{Workload: routertable.WorkloadBalanced, ConcurrencyMin: 16, ConcurrencyMax: 1024,
+					Model: "minimax-m2.5", Hardware: "gb200-nvl72", Shapes: []string{"1P3D"}}, MaxRatio: 1.08}},
+			NotMeasured: []string{"No run shared a prefix."}}}
+}
+
 // The three conditions design 11.3 lists beside the earlier ones, and resolved_differs, each
 // name what the point must say.
 func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 	for _, s := range []Substitution{
 		{Kind: SubClientDifference, Subject: "send_gap", Detail: "the next request is sent after the response stream closes"},
 		{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at 0123456789abcdef0123456789abcdef01234567", Date: "2026-03-02"},
-		{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40)},
+		routerDiffers(),
 		{Kind: SubResolvedDiffers, Subject: "max_num_batched_tokens", Detail: "the run resolved 8192, the engine resolves 2048"},
 		{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat", Differed: []string{"drafter", "num_spec_tokens"}},
 		{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:dsv41flash+mtp+mtp+k3+chat"},
@@ -200,12 +217,18 @@ func TestTheClosenessKindsAreAcceptedWithTheirKeys(t *testing.T) {
 // that does not take it, and a malformed date.
 func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 	later := Substitution{Kind: SubLaterRecord, Subject: "cluster.gpus_per_node", Record: "runners.yaml at abc", Date: "2026-03-02"}
-	router := Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin", Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40)}
+	router := routerDiffers()
 	client := Substitution{Kind: SubClientDifference, Subject: "send_gap", Detail: "x"}
 	resolved := Substitution{Kind: SubResolvedDiffers, Subject: "s", Detail: "x"}
 	profile := Substitution{Kind: SubProfileValue, ProfileFamily: ProfileAcceptance, Subject: "acceptance/mtp:k3", Differed: []string{"drafter", "model"}}
 	unevaluated := Substitution{Kind: SubUnevaluated, Subject: "kernel_hash"}
 	with := func(s Substitution, edit func(*Substitution)) func(*Record) {
+		if s.Bound != nil { // a case edits its own copy of the bound, never the shared one
+			b := *s.Bound
+			b.Ratios = append([]routertable.Ratio(nil), b.Ratios...)
+			b.NotMeasured = append([]string(nil), b.NotMeasured...)
+			s.Bound = &b
+		}
 		edit(&s)
 		return func(r *Record) { r.Substitutions = []Substitution{s} }
 	}
@@ -232,6 +255,16 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
 		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
 		{"router_differs naming a date", with(router, func(s *Substitution) { s.Date = "2026-03-02" }), "substitutions[0].date", "not a key of router_differs"},
+		{"router_differs without differences", with(router, func(s *Substitution) { s.Difference = nil }), "substitutions[0].difference", "required for router_differs"},
+		{"router_differs with a difference that has no aspect", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Text: "x"}} }), "substitutions[0].difference[0].aspect", "required"},
+		{"router_differs with a difference that says nothing", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Aspect: "counter"}} }), "substitutions[0].difference[0].text", "required"},
+		{"router_differs without a bound", with(router, func(s *Substitution) { s.Bound = nil }), "substitutions[0].bound", "required for router_differs"},
+		{"router_differs with a bound that covers everything", with(router, func(s *Substitution) { s.Bound.NotMeasured = nil }), "substitutions[0].bound.not_measured", "does not cover"},
+		{"router_differs with a ratio below one", with(router, func(s *Substitution) { s.Bound.Ratios[0].MaxRatio = 0.5 }), "substitutions[0].bound.ratios[0].max_ratio", "at least 1"},
+		{"router_differs with a metric the registry lacks", with(router, func(s *Substitution) { s.Bound.Ratios[0].Metric = "ttft_p999_ms" }), "substitutions[0].bound.ratios[0].metric", "not in the metric registry"},
+		{"router_differs bounded against its own policy", with(router, func(s *Substitution) { s.Bound.Ratios[0].Against = []string{"round-robin"} }), "substitutions[0].bound.ratios[0].against", "own policy"},
+		{"client_difference naming a bound", with(client, func(s *Substitution) { s.Bound = router.Bound }), "substitutions[0].bound", "not a key of client_difference"},
+		{"later_record naming differences", with(later, func(s *Substitution) { s.Difference = router.Difference }), "substitutions[0].difference", "not a key of later_record"},
 		{"client_difference without a detail", with(client, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for client_difference"},
 		{"client_difference naming evidence", with(client, func(s *Substitution) { s.Evidence = "e" }), "substitutions[0].evidence", "not a key of client_difference"},
 		{"resolved_differs without a detail", with(resolved, func(s *Substitution) { s.Detail = "" }), "substitutions[0].detail", "required for resolved_differs"},

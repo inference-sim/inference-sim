@@ -1,6 +1,7 @@
 package routertable
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,11 +26,28 @@ func valid() *Entry {
 		Kind: Kind, Name: "acme-round-robin", Router: "acme", Mode: "round-robin", Policy: PolicyRoundRobin,
 		Revisions: []string{strings.Repeat("a", 40)},
 		Reason:    "both rotate over the workers",
+		Difference: []Difference{
+			{Statement: Statement{Aspect: "counter", Text: "acme keeps one counter per frontend; llm-d keeps one per runtime"}, Evidence: []int{0, 2}},
+			{Statement: Statement{Aspect: "order", Text: "acme lists workers by arrival; llm-d by identifier"}, Evidence: []int{1}},
+		},
+		Bound: validBound(),
 		Evidence: []Citation{
 			cite(SideRouter, FieldMode, "acme/router"),
 			cite(SideRouter, FieldPolicy, "acme/router"),
 			cite(SideLLMD, FieldPolicy, "inference-sim/llm-d-router"),
 		},
+	}
+}
+
+// validBound is a bound every rule accepts.
+func validBound() *Bound {
+	return &Bound{
+		Evidence: BoundEvidence{File: "registry/docs/router-sensitivity/runs.csv", SHA256: strings.Repeat("c", 64),
+			Producer: "acme/sim", Commit: strings.Repeat("d", 40), Command: "python3 -I sweep.py"},
+		Ratios: []Ratio{{Metric: "ttft_p50_ms", Against: []string{"least-active-requests", "random-picker"},
+			Regime: Regime{Workload: WorkloadBalanced, ConcurrencyMin: 16, ConcurrencyMax: 256, Model: "minimax-m2.5",
+				Hardware: "gb200-nvl72", Shapes: []string{"1P3D", "2P3D"}}, MaxRatio: 1.74}},
+		NotMeasured: []string{"No run had a shared prefix."},
 	}
 }
 
@@ -40,6 +58,7 @@ func TestAValidEntryPasses(t *testing.T) {
 	none := valid()
 	none.Policy, none.Reason = PolicyNone, "its scoring has no counterpart in llm-d"
 	none.Evidence[2].Path = "pkg/epp/anything.go" // a policy of none names no defining file
+	none.Difference, none.Bound = nil, nil        // and no stand-in to differ from or to bound
 	if p := none.Validate(); !p.OK() {
 		t.Fatalf("an explicit no close policy must validate:\n%s", p.Error())
 	}
@@ -112,6 +131,52 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 				Commit: strings.Repeat("b", 40), Path: "d.md", Lines: "1", Claim: "x"})
 		}, "name", "make its name"},
 		{"a citation repeated", func(e *Entry) { e.Evidence = append(e.Evidence, e.Evidence[2]) }, "evidence[3]", "repeats"},
+
+		// The differences (design 11.3: the substitution says how near the stand-in is).
+		{"a mapping with no differences", func(e *Entry) { e.Difference = nil }, "difference", "required"},
+		{"a difference with no aspect", func(e *Entry) { e.Difference[0].Aspect = "" }, "difference[0].aspect", "required"},
+		{"an aspect in upper case", func(e *Entry) { e.Difference[0].Aspect = "Counter" }, "difference[0].aspect", "lower case"},
+		{"an aspect stated twice", func(e *Entry) { e.Difference[1].Aspect = "counter" }, "difference[1].aspect", "stated twice"},
+		{"a difference with no text", func(e *Entry) { e.Difference[0].Text = " " }, "difference[0].text", "required"},
+		{"a difference citing nothing", func(e *Entry) { e.Difference[0].Evidence = nil }, "difference[0].evidence", "required"},
+		{"a difference citing a position past the list", func(e *Entry) { e.Difference[0].Evidence = []int{3} }, "difference[0].evidence", "not in the evidence list"},
+		{"a difference citing a negative position", func(e *Entry) { e.Difference[0].Evidence = []int{-1} }, "difference[0].evidence", "not in the evidence list"},
+		{"a difference citing a position twice", func(e *Entry) { e.Difference[0].Evidence = []int{2, 2} }, "difference[0].evidence", "named twice"},
+		{"differences on an entry with no policy", func(e *Entry) { e.Policy, e.Bound = PolicyNone, nil }, "difference", "no stand-in"},
+		{"a bound on an entry with no policy", func(e *Entry) { e.Policy, e.Difference = PolicyNone, nil }, "bound", "no stand-in"},
+
+		// The bound.
+		{"a mapping with no bound", func(e *Entry) { e.Bound = nil }, "bound", "required"},
+		{"a bound with no file", func(e *Entry) { e.Bound.Evidence.File = "" }, "bound.evidence.file", "required"},
+		{"a bound file that climbs", func(e *Entry) { e.Bound.Evidence.File = "../runs.csv" }, "bound.evidence.file", "from the repository's root"},
+		{"a bound hash of the wrong length", func(e *Entry) { e.Bound.Evidence.SHA256 = "abc" }, "bound.evidence.sha256", "64 lower-case hex"},
+		{"a bound hash in upper case", func(e *Entry) { e.Bound.Evidence.SHA256 = strings.Repeat("C", 64) }, "bound.evidence.sha256", "64 lower-case hex"},
+		{"a bound producer without an owner", func(e *Entry) { e.Bound.Evidence.Producer = "sim" }, "bound.evidence.producer", "<owner>/<name>"},
+		{"a bound built from a branch", func(e *Entry) { e.Bound.Evidence.Commit = "main" }, "bound.evidence.commit", "40-character"},
+		{"a bound with no command", func(e *Entry) { e.Bound.Evidence.Command = " " }, "bound.evidence.command", "required"},
+		{"a bound with no ratios", func(e *Entry) { e.Bound.Ratios = nil }, "bound.ratios", "at least one ratio"},
+		{"a bound that says it covers everything", func(e *Entry) { e.Bound.NotMeasured = nil }, "bound.not_measured", "does not cover"},
+		{"a blank not-measured line", func(e *Entry) { e.Bound.NotMeasured = []string{" "} }, "bound.not_measured[0]", "must not be empty"},
+		{"a metric not in the registry", func(e *Entry) { e.Bound.Ratios[0].Metric = "ttft_p999_ms" }, "bound.ratios[0].metric", "not in the metric registry"},
+		{"no metric", func(e *Entry) { e.Bound.Ratios[0].Metric = "" }, "bound.ratios[0].metric", "required"},
+		{"no alternatives", func(e *Entry) { e.Bound.Ratios[0].Against = nil }, "bound.ratios[0].against", "required"},
+		{"the entry's own policy as an alternative", func(e *Entry) { e.Bound.Ratios[0].Against = []string{"round-robin"} }, "bound.ratios[0].against", "own policy"},
+		{"an alternative named twice", func(e *Entry) { e.Bound.Ratios[0].Against = []string{"x", "x"} }, "bound.ratios[0].against", "named twice"},
+		{"alternatives out of order", func(e *Entry) { e.Bound.Ratios[0].Against = []string{"b", "a"} }, "bound.ratios[0].against", "sorted"},
+		{"a ratio below one", func(e *Entry) { e.Bound.Ratios[0].MaxRatio = 0.9 }, "bound.ratios[0].max_ratio", "at least 1"},
+		{"a ratio of zero", func(e *Entry) { e.Bound.Ratios[0].MaxRatio = 0 }, "bound.ratios[0].max_ratio", "at least 1"},
+		{"a ratio that is not a number", func(e *Entry) { e.Bound.Ratios[0].MaxRatio = math.NaN() }, "bound.ratios[0].max_ratio", "NaN"},
+		{"an infinite ratio", func(e *Entry) { e.Bound.Ratios[0].MaxRatio = math.Inf(1) }, "bound.ratios[0].max_ratio", "+Inf"},
+		{"a ratio of three decimals", func(e *Entry) { e.Bound.Ratios[0].MaxRatio = 1.743 }, "bound.ratios[0].max_ratio", "two decimals"},
+		{"a workload no measurement covers", func(e *Entry) { e.Bound.Ratios[0].Regime.Workload = "agentic" }, "bound.ratios[0].regime.workload", "must be one of"},
+		{"a concurrency of zero", func(e *Entry) { e.Bound.Ratios[0].Regime.ConcurrencyMin = 0 }, "bound.ratios[0].regime.concurrency_min", "at least 1"},
+		{"a concurrency range that runs backward", func(e *Entry) { e.Bound.Ratios[0].Regime.ConcurrencyMax = 8 }, "bound.ratios[0].regime.concurrency_max", "at least concurrency_min"},
+		{"no model", func(e *Entry) { e.Bound.Ratios[0].Regime.Model = "" }, "bound.ratios[0].regime.model", "required"},
+		{"no hardware", func(e *Entry) { e.Bound.Ratios[0].Regime.Hardware = "" }, "bound.ratios[0].regime.hardware", "required"},
+		{"no shapes", func(e *Entry) { e.Bound.Ratios[0].Regime.Shapes = nil }, "bound.ratios[0].regime.shapes", "required"},
+		{"a shape that is not a pool split", func(e *Entry) { e.Bound.Ratios[0].Regime.Shapes = []string{"2P"} }, "bound.ratios[0].regime.shapes", "<n>P<m>D"},
+		{"shapes out of order", func(e *Entry) { e.Bound.Ratios[0].Regime.Shapes = []string{"2P3D", "1P3D"} }, "bound.ratios[0].regime.shapes", "sorted"},
+		{"a ratio stated twice", func(e *Entry) { e.Bound.Ratios = append(e.Bound.Ratios, e.Bound.Ratios[0]) }, "bound.ratios[1]", "repeats"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

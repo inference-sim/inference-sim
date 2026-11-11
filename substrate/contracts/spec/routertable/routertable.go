@@ -57,6 +57,15 @@ type Entry struct {
 	// Reason says why Policy is close enough to the router's mode, naming what the two do
 	// alike and what they do differently, or, for PolicyNone, why none is.
 	Reason string `yaml:"reason"`
+	// Difference lists each way the router's mode and Policy differ, one statement per aspect,
+	// each pointing at the citations that show it. Required for an entry whose Policy is not
+	// PolicyNone: a mapping is a claim of nearness, and the entry says exactly how near. Absent
+	// for PolicyNone, where Reason says why no policy is near.
+	Difference []Difference `yaml:"difference,omitempty"`
+	// Bound says how far the choice of policy can move each figure, measured on BLIS: the
+	// largest ratio between Policy and the alternatives, with the regime it was measured in and
+	// the evidence. Required for an entry whose Policy is not PolicyNone, absent otherwise.
+	Bound *Bound `yaml:"bound,omitempty"`
 	// Evidence cites both routers' code or documentation at pinned revisions. Each citation
 	// supports one field of the entry.
 	Evidence []Citation `yaml:"evidence"`

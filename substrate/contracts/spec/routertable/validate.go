@@ -14,6 +14,8 @@ var (
 	repository = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 	commit     = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	lines      = regexp.MustCompile(`^([1-9][0-9]*)(?:-([1-9][0-9]*))?$`)
+	sha256Hex  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	shape      = regexp.MustCompile(`^[1-9][0-9]*P[1-9][0-9]*D$`)
 )
 
 // Validate checks an entry on its own: it is complete, it names a policy llm-d's router
@@ -62,6 +64,7 @@ func (e *Entry) Validate() *validate.Problems {
 	}
 	e.validateRevisions(p)
 	e.validateEvidence(p)
+	e.validateMapping(p)
 	return p
 }
 

@@ -238,7 +238,7 @@ func (r *Record) validateGrade(p *validate.Problems) {
 
 // validateKeys checks the keys a kind names (design 11.3). A later_record names the field, the
 // record and its date; a router_differs the router the run used, the policy BLIS used and the
-// router table's evidence; a client_difference and a resolved_differs say what differed. A key
+// router table's evidence, with the entry's differences and bound; a client_difference and a resolved_differs say what differed. A key
 // belongs to its own kind only, so a record cannot carry a router's evidence on a coefficient.
 func (s Substitution) validateKeys(p *validate.Problems, at string) {
 	need := map[string]*string{}
@@ -277,7 +277,24 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 			p.Field(at+"."+k, "is not a key of %s", s.Kind)
 		}
 	}
+	if s.Kind != SubRouterDiffers {
+		if len(s.Difference) > 0 {
+			p.Field(at+".difference", "is not a key of %s", s.Kind)
+		}
+		if s.Bound != nil {
+			p.Field(at+".bound", "is not a key of %s", s.Kind)
+		}
+	}
 	if s.Kind == SubRouterDiffers {
+		if len(s.Difference) == 0 {
+			p.Field(at+".difference", "required for router_differs: the entry's statements of how the run's router and the policy differ")
+		}
+		routertable.CheckStatements(p, at+".difference", s.Difference)
+		if s.Bound == nil {
+			p.Field(at+".bound", "required for router_differs: the entry's measured bound on the policy's effect on each figure")
+		} else {
+			p.Merge(at+".bound", s.Bound.Validate(routertable.Policy(s.Policy)))
+		}
 		switch {
 		case s.Policy != "" && (!routertable.Policy(s.Policy).Offered() || routertable.Policy(s.Policy) == routertable.PolicyNone):
 			p.Field(at+".policy", "%q is not a policy llm-d's router offers; a point simulated with a policy names one of %v", s.Policy, routertable.PolicyNames())

@@ -201,6 +201,16 @@ mode: round-robin
 revisions: [aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]
 policy: round-robin
 reason: both rotate
+difference:
+  - {aspect: counter, text: x, evidence: [0, 2]}
+bound:
+  evidence: {file: registry/docs/x.csv, sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc, producer: acme/sim, commit: dddddddddddddddddddddddddddddddddddddddd, command: run}
+  ratios:
+    - metric: ttft_p50_ms
+      against: [random-picker]
+      regime: {workload: balanced, concurrency_min: 16, concurrency_max: 64, model: m, hardware: h, shapes: [1P1D]}
+      max_ratio: 1.1
+  not_measured: [x]
 ` + extra + `evidence:
   - {side: router, field: mode, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "1", claim: x}
   - {side: router, field: policy, repository: acme/router, commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, path: a.go, lines: "2", claim: x}

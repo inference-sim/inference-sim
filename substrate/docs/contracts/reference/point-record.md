@@ -76,6 +76,8 @@ makes it so (COV-4).
 | `policy` | string | for `router_differs` | The llm-d router policy BLIS simulated in place of the run's router. |
 | `evidence` | string | for `router_differs` | The router table's evidence for the match, as the table entry cites it. |
 | `revision` | string | for `router_differs` | The build of the router the run used, a full 40-character commit. The entry maps the router only at the builds it lists, so `Data.CheckRouterSubstitutions` refuses a record whose entry does not cover it. |
+| `difference` | list | for `router_differs`; else no | The entry's statements (`aspect` and `text`) of how the run's router and the policy differ, copied from the entry as it stood when the point was scored. |
+| `bound` | mapping | for `router_differs`; else no | The entry's [bound](router-table.md): how far the choice of policy moves each figure, with its regime and evidence, copied the same way. |
 | `profile_family` | string | for `profile_value` | `acceptance` or `routing`: which kind of substrate profile it is, and so which key fields `differed` can name. |
 | `differed` | sequence | no, and only for `profile_value` | The key fields in which the profile differs from the run's, from its family's key, sorted, each once: for `acceptance`, `model`, `drafter`, `speculative_method`, `num_spec_tokens`, `thinking` or `category`; for `routing`, `model`, `category`, `phase`, `placement` or `expert_parallel`. A routing profile taken under the scenario's fallback category differs in `category` (`routing.Resolution.Differed`). Empty when the profile's key is the run's own. |
 
@@ -93,7 +95,11 @@ holds the kinds to that list). Six of the kinds name more than a subject:
 :   The run was measured behind a router BLIS does not host, and the router table maps it to
     an llm-d policy. `subject` is the router the run used, `entry` the table entry (which fixes the mode),
     `policy` the policy BLIS used, which must be one llm-d's router offers, `revision` the
-    build of the router the run used (the entry must cover it), and `evidence` the table's evidence. The point is never G1, and is not presented as if llm-d
+    build of the router the run used (the entry must cover it), and `evidence` the table's
+    evidence. `difference` and `bound` are the entry's own, copied at scoring time so that a
+    later edit to the entry does not rewrite the point; a reader decides from the bound
+    whether the substitution is small enough for a figure, in the point's regime, and the
+    grade is G2 either way. The point is never G1, and is not presented as if llm-d
     had routed the run.
 `resolved_differs`
 :   A resolved value the run logged differs from the engine's resolution (design §11.2).

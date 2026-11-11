@@ -25,6 +25,8 @@ file's stem and is not a key of the file.
 | `revisions` | list of strings | yes | The builds of the router the run used for which the entry is established, each a full 40-character commit, sorted, each once. A mapping is a claim about the behaviour of a build, so an entry shown for one build is not inherited by another with the same mode: a run on a build not listed has no mapping and stays `router_unsupported` (design §11.4). Every `router`-side citation is at one of them, and each has a citation for the `mode` and one for the `policy`. |
 | `policy` | string | yes | A policy llm-d's router offers, or `none`. |
 | `reason` | string | yes | What the router's mode and the policy do alike and differently; for `none`, why no policy is close enough. |
+| `difference` | list | for a policy other than `none`; else no | Each way the mode and the policy differ, one statement per aspect, each citing the code that shows it, below. |
+| `bound` | mapping | for a policy other than `none`; else no | How far the choice of policy moves each figure on BLIS, measured, with its regime and evidence, below. |
 | `evidence` | list | yes | Citations of both routers' code or documentation, below. |
 
 The key of an entry is the router, the mode and the session-affinity setting. The entry's file is
@@ -82,9 +84,110 @@ Each field the entry states has a citation (SUB-18): the router's own code for i
 when set, its `session_affinity_ttl_s`; and, for the `policy`, a passage of the router that shows
 the behaviour it is matched to and a passage of llm-d's router that shows the policy does it.
 
+### `difference`
+
+<!-- fields: routertable.Difference -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `aspect` | string | yes | What differs, as a lower-case slug, for example `counter`, `tie-break` or `scale`. Each aspect once. |
+| `text` | string | yes | How the router's mode and the policy differ in that aspect, and what BLIS does instead. It states a fact of the code, or says that an effect is not measured. |
+| `evidence` | list of integers | yes | The positions (from 0) in the entry's `evidence` list of the citations the statement rests on. At least one, each once. |
+
+A [point record](point-record.md) carries the same statements without `evidence`, because a
+position means nothing outside the entry:
+
+<!-- fields: routertable.Statement -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `aspect` | string | yes | What differs, as above. |
+| `text` | string | yes | How the router's mode and the policy differ in that aspect. |
+
+A mapping is a claim of nearness, so the entry says how near: every way the two differ that the
+code shows, and for each the passages that show it. A point scored with the entry copies the
+statements (without the positions, which mean nothing outside the entry) into its
+[`router_differs` substitution](point-record.md).
+
+### `bound`
+
+A bound is a sensitivity, not an error. It says how far BLIS's own prediction of a figure moves
+when the policy changes, so it says what a wrong guess of the router's mode could cost. It does
+not say how far BLIS is from the router's real behaviour, which no run measured.
+
+A bound is measured on BLIS, so it is a fact about the two policies and the workload, not about a
+build of the router. The entry states it once for every build in its `revisions`, as it states
+the differences, which are facts of the code at those builds. A difference or a bound that holds
+at one build only would need an entry of its own, which the key (router, mode, affinity) does not
+allow yet.
+
+<!-- fields: routertable.Bound -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `evidence` | mapping | yes | The measurement the ratios come from, below. |
+| `ratios` | list | yes | The limits: at least one, each for one figure, one set of alternatives and one regime. |
+| `not_measured` | list of strings | yes | What the bound does not cover, one sentence each. At least one: a bound that claims to cover everything is not a measured bound. |
+
+<!-- fields: routertable.BoundEvidence -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `file` | string | yes | The CSV of runs, from the repository's root. The ratios are recomputed from it. |
+| `sha256` | string | yes | The SHA-256 of the file, 64 lower-case hex digits, so a ratio cites the bytes it was read from. |
+| `producer` | string | yes | `<owner>/<name>` of the repository BLIS was built from for the runs. |
+| `commit` | string | yes | The full 40-character commit of the producer. |
+| `command` | string | yes | The command that reproduces the file. |
+
+<!-- fields: routertable.Ratio -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `metric` | string | yes | The [metric registry](metrics.md) identifier of the figure, for example `ttft_p50_ms`. |
+| `against` | list of strings | yes | The alternatives the policy was compared with, each by the name of its plugin composition in the evidence file's `policy` column. Sorted, each once, none the entry's own policy. |
+| `regime` | mapping | yes | Where the ratio was measured, below. |
+| `max_ratio` | number | yes | The largest, over every cell of the regime and every alternative, of the larger of the two means over the smaller, each mean taken over the seeds. At least 1, rounded up to two decimals so it never understates. |
+
+<!-- fields: routertable.Regime -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `workload` | string | yes | The kind of workload, below. |
+| `concurrency_min` | integer | yes | The least number of closed-loop clients in the cells. At least 1. |
+| `concurrency_max` | integer | yes | The most. At least `concurrency_min`. |
+| `model` | string | yes | The catalog model the runs used. |
+| `hardware` | string | yes | The catalog hardware the runs used. |
+| `shapes` | list of strings | yes | The pool shapes the cells cover, each `<n>P<m>D`: n prefill and m decode instances. Sorted, each once. |
+
+Workload kinds:
+
+--8<-- "docs/contracts/generated/enum/routertable.WorkloadKind.md"
+
+`balanced`
+:   Closed loop, every request 1,024 prompt tokens and 1,024 output tokens, no prefix shared between requests.
+`prefill-bound`
+:   Closed loop, 8,192 prompt tokens and 16 output tokens.
+`decode-bound`
+:   Closed loop, 256 prompt tokens and 2,048 output tokens.
+
+The list is closed because a bound is a statement about the workloads it names and no others:
+a kind joins it with the measurement that covers it. How the ratios are measured and what they leave out is stated where the evidence is committed.
+
 ## What the validator refuses
 
 An entry with no evidence; one that lacks a citation for a field it states, or for either router's
 side of the policy; a policy llm-d's router does not offer; a `none` or a match with no reason;
 the router `llm-d`; an `llm-d` citation of another repository, a `router` citation of llm-d's, or an `llm-d` citation that names no file defining the policy; a file name that is not the entry's key; no revisions, a revision that is not a full commit, repeated or out of order, a `router` citation at a commit that is not one of the revisions, and a revision with no `router` citation of its own for the mode or the behaviour; a citation whose commit is not a full commit, whose path climbs out of the
 repository or whose lines run backward; a citation repeated.
+
+For a policy other than `none`: no `difference`; an aspect that is empty, not a slug or stated twice; a statement with no text or
+no citation, or one that names a position outside the evidence list or names one twice; no
+`bound`; a bound with no ratios, no `not_measured`, a file path that climbs, a hash that is not 64
+lower-case hex digits, a producer that is not `<owner>/<name>`, a commit that is not a full commit or
+no command; a ratio whose metric is not in the metric registry, that names no alternative or its
+own policy, whose alternatives are unsorted or repeated, whose value is not a finite number of at
+least 1 with two decimals, whose workload is not a kind above, whose concurrency range is empty or runs
+backward, whose model or hardware is missing, whose shapes are missing, malformed or unsorted; a
+ratio stated twice for one regime. For `none`: a `difference` or a `bound`, because there is no
+stand-in policy to differ from or to bound. The catalog's tests also recompute every ratio from
+the evidence file and refuse one that is not the file's.

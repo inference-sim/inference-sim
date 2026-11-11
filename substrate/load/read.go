@@ -2,6 +2,7 @@ package load
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
@@ -171,7 +172,7 @@ func (d *Data) markLoaded(rel string) {
 // CheckRouterSubstitutions refuses a point record whose router_differs substitution the router
 // table does not support (design §11.3, §11.4): the entry it names must exist, belong to the
 // router the point names, cover the build of the router the point says the run used, and map to
-// the policy the point says BLIS simulated. A router mapped for one build is not mapped for
+// the policy the point says BLIS simulated, and carry the entry's differences and bound. A router mapped for one build is not mapped for
 // another, so a record that relies on an entry at a build it does not list is refused.
 func (d *Data) CheckRouterSubstitutions(r *pointrecord.Record) error {
 	var bad []string
@@ -190,6 +191,10 @@ func (d *Data) CheckRouterSubstitutions(r *pointrecord.Record) error {
 			bad = append(bad, fmt.Sprintf("%s: entry %q does not cover revision %s of %s: what the table shows for another build is not inherited, and the point is router_unsupported (G5)", at, s.Entry, s.Revision, s.Subject))
 		case string(e.Policy) != s.Policy:
 			bad = append(bad, fmt.Sprintf("%s: entry %q maps to policy %q, not %q", at, s.Entry, e.Policy, s.Policy))
+		case !reflect.DeepEqual(s.Difference, e.Statements()):
+			bad = append(bad, fmt.Sprintf("%s: the differences are not entry %q's: a point carries the entry's statements as they stand, so a reader sees what the mapping rests on", at, s.Entry))
+		case !reflect.DeepEqual(s.Bound, e.Bound):
+			bad = append(bad, fmt.Sprintf("%s: the bound is not entry %q's: a point carries the entry's bound as it stands, so a reader sees how far the policy moves each figure", at, s.Entry))
 		}
 	}
 	if len(bad) > 0 {

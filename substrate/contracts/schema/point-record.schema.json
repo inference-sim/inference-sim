@@ -540,6 +540,9 @@
     "pointrecord.Substitution": {
       "additionalProperties": false,
       "properties": {
+        "bound": {
+          "$ref": "#/$defs/routertable.Bound"
+        },
         "date": {
           "type": "string"
         },
@@ -549,6 +552,12 @@
         "differed": {
           "items": {
             "type": "string"
+          },
+          "type": "array"
+        },
+        "difference": {
+          "items": {
+            "$ref": "#/$defs/routertable.Statement"
           },
           "type": "array"
         },
@@ -731,6 +740,143 @@
       },
       "required": [
         "hash"
+      ],
+      "type": "object"
+    },
+    "routertable.Bound": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/routertable.BoundEvidence"
+        },
+        "not_measured": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "ratios": {
+          "items": {
+            "$ref": "#/$defs/routertable.Ratio"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence",
+        "not_measured",
+        "ratios"
+      ],
+      "type": "object"
+    },
+    "routertable.BoundEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "file": {
+          "type": "string"
+        },
+        "producer": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "commit",
+        "file",
+        "producer",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "routertable.Ratio": {
+      "additionalProperties": false,
+      "properties": {
+        "against": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_ratio": {
+          "type": "number"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "regime": {
+          "$ref": "#/$defs/routertable.Regime"
+        }
+      },
+      "required": [
+        "against",
+        "max_ratio",
+        "metric",
+        "regime"
+      ],
+      "type": "object"
+    },
+    "routertable.Regime": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency_max": {
+          "type": "integer"
+        },
+        "concurrency_min": {
+          "type": "integer"
+        },
+        "hardware": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "shapes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "workload": {
+          "enum": [
+            "balanced",
+            "prefill-bound",
+            "decode-bound"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "concurrency_max",
+        "concurrency_min",
+        "hardware",
+        "model",
+        "shapes",
+        "workload"
+      ],
+      "type": "object"
+    },
+    "routertable.Statement": {
+      "additionalProperties": false,
+      "properties": {
+        "aspect": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "aspect",
+        "text"
       ],
       "type": "object"
     }
