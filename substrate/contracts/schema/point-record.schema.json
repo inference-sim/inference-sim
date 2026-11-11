@@ -315,7 +315,7 @@
           ],
           "type": "string"
         },
-        "harness_digest": {
+        "harness_commit": {
           "type": "string"
         },
         "identity": {
@@ -372,7 +372,7 @@
         "build",
         "facets",
         "grade",
-        "harness_digest",
+        "harness_commit",
         "identity",
         "kind",
         "point_id",

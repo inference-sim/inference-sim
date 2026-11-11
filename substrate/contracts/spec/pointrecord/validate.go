@@ -18,9 +18,8 @@ import (
 )
 
 var (
-	hex64  = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	hex40  = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	digest = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	hex64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	hex40 = regexp.MustCompile(`^[0-9a-f]{40}$`)
 )
 
 var g5Codes = map[G5Code]bool{CodeNotVisible: true, RouterUnsupported: true, ValueNotRecorded: true,
@@ -91,8 +90,12 @@ func (r *Record) Validate() *validate.Problems {
 	if r.Simulator.Engine.Kind == "" || r.Simulator.Engine.Version == "" {
 		p.Field("simulator.engine", "states the kind and version the simulator runs")
 	}
-	if !digest.MatchString(r.HarnessDigest) {
-		p.Field("harness_digest", "must be sha256:<64 lowercase hex>, got %q", r.HarnessDigest)
+	if !hex40.MatchString(r.HarnessCommit) {
+		if strings.HasPrefix(r.HarnessCommit, "sha256:") {
+			p.Field("harness_commit", "is a digest, %q: the field was harness_digest, a sha256 of an image; the harness is a script named by its commit (design §11.7), so state the accuracy-dashboard commit, 40 lowercase hex characters", r.HarnessCommit)
+		} else {
+			p.Field("harness_commit", "must be the accuracy-dashboard commit that scored the point, 40 lowercase hex characters, got %q", r.HarnessCommit)
+		}
 	}
 	r.validateFigures(p)
 	for i, s := range r.Settings {

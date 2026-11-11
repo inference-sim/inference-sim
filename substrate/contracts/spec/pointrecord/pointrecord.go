@@ -6,7 +6,7 @@
 // A record identifies the point and its ledger unit, grades it G1 to G5 (design §11.3),
 // names every substitution the grade rests on, gives the reason a G5 point was not scored
 // from the closed list of design §11.4, records the simulator build, the data and the
-// harness digest that produced it (X8), and pairs each predicted figure with its measured
+// harness commit that produced it (X8, design §11.7), and pairs each predicted figure with its measured
 // counterpart under one metric identifier (DEV-8).
 //
 // The fields are the accuracy-dashboard's per-point output as of f87f98d
@@ -52,8 +52,10 @@ type Record struct {
 	Build Build `yaml:"build"`
 	// Simulator is the simulator build that scored it.
 	Simulator Simulator `yaml:"simulator"`
-	// HarnessDigest is the digest of the scoring harness image, sha256:<64 hex>.
-	HarnessDigest string `yaml:"harness_digest"`
+	// HarnessCommit is the accuracy-dashboard commit that scored the point, 40 lowercase hex
+	// characters. The harness is a script released from tags and named by its release and commit,
+	// not a container image (design §11.7), so a reader fetches the exact scorer by this commit.
+	HarnessCommit string `yaml:"harness_commit"`
 
 	// Figures pair each predicted figure with the measured one, sorted by metric and then by
 	// basis (scope, member, aggregate, over), each once. Empty for a G5 point.

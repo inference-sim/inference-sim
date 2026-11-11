@@ -29,7 +29,7 @@ refuses an unknown key in either; `Record.Validate` checks it.
 | `substitutions` | list | no | Every departure from an exact comparison, sorted by kind and subject. |
 | `build` | mapping | yes | The engine build that measured the point. |
 | `simulator` | mapping | yes | The simulator build that scored it, and the data it read. |
-| `harness_digest` | string | yes | The scoring harness image, `sha256:<64 hex>` (X8). |
+| `harness_commit` | string | yes | The accuracy-dashboard commit that scored the point, 40 lowercase hex characters (X8). The harness is a script released from tags and named by its release and commit, not a container image (design §11.7). Replaces `harness_digest`, a sha256 of an image; a record carrying that digest is refused. |
 | `figures` | list | unless `G5` | Predicted and measured figures, sorted by metric. |
 | `settings` | list | no | Each classified engine setting, as recorded and as given to BLIS, sorted by arg. |
 | `resolved` | list | no | Engine outcomes both sides report, sorted by quantity. Never passed to BLIS. |

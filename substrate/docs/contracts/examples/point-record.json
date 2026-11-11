@@ -21,7 +21,7 @@
       "build": "v0.16.0"
     }
   },
-  "harness_digest": "sha256:7c9e0f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6",
+  "harness_commit": "7c9e0f1a2b3c4d5e6f708192a3b4c5d6e7f80912",
   "figures": [
     { "metric": "tpot_mean_ms", "predicted_basis": { "scope": "cluster" }, "measured_basis": { "scope": "cluster" }, "predicted": 4.7, "measured": 4.9, "predicted_samples": 640, "measured_samples": 640, "interval": { "low": 4.6, "high": 4.8, "level": 0.95, "replications": 5 } },
     { "metric": "ttft_mean_ms", "predicted_basis": { "scope": "cluster" }, "measured_basis": { "scope": "cluster" }, "predicted": 1410.0, "measured": 1490.0, "predicted_samples": 640, "measured_samples": 640 }
