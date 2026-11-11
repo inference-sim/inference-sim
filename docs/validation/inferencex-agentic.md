@@ -30,9 +30,11 @@ Every arm is **PARTIAL**. The deployment matches field for field (TP, EP, max-nu
 | compilation mode | `NONE` | no field (kernel prices CUDA-graph replay) | UNSTATED | torch.compile disabled in the run (mode NONE); graphs FULL_AND_PIECEWISE |
 | frontend/runner env | `Rust frontend launched (server log)` | not modelled | UNSTATED |  |
 
+The idle-gap cap and warm-up rows describe build 9e3c509c, whose replay cannot state them. The replay states both since #1971 (`trace_idle_gap_cap_s` and `warmup` in the workload spec), so a record from a build that has it carries no such row; the rows above are a record of that build, not of the current one.
+
 Population metrics at concurrency ≥ 2 are confounded by the idle-gap cap: it raises the offered load the run saw beyond what BLIS replays. The comparison that survives every mismatch is the request-level pairing: the same request on both sides, with the same number of requests in flight.
 
-**What would make it EXACT:** a run on the vLLM release whose behaviour the kernel prices (v0.31.0), or kernel pricing for the nightly that ran; the aiperf release BLIS transcribes (0.12.0), or a transcription of the fork; blis-schemas Replay support for the per-trace idle-gap cap and per-lane warm-up requests, or a run without them; and the UNSTATED rows stated by the run.
+**What would make it EXACT:** a run on the vLLM release whose behaviour the kernel prices (v0.31.0), or kernel pricing for the nightly that ran; the aiperf release BLIS transcribes (0.12.0), or a transcription of the fork; a build whose replay states the per-trace idle-gap cap and per-lane warm-up requests (#1971), or a run without them; and the UNSTATED rows stated by the run.
 
 ## Output metrics: ITL on paired requests
 

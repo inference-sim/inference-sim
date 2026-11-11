@@ -44,6 +44,24 @@ boundary, and `blis schema validate <document> <file>` runs the Go validators on
 when valid, 1 when the document is refused, 2 when the command could not run. Both read only the
 release this build pins.
 
+Three commands print what the applications would otherwise copy, and hold no list of their own. The binary is `blis`; the design and the issues write `inference-sim fields|ledger|metrics` for the same commands.
+
+- `blis fields --scenario <file> --scenarios <dir>` prints the field list of the engine the scenario
+  names, as the engine reports it through `engine.Engine.Fields()`: one JSON document in canonical
+  form, sorted, with the engine kind and upstream release in its `engine` member. A scenario is the
+  input because the engine contract gives a list only to an engine that has been built.
+- `blis ledger --list fit|anchor|report` prints the published role list of the pinned substrate
+  release after the substrate's own check (`ledger.LoadPublished`). With `--catalog` naming a
+  substrate checkout's `catalog/` the lists are checked against `ledger.yaml` and the unit lists
+  (seed, partition, every unit in a source, one role per unit); the embedded copy carries
+  neither, so it is checked for what the lists say of themselves. A release that has not
+  published the lists has none to print, and the command fails saying so. `blis ledger units --catalog <substrate checkout>/catalog` prints the
+  ledger's unit identifiers, one per line with its source; no release embeds the unit lists, so it
+  needs a checkout.
+- `blis metrics` prints the metric registry with each metric's scopes and aggregates (`max` and `min`) and which direction is better; `--json` prints
+  the registry's own records. A figure is compared with another only when its metric, scope and
+  aggregate are all the same.
+
 `--catalog <dir>` (or `BLIS_CATALOG`) names a directory with the layout of blis-substrate's
 `catalog/` that replaces the embedded catalog whole. `--registry <dir>` (or `BLIS_REGISTRY`)
 does the same for the registry. The flag wins over the environment variable, and the choice is
@@ -59,7 +77,7 @@ directories:
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 git clone https://github.com/inference-sim/blis-substrate.git
-git -C blis-substrate checkout v0.13.0
+git -C blis-substrate checkout f70c6c7503a47442c4c5d989f8f17b093c14e069
 export BLIS_CATALOG=$PWD/blis-substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)
 ```
 <!-- END GENERATED -->
@@ -75,8 +93,8 @@ it is stale.
 <!-- BEGIN GENERATED from stack.json: versions -->
 | Component | Version | Commit |
 |---|---|---|
-| `github.com/inference-sim/blis-substrate` | `v0.13.0` |  |
-| `github.com/inference-sim/blis-vllm` | `v0.32.0-blis.2` |  |
+| `github.com/inference-sim/blis-substrate` | `v0.13.1-0.20261111044143-f70c6c7503a4` | `f70c6c7503a4` |
+| `github.com/inference-sim/blis-vllm` | `v0.32.1-0.20261111132033-96ea750e3a62` | `96ea750e3a62` |
 | `github.com/inference-sim/llm-d-router` | `v1.0.0-blis.3` |  |
 | vllm (engine) | `0.32.0` | `5df63a7203cd` |
 | llm-d (router) | `1.0.0` | `b9393d1a9f1d` |

@@ -118,7 +118,7 @@ var (
 	loraFootprintBytesPerRank float64 // --lora-footprint-bytes-per-rank
 
 	// Speculative decoding / MTP (#1528). The draft length K and method come from the
-	// scenario's engine.speculative (set when the kernel deployment is adopted); K=0 =>
+	// scenario's engine.speculative_config (set when the kernel deployment is adopted); K=0 =>
 	// feature inert, output byte-identical (INV-6). The acceptance is resolved by
 	// blis-schemas' precedence (#1939): registry profile < workload < scenario < CLI.
 	numSpeculativeTokens  int     // K, from the scenario

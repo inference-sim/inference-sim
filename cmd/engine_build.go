@@ -11,6 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine"
 	"github.com/inference-sim/blis-substrate/contracts/spec/acceptance"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 	"github.com/inference-sim/blis-substrate/load"
 
 	blisvllm "github.com/inference-sim/blis-vllm"
@@ -881,6 +882,29 @@ func contractRoots(scenarioPath string) map[string]string {
 // and the Data each was handed.
 var newContractEngine = func(spec engine.Spec, data *load.Data) (engine.Engine, error) {
 	return coreengine.New(coreengine.Input{Spec: spec, Data: data})
+}
+
+// engineFieldList is the field list of the engine the scenario at scenarioPath names, as that
+// engine reports it through engine.Engine.Fields (design section 7, X19). The engine is built the
+// way a run builds its first pool's, over data, so the list is the one the run's engine would
+// report; this binary holds no list of its own. The contract has no way to ask a kind for its
+// list without building an engine, so a scenario is the input.
+func engineFieldList(scenarioPath string, data *load.Data, seed int64) (fields.FieldList, error) {
+	sel, err := selectEngine(scenarioPath)
+	if err != nil {
+		return fields.FieldList{}, err
+	}
+	registerContractEngines()
+	eng, err := newContractEngine(engine.Spec{
+		Kind:            sel.Ref.Kind,
+		UpstreamVersion: sel.Ref.Version,
+		Roots:           contractRoots(scenarioPath),
+		Seed:            seed,
+	}, data)
+	if err != nil {
+		return fields.FieldList{}, fmt.Errorf("scenario %s: engine %s: %w", scenarioPath, sel.Ref, err)
+	}
+	return eng.Fields(), nil
 }
 
 // Moved from sim/cluster/resolve.go at 739a519b, when the engine's configuration left the host

@@ -467,14 +467,14 @@ schedulingProfiles:
 func TestCapabilityMatrix_Compositions(t *testing.T) {
 	t.Run("P/D + MTP + pools with unequal engines", func(t *testing.T) {
 		t.Parallel()
-		const draft = "      speculative:\n        method: mtp\n        num_spec_tokens: 3\n"
+		const draft = "      speculative_config: {method: mtp, num_speculative_tokens: 3}\n"
 		// The decode pool runs a smaller engine than the prefill pool: fewer sequences and
 		// less of its memory for KV. Both draft (speculation must agree across a handoff).
 		variant := func(decodeSeqs string) string {
 			return writeScenarioVariant(t,
-				"      gpu_memory_utilization: 0.9\n  - role: decode", "      gpu_memory_utilization: 0.9\n"+draft+"  - role: decode",
-				"      max_num_seqs: 256\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.9\n\npd_transfer",
-				"      max_num_seqs: "+decodeSeqs+"\n      max_model_len: 32768\n      cudagraph_mode: PIECEWISE\n      gpu_memory_utilization: 0.8\n"+draft+"\npd_transfer")
+				"      compilation_config: {cudagraph_mode: PIECEWISE}\n  - role: decode", "      compilation_config: {cudagraph_mode: PIECEWISE}\n"+draft+"  - role: decode",
+				"      max_num_seqs: 256\n      max_model_len: 32768\n      gpu_memory_utilization: 0.9\n      compilation_config: {cudagraph_mode: PIECEWISE}\n\npd_transfer",
+				"      max_num_seqs: "+decodeSeqs+"\n      max_model_len: 32768\n      gpu_memory_utilization: 0.8\n      compilation_config: {cudagraph_mode: PIECEWISE}\n"+draft+"\npd_transfer")
 		}
 		wide, narrow := variant("256"), variant("4")
 		load := burst(24, 12, 1500, 128)

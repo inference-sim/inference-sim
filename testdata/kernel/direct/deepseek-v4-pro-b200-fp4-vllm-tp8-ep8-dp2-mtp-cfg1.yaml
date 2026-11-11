@@ -45,6 +45,4 @@ pools:
       max_model_len: 32768
       gpu_memory_utilization: 0.9
       enable_prefix_caching: false
-      speculative:
-        method: mtp
-        num_spec_tokens: 2
+      speculative_config: {method: mtp, num_speculative_tokens: 2}
