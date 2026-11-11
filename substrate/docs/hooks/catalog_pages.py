@@ -667,9 +667,11 @@ def routers_table(cat: Catalog) -> str:
 
 
 def regime_text(g: dict[str, Any]) -> str:
-    lo, hi = g["concurrency_min"], g["concurrency_max"]
-    conc = f"concurrency {lo}" if lo == hi else f"concurrency {lo} to {hi}"
-    return f"{g['workload']}, {conc}, {g['model']} on {g['hardware']}, shapes {', '.join(g['shapes'])}"
+    conc = "concurrency " + ", ".join(str(c) for c in g["concurrencies"])
+    par = lambda p: f"tp{p['tp']} pp{p['pp']} dp{p['dp']}" + (" ep" if p["expert_parallel"] else "")
+    return (f"{g['workload']}, {conc}, {g['model']} on {g['hardware']} over {g['fabric']}, "
+            f"engine {g['engine_version']}, prefill {par(g['prefill'])}, decode {par(g['decode'])}, "
+            f"shapes {', '.join(g['shapes'])}")
 
 
 def bound_block(e: dict[str, Any]) -> list[str]:

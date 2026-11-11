@@ -48,8 +48,10 @@ cell and policy. The *cell mean* of a figure is the mean of the three runs.
 The **ratio** between two policies A and B in a cell is `max(mean_A / mean_B, mean_B / mean_A)`:
 at least 1, and the same whichever policy is above. The **bound** of a regime is the largest ratio
 over every cell of the regime and every alternative it names, rounded **up** to two decimals so
-that it never understates. A **regime** is a workload kind, a range of concurrency, the model and
-hardware, and the pool shapes; outside it the number says nothing. The catalog's tests recompute
+that it never understates. A **regime** is exact: a workload kind, the client counts the sweep ran (a list, not a
+range, since time to first token has a sharp knee between them), the model and hardware, the engine
+release, the fabric between the pools, the parallelism of one prefill and one decode instance, and the
+pool shapes; outside it the number says nothing. The catalog's tests recompute
 every committed bound from the evidence file with code of their own (`contracts/spec/routertable`,
 `TestTheCommittedBoundsAreTheirEvidences`), so an edited ratio or a regenerated file that the entry
 does not follow fails.
@@ -267,9 +269,9 @@ requests per second against 16.8 for round-robin. It is in `alternation.csv`; `r
 
 There is no numeric cutoff. A point whose router resolves to an entry with outcome `mapped` and that has a bound
 row whose regime matches the point's (the metric; the workload kind from the run's prompt and output lengths; a
-concurrency within the range; the same model and hardware; a pool shape the row lists) is G2 `router_differs`,
+concurrency the row lists; the same model, hardware, engine release, fabric and instance layouts; a pool shape the row lists) is G2 `router_differs`,
 whatever the ratio. A point whose regime matches no row of the entry's bound stays G5 `router_unsupported`, with the
-reason "no bound for this regime". The dashboard prints the ratio with the figure and flags `bound_wide` when any
+reason "no bound for this regime" (`routertable.Entry.BoundFor` applies the rule, outcome `regime_not_covered`, and a point record that carries a bound whose regime omits the point's client count is refused). The ratios are the sensitivity of BLIS's own figures to the choice of policy, not the error of standing a policy in for the router. The dashboard prints the ratio with the figure and flags `bound_wide` when any
 relevant ratio exceeds 1.25. The table and the point record carry the numbers; the rule is applied by the scoring
 harness, not by this repository.
 

@@ -208,7 +208,7 @@ bound:
   ratios:
     - metric: ttft_p50_ms
       against: [random-picker]
-      regime: {workload: balanced, concurrency_min: 16, concurrency_max: 64, model: m, hardware: h, shapes: [1P1D]}
+      regime: {workload: balanced, concurrencies: [16, 64], model: m, hardware: h, engine_version: "0.32.0", fabric: ib-400g, prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}, decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}, shapes: [1P1D]}
       max_ratio: 1.1
   not_measured: [x]
 ` + extra + `evidence:

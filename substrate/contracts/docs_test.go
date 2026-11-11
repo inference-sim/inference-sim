@@ -359,6 +359,7 @@ var documented = map[string]struct {
 	"routertable.BoundEvidence":   {typ: reflect.TypeOf(routertable.BoundEvidence{})},
 	"routertable.Ratio":           {typ: reflect.TypeOf(routertable.Ratio{})},
 	"routertable.Regime":          {typ: reflect.TypeOf(routertable.Regime{})},
+	"routertable.Parallel":        {typ: reflect.TypeOf(routertable.Parallel{})},
 	"pointrecord.Record":          {typ: reflect.TypeOf(pointrecord.Record{})},
 	"pointrecord.Identity":        {typ: reflect.TypeOf(pointrecord.Identity{})},
 	"pointrecord.G5Reason":        {typ: reflect.TypeOf(pointrecord.G5Reason{})},

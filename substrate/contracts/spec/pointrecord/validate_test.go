@@ -179,8 +179,10 @@ func routerDiffers() Substitution {
 			Evidence: routertable.BoundEvidence{File: "registry/docs/router-sensitivity/runs.csv", SHA256: strings.Repeat("a", 64),
 				Producer: "inference-sim/inference-sim", Commit: strings.Repeat("b", 40), Command: "python3 -I sweep.py"},
 			Ratios: []routertable.Ratio{{Metric: "tpot_p50_ms", Against: []string{"random-picker"},
-				Regime: routertable.Regime{Workload: routertable.WorkloadBalanced, ConcurrencyMin: 16, ConcurrencyMax: 1024,
-					Model: "minimax-m2.5", Hardware: "gb200-nvl72", Shapes: []string{"1P3D"}}, MaxRatio: 1.08}},
+				Regime: routertable.Regime{Workload: routertable.WorkloadBalanced, Concurrencies: []int{16, 64, 256, 1024},
+					Model: "minimax-m2.5", Hardware: "gb200-nvl72", EngineVersion: "0.32.0", Fabric: "ib-400g",
+					Prefill: routertable.Parallel{TP: 1, PP: 1, DP: 1}, Decode: routertable.Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true},
+					Shapes: []string{"1P3D"}}, MaxRatio: 1.08}},
 			NotMeasured: []string{"No run shared a prefix."}}}
 }
 
@@ -255,6 +257,9 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
 		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
 		{"router_differs naming a date", with(router, func(s *Substitution) { s.Date = "2026-03-02" }), "substitutions[0].date", "not a key of router_differs"},
+		{"router_differs carrying a bound whose regime does not sample the point's clients", with(router, func(s *Substitution) {
+			s.Bound.Ratios[0].Regime.Concurrencies = []int{16, 256, 1024}
+		}), "substitutions[0].bound.ratios[0].regime.concurrencies", "no bound for this regime"},
 		{"router_differs without differences", with(router, func(s *Substitution) { s.Difference = nil }), "substitutions[0].difference", "required for router_differs"},
 		{"router_differs with a difference that has no aspect", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Text: "x"}} }), "substitutions[0].difference[0].aspect", "required"},
 		{"router_differs with a difference that says nothing", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Aspect: "counter"}} }), "substitutions[0].difference[0].text", "required"},

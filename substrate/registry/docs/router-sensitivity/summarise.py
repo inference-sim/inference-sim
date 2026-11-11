@@ -68,6 +68,11 @@ BOUND_WORKLOADS = ["balanced", "prefill-bound", "decode-bound"]
 LOAD_READING = ["default", "least-active-requests", "queue-scorer"]
 OTHER_LOAD_BLIND = {"round-robin": "random-picker", "random-picker": "round-robin"}
 MODEL, HARDWARE = "minimax-m2.5", "gb200-nvl72"
+# What scenario.yaml runs: the engine release, the fabric between the pools, and the parallelism of
+# one prefill instance and one decode instance. A test compares them with the scenario.
+ENGINE_VERSION, FABRIC = "0.32.0", "ib-400g"
+PREFILL = "{tp: 1, pp: 1, dp: 1, expert_parallel: false}"
+DECODE = "{tp: 4, pp: 1, dp: 1, expert_parallel: true}"
 
 
 def emit(cells, policy):
@@ -79,8 +84,9 @@ def emit(cells, policy):
             for m in BOUND_METRICS:
                 best = max(ratio(cells, policy, o, m, w, concs[0], concs[-1])[0] for o in group)
                 print(f"    - metric: {m}\n      against: [{', '.join(sorted(group))}]\n      regime:\n"
-                      f"        workload: {w}\n        concurrency_min: {concs[0]}\n        concurrency_max: {concs[-1]}\n"
-                      f"        model: {MODEL}\n        hardware: {HARDWARE}\n        shapes: [{', '.join(shapes)}]\n"
+                      f"        workload: {w}\n        concurrencies: [{', '.join(str(c) for c in concs)}]\n"
+                      f"        model: {MODEL}\n        hardware: {HARDWARE}\n        engine_version: \"{ENGINE_VERSION}\"\n"
+                      f"        fabric: {FABRIC}\n        prefill: {PREFILL}\n        decode: {DECODE}\n        shapes: [{', '.join(shapes)}]\n"
                       f"      max_ratio: {up(best):.2f}")
 
 

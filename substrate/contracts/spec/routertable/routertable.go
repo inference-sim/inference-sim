@@ -216,7 +216,30 @@ const (
 	// OutcomeNoEntry: no entry has the run's router, mode and affinity setting. The point stays
 	// router_unsupported (G5).
 	OutcomeNoEntry Outcome = "no_entry"
+	// OutcomeRegimeNotCovered: the entry maps the mode, and none of its bounds is for the
+	// point's regime (an unsampled client count, another deployment). What it shows is not shown
+	// for this regime, so the point stays router_unsupported (G5), with the reason NoBoundForRegime.
+	OutcomeRegimeNotCovered Outcome = "regime_not_covered"
 )
+
+// NoBoundForRegime is the reason a point carries when its entry maps the mode and no bound
+// covers the point's regime.
+const NoBoundForRegime = "no bound for this regime"
+
+// BoundFor returns the entry's bound restricted to the ratios whose regime the point lies in,
+// with the outcome the table gives that point: OutcomeMapped when some ratio covers it,
+// OutcomeNoPolicy for a mode that maps none, and OutcomeRegimeNotCovered when none does. Only
+// OutcomeMapped scores the point, so a count or a deployment the runs did not sample cannot
+// carry a bound.
+func (e *Entry) BoundFor(p Point) (*Bound, Outcome) {
+	if e.Policy == PolicyNone {
+		return nil, OutcomeNoPolicy
+	}
+	if b := e.Bound.For(p); b != nil {
+		return b, OutcomeMapped
+	}
+	return nil, OutcomeRegimeNotCovered
+}
 
 // Scored reports whether a point with this outcome can be graded through the table.
 func (o Outcome) Scored() bool { return o == OutcomeMapped }

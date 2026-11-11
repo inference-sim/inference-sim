@@ -5,9 +5,11 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -123,7 +125,7 @@ func recompute(cells []*cell, policy string, r Ratio) (ratio float64, n int, sha
 	worst := 1.0
 	for _, c := range cells {
 		g := r.Regime
-		if string(g.Workload) != c.workload || c.concurrency < g.ConcurrencyMin || c.concurrency > g.ConcurrencyMax {
+		if string(g.Workload) != c.workload || !slices.Contains(g.Concurrencies, c.concurrency) {
 			continue
 		}
 		in := false
@@ -208,11 +210,22 @@ func TestTheCommittedBoundsAreTheirEvidences(t *testing.T) {
 					t.Errorf("ratios[%d]: no cell of the evidence is in the regime", i)
 				}
 				if math.Abs(got-r.MaxRatio) > 1e-9 {
-					t.Errorf("ratios[%d] (%s, workload %s, concurrency %d-%d): the entry states %.2f, the evidence gives %.2f", i, r.Metric,
-						r.Regime.Workload, r.Regime.ConcurrencyMin, r.Regime.ConcurrencyMax, r.MaxRatio, got)
+					t.Errorf("ratios[%d] (%s, workload %s, concurrencies %v): the entry states %.2f, the evidence gives %.2f", i, r.Metric,
+						r.Regime.Workload, r.Regime.Concurrencies, r.MaxRatio, got)
 				}
 				if len(shapes) != len(r.Regime.Shapes) {
 					t.Errorf("ratios[%d]: the regime names shapes %v, the evidence has cells for %v", i, r.Regime.Shapes, shapes)
+				}
+				// The regime is exact: it lists the client counts the evidence ran for its
+				// workload and shapes, all of them and no other, so a count between two is not covered.
+				sampled := map[int]bool{}
+				for _, c := range cells {
+					if string(r.Regime.Workload) == c.workload && slices.Contains(r.Regime.Shapes, c.shape) {
+						sampled[c.concurrency] = true
+					}
+				}
+				if want := slices.Sorted(maps.Keys(sampled)); !slices.Equal(want, r.Regime.Concurrencies) {
+					t.Errorf("ratios[%d]: the regime lists client counts %v, the evidence ran %v for %s on %v", i, r.Regime.Concurrencies, want, r.Regime.Workload, r.Regime.Shapes)
 				}
 			}
 		})
@@ -229,7 +242,7 @@ func TestTheRecomputationNoticesAChangedFigureOrAStatedRatio(t *testing.T) {
 		"round-robin": {{fig: map[string]float64{"m": 100}}, {fig: map[string]float64{"m": 110}}, {fig: map[string]float64{"m": 90}}},
 		"alt":         {{fig: map[string]float64{"m": 150}}, {fig: map[string]float64{"m": 150}}, {fig: map[string]float64{"m": 150}}},
 	}}}
-	r := Ratio{Metric: "m", Against: []string{"alt"}, Regime: Regime{Workload: WorkloadBalanced, ConcurrencyMin: 16, ConcurrencyMax: 16, Shapes: []string{"1P1D"}}}
+	r := Ratio{Metric: "m", Against: []string{"alt"}, Regime: Regime{Workload: WorkloadBalanced, Concurrencies: []int{16}, Shapes: []string{"1P1D"}}}
 	got, n, _, err := recompute(cells, "round-robin", r)
 	if err != nil || n != 1 || got != 1.50 {
 		t.Fatalf("got %v over %d cells, %v; want 1.50 over 1", got, n, err)
@@ -251,23 +264,106 @@ func TestTheRecomputationNoticesAChangedFigureOrAStatedRatio(t *testing.T) {
 	}
 }
 
-// The regime of each ratio names the model and hardware the evidence ran: the scenario the sweep
-// writes states the same two, so a bound cannot claim a part it did not run.
-func TestTheBoundsNameTheModelAndHardwareTheSweepRan(t *testing.T) {
+// The regime of each ratio names what the evidence ran: the scenario the sweep writes states the
+// same model, hardware, engine release, fabric and per-instance parallelism, so a bound cannot
+// claim a deployment it did not run.
+func TestTheBoundsNameTheDeploymentTheSweepRan(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(repoRoot, "registry", "docs", "router-sensitivity", "scenario.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(b)
+	// The scenario is a template: its deployment has a prefill pool of one-GPU instances and a
+	// decode pool of four-GPU instances with expert parallelism.
+	var docs []map[string]any
+	dec := yaml.NewDecoder(strings.NewReader(strings.NewReplacer("@TOPO@", "t", "@ROUTER@", "r", "@NODES@", "1", "@DECODE@", "1").Replace(text)))
+	for {
+		var d map[string]any
+		if err := dec.Decode(&d); err != nil {
+			break
+		}
+		docs = append(docs, d)
+	}
+	if len(docs) != 2 {
+		t.Fatalf("scenario.yaml holds %d documents, want a scenario and a deployment", len(docs))
+	}
+	par := func(m any) Parallel {
+		x := m.(map[string]any)["parallel"].(map[string]any)
+		return Parallel{TP: x["tp"].(int), PP: x["pp"].(int), DP: x["dp"].(int), ExpertParallel: x["enable_expert_parallel"].(bool)}
+	}
+	var prefill, decode Parallel
+	for _, p := range docs[1]["pools"].([]any) {
+		switch p.(map[string]any)["role"] {
+		case "prefill":
+			prefill = par(p)
+		case "decode":
+			decode = par(p)
+		}
+	}
+	engine, fabric := docs[0]["engine_version"].(string), docs[0]["cluster"].(map[string]any)["fabric"].(string)
 	for name, e := range loadCommitted(t) {
 		if e.Bound == nil {
 			continue
 		}
 		for i, r := range e.Bound.Ratios {
-			if !strings.Contains(text, "\nmodel: "+r.Regime.Model+"\n") || !strings.Contains(text, "  hardware: "+r.Regime.Hardware+"\n") {
-				t.Errorf("%s ratios[%d]: the regime names %s on %s, which scenario.yaml does not run", name, i, r.Regime.Model, r.Regime.Hardware)
+			g := r.Regime
+			if !strings.Contains(text, "\nmodel: "+g.Model+"\n") || !strings.Contains(text, "  hardware: "+g.Hardware+"\n") {
+				t.Errorf("%s ratios[%d]: the regime names %s on %s, which scenario.yaml does not run", name, i, g.Model, g.Hardware)
+			}
+			if g.EngineVersion != engine || g.Fabric != fabric || g.Prefill != prefill || g.Decode != decode {
+				t.Errorf("%s ratios[%d]: the regime names engine %s, fabric %s, prefill %+v, decode %+v; scenario.yaml runs %s, %s, %+v, %+v",
+					name, i, g.EngineVersion, g.Fabric, g.Prefill, g.Decode, engine, fabric, prefill, decode)
 			}
 		}
+	}
+}
+
+// A point carries a bound only for the regime the runs sampled: a client count between two
+// sampled ones, another model, hardware, engine release, fabric, instance layout or pool shape
+// has no bound, and the point stays router_unsupported with the reason that no bound covers its
+// regime. The committed entries are the cases.
+func TestAPointOutsideTheSampledRegimeHasNoBound(t *testing.T) {
+	entries := loadCommitted(t)
+	for _, name := range []string{"dynamo-round-robin", "dynamo-random"} {
+		e := entries[name]
+		if e == nil || e.Bound == nil {
+			t.Fatalf("%s: no bound", name)
+		}
+		inside := Point{Workload: WorkloadBalanced, Concurrency: 64, Model: "minimax-m2.5", Hardware: "gb200-nvl72",
+			EngineVersion: "0.32.0", Fabric: "ib-400g", Shape: "2P3D",
+			Prefill: Parallel{TP: 1, PP: 1, DP: 1}, Decode: Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true}}
+		b, out := e.BoundFor(inside)
+		if out != OutcomeMapped || b == nil || len(b.Ratios) == 0 || !out.Scored() {
+			t.Fatalf("%s: a sampled point has outcome %s", name, out)
+		}
+		for _, r := range b.Ratios {
+			if r.Regime.Workload != WorkloadBalanced || !slices.Contains(r.Regime.Concurrencies, 64) {
+				t.Errorf("%s: the bound carries a ratio of regime %+v for a balanced point at 64", name, r.Regime)
+			}
+		}
+		for what, edit := range map[string]func(*Point){
+			"a count between two sampled ones":       func(p *Point) { p.Concurrency = 100 },
+			"a count above the sampled ones":         func(p *Point) { p.Concurrency = 2048 },
+			"another model":                          func(p *Point) { p.Model = "minimax-m3" },
+			"another part":                           func(p *Point) { p.Hardware = "h200" },
+			"another engine release":                 func(p *Point) { p.EngineVersion = "0.33.0" },
+			"another fabric":                         func(p *Point) { p.Fabric = "roce-400g" },
+			"a prefill instance of two GPUs":         func(p *Point) { p.Prefill.TP = 2 },
+			"a decode instance without expert split": func(p *Point) { p.Decode.ExpertParallel = false },
+			"a pool shape no run had":                func(p *Point) { p.Shape = "8P8D" },
+		} {
+			p := inside
+			edit(&p)
+			b, out := e.BoundFor(p)
+			if out != OutcomeRegimeNotCovered || b != nil || out.Scored() {
+				t.Errorf("%s: %s has outcome %s with bound %v, want %s and none", name, what, out, b, OutcomeRegimeNotCovered)
+			}
+		}
+	}
+	if e := entries["dynamo-kv"]; e == nil {
+		t.Fatal("no dynamo-kv entry")
+	} else if _, out := e.BoundFor(Point{Workload: WorkloadBalanced, Concurrency: 64}); out != OutcomeNoPolicy {
+		t.Errorf("an entry that maps none has outcome %s", out)
 	}
 }
 
@@ -321,7 +417,7 @@ func TestTheKVEntryQuotesTheSpreadTheEvidenceGives(t *testing.T) {
 	cells := readRuns(t, "registry/docs/router-sensitivity/runs.csv", true)
 	for workload, want := range map[WorkloadKind]float64{WorkloadBalanced: 1.70, WorkloadDecodeBound: 1.79} {
 		r := Ratio{Metric: "ttft_p50_ms", Against: []string{"least-active-requests"},
-			Regime: Regime{Workload: workload, ConcurrencyMin: 64, ConcurrencyMax: 256, Shapes: []string{"1P3D", "2P3D", "3P2D", "4P1D"}}}
+			Regime: Regime{Workload: workload, Concurrencies: []int{64, 256}, Shapes: []string{"1P3D", "2P3D", "3P2D", "4P1D"}}}
 		got, _, _, err := recompute(cells, "default", r)
 		if err != nil || math.Abs(got-want) > 1e-9 {
 			t.Errorf("%s: default against least-active-requests is %.2f (%v), the kv entry says %.2f", workload, got, err, want)

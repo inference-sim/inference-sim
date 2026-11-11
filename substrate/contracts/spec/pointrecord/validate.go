@@ -227,11 +227,30 @@ func (r *Record) validateGrade(p *validate.Problems) {
 			p.Field(at+".subject", "required: what was substituted")
 		}
 		s.validateKeys(p, at)
+		s.validateBoundCoversPoint(p, at, r.Identity)
 		if i > 0 {
 			prev := r.Substitutions[i-1]
 			if s.Kind < prev.Kind || (s.Kind == prev.Kind && s.Subject <= prev.Subject) {
 				p.Field(at, "substitutions are sorted by kind and subject, each once")
 			}
+		}
+	}
+}
+
+// validateBoundCoversPoint refuses a router_differs that carries a bound ratio whose regime does
+// not include the point's client count: the regime is exact, a count the runs did not sample is
+// not covered, and the point would stay router_unsupported (routertable.NoBoundForRegime). The
+// record names only the count; the scorer restricts the bound to the rest of the point's regime
+// with routertable.Bound.For before it writes the record.
+func (s Substitution) validateBoundCoversPoint(p *validate.Problems, at string, id Identity) {
+	if s.Kind != SubRouterDiffers || s.Bound == nil || id.Concurrency < 1 {
+		return
+	}
+	for i, r := range s.Bound.Ratios {
+		if !slices.Contains(r.Regime.Concurrencies, id.Concurrency) {
+			p.Field(fmt.Sprintf("%s.bound.ratios[%d].regime.concurrencies", at, i),
+				"%v does not include the point's %d clients: the regime is exact, and %s",
+				r.Regime.Concurrencies, id.Concurrency, routertable.NoBoundForRegime)
 		}
 	}
 }

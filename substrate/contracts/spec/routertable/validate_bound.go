@@ -170,17 +170,29 @@ func (g Regime) validate(p *validate.Problems, at string) {
 	if !g.Workload.valid() {
 		p.Field(at+".workload", "must be one of %v, got %q", WorkloadKinds(), g.Workload)
 	}
-	switch {
-	case g.ConcurrencyMin < 1:
-		p.Field(at+".concurrency_min", "must be at least 1, got %d", g.ConcurrencyMin)
-	case g.ConcurrencyMax < g.ConcurrencyMin:
-		p.Field(at+".concurrency_max", "must be at least concurrency_min (%d), got %d", g.ConcurrencyMin, g.ConcurrencyMax)
+	if len(g.Concurrencies) == 0 {
+		p.Field(at+".concurrencies", "required: the client counts the cells ran; a count between two of them is not covered")
 	}
-	if !token.MatchString(g.Model) {
-		p.Field(at+".model", "required: the catalog model the runs used, got %q", g.Model)
+	for i, c := range g.Concurrencies {
+		switch {
+		case c < 1:
+			p.Field(at+".concurrencies", "must be at least 1, got %d", c)
+		case i > 0 && c <= g.Concurrencies[i-1]:
+			p.Field(at+".concurrencies", "are ascending, each once")
+		}
 	}
-	if !token.MatchString(g.Hardware) {
-		p.Field(at+".hardware", "required: the catalog hardware the runs used, got %q", g.Hardware)
+	for name, v := range map[string]string{"model": g.Model, "hardware": g.Hardware, "fabric": g.Fabric} {
+		if !token.MatchString(v) {
+			p.Field(at+"."+name, "required: the catalog %s the runs used, got %q", name, v)
+		}
+	}
+	if !token.MatchString(g.EngineVersion) {
+		p.Field(at+".engine_version", "required: the engine release the runs simulated, as the scenario states it, got %q", g.EngineVersion)
+	}
+	for name, par := range map[string]Parallel{"prefill": g.Prefill, "decode": g.Decode} {
+		if par.TP < 1 || par.PP < 1 || par.DP < 1 {
+			p.Field(at+"."+name, "required: the parallelism of one %s instance, each width at least 1, got %+v", name, par)
+		}
 	}
 	if len(g.Shapes) == 0 {
 		p.Field(at+".shapes", "required: the pool shapes the cells cover, each <n>P<m>D")
@@ -196,5 +208,5 @@ func (g Regime) validate(p *validate.Problems, at string) {
 }
 
 func (g Regime) key() string {
-	return fmt.Sprintf("%s/%d-%d/%s/%s/%s", g.Workload, g.ConcurrencyMin, g.ConcurrencyMax, g.Model, g.Hardware, strings.Join(g.Shapes, ","))
+	return fmt.Sprintf("%s/%v/%s/%s/%s/%s/%+v/%+v/%s", g.Workload, g.Concurrencies, g.Model, g.Hardware, g.EngineVersion, g.Fabric, g.Prefill, g.Decode, strings.Join(g.Shapes, ","))
 }

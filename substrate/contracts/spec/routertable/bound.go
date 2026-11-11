@@ -1,5 +1,10 @@
 package routertable
 
+import (
+	"fmt"
+	"slices"
+)
+
 // Statement is one difference between a router's mode and the llm-d policy that stands in for
 // it, in words. A point record carries the statements of the entry it used.
 type Statement struct {
@@ -99,18 +104,99 @@ type Ratio struct {
 	MaxRatio float64 `yaml:"max_ratio"`
 }
 
-// Regime says where a ratio holds: the workload kind, the concurrency range, the model and the
-// hardware, and the prefill and decode pool shapes. Outside it the ratio says nothing.
+// Parallel is the parallelism of one instance of a pool: the widths a deployment states for it.
+type Parallel struct {
+	TP             int  `yaml:"tp"`
+	PP             int  `yaml:"pp"`
+	DP             int  `yaml:"dp"`
+	ExpertParallel bool `yaml:"expert_parallel"`
+}
+
+// Regime says where a ratio holds. It is exact: a point carries the ratio only when every
+// dimension matches, and a dimension is a value the runs sampled, not an interval between
+// two of them. Outside it the ratio says nothing, and the point stays router_unsupported with the
+// reason that no bound covers its regime (Entry.BoundFor).
+//
+// The dimensions are the ones the evidence shows matter or fixes: the workload, the client counts
+// the sweep ran (time to first token has a sharp knee, so a count between two sampled ones is
+// not covered), the model and hardware, the engine release the runs simulated, the fabric between
+// the pools, the parallelism of one prefill instance and of one decode instance, and the pool
+// shapes.
 type Regime struct {
-	Workload       WorkloadKind `yaml:"workload"`
-	ConcurrencyMin int          `yaml:"concurrency_min"`
-	ConcurrencyMax int          `yaml:"concurrency_max"`
+	Workload WorkloadKind `yaml:"workload"`
+	// Concurrencies are the closed-loop client counts the cells ran, ascending, each once. A
+	// point matches only a count in the list.
+	Concurrencies []int `yaml:"concurrencies"`
 	// Model and Hardware are catalog names.
 	Model    string `yaml:"model"`
 	Hardware string `yaml:"hardware"`
+	// EngineVersion is the engine release the runs simulated, as the scenario states it
+	// (`engine_version`). Fabric is the catalog network between the pools (`cluster.fabric`).
+	EngineVersion string `yaml:"engine_version"`
+	Fabric        string `yaml:"fabric"`
+	// Prefill and Decode are the parallelism of one instance of each pool, as the deployment
+	// states it.
+	Prefill Parallel `yaml:"prefill"`
+	Decode  Parallel `yaml:"decode"`
 	// Shapes are the pool shapes the cells cover, each "<n>P<m>D": n prefill and m decode
 	// instances.
 	Shapes []string `yaml:"shapes"`
+}
+
+// Point is the regime of one point to be scored: what the scorer knows about the deployment it
+// simulates and the load it replays.
+type Point struct {
+	Workload      WorkloadKind
+	Concurrency   int
+	Model         string
+	Hardware      string
+	EngineVersion string
+	Fabric        string
+	// Shape is "<n>P<m>D".
+	Shape           string
+	Prefill, Decode Parallel
+}
+
+// Mismatches says, one phrase each, how the point lies outside the regime; none when it lies
+// inside.
+func (g Regime) Mismatches(p Point) []string {
+	var out []string
+	add := func(what string, in bool, have, want any) {
+		if !in {
+			out = append(out, fmt.Sprintf("%s %v is not %v", what, have, want))
+		}
+	}
+	add("workload", g.Workload == p.Workload, p.Workload, g.Workload)
+	add("concurrency", slices.Contains(g.Concurrencies, p.Concurrency), p.Concurrency, g.Concurrencies)
+	add("model", g.Model == p.Model, p.Model, g.Model)
+	add("hardware", g.Hardware == p.Hardware, p.Hardware, g.Hardware)
+	add("engine version", g.EngineVersion == p.EngineVersion, p.EngineVersion, g.EngineVersion)
+	add("fabric", g.Fabric == p.Fabric, p.Fabric, g.Fabric)
+	add("prefill instance", g.Prefill == p.Prefill, p.Prefill, g.Prefill)
+	add("decode instance", g.Decode == p.Decode, p.Decode, g.Decode)
+	add("pool shape", slices.Contains(g.Shapes, p.Shape), p.Shape, g.Shapes)
+	return out
+}
+
+// For returns the bound with only the ratios whose regime the point lies in, or nil when none
+// does: the point has no bound for its regime. The evidence, the not-measured list and the
+// ratios themselves are the bound's own.
+func (b *Bound) For(p Point) *Bound {
+	if b == nil {
+		return nil
+	}
+	var rs []Ratio
+	for _, r := range b.Ratios {
+		if len(r.Regime.Mismatches(p)) == 0 {
+			rs = append(rs, r)
+		}
+	}
+	if len(rs) == 0 {
+		return nil
+	}
+	out := *b
+	out.Ratios = rs
+	return &out
 }
 
 func (k WorkloadKind) valid() bool {

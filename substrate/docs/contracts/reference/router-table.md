@@ -153,11 +153,23 @@ allow yet.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `workload` | string | yes | The kind of workload, below. |
-| `concurrency_min` | integer | yes | The least number of closed-loop clients in the cells. At least 1. |
-| `concurrency_max` | integer | yes | The most. At least `concurrency_min`. |
+| `concurrencies` | list of integers | yes | The closed-loop client counts the cells ran, ascending, each once, each at least 1. A point matches only a count in the list: nothing is interpolated between two, because time to first token has a sharp knee between them. |
 | `model` | string | yes | The catalog model the runs used. |
 | `hardware` | string | yes | The catalog hardware the runs used. |
+| `engine_version` | string | yes | The engine release the runs simulated, as the scenario's `engine_version` states it. |
+| `fabric` | string | yes | The catalog network between the pools, the scenario's `cluster.fabric`. |
+| `prefill` | mapping | yes | The parallelism of one prefill instance: `tp`, `pp`, `dp` (each at least 1) and `expert_parallel`. |
+| `decode` | mapping | yes | The same for one decode instance. |
 | `shapes` | list of strings | yes | The pool shapes the cells cover, each `<n>P<m>D`: n prefill and m decode instances. Sorted, each once. |
+
+<!-- fields: routertable.Parallel -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `tp` | integer | yes | Tensor-parallel width of one instance. At least 1. |
+| `pp` | integer | yes | Pipeline-parallel width. At least 1. |
+| `dp` | integer | yes | Data-parallel width. At least 1. |
+| `expert_parallel` | boolean | yes | Whether the instance splits its experts across its ranks. |
 
 Workload kinds:
 
@@ -169,6 +181,13 @@ Workload kinds:
 :   Closed loop, 8,192 prompt tokens and 16 output tokens.
 `decode-bound`
 :   Closed loop, 256 prompt tokens and 2,048 output tokens.
+
+A regime is exact. `Entry.BoundFor` takes the point's workload, client count, model, hardware, engine
+release, fabric, instance layouts and pool shape and returns the ratios whose regime contains all
+of them; with none, the outcome is `regime_not_covered` and the point stays `router_unsupported`
+with the reason "no bound for this regime". A point record that carries a router bound whose regime
+does not list the point's client count is refused. The ratios are the sensitivity of BLIS's own
+figures to the choice of policy, not the error of standing a policy in for the router.
 
 The list is closed because a bound is a statement about the workloads it names and no others:
 a kind joins it with the measurement that covers it. How the ratios are measured, how to
@@ -187,8 +206,8 @@ no citation, or one that names a position outside the evidence list or names one
 lower-case hex digits, a producer that is not `<owner>/<name>`, a commit that is not a full commit or
 no command; a ratio whose metric is not in the metric registry, that names no alternative or its
 own policy, whose alternatives are unsorted or repeated, whose value is not a finite number of at
-least 1 with two decimals, whose workload is not a kind above, whose concurrency range is empty or runs
-backward, whose model or hardware is missing, whose shapes are missing, malformed or unsorted; a
+least 1 with two decimals, whose workload is not a kind above, whose client counts are empty, below 1 or not ascending, whose model, hardware, engine
+release, fabric or either instance layout is missing, whose shapes are missing, malformed or unsorted; a
 ratio stated twice for one regime. For `none`: a `difference` or a `bound`, because there is no
 stand-in policy to differ from or to bound. The catalog's tests also recompute every ratio from
 the evidence file and refuse one that is not the file's.

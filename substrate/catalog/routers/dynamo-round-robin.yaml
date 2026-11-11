@@ -76,247 +76,320 @@ bound:
       against: [random-picker]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.07
     - metric: ttft_p99_ms
       against: [random-picker]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.11
     - metric: tpot_p50_ms
       against: [random-picker]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.01
     - metric: output_tok_s
       against: [random-picker]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.01
     - metric: ttft_p50_ms
       against: [random-picker]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.13
     - metric: ttft_p99_ms
       against: [random-picker]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.19
     - metric: tpot_p50_ms
       against: [random-picker]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.01
     - metric: output_tok_s
       against: [random-picker]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.04
     - metric: ttft_p50_ms
       against: [random-picker]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.09
     - metric: ttft_p99_ms
       against: [random-picker]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.10
     - metric: tpot_p50_ms
       against: [random-picker]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.01
     - metric: output_tok_s
       against: [random-picker]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.01
     - metric: ttft_p50_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.55
     - metric: ttft_p99_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.05
     - metric: tpot_p50_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.09
     - metric: output_tok_s
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: balanced
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.12
     - metric: ttft_p50_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.18
     - metric: ttft_p99_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.65
     - metric: tpot_p50_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.04
     - metric: output_tok_s
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: prefill-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.16
     - metric: ttft_p50_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.41
     - metric: ttft_p99_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.26
     - metric: tpot_p50_ms
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.06
     - metric: output_tok_s
       against: [default, least-active-requests, queue-scorer]
       regime:
         workload: decode-bound
-        concurrency_min: 16
-        concurrency_max: 1024
+        concurrencies: [16, 64, 256, 1024]
         model: minimax-m2.5
         hardware: gb200-nvl72
+        engine_version: "0.32.0"
+        fabric: ib-400g
+        prefill: {tp: 1, pp: 1, dp: 1, expert_parallel: false}
+        decode: {tp: 4, pp: 1, dp: 1, expert_parallel: true}
         shapes: [1P3D, 2P3D, 3P2D, 4P1D]
       max_ratio: 1.07
   not_measured:
     - One model (minimax-m2.5) on one part (gb200-nvl72) over NIXL on ib-400g, served by vLLM 0.32.0. Another model or part moves where the pools saturate, and with it where the large ratios sit.
     - Closed-loop clients with fixed prompt and output lengths. No run had a prefix shared between requests, a session of several turns, a spread of lengths, or an open-loop arrival rate.
-    - Concurrency 16, 64, 256 and 1024 only, and the pool shapes 1P3D, 2P3D, 3P2D and 4P1D only, with one-GPU prefill instances and four-GPU decode instances. Ratios between the swept points, and larger pools, were not run.
-    - The ratios are between policies inside BLIS. No run behind Dynamo was compared with a run of BLIS, so how far Dynamo's real behaviour is from either policy is not measured.
+    - Concurrency 16, 64, 256 and 1024 only, and the pool shapes 1P3D, 2P3D, 3P2D and 4P1D only, with one-GPU prefill instances and four-GPU decode instances (tensor parallel 4 with expert parallelism). Counts between the swept points, and larger pools, were not run.
+    - The ratios are policy sensitivity, not substitution error. They say how far BLIS's own figures move when the policy changes, between policies inside BLIS. No run behind Dynamo was compared with a run of BLIS, so how far Dynamo's real behaviour is from either policy is not measured.
+    - The regime is exact. A point whose client count is not one of those listed, or whose model, part, engine release, fabric, instance layout or pool shape is not the one named, has no bound for this regime and stays router_unsupported; nothing is interpolated between the sampled counts, and time to first token has a sharp knee between them.
     - Time to first token, at 64 to 256 clients, is where the ratios against the policies that read load are large. The bound does not hold tightly there, and a ranking by TTFT p50 or p99 in that regime should not rest on this substitution. Time per output token and throughput move far less, except at the extremes of concurrency.
 evidence:
   - side: router

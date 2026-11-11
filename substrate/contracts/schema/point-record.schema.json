@@ -797,6 +797,30 @@
       ],
       "type": "object"
     },
+    "routertable.Parallel": {
+      "additionalProperties": false,
+      "properties": {
+        "dp": {
+          "type": "integer"
+        },
+        "expert_parallel": {
+          "type": "boolean"
+        },
+        "pp": {
+          "type": "integer"
+        },
+        "tp": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dp",
+        "expert_parallel",
+        "pp",
+        "tp"
+      ],
+      "type": "object"
+    },
     "routertable.Ratio": {
       "additionalProperties": false,
       "properties": {
@@ -827,17 +851,29 @@
     "routertable.Regime": {
       "additionalProperties": false,
       "properties": {
-        "concurrency_max": {
-          "type": "integer"
+        "concurrencies": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
         },
-        "concurrency_min": {
-          "type": "integer"
+        "decode": {
+          "$ref": "#/$defs/routertable.Parallel"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "fabric": {
+          "type": "string"
         },
         "hardware": {
           "type": "string"
         },
         "model": {
           "type": "string"
+        },
+        "prefill": {
+          "$ref": "#/$defs/routertable.Parallel"
         },
         "shapes": {
           "items": {
@@ -855,10 +891,13 @@
         }
       },
       "required": [
-        "concurrency_max",
-        "concurrency_min",
+        "concurrencies",
+        "decode",
+        "engine_version",
+        "fabric",
         "hardware",
         "model",
+        "prefill",
         "shapes",
         "workload"
       ],
