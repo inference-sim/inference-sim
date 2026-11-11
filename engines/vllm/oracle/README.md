@@ -87,7 +87,20 @@ A CPU cannot discover four facts: whether vLLM's wheel ships FlashAttention 3 an
 FlashInfer's TRTLLM kernels are usable, and whether the wheel carries FlashMLA. The oracle runs
 every combination of model, compute capability and KV dtype under every setting of those facts. A
 combination resolves only if the size is the same under all of them; otherwise it is refused,
-naming the fact. `oracle/blocksize/TABLE.tsv` is the table to read: each combination, its backend,
+naming the fact.
+
+One fact is assumed, not discovered. `ASSUMED_FACTS` in `oracle/blocksize/oracle.py` states, for
+compute capability 9.0, that vLLM's wheel ships FlashAttention 3 (`fa3_available`), with its
+evidence: the pinned Dockerfile builds for arch 9.0 with CUDA 13.0.3, `CMakeLists.txt` includes the
+`vllm_flash_attn` project on every CUDA build, and one recorded Kimi-K2.5 h200 run on
+`vllm/vllm-openai:v0.22.0` agrees. The condition that builds `_vllm_fa3_C` is in the external
+flash-attention repository, which the pinned tree does not hold, so this is an assumption about
+vLLM's release images. For a Hopper combination the size must then be the same only over the
+settings that agree with it. The table still shows all 16 settings, and a combination that resolves
+only by the assumption carries it (`assumed_facts` in the JSON, a `Source` clause in
+`ResolveBlockSize`). The MLA models with KV `auto`, `bfloat16` or `float16` on SM9x (FlashAttention
+MLA, size 16) resolve this way; with an fp8 KV they still depend on `flashmla_built`. An engine run
+from a build without FA3 is resolved wrongly. `oracle/blocksize/TABLE.tsv` is the table to read: each combination, its backend,
 its size and the size under each setting of the facts. The committed table is
 `core/vllm/blocksize_table.json`, which
 `core/vllm/blocksize.go` embeds, and CI fails if it differs from what the oracle prints:

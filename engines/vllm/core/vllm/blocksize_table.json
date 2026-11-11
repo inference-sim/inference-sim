@@ -1,12 +1,21 @@
 {
+ "assumptions": {
+  "9.0": {
+   "fa3_available": {
+    "evidence": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)",
+    "value": true
+   }
+  }
+ },
  "combinations": [
   {
+   "assumed_facts": {
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+   },
    "backends": [
-    "FLASHMLA",
-    "FLASH_ATTN_MLA",
-    "TRITON_MLA"
+    "FLASH_ATTN_MLA"
    ],
-   "block_size": null,
+   "block_size": 16,
    "by_facts": {
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
@@ -29,10 +38,11 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "auto",
    "model": "deepseek-v3",
-   "note": "depends on fa3_available, flashmla_built",
-   "status": "refused"
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHMLA",
     "TRITON_MLA"
@@ -64,6 +74,7 @@
    "status": "refused"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHMLA",
     "TRITON_MLA"
@@ -95,12 +106,13 @@
    "status": "refused"
   },
   {
+   "assumed_facts": {
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+   },
    "backends": [
-    "FLASHMLA",
-    "FLASH_ATTN_MLA",
-    "TRITON_MLA"
+    "FLASH_ATTN_MLA"
    ],
-   "block_size": null,
+   "block_size": 16,
    "by_facts": {
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
@@ -123,16 +135,17 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "bfloat16",
    "model": "deepseek-v3",
-   "note": "depends on fa3_available, flashmla_built",
-   "status": "refused"
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
   },
   {
+   "assumed_facts": {
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+   },
    "backends": [
-    "FLASHMLA",
-    "FLASH_ATTN_MLA",
-    "TRITON_MLA"
+    "FLASH_ATTN_MLA"
    ],
-   "block_size": null,
+   "block_size": 16,
    "by_facts": {
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
@@ -155,10 +168,11 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "float16",
    "model": "deepseek-v3",
-   "note": "depends on fa3_available, flashmla_built",
-   "status": "refused"
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -189,6 +203,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -219,6 +234,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -249,6 +265,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -279,6 +296,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -309,6 +327,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -339,6 +358,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -369,6 +389,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -399,6 +420,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -429,6 +451,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -459,10 +482,9 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
-    "FLASH_ATTN",
-    "TRITON_ATTN"
+    "FLASH_ATTN"
    ],
    "block_size": 16,
    "by_facts": {
@@ -491,10 +513,9 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
-    "FLASH_ATTN",
-    "TRITON_ATTN"
+    "FLASH_ATTN"
    ],
    "block_size": 16,
    "by_facts": {
@@ -523,10 +544,9 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
-    "FLASH_ATTN",
-    "TRITON_ATTN"
+    "FLASH_ATTN"
    ],
    "block_size": 16,
    "by_facts": {
@@ -555,10 +575,9 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
-    "FLASH_ATTN",
-    "TRITON_ATTN"
+    "FLASH_ATTN"
    ],
    "block_size": 16,
    "by_facts": {
@@ -587,10 +606,9 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
-    "FLASH_ATTN",
-    "TRITON_ATTN"
+    "FLASH_ATTN"
    ],
    "block_size": 16,
    "by_facts": {
@@ -619,6 +637,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -651,6 +670,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -683,6 +703,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -715,6 +736,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -747,6 +769,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -779,6 +802,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -811,6 +835,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -843,6 +868,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -875,6 +901,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -907,6 +934,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER",
     "FLASH_ATTN",
@@ -939,12 +967,13 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+   },
    "backends": [
-    "FLASHMLA",
-    "FLASH_ATTN_MLA",
-    "TRITON_MLA"
+    "FLASH_ATTN_MLA"
    ],
-   "block_size": null,
+   "block_size": 16,
    "by_facts": {
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
@@ -967,10 +996,11 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "auto",
    "model": "kimi-k2.5",
-   "note": "depends on fa3_available, flashmla_built",
-   "status": "refused"
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHMLA",
     "TRITON_MLA"
@@ -1002,6 +1032,7 @@
    "status": "refused"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHMLA",
     "TRITON_MLA"
@@ -1033,12 +1064,13 @@
    "status": "refused"
   },
   {
+   "assumed_facts": {
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+   },
    "backends": [
-    "FLASHMLA",
-    "FLASH_ATTN_MLA",
-    "TRITON_MLA"
+    "FLASH_ATTN_MLA"
    ],
-   "block_size": null,
+   "block_size": 16,
    "by_facts": {
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
@@ -1061,16 +1093,17 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "bfloat16",
    "model": "kimi-k2.5",
-   "note": "depends on fa3_available, flashmla_built",
-   "status": "refused"
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
   },
   {
+   "assumed_facts": {
+    "fa3_available": "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports (vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the external flash-attention repository, which is not in the pinned tree, so this is an assumption about the images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only fa3_available=0 with flashmla_built=1 (size 64)"
+   },
    "backends": [
-    "FLASHMLA",
-    "FLASH_ATTN_MLA",
-    "TRITON_MLA"
+    "FLASH_ATTN_MLA"
    ],
-   "block_size": null,
+   "block_size": 16,
    "by_facts": {
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=0": 16,
     "fa3_available=0,fa4_available=0,flashmla_built=0,trtllm_usable=1": 16,
@@ -1093,10 +1126,11 @@
    "gpu": "h100/h200",
    "kv_cache_dtype": "float16",
    "model": "kimi-k2.5",
-   "note": "depends on fa3_available, flashmla_built",
-   "status": "refused"
+   "note": "the same under every setting of fa3_available, fa4_available, flashmla_built, trtllm_usable that agrees with fa3_available=1 and at every tensor-parallel width in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] (valid up to tp 16 only)",
+   "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1127,6 +1161,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1157,6 +1192,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1187,6 +1223,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1217,6 +1254,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1247,6 +1285,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1277,6 +1316,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1307,6 +1347,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1337,6 +1378,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1367,6 +1409,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER_MLA"
    ],
@@ -1397,6 +1440,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -1427,8 +1471,8 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
     "FLASH_ATTN"
    ],
    "block_size": 16,
@@ -1458,8 +1502,8 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
     "FLASH_ATTN"
    ],
    "block_size": 16,
@@ -1489,6 +1533,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -1519,6 +1564,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -1549,6 +1595,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1579,6 +1626,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1609,6 +1657,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1639,6 +1688,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1669,6 +1719,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1699,6 +1750,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1729,6 +1781,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1759,6 +1812,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1789,6 +1843,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1819,6 +1874,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -1849,6 +1905,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -1879,8 +1936,8 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
     "FLASH_ATTN"
    ],
    "block_size": 16,
@@ -1910,8 +1967,8 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
     "FLASH_ATTN"
    ],
    "block_size": 16,
@@ -1941,6 +1998,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -1971,6 +2029,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -2001,6 +2060,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2031,6 +2091,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2061,6 +2122,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2091,6 +2153,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2121,6 +2184,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2151,6 +2215,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2181,6 +2246,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2211,6 +2277,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2241,6 +2308,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2271,6 +2339,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2301,6 +2370,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -2331,8 +2401,8 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
     "FLASH_ATTN"
    ],
    "block_size": 16,
@@ -2362,8 +2432,8 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
-    "FLASHINFER",
     "FLASH_ATTN"
    ],
    "block_size": 16,
@@ -2393,6 +2463,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -2423,6 +2494,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASH_ATTN"
    ],
@@ -2453,6 +2525,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2483,6 +2556,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2513,6 +2587,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2543,6 +2618,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2573,6 +2649,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2603,6 +2680,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2633,6 +2711,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2663,6 +2742,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2693,6 +2773,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],
@@ -2723,6 +2804,7 @@
    "status": "resolved"
   },
   {
+   "assumed_facts": {},
    "backends": [
     "FLASHINFER"
    ],

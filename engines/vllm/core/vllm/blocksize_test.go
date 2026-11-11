@@ -6,8 +6,10 @@ import (
 )
 
 // The committed table is the block-size oracle's output (oracle/blocksize/oracle.py): a
-// combination is resolved exactly when vLLM's size is the same under every setting of the facts
-// a CPU cannot discover, and that size is the one the resolver returns.
+// combination is resolved exactly when vLLM's size is the same under every setting of the facts a
+// CPU cannot discover that agrees with what the oracle assumes for the capability
+// (blockSizes.Assumptions), and that size is the one the resolver returns. A resolved combination
+// carries the assumed facts exactly when its size is not the same under all 16 settings.
 func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
 	if blockSizes.VLLM != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
 		t.Errorf("the table is for vLLM %s, not the pinned commit", blockSizes.VLLM)
@@ -15,25 +17,64 @@ func TestBlockSizeTableIsInternallyConsistent(t *testing.T) {
 	if len(blockSizes.Facts) < 3 {
 		t.Errorf("the table names %d facts, want the ones the oracle toggles", len(blockSizes.Facts))
 	}
-	resolved := 0
-	for _, c := range blockSizes.Combinations {
-		same := true
-		for _, s := range c.ByFacts {
-			if s != c.ByFacts[firstKey(c.ByFacts)] || s == 0 {
-				same = false
+	for cap, facts := range blockSizes.Assumptions {
+		for f, a := range facts {
+			if _, ok := blockSizes.Facts[f]; !ok || a.Evidence == "" {
+				t.Errorf("capability %s assumes %q (%+v), which is not a fact of the table or has no evidence", cap, f, a)
 			}
 		}
+	}
+	resolved, assumed := 0, 0
+	for _, c := range blockSizes.Combinations {
+		// sameOver is whether every setting that passes keep has one nonzero size.
+		sameOver := func(keep func(setting string) bool) bool {
+			first, same := 0, true
+			for setting, s := range c.ByFacts {
+				if !keep(setting) {
+					continue
+				}
+				if first == 0 {
+					first = s
+				}
+				if s != first || s == 0 {
+					same = false
+				}
+			}
+			return same && first != 0
+		}
+		agrees := func(setting string) bool {
+			for f, a := range blockSizes.Assumptions[c.Capability] {
+				want := "0"
+				if a.Value {
+					want = "1"
+				}
+				if !strings.Contains(","+setting+",", ","+f+"="+want+",") {
+					return false
+				}
+			}
+			return true
+		}
+		same, sameEverywhere := sameOver(agrees), sameOver(func(string) bool { return true })
 		switch {
 		case c.Status == "resolved" && (!same || c.BlockSize == 0 || len(c.Backends) == 0):
 			t.Errorf("%s %s %s resolved to %d but the sizes under the facts are %v", c.Model, c.GPU, c.KVCacheDType, c.BlockSize, c.ByFacts)
 		case c.Status == "refused" && same:
-			t.Errorf("%s %s %s is refused although the size is the same under every fact: %v", c.Model, c.GPU, c.KVCacheDType, c.ByFacts)
+			t.Errorf("%s %s %s is refused although the size is the same under every setting that agrees with the assumptions: %v", c.Model, c.GPU, c.KVCacheDType, c.ByFacts)
+		case c.Status == "resolved" && sameEverywhere && len(c.AssumedFacts) != 0:
+			t.Errorf("%s %s %s is the same under all 16 settings but states assumed facts %v", c.Model, c.GPU, c.KVCacheDType, c.AssumedFacts)
+		case c.Status == "resolved" && !sameEverywhere && len(c.AssumedFacts) == 0:
+			t.Errorf("%s %s %s rests on an assumption but states none: %v", c.Model, c.GPU, c.KVCacheDType, c.ByFacts)
+		case c.Status == "refused" && len(c.AssumedFacts) != 0:
+			t.Errorf("%s %s %s is refused but states assumed facts %v", c.Model, c.GPU, c.KVCacheDType, c.AssumedFacts)
 		case c.Status == "resolved":
 			resolved++
+			if len(c.AssumedFacts) != 0 {
+				assumed++
+			}
 		}
 	}
-	if resolved == 0 {
-		t.Error("no combination resolves")
+	if resolved == 0 || assumed == 0 {
+		t.Errorf("%d combinations resolve, %d of them by assumption", resolved, assumed)
 	}
 }
 
@@ -59,7 +100,12 @@ func TestResolveBlockSize(t *testing.T) {
 		{"dense on Blackwell", with(func(i *BlockSizeInput) { i.Capability = "10.0" }), 16, ""},
 		{"gpt-oss, which has sinks", BlockSizeInput{Model: "gpt-oss-120b", Capability: "10.3", KVCacheDType: "fp8"}, 16, ""},
 		{"MLA on Blackwell is FlashInfer MLA's 32", BlockSizeInput{Model: "deepseek-v3", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
-		{"MLA on Hopper depends on what the wheel ships", BlockSizeInput{Model: "deepseek-v3", Capability: "9.0", KVCacheDType: "fp8"}, 0, "flashmla_built"},
+		{"MLA on Hopper with fp8 KV still depends on FlashMLA", BlockSizeInput{Model: "deepseek-v3", Capability: "9.0", KVCacheDType: "fp8"}, 0, "flashmla_built"},
+		{"Kimi-K2.5 on Hopper with fp8 KV still depends on FlashMLA", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "fp8"}, 0, "flashmla_built"},
+		{"MLA on Hopper with auto KV is FlashAttention MLA's 16, by the FA3 assumption", BlockSizeInput{Model: "deepseek-v3", Capability: "9.0", KVCacheDType: "auto"}, 16, "fa3_available"},
+		{"Kimi-K2.5 on Hopper with auto KV, by the FA3 assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "auto"}, 16, "fa3_available"},
+		{"Kimi-K2.5 on Hopper with bfloat16 KV", BlockSizeInput{Model: "kimi-k2.5", Capability: "9.0", KVCacheDType: "bfloat16"}, 16, "fa3_available"},
+		{"Kimi-K2.5 on Blackwell needs no assumption", BlockSizeInput{Model: "kimi-k2.5", Capability: "10.0", KVCacheDType: "auto"}, 32, ""},
 		{"a model the oracle does not resolve", BlockSizeInput{Model: "minimax-m3", Capability: "10.0", KVCacheDType: "fp8"}, 0, "MiniMaxM3SparseBackend"},
 		{"a hybrid model", BlockSizeInput{Model: "qwen3.5-397b-a17b", Capability: "10.0", KVCacheDType: "fp8"}, 0, "hybrid"},
 		{"a model the oracle has never seen", with(func(i *BlockSizeInput) { i.Model = "no-such-model" }), 0, "not a combination the oracle resolves"},
@@ -76,9 +122,16 @@ func TestResolveBlockSize(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := ResolveBlockSize(c.in)
-			if c.why == "" {
+			if c.why == "" || c.size > 0 {
 				if err != nil || got.Size != c.size || !strings.Contains(got.Source, "vllm/platforms/interface.py:757-781@5df63a72") {
 					t.Fatalf("got %+v, %v; want size %d with a cited source", got, err, c.size)
+				}
+				// A size that rests on an assumed fact says so, with its evidence; one that does not, does not.
+				if assumed := strings.Contains(got.Source, "assuming "); assumed != (c.why != "") {
+					t.Errorf("source %q: assumes a fact: %t, want %t", got.Source, assumed, c.why != "")
+				}
+				if c.why != "" && !strings.Contains(got.Source, "assuming "+c.why+": ") {
+					t.Errorf("source %q does not say it assumes %s", got.Source, c.why)
 				}
 				return
 			}

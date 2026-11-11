@@ -148,7 +148,12 @@ func TestEngineRefusesWhatItDoesNotResolve(t *testing.T) {
 // generated deployment states none (X19).
 func openWithoutBlockSize(t *testing.T, fixture string) (*Model, error) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture))
+	// A fixture name with a directory ("direct/...") is relative to kerneltests/testdata.
+	path := filepath.Join("..", "..", "kerneltests", "testdata", "aisimulate", fixture)
+	if strings.Contains(fixture, "/") {
+		path = filepath.Join("..", "..", "kerneltests", "testdata", filepath.FromSlash(fixture))
+	}
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +186,9 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 		{"deepseek-v3-b200-fp8-sglang-tp8.yaml", 32, ""},
 		// MLA on Hopper with fp8 KV depends on whether the wheel carries FlashMLA.
 		{"deepseek-v3-h200-fp8-sglang-tp8.yaml", 0, "flashmla_built"},
+		// MLA on Hopper with an unstated KV dtype is FlashAttention MLA's 16 if the wheel ships FA3, which the
+		// oracle assumes (oracle/blocksize ASSUMED_FACTS); the source says so.
+		{"direct/kimi-k2.5-h200-int4-vllm-tp8-cfg1.yaml", 16, ""},
 	} {
 		t.Run(c.fixture, func(t *testing.T) {
 			m, err := openWithoutBlockSize(t, c.fixture)
@@ -199,6 +207,8 @@ func TestEngineResolvesAnUnstatedBlockSizeAt032(t *testing.T) {
 			}
 			if src := m.EngineSources()["block_size"]; !strings.Contains(src, "vllm/platforms/interface.py:757-781@5df63a72") {
 				t.Errorf("block_size source %q, want the rule with its citation", src)
+			} else if assumed := strings.Contains(src, "assuming fa3_available: "); assumed != strings.HasPrefix(c.fixture, "direct/kimi") {
+				t.Errorf("block_size source %q: names the FA3 assumption: %t", src, assumed)
 			}
 			// The kernel prices the size Engine reports.
 			if k, ok := m.Kernel().(*latencykernel.Kernel); !ok {

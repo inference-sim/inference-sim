@@ -13,7 +13,9 @@ and runs vLLM's own selection and block-size code on a CPU:
 Only the GPU, the compiled wheels and the facts a CPU cannot discover are replaced (stubs.py,
 design FID-1). Each combination is run under every setting of those facts. It RESOLVES if the
 size is the same under all of them, and is REFUSED, naming the fact, if it differs or if vLLM
-finds no valid backend.
+finds no valid backend. Where ASSUMED_FACTS states a fact for a compute capability, with its
+evidence, the size must be the same only over the settings that agree with it, and the
+combination records the assumption it rests on (assumed_facts).
 
 The model's hybrid and heterogeneous-dtype phases (interface.py:783-790 and :791-796) do not
 apply to the models here: none is a hybrid model, and none sets kv_cache_dtype_skip_layers.
@@ -99,6 +101,26 @@ COMPUTE_CAPABILITY = {"h100": (9, 0), "h200": (9, 0), "b200": (10, 0), "b300": (
 # not the other, so the oracle runs each name and the table says which resolve alike, rather than Go
 # assuming an alias (blis-vllm#68).
 KV_DTYPES = ["auto", "fp8", "fp8_e4m3", "bfloat16", "float16"]
+# Facts the oracle assumes for a compute capability, with the evidence for each. A CPU cannot
+# discover a fact, and a combination whose size depends on one is refused; an assumption lets it
+# resolve over the settings that agree with the assumption. Every combination is still run under all
+# 16 settings (by_facts), so the table shows what each setting gives, and a combination resolves by
+# assumption only where the settings that agree with it all give one size. The assumption is not
+# derived from the pinned tree; whoever runs vLLM from a build that lacks it is resolved wrongly.
+# {(major, minor): {fact: (value, evidence)}}.
+ASSUMED_FACTS = {
+    (9, 0): {
+        "fa3_available": (True, (
+            "vLLM's official CUDA release images ship FlashAttention 3 on SM9x: the pinned docker/Dockerfile:273 builds "
+            "for arch 9.0 (list '7.5 8.0 8.6 8.9 9.0 10.0 11.0 12.0') with CUDA 13.0.3 (:25), CMakeLists.txt:1576-1585 "
+            "includes the vllm_flash_attn project on every CUDA build, and FA3_AVAILABLE is true when _vllm_fa3_C imports "
+            "(vllm_flash_attn/flash_attn_interface.py:20-28, :67-75). The condition that builds _vllm_fa3_C is in the "
+            "external flash-attention repository, which is not in the pinned tree, so this is an assumption about the "
+            "images, not derived from the tree. The one recorded Kimi-K2.5 h200 run (vllm/vllm-openai:v0.22.0, KV auto, "
+            "block_size 16; compat/kernelmodel/testdata/recorded_block_sizes) is consistent with it, and rules out only "
+            "fa3_available=0 with flashmla_built=1 (size 64)")),
+    },
+}
 # The tensor-parallel widths each combination is run at. The per-rank head counts shrink with the
 # width (num_heads // tp), and a backend may accept a head count at one width and not at another,
 # so a combination resolves only if the size is the same at all of them. The table is valid only
@@ -214,14 +236,26 @@ def run(vllm_dir):
                                         ", ".join(f"tp{t}={o[0]}" for t, o in sorted(outs.items())))
             else:
                 results[tuple(vals)] = (outs[TP_WIDTHS[0]], None)
-        sizes = {r[0][0] if r[0] else None for r in results.values()}
-        backends = sorted({r[0][1] for r in results.values() if r[0]})
+        # The settings that agree with what is assumed for this capability; all 16 when nothing is.
+        assumed = ASSUMED_FACTS.get(cap, {})
+
+        def agrees(vals):
+            return all(dict(zip(fact_names, vals))[f] == want for f, (want, _) in assumed.items())
+
+        kept = {k: r for k, r in results.items() if agrees(k)}
+        sizes = {r[0][0] if r[0] else None for r in kept.values()}
+        backends = sorted({r[0][1] for r in kept.values() if r[0]})
+        # A combination rests on an assumption when the size differs over all 16 settings.
+        every = {r[0][0] if r[0] else None for r in results.values()}
+        assumed_facts = {f: ev for f, (_, ev) in assumed.items()} if len(sizes) == 1 and None not in sizes and len(every) > 1 else {}
         if None in sizes:
-            first_err = next(r[1] for r in results.values() if r[1])
+            first_err = next(r[1] for r in kept.values() if r[1])
             status, size = "refused", None
             note = first_err
         elif len(sizes) == 1:
             status, size, note = "resolved", sizes.pop(), ("the same under every setting of " + ", ".join(fact_names) +
+                                                     (" that agrees with " + ", ".join(f"{f}={int(w)}" for f, (w, _) in sorted(assumed.items()))
+                                                      if assumed_facts else "") +
                                                      " and at every tensor-parallel width in " + str(TP_WIDTHS) + " (valid up to tp %d only)" % max(TP_WIDTHS))
         else:
             status, size = "refused", None
@@ -232,6 +266,8 @@ def run(vllm_dir):
                         continue
                     other = list(vals)
                     other[i] = True
+                    if not (agrees(vals) and agrees(other)):
+                        continue
                     a, b = results[tuple(vals)][0], results[tuple(other)][0]
                     if a and b and a[0] != b[0]:
                         differs.append(f)
@@ -239,6 +275,7 @@ def run(vllm_dir):
             note = "depends on " + ", ".join(sorted(set(differs)) or fact_names)
         rows.append(dict(model=model, gpu=gpu, capability=f"{cap[0]}.{cap[1]}", kv_cache_dtype=kv, status=status,
                          block_size=size, backends=backends,
+                         assumed_facts=assumed_facts,
                          by_facts={",".join(f"{n}={int(x)}" for n, x in zip(fact_names, k)): (r[0][0] if r[0] else None)
                                    for k, r in results.items()},
                          note=note))
@@ -254,6 +291,11 @@ def render_table(v, fact_names, rows):
     out.append("# only if the size is the same under all:")
     for f in fact_names:
         out.append(f"#   {f}: {v.stubs.FACT_DOC[f]}")
+    out.append("# Assumed facts. A combination whose size depends on one is resolved over the settings that agree with it,")
+    out.append("# and its assumed_facts (JSON) and its Source say so; the columns below still show all 16 settings.")
+    for cap, facts in sorted(ASSUMED_FACTS.items()):
+        for f, (want, ev) in sorted(facts.items()):
+            out.append(f"#   compute capability {cap[0]}.{cap[1]}: {f}={int(want)}: {ev}")
     out.append("# Platform replacements (design FID-1). None decides a block size:")
     for what, why in v.stubs.REPLACEMENTS:
         out.append(f"#   {what}: {why}")
@@ -281,8 +323,10 @@ def as_json(v, fact_names, rows):
         "vllm": "5df63a7203cdb9328d824a27b682e77c7b9928be",
         "facts": {f: v.stubs.FACT_DOC[f] for f in fact_names},
         "replacements": [{"what": a, "why": b} for a, b in v.stubs.REPLACEMENTS],
+        "assumptions": {f"{cap[0]}.{cap[1]}": {f: {"value": want, "evidence": ev} for f, (want, ev) in facts.items()}
+                        for cap, facts in ASSUMED_FACTS.items()},
         "not_resolved": NOT_RESOLVED,
-        "combinations": [{k: r[k] for k in ("model", "gpu", "capability", "kv_cache_dtype", "status", "block_size", "backends", "by_facts", "note")} for r in rows],
+        "combinations": [{k: r[k] for k in ("model", "gpu", "capability", "kv_cache_dtype", "status", "block_size", "backends", "assumed_facts", "by_facts", "note")} for r in rows],
     }, indent=1, sort_keys=True) + "\n"
 
 

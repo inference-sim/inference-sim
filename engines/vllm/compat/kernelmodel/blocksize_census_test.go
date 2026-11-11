@@ -203,10 +203,10 @@ func TestBlockSizeResolutionOverTheCensusFixtures(t *testing.T) {
 	}
 	t.Logf("v0.32.0 fixtures %d: stated by the run %d (reproduced %d, refused %d, differs %d); no size stated: refused %d (hybrid pieces %d), resolved %d",
 		nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"], nRefused, nHybridPieces, nResolved)
-	if nV032 != 679 || nStated != 354 || nRefused != 38 || nResolved != 287 || nHybridPieces != 9 ||
+	if nV032 != 679 || nStated != 354 || nRefused != 26 || nResolved != 299 || nHybridPieces != 9 ||
 		statedClass["reproduced"] != 0 || statedClass["refused"] != 318 || statedClass["differs"] != 36 || len(statedDiffers) != 36 {
 		t.Errorf("the census counts changed: %d fixtures; stated %d (reproduced %d, refused %d, differs %d); no size stated: refused %d (hybrid %d), resolved %d; "+
-			"want 679; 354 (0, 318, 36); 38 (9), 287", nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"],
+			"want 679; 354 (0, 318, 36); 26 (9), 299", nV032, nStated, statedClass["reproduced"], statedClass["refused"], statedClass["differs"],
 			nRefused, nHybridPieces, nResolved)
 	}
 }
