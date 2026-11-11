@@ -251,7 +251,25 @@ CAPTURE_CASES = [
     dict(name="refused-no-batched-tokens", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=8, max_num_batched_tokens=0),
     dict(name="stated-max-is-the-largest-stated-size", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=8, max_num_batched_tokens=64, max_capture=16, sizes=[8, 16]),
     dict(name="interactivity", mode="PIECEWISE", graph_mode="PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, performance_mode="interactivity"),
+    # The values a deployment states for max_cudagraph_capture_size: 2048 (the most common), the
+    # smallest the points state (2), a value off the stride, one equal to max_num_batched_tokens,
+    # and the same off-stride value with speculation.
+    dict(name="stated-max-2048", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=2048),
+    dict(name="stated-max-2", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=2),
+    dict(name="stated-max-1000", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=8192, max_capture=1000),
+    dict(name="stated-max-equals-batched-tokens", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=256, max_num_batched_tokens=1024, max_capture=1024),
+    dict(name="mtp3-stated-max-1000", mode="FULL_AND_PIECEWISE", graph_mode="FULL_AND_PIECEWISE", max_num_seqs=128, max_num_batched_tokens=8192, spec_tokens=3, max_capture=1000),
 ]
+# The configurations whose resolution reads the part, again on a data-center Blackwell part
+# (platform.is_device_capability_family(100)), where the unstated ceiling is 1024 rather than 512,
+# and the stated values the dashboard's points use. The refusals do not depend on the part.
+BLACKWELL_TWINS = ("tiny-seqs-ceiling-8", "batched-tokens-off-stride", "seqs-off-stride", "small-seqs",
+                   "piecewise", "full-decode-only", "none", "stated-max", "stated-max-above-batched",
+                   "stated-sizes", "mtp3", "mtp1-small", "stated-max-is-the-largest-stated-size",
+                   "stated-max-2048", "stated-max-2", "stated-max-1000", "stated-max-equals-batched-tokens",
+                   "mtp3-stated-max-1000")
+CAPTURE_CASES += [dict(c, name=c["name"] + "-blackwell", blackwell=True) for c in CAPTURE_CASES
+                  if c["name"] in BLACKWELL_TWINS]
 
 
 def cases(ns):
