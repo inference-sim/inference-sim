@@ -275,6 +275,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         if eco is not None:
             iteration = IterationStats() if eco.outputs else None
             frontend.process_outputs(eco.outputs, float(step), iteration)
+            # AsyncLLM does this before it logs (async_llm.py:893@5df63a72): the frontend's
+            # LoRARequestStates fills the running and waiting adapter sets that
+            # vllm:lora_requests_info carries as labels (stats.py:696-700@5df63a72).
+            frontend.update_scheduler_stats(eco.scheduler_stats)
             logger.record(scheduler_stats=eco.scheduler_stats, iteration_stats=iteration, engine_idx=0)
         per_step.append(collect(include_histograms=False))
         step += 1
