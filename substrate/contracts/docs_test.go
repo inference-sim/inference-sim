@@ -345,6 +345,8 @@ var documented = map[string]struct {
 	"fields.Field":                {typ: reflect.TypeOf(fields.Field{})},
 	"fields.Evidence":             {typ: reflect.TypeOf(fields.Evidence{})},
 	"fields.Estimation":           {typ: reflect.TypeOf(fields.Estimation{})},
+	"fields.ValueClasses":         {typ: reflect.TypeOf(fields.ValueClasses{})},
+	"fields.Threshold":            {typ: reflect.TypeOf(fields.Threshold{})},
 	"pointrecord.Record":          {typ: reflect.TypeOf(pointrecord.Record{})},
 	"pointrecord.Identity":        {typ: reflect.TypeOf(pointrecord.Identity{})},
 	"pointrecord.G5Reason":        {typ: reflect.TypeOf(pointrecord.G5Reason{})},

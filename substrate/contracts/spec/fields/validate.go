@@ -71,6 +71,7 @@ func (f *Field) validate(p *validate.Problems) {
 		p.Field("source", "must be %q or %q, got %q", SourceConfig, SourceEnv, f.Source)
 	}
 	f.validateEvidence(p)
+	f.ValueClasses.validate(p, f.Status)
 	est := &validate.Problems{}
 	f.Estimation.validate(est)
 	p.Merge("estimation", est)

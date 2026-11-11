@@ -40,6 +40,23 @@
           "oracle/traces/t2-basic.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 256,
+            "closed": "below"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -50,6 +67,19 @@
       "status": "proven_inert",
       "evidence": {
         "proof": "TestSeedChangesNoDecision"
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 0,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1
+        ]
       },
       "estimation": {
         "rule": "none"

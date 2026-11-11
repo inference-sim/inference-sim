@@ -49,6 +49,10 @@ type Field struct {
 	Status Status `json:"status" yaml:"status"`
 	// Evidence supports Status. Exactly one of its keys is set, the one Status requires.
 	Evidence Evidence `json:"evidence" yaml:"evidence"`
+	// ValueClasses are the classes of values the evidence covers (design VLM-3). Required for
+	// a modelled or proven-inert field and not allowed for any other: a field with no evidence
+	// covers no class.
+	ValueClasses *ValueClasses `json:"value_classes,omitempty" yaml:"value_classes,omitempty"`
 	// Estimation is the rule a scoring harness applies when a run did not record the field,
 	// or set it to a value the port does not model (design §11.2).
 	Estimation Estimation `json:"estimation" yaml:"estimation"`

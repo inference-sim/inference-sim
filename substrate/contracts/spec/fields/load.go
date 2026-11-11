@@ -17,9 +17,11 @@ import (
 var (
 	listKeys       = keySet("kind", "engine", "fields")
 	engineKeys     = keySet("kind", "version")
-	fieldKeys      = keySet("name", "source", "status", "evidence", "estimation")
+	fieldKeys      = keySet("name", "source", "status", "evidence", "value_classes", "estimation")
 	evidenceKeys   = keySet("traces", "proof", "issue", "note")
 	estimationKeys = keySet("rule", "setting", "reason")
+	classesKeys    = keySet("type", "values", "covered", "thresholds", "covered_classes")
+	thresholdKeys  = keySet("value", "closed")
 )
 
 func keySet(keys ...string) map[string]bool {
@@ -108,6 +110,9 @@ const (
 	levelField
 	levelEvidence
 	levelEstimation
+	levelClasses
+	levelThresholds
+	levelThreshold
 	levelFree // inside a setting, or a list of trace paths: any keys, still checked for duplicates
 )
 
@@ -135,7 +140,8 @@ func (w *walker) value(path string, lv level) error {
 
 func (w *walker) object(path string, lv level) error {
 	allowed := map[level]map[string]bool{levelList: listKeys, levelEngine: engineKeys,
-		levelField: fieldKeys, levelEvidence: evidenceKeys, levelEstimation: estimationKeys}[lv]
+		levelField: fieldKeys, levelEvidence: evidenceKeys, levelEstimation: estimationKeys,
+		levelClasses: classesKeys, levelThreshold: thresholdKeys}[lv]
 	seen := map[string]bool{}
 	for w.dec.More() {
 		tok, err := w.dec.Token()
@@ -160,6 +166,10 @@ func (w *walker) object(path string, lv level) error {
 			child = levelEvidence
 		case lv == levelField && key == "estimation":
 			child = levelEstimation
+		case lv == levelField && key == "value_classes":
+			child = levelClasses
+		case lv == levelClasses && key == "thresholds":
+			child = levelThresholds
 		}
 		at := join(path, key)
 		if lv == levelField && key == "name" {
@@ -188,8 +198,11 @@ func (w *walker) object(path string, lv level) error {
 func (w *walker) array(path string, lv level) error {
 	for i := 0; w.dec.More(); i++ {
 		child := levelFree
-		if lv == levelFields {
+		switch lv {
+		case levelFields:
 			child = levelField
+		case levelThresholds:
+			child = levelThreshold
 		}
 		if err := w.value(fmt.Sprintf("%s[%d]", path, i), child); err != nil {
 			return err
