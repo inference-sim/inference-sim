@@ -29,7 +29,7 @@ finite](../concepts/contracts.md#numbers-are-finite)).
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `kind` | string | yes | Always `Result`. |
-| `schema_version` | integer | yes | Always `2`. |
+| `schema_version` | integer | yes | Always `3`. Version 3 requires each figure to state its scope; a version 2 Result is refused. |
 | `name` | string | yes | The run's identity, a lowercase slug. |
 | `engine` | mapping | yes | The engine the run used, below. |
 | `data` | mapping | yes | The catalog and registry the run read, below. |
@@ -304,7 +304,14 @@ revision differs. Both are absent on a fresh run.
 ## `metrics`
 
 Each key is an identifier from the [metric registry](metrics.md). The registry gives its
-formula, statistic, population, window and unit; the Result gives the value.
+formula, statistic, population, window and unit; the Result gives the value and states the
+figure's scope (design §8.7, DEV-8). A Result holds one figure of a metric, so a Result states no
+two scopes of one metric.
+
+A figure with no scope is refused, not read as the whole cluster: a definition is never inferred
+(DEV-8), so a figure that does not say what it is a figure of cannot be compared. A figure is
+compared with another only when the metric, scope, member, aggregate and scope ranged over are
+all the same (`metrics.ComparableFigures`, or `Basis.ComparableTo` for the document form).
 
 <!-- fields: result.Figure -->
 
@@ -312,6 +319,10 @@ formula, statistic, population, window and unit; the Result gives the value.
 |---|---|---|---|
 | `value` | number | yes | Finite and not negative; at most 1 for a fraction. |
 | `samples` | integer | yes | The size of the population the statistic is over. Positive for a latency. |
+| `scope` | string | yes | The scope the figure is at: `cluster`, `pool` or `instance`, one the metric is defined at. |
+| `member` | string | at the pool and instance scopes | The pool or instance the figure is of, by the name the deployment gives it. A figure at the `cluster` scope has none. For an aggregate, the member of `scope`, not of `over`. |
+| `aggregate` | string | with `over` | `max` or `min`, one the metric admits: the figure combines the figures of a narrower scope. Absent for a figure computed from the scope's own population. |
+| `over` | string | with `aggregate` | The narrower scope the aggregate ranges over, one the metric is defined at. |
 
 ## `requests`
 

@@ -21,8 +21,10 @@ import (
 // Kind is the value of Record.Kind.
 const Kind = "PointRecord"
 
-// SchemaVersion is the record schema this package reads and writes.
-const SchemaVersion = 1
+// SchemaVersion is the record schema this package reads and writes. Version 2 requires each
+// figure to state the scope of its predicted and measured sides (DEV-8, design §8.7); a version
+// 1 figure states none, and a definition is never inferred, so it is not read.
+const SchemaVersion = 2
 
 // Record is one scored or declined point.
 type Record struct {
@@ -53,8 +55,8 @@ type Record struct {
 	// HarnessDigest is the digest of the scoring harness image, sha256:<64 hex>.
 	HarnessDigest string `yaml:"harness_digest"`
 
-	// Figures pair each predicted figure with the measured one, sorted by metric. Empty
-	// for a G5 point.
+	// Figures pair each predicted figure with the measured one, sorted by metric and then by
+	// basis (scope, member, aggregate, over), each once. Empty for a G5 point.
 	Figures []Figure `yaml:"figures,omitempty"`
 
 	// Settings compare each classified engine setting the run recorded with what BLIS was
@@ -224,12 +226,19 @@ type Simulator struct {
 	Data result.Data `yaml:"data"`
 }
 
-// Figure pairs a predicted and a measured figure of one metric.
+// Figure pairs a predicted and a measured figure of one metric at one scope.
 type Figure struct {
 	// Metric is the metric-registry identifier both sides are computed under.
-	Metric    string  `yaml:"metric"`
-	Predicted float64 `yaml:"predicted"`
-	Measured  float64 `yaml:"measured"`
+	Metric string `yaml:"metric"`
+	// PredictedBasis and MeasuredBasis state the scope, member, aggregate and scope ranged
+	// over of each side (design §8.7, DEV-8). The two sides are compared only when the metric
+	// and the basis are the same, so a record whose bases differ is refused: the figure pairs
+	// the predicted and measured value of one definition at one scope, and a pair that does not
+	// is no comparison. A side that states no scope has none.
+	PredictedBasis result.Basis `yaml:"predicted_basis"`
+	MeasuredBasis  result.Basis `yaml:"measured_basis"`
+	Predicted      float64      `yaml:"predicted"`
+	Measured       float64      `yaml:"measured"`
 	// PredictedSamples and MeasuredSamples are the number of samples behind each.
 	PredictedSamples int `yaml:"predicted_samples"`
 	MeasuredSamples  int `yaml:"measured_samples"`

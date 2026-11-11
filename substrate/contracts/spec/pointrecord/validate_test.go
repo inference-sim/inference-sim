@@ -5,10 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 )
 
 var h64 = strings.Repeat("a", 64)
+
+// cluster is the basis of a figure computed over the whole cluster.
+var cluster = result.Basis{Scope: metrics.ScopeCluster}
 
 func valid() *Record {
 	return &Record{
@@ -22,9 +26,9 @@ func valid() *Record {
 			Data: result.Data{Build: "v0.16.0", ReleasedData: true}},
 		HarnessDigest: "sha256:" + strings.Repeat("d", 64),
 		Figures: []Figure{
-			{Metric: "tpot_mean_ms", Predicted: 11.0, Measured: 11.2, PredictedSamples: 640, MeasuredSamples: 640,
+			{Metric: "tpot_mean_ms", PredictedBasis: cluster, MeasuredBasis: cluster, Predicted: 11.0, Measured: 11.2, PredictedSamples: 640, MeasuredSamples: 640,
 				Interval: &Interval{Low: 10.8, High: 11.3, Level: 0.95, Replications: 5}},
-			{Metric: "ttft_mean_ms", Predicted: 850, Measured: 880, PredictedSamples: 640, MeasuredSamples: 640},
+			{Metric: "ttft_mean_ms", PredictedBasis: cluster, MeasuredBasis: cluster, Predicted: 850, Measured: 880, PredictedSamples: 640, MeasuredSamples: 640},
 		},
 		Settings: []Setting{
 			{Arg: "max_model_len", Measured: nil, BLIS: nil, Match: MatchEstimated, Rule: "leave_unset"},
@@ -244,5 +248,73 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 			}
 			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
 		})
+	}
+}
+
+// A figure pairs a prediction and a measurement of one metric at one scope. A pair whose sides
+// state different scopes, members or aggregates is no comparison and is refused (DEV-8, design
+// 8.7); so is a side that states none, or a basis its metric does not admit.
+func TestAFigureIsRefusedUnlessBothSidesAreTheSameBasis(t *testing.T) {
+	worst := result.Basis{Scope: metrics.ScopeCluster, Aggregate: metrics.AggregateMax, Over: metrics.ScopeInstance}
+	decode := result.Basis{Scope: metrics.ScopePool, Member: "decode"}
+	for _, c := range []struct {
+		name string
+		set  func(*Figure)
+		path string
+		msg  string
+	}{
+		{"a cluster prediction against a pool measurement", func(f *Figure) { f.MeasuredBasis = decode }, "figures[0].measured_basis", "scope is"},
+		{"a pool prediction against another pool's measurement", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = decode, result.Basis{Scope: metrics.ScopePool, Member: "prefill"}
+		}, "figures[0].measured_basis", "member is"},
+		{"a maximum against a direct figure", func(f *Figure) { f.PredictedBasis = worst }, "figures[0].measured_basis", "aggregate is"},
+		{"a maximum against a minimum", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = worst, result.Basis{Scope: metrics.ScopeCluster, Aggregate: metrics.AggregateMin, Over: metrics.ScopeInstance}
+		}, "figures[0].measured_basis", "aggregate is"},
+		{"a maximum over instances against one over pools", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = worst, result.Basis{Scope: metrics.ScopeCluster, Aggregate: metrics.AggregateMax, Over: metrics.ScopePool}
+		}, "figures[0].measured_basis", "over is"},
+		{"a prediction with no scope", func(f *Figure) { f.PredictedBasis = result.Basis{} }, "figures[0].predicted_basis", "states no scope"},
+		{"a measurement with no scope", func(f *Figure) { f.MeasuredBasis = result.Basis{} }, "figures[0].measured_basis", "states no scope"},
+		{"a pool figure with no member", func(f *Figure) {
+			f.PredictedBasis, f.MeasuredBasis = result.Basis{Scope: metrics.ScopePool}, result.Basis{Scope: metrics.ScopePool}
+		}, "figures[0].predicted_basis", "names no member"},
+		{"an aggregate the metric does not admit", func(f *Figure) {
+			b := result.Basis{Scope: metrics.ScopeCluster, Aggregate: "mean", Over: metrics.ScopeInstance}
+			f.PredictedBasis, f.MeasuredBasis = b, b
+		}, "figures[0].measured_basis", "is not one of max, min"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := valid()
+			c.set(&r.Figures[0])
+			p := r.Validate()
+			for _, it := range p.Errors() {
+				if it.Path == c.path && strings.Contains(it.Message, c.msg) {
+					return
+				}
+			}
+			t.Errorf("expected a problem at %q containing %q, got:\n%s", c.path, c.msg, p.Error())
+		})
+	}
+}
+
+// The same metric at two scopes is two figures, sorted by basis; the same basis twice is not.
+func TestOneMetricMayAppearAtSeveralScopesButNotTwiceAtOne(t *testing.T) {
+	decode := result.Basis{Scope: metrics.ScopePool, Member: "decode"}
+	at := func(b result.Basis) Figure {
+		return Figure{Metric: "ttft_mean_ms", PredictedBasis: b, MeasuredBasis: b, Predicted: 1, Measured: 1, PredictedSamples: 1, MeasuredSamples: 1}
+	}
+	r := valid()
+	r.Figures = []Figure{r.Figures[0], at(cluster), at(decode)}
+	if p := r.Validate(); !p.OK() {
+		t.Errorf("one metric at the cluster and at a pool, in order, was refused:\n%s", p.Error())
+	}
+	r.Figures = []Figure{r.Figures[0], at(decode), at(cluster)}
+	if p := r.Validate(); p.OK() {
+		t.Error("figures of one metric out of basis order were accepted")
+	}
+	r.Figures = []Figure{r.Figures[0], at(cluster), at(cluster)}
+	if p := r.Validate(); p.OK() {
+		t.Error("a metric at one basis twice was accepted")
 	}
 }

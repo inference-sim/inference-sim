@@ -1,6 +1,6 @@
 {
   "kind": "Result",
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "llama-3.1-8b-h100-tp2-dp4.c64-s1",
   "engine": { "kind": "vllm", "version": "0.32.0" },
   "data": {
@@ -87,13 +87,13 @@
   },
   "window": { "start_us": 210000, "end_us": 3210000, "duration_s": 3, "requests": 4 },
   "metrics": {
-    "e2e_mean_ms": { "value": 2904.7, "samples": 4 },
-    "itl_p99_ms": { "value": 28.5, "samples": 1020 },
-    "output_tok_s": { "value": 342.0, "samples": 1026 },
-    "request_throughput": { "value": 1.3333333333333333, "samples": 4 },
-    "tpot_mean_ms": { "value": 21.4, "samples": 4 },
-    "ttft_mean_ms": { "value": 182.0, "samples": 4 },
-    "ttft_p99_ms": { "value": 431.5, "samples": 4 }
+    "e2e_mean_ms": { "value": 2904.7, "samples": 4, "scope": "cluster" },
+    "itl_p99_ms": { "value": 28.5, "samples": 1020, "scope": "cluster" },
+    "output_tok_s": { "value": 342.0, "samples": 1026, "scope": "cluster" },
+    "request_throughput": { "value": 1.3333333333333333, "samples": 4, "scope": "cluster" },
+    "tpot_mean_ms": { "value": 21.4, "samples": 4, "scope": "cluster" },
+    "ttft_mean_ms": { "value": 182.0, "samples": 4, "scope": "cluster" },
+    "ttft_p99_ms": { "value": 431.5, "samples": 4, "scope": "cluster" }
   },
   "requests": {
     "generated": 6,

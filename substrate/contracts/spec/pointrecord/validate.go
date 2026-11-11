@@ -339,11 +339,23 @@ func (r *Record) validateFigures(p *validate.Problems) {
 	}
 	for i, f := range r.Figures {
 		at := fmt.Sprintf("figures[%d]", i)
-		if _, ok := metrics.Lookup(f.Metric); !ok {
+		d, ok := metrics.Lookup(f.Metric)
+		if !ok {
 			p.Field(at+".metric", "%q is not in the metric registry: both sides must name one definition (DEV-8)", f.Metric)
 		}
-		if i > 0 && f.Metric <= r.Figures[i-1].Metric {
-			p.Field(at+".metric", "figures are sorted by metric, each once")
+		if i > 0 {
+			if prev := r.Figures[i-1]; f.Metric < prev.Metric || (f.Metric == prev.Metric && basisKey(f.PredictedBasis) <= basisKey(prev.PredictedBasis)) {
+				p.Field(at+".metric", "figures are sorted by metric and then by predicted basis, each once")
+			}
+		}
+		if ok {
+			f.PredictedBasis.Validate(p, at+".predicted_basis", d)
+			f.MeasuredBasis.Validate(p, at+".measured_basis", d)
+			if f.PredictedBasis.Check(d) == nil && f.MeasuredBasis.Check(d) == nil {
+				if err := f.PredictedBasis.ComparableTo(f.MeasuredBasis, d); err != nil {
+					p.Field(at+".measured_basis", "the two sides are not comparable (%s against %s): %v (DEV-8)", f.PredictedBasis, f.MeasuredBasis, err)
+				}
+			}
 		}
 		for name, v := range map[string]float64{"predicted": f.Predicted, "measured": f.Measured} {
 			if p.FiniteField(at+"."+name, v) && v < 0 {
@@ -375,4 +387,9 @@ func scalar(p *validate.Problems, at string, v any) {
 	default:
 		p.Field(at, "is a %T: a value is a string (a float as printed), an integer, a boolean or null", v)
 	}
+}
+
+// basisKey orders figures of one metric: scope, member, aggregate and the scope ranged over.
+func basisKey(b result.Basis) string {
+	return strings.Join([]string{string(b.Scope), b.Member, string(b.Aggregate), string(b.Over)}, "\x00")
 }

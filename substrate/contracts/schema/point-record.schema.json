@@ -77,6 +77,9 @@
         "measured": {
           "type": "number"
         },
+        "measured_basis": {
+          "$ref": "#/$defs/result.Basis"
+        },
         "measured_samples": {
           "type": "integer"
         },
@@ -137,15 +140,20 @@
         "predicted": {
           "type": "number"
         },
+        "predicted_basis": {
+          "$ref": "#/$defs/result.Basis"
+        },
         "predicted_samples": {
           "type": "integer"
         }
       },
       "required": [
         "measured",
+        "measured_basis",
         "measured_samples",
         "metric",
         "predicted",
+        "predicted_basis",
         "predicted_samples"
       ],
       "type": "object"
@@ -339,7 +347,7 @@
           "type": "array"
         },
         "schema_version": {
-          "const": 1
+          "const": 2
         },
         "settings": {
           "items": {
@@ -597,6 +605,41 @@
           "type": "number"
         }
       },
+      "type": "object"
+    },
+    "result.Basis": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregate": {
+          "enum": [
+            "max",
+            "min"
+          ],
+          "type": "string"
+        },
+        "member": {
+          "type": "string"
+        },
+        "over": {
+          "enum": [
+            "cluster",
+            "pool",
+            "instance"
+          ],
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "cluster",
+            "pool",
+            "instance"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope"
+      ],
       "type": "object"
     },
     "result.Data": {

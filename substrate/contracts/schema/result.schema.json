@@ -728,8 +728,34 @@
     "result.Figure": {
       "additionalProperties": false,
       "properties": {
+        "aggregate": {
+          "enum": [
+            "max",
+            "min"
+          ],
+          "type": "string"
+        },
+        "member": {
+          "type": "string"
+        },
+        "over": {
+          "enum": [
+            "cluster",
+            "pool",
+            "instance"
+          ],
+          "type": "string"
+        },
         "samples": {
           "type": "integer"
+        },
+        "scope": {
+          "enum": [
+            "cluster",
+            "pool",
+            "instance"
+          ],
+          "type": "string"
         },
         "value": {
           "type": "number"
@@ -737,6 +763,7 @@
       },
       "required": [
         "samples",
+        "scope",
         "value"
       ],
       "type": "object"
@@ -1400,7 +1427,7 @@
           "$ref": "#/$defs/result.Runtime"
         },
         "schema_version": {
-          "const": 2
+          "const": 3
         },
         "selected_entries": {
           "$ref": "#/$defs/result.SelectedEntries"

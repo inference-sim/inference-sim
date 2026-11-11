@@ -23,6 +23,7 @@
 package result
 
 import (
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
@@ -36,8 +37,10 @@ const Kind = "Result"
 
 // SchemaVersion is the Result schema this package reads and writes. Version 2 added the
 // engine, data, selected entries, options, workload properties, frame, fates and request
-// rows, and replaced metric_defs by registry identifiers.
-const SchemaVersion = 2
+// rows, and replaced metric_defs by registry identifiers. Version 3 requires each figure to
+// state its scope, and its member and aggregate where it has them (DEV-8, design §8.7): a
+// version 2 figure states none, and a definition is never inferred, so it is not read.
+const SchemaVersion = 3
 
 // Result is one simulator run's predicted output.
 type Result struct {
@@ -530,12 +533,22 @@ type Window struct {
 	Requests int `yaml:"requests"`
 }
 
-// Figure is one predicted value and the number of samples behind it.
+// Figure is one predicted value, the number of samples behind it, and the scope it is at. Its
+// metric is the key it is held under in Result.Metrics, so a Result holds one figure of a
+// metric: the one its frame measures, at the scope and aggregate it states.
 type Figure struct {
 	Value float64 `yaml:"value"`
 	// Samples is the size of the population the statistic was taken over: requests,
 	// token gaps or steps, as the metric's definition says. For a rate, the count summed.
 	Samples int `yaml:"samples"`
+	// Scope, Member, Aggregate and Over are the figure's Basis (design §8.7): the scope it is
+	// at, the pool or instance it is of, and, for a figure that combines the figures of a
+	// narrower scope, the aggregate and the scope it ranges over. Scope is required; the
+	// others are stated where the figure has them. Basis returns them together.
+	Scope     metrics.Scope     `yaml:"scope"`
+	Member    string            `yaml:"member,omitempty"`
+	Aggregate metrics.Aggregate `yaml:"aggregate,omitempty"`
+	Over      metrics.Scope     `yaml:"over,omitempty"`
 }
 
 // Requests counts each request's fate (DEV-9). Generated is the generator's own count of

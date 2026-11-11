@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
@@ -79,8 +80,8 @@ func valid() *Result {
 		Revisions: Revisions{Simulator: "v0.16.0", Substrate: "v0.11.0"},
 		Window:    Window{StartUs: 1_000_000, EndUs: 4_000_000, DurationS: 3, Requests: 2},
 		Metrics: map[string]Figure{
-			"ttft_p99_ms":  {Value: 431.5, Samples: 2},
-			"tpot_mean_ms": {Value: 20, Samples: 2},
+			"ttft_p99_ms":  {Value: 431.5, Samples: 2, Scope: metrics.ScopeCluster},
+			"tpot_mean_ms": {Value: 20, Samples: 2, Scope: metrics.ScopeCluster},
 		},
 		Requests: Requests{Generated: 4, Completed: 2, InFlightAtHorizon: 1, Dropped: map[DropReason]int{DropRoutingRejected: 1}},
 		RequestRows: []RequestRow{
@@ -127,7 +128,7 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		msg    string
 	}{
 		{"wrong kind", func(r *Result) { r.Kind = "SimResult" }, "kind", "must be"},
-		{"old schema version", func(r *Result) { r.SchemaVersion = 1 }, "schema_version", "must be 2"},
+		{"old schema version", func(r *Result) { r.SchemaVersion = 1 }, "schema_version", "must be 3"},
 		{"name not a slug", func(r *Result) { r.Name = "Has Spaces" }, "name", "slug"},
 
 		// engine (SIM-1)
@@ -287,19 +288,21 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"window duration disagrees", func(r *Result) { r.Window.DurationS = 2 }, "window.duration_s", "end_us - start_us"},
 		{"negative window requests", func(r *Result) { r.Window.Requests = -1 }, "window.requests", "negative"},
 		{"window holds more than completed", func(r *Result) { r.Window.Requests = 3 }, "window.requests", "completed"},
-		{"unregistered metric", func(r *Result) { r.Metrics["ttft_p999_ms"] = Figure{Value: 1, Samples: 1} }, "metrics.ttft_p999_ms", "not in the metric registry"},
-		{"metric outside the frame", func(r *Result) { r.Metrics["e2e_mean_ms"] = Figure{Value: 1, Samples: 1} }, "metrics.e2e_mean_ms", "frame.metrics"},
-		{"non-finite metric", func(r *Result) { r.Metrics["ttft_p99_ms"] = Figure{Value: nan, Samples: 1} }, "metrics.ttft_p99_ms.value", "finite"},
-		{"negative metric", func(r *Result) { r.Metrics["ttft_p99_ms"] = Figure{Value: -1, Samples: 1} }, "metrics.ttft_p99_ms.value", "negative"},
-		{"latency over no sample", func(r *Result) { r.Metrics["ttft_p99_ms"] = Figure{Value: 1} }, "metrics.ttft_p99_ms.samples", "no sample"},
+		{"unregistered metric", func(r *Result) { r.Metrics["ttft_p999_ms"] = Figure{Value: 1, Samples: 1, Scope: metrics.ScopeCluster} }, "metrics.ttft_p999_ms", "not in the metric registry"},
+		{"metric outside the frame", func(r *Result) { r.Metrics["e2e_mean_ms"] = Figure{Value: 1, Samples: 1, Scope: metrics.ScopeCluster} }, "metrics.e2e_mean_ms", "frame.metrics"},
+		{"non-finite metric", func(r *Result) {
+			r.Metrics["ttft_p99_ms"] = Figure{Value: nan, Samples: 1, Scope: metrics.ScopeCluster}
+		}, "metrics.ttft_p99_ms.value", "finite"},
+		{"negative metric", func(r *Result) { r.Metrics["ttft_p99_ms"] = Figure{Value: -1, Samples: 1, Scope: metrics.ScopeCluster} }, "metrics.ttft_p99_ms.value", "negative"},
+		{"latency over no sample", func(r *Result) { r.Metrics["ttft_p99_ms"] = Figure{Value: 1, Scope: metrics.ScopeCluster} }, "metrics.ttft_p99_ms.samples", "no sample"},
 		{"fraction above one", func(r *Result) {
 			r.Frame.Metrics = []string{"cache_hit_rate", "tpot_mean_ms", "ttft_p99_ms"}
-			r.Metrics["cache_hit_rate"] = Figure{Value: 1.2, Samples: 4}
+			r.Metrics["cache_hit_rate"] = Figure{Value: 1.2, Samples: 4, Scope: metrics.ScopeCluster}
 		}, "metrics.cache_hit_rate.value", "fraction"},
 		{"rate over an empty window", func(r *Result) {
 			r.Window = Window{StartUs: 5, EndUs: 5, Requests: 0}
 			r.Frame.Metrics = []string{"request_throughput", "tpot_mean_ms", "ttft_p99_ms"}
-			r.Metrics["request_throughput"] = Figure{Value: 6, Samples: 2}
+			r.Metrics["request_throughput"] = Figure{Value: 6, Samples: 2, Scope: metrics.ScopeCluster}
 		}, "window.duration_s", "rate over the window"},
 		{"figures from a run that failed its frame", func(r *Result) {
 			r.Frame.Acceptance[0] = AcceptanceCondition{Condition: ConditionUnfinishedAtMost, Threshold: 0.1, Observed: 0.25}

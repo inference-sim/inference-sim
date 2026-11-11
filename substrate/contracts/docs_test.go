@@ -390,6 +390,7 @@ var documented = map[string]struct {
 	"result.RevisionChange":       {typ: reflect.TypeOf(result.RevisionChange{})},
 	"result.Window":               {typ: reflect.TypeOf(result.Window{})},
 	"result.Figure":               {typ: reflect.TypeOf(result.Figure{})},
+	"result.Basis":                {typ: reflect.TypeOf(result.Basis{})},
 	"result.Requests":             {typ: reflect.TypeOf(result.Requests{})},
 	"result.RequestRow":           {typ: reflect.TypeOf(result.RequestRow{})},
 	"result.AgenticTag":           {typ: reflect.TypeOf(result.AgenticTag{})},

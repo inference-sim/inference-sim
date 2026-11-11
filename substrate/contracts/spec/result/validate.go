@@ -546,6 +546,7 @@ func (r *Result) validateMetrics(p *validate.Problems) {
 		if !measured[id] {
 			p.Field(at, "is not one of frame.metrics")
 		}
+		f.Basis().Validate(p, at, d)
 		if p.FiniteField(at+".value", f.Value) && f.Value < 0 {
 			p.Field(at+".value", "must not be negative: every metric is a latency, a rate, a fraction or a count")
 		}

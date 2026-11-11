@@ -20,7 +20,7 @@ refuses an unknown key in either; `Record.Validate` checks it.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `kind` | string | yes | Always `PointRecord`. |
-| `schema_version` | integer | yes | Always `1`. |
+| `schema_version` | integer | yes | Always `2`. Version 2 requires each figure to state the scope of both sides; a version 1 record is refused. |
 | `point_id` | string | yes | SHA-256 of the canonical JSON of `identity`, 64 lowercase hex characters. |
 | `unit_id` | string | yes | The ledger unit (design §10.2). |
 | `identity` | mapping | yes | The point's identifying fields in its source's terms, below. |
@@ -147,11 +147,30 @@ A key belongs to its own kind: a `policy` on a `later_record` is refused.
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `metric` | string | yes | A [metric identifier](metrics.md); both sides are computed under it. |
+| `predicted_basis` | mapping | yes | The scope, member, aggregate and scope ranged over of the predicted side, below. |
+| `measured_basis` | mapping | yes | The same for the measured side. |
 | `predicted` | number | yes | The simulated figure. |
 | `measured` | number | yes | The measured figure. |
 | `predicted_samples` | integer | yes | Samples behind the prediction. |
 | `measured_samples` | integer | yes | Samples behind the measurement. |
 | `interval` | mapping | no | The prediction's replication interval. |
+
+Each side states the basis its figure is at (design §8.7, DEV-8), and the record is valid only
+when the two are the same: a prediction at the cluster scope is not compared with a measurement
+of one instance, nor a maximum over instances with a mean, nor the figure of instance 3 with
+that of instance 7. The validator refuses a pair whose bases differ and names the field where
+they do (`scope`, `member`, `aggregate` or `over`), a basis the metric does not admit, and a
+side that states no scope. Figures are sorted by metric and then by the predicted basis, each
+once.
+
+<!-- fields: result.Basis -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `scope` | string | yes | `cluster`, `pool` or `instance`, one the metric is defined at. |
+| `member` | string | at the pool and instance scopes | The pool or instance, by the deployment's name; none at the cluster scope. |
+| `aggregate` | string | with `over` | `max` or `min`, one the metric admits. |
+| `over` | string | with `aggregate` | The narrower scope the aggregate ranges over. |
 
 <!-- fields: pointrecord.Interval -->
 
