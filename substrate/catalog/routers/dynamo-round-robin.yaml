@@ -11,23 +11,20 @@ revisions:
   - 1682167d3c97f0fc8cd405dee51f17288eeaeb55
 policy: none
 reason: >-
-  llm-d's round-robin policy (a profile with no scorer, so the max-score picker rotates the tied
-  endpoints) is a rotation, as Dynamo's mode is, but the two keep their counters in different
-  places, and which places decides which endpoint serves which request. Dynamo keeps one
-  counter per router object. In the build the recipes pin it is the counter of a PushRouter, one
-  per endpoint client in each frontend process (push_router.rs). Every recipe the dashboard read runs several frontends
-  (enable_multiple_frontends), so the sequence the workers see interleaves independent rotations.
-  llm-d keeps one counter per runtime and draws it at every pick of every profile (common.go,
-  picker.go). A run with a prefill and a decode profile, as inference-sim's disaggregating
-  configuration has (examples/llm-d/pd.yaml: a max-score-picker in each of the two profiles),
-  draws two counters per request, so the prefill profile sees the even counters and the decode
-  profile the odd ones. With an even pool size the prefill pool then reaches only the endpoints at
-  even shifts (one endpoint of two), and the decode pool only the odd ones. The measured series
-  are disaggregated, so the policy would distort which endpoint serves a request in exactly the
-  case the table is for. The entry would map to round-robin if the deployment were stated to
-  have one frontend and BLIS drew one counter per request for the pool, or kept a counter per
-  profile; neither is established. Dynamo's order of workers (instance_ids_avail) is not cited
-  either. Until then the mode stays unsupported.
+  Dynamo's round-robin mode rotates strictly per request: it takes the next value of a counter
+  and indexes the list of available instances by it (push_router.rs), so successive requests go
+  to successive workers. llm-d's round-robin policy does not: it is the max-score picker with no
+  scorer, every endpoint is tied, and the picker chooses among the tied endpoints at random
+  (the hosted scheduler shuffles the candidates before each pick, so rotating them by the
+  counter is a random choice, as the random picker's is). Tests of the router fork on pools of
+  two, three and four endpoints reach every endpoint in near equal counts and not in a cycle
+  (reference-configs/README.md, "What round-robin does"). The nearest llm-d policy therefore
+  picks at random among tied endpoints where Dynamo rotates, and the random picker is equally
+  close. Whether that is near enough is a measurement of how far the choice of policy moves
+  BLIS's figures, which this layer does not carry, so the mode stays unsupported here. Dynamo's
+  other structure (a counter per router object, several frontends in every recipe the dashboard
+  read, the order of the worker list, which push_router.rs and client.rs show and the code read
+  does not fix) is not a difference between the two policies that this entry relies on.
 evidence:
   - side: router
     field: mode
@@ -71,3 +68,17 @@ evidence:
     path: pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go
     lines: "108-117"
     claim: The max-score picker draws the counter at every pick and rotates each group of tied endpoints by it, so a second profile that picks draws another.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: reference-configs/README.md
+    lines: "66-93"
+    claim: The router has no policy that rotates strictly, one endpoint per request. Round-robin is the max-score picker with no scorer; the candidates reach the picker in a seeded random order in a hosted runtime, so the choice is uniformly random among the tied endpoints, as the random picker's is; tests of pools of two, three and four show near equal counts and no cycle.
+  - side: llm-d
+    field: policy
+    repository: inference-sim/llm-d-router
+    commit: 03246be994224ef031dfdafb966c54f60d01e933
+    path: reference-configs/README.md
+    lines: "56-59"
+    claim: The default policy has no prefill/decode form, so a row that needs prefill/decode routing under default has no configuration and is unsupported.
