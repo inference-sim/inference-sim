@@ -403,6 +403,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	if s := languageModelOnlySubstitution(in.Model, engine); s != nil {
 		m.substitutions = append(m.substitutions, *s)
 	}
+	if s := cudagraphSubstitution(engine, k.Resolved().Overrides); s != nil {
+		m.substitutions = append(m.substitutions, *s)
+	}
 	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
 	m.rules = reportRules(in)
 	m.routing = routingRecordOf(in.Routing)

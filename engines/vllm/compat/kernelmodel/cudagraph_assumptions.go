@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
+	sim "github.com/inference-sim/blis-vllm/compat/engine"
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
 )
 
@@ -38,4 +41,26 @@ func cudagraphAssumptions(e engineconfig.Engine) []string {
 			"can differ as cudagraph_mode's assumption says", e.CUDAGraphCaptureSizes))
 	}
 	return out
+}
+
+// cudagraphSubstitution is the machine-readable form of what the assumptions above can only warn of,
+// for the case the cost model resolves and so can state: a deployment that STATES a cudagraph_mode which
+// the kernel prices as another one (the layout cannot honour it: a DeepEP high-throughput or MoonEP
+// all-to-all cannot be captured, so the pool runs no graphs). The grade reads Substitutions, not the
+// assumptions' text, and a point priced in another mode than the one it states must not be graded as the
+// stated deployment. A divergence the kernel cannot see (v0.32.0 lowering a mode against the attention
+// backend, which needs the backend's cudagraph support) is not proved by any resolution here and stays an
+// assumption. An unstated mode that the layout turns off is the engine's own default resolving, not a
+// stated mode priced as another, and is not listed.
+func cudagraphSubstitution(e engineconfig.Engine, overrides []kernel.Override) *sim.Substitution {
+	if e.CUDAGraphMode == "" {
+		return nil
+	}
+	for _, o := range overrides {
+		if o.Field == "cudagraph_mode" && !strings.EqualFold(o.Requested, o.Resolved) {
+			return &sim.Substitution{Setting: "compilation_config.cudagraph_mode", Stated: e.CUDAGraphMode, Priced: o.Resolved,
+				Reason: o.Reason}
+		}
+	}
+	return nil
 }
