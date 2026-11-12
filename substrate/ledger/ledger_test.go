@@ -347,13 +347,13 @@ func TestRedistributable(t *testing.T) {
 
 // The committed entries: the InferenceX results are not redistributable, because neither the
 // licence of the code that runs the benchmarks nor that of the repository that publishes the
-// dump states terms for the results. The forward-pass dataset states a restriction.
+// dump states terms for the results. AISimulate's end-to-end artifact holds InferenceX values, and the forward-pass dataset states a restriction.
 func TestCommittedSourcesRedistributability(t *testing.T) {
 	src, err := LoadSources("../catalog/ledger")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]bool{"inferencex": false, "aisimulate-fpm": false} {
+	for id, want := range map[string]bool{"inferencex": false, "aisimulate": false, "aisimulate-fpm": false} {
 		s := src.Lookup(id)
 		if s == nil {
 			t.Fatalf("no source %s", id)

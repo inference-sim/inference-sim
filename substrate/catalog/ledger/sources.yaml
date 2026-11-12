@@ -140,9 +140,20 @@ sources:
           quote: >-
             Except for the third-party material identified in that notice file, this codebase is
             licensed under the Apache License 2.0 as described below.
+      restrictions:
+        # The end-to-end artifact pinned above carries measured values taken from InferenceX,
+        # whose results have no stated terms (the inferencex source). The quoted field is in
+        # summary.json (SHA-256 below), produced by the run at this commit.
+        - url: https://github.com/ai-dynamo/aisimulate/commit/cab77b9c7888b1c40df8cd3228f5e03c355ef23c
+          sha256: e1a380ad7b06ae7f27edc95357e24219f4003e3ed73a3f93ff0dcd192578a3a2
+          lines: "snapshot.measurement_source_url"
+          quote: "InferenceX release db-dump/2026-09-28"
       note: >-
         Lines 3-8 of the same file except one vendored config.json, which is MIT. GitHub reports
-        the repository's licence as NOASSERTION because of that preamble.
+        the repository's licence as NOASSERTION because of that preamble. The restriction is
+        not AISimulate's own: the end-to-end artifact holds measured values from InferenceX,
+        whose terms for results are unstated, so the entry is not redistributable and its
+        values are not committed (decided with the maintainer, 2026-11-12).
 
   - id: aisimulate-fpm
     title: NVIDIA forward-pass dataset on Hugging Face (nvidia/aisimulate-fpm-dataset)
