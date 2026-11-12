@@ -300,7 +300,7 @@ func (k *Kernel) priceStep(b, drafted kernel.Batch,
 	// Per-resource totals are still accumulated, because a caller wants to see where the
 	// work went even though the step time is not their max.
 	var perResource [numResources]float64
-	overlapSeconds := k.priceLayers(k.plan.Layers, k.layerFits, k.layerKV, &s, &perResource)
+	overlapSeconds := k.priceTarget(b, &s, &perResource)
 	if k.plan.Embedding.Count > 0 {
 		overlapSeconds += k.priceLayers([]price.PlannedLayer{k.plan.Embedding}, nil,
 			[]layerKV{{}}, &s, &perResource)

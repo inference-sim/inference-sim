@@ -2025,6 +2025,13 @@ func (k *Kernel) PreSnapshotBytes() int64 { return k.commBytes + k.workspaceByte
 // with no graph whatever the mode. Zero when the resolved mode captures nothing.
 func (k *Kernel) CaptureTokens() int { return k.captureTokens }
 
+// CaptureSizes returns the step sizes, in tokens, a captured CUDA graph covers, ascending: a
+// step runs in the smallest of them that holds it, padded to its size, and in none when it
+// is larger than CaptureTokens. Empty when the resolved mode captures nothing. The engine that
+// states a step's rows reads it to say which graph the step replays; the kernel resolves no
+// capture size of its own beyond what it prices from.
+func (k *Kernel) CaptureSizes() []int { return append([]int(nil), k.captureSizes...) }
+
 // GraphModes returns the CUDA graph mode the engine runs a uniform decode step under and the
 // one it runs every other step under, as vLLM names them -- "FULL", "PIECEWISE" or "NONE" --
 // after the overrides Resolved reports. A step above CaptureTokens runs with no graph under

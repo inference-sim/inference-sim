@@ -116,6 +116,8 @@ A `Batch` is what the simulator supplies for one step.
 | `SMBudget int` | SMs available this step: the chip's count less any held by a concurrent offload fetch. |
 | `PadTokens int` | Tokens this data-parallel rank pads its step with under vLLM's DP lockstep: every rank runs the group's largest token count, and a rank with nothing scheduled runs a dummy batch of pad alone. Pad tokens run the GEMMs, the MoE dispatch and combine and the expert paths, but never the logits, the LM head, the vocabulary all-gather or sampling. They are not requests. 0 means none; never negative. |
 | `DraftPaddedTokens int` | Tokens this rank's drafter launches, after its own graph bucket and the width its data-parallel group agreed; the drafter coordinates its padding apart from the target's. The rows beyond the rank's own draft rows run the GEMMs and the MoE paths and no attention. An engine that states a step as a `plan.StepShape` carries it as `DraftShape.Passes[rank].Padded`. 0 means the drafter launches only its own rows; never negative. |
+| `TailFrom int` | The index, in the model graph's expanded layer stack, of the first layer that runs over fewer rows than the requests scheduled: layers `TailFrom` to the end run each request's `TailRows` rows. The engine states it, for the steps in which its forward pass does that (an engine can run the layers past the last one that produces KV on each request's trailing window only). The embedding, the layers before it, the head, the drafter and the host and launch terms keep the whole batch. An engine that states a step as a `plan.StepShape` carries it as `StepShape.TailFrom`. 0 means no tail: every layer runs every scheduled token. A value at or past the stack's length leaves no layer in the tail; never negative. |
+| `TailPadTokens int` | Rows the tail's batch is launched with beyond its own, when the engine pads it to a size of its own; as `PadTokens` does for the whole batch they run the GEMMs, the collectives and the experts, and no attention. As a step shape it is `PaddedShape.TailTokens` less the tail's rows. Read only with `TailFrom`; never negative. |
 
 Each `ReqShape` carries the counts an engine's own scheduler reads:
 
@@ -125,8 +127,9 @@ Each `ReqShape` carries the counts an engine's own scheduler reads:
 | `Computed` | Tokens already computed, as of batch formation. |
 | `PromptLen` | The prompt length. With `Computed`, it tells the last chunk of a prefill split across steps apart from a decode. |
 | `CachedTokens` | The prefix-cache hit, already subtracted from `Scheduled`. A count, not a rate. |
+| `TailRows` | How many of `Scheduled` the layers from `Batch.TailFrom` run: the request's last `TailRows` tokens, at their own positions (a step shape's `RequestStep.TailRows`). 0 means all of them, as for a decode row. Never more than `Scheduled`, and refused (`Validate`) without a `TailFrom`. |
 
-`Batch.Tokens()` sums `Scheduled`, and `Batch.PaddedTokens()` adds `PadTokens`: the count the layers run. `Batch.Validate()` refuses a negative count. `Batch.UniformDecode(width)` reports whether every
+`Batch.Tokens()` sums `Scheduled`, and `Batch.PaddedTokens()` adds `PadTokens`: the count the layers run. `Batch.Validate()` refuses a negative count, more tail rows than scheduled tokens, and tail rows with no `TailFrom`. `Batch.UniformDecode(width)` reports whether every
 request schedules exactly `width` tokens. Some engine behavior, such as when dual-batch
 overlap engages, uses one threshold for such a batch and another for any other.
 

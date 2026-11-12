@@ -17,3 +17,6 @@ LoweredLayer.Primitive # kernel: TestTheKernelImplementationThatRunsDecidesWhich
 LoweredLayer.Scorer # kernel: TestTheScorerAndThePrimaryOfOneLayerAreBoundToTheirOwnKernels
 PrimitiveShape.Format # kernel: TestAGemmValueIsBoundToTheKernelOfItsFormat
 PrimitiveShape.Dtype # kernel: TestAnFP16CacheDoesNotConsumeTheBF16MeasuredLane
+StepShape.TailFrom # kernel: TestTheTailCoversTheLayersFromItsFirstLayer
+RequestStep.TailRows # kernel: TestARequestsRowsAreItsOwnAndAllOfThemIsNoTail
+PaddedShape.TailTokens # kernel: TestAStepShapeStatesTheTailInTheEnginesWords

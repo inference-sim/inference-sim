@@ -198,12 +198,23 @@ func (s StepShape) Validate(ranks, stages int) error {
 		add("stage %d of %d pipeline stages", s.Stage, stages)
 	}
 	for r, rk := range s.Ranks {
-		var scheduled units.Tokens
+		var scheduled, tail units.Tokens
 		for i, q := range rk.Requests {
-			if q.Scheduled < 0 || q.Computed < 0 || q.Prompt < 0 || q.Cached < 0 {
+			if q.Scheduled < 0 || q.Computed < 0 || q.Prompt < 0 || q.Cached < 0 || q.TailRows < 0 {
 				add("rank %d request %d has a negative token count: %+v", r, i, q)
 			}
+			if q.TailRows > q.Scheduled {
+				add("rank %d request %d runs %d tail rows of %d scheduled tokens", r, i, q.TailRows, q.Scheduled)
+			}
+			if q.TailRows > 0 && s.TailFrom == 0 {
+				add("rank %d request %d states %d tail rows and the step states no TailFrom", r, i, q.TailRows)
+			}
 			scheduled += q.Scheduled
+			if q.TailRows == 0 {
+				tail += q.Scheduled
+			} else {
+				tail += q.TailRows
+			}
 		}
 		if r < len(s.Padded) {
 			if !s.Padded[r].Launch.Valid() {
@@ -212,10 +223,16 @@ func (s StepShape) Validate(ranks, stages int) error {
 			if s.Padded[r].Tokens < scheduled {
 				add("rank %d launches %d tokens but schedules %d; padding never removes tokens", r, s.Padded[r].Tokens, scheduled)
 			}
+			if t := s.Padded[r].TailTokens; t != 0 && (s.TailFrom == 0 || t < tail) {
+				add("rank %d launches %d tail rows for a tail of %d rows (TailFrom %d); padding never removes rows and needs a TailFrom", r, t, tail, s.TailFrom)
+			}
 		}
 	}
 	if s.DecodeQueryLen < 0 {
 		add("DecodeQueryLen is %d", s.DecodeQueryLen)
+	}
+	if s.TailFrom < 0 {
+		add("TailFrom is %d", s.TailFrom)
 	}
 	if s.Drafts.Drafted < 0 || s.Drafts.Verified < 0 {
 		add("drafts %+v", s.Drafts)

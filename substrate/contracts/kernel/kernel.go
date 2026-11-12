@@ -291,6 +291,23 @@ type Batch struct {
 	// rank's own draft rows are real. Zero means the drafter launches only its own rows; a figure
 	// below them is read the same way. It must not be negative (Validate).
 	DraftPaddedTokens int
+
+	// TailFrom is the index, in the model graph's expanded layer stack, of the first layer that
+	// runs over fewer rows than the requests scheduled: the layers from TailFrom to the end of
+	// the stack run each request's ReqShape.TailRows rows, not its Scheduled tokens. The engine
+	// states it, because only the engine knows whether it runs a layer on a subset of a step's
+	// rows (an engine can run the layers past the last one that produces KV on each request's
+	// trailing window only) and the cost model resolves nothing. The layers before TailFrom, the
+	// embedding, the head and the drafter keep the whole batch, and the step still launches
+	// every layer. Zero means no tail: every layer runs every scheduled token. A value at or
+	// past the stack's length leaves no layer in the tail. It must not be negative (Validate).
+	TailFrom int
+
+	// TailPadTokens are the rows the tail's batch is padded with when the engine launches it at
+	// a size of its own (a captured graph's size): the tail runs its rows plus this many, and
+	// like PadTokens the pad runs the GEMMs, the collectives and the experts, never attention.
+	// Zero means none. It must not be negative, and is read only with TailFrom.
+	TailPadTokens int
 }
 
 // ReqShape is one request's contribution. The three token counts are what an
@@ -311,6 +328,11 @@ type ReqShape struct {
 	// count rather than a rate: the simulator has computed it, and a cost model that
 	// took a rate would have to guess.
 	CachedTokens int
+	// TailRows is how many of this request's Scheduled tokens the layers from Batch.TailFrom run:
+	// its last TailRows tokens, at their own positions. Zero means all of Scheduled (a request
+	// the engine does not trim, such as a decode row). It must not exceed Scheduled, and is
+	// read only with Batch.TailFrom (Validate refuses it without one).
+	TailRows int
 }
 
 // Tokens returns the batch's total scheduled token count, the quantity collective
@@ -455,12 +477,14 @@ type Override struct {
 func (b Batch) PaddedTokens() int { return b.Tokens() + b.PadTokens }
 
 // Validate reports a batch no step can have: a negative pad, budget, threshold or
-// per-request count.
+// per-request count, or a tail statement that rows cannot satisfy (more rows than scheduled, or
+// rows with no layer to apply to).
 func (b Batch) Validate() error {
-	var bad []string
+	var bad, over []string
 	for field, v := range map[string]int{
 		"PadTokens": b.PadTokens, "SMBudget": b.SMBudget, "DecodeThreshold": b.DecodeThreshold,
-		"DraftPaddedTokens": b.DraftPaddedTokens,
+		"DraftPaddedTokens": b.DraftPaddedTokens, "TailFrom": b.TailFrom,
+		"TailPadTokens": b.TailPadTokens,
 	} {
 		if v < 0 {
 			bad = append(bad, fmt.Sprintf("%s %d", field, v))
@@ -469,18 +493,31 @@ func (b Batch) Validate() error {
 	for i, r := range b.Reqs {
 		for field, v := range map[string]int{
 			"Scheduled": r.Scheduled, "Computed": r.Computed, "PromptLen": r.PromptLen,
-			"CachedTokens": r.CachedTokens,
+			"CachedTokens": r.CachedTokens, "TailRows": r.TailRows,
 		} {
 			if v < 0 {
 				bad = append(bad, fmt.Sprintf("Reqs[%d].%s %d", i, field, v))
 			}
 		}
+		if r.TailRows > r.Scheduled {
+			over = append(over, fmt.Sprintf("Reqs[%d].TailRows %d exceeds its Scheduled %d", i, r.TailRows, r.Scheduled))
+		}
+		if r.TailRows > 0 && b.TailFrom == 0 {
+			over = append(over, fmt.Sprintf("Reqs[%d].TailRows %d is stated with no TailFrom", i, r.TailRows))
+		}
 	}
-	if len(bad) == 0 {
-		return nil
+	if b.TailPadTokens > 0 && b.TailFrom == 0 {
+		over = append(over, fmt.Sprintf("TailPadTokens %d is stated with no TailFrom", b.TailPadTokens))
 	}
-	sort.Strings(bad)
-	return fmt.Errorf("batch: must not be negative: %s", strings.Join(bad, ", "))
+	if len(bad) > 0 {
+		sort.Strings(bad)
+		return fmt.Errorf("batch: must not be negative: %s", strings.Join(bad, ", "))
+	}
+	if len(over) > 0 {
+		sort.Strings(over)
+		return fmt.Errorf("batch: tail rows: %s", strings.Join(over, "; "))
+	}
+	return nil
 }
 
 // HostDemand is what one request asks of the host's admission queue. Both are zero for a

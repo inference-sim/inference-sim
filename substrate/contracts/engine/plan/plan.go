@@ -551,6 +551,15 @@ type StepShape struct {
 	// because only the engine knows which of its requests its attention kernels treat as a
 	// decode, and the cost model resolves nothing (SUB-6). The zero value means 1.
 	DecodeQueryLen units.Tokens
+	// TailFrom is the index, in the model graph's layer stack, of the first layer that runs over
+	// fewer rows than the requests scheduled: the layers from TailFrom to the end run each
+	// request's RequestStep.TailRows last tokens, not its Scheduled ones. The engine states it
+	// when its forward pass runs a layer suffix on a subset of the step's rows (an engine can run
+	// the layers past the last one that produces KV on each request's trailing window only), for
+	// only the steps that do; the cost model resolves nothing (SUB-6). The embedding, the layers
+	// before TailFrom, the head and any drafter keep the scheduled tokens, and the step still
+	// launches every layer. The zero value is no tail: every layer runs every scheduled token.
+	TailFrom int
 }
 
 // DecodeWidth returns DecodeQueryLen with its floor applied: a step has no request that
@@ -601,6 +610,11 @@ type RequestStep struct {
 	Prompt   units.Tokens
 	// Cached is the prefix-cache hit, already subtracted from Scheduled.
 	Cached units.Tokens
+	// TailRows is how many of Scheduled the layers from StepShape.TailFrom run: the request's
+	// last TailRows tokens, at their own positions. Zero means all of Scheduled (a decode row
+	// that the engine does not trim). It never exceeds Scheduled, and a step with no TailFrom
+	// states none.
+	TailRows units.Tokens
 }
 
 // PaddedShape is the shape one rank actually launches.
@@ -609,6 +623,10 @@ type PaddedShape struct {
 	Tokens units.Tokens
 	// Launch says how the step launches; the three cost differently, so the engine states which.
 	Launch Launch
+	// TailTokens is the rows the layers from StepShape.TailFrom launch on this rank, when the
+	// engine pads that batch to a size of its own (a captured graph's): at least the rows the
+	// requests state in TailRows. Zero means the tail launches exactly its rows.
+	TailTokens units.Tokens
 }
 
 // Launch is how a step launches.

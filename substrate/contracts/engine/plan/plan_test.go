@@ -122,6 +122,15 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 		{"verified drafts outside a verify step", func(s *StepShape) { s.Drafts.Verified = 2 }, "only a verify step verifies"},
 		{"a prebuilt step that launches", func(s *StepShape) { s.Mode = StepPrebuilt }, "launches nothing"},
 		{"a negative decode threshold", func(s *StepShape) { s.DecodeQueryLen = -1 }, "DecodeQueryLen is -1"},
+		{"more tail rows than scheduled tokens", func(s *StepShape) { s.TailFrom = 3; s.Ranks[0].Requests[0].TailRows = 11 }, "11 tail rows of 10 scheduled"},
+		{"tail rows with no layer to start at", func(s *StepShape) { s.Ranks[0].Requests[0].TailRows = 4 }, "states no TailFrom"},
+		{"a tail launched below its rows", func(s *StepShape) {
+			s.TailFrom = 3
+			s.Ranks[0].Requests[0].TailRows = 4
+			s.Padded[0].TailTokens = 4
+		}, "padding never removes rows"},
+		{"a tail launch with no tail", func(s *StepShape) { s.Padded[0].TailTokens = 16 }, "needs a TailFrom"},
+		{"a negative tail layer", func(s *StepShape) { s.TailFrom = -1 }, "TailFrom is -1"},
 		{"a drafter pass for one rank of two", func(s *StepShape) {
 			s.Ranks = append(s.Ranks, s.Ranks[0])
 			s.Padded = append(s.Padded, s.Padded[0])
@@ -140,6 +149,15 @@ func TestAStepThatNoEngineCanFormIsRefused(t *testing.T) {
 				t.Errorf("error %v does not contain %q", err, c.want)
 			}
 		})
+	}
+	// A step that runs a layer suffix on a subset of its rows is one the contract allows, and the
+	// zero value of each tail field is no tail.
+	tail := good()
+	tail.TailFrom = 3
+	tail.Ranks[0].Requests[0].TailRows = 4
+	tail.Padded[0].TailTokens = 5 + 1
+	if err := tail.Validate(1, 1); err != nil {
+		t.Errorf("a step with a tail was refused: %v", err)
 	}
 	// A lockstep group of two ranks needs both, since padding depends on every rank's tokens.
 	if err := good().Validate(2, 1); err == nil {
