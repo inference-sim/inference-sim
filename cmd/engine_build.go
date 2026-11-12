@@ -248,7 +248,7 @@ func (p *kernelPools) holdsPrefillKV() bool {
 }
 
 // instanceEndpoint is where each instance's workers sit, in the numbering of its own pool: the
-// node (relative to the pool's first) and the rack of its rank's placement. It is what a decode
+// node and the rack of its rank's placement, each counted from the pool's lowest (poolOrigin). It is what a decode
 // engine is told about the prefill it pulls from (engine.Request.Peer). Instances are numbered
 // prefill first, then decode (build.RankInPool). Nil for a colocated run (nil receiver).
 func (p *kernelPools) instanceEndpoint() func(cluster.InstanceID) plan.Endpoint {
@@ -266,7 +266,11 @@ func (p *kernelPools) instanceEndpoint() func(cluster.InstanceID) plan.Endpoint 
 			m = p.decode
 		}
 		at := m.PlacementOf(build.RankInPool(string(id), firstDecode))
-		return plan.Endpoint{Node: at.Node - firstNodeOf(m), Rack: at.Rack}
+		local, err := poolOrigin(m).Local(plan.Endpoint{Node: at.Node, Rack: at.Rack})
+		if err != nil {
+			panic(fmt.Sprintf("instance endpoint: instance %q: %v", id, err))
+		}
+		return local
 	}
 }
 
@@ -1200,9 +1204,20 @@ func newTransferEnvironment(own, peer *kernelmodel.Model) (*transferEnvironment,
 		rates: map[tierKey]float64{}}, nil
 }
 
-// firstNodeOf is the node a pool's first rank sits on: the offset that turns a pool-relative
-// node into the cluster's.
-func firstNodeOf(m *kernelmodel.Model) int { return m.PlacementOf(0).Node }
+// poolOrigin is where the pool's own numbering starts in the cluster's: the lowest node and the
+// lowest rack among the placements of the pool's ranks. Every plan.Endpoint is counted from it in
+// both coordinates (engine.PoolOrigin), so two pools whose local rack 0 are different racks of the
+// cluster stay different when a pull's two ends are turned back into cluster placements. It is
+// the minimum over the ranks and not the first rank's place, so that no rank of the pool is below it.
+func poolOrigin(m *kernelmodel.Model) engine.PoolOrigin {
+	first := m.PlacementOf(0)
+	o := engine.PoolOrigin{Node: first.Node, Rack: first.Rack}
+	for r := 1; r < m.RankCapacity(); r++ {
+		at := m.PlacementOf(r)
+		o.Node, o.Rack = min(o.Node, at.Node), min(o.Rack, at.Rack)
+	}
+	return o
+}
 
 // errHostEnvironment says which questions this Environment does not answer, and why.
 func errHostEnvironment(what string) error {
@@ -1256,9 +1271,11 @@ func (e *transferEnvironment) blocksOf(tokens int64) int64 {
 	return (tokens + e.blockSize - 1) / e.blockSize
 }
 
-// placement is the cluster's placement of a pool-relative endpoint of pool m.
+// placement is the cluster's placement of an endpoint in the numbering of pool m, node and rack
+// both: the pool's origin added to each coordinate.
 func placement(m *kernelmodel.Model, at plan.Endpoint) kernel.Placement {
-	return kernel.Placement{Node: firstNodeOf(m) + at.Node, Rack: at.Rack, Pool: m.PlacementOf(0).Pool}
+	g := poolOrigin(m).Global(at)
+	return kernel.Placement{Node: g.Node, Rack: g.Rack, Pool: m.PlacementOf(0).Pool}
 }
 
 // ownEndpoint refuses an endpoint of the engine's own pool that the pool's plan does not have;

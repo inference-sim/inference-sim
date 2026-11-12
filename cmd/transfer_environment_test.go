@@ -378,3 +378,55 @@ func TestPlaceInstance_AnEngineThatAcceptsNoPlacementIsRefusedInADisaggregatedRu
 		t.Errorf("a colocated run (no pools) must leave the engine as built: %v", err)
 	}
 }
+
+// A prefill pool of 18 GB200 trays fills rack 0 (72 GPUs, four per tray) and a one-tray decode pool
+// starts on the next rack, so the two pools' local rack 0 are different racks of the cluster.
+// Every endpoint is in the numbering of the pool it is in, node and rack both: the decode instance is
+// at its pool's {0, 0}, and the Environment turns each end of a pull back into a cluster placement
+// with the origin of the pool the end is in, so the pull is priced between the two pools' real
+// places. A host that offsets the node and leaves the rack in the cluster's numbering states the
+// decode instance at the cluster's rack, and reads an engine's pool-relative {0, 0} as rack 0, a
+// rack the decode pool does not hold.
+func TestPullBetweenPoolsThatStartOnDifferentRacksIsPricedBetweenTheirRealPlaces(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join(pdScenarios, "minimax-m2.5-gb200-1p1d-dp2.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.NewReplacer("    nodes: 17\n", "    nodes: 18\n", "    nodes: 2\n", "    nodes: 1\n",
+		"      dp: 2\n", "      dp: 1\n").Replace(string(src))
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "gb200-rack-boundary.yaml"), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pools, restore := openPools(t, dir, "gb200-rack-boundary.yaml", 1, 1)
+	defer restore()
+	prefillAt, decodeAt := pools.prefill.PlacementOf(0), pools.decode.PlacementOf(0)
+	if prefillAt.Rack == decodeAt.Rack || decodeAt.Rack == 0 {
+		t.Fatalf("fixture: prefill is at rack %d and decode at rack %d, want the decode pool to start on a rack other than 0", prefillAt.Rack, decodeAt.Rack)
+	}
+	endpointOf := pools.instanceEndpoint()
+	if got := endpointOf("instance_1"); got != (plan.Endpoint{}) {
+		t.Errorf("the decode pool's only instance is at %+v in its own numbering, want node 0 rack 0 (the cluster has it at node %d rack %d)",
+			got, decodeAt.Node, decodeAt.Rack)
+	}
+	e, err := newTransferEnvironment(pools.decode, pools.prefill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const tokens = 4096
+	decodePlan := plan.PoolPlan{Hardware: "chip", Layout: plan.Layout{Tensor: 4, RanksPerNode: 4, Nodes: 1}}
+	got, err := e.TransferDemand(decodePlan, plan.Transfer{Tokens: tokens, From: plan.Endpoint{}, To: plan.Endpoint{},
+		Kind: plan.TransferPeer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := pools.prefill.Kernel().PDTransferDemand(tokens, prefillAt, decodeAt)
+	if len(got.Links) != len(want.Links) || got.Bytes != want.Bytes || got.Floor != want.Floor {
+		t.Fatalf("the pull from prefill {0,0} to decode {0,0} demands %+v, want the kernel's demand between the pools' places %+v", got, want)
+	}
+	for i := range want.Links {
+		if got.Links[i] != want.Links[i] {
+			t.Errorf("link %d of the pull is %+v, want %+v (prefill at %+v, decode at %+v)", i, got.Links[i], want.Links[i], prefillAt, decodeAt)
+		}
+	}
+}
