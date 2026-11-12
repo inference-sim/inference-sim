@@ -539,10 +539,13 @@ func (m *Model) Packaging() scenario.Packaging { return m.id.packaging }
 // holding its first GPU. The rack is the node's position in GPUsPerRack-sized domains; a
 // cluster stating none gives every node its own, so no two nodes are taken to share an NVLink
 // domain the scenario never described.
-func (m *Model) PlacementOf(rank int) kernel.Placement {
+func (m *Model) PlacementOf(rank int) kernel.Placement { return m.placementAt(rank, m.id.rankGPUs) }
+
+// placementAt places the pool's n-th unit of width GPUs, the units packed onto the nodes in order.
+func (m *Model) placementAt(n, width int) kernel.Placement {
 	node := m.id.firstNode
 	if m.id.gpusPerNode > 0 {
-		node += rank * m.id.rankGPUs / m.id.gpusPerNode
+		node += n * width / m.id.gpusPerNode
 	}
 	// The rack decides which link a handoff between two nodes crosses (kernel.PDTransferDemand):
 	// one rack means the NVLink domain, two means the NICs. Without the NVLink path every node
@@ -555,6 +558,20 @@ func (m *Model) PlacementOf(rank int) kernel.Placement {
 	return kernel.Placement{Node: node, Rack: rack, Pool: m.id.role}
 }
 
+// GroupGPUs is the GPUs of one data-parallel group, dp x pp x tp x pcp: the pod a vLLM server runs on,
+// whose ranks sit behind one endpoint and whose engine is one instance of a host that builds the
+// whole group as one engine (core/vllm's DPGroup). It equals the GPUs of one rank at dp 1.
+func (m *Model) GroupGPUs() int { return m.id.rankGPUs * max(1, m.k.Resolved().DataParallel()) }
+
+// GroupCapacity is how many groups the pool's nodes hold: its GPUs divided by GroupGPUs. A host
+// that runs a group as one instance may run at most this many in the pool (RankCapacity counts
+// ranks, for a host that runs one instance for each).
+func (m *Model) GroupCapacity() int { return m.id.poolNodes * m.id.gpusPerNode / m.GroupGPUs() }
+
+// GroupPlacementOf places the pool's g-th group, the groups packed onto the pool's nodes in order,
+// as PlacementOf places a rank.
+func (m *Model) GroupPlacementOf(g int) kernel.Placement { return m.placementAt(g, m.GroupGPUs()) }
+
 // EnginePlacement is where the pool sits, in the engine's terms (core/placement): the chip and fabric the
 // scenario names, the parallel widths the kernel resolved, the pool's nodes and the rack of each, and
 // the node of the pool's first replica (PlacementOf(0), counted from the pool's first node). A
@@ -565,6 +582,17 @@ func (m *Model) EnginePlacement() placement.Placement { return m.EnginePlacement
 // (PlacementOf), counted from the pool's first node. A host that builds one engine for each instance states it
 // with the engine's SetPlacement (placement.Placeable).
 func (m *Model) EnginePlacementOf(rank int) placement.Placement {
+	return m.enginePlacement(m.PlacementOf(rank))
+}
+
+// EngineGroupPlacementOf is the placement of the pool's g-th group: EnginePlacement with the node the
+// group's first rank fills (GroupPlacementOf), counted from the pool's first node. The group's own
+// engine states where each of its ranks sits from it (core/vllm's DPGroup.SetPlacement).
+func (m *Model) EngineGroupPlacementOf(g int) placement.Placement {
+	return m.enginePlacement(m.GroupPlacementOf(g))
+}
+
+func (m *Model) enginePlacement(at kernel.Placement) placement.Placement {
 	r := m.k.Resolved()
 	p := placement.Placement{Hardware: m.id.hardware, Fabric: m.id.fabric, Tensor: m.id.tpRanks,
 		Pipeline: m.PipelineStages(), Data: r.DataParallel(), Expert: r.ExpertParallel(),
@@ -576,7 +604,7 @@ func (m *Model) EnginePlacementOf(rank int) placement.Placement {
 		}
 		p.NodeRacks = append(p.NodeRacks, rack)
 	}
-	p.Node = m.PlacementOf(rank).Node - m.id.firstNode
+	p.Node = at.Node - m.id.firstNode
 	return p
 }
 

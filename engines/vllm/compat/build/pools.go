@@ -428,14 +428,25 @@ func RankInPool(id string, firstDecode int) int {
 // as its nodes have GPUs for. Called once the instance counts are final. colocated is the
 // run's kernel (nil when none is open).
 func RequireCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, top Topology) error {
+	return requireCapacity(scenario, colocated, p, top, (*kernelmodel.Model).RankCapacity, "rank(s)")
+}
+
+// RequireGroupCapacity is RequireCapacity for a host that runs a data-parallel group as one instance (core/vllm's
+// DPGroup): a pool holds as many instances as its GPUs hold groups of dp x pp x tp ranks (Model.GroupCapacity).
+func RequireGroupCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, top Topology) error {
+	return requireCapacity(scenario, colocated, p, top, (*kernelmodel.Model).GroupCapacity, "data-parallel group(s)")
+}
+
+func requireCapacity(scenario string, colocated *kernelmodel.Model, p *Pools, top Topology,
+	capacity func(*kernelmodel.Model) int, unit string) error {
 	if colocated == nil {
 		return nil
 	}
 	check := func(role string, n int, m *kernelmodel.Model) error {
-		if c := m.RankCapacity(); n > c {
+		if c := capacity(m); n > c {
 			return fmt.Errorf("%d %s instance(s) requested, but scenario %q's %s pool "+
-				"holds %d rank(s) at its layout; raise the pool's nodes in the scenario or run fewer",
-				n, role, scenario, m.Role(), c)
+				"holds %d %s at its layout; raise the pool's nodes in the scenario or run fewer",
+				n, role, scenario, m.Role(), c, unit)
 		}
 		return nil
 	}
