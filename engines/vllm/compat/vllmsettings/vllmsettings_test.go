@@ -89,7 +89,8 @@ func TestOfFillsEverySetting(t *testing.T) {
 	noKey := map[string]bool{
 		// ServedWeights is the layout the engine serves a checkpoint in, resolved from the
 		// checkpoint's quantization (vLLM's ModelConfig._verify_quantization), not read from
-		// an engine block key. Of does not resolve it yet, so the kernel prices the graph as stored.
+		// an engine block key, and it needs the checkpoint, which Of does not see. compat/kernelmodel's lowerQuantization
+		// states it for the checkpoints compat/quantization covers; the others price the graph as stored.
 		"Settings.ServedWeights": true}
 	var unfilled []string
 	for _, m := range missing {

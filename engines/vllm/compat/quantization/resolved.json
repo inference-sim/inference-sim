@@ -1,0 +1,346 @@
+{
+ "checkpoints": {
+  "deepseek-v4-pro": {
+   "cases": [
+    {
+     "resolved": "deepseek_v4_fp8",
+     "stated": null
+    },
+    {
+     "resolved": "deepseek_v4_fp8",
+     "stated": "deepseek_v4_fp8"
+    },
+    {
+     "resolved": "deepseek_v4_fp8",
+     "stated": "fp8"
+    },
+    {
+     "resolved": "deepseek_v4_fp8",
+     "stated": "awq"
+    },
+    {
+     "resolved": "deepseek_v4_fp8",
+     "stated": "nvfp4"
+    }
+   ],
+   "checkpoint_quant_method": "fp8",
+   "config_sha256": "5fe4568daee51c208cb8a79538eaeda090ae011ade1dee2c386aa95f569c810e",
+   "control_without_quantization_config": [
+    {
+     "resolved": null,
+     "stated": null
+    },
+    {
+     "resolved": "fp8",
+     "stated": "fp8"
+    }
+   ],
+   "model_type": "deepseek_v4"
+  },
+  "minimax-m3-mxfp8": {
+   "cases": [
+    {
+     "resolved": "mxfp8",
+     "stated": null
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (auto_awq).",
+     "stated": "auto_awq"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (auto_gptq).",
+     "stated": "auto_gptq"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (awq).",
+     "stated": "awq"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (awq_marlin).",
+     "stated": "awq_marlin"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (compressed-tensors).",
+     "stated": "compressed-tensors"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (deepseek_v4_fp8).",
+     "stated": "deepseek_v4_fp8"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (experts_int8).",
+     "stated": "experts_int8"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (fbgemm_fp8).",
+     "stated": "fbgemm_fp8"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (fp8).",
+     "stated": "fp8"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (fp8_per_block).",
+     "stated": "fp8_per_block"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (fp8_per_channel).",
+     "stated": "fp8_per_channel"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (fp8_per_tensor).",
+     "stated": "fp8_per_tensor"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (fp_quant).",
+     "stated": "fp_quant"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (gpt_oss_mxfp4).",
+     "stated": "gpt_oss_mxfp4"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (gptq).",
+     "stated": "gptq"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (gptq_marlin).",
+     "stated": "gptq_marlin"
+    },
+    {
+     "resolved": "humming",
+     "stated": "humming"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (inc).",
+     "stated": "inc"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (int8_per_channel_weight_only).",
+     "stated": "int8_per_channel_weight_only"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (modelopt).",
+     "stated": "modelopt"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (modelopt_fp4).",
+     "stated": "modelopt_fp4"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (modelopt_mixed).",
+     "stated": "modelopt_mixed"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (modelopt_mxfp8).",
+     "stated": "modelopt_mxfp8"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (moe_wna16).",
+     "stated": "moe_wna16"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (mxfp4).",
+     "stated": "mxfp4"
+    },
+    {
+     "resolved": "mxfp8",
+     "stated": "mxfp8"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (nvfp4_per_token).",
+     "stated": "nvfp4_per_token"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (online).",
+     "stated": "online"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (quark).",
+     "stated": "quark"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (torchao).",
+     "stated": "torchao"
+    },
+    {
+     "error": "Quantization method specified in the model config (mxfp8) does not match the quantization method specified in the `quantization` argument (not_a_quantization_method).",
+     "stated": "not_a_quantization_method"
+    }
+   ],
+   "checkpoint_quant_method": "mxfp8",
+   "config_sha256": "a3698fff231a6cd92f632dcbe50f0b1dbda716994f29ccde9f0fa9d2a87698bf",
+   "layout": {
+    "classes": {
+     "head": {
+      "unquantized": 1
+     },
+     "linear": {
+      "MXFP8": 240
+     },
+     "routed_experts": {
+      "MXFP8": 57
+     }
+    },
+    "config_class": "ModelOptMxFp8Config",
+    "mxfp8_block_size": 32,
+    "unquantized_dtype": "bfloat16"
+   },
+   "model_type": "minimax_m3_vl",
+   "resolved_without_quantization": "mxfp8"
+  },
+  "minimax-m3-nvfp4": {
+   "cases": [
+    {
+     "resolved": "modelopt_mixed",
+     "stated": null
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "auto_awq"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "auto_gptq"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "awq"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "awq_marlin"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "compressed-tensors"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "deepseek_v4_fp8"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "experts_int8"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "fbgemm_fp8"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "fp8"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "fp8_per_block"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "fp8_per_channel"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "fp8_per_tensor"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "fp_quant"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "gpt_oss_mxfp4"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "gptq"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "gptq_marlin"
+    },
+    {
+     "resolved": "humming",
+     "stated": "humming"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "inc"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "int8_per_channel_weight_only"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "modelopt"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "modelopt_fp4"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "modelopt_mixed"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "modelopt_mxfp8"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "moe_wna16"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "mxfp4"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "mxfp8"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "nvfp4_per_token"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "online"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "quark"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "torchao"
+    },
+    {
+     "resolved": "modelopt_mixed",
+     "stated": "not_a_quantization_method"
+    }
+   ],
+   "checkpoint_quant_method": "modelopt",
+   "config_sha256": "440d22038ffa0bcb93fa01e8d2d555e3840d939167c08eace81b9cce386fb117",
+   "layout": {
+    "classes": {
+     "head": {
+      "unquantized": 1
+     },
+     "linear": {
+      "MXFP8": 240
+     },
+     "routed_experts": {
+      "NVFP4": 57
+     }
+    },
+    "config_class": "ModelOptMixedPrecisionConfig",
+    "mxfp8_block_size": 32,
+    "unquantized_dtype": "bfloat16"
+   },
+   "model_type": "minimax_m3_vl",
+   "resolved_without_quantization": "modelopt_mixed"
+  }
+ },
+ "vllm": "5df63a7203cdb9328d824a27b682e77c7b9928be"
+}

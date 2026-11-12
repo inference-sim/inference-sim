@@ -3843,7 +3843,8 @@
    "evidence": {
     "traces": [
      "compat/kernelmodel/quantization_v4_test.go",
-     "oracle/quantization/resolved.json"
+     "compat/kernelmodel/quantization_m3_test.go",
+     "compat/quantization/resolved.json"
     ]
    },
    "status": "modelled"

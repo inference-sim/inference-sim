@@ -9892,13 +9892,16 @@
       "evidence": {
         "traces": [
           "compat/kernelmodel/quantization_v4_test.go",
-          "oracle/quantization/resolved.json"
+          "compat/kernelmodel/quantization_m3_test.go",
+          "compat/quantization/resolved.json"
         ]
       },
       "value_classes": {
         "type": "enumerated",
         "covered": [
-          "deepseek_v4_fp8"
+          "deepseek_v4_fp8",
+          "modelopt_mixed",
+          "mxfp8"
         ]
       },
       "estimation": {

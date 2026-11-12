@@ -450,12 +450,13 @@ jobs:
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
           BLIS_ORACLE_CATALOG="$catalog" python -I oracle/blocksize/oracle.py vllm-source check core/vllm/blocksize_table.json oracle/blocksize/TABLE.tsv
-      # The quantization vLLM serves a DeepSeek-V4 FP8 checkpoint with, for each value a deployment
-      # can state, from vLLM's own ModelConfig over the catalog's config.json.
+      # The quantization vLLM serves the DeepSeek-V4 FP8 and MiniMax-M3 MXFP8 and NVFP4 checkpoints
+      # with, for each value a deployment can state, from vLLM's own ModelConfig over the catalog's
+      # config.json, and the layout of each class of MiniMax-M3 layers from vLLM's quantization config.
       - name: the quantization resolutions are vLLM's own
         run: |
           catalog="$(go list -m -f '{{.Dir}}' github.com/inference-sim/blis-substrate)/catalog/models"
-          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/quantization/oracle.py vllm-source check oracle/quantization/resolved.json
+          BLIS_ORACLE_CATALOG="$catalog" python -I oracle/quantization/oracle.py vllm-source check compat/quantization/resolved.json
       # speculative_config.synthetic_acceptance_length, resolved to per-position rates by vLLM's own
       # function over a grid of lengths, valid and not (the sampler that consumes the rates needs a GPU).
       - name: the synthetic acceptance resolutions are vLLM's own

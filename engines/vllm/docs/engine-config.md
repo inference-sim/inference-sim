@@ -66,7 +66,7 @@ Weights and caches:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `quantization` | string | no | Weight format the engine serves, where it differs from the checkpoint's. Omitted means the checkpoint's own format. |
+| `quantization` | string | no | Weight format the engine serves, where it differs from the checkpoint's. Omitted means the checkpoint's own format. For the MiniMax-M3 MXFP8 and NVFP4 checkpoints it is resolved as vLLM v0.32.0 resolves it (`ModelConfig._verify_quantization`): the checkpoint's recipe decides the format of each class of layers, `mxfp8` and `modelopt_mixed` are those checkpoints' own methods, a value vLLM refuses is refused with its message, and a value its recipe's class claims is priced as the recipe and recorded as a substitution. See [Quantization](#quantization). |
 | `moe_backend` | string | no | The expert-kernel backend, `--moe-backend`. Omitted means `auto`. A mega-MoE backend is one of the conditions under which DeepSeek-V4.1 turns on its own sequence parallelism. |
 | `kv_cache_dtype` | string | no | KV cache format. |
 | `enable_prefix_caching` | boolean | no | Omitted means true, vLLM's default. `false` describes a deployment without prefix caching. |
@@ -198,3 +198,38 @@ A tool that writes the block from `fields.json` names (blis-config-search) needs
 a config name `a.b` is the nested mapping `a: {b: ...}`, a name without a dot is a top-level key, and
 an environment variable is a key of `env`. `VLLMKeys` in `rules/engineconfig/names.go` lists the names the block
 takes.
+
+## Quantization
+
+vLLM does not serve the format `--quantization` names. `ModelConfig._verify_quantization`
+(`vllm/config/model.py:1370-1449@5df63a72`) reads the checkpoint's `quantization_config`, asks each
+quantization class whether it claims the checkpoint (the ModelOpt classes read `quant_algo`:
+`vllm/model_executor/layers/quantization/modelopt.py:449-455, 772-778, 1205-1211, 1627-1633@5df63a72`), and
+then takes the claimed method whatever was stated, accepts a value equal to the checkpoint's own method, or
+raises. The method then builds each layer's weights from the checkpoint's recipe; for a ModelOpt
+mixed-precision checkpoint that is the per-layer `quantized_layers` mapping
+(`ModelOptMixedPrecisionConfig._resolve_quant_algo`, `modelopt.py:1692-1790@5df63a72`).
+
+blis-vllm lowers that resolution for the catalog's MiniMax-M3 checkpoints (`minimax-m3-mxfp8`, whose recipe
+is `mxfp8`, and `minimax-m3-nvfp4`, whose recipe is ModelOpt `MIXED_PRECISION`, resolved to
+`modelopt_mixed`), in `compat/quantization`:
+
+| Stated for | Result |
+|---|---|
+| nothing, or the checkpoint's own method (`mxfp8`; `modelopt_mixed`) | the layout the recipe gives: dense projections, routed experts and head each in one format; the router in float32 and the embedding in the model dtype, which no recipe governs |
+| a value vLLM refuses (any other method on the MXFP8 checkpoint) | the open is refused, quoting vLLM's message |
+| a value another class claims (any method on the mixed-precision checkpoint) | priced as the recipe, and recorded in `Provenance().Substitutions` as a quantization from the stated value to `modelopt_mixed` |
+| `humming`, which vLLM honours | refused by name: this engine states no layout for it |
+| a recipe that serves one class of layers in two formats | refused by name; the kernel prices one format per class |
+
+The answers are not computed at run time. `oracle/quantization/oracle.py` runs vLLM's own `ModelConfig` over each
+checkpoint's `config.json` for every method name vLLM lists, and its quantization config over the model's layer
+prefixes, and its output is `compat/quantization/resolved.json`, embedded in the package and checked against vLLM
+in CI. The checkpoint is named by the SHA-256 of its `config.json`, which its catalog graph records. The kernel
+then proves the graph stores exactly the stated layout (`enginesettings.ServedWeights`) and refuses otherwise, so
+a catalog graph that drifts from the recipe is caught. A checkpoint the file has no layout for (every other
+model) keeps its stated value, which the kernel prices as before.
+
+Not covered: online quantization of a bfloat16 checkpoint (`quantization: mxfp8` on `minimax-m3`), and the
+Nemotron ModelOpt mixed-precision checkpoints, whose recipes are over module names the oracle does not enumerate.
+

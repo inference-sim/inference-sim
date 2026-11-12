@@ -375,6 +375,12 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
 	}
 	settings := vllmsettings.Of(engine)
+	// The quantization vLLM serves is the checkpoint's recipe's, not what --quantization names
+	// (lowerQuantization).
+	quant, err := lowerQuantization(in.Model, engine.Quantization, &settings)
+	if err != nil {
+		return nil, fmt.Errorf("%s pool: %w", pool.Role, err)
+	}
 	// An unstated block_size, gpu_memory_utilization, max_num_seqs or max_num_batched_tokens the release resolves is priced at the
 	// resolved value, so the kernel and Engine describe one engine (resolveEngine).
 	r := resolveEngine(in, engine)
@@ -424,6 +430,9 @@ func fromDecoded(in latencykernel.Inputs, engine engineconfig.Engine, data *load
 	}
 	if s := cudagraphSubstitution(engine, k.Resolved().Overrides); s != nil {
 		m.substitutions = append(m.substitutions, *s)
+	}
+	if quant != nil {
+		m.substitutions = append(m.substitutions, *quant)
 	}
 	m.indexerRules, _ = in.Rules.(indexerKVDTypeRules)
 	m.rules = reportRules(in)

@@ -217,6 +217,14 @@
      "deepseek_v4_fp8"
     ],
     "why": "the test states deepseek_v4_fp8 on a DeepSeek-V4 FP8 checkpoint and finds the plan equal to the unstated one"
+   },
+   {
+    "trace": "compat/kernelmodel/quantization_m3_test.go",
+    "values": [
+     "mxfp8",
+     "modelopt_mixed"
+    ],
+    "why": "the test states mxfp8 on the MiniMax-M3 MXFP8 checkpoint and modelopt_mixed on its NVFP4 mixed-precision one, on h100, h200, b200 and b300, and finds each plan equal to the unstated one; it also states every other method vLLM lists and finds the open refused with vLLM's own text or the replacement recorded"
    }
   ]
  },

@@ -7897,7 +7897,9 @@
    "value_classes": {
     "type": "enumerated",
     "covered": [
-     "deepseek_v4_fp8"
+     "deepseek_v4_fp8",
+     "modelopt_mixed",
+     "mxfp8"
     ]
    },
    "basis": {
@@ -7957,7 +7959,9 @@
        "vllm/model_executor/model_loader/weight_utils.py:269",
        "vllm/model_executor/model_loader/weight_utils.py:386"
       ],
-      "covered_by": []
+      "covered_by": [
+       "compat/kernelmodel/quantization_m3_test.go"
+      ]
      },
      {
       "values": [
@@ -7973,6 +7977,7 @@
       "other": true,
       "compared_at": [],
       "covered_by": [
+       "compat/kernelmodel/quantization_m3_test.go",
        "compat/kernelmodel/quantization_v4_test.go"
       ]
      },
@@ -8206,6 +8211,16 @@
      {
       "value": "deepseek_v4_fp8",
       "trace": "compat/kernelmodel/quantization_v4_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "mxfp8",
+      "trace": "compat/kernelmodel/quantization_m3_test.go",
+      "reviewed": true
+     },
+     {
+      "value": "modelopt_mixed",
+      "trace": "compat/kernelmodel/quantization_m3_test.go",
       "reviewed": true
      }
     ],

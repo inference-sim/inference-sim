@@ -162,17 +162,24 @@ and rerun it.
 
 ## Quantization oracle
 
-`oracle/quantization/oracle.py` runs vLLM's own `ModelConfig` (`vllm/config/model.py:1370-1412`,
-with `DeepseekV4FP8Config.override_quantization_method`, `vllm/models/deepseek_v4/quant_config.py:140-157`)
-over the catalog's deepseek-v4-pro `config.json` once for each value a deployment can state for
-`quantization`, and over the same file without its `quantization_config` as a control. The
-committed answers are `oracle/quantization/resolved.json`, which
-`compat/kernelmodel/quantization_v4_test.go` holds the kernel's plan to, and CI fails if the file
-differs from what the oracle prints:
+`oracle/quantization/oracle.py` runs vLLM's own `ModelConfig` (`vllm/config/model.py:1370-1449`, with the
+quantization classes' `override_quantization_method`: `vllm/models/deepseek_v4/quant_config.py:140-157` and
+`vllm/model_executor/layers/quantization/modelopt.py`) over the catalog's `config.json` of three checkpoints:
+`deepseek-v4-pro` once for each of five stated values, with the same file without its `quantization_config` as a
+control, and `minimax-m3-mxfp8` and `minimax-m3-nvfp4` once for each method name vLLM lists, none, and a name it
+does not list. Each answer is the method vLLM resolves to, or the text of the error it raises. For the two
+MiniMax-M3 checkpoints it also builds vLLM's quantization config from the checkpoint's `quantization_config`
+and asks it, for every layer prefix MiniMax-M3's model builds (`vllm/models/minimax_m3/nvidia/model.py`),
+whether the layer is excluded and which algorithm the per-layer mapping gives it, and records the algorithms
+by class of layer. The committed answers are `compat/quantization/resolved.json`, which the
+`compat/quantization` package embeds, which `compat/kernelmodel/quantization_v4_test.go` and
+`quantization_m3_test.go` hold the kernel's plans to, and CI fails if the file differs from what the oracle
+prints. It needs vLLM's `requirements/common.txt`, `torch` and `torchvision` (the model registry imports the
+model's modules); it does not need a GPU.
 
 ```sh
 BLIS_ORACLE_CATALOG=<blis-substrate>/catalog/models \
-  python -I oracle/quantization/oracle.py <vllm checkout> json > oracle/quantization/resolved.json
+  python -I oracle/quantization/oracle.py <vllm checkout> json > compat/quantization/resolved.json
 ```
 
 ## Scenario

@@ -11,7 +11,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/kernel"
 )
 
-// quantizationOracle is oracle/quantization/resolved.json: what vLLM's own ModelConfig
+// quantizationOracle is the deepseek-v4-pro entry of compat/quantization/resolved.json: what vLLM's own ModelConfig
 // (vllm/config/model.py:1370-1412@5df63a72, DeepseekV4FP8Config.override_quantization_method at
 // vllm/models/deepseek_v4/quant_config.py:140-157@5df63a72) resolves `quantization` to on the
 // catalog's deepseek-v4-pro checkpoint, for each value a deployment could state.
@@ -30,17 +30,22 @@ type quantizationOracle struct {
 
 func loadQuantizationOracle(t *testing.T) quantizationOracle {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "oracle", "quantization", "resolved.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "quantization", "resolved.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var o quantizationOracle
-	if err := json.Unmarshal(raw, &o); err != nil {
+	var doc struct {
+		Commit      string                        `json:"vllm"`
+		Checkpoints map[string]quantizationOracle `json:"checkpoints"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if o.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" || o.Model != "deepseek-v4-pro" {
-		t.Fatalf("the oracle file is for %s at %s", o.Model, o.Commit)
+	o, ok := doc.Checkpoints["deepseek-v4-pro"]
+	if !ok || doc.Commit != "5df63a7203cdb9328d824a27b682e77c7b9928be" {
+		t.Fatalf("the oracle file has no deepseek-v4-pro entry at 5df63a72 (vllm %s)", doc.Commit)
 	}
+	o.Commit, o.Model = doc.Commit, "deepseek-v4-pro"
 	return o
 }
 
