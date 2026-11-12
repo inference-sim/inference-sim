@@ -46,6 +46,8 @@ them.</p>
 | `nodes` | integer | yes | Node count, at least 1. |
 | `gpus_per_node` | integer | unless the chip states it | GPUs per node, at least 1. Required when the chip's entry states no `GPUsPerNode`; otherwise omit it or state the entry's value. See [Packaging](#packaging). |
 | `gpus_per_rack` | integer | no | GPUs per rack, an NVLink domain that spans nodes. Only a chip's entry states a rack: omit it or state the entry's `GPUsPerRack`. See [Packaging](#packaging). |
+| `switch_groups` | list of lists of integers | no | A partition of the nodes `0` to `nodes - 1` into the groups that sit under one leaf switch, each group a list of node numbers. Needs `uplink_oversubscription`. See [Switch groups](../../kernel/concepts/switch-groups.md). |
+| `uplink_oversubscription` | number | with `switch_groups` | The ratio r of a group's aggregate NIC rate to its uplink's rate, at least 1. Refused without `switch_groups`. |
 | `storage` | list of strings | no | Storage classes from the catalog's `devices/storage.yaml` that the cluster provides. If any are listed, a deployment's offload tiers must use them. |
 
 ### Packaging
@@ -83,6 +85,10 @@ A scenario is invalid if
 - `gpus_per_rack` and `gpus_per_node` are both set and the first is not a multiple of the
   second;
 - the cluster has more than one node and names no `fabric`;
+- `switch_groups` has an empty group, names a node twice (`switch_group_overlap`), names a node the
+  cluster does not have (`switch_group_unknown_node`), leaves a node out (`switch_group_missing_node`), or
+  is stated for a one-node cluster; `uplink_oversubscription` is missing with groups, not a finite
+  number, not positive, below 1, or stated without groups (each refused under its own rule name);
 - a `storage` entry is empty or appears twice;
 - `workload` is present and is not a valid [binding](workload.md#binding).
 - `acceptance` is present and is not a valid [pin](acceptance.md#scenario-pin).

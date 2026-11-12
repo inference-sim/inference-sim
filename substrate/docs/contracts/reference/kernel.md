@@ -181,6 +181,8 @@ func TestPDTransferLaw(t *testing.T) {
 }
 ```
 
+Where the scenario states switch groups, a handoff between groups names two more links, `uplink/egress/group/<g>` and `uplink/ingress/group/<h>`; see [Switch groups](../../kernel/concepts/switch-groups.md).
+
 `PDCases` covers a same-node, a same-rack and a cross-rack handoff at token counts from 0 to
 131,072. `CheckPDTransfer` checks one case and returns an error, for a caller with cases
 of its own; `TestPDTransfer` fails when given no cases, since it would then check nothing.

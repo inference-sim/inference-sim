@@ -1827,6 +1827,18 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "switch_groups": {
+          "items": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "uplink_oversubscription": {
+          "type": "number"
         }
       },
       "required": [

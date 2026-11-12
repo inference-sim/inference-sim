@@ -248,6 +248,7 @@ nav:
     - Pricing a step: kernel/concepts/step.md
     - Memory: kernel/concepts/memory.md
     - Parallelism: kernel/concepts/parallelism.md
+    - Switch groups: kernel/concepts/switch-groups.md
     - Refuse, assume, override: kernel/concepts/resolution.md
   - Guides:
     - kernel/guides/index.md
