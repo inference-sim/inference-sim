@@ -168,9 +168,30 @@ func isDeepseekV4(g *model.Graph) bool {
 	return a == rules.ArchDeepseekV4 || a == rules.ArchDeepseekV41
 }
 
+// recurrentDrafterRefusal refuses an enabled speculator whose stack holds a recurrent layer, whatever
+// the target is. vLLM registers a drafter's layers in the same KV cache config as the target's, so
+// a recurrent drafter layer adds a Mamba group and changes the cache bytes; that state is not
+// mapped. planMamba refuses it too for a recurrent target, but a full-attention target never reaches
+// planMamba, and the attention-only drafter mapping below would skip the layer without a word.
+func recurrentDrafterRefusal(g *model.Graph, e engineconfig.Engine) error {
+	if g.Speculator == nil || e.Speculative == nil || e.Speculative.NumSpecTokens <= 0 {
+		return nil
+	}
+	var err error
+	stackNodes(g, g.Speculator.Stack, func(id string, d model.Node) {
+		if d.Op == model.OpRecurrentUpdate && err == nil {
+			err = fmt.Errorf("recurrent layers: drafter layer kind %s holds a recurrent layer, whose state is not mapped", id)
+		}
+	})
+	return err
+}
+
 func kvLayersRead(g *model.Graph, pool deployment.Pool, engine engineconfig.Engine, ds deepseekServing) ([]KVLayerRun, error) {
 	if g == nil {
 		return nil, nil
+	}
+	if err := recurrentDrafterRefusal(g, engine); err != nil {
+		return nil, err
 	}
 	if isDeepseekV4(g) {
 		return deepseekKVLayers(g, pool, engine, ds)

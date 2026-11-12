@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 
 	"github.com/inference-sim/blis-vllm/rules/engineconfig"
@@ -434,5 +435,24 @@ func TestUnmatchedRecurrentSettingsStayRefusals(t *testing.T) {
 	}
 	if pieces := m.V032Pieces(); len(pieces) != 1 || !strings.Contains(pieces[0], `mamba_cache_mode "all"`) {
 		t.Errorf("V032Pieces %v, want the one hybrid KV groups piece naming mamba_cache_mode", pieces)
+	}
+}
+
+// A recurrent drafter beside a full-attention target is refused by name, not skipped: the target has
+// no recurrent layer, so planMamba never runs, and the drafter mapping reads attention nodes only.
+func TestRecurrentDrafterBesideAnAttentionOnlyTargetIsRefused(t *testing.T) {
+	g := &model.Graph{
+		LayerKinds: []model.LayerKind{{ID: "attn", Nodes: []model.Node{gqa}}, {ID: "rec", Nodes: []model.Node{mamba2}}},
+		Stack:      model.Stack{Pattern: []string{"attn"}, Repeat: 2},
+		Speculator: &model.Speculator{Method: "mtp", NumSpec: 1, Stack: model.Stack{Pattern: []string{"rec"}, Repeat: 1}},
+	}
+	on := engineconfig.Engine{Speculative: &engineconfig.Speculative{Method: "mtp", NumSpecTokens: 1}}
+	runs, err := kvLayersOf(g, deployment.Pool{}, on, deepseekServing{})
+	if err == nil || !strings.Contains(err.Error(), "drafter layer kind rec holds a recurrent layer") {
+		t.Errorf("enabled recurrent drafter: runs %v, err %v; want a refusal naming the drafter layer", runs, err)
+	}
+	// A speculator the engine does not enable runs no drafter layers, so nothing is refused.
+	if _, err := kvLayersOf(g, deployment.Pool{}, engineconfig.Engine{}, deepseekServing{}); err != nil {
+		t.Errorf("speculation off: %v", err)
 	}
 }
