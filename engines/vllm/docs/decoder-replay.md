@@ -82,4 +82,4 @@ Not benchmarked. A step that trims clones its batch once, and the kernel then pr
 ## Sources
 
 - vLLM v0.32.0 (`5df63a72`): `vllm/models/deepseek_v41/nvidia/model.py`, `nvidia/model_state.py`, `nvidia/decoder_replay_cudagraph.py`, `decoder_replay_layers.py`, `vllm/config/compilation.py:559-575`, `vllm/v1/worker/gpu/cudagraph_utils.py:518-548`, `vllm/v1/core/sched/scheduler.py:3105-3120`. Apache-2.0.
-- blis-substrate: `kernel/tail.go`, `docs/kernel/concepts/step.md` ("Layers that run on some of the rows").
+- blis-substrate: `kernel/tail.go`, and the section "Layers that run on some of the rows" of its kernel step concepts page.
