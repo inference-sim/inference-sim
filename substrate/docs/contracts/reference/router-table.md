@@ -61,7 +61,7 @@ Policies:
 | `field` | string | yes | The field of the entry it supports, below. |
 | `repository` | string | yes | `<owner>/<name>` on GitHub. On the `llm-d` side, `llm-d/llm-d-router` or `inference-sim/llm-d-router`; on the `router` side, not those. |
 | `commit` | string | yes | The full 40-character commit the passage is read at. A branch or a tag is not a pinned revision. |
-| `path` | string | yes | The file, from the repository's root. For a policy other than `none`, one `llm-d` citation names a file that defines the policy (`routertable.Policies`). |
+| `path` | string | yes | The file, from the repository's root. For a policy other than `none`, one `llm-d` citation shows the behaviour the policy is matched to, at the commit it names; the contract keeps no list of files. |
 | `lines` | string | yes | A line number, or a range `<first>-<last>`, at `commit`. |
 | `claim` | string | yes | What the passage shows. |
 

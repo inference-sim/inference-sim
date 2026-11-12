@@ -14,13 +14,15 @@ An entry is added only with evidence: for each field it states, a citation of th
 
 ## The policies llm-d's router offers
 
-A policy is a composition of the router's scheduling plugins that it runs without code of BLIS's own. The list is closed: a policy joins it with the router code that defines it.
+A policy is a composition of the router's scheduling plugins that it runs without code of BLIS's own. The list is closed and holds names only:
 
-| Policy | Plugins | Defined in llm-d-router |
-|---|---|---|
-| `round-robin` | max-score-picker; no scorer; one counter per runtime, drawn at every pick of every profile | `pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go` and `picker/common.go` (`RotateScoredEndpoints`) |
-| `least-active-requests` | inflight-load-producer; active-request-scorer; max-score-picker | `pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go` |
-| `default` | queue-scorer (2); kv-cache-utilization-scorer (2); prefix-cache-scorer (3); max-score-picker | `pkg/epp/config/loader/defaults.go` (`loadDefaultConfig`) |
-| `none` | no policy is close enough | |
+| Policy | Meaning |
+|---|---|
+| `round-robin` | every endpoint is treated alike |
+| `least-active-requests` | the endpoint with the fewest in-flight requests is preferred |
+| `default` | the router's built-in configuration when none is given |
+| `none` | no policy is close enough |
+
+What a policy is made of (plugins, weights, tie handling, source files) changes with the router's release, so this repository does not list it. The router fork owns it; each entry above states the behaviour it relies on and cites the router tree at the build it names.
 
 The file format, and the rules a validator refuses an entry by, are in the [router table reference](../../contracts/reference/router-table.md).

@@ -104,38 +104,9 @@ func (e *Entry) validateEvidence(p *validate.Problems) {
 	if supported[SideRouter][FieldPolicy] == 0 {
 		p.Field("evidence", "no citation of the router's code shows the behaviour that the policy is matched to (side router, field policy)")
 	}
-	if e.Policy != "" && e.Policy.Offered() && e.Policy != PolicyNone {
-		if !e.citesPolicySource() {
-			p.Field("evidence", "no llm-d citation is of a file that defines the policy %q; cite one of %v", e.Policy, e.Policy.sources())
-		}
-	}
 	if supported[SideLLMD][FieldPolicy] == 0 {
 		p.Field("evidence", "no citation of llm-d's router code or documentation supports the policy %q (side llm-d, field policy)", e.Policy)
 	}
-}
-
-// sources lists the files of llm-d's router that define a policy.
-func (p Policy) sources() []string {
-	for _, i := range Policies() {
-		if i.Policy == p {
-			return i.Sources
-		}
-	}
-	return nil
-}
-
-func (e *Entry) citesPolicySource() bool {
-	for _, c := range e.Evidence {
-		if c.Side != SideLLMD || c.Field != FieldPolicy {
-			continue
-		}
-		for _, f := range e.Policy.sources() {
-			if c.Path == f {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // validateSide checks that a citation of llm-d's side is of llm-d's router and that one of the

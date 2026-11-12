@@ -3,7 +3,6 @@ package routertable
 import (
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -106,7 +105,6 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 		{"no claim", func(e *Entry) { e.Evidence[0].Claim = "" }, "evidence[0].claim", "required"},
 		{"llm-d cited at another repository", func(e *Entry) { e.Evidence[2].Repository = "acme/router" }, "evidence[2].repository", "one of"},
 		{"the router cited at llm-d's repository", func(e *Entry) { e.Evidence[0].Repository = "inference-sim/llm-d-router" }, "evidence[0].repository", "cannot be of llm-d's router"},
-		{"llm-d cited at a file that does not define the policy", func(e *Entry) { e.Evidence[2].Path = "pkg/epp/other.go" }, "evidence", "defines the policy"},
 		{"a file name that lies about the key", func(e *Entry) { e.Name = "whatever-name" }, "name", "make its name"},
 		{"a file name that omits the affinity", func(e *Entry) {
 			e.SessionAffinityTTLS = ptr(60)
@@ -146,13 +144,10 @@ func TestTheNameIsTheKey(t *testing.T) {
 func TestEveryPolicyIsDocumentedAndOffered(t *testing.T) {
 	seen := map[Policy]bool{}
 	for _, i := range Policies() {
-		if i.Plugins == "" || len(i.Sources) == 0 {
-			t.Errorf("%s: states no plugins or no source", i.Policy)
+		if !i.Offered() || seen[i] || i == PolicyNone {
+			t.Errorf("%s is repeated, none, or not offered", i)
 		}
-		if !i.Policy.Offered() || seen[i.Policy] || i.Policy == PolicyNone {
-			t.Errorf("%s is repeated, none, or not offered", i.Policy)
-		}
-		seen[i.Policy] = true
+		seen[i] = true
 	}
 	if Policy("bogus").Offered() || !PolicyNone.Offered() {
 		t.Error("Offered must accept none and refuse a policy outside the list")
@@ -213,22 +208,16 @@ func TestAnEntryIsNotInheritedByAnUncitedRevision(t *testing.T) {
 	}
 }
 
-// The policy list is not versioned. Its composition is what consumers read as plugin types with
-// optional weights, and a source is a Go file of the router; a claim about how one release behaves
-// (a tie-break, a profile pair, a decider) does not parse as a composition and so cannot be put there.
-// Such claims belong in the revision-bound catalog entries, which cite the router tree.
-func TestEveryPolicyCompositionParsesAsPluginTypesAndWeights(t *testing.T) {
-	item := regexp.MustCompile(`^(no scorer|[a-z][a-z0-9-]*( \([0-9]+\))?)$`)
-	for _, i := range Policies() {
-		for _, part := range strings.Split(i.Plugins, ";") {
-			if part = strings.TrimSpace(part); !item.MatchString(part) {
-				t.Errorf("%s: composition item %q is not a plugin type with an optional weight", i.Policy, part)
-			}
-		}
-		for _, s := range i.Sources {
-			if !strings.HasSuffix(s, ".go") || strings.HasPrefix(s, "/") || strings.Contains(s, "..") {
-				t.Errorf("%s: source %q is not a Go file of the router from its root", i.Policy, s)
-			}
+// The policy list is not versioned, so it holds no fact that changes with a router release: no
+// plugin composition and no source path. An entry cites whatever file of llm-d's router, at its
+// pinned commit, shows the behaviour it relies on; the contract does not carry a second list of
+// files that would go stale when the router moves a plugin.
+func TestAnEntryMayCiteAnyFileOfTheRouterAtAPinnedCommit(t *testing.T) {
+	for _, path := range []string{"pkg/epp/other.go", "pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go", "cmd/epp/main.go"} {
+		e := valid()
+		e.Evidence[2].Path = path
+		if p := e.Validate(); len(p.Errors()) != 0 {
+			t.Errorf("citing %s: %v", path, p.Errors())
 		}
 	}
 }

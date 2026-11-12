@@ -104,26 +104,20 @@ const (
 	FieldPolicy Field = "policy"
 )
 
-// Policy is a policy llm-d's router offers: a composition of its scheduling plugins that the
-// router runs without code of BLIS's own. The list is closed. A policy is added with the
-// router code that makes it what it is.
+// Policy is the name of a policy llm-d's router offers: a composition of its scheduling plugins
+// that the router runs without code of BLIS's own. The list is closed and holds names only. What a
+// policy is made of (plugins, weights, tie handling, source files) changes with the router's
+// release, so it is not stated here: the router fork owns it, and each entry of the table states
+// the behaviour it relies on in its evidence, with a citation at the router build it names.
 type Policy string
 
 const (
-	// PolicyRoundRobin: no scorer, so every endpoint scores alike, and the max-score picker
-	// rotates through the endpoints with a counter. The counter is one per runtime and is drawn
-	// at every pick of every profile (picker.RandFor, NextCounter), not once per request: a
-	// configuration whose request runs two profiles that each pick, such as a prefill and a decode
-	// profile, draws two, and a pool of even size then sees only every other endpoint. The policy
-	// is strict round-robin over the endpoints, listed in ID order in BLIS's hosted router, for a
-	// configuration with one pick per request.
+	// PolicyRoundRobin is the policy that treats every endpoint alike.
 	PolicyRoundRobin Policy = "round-robin"
-	// PolicyLeastActiveRequests: the router's own count of in-flight requests per endpoint
-	// (inflight-load-producer), scored by active-request-scorer so the endpoint with the
-	// fewest scores highest, and the max-score picker; ties are rotated, not drawn at random.
+	// PolicyLeastActiveRequests is the policy that prefers the endpoint with the fewest
+	// in-flight requests.
 	PolicyLeastActiveRequests Policy = "least-active-requests"
-	// PolicyDefault: the router's built-in configuration when none is given: queue-scorer
-	// (weight 2), kv-cache-utilization-scorer (2) and prefix-cache-scorer (3).
+	// PolicyDefault is the router's built-in policy when none is given.
 	PolicyDefault Policy = "default"
 	// PolicyNone: no llm-d policy is close enough. The router stays unsupported (G5
 	// router_unsupported). The entry's reason says why; the table records the absence so that a
@@ -131,35 +125,17 @@ const (
 	PolicyNone Policy = "none"
 )
 
-// PolicyInfo describes a policy.
-type PolicyInfo struct {
-	Policy Policy
-	// Plugins is the composition, as the plugin types of llm-d's router with their weights.
-	Plugins string
-	// Sources are the files of llm-d's router, from its root, that define the composition. An
-	// entry that maps to the policy cites at least one of them.
-	Sources []string
-}
-
 // Policies lists the policies llm-d's router offers, in the order they are documented. It does
 // not include PolicyNone, which is the absence of one.
-func Policies() []PolicyInfo {
-	return []PolicyInfo{
-		{PolicyRoundRobin, "max-score-picker; no scorer",
-			[]string{"pkg/epp/framework/plugins/scheduling/picker/maxscore/picker.go",
-				"pkg/epp/framework/plugins/scheduling/picker/common.go"}},
-		{PolicyLeastActiveRequests, "inflight-load-producer; active-request-scorer; max-score-picker",
-			[]string{"pkg/epp/framework/plugins/scheduling/scorer/activerequest/active_request.go"}},
-		{PolicyDefault, "queue-scorer (2); kv-cache-utilization-scorer (2); prefix-cache-scorer (3); max-score-picker",
-			[]string{"pkg/epp/config/loader/defaults.go"}},
-	}
+func Policies() []Policy {
+	return []Policy{PolicyRoundRobin, PolicyLeastActiveRequests, PolicyDefault}
 }
 
 // PolicyNames lists the names of the policies llm-d's router offers.
 func PolicyNames() []string {
 	var out []string
-	for _, i := range Policies() {
-		out = append(out, string(i.Policy))
+	for _, p := range Policies() {
+		out = append(out, string(p))
 	}
 	return out
 }
@@ -173,8 +149,8 @@ func (p Policy) Offered() bool {
 	if p == PolicyNone {
 		return true
 	}
-	for _, i := range Policies() {
-		if i.Policy == p {
+	for _, q := range Policies() {
+		if q == p {
 			return true
 		}
 	}
