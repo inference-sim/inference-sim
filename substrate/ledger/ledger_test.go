@@ -345,6 +345,40 @@ func TestRedistributable(t *testing.T) {
 	}
 }
 
+// check-base reads the merge base's ledger with this code, and a base from before the sign-off
+// was dropped still has sign_off on its licences. The key is accepted and means nothing; any
+// other unknown key on a licence is still refused.
+func TestLegacySignOffIsAcceptedAndIgnored(t *testing.T) {
+	write := func(extra string) string {
+		dir := t.TempDir()
+		doc := `kind: LedgerSources
+sources:
+  - id: s
+    title: t
+    status: no units yet
+    revision: {kind: git_commit, url: "https://github.com/o/r/tree/2f0f4cd8606d580567b253d02f3d699fe36db865", ref: 2f0f4cd8606d580567b253d02f3d699fe36db865}
+    licence:
+      spdx: GPL-3.0
+      evidence:
+        - {url: "https://github.com/o/r/blob/2f0f4cd8606d580567b253d02f3d699fe36db865/LICENSE", sha256: "` + strings.Repeat("a", 64) + `", lines: "1", quote: GPL}
+` + extra
+		if err := os.WriteFile(filepath.Join(dir, FileSources), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	s, err := LoadSources(write("      sign_off: {by: someone, on: 2026-01-02}\n"))
+	if err != nil {
+		t.Fatalf("a legacy sign_off is refused: %v", err)
+	}
+	if s.Sources[0].Licence.Redistributable() {
+		t.Error("a sign_off made a non-allow-listed licence redistributable")
+	}
+	if _, err := LoadSources(write("      signed_by: someone\n")); err == nil {
+		t.Error("an unknown licence key is accepted")
+	}
+}
+
 // The committed entries: the InferenceX results are not redistributable, because neither the
 // licence of the code that runs the benchmarks nor that of the repository that publishes the
 // dump states terms for the results. AISimulate's end-to-end artifact holds InferenceX values, and the forward-pass dataset states a restriction.

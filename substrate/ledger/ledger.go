@@ -231,6 +231,12 @@ type Licence struct {
 	// grants. A source with a restriction is not redistributable whatever its licence.
 	Restrictions []LicenceQuote `yaml:"restrictions,omitempty"`
 	Note         string         `yaml:"note,omitempty"`
+	// LegacySignOff is the ledger owner's sign-off that earlier ledgers recorded under sign_off.
+	// It no longer means anything: redistributability does not read it. It is accepted and ignored
+	// so that this code can read the merge base's ledger, which check-base compares against, while
+	// a base still carries it. Nothing writes it; the committed sources.yaml omits it. Any other
+	// unknown key is still refused. Remove this field when no base carries a sign_off.
+	LegacySignOff any `yaml:"sign_off,omitempty"`
 }
 
 // LicenceQuote is a quotation from a file at a pinned revision.
