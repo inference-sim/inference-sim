@@ -382,7 +382,8 @@ func meanOf(t *testing.T, cells []*cell, shape, workload string, conc int, polic
 }
 
 // The round-robin entry says the layer 10 prediction, that llm-d's shared counter gives a prefill
-// pool of even size every other endpoint, was not reproduced. The evidence it cites shows it: with a
+// pool of even size every other endpoint, does not hold (the policy picks at random among tied
+// endpoints, so a pool is used in full). The evidence it cites shows it: with a
 // workload that saturates the prefill pool, round-robin with two prefill endpoints serves more
 // than the one-endpoint rate by nearly the factor of two (so both endpoints are used), and
 // with four serves more than three times it. A pool that used one endpoint would serve about
@@ -429,7 +430,7 @@ func TestTheKVEntryQuotesTheSpreadTheEvidenceGives(t *testing.T) {
 	}
 }
 
-// Each Dynamo mode maps to the nearest policy: round-robin to the rotation, random to the random
+// Each Dynamo mode maps to the nearest policy: round-robin to llm-d's round-robin, random to the random
 // picker, and kv to none. The random picker is a policy of the closed list with its defining file, and
 // the random entry cites that file, so the table does not map a memoryless draw to a rotation.
 func TestTheDynamoModesMapToTheirNearestPolicy(t *testing.T) {

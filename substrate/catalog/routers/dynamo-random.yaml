@@ -12,8 +12,9 @@ policy: random-picker
 reason: >-
   Dynamo's random mode and llm-d's random picker do the same thing: for each request, draw a
   uniform random index over the available workers, with no state between requests and no reading
-  of load. Neither keeps a counter, so unlike round-robin there is no shared counter, no rotation
-  and no dependence on the order of the worker list. The remaining differences are the source of
+  of load. Neither keeps a counter. llm-d's round-robin policy also picks at random among tied
+  endpoints, so the two llm-d policies choose alike; Dynamo's random mode has no dependence
+  on the order of the worker list. The remaining differences are the source of
   the randomness and the pools each draw serves, below. How far the choice of policy moves BLIS's
   figures is the bound; the first group of ratios is against round-robin, the other policy that
   ignores load, and the second against the policies that read load.
@@ -32,8 +33,7 @@ difference:
     text: >-
       Each pool draws on its own in both: Dynamo's prefill and decode routers are separate
       objects (random keeps no counter to share), and llm-d's random picker draws once for each
-      pick of each profile. No shared state couples the prefill and decode picks, so the
-      counter-per-pool difference of round-robin does not arise here.
+      pick of each profile. No shared state couples the prefill and decode picks.
     evidence: [2, 4]
   - aspect: frontends
     text: >-

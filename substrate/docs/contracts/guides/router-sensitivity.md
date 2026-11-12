@@ -31,7 +31,7 @@ The sweep holds the engine, the model, the hardware and the workload fixed, chan
 router's policy, and records how far each figure moves. That is a **sensitivity of BLIS's
 prediction to the policy**. It is not an error against Dynamo: no run behind Dynamo was compared
 with a run of BLIS. It bounds what a wrong guess of the router's mode costs inside BLIS. It says
-nothing about a difference between BLIS's rotation and Dynamo's that BLIS does not model; the
+nothing about a difference between BLIS's random choice among tied endpoints and Dynamo's strict rotation that BLIS does not model; the
 entry's `difference` lists those.
 
 It is measured, not reasoned, because reasoning from the code was wrong once. The first version of
@@ -226,7 +226,7 @@ alternative in any workload swept) and, away from the extremes of concurrency, f
 - **Median time to first token at 64 to 256 clients, against a policy that reads load.** Round-robin is up to
   1.55 times `least-active-requests` for `balanced`, 1.41 for `decode-bound`, and 1.47 times `default` at 64
   clients. This is where the pools approach saturation: a router that reads its own counts keeps a short queue where a
-  rotation does not. A ranking by TTFT p50 in that regime should not rest on the substitution.
+  policy that ignores load does not. A ranking by TTFT p50 in that regime should not rest on the substitution.
 - **p99 time to first token for the `prefill-bound` workload**, up to 1.65 against `least-active-requests` at 64 clients, 1.34 against `queue-scorer` and `default`.
 - **Throughput of the `prefill-bound` workload at 16 clients** (1.16 against `least-active-requests`; the load-blind policies and `default` share
   the gap, so it is arrival imbalance across four prefill endpoints and 16 clients), and **at 1,024 clients for
@@ -238,10 +238,10 @@ ratios is the whole statement; a single "at most" would hide the cells above.
 
 ## The prefill-pool check
 
-llm-d's max-score picker draws one counter at every pick of every profile (the entry's `counter-per-pool`
-difference), so a request that picks a prefill endpoint and then a decode endpoint draws two successive values. Read
-literally, that gives a prefill pool of even size only every other endpoint. The first version of the table
-mapped no policy for that reason.
+llm-d's max-score picker draws one counter at every pick of every profile, so a request that picks a prefill endpoint
+and then a decode endpoint draws two successive values. Read literally, with the candidates in a fixed order, that
+would give a prefill pool of even size only every other endpoint. The first version of the table mapped no policy for
+that reason.
 
 The check uses a workload that saturates the prefill pool (`prefill-bound`), where a pool served through one endpoint
 would give the one-endpoint rate. In requests per second, round-robin:
@@ -256,9 +256,11 @@ Two endpoints serve about twice the rate of one; a pool that used one would give
 reproduced. At 1 to 8 clients (`alternation.csv`, 2P3D) round-robin served 4.66, 9.30, 16.84 and 24.35 requests per second at 1, 2, 4 and 8 clients.
 `TestTheEvidenceDoesNotShowAStarvedPrefillPool` pins the comparison.
 
-Why it does not show is **not known**. BLIS's Result lists decode endpoints in `TargetDistribution` and not prefill
-endpoints, so a prefill pick cannot be read back; recording both pools is a change to the simulator. Concurrent requests
-interleave their picks, which breaks the strict alternation the reading assumes, and that is a guess.
+Why it does not show: the hosted scheduler puts the candidates in a seeded random order before each pick, so the
+choice among the tied endpoints is random and not a cycle, and a pool of even size is used in full (the router fork's
+`reference-configs/README.md`, "What round-robin does", tests pools of two, three and four). BLIS's Result lists decode endpoints in `TargetDistribution` and not prefill
+endpoints, so a prefill pick cannot be read back; recording both pools is a change to the simulator. So this table
+shows the pool used, and not which endpoint served a request.
 
 One result of the same check is **unexplained and not about round-robin**. With `least-active-requests`, two prefill
 endpoints and 4 clients, two of 500 requests did not complete in seeds 42 and 43 (`timed_out`, requests 55 and 56 of session users 3 and 2, round 14) and the rate was 12.7
@@ -275,7 +277,7 @@ reason "no bound for this regime" (`routertable.Entry.BoundFor` applies the rule
 relevant ratio exceeds 1.25. The table and the point record carry the numbers; the rule is applied by the scoring
 harness, not by this repository.
 
-Which policy each Dynamo mode maps to: `round-robin` to `round-robin` (a rotation with a counter), `random` to
+Which policy each Dynamo mode maps to: `round-robin` to `round-robin` (Dynamo rotates strictly per request; llm-d's policy picks at random among tied endpoints, and the random picker is equally close), `random` to
 `random-picker` (llm-d's uniform draw with no counter, `picker/random/picker.go`, a policy BLIS hosts and the sweep
 ran), `kv` to none. For the random entry the first group of ratios is the sensitivity between the random picker and
 round-robin; for the round-robin entry it is the same pair seen from the other side, so the two are equal, and each
