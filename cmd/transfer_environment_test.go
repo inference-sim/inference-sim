@@ -400,7 +400,7 @@ func TestPullBetweenPoolsThatStartOnDifferentRacksIsPricedBetweenTheirRealPlaces
 	}
 	pools, restore := openPools(t, dir, "gb200-rack-boundary.yaml", 1, 1)
 	defer restore()
-	prefillAt, decodeAt := pools.prefill.PlacementOf(0), pools.decode.PlacementOf(0)
+	prefillAt, decodeAt := pools.prefill.GroupPlacementOf(0), pools.decode.GroupPlacementOf(0)
 	if prefillAt.Rack == decodeAt.Rack || decodeAt.Rack == 0 {
 		t.Fatalf("fixture: prefill is at rack %d and decode at rack %d, want the decode pool to start on a rack other than 0", prefillAt.Rack, decodeAt.Rack)
 	}

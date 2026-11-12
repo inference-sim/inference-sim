@@ -184,9 +184,9 @@ func runTopology() build.Topology {
 func fatalf(format string, args ...any) { logrus.Fatalf(format, args...) }
 
 // scenarioEndpointTopology uses the same role-specific kernel placements that price KV
-// handoffs (build.EndpointPlacements), as the cluster's endpoint topology.
+// handoffs (build.EndpointGroupPlacements), as the cluster's endpoint topology.
 func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, total, prefill, decode int) (map[cluster.InstanceID]cluster.EndpointTopology, error) {
-	placed, err := build.EndpointPlacements(model, pools.pools(), total, prefill, decode)
+	placed, err := build.EndpointGroupPlacements(model, pools.pools(), total, prefill, decode)
 	if err != nil || placed == nil {
 		return nil, err
 	}
@@ -266,7 +266,7 @@ func (p *kernelPools) instanceEndpoint() func(cluster.InstanceID) plan.Endpoint 
 		if n >= firstDecode {
 			m = p.decode
 		}
-		at := m.PlacementOf(build.RankInPool(string(id), firstDecode))
+		at := m.GroupPlacementOf(build.RankInPool(string(id), firstDecode))
 		local, err := poolOrigin(m).Local(plan.Endpoint{Node: at.Node, Rack: at.Rack})
 		if err != nil {
 			panic(fmt.Sprintf("instance endpoint: instance %q: %v", id, err))
@@ -478,9 +478,9 @@ func rankInPool(id cluster.InstanceID, firstDecode int) int {
 }
 
 // requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
-// (build.RequireCapacity). Called once the instance counts are final.
+// (build.RequireGroupCapacity). Called once the instance counts are final.
 func requireKernelCapacity(p *kernelPools) {
-	if err := build.RequireCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
+	if err := build.RequireGroupCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
 }
@@ -1229,15 +1229,16 @@ func newTransferEnvironment(own, peer *kernelmodel.Model) (*transferEnvironment,
 }
 
 // poolOrigin is where the pool's own numbering starts in the cluster's: the lowest node and the
-// lowest rack among the placements of the pool's ranks. Every plan.Endpoint is counted from it in
-// both coordinates (engine.PoolOrigin), so two pools whose local rack 0 are different racks of the
-// cluster stay different when a pull's two ends are turned back into cluster placements. It is
-// the minimum over the ranks and not the first rank's place, so that no rank of the pool is below it.
+// lowest rack among the places of the pool's groups (GroupPlacementOf, the places instanceEndpoint
+// states). Every plan.Endpoint is counted from it in both coordinates (engine.PoolOrigin), so two
+// pools whose local rack 0 are different racks of the cluster stay different when a pull's two
+// ends are turned back into cluster placements. It is the minimum over the groups and not the
+// first group's place, so that no group of the pool is below it.
 func poolOrigin(m *kernelmodel.Model) engine.PoolOrigin {
-	first := m.PlacementOf(0)
+	first := m.GroupPlacementOf(0)
 	o := engine.PoolOrigin{Node: first.Node, Rack: first.Rack}
-	for r := 1; r < m.RankCapacity(); r++ {
-		at := m.PlacementOf(r)
+	for g := 1; g < m.GroupCapacity(); g++ {
+		at := m.GroupPlacementOf(g)
 		o.Node, o.Rack = min(o.Node, at.Node), min(o.Rack, at.Rack)
 	}
 	return o
