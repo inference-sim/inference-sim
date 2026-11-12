@@ -198,6 +198,10 @@ func construct(in Inputs) (*Kernel, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolving the cluster's packaging: %w", err)
 	}
+	sw, err := in.Scenario.Cluster.Switching()
+	if err != nil {
+		return nil, fmt.Errorf("resolving the cluster's switch groups: %w", err)
+	}
 	// A rack is one NVLink domain where the chip says so: the catalog records a rack tier
 	// only on parts whose NVLink fabric spans chassis, and the resolved rack is the entry's.
 	fab.RackIsOneDomain = pk.GPUsPerRack > 0 && in.Chip.IntraRackBwGBps > 0
@@ -273,6 +277,7 @@ func construct(in Inputs) (*Kernel, error) {
 
 	k := &Kernel{layout: layout, fabric: fab, pool: pool, engine: eng, chip: *in.Chip, rules: in.Rules,
 		family: family, architecture: g.Global.Architecture, graph: g,
+		switching:           sw,
 		statedFirstPassRows: in.DraftFirstPassRows, statedPassRequests: in.DraftPassRequests}
 	if in.Fabric != nil && !fabricEfficiencyStated {
 		k.assume("fabric_bandwidth_efficiency", "1",
@@ -951,6 +956,7 @@ func (k *Kernel) lift(c *resolve.Coefficients, g *model.Graph, cacheBytes float6
 		// finite rather than infinite.
 		k.nicBytesPerSecond = k.nvlinkBytesPerSecond
 	}
+	k.adoptSwitching()
 
 	// Collective floors are per operation, dtype and rank count. All three axes
 	// matter and the measurements say so: on H200 an all-reduce floor is 15.98 us
@@ -3115,4 +3121,43 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// instanceGPUs is the GPUs one instance of the pool occupies: the engine lays ranks out
+// DP x PP x PCP x TP.
+func (k *Kernel) instanceGPUs() int {
+	pl := k.pool.Parallel
+	return max(pl.TP, 1) * max(pl.PP, 1) * max(pl.DP, 1) * max(pl.PCP, 1)
+}
+
+// uplinkRate is the rate of group g's uplink as one rank's flow sees it, in bytes per second:
+//
+//	n_g x gpusPerNode x nic / (r x rankGPUs)
+//
+// n_g nodes each offer gpusPerNode rails at the NIC rate, the uplink carries 1/r of that,
+// and the rankGPUs ranks of one instance pull at once through it, so one rank's flow is
+// 1/rankGPUs of the uplink. Every pull the pool's kernel prices is one rank's payload, so
+// the rate is the same for every flow on a link, which a simulator's one-rate-per-link rule
+// needs.
+func uplinkRate(nodes, gpusPerNode int, nic, ratio float64, rankGPUs int) float64 {
+	return float64(nodes) * float64(gpusPerNode) * nic / (ratio * float64(rankGPUs))
+}
+
+// adoptSwitching sizes each switch group's uplink, and states the one thing the model
+// leaves unpriced: a step collective that crosses a group boundary pays the node rate.
+func (k *Kernel) adoptSwitching() {
+	if k.switching == nil {
+		return
+	}
+	for g := range k.switching.Groups {
+		k.uplinkBytesPerSecond = append(k.uplinkBytesPerSecond, uplinkRate(
+			k.switching.GroupNodes(g), k.layout.GPUsPerNode, k.nicBytesPerSecond,
+			k.switching.Oversubscription, k.instanceGPUs()))
+	}
+	if k.instanceGPUs() > k.layout.GPUsPerNode {
+		k.assume("switch_group_collectives", "node rate",
+			"the cluster states switch groups and an instance spans nodes, which may sit in "+
+				"different groups; the uplink prices KV pulls between pools, and a step "+
+				"collective that crosses a group boundary is priced at the node rate")
+	}
 }

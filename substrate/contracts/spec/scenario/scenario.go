@@ -119,6 +119,16 @@ type Cluster struct {
 	// through Packaging.
 	GPUsPerRack int `yaml:"gpus_per_rack,omitempty"`
 
+	// SwitchGroups partitions the nodes 0..Nodes-1 into the groups that hang under one
+	// leaf switch: each entry lists the nodes of one group. Omitted, the fabric has no
+	// stated grouping and every node pair is priced at the NIC rate. Read the groups
+	// through Switching, never from this field (X15).
+	SwitchGroups [][]int `yaml:"switch_groups,omitempty"`
+	// UplinkOversubscription is the ratio r of a group's aggregate NIC rate to the rate of
+	// its uplink to the rest of the fabric, at least 1. A group of n nodes with g GPUs
+	// each has an uplink of n x g x NIC / r. Required with SwitchGroups, refused without.
+	UplinkOversubscription float64 `yaml:"uplink_oversubscription,omitempty"`
+
 	// Storage names the catalog storage-device classes provisioned in the cluster:
 	// the inventory a deployment's offload layout may draw tiers from. Declaring it
 	// here, rather than reaching it only through a deployment's offload block,

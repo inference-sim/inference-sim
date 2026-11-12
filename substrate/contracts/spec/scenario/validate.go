@@ -127,6 +127,7 @@ func (c Cluster) Validate() *validate.Problems {
 			"required for a %d-node cluster: cross-node cost resolves from the fabric, not the chip",
 			c.Nodes)
 	}
+	c.validateSwitching(p)
 	// Storage is optional inventory, but a named class must be nameable and listed
 	// once: a blank entry names nothing, and a duplicate is a copy-paste that would
 	// make a deployment's tier reference ambiguous.

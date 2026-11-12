@@ -34,6 +34,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
+	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
 
 	"github.com/inference-sim/blis-substrate/kernel/internal/price"
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
@@ -155,6 +156,11 @@ type Kernel struct {
 	epsMax, mHalf        float64
 	nvlinkBytesPerSecond float64
 	nicBytesPerSecond    float64
+	// switching is the cluster's switch groups, nil where the scenario states none.
+	// uplinkBytesPerSecond is each group's uplink rate as one rank's flow sees it
+	// (uplinkRate), indexed by group.
+	switching            *scenario.Switching
+	uplinkBytesPerSecond []float64
 	hostBytesPerSecond   float64
 	moeImbalance         float64
 	// asyncScheduling is the engine's resolved async_scheduling (resolveAsyncScheduling).
@@ -1809,6 +1815,16 @@ func (k *Kernel) PDTransferTime(tokens int, from, to kernel.Placement) time.Dura
 //	same rack, one-domain NVLink rack  that rack's NVLink domain, at the NVLink rate
 //	otherwise                          the sender's NIC egress and the receiver's NIC
 //	                                   ingress, each at the NIC rate
+//	different switch groups            the two NIC links, and the sender group's uplink
+//	                                   egress and the receiver group's uplink ingress
+//
+// A scenario that states switch groups gives each group an uplink of n x gpusPerNode x NIC /
+// (r x rankGPUs) bytes per second (uplinkRate): n nodes, r the stated oversubscription, and
+// rankGPUs the GPUs of one instance. The payload is one rank's, and an instance's ranks pull
+// at once on separate rails through the one physical uplink, so one rank's flow sees its
+// share. A pull alone is bound by its NIC unless r is large enough that the uplink binds,
+// so a lone pull prices as it would without groups; two or more pulls leaving or entering one
+// group share its uplink and slow each other. A pull inside one group names no uplink.
 //
 // Link IDs are derived from the placement alone, so every kernel of one deployment names a
 // physical link the same way: a prefill pool's kernel and a decode pool's kernel describe
@@ -1851,6 +1867,15 @@ func (k *Kernel) PDTransferDemand(tokens int, from, to kernel.Placement) kernel.
 				BytesPerSecond: k.nicBytesPerSecond},
 			{Link: kernel.LinkID(fmt.Sprintf("nic/ingress/node/%d", to.Node)),
 				BytesPerSecond: k.nicBytesPerSecond},
+		}
+		gf, okf := k.switching.GroupOf(from.Node)
+		gt, okt := k.switching.GroupOf(to.Node)
+		if okf && okt && gf != gt {
+			d.Links = append(d.Links,
+				kernel.LinkUse{Link: kernel.LinkID(fmt.Sprintf("uplink/egress/group/%d", gf)),
+					BytesPerSecond: k.uplinkBytesPerSecond[gf]},
+				kernel.LinkUse{Link: kernel.LinkID(fmt.Sprintf("uplink/ingress/group/%d", gt)),
+					BytesPerSecond: k.uplinkBytesPerSecond[gt]})
 		}
 	}
 	return d
