@@ -50,7 +50,7 @@ def fi_backend(value, nodes, cap):
     envs = types.SimpleNamespace(VLLM_FLASHINFER_ALLREDUCE_BACKEND=value)
     plat = types.SimpleNamespace(has_device_capability=lambda c: stand_in._cap(cap)[0] * 10 >= c)
     f = function_from(path, "_resolve_fi_ar_backend",
-                      {"envs": envs, "_node_count": lambda g: nodes, "current_platform": plat, "logger": Log()})
+                      {"ProcessGroup": object, "envs": envs, "_node_count": lambda g: nodes, "current_platform": plat, "logger": Log()})
     try:
         return f(object())[0]
     except Exception:
