@@ -19,18 +19,31 @@ const (
 	// may use from it: the fork's implementation of blis-schemas embed.Constructor.
 	routerConstructor = routerModule + "/pkg/embed"
 	forkGuide         = "docs/contributing/llm-d-router-fork.md"
+	// routerReferenceConfigs is the one other fork package BLIS may import, and FS the one
+	// identifier it may use from it: the read-only embed.FS holding the fork's reference
+	// EndpointPicker configurations and their index. It holds no router code, so it ties BLIS to
+	// the fork's data files and not to router internals; `blis router-configs` prints them.
+	routerReferenceConfigs = routerModule + "/reference-configs"
 )
 
+// allowedRouterPackages maps each llm-d-router package BLIS may import to the package's name and
+// the only identifier BLIS may use from it.
+var allowedRouterPackages = map[string]struct{ name, only string }{
+	routerConstructor:      {"embed", "New"},
+	routerReferenceConfigs: {"referenceconfigs", "FS"},
+}
+
 // TestRouterImportsOnlyTheEmbedConstructor guards the router contract: BLIS programs against
-// blis-schemas embed, and takes only the constructor pkg/embed.New from the llm-d-router fork. A
+// blis-schemas embed, and takes only the constructor pkg/embed.New and the reference configurations'
+// embed.FS (reference-configs.FS) from the llm-d-router fork. A
 // router-internal import would tie BLIS to code upstream semver does not cover, so a same-major
 // router release could no longer reach BLIS as a pin bump alone.
 func TestRouterImportsOnlyTheEmbedConstructor(t *testing.T) {
 	root := moduleRoot(t)
 	problems := routerImportProblems(t, root)
 	if len(problems) > 0 {
-		t.Fatalf("BLIS may take only %s.New from the llm-d-router fork; everything else comes from "+
-			"blis-schemas embed (see %s):\n  %s", routerConstructor, forkGuide, strings.Join(problems, "\n  "))
+		t.Fatalf("BLIS may take only %s.New and %s.FS from the llm-d-router fork; everything else comes from "+
+			"blis-schemas embed (see %s):\n  %s", routerConstructor, routerReferenceConfigs, forkGuide, strings.Join(problems, "\n  "))
 	}
 }
 
@@ -47,6 +60,10 @@ func TestRouterImportGuardDetects(t *testing.T) {
 		{"other identifier", "package p\nimport " + q(routerConstructor) + "\nvar _ = embed.Adapter", "uses embed.Adapter"},
 		{"renamed, other identifier", "package p\nimport r " + q(routerConstructor) + "\nvar _ = r.Options{}", "uses r.Options"},
 		{"dot import", "package p\nimport . " + q(routerConstructor), "dot-imports"},
+		{"reference configs FS", "package p\nimport rc " + q(routerReferenceConfigs) + "\nvar _ = rc.FS", ""},
+		{"reference configs other identifier", "package p\nimport rc " + q(routerReferenceConfigs) + "\nvar _ = rc.Index", "uses rc.Index"},
+		{"reference configs subpackage", "package p\nimport _ " + q(routerReferenceConfigs+"/guides"), "imports " + q(routerReferenceConfigs+"/guides")},
+		{"constructor identifier on reference configs", "package p\nimport rc " + q(routerReferenceConfigs) + "\nvar _ = rc.New", "uses rc.New"},
 		// A blank import of the constructor package uses no identifier of it: allowed, as New alone is.
 		{"blank constructor import", "package p\nimport _ " + q(routerConstructor), ""},
 	} {
@@ -111,26 +128,31 @@ func routerImportProblems(t *testing.T, root string) []string {
 
 func fileProblems(rel string, f *ast.File) []string {
 	var problems []string
-	var local string // the constructor package's name in this file
+	only := map[string]string{} // a file's local name for an allowed package -> the one identifier it may use
 	for _, imp := range f.Imports {
 		path, _ := strconv.Unquote(imp.Path.Value)
 		if path != routerModule && !strings.HasPrefix(path, routerModule+"/") {
 			continue
 		}
-		if path != routerConstructor {
+		pkg, ok := allowedRouterPackages[path]
+		if !ok {
 			problems = append(problems, rel+": imports "+strconv.Quote(path))
 			continue
 		}
-		local = "embed"
+		local := pkg.name
 		if imp.Name != nil {
 			local = imp.Name.Name
 		}
-		if local == "." {
+		switch local {
+		case ".":
 			problems = append(problems, rel+": dot-imports "+strconv.Quote(path))
-			local = ""
+		case "_":
+			// A blank import uses no identifier of the package.
+		default:
+			only[local] = pkg.only
 		}
 	}
-	if local == "" || local == "_" {
+	if len(only) == 0 {
 		return problems
 	}
 	ast.Inspect(f, func(n ast.Node) bool {
@@ -138,8 +160,10 @@ func fileProblems(rel string, f *ast.File) []string {
 		if !ok {
 			return true
 		}
-		if x, ok := sel.X.(*ast.Ident); ok && x.Name == local && sel.Sel.Name != "New" {
-			problems = append(problems, rel+": uses "+local+"."+sel.Sel.Name)
+		if x, ok := sel.X.(*ast.Ident); ok {
+			if id, ok := only[x.Name]; ok && sel.Sel.Name != id {
+				problems = append(problems, rel+": uses "+x.Name+"."+sel.Sel.Name)
+			}
 		}
 		return true
 	})

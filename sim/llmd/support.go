@@ -120,6 +120,7 @@ var signalReasons = map[string]string{
 	"endpoint-attribute-weight-scorer":          "the simulated pods carry no custom endpoint attributes",
 	"label-producer":                            "the simulated pods carry no custom endpoint attributes",
 	"endpoint-pin-screener":                     "its request headers are not produced by the simulated workload",
+	"disaggregatedset-rollout-screener":         "the simulated pods carry no DisaggregatedSet name, revision and role labels, which it reads",
 	"multicluster-approx-prefix-cache-producer": "multi-cluster routing is not simulated",
 	"multicluster-kv-cache-utilization-scorer":  "multi-cluster routing is not simulated",
 	"multicluster-metrics-data-source":          "multi-cluster routing is not simulated",

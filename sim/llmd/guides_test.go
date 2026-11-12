@@ -28,8 +28,8 @@ func TestLLMDGuides_RunOrAreRefusedWithAReason(t *testing.T) {
 		// Run on 64-token engines below, past the producer's block-size check.
 		"precise-prefix-cache-routing.yaml": "",
 		"tiered-prefix-cache-cpu.yaml":      "",
-		// Its revision split draws from process-wide randomness, which would break INV-6.
-		"wide-ep.yaml": `"disaggregatedset-rollout-screener" (type disaggregatedset-rollout-screener): its revision split draws from process-wide randomness`,
+		// The fork hosts it, but it reads the DisaggregatedSet labels of each pod and the simulated pods carry none.
+		"wide-ep.yaml": `"disaggregatedset-rollout-screener" (type disaggregatedset-rollout-screener): the simulated pods carry no DisaggregatedSet name, revision and role labels, which it reads`,
 	}
 	files, err := filepath.Glob(filepath.Join("testdata", "llm-d-guides", "*.yaml"))
 	if err != nil {
