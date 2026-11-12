@@ -249,6 +249,7 @@ nav:
     - Memory: kernel/concepts/memory.md
     - Parallelism: kernel/concepts/parallelism.md
     - Switch groups: kernel/concepts/switch-groups.md
+    - The admission queue: kernel/concepts/admission-split.md
     - Refuse, assume, override: kernel/concepts/resolution.md
   - Guides:
     - kernel/guides/index.md
