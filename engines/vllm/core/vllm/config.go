@@ -427,15 +427,11 @@ func resolve(c Config) (settings, error) {
 		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
 			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/15")
 	}
-	if s.connector != nil && c.DataParallelSize > 1 {
-		// The data-parallel group starts no transfers and holds no handoffs (DPGroup): a P/D pool
-		// at dp > 1 would never pull or release its KV.
-		return settings{}, fmt.Errorf("vllm: kv_transfer with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
-	}
 	if s.offload != nil && c.DataParallelSize > 1 {
+		// Each rank would run its own offload connector and CPU tier; the group aggregates a P/D
+		// connector's transfers (DPGroup) but not the offload's jobs, which it routes by request.
 		return settings{}, fmt.Errorf("vllm: kv_offload with data parallelism (dp %d) is not built yet: the "+
-			"data-parallel group reports no transfers (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
+			"data-parallel group does not carry an offload connector's jobs (%s)", c.DataParallelSize, "https://github.com/inference-sim/blis-vllm/issues/47")
 	}
 	s.dp = dpSettings{ranks: max(c.DataParallelSize, 1), syncInterval: e.DPSyncInterval,
 		prefillInterval: max(e.PrefillScheduleInterval, 1), statsIntervalUs: c.DPStatsIntervalUs}

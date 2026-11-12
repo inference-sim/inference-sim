@@ -99,6 +99,25 @@ func (p Placement) ForRank(rank, ranksPerReplica int) Placement {
 	return p
 }
 
+// ReplicaAt is the placement of data-parallel replica rank of a group whose first replica is on p.Node: the
+// replica's ranksPerReplica workers fill nodes in order from there (a replica's first rank decides its node).
+// A node past the pool's makes a placement that Validate refuses; nothing here clamps it.
+func (p Placement) ReplicaAt(rank, ranksPerReplica int) Placement {
+	if p.RanksPerNode > 0 {
+		p.Node += rank * max(ranksPerReplica, 1) / p.RanksPerNode
+	}
+	return p
+}
+
+// GroupNodes is how many nodes a group of replicas of ranksPerReplica workers fills (0 when the placement states
+// no ranks per node, which is the one-node pool).
+func (p Placement) GroupNodes(replicas, ranksPerReplica int) int {
+	if p.RanksPerNode <= 0 {
+		return 1
+	}
+	return (replicas*max(ranksPerReplica, 1) + p.RanksPerNode - 1) / p.RanksPerNode
+}
+
 // Plan is the PoolPlan this placement and its KV tiers describe. It states the pool's chip, network,
 // layout and KV tiers, which are the engine's own; it does not state the lowered layers, the KV groups,
 // the captured graphs or the memory breakdown, which are the cost model's resolution and are not moved

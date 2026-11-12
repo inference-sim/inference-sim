@@ -241,7 +241,7 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 	if err := p.Validate(); err != nil {
 		return fmt.Errorf("vllm: placement: %w", err)
 	}
-	if (e.pd != nil && e.pd.next > 0) || (e.off != nil && e.off.next > 0) {
+	if e.startedTransfers() {
 		return fmt.Errorf("vllm: placement: the engine has started transfers against its old place")
 	}
 	e.at = p.Endpoint()
@@ -253,6 +253,11 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 		e.off.at = e.at
 	}
 	return nil
+}
+
+// startedTransfers reports whether the engine has stated a transfer against its place.
+func (e *Engine) startedTransfers() bool {
+	return (e.pd != nil && e.pd.next > 0) || (e.off != nil && e.off.next > 0)
 }
 
 var _ placement.Placeable = (*Engine)(nil)

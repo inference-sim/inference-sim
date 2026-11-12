@@ -73,6 +73,10 @@ type pd struct {
 	// scheduler (get_num_new_matched_tokens): what its load moves.
 	matched map[string]int
 	next    engine.TransferID
+	// stride and lane make the IDs of a data-parallel group's ranks distinct: rank r of n states
+	// its k-th transfer as (k-1)*n + r + 1, so the group finds the rank of a TransferDone from the
+	// ID alone. An engine alone has stride 1 and lane 0, and its IDs are 1, 2, 3 ...
+	stride, lane int
 	// pulls are the decode side's loads in flight, and holds the prefill side's finished
 	// requests whose blocks wait to be read, by transfer.
 	pulls map[engine.TransferID]string
@@ -130,7 +134,7 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 	}
 	p := &pd{role: c.Role, nixl: nixl.New(cfg), matched: map[string]int{}, pulls: map[engine.TransferID]string{},
 		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{},
-		at: at, peer: map[string]plan.Endpoint{}}
+		at: at, peer: map[string]plan.Endpoint{}, stride: 1}
 	// is_kv_consumer and is_kv_producer (vllm/config/kv_transfer.py:130-136@5df63a72) set
 	// defer_block_free and requires_kv_delivery beside more than one batch in flight
 	// (vllm/v1/core/sched/scheduler.py:184-194@5df63a72).
@@ -183,6 +187,12 @@ func (p *pd) transferParams(r engine.Request, blockSize int) (*sched.TransferPar
 	return nil, nil
 }
 
+// newID is the next transfer's ID (stride, lane).
+func (p *pd) newID() engine.TransferID {
+	p.next++
+	return (p.next-1)*engine.TransferID(p.stride) + engine.TransferID(p.lane) + 1
+}
+
 // started reports the loads a schedule began: the remote-prefilled requests that entered
 // WAITING_FOR_REMOTE_KVS, in queue order, each once.
 func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
@@ -195,8 +205,8 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 			continue
 		}
 		p.pulling[id] = true
-		p.next++
-		p.pulls[p.next] = id
+		tid := p.newID()
+		p.pulls[tid] = id
 		// A pull from a peer: it reads the prefill's node and rack (engine.Request.Peer) and lands on this
 		// engine's, and uses no tier.
 		blocks := 0
@@ -204,7 +214,7 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 		for _, n := range counts {
 			blocks += n
 		}
-		out = append(out, engine.Transfer{ID: p.next, Request: id, Kind: engine.TransferLoad, Tokens: p.matched[id],
+		out = append(out, engine.Transfer{ID: tid, Request: id, Kind: engine.TransferLoad, Tokens: p.matched[id],
 			Blocks: blocks, Move: plan.Transfer{Tokens: units.Tokens(p.matched[id]), From: p.peer[id], To: p.at,
 				Kind: plan.TransferPeer}})
 	}
@@ -227,8 +237,8 @@ func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handof
 		if s.Request(f.ID) == nil {
 			continue // freed at once: nothing computed to read, or not a normal finish
 		}
-		p.next++
-		p.holds[p.next] = f.ID
+		tid := p.newID()
+		p.holds[tid] = f.ID
 		// The blocks held for the read are every transfer group's, clipped as the connector clips the
 		// remote_block_ids it advertises (get_exchange_clipped_blocks, nixl/base_scheduler.py:262-300
 		// @5df63a72): all of a full-attention or MLA group's, a sliding window's last blocks, a
@@ -252,7 +262,7 @@ func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handof
 				}
 			}
 		}
-		out = append(out, engine.Handoff{ID: f.ID, Transfer: p.next, Blocks: blocks})
+		out = append(out, engine.Handoff{ID: f.ID, Transfer: tid, Blocks: blocks})
 	}
 	return out
 }
