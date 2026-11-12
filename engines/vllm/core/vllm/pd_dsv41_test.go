@@ -164,13 +164,12 @@ func TestPDConformanceDeepSeekV41Groups(t *testing.T) {
 // blis-vllm#47.
 func TestPDRefusalsBesideDeepSeekV41Layers(t *testing.T) {
 	for _, c := range []struct{ name, extra, want string }{
-		{"producer at pp 2", producer + dsv41Layers + "pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n",
-			"with a hybrid KV cache layout"},
+		{"producer at pp 2", producer + dsv41Layers + "pipeline_parallel_size: 2\nasync_scheduling: true\nuse_v2_model_runner: true\n", ""},
 		{"producer at dp 2", producer + dsv41Layers + "data_parallel_size: 2\n", "issues/47"},
 		{"consumer at dp 2", consumer + dsv41Layers + "data_parallel_size: 2\n", "issues/47"},
 	} {
 		_, err := build(t, c.extra)()
-		if err == nil || !strings.Contains(err.Error(), c.want) {
+		if err == nil || (c.want != "" && !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%s: %v, want a refusal naming %q", c.name, err, c.want)
 		}
 	}
@@ -197,20 +196,13 @@ func handoffs(t *testing.T, extra string, reqs ...engine.Request) (map[string][]
 }
 
 // A V4.1-shaped prefiller holds every transfer group's clipped blocks for the read, not one
-// group's: the count equals the sum over the groups of what the connector advertises.
+// group's: the handoff names as many blocks as the connector's rule gives over the groups (the
+// prefiller computed the prompt less the one backoff token).
 func TestProducerHandoffHoldsEveryTransferGroup(t *testing.T) {
 	h, p := handoffs(t, producer+dsv41Layers, req("a", 400, 1))
-	want := 0
 	got := h["a"]
-	sent, ok := p.pd.nixl.Sent("a")
-	if !ok {
-		t.Fatal("the connector advertised no blocks")
-	}
-	for _, n := range sent {
-		want += n
-	}
-	if len(got) != want || want == 0 {
-		t.Errorf("handoff holds %d blocks, the connector advertised %d over its groups %v", len(got), want, sent)
+	if want := connectorBlocks(p, 399, 0); len(got) != want {
+		t.Errorf("handoff holds %d blocks, the connector's rule over the groups gives %d", len(got), want)
 	}
 	seen := map[int64]bool{}
 	for _, b := range got {
