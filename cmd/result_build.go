@@ -220,6 +220,12 @@ func standardMetrics(sum sim.MeasuredSummary, m *sim.Metrics, gpus, decodeGPUs i
 		if sum.RequestITLP90Ms > 0 {
 			put("interactivity_p90", sum.InteractivityP90, k)
 		}
+		// InferenceX's mean_intvty: 1000 over the mean of the time per output token, the
+		// reciprocal of the mean and not the mean of the reciprocals (interactivity_mean), which
+		// is higher whenever the per-request TPOT varies.
+		if registryDefines("interactivity_of_mean_tpot") && sum.RequestITLMeanMs > 0 {
+			put("interactivity_of_mean_tpot", 1000/sum.RequestITLMeanMs, k)
+		}
 	}
 	if sum.PerUserCount > 0 {
 		put("interactivity_mean", sum.OutputTokPerUserMean, sum.PerUserCount)
