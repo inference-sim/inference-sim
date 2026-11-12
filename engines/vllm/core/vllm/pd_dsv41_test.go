@@ -175,3 +175,98 @@ func TestPDRefusalsBesideDeepSeekV41Layers(t *testing.T) {
 		}
 	}
 }
+
+// handoffs runs prefill legs through a producer and returns each one's handoff.
+func handoffs(t *testing.T, extra string, reqs ...engine.Request) (map[string][]int64, *Engine) {
+	t.Helper()
+	p := mustEngine(t, extra)
+	for i, r := range reqs {
+		r.RemoteDecode, r.MaxOutputTokens = true, 1
+		if err := p.Add(r, engine.Time(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	results, _, _ := runOne(t, p, 0)
+	out := map[string][]int64{}
+	for _, res := range results {
+		for _, h := range res.Handoffs {
+			out[h.ID] = h.Blocks
+		}
+	}
+	return out, p
+}
+
+// A V4.1-shaped prefiller holds every transfer group's clipped blocks for the read, not one
+// group's: the count equals the sum over the groups of what the connector advertises.
+func TestProducerHandoffHoldsEveryTransferGroup(t *testing.T) {
+	h, p := handoffs(t, producer+dsv41Layers, req("a", 400, 1))
+	want := 0
+	got := h["a"]
+	sent, ok := p.pd.nixl.Sent("a")
+	if !ok {
+		t.Fatal("the connector advertised no blocks")
+	}
+	for _, n := range sent {
+		want += n
+	}
+	if len(got) != want || want == 0 {
+		t.Errorf("handoff holds %d blocks, the connector advertised %d over its groups %v", len(got), want, sent)
+	}
+	seen := map[int64]bool{}
+	for _, b := range got {
+		if seen[b] {
+			t.Errorf("block %d held twice in one handoff", b)
+		}
+		seen[b] = true
+	}
+}
+
+// Two prompts that share a prefix hold the shared blocks once between them in the pool, and each
+// handoff names them: the prefix's blocks appear in both, so a count of distinct blocks across
+// handoffs is smaller than the sum.
+func TestHandoffsOfSharedPrefixesNameTheSharedBlocks(t *testing.T) {
+	a := req("a", 400, 1)
+	b := req("b", 400, 1)
+	copy(b.Prompt[:256], a.Prompt[:256])
+	h, _ := handoffs(t, producer+dsv41Layers, a, b)
+	distinct := map[int64]bool{}
+	sum := 0
+	for _, blocks := range h {
+		sum += len(blocks)
+		for _, id := range blocks {
+			distinct[id] = true
+		}
+	}
+	if len(h) != 2 || len(distinct) >= sum {
+		t.Errorf("handoffs %v: %d distinct blocks across %d listed, want the shared prefix named by both", h, len(distinct), sum)
+	}
+}
+
+// A finished prefill's advertised block counts are dropped once the decoder has read it: the
+// connector keeps nothing for the engine's lifetime.
+func TestAFinishedProducerRequestLeavesNothingInTheConnector(t *testing.T) {
+	p := mustEngine(t, producer+dsv41Layers)
+	r := req("a", 400, 1)
+	r.RemoteDecode = true
+	if err := p.Add(r, 0); err != nil {
+		t.Fatal(err)
+	}
+	results, _, now := runOne(t, p, 0)
+	var h []engine.Handoff
+	for _, res := range results {
+		h = append(h, res.Handoffs...)
+	}
+	if len(h) != 1 {
+		t.Fatalf("handoffs %+v, want one", h)
+	}
+	if _, held := p.pd.nixl.Sent("a"); !held {
+		t.Fatal("the connector advertised nothing for a held request")
+	}
+	if err := p.TransferDone(h[0].Transfer, true, now); err != nil {
+		t.Fatal(err)
+	}
+	runOne(t, p, 0)
+	if _, held := p.pd.nixl.Sent("a"); held {
+		t.Error("the connector still holds the advertised blocks of a request whose read finished")
+	}
+}

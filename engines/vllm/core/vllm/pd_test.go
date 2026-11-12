@@ -382,8 +382,9 @@ func TestPDPrefillLegSamplesOneToken(t *testing.T) {
 	enginetest.TestEngine(t, build(t, producer), arrivals(legs...), enginetest.Options{Boundary: boundary})
 }
 
-// A hybrid model's handoff holds the prompt's full-attention blocks: every one of its tokens,
-// even where group 0 is a sliding window whose early slots are freed.
+// A hybrid model's handoff holds every transfer group's blocks: the full-attention group's cover
+// every prompt token even where group 0 is a sliding window whose early slots are freed, and the
+// window's last blocks are held beside them.
 func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	const windowFirst = "kv_layers:\n" +
 		"- {count: 1, spec: sliding_window, sliding_window: 32, num_kv_heads: 1, head_size: 64}\n" +
@@ -399,8 +400,10 @@ func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	for _, res := range results {
 		h = append(h, res.Handoffs...)
 	}
-	if len(h) != 1 || len(h[0].Blocks) != 10 {
-		t.Fatalf("handoffs %+v, want the 160-token prompt's 10 blocks", h)
+	// Both groups' blocks are held: the full-attention group's 10 and the window's 2 (a 32-token
+	// window in 16-token blocks keeps the blocks of its last 31 tokens).
+	if len(h) != 1 || len(h[0].Blocks) != 12 {
+		t.Fatalf("handoffs %+v, want the full-attention group's 10 blocks and the window's 2", h)
 	}
 }
 

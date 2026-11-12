@@ -229,20 +229,27 @@ func (p *pd) handoffs(s *sched.Scheduler, fins []sched.Finished) []engine.Handof
 		}
 		p.next++
 		p.holds[p.next] = f.ID
-		// The prompt's blocks: a full-attention group's, which hold every token, rather than a
-		// sliding window's, whose freed slots are the null block (a hybrid model's group 0 may be
-		// either).
-		g := 0
-		for i := 0; i < s.KV.NumGroups(); i++ {
-			if s.KV.PrefixIndexable(uint32(i)) {
-				g = i
-				break
+		// The blocks held for the read are every transfer group's, clipped as the connector clips the
+		// remote_block_ids it advertises (get_exchange_clipped_blocks, nixl/base_scheduler.py:262-300
+		// @5df63a72): all of a full-attention or MLA group's, a sliding window's last blocks, a
+		// ring's one. A sliding window's freed slots (the null block) hold nothing. Block ids are
+		// the pool's, so a block a prefix cache shares appears in every handoff that holds it.
+		ids := make([][]int, s.KV.NumGroups())
+		for g := range ids {
+			for _, b := range s.KV.GroupBlocks(g, f.ID) {
+				id := b.ID
+				if b.Null {
+					id = -1
+				}
+				ids[g] = append(ids[g], id)
 			}
 		}
 		var blocks []int64
-		for _, b := range s.KV.GroupBlocks(g, f.ID) {
-			if !b.Null {
-				blocks = append(blocks, int64(b.ID))
+		for _, grp := range p.nixl.Clip(ids) {
+			for _, id := range grp {
+				if id >= 0 {
+					blocks = append(blocks, int64(id))
+				}
 			}
 		}
 		out = append(out, engine.Handoff{ID: f.ID, Transfer: p.next, Blocks: blocks})

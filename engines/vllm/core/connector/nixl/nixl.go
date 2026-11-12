@@ -186,6 +186,9 @@ func (s *Scheduler) LoadedGroups(_ *sched.Request, all []int) []int { return all
 // prompt. It reports false before then.
 func (s *Scheduler) Pulled(id string) ([]int, bool) { counts, ok := s.pull[id]; return counts, ok }
 
+// Clip is get_exchange_clipped_blocks over this connector's groups (Config.ClipBlocks).
+func (s *Scheduler) Clip(ids [][]int) [][]int { return s.cfg.ClipBlocks(ids) }
+
 // Sent is how many blocks a finished prefill advertised to its decoder for request id, per KV
 // cache group (remote_block_ids), once the connector held its blocks for the read; false when it
 // did not.
@@ -299,6 +302,8 @@ func (s *Scheduler) FinishedAllGroups(r *sched.Request, blockIDs [][]int) bool {
 func (s *Scheduler) AfterOutput(o sched.TransferOutcome) {
 	for _, id := range o.FinishedSending {
 		delete(s.send, id)
+		// The read is done: the advertised block counts are no longer needed.
+		delete(s.sent, id)
 	}
 }
 
