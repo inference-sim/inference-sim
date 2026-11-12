@@ -266,7 +266,7 @@ func (p *kernelPools) instanceEndpoint() func(cluster.InstanceID) plan.Endpoint 
 		if n >= firstDecode {
 			m = p.decode
 		}
-		at := m.PlacementOf(build.RankInPool(string(id), firstDecode))
+		at := m.GroupPlacementOf(build.RankInPool(string(id), firstDecode))
 		return plan.Endpoint{Node: at.Node - firstNodeOf(m), Rack: at.Rack}
 	}
 }
@@ -474,9 +474,9 @@ func rankInPool(id cluster.InstanceID, firstDecode int) int {
 }
 
 // requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
-// (build.RequireCapacity). Called once the instance counts are final.
+// (build.RequireGroupCapacity). Called once the instance counts are final.
 func requireKernelCapacity(p *kernelPools) {
-	if err := build.RequireCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
+	if err := build.RequireGroupCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
 }
