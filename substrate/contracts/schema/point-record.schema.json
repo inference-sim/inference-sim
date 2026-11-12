@@ -601,6 +601,9 @@
         "record": {
           "type": "string"
         },
+        "regime": {
+          "$ref": "#/$defs/routertable.Point"
+        },
         "revision": {
           "type": "string"
         },
@@ -818,6 +821,55 @@
         "expert_parallel",
         "pp",
         "tp"
+      ],
+      "type": "object"
+    },
+    "routertable.Point": {
+      "additionalProperties": false,
+      "properties": {
+        "concurrency": {
+          "type": "integer"
+        },
+        "decode": {
+          "$ref": "#/$defs/routertable.Parallel"
+        },
+        "engine_version": {
+          "type": "string"
+        },
+        "fabric": {
+          "type": "string"
+        },
+        "hardware": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "prefill": {
+          "$ref": "#/$defs/routertable.Parallel"
+        },
+        "shape": {
+          "type": "string"
+        },
+        "workload": {
+          "enum": [
+            "balanced",
+            "prefill-bound",
+            "decode-bound"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "concurrency",
+        "decode",
+        "engine_version",
+        "fabric",
+        "hardware",
+        "model",
+        "prefill",
+        "shape",
+        "workload"
       ],
       "type": "object"
     },

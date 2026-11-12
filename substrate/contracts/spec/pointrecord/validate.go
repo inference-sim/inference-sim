@@ -237,20 +237,29 @@ func (r *Record) validateGrade(p *validate.Problems) {
 	}
 }
 
-// validateBoundCoversPoint refuses a router_differs that carries a bound ratio whose regime does
-// not include the point's client count: the regime is exact, a count the runs did not sample is
-// not covered, and the point would stay router_unsupported (routertable.NoBoundForRegime). The
-// record names only the count; the scorer restricts the bound to the rest of the point's regime
-// with routertable.Bound.For before it writes the record.
+// validateBoundCoversPoint checks the regime a router_differs carries and that the bound it carries
+// belongs to it. The regime is exact: a ratio whose regime does not contain the point is not
+// carried (the point would have no bound for this regime and stay router_unsupported), and the
+// point's client count is the record's own. The subset itself, that it is exactly the entry's
+// ratios that cover the point, is checked against the entry by Data.CheckRouterSubstitutions.
 func (s Substitution) validateBoundCoversPoint(p *validate.Problems, at string, id Identity) {
-	if s.Kind != SubRouterDiffers || s.Bound == nil || id.Concurrency < 1 {
+	if s.Kind != SubRouterDiffers {
+		return
+	}
+	if s.Regime == nil {
+		p.Field(at+".regime", "required for router_differs: the point's regime, from which the carried bound is the entry's applicable subset")
+		return
+	}
+	s.Regime.Validate(p, at+".regime")
+	if id.Concurrency >= 1 && s.Regime.Concurrency != id.Concurrency {
+		p.Field(at+".regime.concurrency", "%d, and the point's identity has %d clients", s.Regime.Concurrency, id.Concurrency)
+	}
+	if s.Bound == nil {
 		return
 	}
 	for i, r := range s.Bound.Ratios {
-		if !slices.Contains(r.Regime.Concurrencies, id.Concurrency) {
-			p.Field(fmt.Sprintf("%s.bound.ratios[%d].regime.concurrencies", at, i),
-				"%v does not include the point's %d clients: the regime is exact, and %s",
-				r.Regime.Concurrencies, id.Concurrency, routertable.NoBoundForRegime)
+		if mm := r.Regime.Mismatches(*s.Regime); len(mm) > 0 {
+			p.Field(fmt.Sprintf("%s.bound.ratios[%d].regime", at, i), "does not contain the point (%s): %s", strings.Join(mm, "; "), routertable.NoBoundForRegime)
 		}
 	}
 }
@@ -302,6 +311,9 @@ func (s Substitution) validateKeys(p *validate.Problems, at string) {
 		}
 		if s.Bound != nil {
 			p.Field(at+".bound", "is not a key of %s", s.Kind)
+		}
+		if s.Regime != nil {
+			p.Field(at+".regime", "is not a key of %s", s.Kind)
 		}
 	}
 	if s.Kind == SubRouterDiffers {

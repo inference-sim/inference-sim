@@ -210,3 +210,27 @@ func (g Regime) validate(p *validate.Problems, at string) {
 func (g Regime) key() string {
 	return fmt.Sprintf("%s/%v/%s/%s/%s/%s/%+v/%+v/%s", g.Workload, g.Concurrencies, g.Model, g.Hardware, g.EngineVersion, g.Fabric, g.Prefill, g.Decode, strings.Join(g.Shapes, ","))
 }
+
+// Validate checks a point's regime on its own: a known workload, at least one client, the catalog
+// and engine names, a pool shape and the two instance layouts. Findings are recorded under at.
+func (pt Point) Validate(p *validate.Problems, at string) {
+	if !pt.Workload.valid() {
+		p.Field(at+".workload", "must be one of %v, got %q", WorkloadKinds(), pt.Workload)
+	}
+	if pt.Concurrency < 1 {
+		p.Field(at+".concurrency", "must be at least 1, got %d", pt.Concurrency)
+	}
+	for name, v := range map[string]string{"model": pt.Model, "hardware": pt.Hardware, "fabric": pt.Fabric, "engine_version": pt.EngineVersion} {
+		if !token.MatchString(v) {
+			p.Field(at+"."+name, "required, got %q", v)
+		}
+	}
+	if !shape.MatchString(pt.Shape) {
+		p.Field(at+".shape", "%q must be <n>P<m>D", pt.Shape)
+	}
+	for name, par := range map[string]Parallel{"prefill": pt.Prefill, "decode": pt.Decode} {
+		if par.TP < 1 || par.PP < 1 || par.DP < 1 {
+			p.Field(at+"."+name, "required: the parallelism of one %s instance, each width at least 1, got %+v", name, par)
+		}
+	}
+}

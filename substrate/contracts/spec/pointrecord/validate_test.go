@@ -173,6 +173,9 @@ func TestEachFailureModeIsRefused(t *testing.T) {
 func routerDiffers() Substitution {
 	return Substitution{Kind: SubRouterDiffers, Subject: "dynamo", Entry: "dynamo-round-robin", Policy: "round-robin",
 		Evidence: "catalog/routers/dynamo-round-robin.yaml", Revision: strings.Repeat("e", 40),
+		Regime: &routertable.Point{Workload: routertable.WorkloadBalanced, Concurrency: 64, Model: "minimax-m2.5", Hardware: "gb200-nvl72",
+			EngineVersion: "0.32.0", Fabric: "ib-400g", Shape: "1P3D",
+			Prefill: routertable.Parallel{TP: 1, PP: 1, DP: 1}, Decode: routertable.Parallel{TP: 4, PP: 1, DP: 1, ExpertParallel: true}},
 		Difference: []routertable.Statement{
 			{Aspect: "counter", Text: "Dynamo keeps one counter per frontend process; llm-d keeps one per runtime."}},
 		Bound: &routertable.Bound{
@@ -257,9 +260,27 @@ func TestTheClosenessKindsAreRefusedWithoutWhatTheyName(t *testing.T) {
 		{"router_differs without the router", with(router, func(s *Substitution) { s.Subject = "" }), "substitutions[0].subject", "required"},
 		{"router_differs naming a record", with(router, func(s *Substitution) { s.Record = "r" }), "substitutions[0].record", "not a key of router_differs"},
 		{"router_differs naming a date", with(router, func(s *Substitution) { s.Date = "2026-03-02" }), "substitutions[0].date", "not a key of router_differs"},
-		{"router_differs carrying a bound whose regime does not sample the point's clients", with(router, func(s *Substitution) {
+		{"router_differs carrying a ratio whose regime does not sample the point's clients", with(router, func(s *Substitution) {
 			s.Bound.Ratios[0].Regime.Concurrencies = []int{16, 256, 1024}
-		}), "substitutions[0].bound.ratios[0].regime.concurrencies", "no bound for this regime"},
+		}), "substitutions[0].bound.ratios[0].regime", "no bound for this regime"},
+		{"router_differs carrying a ratio of another deployment", with(router, func(s *Substitution) {
+			s.Bound.Ratios[0].Regime.Fabric = "roce-400g"
+		}), "substitutions[0].bound.ratios[0].regime", "no bound for this regime"},
+		{"router_differs carrying a ratio of another workload", with(router, func(s *Substitution) {
+			s.Bound.Ratios[0].Regime.Workload = routertable.WorkloadPrefillBound
+		}), "substitutions[0].bound.ratios[0].regime", "no bound for this regime"},
+		{"router_differs with no regime", with(router, func(s *Substitution) { s.Regime = nil }), "substitutions[0].regime", "required"},
+		{"router_differs whose regime has other clients than the point", with(router, func(s *Substitution) {
+			r := *s.Regime
+			r.Concurrency = 256
+			s.Regime = &r
+		}), "substitutions[0].regime.concurrency", "point's identity"},
+		{"router_differs with a malformed regime", with(router, func(s *Substitution) {
+			r := *s.Regime
+			r.Shape = "2P"
+			s.Regime = &r
+		}), "substitutions[0].regime.shape", "<n>P<m>D"},
+		{"later_record naming a regime", with(later, func(s *Substitution) { r := *router.Regime; s.Regime = &r }), "substitutions[0].regime", "not a key"},
 		{"router_differs without differences", with(router, func(s *Substitution) { s.Difference = nil }), "substitutions[0].difference", "required for router_differs"},
 		{"router_differs with a difference that has no aspect", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Text: "x"}} }), "substitutions[0].difference[0].aspect", "required"},
 		{"router_differs with a difference that says nothing", with(router, func(s *Substitution) { s.Difference = []routertable.Statement{{Aspect: "counter"}} }), "substitutions[0].difference[0].text", "required"},

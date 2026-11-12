@@ -186,6 +186,12 @@ type Substitution struct {
 	// copied the same way. Only with router_differs, where it is required. A reader decides from
 	// it whether the substitution is small enough for a figure: the grade is G2 either way.
 	Bound *routertable.Bound `yaml:"bound,omitempty"`
+	// Regime is the point's own regime: its workload, client count, model, hardware, engine
+	// release, fabric, instance layouts and pool shape. Only with router_differs, where it is
+	// required. The Bound is the part of the entry's bound whose regimes contain it
+	// (routertable.Bound.For) and nothing else, so a reader, and Data.CheckRouterSubstitutions,
+	// can recompute the subset from the entry and verify it.
+	Regime *routertable.Point `yaml:"regime,omitempty"`
 	// ProfileFamily says which kind of substrate profile a profile_value is: acceptance or
 	// routing. The key fields a profile can differ in are the family's own. Only with
 	// profile_value, where it is required.

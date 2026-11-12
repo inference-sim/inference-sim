@@ -144,17 +144,19 @@ type Regime struct {
 }
 
 // Point is the regime of one point to be scored: what the scorer knows about the deployment it
-// simulates and the load it replays.
+// simulates and the load it replays. A router_differs substitution carries it, so that the bound
+// it carries can be recomputed from the entry and checked (Bound.For).
 type Point struct {
-	Workload      WorkloadKind
-	Concurrency   int
-	Model         string
-	Hardware      string
-	EngineVersion string
-	Fabric        string
+	Workload      WorkloadKind `yaml:"workload"`
+	Concurrency   int          `yaml:"concurrency"`
+	Model         string       `yaml:"model"`
+	Hardware      string       `yaml:"hardware"`
+	EngineVersion string       `yaml:"engine_version"`
+	Fabric        string       `yaml:"fabric"`
 	// Shape is "<n>P<m>D".
-	Shape           string
-	Prefill, Decode Parallel
+	Shape   string   `yaml:"shape"`
+	Prefill Parallel `yaml:"prefill"`
+	Decode  Parallel `yaml:"decode"`
 }
 
 // Mismatches says, one phrase each, how the point lies outside the regime; none when it lies

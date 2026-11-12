@@ -193,8 +193,16 @@ func (d *Data) CheckRouterSubstitutions(r *pointrecord.Record) error {
 			bad = append(bad, fmt.Sprintf("%s: entry %q maps to policy %q, not %q", at, s.Entry, e.Policy, s.Policy))
 		case !reflect.DeepEqual(s.Difference, e.Statements()):
 			bad = append(bad, fmt.Sprintf("%s: the differences are not entry %q's: a point carries the entry's statements as they stand, so a reader sees what the mapping rests on", at, s.Entry))
-		case !reflect.DeepEqual(s.Bound, e.Bound):
-			bad = append(bad, fmt.Sprintf("%s: the bound is not entry %q's: a point carries the entry's bound as it stands, so a reader sees how far the policy moves each figure", at, s.Entry))
+		case e.Bound == nil && s.Bound != nil:
+			bad = append(bad, fmt.Sprintf("%s: the bound is not the part of entry %q's bound that covers the point's regime: the entry states none", at, s.Entry))
+		case e.Bound == nil:
+			// An entry without a bound is checked by the validator, which requires one of a mapping.
+		case s.Regime == nil:
+			bad = append(bad, fmt.Sprintf("%s: no regime: a point carries the part of entry %q's bound that covers its own regime, which cannot be checked without it", at, s.Entry))
+		case e.Bound.For(*s.Regime) == nil:
+			bad = append(bad, fmt.Sprintf("%s: entry %q has no bound for this regime: the point is router_unsupported (G5), not router_differs", at, s.Entry))
+		case !reflect.DeepEqual(s.Bound, e.Bound.For(*s.Regime)):
+			bad = append(bad, fmt.Sprintf("%s: the bound is not the part of entry %q's bound that covers the point's regime: a point carries exactly the entry's ratios whose regime contains it, as they stand, and none for another regime", at, s.Entry))
 		}
 	}
 	if len(bad) > 0 {

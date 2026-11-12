@@ -162,6 +162,27 @@ allow yet.
 | `decode` | mapping | yes | The same for one decode instance. |
 | `shapes` | list of strings | yes | The pool shapes the cells cover, each `<n>P<m>D`: n prefill and m decode instances. Sorted, each once. |
 
+### Regime of a point
+
+<!-- fields: routertable.Point -->
+
+| Key | Type | Required | Meaning |
+|---|---|---|---|
+| `workload` | string | yes | The workload kind of the point. |
+| `concurrency` | integer | yes | Its closed-loop client count. At least 1. |
+| `model` | string | yes | The catalog model it simulates. |
+| `hardware` | string | yes | The catalog hardware. |
+| `engine_version` | string | yes | The engine release the scoring simulator runs. |
+| `fabric` | string | yes | The catalog network between the pools. |
+| `shape` | string | yes | Its pool shape, `<n>P<m>D`. |
+| `prefill` | mapping | yes | The parallelism of one prefill instance, as for a regime. |
+| `decode` | mapping | yes | The same for one decode instance. |
+
+A router_differs substitution carries this regime, and the part of the entry's bound that covers
+it (`Bound.For`): `load.Data.CheckRouterSubstitutions` recomputes that part from the entry and
+refuses a bound that omits a covering ratio, carries one for another regime, or is carried for a
+point the entry has no bound for.
+
 <!-- fields: routertable.Parallel -->
 
 | Key | Type | Required | Meaning |
