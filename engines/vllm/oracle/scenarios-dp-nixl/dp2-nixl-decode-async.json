@@ -1,0 +1,123 @@
+{
+ "name": "dp2-nixl-decode-async",
+ "description": "dp2-nixl-decode with async_scheduling: every rank runs the AsyncScheduler and its own step_with_batch_queue, the pull's landing riding on the first output popped from then on.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 2,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 4,
+  "stats_interval": 1,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_roles": [
+    "kv_consumer",
+    "kv_consumer"
+   ],
+   "kv_load_failure_policy": "fail",
+   "extra_config": {}
+  },
+  "async_scheduling": true
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    4171,
+    842,
+    262,
+    4486,
+    385,
+    723,
+    3480,
+    3049,
+    179,
+    1003,
+    3899,
+    743
+   ],
+   "output": [
+    3140,
+    676,
+    2208
+   ],
+   "remote_prefill": true,
+   "recv_delay": 4,
+   "rank": 0
+  },
+  {
+   "id": "l0",
+   "arrival_step": 0,
+   "prompt": [
+    4337,
+    4199,
+    3191,
+    186,
+    3980,
+    329
+   ],
+   "output": [
+    3678,
+    3116,
+    1361,
+    644,
+    2771,
+    1543,
+    1079,
+    4327
+   ],
+   "rank": 1
+  },
+  {
+   "id": "d1",
+   "arrival_step": 1,
+   "prompt": [
+    3982,
+    2863,
+    2351,
+    4348,
+    1021,
+    486,
+    3561,
+    267,
+    249,
+    4202
+   ],
+   "output": [
+    3817,
+    1645,
+    1679
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "rank": 1
+  },
+  {
+   "id": "d2",
+   "arrival_step": 2,
+   "prompt": [
+    3984,
+    1735,
+    2354,
+    4899,
+    4766,
+    3530,
+    2913,
+    576
+   ],
+   "output": [
+    3846,
+    3824
+   ],
+   "remote_prefill": true,
+   "recv_delay": 0,
+   "rank": 1
+  }
+ ]
+}

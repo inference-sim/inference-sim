@@ -48,6 +48,7 @@ so, when it is unset.
 | T3 EngineCore | `run_enginecore.py` | `scenarios-t3/` | `gen_fuzz_t3.py` | `./core/engine` (`BLIS_VLLM_T3_FUZZ_DIR`) |
 | T3 data parallel | `run_dp.py` | `scenarios-dp/` | `gen_fuzz_dp.py` | `./core/engine` (`BLIS_VLLM_DP_FUZZ_DIR`) |
 | T3 data parallel, async (a batch queue per rank) | `run_dp.py` | `scenarios-dp-async/` | | `./core/engine`, `./core/vllm` |
+| T3/T4 data parallel with NIXL on every rank | `run_dp.py` | `scenarios-dp-nixl/` | | `./core/engine` |
 | T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`; 20000+ add hybrid groups and drafters; 30000+ the batch queue) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
 | T4 OffloadingConnector (CPU tier, LRU) | `run_offloading.py` | `scenarios/offloading/` | `gen_offloading_fuzz.py` (seeds 20000+ add sliding-window groups) | `./core/connector/offloading` (`BLIS_VLLM_OFFLOAD_FUZZ_DIR`) |
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
@@ -169,3 +170,43 @@ or in that order.
 Per step: `scheduled` (tokens per request), `preempted`, `finished`, `free_blocks`,
 `num_running`, `num_waiting`, `kv_usage`, and `blocks` (each running request's blocks as
 `[hash or null, ref_cnt]`, never block ids), plus `provenance`.
+
+### Data-parallel connector scenarios
+
+`scenarios-dp-nixl/` runs `run_dp.py` with a NIXL connector on every rank. A rank is one DP engine
+core: its own vLLM `Scheduler`, KV cache and `NixlConnector` scheduler side, as vLLM gives each rank
+its own `engine_id` (`<uuid>_dp<rank>`, `vllm/v1/engine/core.py:1417-1426@5df63a72`). The prefill rank
+that ran a request names itself in the request's `kv_transfer_params`, and the decode side pulls that
+rank's blocks for that request, so a P/D pair at DP is per rank and per request; the ranks are coupled
+only by the DP wave (lockstep steps, dummy batches, the all-reduce of the unfinished flags). The
+scenario is a DP scenario (`data_parallel_size`, `dp_sync_interval`, `prefill_schedule_interval`,
+`stats_interval`, `stats_lag`, `async_scheduling`) plus:
+
+```json
+"connector": {"name": "NixlConnector", "kv_roles": ["kv_producer", "kv_consumer"],
+              "kv_load_failure_policy": "fail", "extra_config": {}}
+```
+
+`kv_roles` gives one role per rank (`kv_producer`, `kv_consumer` or `kv_both`; `kv_role` gives one for
+all). The scheduler settings are the connector scenarios' (`max_model_len` is required,
+`enable_prefix_caching` defaults to true). A request takes the connector scenarios' fields
+(`remote_prefill` with `recv_delay` and `recv_failed`, `remote_decode` with `send_delay`,
+`invalid_blocks`, `abort_step`) and `rank`, the rank the P/D proxy sends it to
+(`data_parallel_rank`, which the load balancer obeys without reading the load counts); without
+`rank` the balancer chooses.
+
+The transport is the connector oracle's mock, run on each rank's own scheduler: a pull is reported
+`recv_delay` steps after the rank's step that parked the request, a hold is reported `send_delay`
+steps after the request finished. A request waiting for remote KV is unfinished, so its rank's wave
+stays running; the rank steps, schedules nothing, and runs a dummy batch. A producer rank that only
+holds finished requests' blocks has requests to step but no unfinished ones, so it does not keep
+the wave running. A rank's record has the DP fields (`dummy`, `throttled`, and with
+`async_scheduling` `processed` and `queue_len`) and what the connector oracle records for a
+scheduler (`scheduled`, `preempted`, `aborted`, `transport`, `finished`, the KV state and the
+connector-visible state). The trace is tier 3; the Go test is `TestDPNixlAgainstVLLM`
+(`core/engine/dp_nixl_test.go`).
+
+Not modelled: a rank with no connector (every rank here has one), `engine_id` and the side-channel
+port (`VLLM_NIXL_SIDE_CHANNEL_PORT + data_parallel_index`), which name the peer and decide no
+scheduling step, and the in-flight accounting of aborts, which the harness applies when it queues the
+abort (the client drops a finished request when the engine reports it, `core_client.py:1703-1710`).

@@ -195,19 +195,7 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         vllm_config = dataclasses.replace(vllm_config, speculative_config=SpeculativeConfig(
             target_model_config=vllm_config.model_config, target_parallel_config=vllm_config.parallel_config,
             **args))
-    # create_vllm_config always enables prefix caching and leaves the scheduling policy, the
-    # long-prefill cap and the watermark at their defaults; the scenario states them
-    # (environment set-up of vLLM's own config objects, read when the Scheduler is built).
-    vllm_config.cache_config.enable_prefix_caching = cfg.get("enable_prefix_caching", True)
-    vllm_config.scheduler_config.policy = cfg.get("scheduling_policy", "fcfs")
-    vllm_config.scheduler_config.long_prefill_token_threshold = cfg.get("long_prefill_token_threshold", 0)
-    vllm_config.scheduler_config.watermark = cfg.get("watermark", 0.0)
-    # The helper passes max_model_len to SchedulerConfig only and builds ModelConfig without it
-    # (utils.py:132-142), so the model's own 2048 would govern: the Scheduler reads
-    # model_config.max_model_len (scheduler.py:145). Set it there, as `vllm serve
-    # --max-model-len` does, and run the startup check the edits above bypassed.
-    vllm_config.model_config.max_model_len = cfg["max_model_len"]
-    vllm_config.scheduler_config.verify_max_model_len(cfg["max_model_len"])
+    apply_scenario_config(vllm_config, cfg)
     # The CPU platform turns async scheduling off (vllm/platforms/cpu.py:329-331); tier 3's
     # set_async sets the scenario's value back and returns vLLM's own max_concurrent_batches
     # for it, before the Scheduler reads both (defer_block_free, scheduler.py:184-192).
@@ -370,6 +358,24 @@ def pulled_blocks(out) -> dict:
     Recorded for scenarios that state "kv_layers"."""
     meta = out.kv_connector_metadata
     return {rid: [len(g) for g in m.local_block_ids] for rid, m in sorted(getattr(meta, "reqs_to_recv", {}).items())}
+
+
+def apply_scenario_config(vllm_config, cfg: dict) -> None:
+    """Sets the scenario's cache, scheduler and length settings on a config the helper built
+    (oracle/run_dp.py builds each rank's config the same way)."""
+    # create_vllm_config always enables prefix caching and leaves the scheduling policy, the
+    # long-prefill cap and the watermark at their defaults; the scenario states them
+    # (environment set-up of vLLM's own config objects, read when the Scheduler is built).
+    vllm_config.cache_config.enable_prefix_caching = cfg.get("enable_prefix_caching", True)
+    vllm_config.scheduler_config.policy = cfg.get("scheduling_policy", "fcfs")
+    vllm_config.scheduler_config.long_prefill_token_threshold = cfg.get("long_prefill_token_threshold", 0)
+    vllm_config.scheduler_config.watermark = cfg.get("watermark", 0.0)
+    # The helper passes max_model_len to SchedulerConfig only and builds ModelConfig without it
+    # (utils.py:132-142), so the model's own 2048 would govern: the Scheduler reads
+    # model_config.max_model_len (scheduler.py:145). Set it there, as `vllm serve
+    # --max-model-len` does, and run the startup check the edits above bypassed.
+    vllm_config.model_config.max_model_len = cfg["max_model_len"]
+    vllm_config.scheduler_config.verify_max_model_len(cfg["max_model_len"])
 
 
 def add_kv_params(req, r: dict, block_size: int) -> None:

@@ -1,0 +1,121 @@
+{
+ "name": "dp2-nixl-recv-failed",
+ "description": "DP 2, both ranks kv_consumer, kv_load_failure_policy fail. The pull of d0 on rank 0 fails as a whole; the request finishes with an error while rank 1 keeps pulling and decoding.",
+ "config": {
+  "max_num_seqs": 4,
+  "max_num_batched_tokens": 16,
+  "block_size": 4,
+  "num_blocks": 40,
+  "max_model_len": 128,
+  "enable_prefix_caching": true,
+  "scheduling_policy": "fcfs",
+  "data_parallel_size": 2,
+  "prefill_schedule_interval": 1,
+  "dp_sync_interval": 4,
+  "stats_interval": 1,
+  "connector": {
+   "name": "NixlConnector",
+   "kv_roles": [
+    "kv_consumer",
+    "kv_consumer"
+   ],
+   "kv_load_failure_policy": "fail",
+   "extra_config": {
+    "kv_recompute_threshold": 0
+   }
+  }
+ },
+ "requests": [
+  {
+   "id": "d0",
+   "arrival_step": 0,
+   "prompt": [
+    4785,
+    2690,
+    2533,
+    4470,
+    1579,
+    1679,
+    1815,
+    416,
+    3526,
+    2114,
+    3123,
+    4295
+   ],
+   "output": [
+    3423,
+    2870,
+    2036
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "rank": 0,
+   "recv_failed": true
+  },
+  {
+   "id": "d1",
+   "arrival_step": 0,
+   "prompt": [
+    1308,
+    2111,
+    3772,
+    1439,
+    548,
+    1073,
+    905,
+    908,
+    4011,
+    494
+   ],
+   "output": [
+    4748,
+    4053,
+    113
+   ],
+   "remote_prefill": true,
+   "recv_delay": 2,
+   "rank": 1
+  },
+  {
+   "id": "l0",
+   "arrival_step": 1,
+   "prompt": [
+    225,
+    796,
+    3014,
+    790,
+    547,
+    1895,
+    241,
+    3252
+   ],
+   "output": [
+    4853,
+    1220,
+    2041,
+    3703
+   ],
+   "rank": 1
+  },
+  {
+   "id": "d2",
+   "arrival_step": 3,
+   "prompt": [
+    3472,
+    263,
+    944,
+    2852,
+    1153,
+    3639
+   ],
+   "output": [
+    335,
+    1167
+   ],
+   "remote_prefill": true,
+   "recv_delay": 1,
+   "rank": 0
+  }
+ ]
+}

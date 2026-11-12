@@ -41,6 +41,21 @@ its GPU is run_enginecore.py's mock executor; both are oracle/run_enginecore.py'
 (has_work, core.py:1534-1540: requests, batches queued, or the wave running); its step's
 model_executed is what the dummy batch reads.
 
+With a "connector" in the scenario's config (oracle/scenarios-dp-nixl), each rank also holds vLLM's
+real NixlConnector scheduler side, built as oracle/run_connector.py builds one (tests/v1/kv_connector/
+unit/utils.py create_vllm_config, create_scheduler: one config, one Scheduler and one connector per
+rank), with the rank's own kv_role. A request names the side of the P/D transfer this rank is
+("remote_prefill" or "remote_decode") and, optionally, the rank the proxy sends it to ("rank": the
+request's data_parallel_rank, which get_core_engine_for_request obeys without consulting the load
+counts, core_client.py:1647-1650); with no "rank" the balancer chooses. The transfers are the
+connector oracle's transport mock (run_connector.py transport_report), evaluated per rank on that
+rank's own scheduler: a pull lands "recv_delay" steps after the rank's step that parked it, a held
+producer request is released "send_delay" steps after it finished. A rank with a request waiting for
+remote KV has unfinished requests (Scheduler.get_num_unfinished_requests counts it), so its wave
+stays running; the rank steps (has_requests), schedules nothing and runs a dummy batch. Each rank's
+record then adds what run_connector.py records. Without a "connector" nothing in this paragraph runs,
+and the traces of the scenarios above are unchanged.
+
 Usage: python -I oracle/run_dp.py <vllm checkout> <scenario.json | dir> [out dir]
 """
 
@@ -92,8 +107,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
 
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
-    from run_enginecore import MockGPU, engine_core, restore_async  # noqa: E402
-    from run_scheduler import provenance  # noqa: E402
+    from run_enginecore import MockGPU, engine_core, restore_async, set_async  # noqa: E402
+    from run_scheduler import kv_state, provenance  # noqa: E402
 
     with open(scenario_path) as f:
         sc = json.load(f)
@@ -110,20 +125,52 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # Async scheduling: each rank runs the AsyncScheduler and its own step_with_batch_queue.
     async_sched = bool(cfg.get("async_scheduling", False))
 
+    connector = cfg.get("connector")
+    roles: list[str] = []
+    configs: list = []
+    queue_sizes: list[int] = []
     ranks = []
-    for _ in range(dp):
-        ranks.append(helpers.create_scheduler(
-            model=model,
-            max_num_seqs=cfg["max_num_seqs"],
-            max_num_batched_tokens=cfg["max_num_batched_tokens"],
-            long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
-            enable_prefix_caching=cfg.get("enable_prefix_caching", False),
-            num_blocks=cfg["num_blocks"],
-            block_size=block_size,
-            max_model_len=cfg.get("max_model_len"),
-            scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
-            **({"async_scheduling": True, "scheduler_cls": AsyncScheduler} if async_sched else {}),
-        ))
+    if connector:
+        import tests.v1.kv_connector.unit.utils as chelpers  # noqa: E402
+        from run_connector import add_kv_params, apply_scenario_config, connector_state_of  # noqa: E402
+        from run_connector import QueuedGPU, transport_report  # noqa: E402
+        from vllm.v1.request import RequestStatus  # noqa: E402
+
+        if not os.path.abspath(chelpers.__file__).startswith(os.path.abspath(vllm_root) + os.sep):
+            sys.exit("tests.v1.kv_connector.unit.utils did not resolve into the vLLM checkout")
+        if connector["name"] != "NixlConnector":
+            sys.exit(f"{scenario_path}: this runner drives NixlConnector")
+        roles = list(connector.get("kv_roles") or [connector.get("kv_role", "kv_consumer")] * dp)
+        if len(roles) != dp or any(r not in ("kv_producer", "kv_consumer", "kv_both") for r in roles):
+            sys.exit(f"{scenario_path}: connector.kv_roles needs one of kv_producer, kv_consumer, kv_both per rank")
+        for role in roles:
+            vllm_config = chelpers.create_vllm_config(
+                model=model, max_num_seqs=cfg["max_num_seqs"], max_num_batched_tokens=cfg["max_num_batched_tokens"],
+                block_size=block_size, max_model_len=cfg["max_model_len"], kv_connector=connector["name"],
+                kv_role=role, kv_load_failure_policy=connector.get("kv_load_failure_policy", "fail"),
+                kv_connector_extra_config=connector.get("extra_config") or {},
+                enable_chunked_prefill=cfg.get("enable_chunked_prefill", True))
+            apply_scenario_config(vllm_config, cfg)
+            # The CPU platform turns async scheduling off; set_async puts the scenario's value
+            # back before the Scheduler reads it (run_connector.py).
+            queue_sizes.append(set_async(vllm_config, async_sched, False) if async_sched else 1)
+            ranks.append(chelpers.create_scheduler(vllm_config, num_blocks=cfg["num_blocks"]))
+            configs.append(vllm_config)
+        assert all(isinstance(s, AsyncScheduler) == async_sched for s in ranks)
+    else:
+        for _ in range(dp):
+            ranks.append(helpers.create_scheduler(
+                model=model,
+                max_num_seqs=cfg["max_num_seqs"],
+                max_num_batched_tokens=cfg["max_num_batched_tokens"],
+                long_prefill_token_threshold=cfg.get("long_prefill_token_threshold", 0),
+                enable_prefix_caching=cfg.get("enable_prefix_caching", False),
+                num_blocks=cfg["num_blocks"],
+                block_size=block_size,
+                max_model_len=cfg.get("max_model_len"),
+                scheduling_policy=cfg.get("scheduling_policy", "fcfs"),
+                **({"async_scheduling": True, "scheduler_cls": AsyncScheduler} if async_sched else {}),
+            ))
 
     # Each rank's DP engine core: exactly the state _has_global_unfinished_reqs and
     # _should_throttle_prefills read, as vLLM's own tests build it
@@ -150,14 +197,27 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     # With async scheduling each rank's DP core also holds what step_with_batch_queue reads, and
     # its GPU is the shared mock (oracle/run_enginecore.py), one per rank.
     batches: list[list[dict]] = [[] for _ in range(dp)]
-    if async_sched:
+    # The connector's transport and the client's aborts, per rank (run_connector.py's own state).
+    clock = {"step": 0}
+    load_started: dict[str, int] = {}
+    finished_at: dict[str, int] = {}
+    reported: set = set()
+    current: list[dict] = [{} for _ in range(dp)]
+    gpus: list = []
+    if async_sched and connector:
+        for i, core in enumerate(cores):
+            assert queue_sizes[i] > 1
+            gpus.append(QueuedGPU(ranks[i], by_id, clock, load_started, finished_at, True,
+                                  lambda i=i: current[i]))
+            engine_core(ranks[i], configs[i], queue_sizes[i], True, False, gpus[i], core=core)
+    elif async_sched:
         for i, core in enumerate(cores):
             vllm_config, queue_size = restore_async(ranks[i], True, False)
             assert isinstance(ranks[i], AsyncScheduler) and queue_size > 1
             gpu = MockGPU(lambda s=ranks[i]: s, by_id, sampled, {}, {}, 0, True, batches[i],
                           ModelRunnerOutput, EOS_TOKEN_ID)
             engine_core(ranks[i], vllm_config, queue_size, True, False, gpu, core=core)
-    else:
+    elif not connector:
         assert all(type(s) is Scheduler for s in ranks)
 
     # The all-reduce: the sum over ranks (sync_dp_state's process-group collective), answered
@@ -228,6 +288,84 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
         r_rec["queue_len"] = len(core.batch_queue)
         return executed
 
+    def finish_client_side(o_request_id: str) -> None:
+        # process_engine_outputs (core_client.py:1703-1710).
+        if (eng := client.reqs_in_flight.pop(o_request_id, None)) is not None:
+            client.engine_inflight[eng] -= 1
+
+    def step_connector(i, s, core, r_rec) -> bool:
+        """One rank's busy-loop step with its connector: run_connector.py's step (sync) or its
+        queued step (async), on this rank's scheduler, with the aborts of requests routed here."""
+        aborts = sorted(rid for rid, r in by_id.items() if r.get("abort_step") == step and routed.get(rid) == i)
+        r_rec["aborted"] = aborts
+        for rid in aborts:
+            finish_client_side(rid)
+        if async_sched:
+            # Queued on the EngineCore's aborts queue, which vLLM drains after the next popped
+            # batch's output (core.py:780-783).
+            if aborts:
+                core.aborts_queue.put_nowait(aborts)
+            if not (s.has_requests() or core.batch_queue):
+                r_rec["processed"], r_rec["queue_len"] = False, 0
+                return False
+            current[i] = r_rec
+            if s.has_requests():
+                r_rec["throttled"] = DPEngineCoreProc._should_throttle_prefills(core)
+            outputs, executed = core.step_with_batch_queue()
+            core.post_step(executed)
+            for eco in (outputs or {}).values():
+                for o in eco.outputs:
+                    if o.finish_reason is not None:
+                        r_rec["finished"].append(o.request_id)
+                        finished_at.setdefault(o.request_id, step)
+                        finished[o.request_id] = {"reason": str(o.finish_reason), "rank": i,
+                                                  "output_tokens": gpus[i].sampled[o.request_id], "step": step}
+                        finish_client_side(o.request_id)
+            r_rec["finished"].sort()
+            r_rec["queue_len"] = len(core.batch_queue)
+            return executed
+        if not s.has_requests():
+            return False
+        throttle = DPEngineCoreProc._should_throttle_prefills(core)
+        r_rec["throttled"] = throttle
+        out = s.schedule(throttle)
+        for rid, r in by_id.items():
+            req = s.requests.get(rid)
+            if r.get("remote_prefill") and rid not in load_started and req is not None and \
+                    req.status == RequestStatus.WAITING_FOR_REMOTE_KVS:
+                load_started[rid] = step
+        r_rec["scheduled"] = dict(sorted(out.num_scheduled_tokens.items()))
+        r_rec["preempted"] = sorted(out.preempted_req_ids or [])
+        req_ids, toks = [], []
+        for rid in out.num_scheduled_tokens:
+            req_ids.append(rid)
+            if not s.requests[rid].is_prefill_chunk:
+                k, o = sampled[rid], by_id[rid]["output"]
+                if k >= len(o):
+                    toks.append([])
+                else:
+                    toks.append([EOS_TOKEN_ID if k == len(o) - 1 else o[k]])
+                    sampled[rid] = k + 1
+            else:
+                toks.append([])
+        kv_out, r_rec["transport"] = transport_report(s, by_id, step, load_started, finished_at, reported)
+        if aborts:
+            s.finish_requests(aborts, RequestStatus.FINISHED_ABORTED)
+        outs = s.update_from_output(out, ModelRunnerOutput(
+            req_ids=req_ids, req_id_to_index={rid: j for j, rid in enumerate(req_ids)},
+            sampled_token_ids=toks, logprobs=None, prompt_logprobs_dict={}, pooler_output=[],
+            kv_connector_output=kv_out))
+        for eco in outs.values():
+            for o in eco.outputs:
+                if o.finish_reason is not None:
+                    r_rec["finished"].append(o.request_id)
+                    finished_at.setdefault(o.request_id, step)
+                    finished[o.request_id] = {"reason": str(o.finish_reason), "rank": i,
+                                              "output_tokens": sampled[o.request_id], "step": step}
+                    finish_client_side(o.request_id)
+        r_rec["finished"].sort()
+        return out.total_num_scheduled_tokens > 0
+
     step = 0
     record_counts()
     while step < max_steps:
@@ -241,8 +379,10 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
             req = Request(request_id=r["id"], prompt_token_ids=list(r["prompt"]), sampling_params=params,
                           pooling_params=None, arrival_time=float(r["arrival_step"]),
                           priority=r.get("priority", 0), block_hasher=hasher)
+            if connector:
+                add_kv_params(req, r, block_size)
             engine = client.get_core_engine_for_request(SimpleNamespace(
-                request_id=r["id"], data_parallel_rank=None, pooling_params=None))
+                request_id=r["id"], data_parallel_rank=r.get("rank") if connector else None, pooling_params=None))
             rank = client.core_engines.index(engine)
             routed[r["id"]] = rank
             arrivals.append([r["id"], rank])
@@ -256,12 +396,21 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 and not any(c.batch_queue for c in cores if async_sched):
             break
         rec = {"step": step, "arrivals": arrivals, "ranks": []}
+        clock["step"] = step
         votes.clear()
         local = []
         for i, (s, core) in enumerate(zip(ranks, cores)):
             r_rec = {"rank": i, "dummy": False, "scheduled": {}, "finished": [], "throttled": False}
+            if connector:
+                r_rec.update({"preempted": [], "aborted": [], "transport": {
+                    "recving": [], "sending": [], "failed": [], "invalid_blocks": 0}})
+                if async_sched:
+                    # QueuedGPU sets it when the rank's step pops a batch.
+                    r_rec["processed"] = False
             executed = False
-            if async_sched:
+            if connector:
+                executed = step_connector(i, s, core, r_rec)
+            elif async_sched:
                 executed = step_batch_queue(i, s, core, r_rec)
             elif s.has_requests():
                 throttle = DPEngineCoreProc._should_throttle_prefills(core)
@@ -297,6 +446,9 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
                 # A dummy batch keeps the rank in the collective (core.py:2357-2368).
                 r_rec["dummy"] = True
             local.append(unfinished)
+            if connector:
+                r_rec.update(kv_state(s))
+                r_rec.update(connector_state_of(s))
             rec["ranks"].append(r_rec)
         for i, u in enumerate(local):
             votes[i] = u
@@ -323,6 +475,8 @@ def run_one(vllm_root: str, scenario_path: str) -> dict:
     if async_sched:
         prov["engine"].update({"async_scheduling": True, "max_concurrent_batches": cores[0].batch_queue_size,
                                "scheduler_class": type(ranks[0]).__name__})
+    if connector:
+        prov["engine"].update({"connector": connector["name"], "kv_roles": roles})
     return {"provenance": prov, "routed": dict(sorted(routed.items())), "steps": steps,
             "finished": dict(sorted(finished.items()))}
 
