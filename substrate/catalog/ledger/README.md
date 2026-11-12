@@ -72,6 +72,54 @@ The rules the ingest tool applies are those of design §10.2:
 - The same metrics under two identities with one role key are one unit, under the identity
   of the smallest row id. With two different role keys, both records are left out.
 
+## Records published after the pinned dump
+
+The dump is weekly and the benchmarks are not. A record InferenceX published after the pinned
+dump is added as a supplement, listed under the source in `sources.yaml`: the URL of the API
+that serves it, the upstream run, and each record's id and the SHA-256 of its content (the
+canonical JSON of the whole record as served, numbers as printed). The ingest tool fetches the
+API, refuses any pinned record whose content differs or that is no longer served, reads no
+record that is not pinned, and ingests the supplement's records together with the dump's, so
+every rule above applies to them unchanged. Their units are in the same
+`units/inferencex.jsonl.gz`, with the same identity, role key and keyed role assignment (D4)
+as a unit from the dump. A supplement unit that carried any other role key would fail
+`ledger check`, which recomputes every role key from the identity.
+
+No value of a supplement record is committed (X12): the unit holds identifying fields and the
+hash of the record's metrics. A consumer that needs the values asks the tool for them:
+
+```sh
+go run ./ledger/cmd/ledger supplement-records -out records.json catalog/ledger   # needs the network
+```
+
+`records.json` holds the pinned records as the API served them, each equal to its pin. It is an
+input for one run and is never committed. A unit's `measurements[].record` is the record id.
+
+To add records, a ledger owner runs the pin tool and opens a pull request that adds the
+supplement and the regenerated unit list and report:
+
+```sh
+go run ./ledger/cmd/ledger pin-supplement -url 'https://inferencex.semianalysis.com/api/v1/benchmarks?model=DeepSeek-V4.1-Flash' -ids 447774-447789
+```
+
+Rules the tool enforces:
+
+- Each record id is above every id of the pinned dump. A record the dump holds is not a
+  supplement, because the dump's copy and the API's could print a number differently and become
+  two measurements of one unit. When a new source revision holds a supplement's records, the
+  pull request that moves the revision removes the supplement.
+- The run's attempt is read from the record's `run_url`; a record with no run is refused. The
+  API does not serve the run's conclusion, so the unit records `run_conclusion: null`.
+- The measured hash of an API record is the hash of the metrics as the API prints them. It is
+  not compared with a dump's copy of the same record.
+- `ledger check-generated` fetches the supplements, so it needs the network as well as the dump.
+  `TestEverySupplementRecordHasAUnit` checks offline that every pinned record has a unit.
+
+A unit's role is still drawn only by the seed-holding jobs. Until a ledger owner creates the
+seed, no supplement unit, like no other unit, is on the fit or anchor list, and so the dashboard
+cannot score it (COV-2). After the release job publishes the lists, a supplement unit that draws
+anchor is scored and one that draws fit is fitted from, with no case made for it.
+
 ## Changing how identities are computed
 
 If a pull request changes the ingest tool so that some unit_ids or role keys change, the

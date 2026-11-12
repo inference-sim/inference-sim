@@ -121,7 +121,69 @@ type Source struct {
 	// Artifacts pins each workflow artifact a tool reads from this source's publisher, by run,
 	// attempt and SHA-256 (D3). It holds data no unit list yet carries.
 	Artifacts []Artifact `yaml:"artifacts,omitempty"`
-	Licence   Licence    `yaml:"licence"`
+	// Supplements pin records the source published after Revision, so a unit can exist for a
+	// measurement the pinned revision does not hold. The ingest tool fetches them and adds
+	// their units to the source's one unit list; none of their values is committed (X12).
+	Supplements []Supplement `yaml:"supplements,omitempty"`
+	Licence     Licence      `yaml:"licence"`
+}
+
+// Supplement is a set of records a source published after its pinned revision, pinned by
+// record id and by the SHA-256 of each record's content (D3). Kind is api_records: the
+// records are served by the source's API at URL, which is not itself a revision, so the
+// content hash is what pins them.
+type Supplement struct {
+	ID   string `yaml:"id"`
+	Kind string `yaml:"kind"`
+	// URL serves the pinned records, among others; the ingest tool reads only the pinned ones.
+	URL string `yaml:"url"`
+	// Run is the upstream run that produced the records, including its attempt.
+	Run string `yaml:"run"`
+	// Records are the pinned records in increasing id order. Each id is above every id of the
+	// pinned revision: a record the revision holds is not a supplement.
+	Records []PinnedRecord `yaml:"records"`
+}
+
+// PinnedRecord names one source record and the SHA-256 of its content: the canonical JSON of
+// the whole record as the API serves it, numbers kept as printed (MeasuredID).
+type PinnedRecord struct {
+	ID     int64  `yaml:"id"`
+	SHA256 string `yaml:"sha256"`
+}
+
+// SupplementKindAPI is the one kind of supplement.
+const SupplementKindAPI = "api_records"
+
+func (s Supplement) check(at string) error {
+	var errs []error
+	if !sourceID.MatchString(s.ID) {
+		errs = append(errs, fmt.Errorf("%s.id: %q is not a lowercase slug", at, s.ID))
+	}
+	if s.Kind != SupplementKindAPI {
+		errs = append(errs, fmt.Errorf("%s.kind: %q, want %q", at, s.Kind, SupplementKindAPI))
+	}
+	if !strings.HasPrefix(s.URL, "https://") {
+		errs = append(errs, fmt.Errorf("%s.url: %q is not an https URL", at, s.URL))
+	}
+	if !strings.HasPrefix(s.Run, "https://") || !runURL.MatchString(s.Run) {
+		errs = append(errs, fmt.Errorf("%s.run: %q is not the https URL of a workflow run and attempt (.../actions/runs/N/attempts/M)", at, s.Run))
+	}
+	if len(s.Records) == 0 {
+		errs = append(errs, fmt.Errorf("%s.records: pin at least one record by id and SHA-256", at))
+	}
+	for i, r := range s.Records {
+		rat := fmt.Sprintf("%s.records[%d]", at, i)
+		if r.ID < 1 {
+			errs = append(errs, fmt.Errorf("%s.id: %d, want a record id of 1 or more", rat, r.ID))
+		}
+		if i > 0 && r.ID <= s.Records[i-1].ID {
+			errs = append(errs, fmt.Errorf("%s.id: %d is not above the record before it; list the records in increasing id order, each once", rat, r.ID))
+		}
+		if !hex64.MatchString(r.SHA256) {
+			errs = append(errs, fmt.Errorf("%s.sha256: %q is not 64 lowercase hex digits", rat, r.SHA256))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // Artifact is one workflow artifact of a source, pinned to an exact run. Revision.Kind is
@@ -201,6 +263,7 @@ var (
 	gitCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	runID     = regexp.MustCompile(`^[0-9]{1,20}$`)
 	isoDate   = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	runURL    = regexp.MustCompile(`/actions/runs/[0-9]+/attempts/[0-9]+$`)
 )
 
 // Validate checks sources.yaml on its own, including D3.
@@ -243,6 +306,27 @@ func (s *Sources) Validate() error {
 			}
 			if err := a.Revision.check(aat + ".revision"); err != nil {
 				errs = append(errs, err)
+			}
+		}
+		seenSup := map[string]bool{}
+		seenRec := map[int64]string{}
+		for j, sup := range src.Supplements {
+			sat := fmt.Sprintf("%s.supplements[%d]", at, j)
+			if seenSup[sup.ID] {
+				errs = append(errs, fmt.Errorf("%s.id: duplicate supplement %q", sat, sup.ID))
+			}
+			seenSup[sup.ID] = true
+			if err := sup.check(sat); err != nil {
+				errs = append(errs, err)
+			}
+			for _, r := range sup.Records {
+				if other, dup := seenRec[r.ID]; dup && other != sup.ID {
+					errs = append(errs, fmt.Errorf("%s: record %d is also pinned by supplement %q; a record is pinned once", sat, r.ID, other))
+				}
+				seenRec[r.ID] = sup.ID
+			}
+			if src.Units == "" {
+				errs = append(errs, fmt.Errorf("%s: a source with no unit list has nowhere to put a supplement's units", sat))
 			}
 		}
 		if src.Units == "" && src.Status == "" {

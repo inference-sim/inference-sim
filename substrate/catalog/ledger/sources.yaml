@@ -34,6 +34,33 @@ sources:
         - {name: inferencex-2026-09-28.dump.zst.part15, sha256: d206b2d3c9678e985e6fc1a3f80067eedc421accce72937da753e2e54e833883}
         - {name: inferencex-2026-09-28.dump.zst.part16, sha256: c560093df925f66245bbb22c2e6833782f9c7083ccb7bfd2150da50791158882}
     units: units/inferencex.jsonl.gz
+    # Records InferenceX published after the pinned dump, pinned by record id and by the SHA-256
+    # of each record's content (D3). The ingest tool fetches them from the API, refuses any
+    # whose content differs, and adds their units to the one unit list; no value is committed
+    # (X12). Add one with `ledger pin-supplement`; remove it when a pinned revision holds its
+    # records. The licence entry below covers them, as it does the dump.
+    supplements:
+      - id: h200-dsv41flash-vllm-v0-33-0
+        kind: api_records
+        url: https://inferencex.semianalysis.com/api/v1/benchmarks?model=DeepSeek-V4.1-Flash
+        run: https://github.com/SemiAnalysisAI/InferenceX/actions/runs/42341901521/attempts/1
+        records:
+          - {id: 447774, sha256: 3683c15db69e29532a1db00f92a7066e2e9020ae6de38611d68a3016e5701401}
+          - {id: 447775, sha256: 36e7bbe46eec5cb678be75b88d22021e5e61ea5e12fa479e71a2f6e9f7cb1fd2}
+          - {id: 447776, sha256: cb9ab431b79cecb05b2d6bc3a678ddd8aed5ab9f4f29efb04abb122ff9a4abcb}
+          - {id: 447777, sha256: bdc1674ab31fd96d8dad705b18e54ef51e2a1b7895a0af48b477b07c7d4082c3}
+          - {id: 447778, sha256: 054c7efdb8122d5efe00a3234c0b4aa7d7db939b96c812478477cb773b8b16c0}
+          - {id: 447779, sha256: 664704fddad0072d3bccf7a288e22e1d4c39835de64d6707b2b20f41ea15841e}
+          - {id: 447780, sha256: 9a5856b38796f16c98bcda94318c4b64d890e80cafea050c3e33e176cc9f9546}
+          - {id: 447781, sha256: 18e4dfaaf61426bf4dfdadf42ccf124700bafe93b9b10dc55566326b416d6d9b}
+          - {id: 447782, sha256: 35afd786168b952e49409820d6daff5373654b6843e1738cf4f923c4649c2910}
+          - {id: 447783, sha256: 36018ede0680a0df9f430bf122af47b05305dafee6449e9b24e0d921a937bf01}
+          - {id: 447784, sha256: 03b64996819bba0145e36f1ef51432cc66762f139c84ff5ea77ebc28882724ba}
+          - {id: 447785, sha256: 1d1424c550d1b3ce6a77976bd8b30fe37e26c3c7608138883796e2e04cdfa801}
+          - {id: 447786, sha256: 3c8444f75b299d71c8f0189e3c364fc3239e3184ac9e68b8d71e92ad998c9410}
+          - {id: 447787, sha256: c4ebfd91805bc6c3e9806e0a3ffce0f5e2b8a5def0ecfc654df042c7680f38cf}
+          - {id: 447788, sha256: 00f1ad17e3a923e52b17a2784f71b5b865af0f0439ac4046d34039c22fd6dcc7}
+          - {id: 447789, sha256: 59f12344295e7667f7fdc9529b3d66c6d2e67941361f3375ec342121f59275f8}
     licence:
       # The benchmarks are run by SemiAnalysisAI/InferenceX, whose licence file is Apache-2.0.
       # The dump is published by SemiAnalysisAI/InferenceX-app, whose licence file is GPL-3.0.

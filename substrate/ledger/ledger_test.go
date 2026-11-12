@@ -922,3 +922,42 @@ func TestPublishedListsAreCheckedAgainstTheLedger(t *testing.T) {
 		t.Errorf("lists published with no recorded seed: %v", err)
 	}
 }
+
+// D3: a supplement's records are pinned by id and content hash. A pin that is unordered,
+// repeated, unhashed or on a source with no unit list is refused, and so is a record pinned by
+// two supplements.
+func TestSupplementPinsRefused(t *testing.T) {
+	good := func() *Sources {
+		s := goodSources()
+		s.Sources[0].Status = ""
+		s.Sources[0].Units = "units/s.jsonl.gz"
+		s.Sources[0].Supplements = []Supplement{{ID: "a", Kind: SupplementKindAPI, URL: "https://x.test/api",
+			Run:     "https://github.com/o/r/actions/runs/7/attempts/1",
+			Records: []PinnedRecord{{ID: 1, SHA256: strings.Repeat("a", 64)}, {ID: 2, SHA256: strings.Repeat("b", 64)}}}}
+		return s
+	}
+	if err := good().Validate(); err != nil {
+		t.Fatalf("the good supplement was refused: %v", err)
+	}
+	bad := map[string]func(s *Source){
+		"unordered":    func(s *Source) { s.Supplements[0].Records[1].ID = 1 },
+		"no hash":      func(s *Source) { s.Supplements[0].Records[0].SHA256 = "" },
+		"no records":   func(s *Source) { s.Supplements[0].Records = nil },
+		"http":         func(s *Source) { s.Supplements[0].URL = "http://x.test/api" },
+		"no attempt":   func(s *Source) { s.Supplements[0].Run = "https://github.com/o/r/actions/runs/7" },
+		"kind":         func(s *Source) { s.Supplements[0].Kind = "scrape" },
+		"no unit list": func(s *Source) { s.Units = ""; s.Status = "none" },
+		"pinned twice": func(s *Source) {
+			dup := s.Supplements[0]
+			dup.ID = "b"
+			s.Supplements = append(s.Supplements, dup)
+		},
+	}
+	for name, mutate := range bad {
+		s := good()
+		mutate(&s.Sources[0])
+		if err := s.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

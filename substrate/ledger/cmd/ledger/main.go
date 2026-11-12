@@ -2,7 +2,8 @@
 //
 //	ledger ingest-inferencex -rows R -partition P [-revision REV] DIR
 //	    Generate units/inferencex.jsonl.gz, reports/inferencex.yaml, legacy-map.yaml and
-//	    legacy-points.jsonl.gz in DIR from the rows export.sql printed.
+//	    legacy-points.jsonl.gz in DIR from the rows export.sql printed and from the records
+//	    sources.yaml pins as supplements, which it fetches from the source's API.
 //	ledger check [-release] DIR
 //	    Load and check every committed ledger file (D3, D4, D6). With -release, also require
 //	    the three published lists a release carries, the fit and anchor lists nonempty.
@@ -26,6 +27,13 @@
 //	    List the units a candidate job predicts: every unit not on the published lists.
 //	ledger measured-inferencex -rows R -out FILE LEDGER
 //	    Write each InferenceX unit's measured values and lane, for the seed-holding jobs.
+//	ledger supplement-records -out FILE [-id ID] LEDGER
+//	    Fetch the InferenceX records sources.yaml pins as supplements, refuse any whose content
+//	    differs from its pin, and write them as a JSON list, exactly as the source served them.
+//	    The file is an input for a run, never a committed file (X12).
+//	ledger pin-supplement -url U -ids A,B,...
+//	    Print the sources.yaml pins (record id and content SHA-256) of those records, for a
+//	    ledger owner who adds a supplement.
 //	ledger aggregate -job J -role R -predictions P -candidate SHA -measured M -out FILE LEDGER  (seed-holding)
 //	    Reduce a candidate's predictions on the units of role R to aggregates (D7).
 //
@@ -48,6 +56,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -69,7 +78,7 @@ func (u usageError) Error() string { return u.msg }
 
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
+		_, _ = fmt.Fprintln(stderr, "usage: ledger <ingest-inferencex|supplement-records|pin-supplement|check|check-generated|check-base|generate-aliases|scan-roles|lint-workflows|release|join|check-report|candidate-units|measured-inferencex|aggregate|method-error> ...")
 		return 2
 	}
 	cmds := map[string]func([]string, io.Writer) error{
@@ -85,6 +94,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		"check-report":        cmdCheckReport,
 		"candidate-units":     cmdCandidateUnits,
 		"measured-inferencex": cmdMeasuredInferenceX,
+		"supplement-records":  cmdSupplementRecords,
+		"pin-supplement":      cmdPinSupplement,
 		"aggregate":           cmdAggregate,
 		"method-error":        cmdMethodError,
 	}
@@ -117,6 +128,22 @@ func parse(fs *flag.FlagSet, args []string, nargs int, usage string) error {
 	return nil
 }
 
+// fetcher reads the API of a supplement. Tests replace it.
+var fetcher = inferencex.HTTPFetcher()
+
+// supplements fetches and checks every supplement the source pins.
+func supplements(src *ledger.Source) ([]*inferencex.SupplementData, error) {
+	var out []*inferencex.SupplementData
+	for _, s := range src.Supplements {
+		d, err := inferencex.FetchSupplement(s, fetcher)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
 // generate runs the InferenceX ingest and returns each generated file by its path under the
 // ledger directory.
 func generate(rowsPath, partitionPath, dir string) (map[string][]byte, *inferencex.Report, error) {
@@ -137,7 +164,15 @@ func generate(rowsPath, partitionPath, dir string) (map[string][]byte, *inferenc
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", rowsPath, err)
 	}
-	units, rep, err := inferencex.Ingest(rows, src.Revision.Ref, hex.EncodeToString(sum[:]))
+	supps, err := supplements(src)
+	if err != nil {
+		return nil, nil, err
+	}
+	var sr []inferencex.SupplementRows
+	for _, d := range supps {
+		sr = append(sr, inferencex.SupplementRows{ID: d.ID, Rows: d.Rows})
+	}
+	units, rep, err := inferencex.IngestWithSupplements(rows, sr, src.Revision.Ref, hex.EncodeToString(sum[:]))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -612,6 +647,13 @@ func cmdMeasuredInferenceX(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	supps, err := supplements(l.Sources.Lookup(inferencex.SourceID))
+	if err != nil {
+		return err
+	}
+	for _, d := range supps {
+		rows = append(rows, d.Rows...)
+	}
 	m, err := inferencex.MeasuredValues(rows, l.Units[inferencex.SourceID])
 	if err != nil {
 		return err
@@ -624,6 +666,90 @@ func cmdMeasuredInferenceX(args []string, stdout io.Writer) error {
 		return err
 	}
 	_, _ = fmt.Fprintf(stdout, "measured values for %d units\n", len(m.Values))
+	return nil
+}
+
+func cmdSupplementRecords(args []string, stdout io.Writer) error {
+	fs := flags("supplement-records")
+	out := fs.String("out", "", "file to write")
+	id := fs.String("id", "", "one supplement; all when empty")
+	if err := parse(fs, args, 1, "supplement-records -out FILE [-id ID] LEDGER"); err != nil {
+		return err
+	}
+	if *out == "" {
+		return usageError{"-out is required"}
+	}
+	sources, err := ledger.LoadSources(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	src := sources.Lookup(inferencex.SourceID)
+	if src == nil {
+		return fmt.Errorf("%s names no %q source", ledger.FileSources, inferencex.SourceID)
+	}
+	pick := *src
+	pick.Supplements = nil
+	for _, s := range src.Supplements {
+		if *id == "" || s.ID == *id {
+			pick.Supplements = append(pick.Supplements, s)
+		}
+	}
+	if len(pick.Supplements) == 0 {
+		return fmt.Errorf("no supplement %q in %s", *id, ledger.FileSources)
+	}
+	supps, err := supplements(&pick)
+	if err != nil {
+		return err
+	}
+	var all []json.RawMessage
+	for _, d := range supps {
+		all = append(all, d.Records...)
+	}
+	b, err := json.Marshal(all)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*out, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(stdout, "%d supplement records, each equal to its pin\n", len(all))
+	return nil
+}
+
+func cmdPinSupplement(args []string, stdout io.Writer) error {
+	fs := flags("pin-supplement")
+	url := fs.String("url", "", "the API URL that serves the records")
+	idList := fs.String("ids", "", "record ids, comma separated; a-b is a range")
+	if err := parse(fs, args, 0, "pin-supplement -url U -ids A,B,A-B"); err != nil {
+		return err
+	}
+	var ids []int64
+	for _, part := range strings.Split(*idList, ",") {
+		lo, hi, isRange := strings.Cut(strings.TrimSpace(part), "-")
+		a, err := strconv.ParseInt(lo, 10, 64)
+		if err != nil {
+			return usageError{fmt.Sprintf("-ids: %q is not a record id", part)}
+		}
+		b := a
+		if isRange {
+			if b, err = strconv.ParseInt(hi, 10, 64); err != nil || b < a {
+				return usageError{fmt.Sprintf("-ids: %q is not a range", part)}
+			}
+		}
+		for id := a; id <= b; id++ {
+			ids = append(ids, id)
+		}
+	}
+	if *url == "" || len(ids) == 0 {
+		return usageError{"-url and -ids are required"}
+	}
+	pins, err := inferencex.PinSupplement(*url, ids, fetcher)
+	if err != nil {
+		return err
+	}
+	for _, p := range pins {
+		_, _ = fmt.Fprintf(stdout, "- {id: %d, sha256: %s}\n", p.ID, p.SHA256)
+	}
 	return nil
 }
 

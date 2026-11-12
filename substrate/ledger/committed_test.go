@@ -2,6 +2,7 @@ package ledger_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -100,6 +101,39 @@ func TestExtractorPinEqualsTheLedgerEntry(t *testing.T) {
 	} {
 		if pair[0] != pair[1] {
 			t.Errorf("%s: the extractor's pin file has %v, sources.yaml has %v", name, pair[0], pair[1])
+		}
+	}
+}
+
+// Every record a supplement pins is in the committed unit list, so the list the dashboard and
+// the jobs read holds a unit for it with the canonical role key. A pin added to sources.yaml
+// without regenerating the list fails here, with no network.
+func TestEverySupplementRecordHasAUnit(t *testing.T) {
+	l, err := ledger.Load("../catalog/ledger", map[string]ledger.RoleKeyFunc{inferencex.SourceID: inferencex.RoleKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := l.Sources.Lookup(inferencex.SourceID)
+	if src == nil || len(src.Supplements) == 0 {
+		t.Fatal("the InferenceX source pins no supplement (X22)")
+	}
+	has := map[string]bool{}
+	for _, u := range l.Units[inferencex.SourceID] {
+		for _, m := range u.Measurements {
+			has[m.Record] = true
+			for _, d := range m.Duplicates {
+				has[d] = true
+			}
+			for _, d := range m.Merged {
+				has[d.Record] = true
+			}
+		}
+	}
+	for _, s := range src.Supplements {
+		for _, r := range s.Records {
+			if !has[fmt.Sprint(r.ID)] {
+				t.Errorf("supplement %s pins record %d, but the unit list holds no unit for it; regenerate it with ledger ingest-inferencex", s.ID, r.ID)
+			}
 		}
 	}
 }
