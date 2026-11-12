@@ -146,7 +146,7 @@ by construction.
 The kernel states the links; it never sees other transfers. How a shared link's bandwidth
 is divided is the simulator's to decide, and the schema does not prescribe it.
 
-Package `kernel/kerneltest` checks the law against any implementation, the way
+Package `contracts/conformance/kerneltest` checks the law against any implementation, the way
 `testing/fstest` checks a file system:
 
 ```go

@@ -20,8 +20,8 @@ import (
 //     <owner>/<repo>#<n>, github.com/<owner>/<repo>/issues/<n>, or, with the repository
 //     known, #<n>.
 //
-// The nightly job resolves each cited issue and fails on a closed one. The merge check
-// fails a pull request whose body closes an issue still cited in the merge tree.
+// The nightly job resolves each cited issue and fails on a closed one. The pull-request
+// check fails a pull request whose body closes an issue still cited in the tree.
 
 // Issue names one issue.
 type Issue struct {

@@ -27,10 +27,10 @@ def ck(label, ok, detail=""):
         FAILURES.append(label)
 
 
-def sweep(model="minimax-m2.5", stated=None, gpu="h200", gpus_per_node=8):
+def sweep(model="minimax-m2.5", stated=None, gpu="h200", gpus_per_node=8, framework="vllm"):
     s = {
-        "scenario": f"{model}-{gpu}-fp8-vllm-tp4.yaml", "model": model, "gpu": gpu,
-        "precision": "fp8", "framework": "vllm",
+        "scenario": f"{model}-{gpu}-fp8-{framework}-tp4.yaml", "model": model, "gpu": gpu,
+        "precision": "fp8", "framework": framework,
         "parallelism": {"tp_size": 4, "pp_size": 1, "attention_dp_size": 1,
                         "moe_ep_size": 1, "moe_tp_size": 4},
     }
@@ -55,6 +55,19 @@ def main() -> int:
        engine(sweep(stated={}), "gpu_memory_utilization") == "0.92")
     ck("a corpus with no stated_config also takes 0.92",
        engine(sweep(), "gpu_memory_utilization") == "0.92")
+    # X19: a default is never written for an engine it does not belong to (a non-vLLM
+    # deployment used to be given vLLM's 0.92).
+    for fw in ("sglang", "trt", "trtllm"):
+        ck(f"an unstated gpu_memory_utilization is left out under {fw}, not vLLM's 0.92",
+           engine(sweep(stated={}, framework=fw), "gpu_memory_utilization") is None)
+        text = emit(sweep(stated={}, framework=fw), {"1024:1024"}, {"1k1k"})
+        ck(f"the {fw} scenario says the value is unstated and not vLLM's",
+           "0.92" not in text and "knows no default for " + fw in text)
+        ck(f"a stated gpu_memory_utilization is still written under {fw}",
+           engine(sweep(stated={"gpu_memory_utilization": 0.8}, framework=fw),
+                  "gpu_memory_utilization") == "0.8")
+    ck("a vLLM scenario records the framework contract that supplies 0.92",
+       "vllm/config/cache.py:103" in emit(sweep(stated={}), {"1024:1024"}, {"1k1k"}))
     ck("a stated block_size is written as stated",
        engine(sweep(stated={"block_size": 128}), "block_size") == "128")
     ck("an unstated block_size follows the rule (16 for a plain model)",

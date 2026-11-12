@@ -41,8 +41,9 @@
 - id: SGL-3
   section: §5
   statement: >-
-    fields.json covers SGLang's ServerArgs and its SGLANG_* environment variables, under the rules
-    of VLM-3. Defaults are resolved as SGLang's own resolution hooks resolve them.
+    The field list covers every configuration field and every environment variable the pinned SGLang
+    release reads, under the rules of VLM-3. Defaults are resolved as SGLang's own resolution hooks
+    resolve them.
   scope:
   - blis-sglang
   checks:

@@ -67,7 +67,7 @@ Layout is
 `data/<org>--<model>/<system>/<framework>/<version>/<parallelism>/{manifest.json,fpm/,measurements/}`.
 The per-leaf measurement Parquets under `measurements/` are what this registry validates
 against; the three configs the HuggingFace datasets-server exposes
-(`catalog/configurations`, `fpm/files`, `measurements/files`, 326 rows in total) are
+(the `catalog`, `fpm` and `measurements` file-index configs, 326 rows in total) are
 **file indexes, not measurements** — a reader who stops at those will conclude the dataset
 is three hundred rows.
 

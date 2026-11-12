@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Fetch the InferenceX CollectiveX run bodies that committed entries cite and the API still
-serves, and refuse unless each is byte-for-byte the body pinned below.
+serves, and refuse unless the points of each are the points pinned below.
 
     python -I scripts/fetch_cited_inferencex.py <out dir>     # then COLLECTIVEX_DATA=<out dir>
 
 The bodies are third-party data and are never committed (X12, D6: the ledger's InferenceX
-licence has no sign-off); CI fetches them and checks their sha256 instead. Each is saved as
+licence has no sign-off); CI fetches them and checks a digest of their points instead
+(collectivex_points.py). The digest covers what the fit reads and not the bytes: on 2026-11-07
+the API began serving all fourteen bodies with different bytes and the same points, and a pin
+on bytes failed the gate for a change that moved no value. Each is saved as
 cx_run_<id>.body, the name the writers read.
 
 WHICH BODIES. fit_deepep_collectivex.py's GB200 / H200-EP16 entries cite run 1793303708 by
-its full sha256 and name the runs that publish the same points byte-identically; the writer
-re-derives that list, so all of them must be present. The list and hashes are those served
-on 2026-11-05; 1793303708's matches the hash the entries cite.
+the sha256 of its points and name the runs that publish the same points; the writer
+re-derives that list, so all of them must be present. The list is the one served on
+2026-11-05. The digests were taken on 2026-11-09, and the fit gives the same values from the
+bodies of both dates.
 
 WHICH ARE NOT HERE. fit_deepep_ll_graph.py and fit_host_link.py cite runs the API no longer
 serves (33356406487, 36334392363, 36367074689, 36402856875, and the swap_blocks bodies sha256
@@ -28,31 +32,36 @@ the test with an owning issue.
 
 from __future__ import annotations
 
-import hashlib
+import importlib.util
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+_spec = importlib.util.spec_from_file_location(
+    "collectivex_points", Path(__file__).resolve().parent / "collectivex_points.py")
+cpts = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(cpts)
+
 URL = "https://inferencex.semianalysis.com/api/v1/collectivex/runs/{run}?version=1"
 
-# run id -> sha256 of its body, as served on 2026-11-05.
+# run id -> sha256 of the points of its body (collectivex_points.digest), as served on 2026-11-09.
 BODIES = {
-    "1793201996": "3a250c0d2152aae95e3de7db1eb469f69258f51a6c454133f59fb0799999081b",
-    "1793209284": "43f204c13aaafb5a5c0f59088db1d085799b018fda3b14544d63b4b4aae320e6",
-    "1793224262": "c6153f36e9629902c66d91923a3ae9b316c715e9f94b81c9b07688ce9d8d4ed5",
-    "1793237711": "435c7b6824b60f7cfe8e2ba4fa399670167448325a0d022752c8c59047db831b",
-    "1793244384": "57317e1fdf671f7afb43a9fb30d920f004b32f487a4c458371acd54b7b9867c5",
-    "1793264366": "fab9b59c2e25bc4485ef9dd696b3874952ed1962e43e964ed65b24d2f6174756",
-    "1793264384": "7f0cbe74f38ab4d35dee3210427b4d7cbb44e98973d32e992bfdac7055c9ccd1",
-    "1793264397": "66548896e6e94ecc1cb7b80b3dabea6d191c3cbfd6e5c26738a234677ff5143e",
-    "1793270219": "65909914ee2d63ed6b742b5c013020716d9582454d8d9682da0560b4f54befa5",
-    "1793270233": "33d1a3b2d0bdd0d04358c49498e4c2b4e1a317926d76b85a3e56fd54de743d39",
-    "1793295596": "1238ecd8904124e5e00af7fed58bcd68aa370e8945d3beb8a3988aedefad7c0f",
-    "1793295612": "2d1d543bcfe53dfe14bc6cee9d4298f60138d30ed329f26fd02f82ebda4f3287",
-    "1793300196": "b688efab93cad5f9e3f968e80428cb726cd9ef5cb54de4cc412d710a3b841cdd",
-    "1793303708": "78d991b356a157fbe50b59f62724331fd69a68b7e5c38610a2dbb305f36454af",
+    "1793201996": "524ad4a5c24a6fc496ff180d8709070f8b668a4c60db3725c621be79277ce757",
+    "1793209284": "3493f5b1c214a3c5a92f820e8086213f7cc23538ef73ad375e33cbea22449c17",
+    "1793224262": "5bd19a8a0f0e37d1b9fea8a80b46238d9003f3278a196ece24686fd62549460a",
+    "1793237711": "648cccba78aec6337a9e60dfd7bf523e1ba89b8e53e56911e1195758995091eb",
+    "1793244384": "f6ff7a5ba7ec095988fb033d7af1c34a23ce7973b58b2c7b13d20773b3f2a5e3",
+    "1793264366": "f6ff7a5ba7ec095988fb033d7af1c34a23ce7973b58b2c7b13d20773b3f2a5e3",
+    "1793264384": "f6ff7a5ba7ec095988fb033d7af1c34a23ce7973b58b2c7b13d20773b3f2a5e3",
+    "1793264397": "f6ff7a5ba7ec095988fb033d7af1c34a23ce7973b58b2c7b13d20773b3f2a5e3",
+    "1793270219": "53f25c667cca54d5a93c9c7c4982e60e84d27e034d6e0c7819fc63584421514a",
+    "1793270233": "762780b8ae07e6bf7374ef762d20b5c0047a70ed2c06532495685179baf33232",
+    "1793295596": "38b396d583c7036b2b25e93c4cbbfb1f4c753a8b5e2fa7ddb1716292c22be0a6",
+    "1793295612": "eebb7982403a8056cc53cdaef4a82817a2382ee457d56f99fd49d16fc530002a",
+    "1793300196": "eebb7982403a8056cc53cdaef4a82817a2382ee457d56f99fd49d16fc530002a",
+    "1793303708": "eebb7982403a8056cc53cdaef4a82817a2382ee457d56f99fd49d16fc530002a",
 }
 ATTEMPTS = 4
 
@@ -83,12 +92,12 @@ def main(argv: list[str]) -> int:
     bad = []
     for run, want in sorted(BODIES.items()):
         body = fetch(run)
-        got = hashlib.sha256(body).hexdigest()
+        got = cpts.digest_bytes(body)
         if got != want:
-            bad.append(f"run {run}: body sha256 {got}, not the pinned {want}")
+            bad.append(f"run {run}: points sha256 {got}, not the pinned {want}")
             continue
         (out / f"cx_run_{run}.body").write_bytes(body)
-        print(f"run {run}: {len(body)} bytes, sha256 {got[:12]} ok")
+        print(f"run {run}: {len(body)} bytes, points sha256 {got[:12]} ok")
     if bad:
         print("\n".join(bad), file=sys.stderr)
         return 1

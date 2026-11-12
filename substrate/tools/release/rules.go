@@ -198,7 +198,7 @@ func CheckInvariants(reg *invariants.Registry, repo string, passed map[string]bo
 				continue
 			}
 			owns = true
-			if c.Status == invariants.StatusCI && c.Runs != invariants.RunsSettings {
+			if c.Status == invariants.StatusCI && c.Runs != invariants.RunsPractice {
 				ok, seen := passed[c.Test]
 				switch {
 				case !seen:
@@ -208,9 +208,23 @@ func CheckInvariants(reg *invariants.Registry, repo string, passed map[string]bo
 				}
 			}
 		}
+		// The gate reads automated checks only: a maintainer practice has no check run to wait
+		// for (design §13.1), so an invariant is held to its target by the status its automated
+		// checks give, and one with none is not held.
+		auto, autoCI := 0, 0
+		for _, c := range inv.Checks {
+			if c.Runs == invariants.RunsPractice {
+				continue
+			}
+			auto++
+			if c.Status == invariants.StatusCI {
+				autoCI++
+			}
+		}
+		got := invariants.StatusOf(autoCI, auto)
 		reached := inv.Target.Milestone != nil && (*inv.Target.Milestone < milestone || milestoneRelease && *inv.Target.Milestone == milestone)
-		if owns && reached && inv.Status != inv.Target.Status {
-			bad = append(bad, fmt.Sprintf("%s: milestone M%d is reached and the invariant is %s, not its target %s (design §13.3)", inv.ID, *inv.Target.Milestone, inv.Status, inv.Target.Status))
+		if owns && auto > 0 && reached && got != inv.Target.Status {
+			bad = append(bad, fmt.Sprintf("%s: milestone M%d is reached and its automated checks are %s, not the target %s (design §13.3)", inv.ID, *inv.Target.Milestone, got, inv.Target.Status))
 		}
 	}
 	sort.Strings(bad)
@@ -236,7 +250,7 @@ type Bug struct {
 
 // CheckBugs refuses a release while an open invariant bug lives in the repository or in a
 // repository whose code it ships, unless the release fixes only that bug (fixes lists the
-// issues this release closes, and it closes nothing else) or a release owner records a
+// issues this release closes, and it closes nothing else) or the person cutting the release records a
 // waiver (waived lists issues waived in the release notes).
 func CheckBugs(bugs []Bug, fixes []int, waived []int, security bool) []string {
 	if security {

@@ -5,7 +5,7 @@ deployment stating the choices made against it. This guide writes one of each fo
 node, then extends them to a disaggregated deployment across four.</p>
 
 Every example on this page is a file in
-[`docs/examples/`](https://github.com/inference-sim/blis-substrate/tree/main/docs/contracts/examples),
+[`docs/contracts/examples/`](https://github.com/inference-sim/blis-substrate/tree/main/docs/contracts/examples),
 and the test suite validates each one.
 
 ## A scenario

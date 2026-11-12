@@ -85,10 +85,7 @@ func renderStatusTable(reg *invariants.Registry) string {
 	b.WriteString("<!-- Generated from blis-substrate/contracts/invariants by go run ./tools/invariants render. Do not edit. -->\n")
 	b.WriteString("<div class=\"tbl\"><table>\n<thead><tr><th>Invariant</th><th>Statement, first sentence</th><th>Status</th><th>In CI by</th><th>Note</th></tr></thead>\n<tbody>\n")
 	for _, inv := range reg.Invariants {
-		by := "now"
-		if inv.Target.Milestone != nil {
-			by = fmt.Sprintf("M%d", *inv.Target.Milestone)
-		}
+		by := invariants.MilestoneLabel(inv.Target.Milestone)
 		fmt.Fprintf(&b, "<tr><td><span class=\"inv\">%s</span></td><td>%s</td><td><code>%s</code></td><td>%s</td><td>%s</td></tr>\n",
 			inv.ID, html.EscapeString(firstSentence(inv.Statement)), inv.Status, by, html.EscapeString(inv.Note))
 	}
@@ -146,7 +143,7 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 		}
 		target := "target reached"
 		if inv.Target.Milestone != nil {
-			target = fmt.Sprintf("target %s by M%d", inv.Target.Status, *inv.Target.Milestone)
+			target = fmt.Sprintf("target %s by %s", inv.Target.Status, invariants.MilestoneLabel(inv.Target.Milestone))
 		}
 		fmt.Fprintf(&b, "- **%s** (%s; %s) %s\n", inv.ID, inv.Status, target, firstSentence(inv.Statement))
 		for _, c := range inv.Checks {
@@ -160,17 +157,63 @@ func renderAgents(reg *invariants.Registry, repo string) string {
 			b.WriteString(line + "\n")
 		}
 	}
+	b.WriteString(renderPractices(reg, repo))
+	b.WriteString(renderGuidance(reg, repo))
 	qs := reg.Questions(repo)
 	if len(qs) > 0 {
 		b.WriteString("\n### Review questions\n\n")
-		b.WriteString("CI adds each question below to a pull request that changes one of its paths, as a\n")
-		b.WriteString("required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent\n")
-		b.WriteString("may propose an answer but never gives one (design §13.7).\n\n")
+		b.WriteString("CI lists each question below in the description of a pull request that changes one of\n")
+		b.WriteString("its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or\n")
+		b.WriteString("no in a review comment, with the files and lines that support the answer. No check waits\n")
+		b.WriteString("on a question.\n\n")
 		for _, q := range qs {
-			fmt.Fprintf(&b, "- **%s** %s Reviewer: %s. When: %s. %s\n", q.ID, q.Question, q.Reviewer, q.When, triggerText(q.ID, q.Trigger))
+			fmt.Fprintf(&b, "- **%s** %s Expertise: %s. Applies when: %s. %s\n", q.ID, q.Question, q.Expertise, q.When, triggerText(q.ID, q.AppliesWhen))
 		}
 	}
 	b.WriteString(endMarker + "\n")
+	return b.String()
+}
+
+// renderPractices writes the maintainer checklist for one repository: one item for each
+// practice check that concerns it (design §4.2). No program checks these. A maintainer with
+// write access keeps each one and confirms it when the repository's settings change.
+func renderPractices(reg *invariants.Registry, repo string) string {
+	var items []string
+	for _, inv := range reg.Invariants {
+		for _, c := range inv.Checks {
+			if c.Repo == repo && c.Runs == invariants.RunsPractice {
+				items = append(items, fmt.Sprintf("- [ ] **%s** %s\n", inv.ID, c.Check))
+			}
+		}
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n### Maintainer practices\n\n")
+	b.WriteString("No program checks these. A maintainer with write access keeps each one for this\n")
+	b.WriteString("repository as a whole and confirms it when the repository's settings change (design §4.2).\n\n")
+	for _, it := range items {
+		b.WriteString(it)
+	}
+	return b.String()
+}
+
+// renderGuidance writes the agent guidance for one repository: the part of each rule that
+// shapes how an agent writes or reviews a change and that no program can decide.
+func renderGuidance(reg *invariants.Registry, repo string) string {
+	var b strings.Builder
+	for _, inv := range reg.Invariants {
+		if inv.Guidance == "" || !applies(inv, repo) {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("\n### Agent guidance\n\n")
+			b.WriteString("Follow these on every change you write or review. They are not checked by a program\n")
+			b.WriteString("(design §4.2).\n\n")
+		}
+		fmt.Fprintf(&b, "- **%s** %s\n", inv.ID, strings.TrimSpace(inv.Guidance))
+	}
 	return b.String()
 }
 
@@ -230,12 +273,6 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 ## Not in this pull request
 
 <!-- What remains, and why. -->
-
-## Review questions
-
-<!-- CI adds a required checklist item here for each review question whose paths this pull
-request changes (design §13.2). A reviewer with write access answers each one: tick it, and write "yes" or
-"no" with a one-line reason. -->
 
 ## Checklist
 

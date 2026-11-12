@@ -108,9 +108,9 @@
   - question: >-
       Does this new scenario field describe something the real system would observe, rather than a
       setting the upstream does not have?
-    reviewer: contracts expertise
+    expertise: contracts expertise
     when: a key is added to the environment list
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -118,9 +118,9 @@
   - question: >-
       Does this router flag only change how a deployed router is served or observed, with no effect
       on any routing, admission or flow-control decision?
-    reviewer: router fork expertise
+    expertise: router fork expertise
     when: a flag is added to the fork's list of flags that only matter in a cluster
-    trigger:
+    applies_when:
       repos:
       - llm-d-router
       paths:
@@ -180,9 +180,9 @@
   - question: >-
       Does this change hide one engine's policy (a default, threshold, backend choice or padding rule)
       behind a neutral name? Would the other engine need the same edit?
-    reviewer: expertise in the changed directory
+    expertise: expertise in the changed directory
     when: any non-test change under catalog/, registry/ or kernel/
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -255,9 +255,9 @@
   - question: >-
       Is engine behaviour, such as scheduling, admission or KV accounting, being added to the simulator
       instead of an engine repository?
-    reviewer: inference-sim expertise
+    expertise: inference-sim expertise
     when: a change to the simulator's request-lifecycle or capacity code
-    trigger:
+    applies_when:
       repos:
       - inference-sim
       paths:
@@ -334,9 +334,9 @@
   - question: >-
       Does this change to how the router is hosted keep upstream behaviour on paths the recorded streams
       do not cover, such as errors, timeouts and cancellation?
-    reviewer: router fork expertise
+    expertise: router fork expertise
     when: a fork pull request converts a call site or updates the lint baseline
-    trigger:
+    applies_when:
       repos:
       - llm-d-router
       paths:
@@ -410,9 +410,9 @@
       Does this new replacement stand in only for the GPU, clock, transport, environment settings,
       the hardware platform or an outside service, and not for a decision? If it reproduces a decision,
       is it declared as a transcription?
-    reviewer: engine repository expertise
+    expertise: engine repository expertise
     when: the manifest changes
-    trigger:
+    applies_when:
       repos:
       - blis-vllm
       - blis-sglang
@@ -427,12 +427,12 @@
   section: §4
   title: Same inputs, same output.
   statement: >-
-    For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry
-    content hashes, the simulator's standard output is identical byte for byte across runs, thread
-    counts and supported platforms. The data source (embedded or path) is recorded in the Result,
-    but is left out of the output the byte gate compares. Simulated time is passed in as a number,
-    and no code reads the system clock. Randomness comes from named substreams seeded from the scenario
-    (DEV-6).
+    For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and
+    coefficient registry content hashes, the simulator's standard output is identical byte for byte
+    across runs, thread counts and supported platforms. The data source (embedded or path) is
+    recorded in the Result, but is left out of the output the byte gate compares. Simulated time is
+    passed in as a number, and no code reads the system clock. Randomness comes from named
+    substreams seeded from the scenario (DEV-6).
   scope:
   - blis-sglang
   - blis-substrate
@@ -504,10 +504,10 @@
     status: new
   review:
   - question: Could this floating-point reduction give a different result on another platform?
-    reviewer: expertise in the changed repository
+    expertise: expertise in the changed repository
     when: >-
       a parallel or floating-point reduction is added, or the cross-platform check fails
-    trigger:
+    applies_when:
       manual: true
   status: partial
   target:
@@ -517,12 +517,12 @@
   section: §4
   title: One owner for each fact; dependencies point one way.
   statement: >-
-    Contracts live in blis-substrate/contracts. A repository never imports one above it in Figure
-    1. A generated file is written only by its generator. Every copy of a fact is generated from its
-    owner or checked against it. The dashboard's scoring harness is the one thing a lower repository
-    uses from a repository above it: it runs the harness as a pinned, released tool, never imports
-    its code. A lower repository's candidate job may also build inference-sim through stack CI to
-    run that harness (§13.5).
+    Contracts live in blis-substrate/contracts. A repository never imports one above it in Figure 1. A
+    generated file is written only by its generator. Every copy of a fact is generated from its owner or
+    checked against it. The dashboard's scoring harness is the one thing a lower repository uses from a
+    repository above it: it runs the harness at a pinned release or commit, never imports its code. A
+    lower repository's candidate job may also build inference-sim through stack CI to run that harness
+    (§13.5).
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -630,10 +630,10 @@
     status: new
   review:
   - question: Does this change give a second home to a fact another repository owns?
-    reviewer: expertise in the changed repository
+    expertise: expertise in the changed repository
     when: >-
       a pull request adds a literal list or table, or a constant that cites another repository
-    trigger:
+    applies_when:
       manual: true
   status: partial
   target:
@@ -734,9 +734,9 @@
   review:
   - question: >-
       Was this fitting method, gate or threshold chosen after seeing evaluation results?
-    reviewer: expertise in the repository landing the change
+    expertise: expertise in the repository landing the change
     when: a pull request changes a fitting method, gate or threshold
-    trigger:
+    applies_when:
       repos:
       - blis-substrate
       paths:
@@ -745,7 +745,7 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
 - id: X9
   section: §4
   title: The upstream feature surface is fully accounted for.
@@ -818,9 +818,9 @@
   - question: >-
       Is this "out of scope" reason one of the three allowed, with a citation that supports it, and
       does the llm-d stack never use the feature on the hardware BLIS targets?
-    reviewer: engine repository expertise
+    expertise: engine repository expertise
     when: an item is marked out of scope
-    trigger:
+    applies_when:
       repos:
       - blis-vllm
       - blis-sglang
@@ -1313,55 +1313,48 @@
   checks:
   - repo: blis-substrate
     check: >-
-      A nightly job in blis-substrate that lists the previous day's merges in every repository and
-      fails if any merged head has no successful required run
-    runs: nightly
-    status: new
-    test: 'nightly.yml: prcheck audit-merges'
-    known_bad: 'tools/prcheck: TestAuditMerges'
-  - repo: blis-substrate
-    check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
-    status: new
+    runs: practice
+    status: ci
   - repo: blis-vllm
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: ci
-    test: branch protection on main
   - repo: blis-sglang
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: new
   - repo: llm-d-router
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
-    status: new
+    runs: practice
+    status: ci
   - repo: inference-sim
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: ci
-    test: branch protection on main
   - repo: blis-config-search
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: new
   - repo: accuracy-dashboard
     check: >-
       The protected branch requires the repository's named checks, including formatting and lint
-    runs: settings
+    runs: practice
     status: new
   review: null
   status: partial
   target:
     status: ci
     milestone: 1
-  note: checks are required only in blis-vllm, blis-registry and inference-sim
+  note: >-
+    checks are required in blis-substrate, blis-vllm, inference-sim (by a ruleset on the default branch) and
+    the router fork's llm-d-r branch; accuracy-dashboard requires a pull request but no checks, and
+    blis-config-search and blis-sglang require none
 - id: X18
   section: §4.1
   statement: >-
@@ -1470,13 +1463,14 @@
 - id: X20
   section: §4.1
   statement: >-
-    Every commit written for BLIS is signed. Every commit that contains work by a person or an agent
-    carries a DCO Signed-off-by line from the person who takes responsibility for it; an agent never
-    signs off, since only a person can certify the DCO. A commit written with an agent's help says
-    so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool. Release-bot
-    commits are signed with the bot's identity and carry no sign-off. In the router fork, this applies
-    to every commit not reachable from the upstream tag being merged; upstream history is kept as
-    upstream wrote it.
+    A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no
+    Co-authored-by line naming the tool. An agent never signs off in its own name, since only a person
+    can certify the DCO. Signing a commit and adding a DCO Signed-off-by line are encouraged for the
+    person who takes responsibility for it, and an agent that pushes commits for a person, on that
+    person’s instruction and with that person’s key, may sign and sign off in that person’s name; no
+    check requires either. Release-bot commits are signed with the bot's identity and carry no sign-off.
+    In the router fork, this applies to every commit not reachable from the upstream tag being merged;
+    upstream history is kept as upstream wrote it.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1489,7 +1483,7 @@
   - repo: blis-substrate
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
     test: 'shared-pr-checks.yml: prcheck commits'
@@ -1497,50 +1491,92 @@
   - repo: blis-vllm
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
-    test: .github/workflows/ci-signed-commits.yaml
   - repo: inference-sim
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
       A commit-policy check, required on every pull request in every repository, over the commits
-      the pull request adds
+      the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool
     runs: pull_request
+    status: new
+  - repo: blis-substrate
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: blis-vllm
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: blis-sglang
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: llm-d-router
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: inference-sim
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: blis-config-search
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
+    status: new
+  - repo: accuracy-dashboard
+    check: >-
+      The person who takes responsibility for a commit signs it and signs it off, or instructs an
+      agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+    runs: practice
     status: new
   review: null
   status: new
   target:
     status: ci
-    milestone: 4
+    milestone: 5
   note: >-
     the router fork has a signature and DCO check, but it is not required and did not run on its pull
     requests #3 and #4; no repository checks Assisted-by or Co-authored-by lines; the check runs in
-    every repository from M1, and signing and sign-off wait for the closing step after M4 (the
-    release plan, "Deferring signing and sign-off")
+    every repository from M1. Signing and sign-off are a maintainer practice, encouraged and not
+    checked (the release plan, "Signing and sign-off")
+
 - id: X21
   section: §4.1
   statement: >-
@@ -1670,13 +1706,12 @@
 - id: X22
   section: §4.1
   statement: >-
-    Every verdict (a CI result, an agent's review, or a person's answer to a review question) names
-    the git tree hash of the exact tree it judged. A CI verdict is on the head tree of the pull
-    request, and is run again when merging changes a path it covers; an agent's or person's verdict
-    is on the head tree, and is requested again when merging changes a path it covers. BLIS
-    repositories do not use a merge queue. Every job that scores, fits or checks data states the
-    minimum number of items it must process, and fails below it. No step in a required job ignores
-    an exit code.
+    Every verdict (a CI result or the review agent's review, including its answers to review
+    questions) names the git tree hash of the exact tree it judged. A CI verdict is on the head tree
+    of the pull request. The review agent’s verdict is on the head tree, and is given again after a
+    push. BLIS repositories do not use a merge queue. Every job that scores, fits or checks data
+    states the minimum number of items it must process, and fails below it. No step in a required job
+    ignores an exit code.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1688,46 +1723,44 @@
   checks:
   - repo: blis-substrate
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
-    test: 'shared-merge-check.yml: prcheck merge'
-    known_bad: 'tools/prcheck: TestMergeCheck'
   - repo: blis-vllm
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: inference-sim
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
-      The shared merge check in blis-substrate/.github/workflows, called by every repository, which
-      compares verdict tree hashes
+      The shared pull-request check in blis-substrate/.github/workflows, called by every repository,
+      which records each review-agent answer with the head tree
     runs: pull_request
     status: new
   - repo: blis-substrate
@@ -1794,13 +1827,22 @@
   target:
     status: ci
     milestone: 4
-  note: some jobs fail on zero items; no verdict names its tree; the release plan schedules the check that refuses an answer edited after the latest write-access approval after M4 (Hardening beyond M4), and until then the pull-request check records each answer with the head tree
+  note: >-
+    some jobs fail on zero items; no verdict names its tree; the pull-request check no longer
+    records review answers, since a review question is guidance for the review agent (design
+    v51), so the check that records the review agent's answers with the head tree is not yet
+    built
 - id: X23
   section: §4.1
   statement: >-
-    A version is written in one place. stack.json, each repository's go.mod, contracts/toolchain,
-    and each application's or harness pin file are the only files that state a version; every other
-    file that mentions one (Dockerfiles, workflow files, documentation) is generated from them.
+    A version is written in one place. stack.json, each repository's go.mod, contracts/toolchain, and
+    each application's or harness pin file are the only files that state a version; every other file
+    that mentions one (Dockerfiles, workflow files, documentation) is generated from them.
+    Documentation does not repeat a version those files state: it says “the pinned release” and links
+    to the file that states it. A page names an upstream release only when the page is about that
+    release, or where a citation needs it (vllm/<path>:<lines>@<commit8>), because a line number means
+    nothing without its release. A workflow reads the Go version from go.mod. A draft specification
+    under specs/ is a record of what was planned and is exempt.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1866,6 +1908,9 @@
     Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue,
     or rejected with a reason. An issue closes only through a commit or pull request that names it,
     or as not planned, by a reviewer with write access, with a reason.
+  guidance: >-
+    Answer each review thread with its commit or its issue, and resolve the thread once the
+    reviewer is satisfied.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -1877,39 +1922,39 @@
   checks:
   - repo: blis-substrate
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
-    test: 'shared-merge-check.yml: prcheck merge'
-    known_bad: 'tools/prcheck: TestMergeCheck'
+    test: 'shared-pr-checks.yml: prcheck threads'
+    known_bad: 'tools/prcheck: TestCheckThreads'
   - repo: blis-vllm
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: blis-sglang
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: llm-d-router
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: inference-sim
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: blis-config-search
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
     check: >-
-      The shared merge check, which refuses a merge while a review thread has no outcome
+      A pull-request check that refuses a review thread with no outcome
     runs: pull_request
     status: new
   - repo: blis-substrate
@@ -2047,7 +2092,23 @@
   statement: >-
     In documentation, every source path, symbol, issue or pull-request reference, and every statement
     that a feature is supported, is either generated (from surface.json, stack.json or the code) or
-    checked against the pinned tree.
+    checked against the pinned tree. A pull request carries the documentation change that its own change
+    needs: a path it removes or renames, a behaviour it changes, a setting it adds or drops. A
+    repository that adopts the check clears the findings it already has in the pull request that first
+    requires the check, so the check is green from then on and every later finding is a pull request’s
+    own. No finding is hidden from the check by a list of known ones. Documentation has two kinds of
+    reader and is written for each. A person needs the concept: the design, the invariants, the process
+    and why they are so, with no version, count or other detail that changes without the idea changing.
+    An agent needs pointers: where a rule, a file or a command lives, so it can change the code
+    correctly. Each page is for one of them, says which, and is no longer than that reader needs. A page
+    for people holds no path, symbol, version or count, so there is nothing in it for a check to fail
+    on; the reference check reads the pages for agents, and skips records such as specs/ and RFCs, which
+    say what was true when written. A check that fails a pull request for something it did not touch, or
+    for a detail that was never needed, is a defect in the check, and the fix is to narrow the check or
+    delete the detail, never to add a list of known findings. Documentation is short, it says where a
+    rule, a file or a command lives and links to it, and it leaves out anything that can drift without a
+    check noticing, such as a version, a count, a line number or a list of what is supported at the
+    moment of writing.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -2165,33 +2226,33 @@
     runs: nightly
     status: new
   - repo: blis-substrate
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
-    test: 'shared-merge-check.yml: prcheck issues -closes'
+    test: 'shared-pr-checks.yml: prcheck issues -closes'
     known_bad: 'tools/prcheck: TestCitedIssues'
   - repo: blis-vllm
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: blis-sglang
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: llm-d-router
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: inference-sim
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: blis-config-search
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: accuracy-dashboard
-    check: A merge check that refuses a change closing an issue still cited elsewhere
+    check: A pull-request check that refuses a change closing an issue still cited elsewhere
     runs: pull_request
     status: new
   - repo: blis-substrate

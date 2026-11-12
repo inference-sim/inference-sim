@@ -74,3 +74,16 @@ def test_two_tables_may_share_a_header_and_a_row():
 def test_rows_in_fenced_code_are_not_checked():
     page = "```\n| A |\n| A |\n```\n"
     assert problems(page) == []
+
+
+def test_the_corruption_of_the_reference_index_is_found():
+    """blis-schemas#96: the reference landing page carried one table row after almost every
+    source line, 29 copies in a 58-line file. The guard must find that exact damage on the real
+    page, and find nothing on the page as it stands."""
+    page = (DOCS / "contracts" / "reference" / "index.md").read_text(encoding="utf-8")
+    assert problems(page) == []
+    row = next(line for line in page.splitlines() if line.startswith("| [Acceptance profiles]"))
+    damaged = "\n".join(line + "\n" + row for line in page.splitlines()) + "\n"
+    found = problems(damaged)
+    assert len(found) >= 10, found
+    assert all(row in f for f in found if f.startswith("repeated")) or any(f.startswith("not a table") for f in found)

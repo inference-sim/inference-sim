@@ -217,3 +217,44 @@ func TestEveryRepositoryHasASection(t *testing.T) {
 		}
 	}
 }
+
+// Every repository's AGENTS.md lists each practice check that concerns it as a maintainer
+// checklist item, and the guidance of every rule that has any (design §4.2, §13.1).
+func TestEveryRepositoryGetsItsPracticesAndGuidance(t *testing.T) {
+	reg, err := invariants.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, repo := range invariants.Repositories {
+		s := renderAgents(reg, repo)
+		for _, inv := range reg.Invariants {
+			for _, c := range inv.Checks {
+				if c.Repo == repo && c.Runs == invariants.RunsPractice {
+					if want := "- [ ] **" + inv.ID + "** "; !strings.Contains(s, want) {
+						t.Errorf("%s: no checklist item %q", repo, want)
+					}
+				}
+			}
+			if inv.Guidance != "" && applies(inv, repo) && !strings.Contains(s, "- **"+inv.ID+"** "+strings.TrimSpace(inv.Guidance)) {
+				t.Errorf("%s: guidance of %s missing", repo, inv.ID)
+			}
+		}
+	}
+}
+
+// A practice appears in the maintainer checklist, and a repository with no practice has no
+// maintainer section.
+func TestAPracticeIsListedInTheMaintainerChecklist(t *testing.T) {
+	reg := &invariants.Registry{Invariants: []invariants.Invariant{{
+		ID: "T-1", Scope: []string{"blis-substrate"}, Status: "new",
+		Checks: []invariants.Check{{Repo: "blis-substrate", Check: "Tags are protected", Runs: invariants.RunsPractice, Status: "ci"}},
+	}}}
+	s := renderAgents(reg, "blis-substrate")
+	if !strings.Contains(s, "### Maintainer practices") || !strings.Contains(s, "- [ ] **T-1** Tags are protected") {
+		t.Errorf("practice not in the checklist:\n%s", s)
+	}
+	reg.Invariants[0].Checks = nil
+	if s := renderAgents(reg, "blis-substrate"); strings.Contains(s, "Maintainer practices") {
+		t.Errorf("empty checklist rendered:\n%s", s)
+	}
+}

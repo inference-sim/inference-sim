@@ -9,9 +9,13 @@ name: ci
 
 on:
   pull_request:
-  # The required check also runs on the merge-queue tree, which is the tree a CI verdict
-  # judges (X22).
-  merge_group:
+    # The full set judges a pull request whose base is main, the pull request that merges. A stacked
+    # layer (any other base) runs ci-light.yml. Retargeting a pull request to main is a change of
+    # its base branch, which GitHub reports as the activity type `edited` (not a default type), so
+    # `edited` is listed: without it the retarget starts no run. ready_for_review is listed so a
+    # draft marked ready is judged too. A new run for the same ref cancels the one in progress.
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
   workflow_dispatch:
@@ -44,7 +48,7 @@ jobs:
           fetch-depth: 0
       - id: filter
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
           # On a push with no usable base, or a manual run, every job runs.
@@ -104,7 +108,7 @@ jobs:
         run: GOBIN="$RUNNER_TEMP/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
       - name: Lint what the change touches
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           set -euo pipefail
           # With no usable base (a manual run, a new branch), lint what the last commit changed.
@@ -328,9 +332,7 @@ jobs:
   # the workflow files, takes the change's file list from git diff base..head (the merge base to
   # the pull request's head), and passes
   # only if every workflow whose paths the change touched has a successful check run on the
-  # pull request's head. In the merge queue (none is enabled today) each of those workflows
-  # also runs, on the merge-queue commit, and the aggregator requires a successful run of each
-  # there whatever the change touches (X17, X22).
+  # pull request's head.
   required:
     name: required
     if: always()
@@ -341,12 +343,12 @@ jobs:
       checks: read
     env:
       GH_TOKEN: ${{ github.token }}
-      GATE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-      GATE_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+      GATE_BASE: ${{ github.event.pull_request.base.sha }}
+      GATE_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - uses: ./.github/actions/go-toolchain
       - env:
@@ -357,16 +359,8 @@ jobs:
           if [ -n "$bad" ]; then echo "failed or cancelled: $bad"; exit 1; fi
           echo "every job that ran passed"
       - name: Path-filtered gates ran where their paths were touched (X16, X17)
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            # CI must have run on the tree being merged (X17, X22). Each gate workflow also
-            # triggers on merge_group and runs for every queue entry, so its check runs are read
-            # at the merge-queue commit, always: its cheap changes job must have succeeded, and
-            # its heavy job must have succeeded or been skipped because no path changed.
-            go run ./tools/prcheck path-gates -merge-queue -repo "${{ github.repository }}" -base "$GATE_BASE" -head "${{ github.sha }}"
-          else
-            # The files the pull request changes: its head against the merge base with the base.
-            go run ./tools/prcheck path-gates -repo "${{ github.repository }}" -base "$(git merge-base "$GATE_BASE" "$GATE_HEAD")" -head "$GATE_HEAD"
-          fi
+          # The files the pull request changes: its head against the merge base with the base.
+          go run ./tools/prcheck path-gates -repo "${{ github.repository }}" -base "$(git merge-base "$GATE_BASE" "$GATE_HEAD")" -head "$GATE_HEAD"

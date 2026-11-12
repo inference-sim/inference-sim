@@ -36,7 +36,9 @@ block_size, gpu_memory_utilization, cudagraph_mode. A sweep carrying `stated_con
 InferenceX direct corpus: what the run's own args line passed) supplies
 gpu_memory_utilization, block_size, enable_prefix_caching and the speculative config, which
 are then written as stated. gpu_memory_utilization not stated is vLLM v0.31.0's default,
-0.92 (vllm/config/cache.py:103); prefix caching and speculation not stated are left out, so
+0.92 (vllm/config/cache.py:103) for a vLLM deployment, and is left out for any other framework,
+whose default this generator does not know (X19: a default is never written for an engine it
+does not belong to); prefix caching and speculation not stated are left out, so
 v0.31.0's defaults apply (caching on, no drafting). A stated drafter the catalog graph does
 not describe is not written at all (see UNPRICED_SPECULATORS): a file without its
 speculative block would load as a target-only deployment and be priced as one, so the
@@ -107,8 +109,11 @@ def v4_block_size(gpu: str) -> int:
     return 256
 
 
-# vLLM v0.31.0's CacheConfig.gpu_memory_utilization default (vllm/config/cache.py:103).
-GPU_MEMORY_UTILIZATION_DEFAULT = 0.92
+# The default the generator may write for an unstated setting, by framework: vLLM v0.31.0's
+# CacheConfig.gpu_memory_utilization default (vllm/config/cache.py:103). A framework not listed
+# has no default here, so the setting is left out and the deployment says so. SGLang and
+# TensorRT-LLM have their own memory settings, which this generator does not model.
+GPU_MEMORY_UTILIZATION_DEFAULT = {"vllm": (0.92, "vLLM v0.31.0's default (vllm/config/cache.py:103)")}
 
 # Stated drafters the catalog graph does not describe: the kernel refuses a deployment that
 # drafts with a method other than its graph's speculator (liftDraft, draft.go). MiniMax-M3's
@@ -211,7 +216,17 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
         block_size = v4_block_size(dep["gpu"])
     stated = dep.get("stated_config", {})
     block_size = stated.get("block_size", block_size)
-    gmu = stated.get("gpu_memory_utilization", GPU_MEMORY_UTILIZATION_DEFAULT)
+    # A stated value is written as stated. An unstated one takes the default of this
+    # deployment's framework when the generator knows it; otherwise it stays unstated.
+    framework_default = GPU_MEMORY_UTILIZATION_DEFAULT.get(dep["framework"])
+    if "gpu_memory_utilization" in stated:
+        gmu, gmu_note = stated["gpu_memory_utilization"], "stated by the run."
+    elif framework_default is not None:
+        gmu, gmu_note = framework_default[0], f"not stated, so {framework_default[1]}."
+    else:
+        gmu = None
+        gmu_note = (f"not stated, and this generator knows no default for {dep['framework']}, "
+                    "so it is left out; the value is unstated, not vLLM's.")
     spec = stated.get("speculative_method")
 
     lines = [
@@ -225,9 +240,7 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
         f"# moe_ep_size {ep}, moe_tp_size {par['moe_tp_size']}. Workloads scored at this",
         f"# deployment: {', '.join(sorted(labels))}.",
         "#",
-        f"# gpu_memory_utilization {gmu}: "
-        + ("stated by the run." if "gpu_memory_utilization" in stated else
-           "not stated, so vLLM v0.31.0's default (vllm/config/cache.py:103)."),
+        f"# gpu_memory_utilization {'(absent)' if gmu is None else gmu}: {gmu_note}",
         f"# block_size {block_size}: "
         + ("stated by the run." if "block_size" in stated else "not stated; see below."),
     ]
@@ -315,8 +328,9 @@ def emit(dep: dict, workloads: set[str], labels: set[str],
         "      max_num_seqs: 256",
         f"      max_model_len: {max_len}",
         "      cudagraph_mode: PIECEWISE",
-        f"      gpu_memory_utilization: {gmu}",
     ]
+    if gmu is not None:
+        lines.append(f"      gpu_memory_utilization: {gmu}")
     if "enable_prefix_caching" in stated:
         pc = str(stated["enable_prefix_caching"]).lower()
         lines.append(f"      enable_prefix_caching: {pc}")

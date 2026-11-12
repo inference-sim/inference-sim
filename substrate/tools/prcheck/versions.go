@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"path"
 	"regexp"
@@ -17,9 +16,9 @@ import (
 // or a BLIS module with a version (blis-vllm v0.32.0-blis.2, inference-sim@v0.16.0,
 // blis-substrate v0.11.0). A file is exempt when it is a source of versions, a test or
 // test fixture, or generated (it carries "Code generated" or "BEGIN GENERATED"). Every
-// other finding must be listed in the baseline file, which may only shrink: a finding
-// not in it fails, and a baseline entry no longer found fails too, so the list is kept
-// exact.
+// other finding fails. A draft specification under specs/ is a record of what was planned
+// and is exempt, and a workflow reads the Go version from go.mod (go-version-file), so a
+// literal Go version in a workflow is a finding.
 
 var (
 	goVersionLit = regexp.MustCompile(`\bgo1\.\d+(?:\.\d+)?\b|\bgo 1\.\d+(?:\.\d+)?\b|\bGo 1\.\d+(?:\.\d+)?\b|\bgolang:1\.\d+|go-version:\s*['"]?1\.\d+`)
@@ -30,8 +29,10 @@ var (
 func versionSource(p string) bool {
 	base := path.Base(p)
 	switch base {
-	case "go.mod", "go.sum", "go.work.sum", "stack.json", "stack.lock", "pins.env", "harness.pin", "toolchain",
-		"version-literals.txt": // the baseline lists literals; it states none
+	case "go.mod", "go.sum", "go.work.sum", "stack.json", "stack.lock", "pins.env", "harness.pin", "toolchain":
+		return true
+	}
+	if strings.HasPrefix(p, "specs/") || strings.Contains(p, "/specs/") {
 		return true
 	}
 	return strings.HasSuffix(base, "_test.go") || strings.HasPrefix(base, "test_") ||
@@ -64,57 +65,11 @@ func VersionFindings(p string, src []byte) []string {
 	return out
 }
 
-// ParseBaseline reads a baseline file: one "path: literal" per line, # comments allowed.
-func ParseBaseline(src string) map[string]bool {
-	out := map[string]bool{}
-	sc := bufio.NewScanner(strings.NewReader(src))
-	for sc.Scan() {
-		l := strings.TrimSpace(sc.Text())
-		if l != "" && !strings.HasPrefix(l, "#") {
-			out[l] = true
-		}
-	}
-	return out
-}
-
-// CheckVersions compares findings with the baseline.
-func CheckVersions(findings []string, baseline map[string]bool) []string {
+// CheckVersions turns findings into failures. No list of known findings hides one (X23).
+func CheckVersions(findings []string) []string {
 	var bad []string
-	found := map[string]bool{}
 	for _, f := range findings {
-		found[f] = true
-		if !baseline[f] {
-			bad = append(bad, fmt.Sprintf("%s is a version literal outside stack.json, go.mod, contracts/toolchain and the pin files; generate it from them (X23)", f))
-		}
-	}
-	for b := range baseline {
-		if !found[b] {
-			bad = append(bad, fmt.Sprintf("baseline entry %q no longer occurs; remove it, the baseline only shrinks (X23)", b))
-		}
-	}
-	sort.Strings(bad)
-	return bad
-}
-
-var findingLine = regexp.MustCompile(`^([^:]+):\d+: `)
-
-// CheckBaseline is the ratchet for a check turned on over a tree that already breaks it:
-// a finding is a failure unless the baseline lists it, with its line number removed, and
-// a baseline entry that no longer occurs is a failure too, so the list only shrinks.
-func CheckBaseline(findings []string, baseline map[string]bool, inv string) []string {
-	var bad []string
-	found := map[string]bool{}
-	for _, f := range findings {
-		k := findingLine.ReplaceAllString(f, "$1: ")
-		found[k] = true
-		if !baseline[k] {
-			bad = append(bad, f)
-		}
-	}
-	for b := range baseline {
-		if !found[b] {
-			bad = append(bad, fmt.Sprintf("baseline entry %q no longer occurs; remove it, the baseline only shrinks (%s)", b, inv))
-		}
+		bad = append(bad, fmt.Sprintf("%s is a version literal outside stack.json, go.mod, contracts/toolchain and the pin files; generate it from them, or say \"the pinned release\" and link the file that states it (X23)", f))
 	}
 	sort.Strings(bad)
 	return bad

@@ -1,0 +1,20 @@
+# Differences between this registry and the release plan's section 3.2 table that are allowed
+# while the M2 substrate stack is open. The plan is generated from the registry as it stands
+# when the whole stack has merged. A layer states only what it holds, so before the last layer
+# a row of the table can name a status or an "In CI by" that this layer's registry does not
+# have yet. TestRegistryAgreesWithThePlan accepts exactly these rows and fails on a difference
+# that is not listed here and on a listed row that no longer differs, so the list can only
+# shrink, and the last layer of the stack has none (this file is deleted there).
+#
+# Columns: identifier, status here, "In CI by" here, the layer that closes the difference.
+SUB-1	partial	M2	2
+SUB-7	new	M2	3
+SUB-16	new	M2	2
+SUB-18	new	M2	5
+VAL-1	partial	M2	3
+VAL-2	new	M2	3
+VAL-3	new	M2	3
+VAL-4	new	M2	3
+VAL-5	new	M2	3
+VAL-10	new	M2	3
+CFG-3	new	M2	open

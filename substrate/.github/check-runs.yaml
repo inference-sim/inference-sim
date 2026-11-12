@@ -1,0 +1,73 @@
+# The check run that proves each registry check (LIF-3, #15). The release bot builds its results
+# from the check runs of the exact commit it tags, through this file, and never reads a results
+# file a person wrote. Keys are a repository, then the `test` string of a registry check with
+# status ci; the value is the check-run names that must all have concluded success at the
+# commit. A name ending in `*` stands for every check run whose name begins with the text before
+# it (a matrix), at least one of which must exist. A skipped run is not a success: run the
+# workflow by hand on the commit being tagged (workflow_dispatch), which runs every job.
+# A name that ran more than once at the commit is decided by its newest attempt (highest check-run id).
+#
+# `go test ./tools/release` fails when a ci check of the registry has no entry here, and when an
+# entry names no ci check of the registry, so this file cannot drift from the registry.
+blis-substrate:
+  "go run ./validate/cmd/validate-registry registry": [registry]
+  "ledger: TestUnpinnedRevisionsRefused": [ledger]
+  "ledger: TestCheckAgainstBase": [ledger]
+  "ledger: TestNoCommittedRoles": [ledger]
+  "ledger: TestLintWorkflows": [ledger]
+  "tools/modlint: TestEachRuleHasAKnownBadInput": [contracts and validators]
+  "contracts: TestKernelImportsOnlySpec": [contracts and validators]
+  "contracts: TestDocFieldTablesMatchTypes": [contracts and validators]
+  "contracts: TestLoadRejectsUnknownFields": [contracts and validators]
+  "contracts: TestDocExamplesValidate": [contracts and validators]
+  "catalog/scripts/derive_graph.py --check": [catalog]
+  "registry/validator/test_coefficient_properties.py": [registry]
+  "ci.yml jobs catalog, registry": [catalog, registry]
+  "ci.yml job catalog: derive_graph.py --check": [catalog]
+  "load: TestEmbeddedAndExportedCheckoutAreTheSame": [contracts and validators]
+  "TestEmbedPatternsEqualLoaderPatterns": ["format, vet and build"]
+  "TestNoNestedModule": ["format, vet and build"]
+  "TestModuleZipIsUnder100MB": ["format, vet and build"]
+  "tools/schemagen: TestPublishedSchemasMatchTheTypes": [contracts and validators]
+  "contracts/spec/coefficient: TestRationaleRequiredForEveryMethodButMeasured": [contracts and validators]
+  "registry/validator (pytest)": [registry]
+  "kernel: TestTheLibraryImportsNoEngineModel": [cost model]
+  "tools/docgen: TestGeneratedDocsAreCurrent": [contracts and validators]
+  "go run ./validate/cmd/validate-catalog catalog": [catalog]
+  "validate/cmd/validate-catalog: TestRunLicenceCheck": [contracts and validators]
+  "ci.yml: mutants": [mutation check]
+  "tools/pyrules: TestEveryRestatementAgreesWithGo": [contracts and validators]
+  "tools/pyrules/pyrules.py": [contracts and validators]
+  "ci.yml job required": [required]
+blis-vllm:
+  "oracle/check_mocks.py": [oracle-tier2]
+  "oracle/check_lock.py": [oracle-tier2]
+  "oracle/check_goldens.py": [goldens-reviewed]
+  "ci.yml jobs packs-against-vllm, oracle-tier2, metrics-manifest": ["packs-against-vllm (*", oracle-tier2, metrics-manifest]
+  "TestEveryFileStatesItsProvenance": [go-test-rest]
+  "TestNoClockNoGoroutines": [go-test-rest]
+  "rules/engineconfig: TestDecodeRefusesAnUnknownKey": [go-test-rest]
+  "ci.yml job packs-against-vllm: go test -run MatchSource": ["packs-against-vllm (*"]
+  "oracle/check_mocks.py oracle/mocks.json": [oracle-tier2]
+  "core/sched: TestDifferentialAgainstVLLM": [oracle-tier2]
+  "go run ./cmd/metricsmanifest -check": [metrics-manifest]
+inference-sim:
+  "tools/harness: TestEveryMeasuredOrResolvedPointSentItsTarget": ["test (kernel backend,*"]
+  "sim: TestINV1Accounted": ["test (core packages,*"]
+  "sim/llmd: TestSupportedTypesAreHostedByTheFork": ["test (llm-d router,*"]
+  "cmd: TestRunCmd_KernelBackend_ScenarioRefusals": ["test (workload & cmd,*"]
+  "sim/llmd: TestStartupRefusalMessages": ["test (llm-d router,*"]
+  "sim/cluster: TestPDContention_*": ["test (cluster (heavy),*"]
+  "cmd: TestScenarioRouterInputs_MapsTheRouterBlock": ["test (workload & cmd,*"]
+  "cmd: TestTheBinaryReachesBlisVLLMOnlyThroughTheBuildSite": ["test (workload & cmd,*"]
+  "sim/llmd: TestRouterImportsOnlyTheEmbedConstructor": ["test (llm-d router,*"]
+  "sim/llmd: TestDeterminism_AcrossProcesses": ["test (llm-d router,*"]
+  "cmd: TestParity_RunStdout_DeterministicAndEagerLazyIdentical": ["test (workload & cmd,*"]
+accuracy-dashboard:
+  "orchestrator/test_build_summary.py": [orchestrator]
+  ".github/workflows/api-nightly.yml job publish": [publish]
+  "orchestrator/validate_summary.py": [orchestrator]
+blis-config-search:
+  "scripts/test_build.py": [python]
+  "checks.yml: pin guard on the cloned commit": [python]
+  "scripts/test_experiment.py": [python]

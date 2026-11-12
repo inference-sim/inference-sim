@@ -239,8 +239,8 @@
   section: §5
   statement: >-
     Data is loaded the same way from a path or from the embedded copy: the same file patterns, the
-    same validators (including the checks between catalog and registry), and the same content hash.
-    The embedded patterns equal the loader's patterns.
+    same validators (including the checks between the catalog and the coefficient registry), and the
+    same content hash. The embedded patterns equal the loader's patterns.
   scope:
   - blis-substrate
   checks:
@@ -443,12 +443,13 @@
 - id: SUB-16
   section: §5
   statement: >-
-    Quantities carry units as types. Bytes, seconds, tokens, FLOPs, bytes per second and dimensionless
-    ratios are distinct Go types in contracts/, and so are per-rank, per-node and per-group amounts,
-    so adding a byte count to a token count, or a per-rank amount to a per-group one, does not compile.
-    A registry entry's unit equals the unit the formula reading it requires, checked when the registry
-    loads. An efficiency lies in (0, 1]. A quantised format is one type (payload bits, scale bits,
-    block shape) with one function for its stored bytes.
+    Quantities carry units as types. Bytes, seconds, tokens, FLOPs, bytes per second and
+    dimensionless ratios are distinct Go types in contracts/, and so are per-rank, per-node and
+    per-group amounts, so adding a byte count to a token count, or a per-rank amount to a per-group
+    one, does not compile. A coefficient registry entry's unit equals the unit the formula reading
+    it requires, checked when the coefficient registry loads. An efficiency lies in (0, 1]. A
+    quantised format is one type (payload bits, scale bits, block shape) with one function for its
+    stored bytes.
   scope:
   - blis-substrate
   checks:
@@ -500,9 +501,9 @@
 - id: SUB-18
   section: §5
   statement: >-
-    Provenance is recorded per field, not per file. A catalog field holds a datasheet figure, a published
-    figure, or a measurement of one named device, and says which. A fitted or assumed value is a coefficient,
-    and belongs in the registry.
+    Provenance is recorded per field, not per file. A catalog field holds a datasheet figure, a
+    published figure, or a measurement of one named device, and says which. A fitted or assumed
+    value is a coefficient, and belongs in the coefficient registry.
   scope:
   - blis-substrate
   checks:

@@ -20,31 +20,31 @@
   checks:
   - repo: blis-substrate
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: blis-vllm
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: blis-sglang
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: llm-d-router
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: inference-sim
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: blis-config-search
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: accuracy-dashboard
     check: Protected tags
-    runs: settings
+    runs: practice
     status: new
   - repo: blis-substrate
     check: A nightly check that every tag resolves to its recorded commit
@@ -196,8 +196,9 @@
   section: §14.2
   statement: >-
     Only the release bot cuts releases, and only from a commit where every ci invariant passed. If
-    the bot is unavailable, two release owners may follow the documented manual procedure (§13.6);
-    a manual tag is signed with a release owner's key and recorded in the release notes.
+    the bot is unavailable, a person with write access to the repository may follow the documented
+    manual procedure (§13.6); a manual tag is an annotated tag on the checked commit, recorded in
+    the release notes.
   scope:
   - accuracy-dashboard
   - blis-config-search
@@ -208,32 +209,32 @@
   - llm-d-router
   checks:
   - repo: blis-substrate
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: blis-vllm
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: blis-sglang
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: llm-d-router
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: inference-sim
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: blis-config-search
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: accuracy-dashboard
-    check: Repository settings that let only the release bot and release owners create tags
-    runs: settings
+    check: Repository settings that let only the release bot and people with write access create tags
+    runs: practice
     status: new
   - repo: blis-substrate
     check: The bot's own check of every ci invariant
@@ -243,37 +244,37 @@
     known_bad: 'tools/release: TestRefusals'
   - repo: blis-substrate
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   - repo: blis-vllm
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   - repo: blis-sglang
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   - repo: llm-d-router
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   - repo: inference-sim
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   - repo: blis-config-search
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   - repo: accuracy-dashboard
     check: >-
-      A nightly check that every tag made by a person is signed and listed in its release notes
+      A nightly check that every tag made by a person is annotated and listed in its release notes
     runs: nightly
     status: new
   review: null

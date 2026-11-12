@@ -14,7 +14,7 @@ engine repository.
 - The cost model resolves nothing: every default, backend choice, padding and capture decision
   arrives in the plan or the step shape (SUB-6).
 - The catalog holds declared facts, each with a citation. A fitted or assumed value is a
-  coefficient, and belongs in the registry (SUB-3, SUB-18).
+  coefficient, and belongs in the coefficient registry (SUB-3, SUB-18).
 - Every coefficient is written by its family's writer script, never by hand (SUB-4).
 - Packages under `contracts/` import only the Go standard library, the YAML parser and each
   other, and change only compatibly (SUB-1).
@@ -31,6 +31,10 @@ go run ./validate/cmd/validate-registry registry
 (cd catalog && python3 scripts/derive_graph.py --check && python3 -m pytest tests -q)
 (cd registry && python3 -m pytest validator -q)
 DOCS_RELEASE=main mkdocs build --strict
+go run ./tools/invariants render -check
+go run ./tools/prcheck workflows
+go run ./tools/prcheck versions
+go run ./tools/prcheck docrefs
 ```
 
 - Every behaviour change has a test that fails without it (X13).
@@ -38,13 +42,31 @@ DOCS_RELEASE=main mkdocs build --strict
   be wrong, and regenerated reference documentation: `go run ./tools/docgen` (SUB-2).
 - Never commit third-party data; a derived value cites its source by URL and commit or hash
   (X12). Never write a private name in a file, commit or pull request (X12).
-- A commit written with an agent's help says so in one `Assisted-by:` line. The person who takes
-  responsibility for it adds the DCO `Signed-off-by:` line; an agent never signs off (X20).
+
+## A change here must also update
+
+- The documentation that describes what the change removes, renames or alters. A path, symbol,
+  issue reference or supported-feature statement in a page is generated or checked (X26).
+- The generated copies, with `go run ./tools/invariants render`, when an invariant registry record
+  changes; and the record itself, when a check is added or a status moves (design §13.1).
+- The reference pages, with `go run ./tools/docgen`, when a schema or data field changes.
+- The issue the change closes, named on a `Closes` line; an issue cited as a gap stays open until
+  the change that removes its last citation (X28).
 
 ## Agents may not
 
 Edit a generated file by hand; weaken, skip or delete a check; change a success criterion after
-reading held-out data; answer a review question; approve a merge; cut a release (design §13.7).
+reading held-out data, or the ledger's cut-points or partition version; approve a merge; cut a
+release; review a change they wrote themselves (design §13.7). An agent may act as the review
+agent: it answers each review question below in a review comment, with the files and lines that
+support the answer.
+
+## Where to look next
+
+The design is the target this repository implements; each rule above names its invariant
+identifier, which the invariant registry (`contracts/invariants`) and the appendix at
+`docs/contracts/invariants` define. Contributor guides are under `docs/contributing` and
+`docs/contracts/contributing`.
 
 <!-- BEGIN GENERATED: invariants (go run ./tools/invariants render; do not edit) -->
 ## Invariants checked in blis-substrate
@@ -66,14 +88,14 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **X3** (partial; target ci by M4) Scheduling, KV management, KV connectors and tiering decisions, default resolution, and lowering a model to kernel implementations belong to blis-vllm or blis-sglang.
   - `ci`, pull_request: The cost model imports no engine module (`kernel: TestTheLibraryImportsNoEngineModel`)
   - `new`, pull_request: Scheduler and KV types exist only in engine modules
-- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
+- **X6** (partial; target ci by M3) For fixed scenario bytes, seed, module versions, Go toolchain version and catalog and coefficient registry content hashes, the simulator's standard output is identical byte for byte across runs, thread counts and supported platforms.
   - `new`, pull_request: No clock reads and no goroutines in engine or cost-model code
   - `new`, pull_request: No unsorted map iteration on an output path, and no unnamed randomness. In the router fork this lint covers files the fork wrote; upstream code is covered by the differential test in X4
 - **X7** (partial; target ci by M4) Contracts live in blis-substrate/contracts.
   - `new`, pull_request: A lower repository refers to accuracy-dashboard only through the harness pin file
   - `new`, pull_request: The module graph across all repositories follows Figure 1
   - `ci`, pull_request: Every generated file matches its generator's output (`tools/docgen: TestGeneratedDocsAreCurrent`)
-- **X8** (new; target ci by M1) Every number records the exact versions and data it came from, and can be regenerated from them.
+- **X8** (new; target ci by M2) Every number records the exact versions and data it came from, and can be regenerated from them.
   - `new`, pull_request: No ledger unit is cited under two roles by any fit, gate or dashboard point
   - `new`, pull_request: Every data source is pinned to an exact revision
   - `new`, pull_request: Published numbers regenerate: on redistributable fixtures on every pull request, on the full data nightly
@@ -103,27 +125,27 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, pull_request: Each repository's CI configuration (`prcheck workflows, prcheck skips`)
   - `new`, nightly: The nightly status page (§13.4) (`shared-nightly.yml: prcheck status`)
 - **X17** (partial; target ci by M1) Every repository's protected branch requires its named checks, including formatting and lint.
-  - `new`, nightly: A nightly job in blis-substrate that lists the previous day's merges in every repository and fails if any merged head has no successful required run (`nightly.yml: prcheck audit-merges`)
-  - `new`, settings: The protected branch requires the repository's named checks, including formatting and lint
+  - `ci`, practice: The protected branch requires the repository's named checks, including formatting and lint
 - **X18** (new; target ci by M2) Every check in the invariant registry names a known-bad input that must make it fail.
   - `new`, nightly: A nightly job in blis-substrate that runs each check on its known-bad input and fails if the check passes (`nightly.yml: prcheck knownbad`)
   - `new`, nightly: The nightly mutation sweep (T7), which covers substrate validators and the simulator's own checks as well as engine code
 - **X19** (new; target ci by M2) Scripts and generators, in every language, never write an engine default.
   - `new`, pull_request: The engine-name lint (X2), run on *.py and *.sh in every repository that has scripts
-- **X20** (new; target ci by M4) Every commit written for BLIS is signed.
-  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds (`shared-pr-checks.yml: prcheck commits`)
+- **X20** (new; target ci by after M4) A commit written with an agent's help says so in one Assisted-by: <tool> line, and carries no Co-authored-by line naming the tool.
+  - `new`, pull_request: A commit-policy check, required on every pull request in every repository, over the commits the pull request adds: one Assisted-by line, no Co-authored-by or Signed-off-by naming a tool (`shared-pr-checks.yml: prcheck commits`)
+  - `new`, practice: The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
 - **X21** (new; target ci by M1) Everything a build or a release runs is pinned and traceable.
   - `new`, pull_request: A workflow lint that refuses an action not pinned by commit (`prcheck workflows`)
   - `new`, pull_request: Pip install --require-hashes in every Python CI job (`prcheck workflows`)
   - `new`, pull_request: A check that LICENSE and any required NOTICE exist
-- **X22** (partial; target ci by M4) Every verdict (a CI result, an agent's review, or a person's answer to a review question) names the git tree hash of the exact tree it judged.
-  - `new`, pull_request: The shared merge check in blis-substrate/.github/workflows, called by every repository, which compares verdict tree hashes (`shared-merge-check.yml: prcheck merge`)
+- **X22** (partial; target ci by M4) Every verdict (a CI result or the review agent's review, including its answers to review questions) names the git tree hash of the exact tree it judged.
+  - `new`, pull_request: The shared pull-request check in blis-substrate/.github/workflows, called by every repository, which records each review-agent answer with the head tree
   - `new`, pull_request: A workflow lint that refuses ignored exit codes (`prcheck workflows`)
   - `ci`, pull_request: Each job's item count (`ci.yml job required`)
 - **X23** (new; target ci by M1) A version is written in one place.
   - `new`, pull_request: A lint in every repository, over every file type, for version literals of BLIS modules or Go that are not generated (`prcheck versions`)
 - **X24** (new; target ci by M4) Every review finding ends in one of three outcomes before merge: fixed, filed as a linked issue, or rejected with a reason.
-  - `new`, pull_request: The shared merge check, which refuses a merge while a review thread has no outcome (`shared-merge-check.yml: prcheck merge`)
+  - `new`, pull_request: A pull-request check that refuses a review thread with no outcome (`shared-pr-checks.yml: prcheck threads`)
   - `new`, nightly: A nightly job that reopens an issue closed any other way
 - **X25** (new; target ci by M1) Tests read only their declared inputs, never sibling checkouts, ignored directories or the user's environment.
   - `new`, pull_request: CI in a clean container with no sibling checkouts
@@ -135,7 +157,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, release: The release bot (`tools/release: CheckBugs`)
 - **X28** (new; target ci by M1) An issue in a BLIS repository that is cited as the reason for a refusal, for a refused or not-modelled item in a field or surface list, or in a code comment that marks a gap or a divergence, stays open.
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
-  - `new`, pull_request: A merge check that refuses a change closing an issue still cited elsewhere (`shared-merge-check.yml: prcheck issues -closes`)
+  - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
 - **SUB-1** (partial; target ci by M2) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
   - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)
@@ -163,7 +185,7 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `ci`, pull_request: The validators run on every pull request (`ci.yml jobs catalog, registry`)
   - `ci`, pull_request: The graph deriver --check runs on every pull request (`ci.yml job catalog: derive_graph.py --check`)
   - `new`, pull_request: Every registry writer --check runs on every pull request, on redistributable fixtures
-- **SUB-9** (ci; target reached) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between catalog and registry), and the same content hash.
+- **SUB-9** (ci; target reached) Data is loaded the same way from a path or from the embedded copy: the same file patterns, the same validators (including the checks between the catalog and the coefficient registry), and the same content hash.
   - `ci`, pull_request: A test that loads the embedded copy and an exported checkout of the same commit, and gets identical data and an identical hash (`load: TestEmbeddedAndExportedCheckoutAreTheSame`)
   - `ci`, pull_request: A test comparing the two pattern lists (`TestEmbedPatternsEqualLoaderPatterns`)
 - **SUB-10** (new; target ci by M2) contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all.
@@ -260,16 +282,16 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **COV-1** (partial; target ci by M1) One scorer produces every number, and it lives only in accuracy-dashboard: no other repository compares a simulation with a measured end-to-end benchmark.
   - `new`, pull_request: A lint that refuses code outside accuracy-dashboard that reads end-to-end benchmark units to compute an error
 - **LIF-1** (new; target ci by M1) A tag names one commit forever.
-  - `new`, settings: Protected tags
+  - `new`, practice: Protected tags
   - `new`, nightly: A nightly check that every tag resolves to its recorded commit (`shared-nightly.yml: prcheck tags`)
 - **LIF-2** (partial; target ci by M1) In every build, each BLIS module resolves to the exact version the release records in stack.json, and the router fork resolves to a -blis.N tag through inference-sim's one replace directive (X11).
   - `ci`, pull_request: Selected-version lint (go list -m all), which for the router reads the replace target that go list -m -json reports, not the placeholder version on the require line (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A check that every module in go list -m -json all declares a GoVersion no higher than contracts/toolchain (`tools/modlint: TestEachRuleHasAKnownBadInput`)
   - `ci`, pull_request: A CI step that fails if go version differs from it (`tools/modlint: TestEachRuleHasAKnownBadInput`)
 - **LIF-3** (new; target ci by M1) Only the release bot cuts releases, and only from a commit where every ci invariant passed.
-  - `new`, settings: Repository settings that let only the release bot and release owners create tags
+  - `new`, practice: Repository settings that let only the release bot and people with write access create tags
   - `new`, pull_request: The bot's own check of every ci invariant (`tools/release: CheckInvariants`)
-  - `new`, nightly: A nightly check that every tag made by a person is signed and listed in its release notes
+  - `new`, nightly: A nightly check that every tag made by a person is annotated and listed in its release notes
 - **LIF-4** (new; target ci by M1) Release notes are generated (§13.3).
   - `new`, release: The release bot, which writes the notes from the release's changes (`tools/release: Notes`)
 - **LIF-5** (new; target ci by M4) An engine module, or the router fork, models one upstream release.
@@ -277,19 +299,37 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **LIF-7** (new; target ci by M1) A deprecated feature is removed by the first release after its deprecation that may break compatibility: a MAJOR release, or a MINOR release while the repository is at v0.
   - `new`, release: The release bot, which refuses a MAJOR release, or a MINOR release at v0, that still contains a feature deprecated in an earlier release (`tools/release: CheckDeprecations`)
 
+### Maintainer practices
+
+No program checks these. A maintainer with write access keeps each one for this
+repository as a whole and confirms it when the repository's settings change (design §4.2).
+
+- [ ] **X17** The protected branch requires the repository's named checks, including formatting and lint
+- [ ] **X20** The person who takes responsibility for a commit signs it and signs it off, or instructs an agent to push it in that person's name. Encouraged, never checked before the closing step after M4
+- [ ] **LIF-1** Protected tags
+- [ ] **LIF-3** Repository settings that let only the release bot and people with write access create tags
+
+### Agent guidance
+
+Follow these on every change you write or review. They are not checked by a program
+(design §4.2).
+
+- **X24** Answer each review thread with its commit or its issue, and resolve the thread once the reviewer is satisfied.
+
 ### Review questions
 
-CI adds each question below to a pull request that changes one of its paths, as a
-required checklist item. A reviewer with write access answers it yes or no with a one-line reason; an agent
-may propose an answer but never gives one (design §13.7).
+CI lists each question below in the description of a pull request that changes one of
+its paths. It is guidance for the review agent (design §13.2): the agent answers it yes or
+no in a review comment, with the files and lines that support the answer. No check waits
+on a question.
 
-- **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Reviewer: contracts expertise. When: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
-- **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Reviewer: expertise in the changed directory. When: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
-- **X6** Could this floating-point reduction give a different result on another platform? Reviewer: expertise in the changed repository. When: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
-- **X7** Does this change give a second home to a fact another repository owns? Reviewer: expertise in the changed repository. When: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
-- **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Reviewer: expertise in the repository landing the change. When: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
-- **DEV-12** Does this change alter what is modelled? Reviewer: expertise in the changed directory. When: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
-- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Reviewer: expertise in the changed directory. When: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. Added by a reviewer with the label `review:VAL-11`.
-- **D1** Was this value read from, or tuned against, any measurement? Reviewer: registry expertise. When: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
-- **D7** Was the new seed generated as the ledger records? Reviewer: ledger expertise. When: a seed is created or rotated. Added by a reviewer with the label `review:D7`.
+- **X1** Does this new scenario field describe something the real system would observe, rather than a setting the upstream does not have? Expertise: contracts expertise. Applies when: a key is added to the environment list. Paths: `contracts/spec/scenario/**`.
+- **X2** Does this change hide one engine's policy (a default, threshold, backend choice or padding rule) behind a neutral name? Would the other engine need the same edit? Expertise: expertise in the changed directory. Applies when: any non-test change under catalog/, registry/ or kernel/. Paths: `catalog/**`, `registry/**`, `kernel/**`, except `**/*_test.go`, `**/testdata/**`, `**/tests/**`.
+- **X6** Could this floating-point reduction give a different result on another platform? Expertise: expertise in the changed repository. Applies when: a parallel or floating-point reduction is added, or the cross-platform check fails. Added by a reviewer with the label `review:X6`.
+- **X7** Does this change give a second home to a fact another repository owns? Expertise: expertise in the changed repository. Applies when: a pull request adds a literal list or table, or a constant that cites another repository. Added by a reviewer with the label `review:X7`.
+- **X8** Was this fitting method, gate or threshold chosen after seeing evaluation results? Expertise: expertise in the repository landing the change. Applies when: a pull request changes a fitting method, gate or threshold. Paths: `registry/scripts/**`, `registry/validator/**`.
+- **DEV-12** Does this change alter what is modelled? Expertise: expertise in the changed directory. Applies when: a pull request is declared a verification change but moves a Result outside the byte gate. Added by a reviewer with the label `review:DEV-12`.
+- **VAL-11** Is this change kept or rejected because it offsets an error elsewhere? Expertise: expertise in the changed directory. Applies when: a pricing change lands or is rejected with end-to-end evidence that contradicts its operator-level evidence. Added by a reviewer with the label `review:VAL-11`.
+- **D1** Was this value read from, or tuned against, any measurement? Expertise: registry expertise. Applies when: an assumed entry is added or changed. Paths: `registry/coefficients/**`.
+- **D7** Was the new seed generated as the ledger records? Expertise: ledger expertise. Applies when: a seed is created or rotated. Added by a reviewer with the label `review:D7`.
 <!-- END GENERATED: invariants -->

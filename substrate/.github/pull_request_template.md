@@ -40,12 +40,6 @@ report and the scoring harness's figures on published units (X13, VAL-6). Otherw
 
 <!-- What remains, and why. -->
 
-## Review questions
-
-<!-- CI adds a required checklist item here for each review question whose paths this pull
-request changes (design §13.2). A reviewer with write access answers each one: tick it, and write "yes" or
-"no" with a one-line reason. -->
-
 ## Checklist
 
 - [ ] X12: No third-party data committed; each derived value cites its source by URL and commit or hash; no private names.

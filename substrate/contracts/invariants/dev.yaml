@@ -68,7 +68,7 @@
   status: new
   target:
     status: ci
-    milestone: 1
+    milestone: 2
   note: >-
     events are ordered by time, priority and a global insertion counter (sim/cluster/cluster_event.go)
 - id: DEV-3
@@ -396,10 +396,10 @@
     status: new
   review:
   - question: Does this change alter what is modelled?
-    reviewer: expertise in the changed directory
+    expertise: expertise in the changed directory
     when: >-
       a pull request is declared a verification change but moves a Result outside the byte gate
-    trigger:
+    applies_when:
       manual: true
   status: new
   target:

@@ -2,7 +2,7 @@
 // review set that spans repositories, described by a stack.lock file.
 //
 //	go run ./tools/release -lock stack.lock -dir blis-substrate=../blis-substrate \
-//	    -dir blis-vllm=../blis-vllm -results results.json [-bugs bugs.json] [-base main]
+//	    -dir blis-vllm=../blis-vllm [-check-runs .github/check-runs.yaml] [-bugs bugs.json] [-base main]
 //	    [-apply | -tag] [-layer <repo>] [-sign]
 //
 // Without -apply or -tag it is a dry run: it prints, for each repository bottom-up (X10), the
@@ -16,7 +16,7 @@
 // the branch release/<tag>: the head merged into the base and the pins in one commit, with no
 // tag. Every layer below must already be tagged and its tag published on its origin (git
 // ls-remote), because the pins are those real tags. With -tag it tags that layer's staged
-// tip, and only where -results records every ci check at the tip's own SHA (LIF-3) and
+// tip, and only where the tip's own check runs prove every ci check (LIF-3) and
 // where the tip no longer holds the pin-by-commit deferral file and passes the selected-module
 // lint (-modlint, no deferral: the whole module graph, not only the direct requirements, so a
 // transitive BLIS pseudo-version or a BLIS replace is refused). -sign signs the pin commits
@@ -24,16 +24,18 @@
 // command again: the version numbers do not advance, a staged branch is continued, and a
 // tagged layer is skipped.
 //
-// The release job does not exist yet (it arrives in M2). After each command the tool prints
-// what to do by hand: push the branch, run the layer's checks on it and record the results,
-// run -tag, push the tag, run the layer's checks against the tag, then run -apply for the
-// next layer. The push needs a bypass of the branch and tag protection for the bot or the
+// The results are read from GitHub, never from a file: for each repository and commit the tool
+// lists the commit's check runs and decides each registry ci check through .github/check-runs.yaml.
+// A check with no successful run at the commit has no result, so a hand-written "true" cannot
+// stand in for a run. After each command the tool prints what to do by hand: push the branch,
+// run the layer's checks on it (a workflow_dispatch run runs every job), run -tag, push the
+// tag, run the layer's checks against the tag, then run -apply for the next layer. The push needs a bypass of the branch and tag protection for the bot or the
 // owners.
 //
 // It refuses a tag when:
 //   - a ci check of an invariant the repository owns has no passing result at the head
-//     (LIF-3), or a reached target milestone has not been met (design §13.3); -results is a
-//     JSON object {"<repo>": {"<commit>": {"<test>": true|false}}} written by CI;
+//     (LIF-3), or a reached target milestone has not been met (design §13.3). A result is
+//     read from the commit's check runs through .github/check-runs.yaml, never from a file;
 //   - an engine or router tag breaks LIF-5: not v<upstream>-blis.N, N not one above the
 //     previous on the same upstream release, or a plain tag;
 //   - an engine or router release requires a newer substrate than inference-sim (§3.2);
@@ -71,6 +73,9 @@ func (d dirFlag) Set(v string) error {
 	return nil
 }
 
+// fetchCheckRuns reads a commit's check runs; a test replaces it.
+var fetchCheckRuns = FetchCheckRuns
+
 func main() {
 	code, err := run(os.Args[1:], os.Stdout)
 	if err != nil {
@@ -82,11 +87,11 @@ func main() {
 func run(args []string, w io.Writer) (int, error) {
 	fs := flag.NewFlagSet("release", flag.ContinueOnError)
 	lockPath := fs.String("lock", "", "the review set's stack.lock")
-	results := fs.String("results", "", "JSON of each repository's check results at each commit")
+	runMapPath := fs.String("check-runs", ".github/check-runs.yaml", "which check runs prove each registry check (LIF-3)")
 	bugsPath := fs.String("bugs", "", "JSON of open invariant bugs per repository")
 	base := fs.String("base", "main", "the branch each head merges into")
 	apply := fs.Bool("apply", false, "stage the release commit on release/<tag> in the local checkouts: merge and pin, no tag (never pushes)")
-	tag := fs.Bool("tag", false, "tag the staged release/<tag> tips, only where -results records every ci check at the tip's own SHA")
+	tag := fs.Bool("tag", false, "tag the staged release/<tag> tips, only where the tip's own check runs prove every ci check")
 	modlint := fs.String("modlint", "", "the tools/modlint binary, built from the substrate version being released; -tag runs it, with no deferral, on each staged tip")
 	layer := fs.String("layer", "", "the repository -apply or -tag works on; default: the first layer in lock order that is not yet tagged")
 	sign := fs.Bool("sign", false, "sign the pin commits and tags")
@@ -95,8 +100,8 @@ func run(args []string, w io.Writer) (int, error) {
 	if err := fs.Parse(args); err != nil {
 		return 2, err
 	}
-	if *lockPath == "" || *results == "" {
-		return 2, fmt.Errorf("-lock and -results are required")
+	if *lockPath == "" {
+		return 2, fmt.Errorf("-lock is required")
 	}
 	raw, err := os.ReadFile(*lockPath)
 	if err != nil {
@@ -110,9 +115,16 @@ func run(args []string, w io.Writer) (int, error) {
 	if err != nil {
 		return 2, err
 	}
-	var res map[string]map[string]map[string]bool
-	if err := readJSON(*results, &res); err != nil {
+	rawMap, err := os.ReadFile(*runMapPath)
+	if err != nil {
 		return 2, err
+	}
+	runMap, err := ParseRunMap(rawMap)
+	if err != nil {
+		return 2, err
+	}
+	if bad := runMap.Coverage(reg); len(bad) > 0 {
+		return 2, fmt.Errorf("%s disagrees with the registry:\n  %s", *runMapPath, strings.Join(bad, "\n  "))
 	}
 	bugs := map[string][]Bug{}
 	if *bugsPath != "" {
@@ -122,8 +134,14 @@ func run(args []string, w io.Writer) (int, error) {
 	}
 	env := Env{
 		Registry: reg,
+		// The results are the conclusions of the commit's own check runs, read through the
+		// mapping; no file a person wrote is consulted (LIF-3, #15).
 		Passed: func(repo, commit string) (map[string]bool, error) {
-			return res[repo][commit], nil
+			runs, err := fetchCheckRuns(repo, commit)
+			if err != nil {
+				return nil, err
+			}
+			return runMap.Results(repo, runs), nil
 		},
 		Bugs: func(repo string) ([]Bug, error) { return bugs[repo], nil },
 	}
@@ -166,7 +184,7 @@ func run(args []string, w io.Writer) (int, error) {
 		st := steps[i]
 		tip, _ := gitIn(st.Dir, "rev-parse", "refs/heads/"+Branch(st))
 		_, _ = fmt.Fprintf(w, "staged %s %s at %s; no tag yet, nothing pushed\n", st.Repo, Branch(st), tip)
-		_, _ = fmt.Fprintf(w, "next: push %s, run %s's checks on it and record the results for %s, then run -tag -layer %s\n", Branch(st), st.Repo, short(tip), st.Repo)
+		_, _ = fmt.Fprintf(w, "next: push %s, run %s's checks on it (a workflow_dispatch run runs every job), then run -tag -layer %s\n", Branch(st), st.Repo, st.Repo)
 		return 0, nil
 	case *tag:
 		if err := Tag(env, lock, steps, *layer, *sign); err != nil {

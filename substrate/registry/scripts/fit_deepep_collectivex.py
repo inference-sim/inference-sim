@@ -13,8 +13,8 @@ The query must be the bare integer `version=1`: without it, or with `v1`, the AP
 {"error":"Unknown version"}. The API serves only its latest 15 runs. Backend `deepep-v2`,
 precision bf16 (BF16 dispatch and combine), shape hidden 7168, top-6 of 384 experts, uniform
 routing; the roundtrip (dispatch + combine) p50 per tokens-per-rank point. Within one series
-every body that carries it publishes byte-identical points (asserted below), so each entry
-cites one body by run id and that body's full sha256: the run it already cites while that
+every body that carries it publishes identical points (asserted below), so each entry
+cites one body by run id and the sha256 of that body's points (collectivex_points.py): the run it already cites while that
 body is present, else the newest carrying the series. A newer run that publishes the same
 points therefore leaves the entry unchanged; one that publishes different points fails.
 
@@ -86,7 +86,6 @@ from __future__ import annotations
 
 import argparse
 import glob
-import hashlib
 import importlib.util
 import json
 import os
@@ -167,6 +166,10 @@ _spec = importlib.util.spec_from_file_location(
     "coefficient_blocks", Path(__file__).parent / "coefficient_blocks.py")
 cb = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cb)
+_pspec = importlib.util.spec_from_file_location(
+    "collectivex_points", Path(__file__).resolve().parent / "collectivex_points.py")
+cpts = importlib.util.module_from_spec(_pspec)
+_pspec.loader.exec_module(cpts)
 
 
 def stem_chip(part: str) -> str:
@@ -217,7 +220,7 @@ def series(data: Path, sku: str, mode: str, ranks: int, nodes: int, prefer: str 
         if pts != found[newest]:
             raise SystemExit(f"{sku} {mode} EP{ranks}: run {run} publishes different points "
                              f"from run {newest}; one body is not the measurement")
-    sha = hashlib.sha256(paths[newest].read_bytes()).hexdigest()
+    sha = cpts.digest_bytes(paths[newest].read_bytes())
     # The corroborating runs named are those up to the cited one, so a later run that
     # republishes the same points does not rewrite the entry.
     others = sorted((r for r in found if r != newest and int(r) < int(newest)), key=int)
@@ -267,9 +270,9 @@ def entry(name, value, units, part, fabric, mode, ranks, run, others, sha, n_fit
              else f"{{hardware: [{part}]}}")
     fit_t, held_t = SPLIT[mode]
     line = ", ".join(f"T{t} {x:+.1%}" for t, x in held.items())
-    also = (f"; the same points are published byte-identically in runs "
+    also = (f"; the same points are published in runs "
             f"{', '.join(others)}" if others else "")
-    cite = (f"InferenceX CollectiveX run {run} ({URL.format(run=run)}; body sha256 {sha}"
+    cite = (f"InferenceX CollectiveX run {run} ({URL.format(run=run)}; points sha256 {sha}"
             f"{also}), backend deepep-v2 mode {mode}, bf16, EP{ranks}, hidden {HIDDEN} top-"
             f"{TOP_K} of {EXPERTS} uniform, roundtrip p50")
     rat = (f"{WHAT[mode]} {WHERE[(part, ranks)]} floor + tokens x hidden x 2 x top_k / rate, "
@@ -293,7 +296,7 @@ def entry(name, value, units, part, fabric, mode, ranks, run, others, sha, n_fit
 
 OWNED = re.compile(r"^moe_a2a_(floor|rate)_(deepep_low_latency_graph|deepep_v2_graph)_"
                    r"(\d+)rank_([a-z0-9_]+)$")
-CITE = re.compile(r"InferenceX CollectiveX run (\d+) \(\S+; body sha256 ([0-9a-f]{64})")
+CITE = re.compile(r"InferenceX CollectiveX run (\d+) \(\S+; points sha256 ([0-9a-f]{64})")
 
 
 def owned(name: str) -> bool:
@@ -329,8 +332,8 @@ def cited_bodies_absent(text: str, data: Path) -> str:
             path = data / f"cx_run_{m.group(1)}.body"
             if not path.is_file():
                 problems.append(f"run {m.group(1)} absent")
-            elif hashlib.sha256(path.read_bytes()).hexdigest() != m.group(2):
-                problems.append(f"run {m.group(1)} body differs from sha256 {m.group(2)[:12]}")
+            elif cpts.digest_bytes(path.read_bytes()) != m.group(2):
+                problems.append(f"run {m.group(1)} points differ from sha256 {m.group(2)[:12]}")
     return "; ".join(sorted(set(problems)))
 
 

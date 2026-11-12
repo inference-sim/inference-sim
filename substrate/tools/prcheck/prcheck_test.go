@@ -6,14 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
@@ -33,24 +28,33 @@ func none(t *testing.T, got []string) {
 }
 
 // X20. The good commit is the form the brief requires of agent-assisted work, once the
-// responsible person has signed off.
+// X20: the commit-policy check covers the form an agent can get wrong, and nothing else.
+// Signing and sign-off are encouraged, not required, so a commit with neither passes.
 func TestCommitPolicy(t *testing.T) {
-	good := Commit{Hash: strings.Repeat("a", 40), Signed: true, Author: "Ada Person <ada@example.com>",
+	good := Commit{Hash: strings.Repeat("a", 40), Author: "Ada Person <ada@example.com>",
 		Message: "Add a check\n\nBody.\n\nAssisted-by: Claude Code (Claude Opus 5.5)\nSigned-off-by: Ada Person <ada@example.com>\n"}
 	none(t, CommitPolicy(good))
-	bot := Commit{Hash: "b", Signed: true, Author: "release bot <" + releaseBotEmail + ">",
+	bot := Commit{Hash: "b", Author: "release bot <" + releaseBotEmail + ">",
 		Committer: "release bot <" + releaseBotEmail + ">", Message: "Release v0.11.1\n"}
 	none(t, CommitPolicy(bot))
+
+	// What the design no longer requires: a sign-off, and a signature. A commit with an
+	// Assisted-by line and no Signed-off-by passes, and so does one with neither trailer.
+	none(t, CommitPolicy(Commit{Hash: "c", Author: "Ada Person <ada@example.com>", Message: "Add\n\nAssisted-by: Claude Code\n"}))
+	none(t, CommitPolicy(Commit{Hash: "d", Author: "Ada Person <ada@example.com>", Message: "Add a thing\n"}))
+	// A person's own sign-off, with or without an Assisted-by line, passes.
+	none(t, CommitPolicy(Commit{Hash: "e", Author: "Ada Person <ada@example.com>", Message: "Add\n\nSigned-off-by: Ada Person <ada@example.com>\n"}))
 
 	cases := []struct {
 		name string
 		edit func(*Commit)
 		want string
 	}{
-		{"unsigned", func(c *Commit) { c.Signed = false }, "not signed"},
-		{"no sign-off", func(c *Commit) { c.Message = "Add\n\nAssisted-by: Claude Code\n" }, "no Signed-off-by"},
 		{"agent signs off", func(c *Commit) {
 			c.Message = "Add\n\nAssisted-by: Claude Code\nSigned-off-by: Claude <noreply@anthropic.com>\n"
+		}, "is not a person"},
+		{"a sign-off that is no address", func(c *Commit) {
+			c.Message = "Add\n\nSigned-off-by: Ada\n"
 		}, "is not a person"},
 		{"co-authored by a tool", func(c *Commit) {
 			c.Message = "Add\n\nCo-authored-by: Claude Opus <noreply@anthropic.com>\nSigned-off-by: Ada Person <ada@example.com>\n"
@@ -58,16 +62,9 @@ func TestCommitPolicy(t *testing.T) {
 		{"two assisted-by", func(c *Commit) {
 			c.Message = "Add\n\nAssisted-by: Claude Code\nAssisted-by: Copilot\nSigned-off-by: Ada Person <ada@example.com>\n"
 		}, "2 Assisted-by lines"},
-		{"bot author, person committer", func(c *Commit) {
-			c.Author = "release bot <" + releaseBotEmail + ">"
-			c.Committer = "Ada Person <ada@example.com>"
-			c.Message = "Release\n"
-		}, "no Signed-off-by"},
-		{"bot author, no committer", func(c *Commit) {
-			c.Author = "release bot <" + releaseBotEmail + ">"
-			c.Committer = ""
-			c.Message = "Release\n"
-		}, "no Signed-off-by"},
+		{"an empty assisted-by", func(c *Commit) {
+			c.Message = "Add\n\nAssisted-by:\n"
+		}, "empty Assisted-by"},
 		{"bot signs off", func(c *Commit) {
 			c.Author = "release bot <" + releaseBotEmail + ">"
 			c.Committer = "release bot <" + releaseBotEmail + ">"
@@ -81,10 +78,6 @@ func TestCommitPolicy(t *testing.T) {
 			has(t, CommitPolicy(cm), c.want)
 		})
 	}
-	// A co-author who is a person is allowed.
-	person := good
-	person.Message = "Add\n\nCo-authored-by: Bea Person <bea@example.com>\nSigned-off-by: Ada Person <ada@example.com>\n"
-	none(t, CommitPolicy(person))
 }
 
 const goodWorkflow = `name: ci
@@ -170,8 +163,8 @@ func TestGateDeclaresItsPaths(t *testing.T) {
 	has(t, got, "declares its trigger paths")
 }
 
-// This repository passes its own checks, so a change that breaks one, or that fixes a
-// baselined finding without shrinking the baseline, fails go test as well as CI.
+// This repository passes its own checks, so a change that breaks one fails go test as well
+// as CI.
 func TestThisRepositoryPassesItsOwnChecks(t *testing.T) {
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
@@ -216,43 +209,41 @@ func TestDescriptionCheck(t *testing.T) {
 	none(t, CheckDescription(commented))
 }
 
-// X22 and X24.
-func TestMergeCheck(t *testing.T) {
-	mt, ht := strings.Repeat("a", 40), strings.Repeat("b", 40)
-	good := MergeInput{
-		MergeTree: mt, HeadTree: ht, Required: []string{"required"},
-		Verdicts: []Verdict{
-			{Kind: "check", Name: "required", Body: "ok\nTree: " + mt + "\n"},
-			{Kind: "review", Name: "ada", Body: "Looks right.\nTree: " + ht + "\n", Paths: []string{"kernel/a.go"}},
-			{Kind: "answer", Name: "X2", Body: "yes: neutral\nTree: " + ht + "\n", Paths: []string{"kernel/**"}},
-		},
-		Threads:        []Thread{{URL: "t1", Resolved: true, Comments: []string{"nit", "Outcome: fixed in abc"}}},
-		ChangedByMerge: []string{"registry/x.yaml"},
+// X14: a pin written as a release tag resolves to the commit the tag points at, and a stale
+// pin fails (blis-schemas#92). Known-bad inputs: a hash that is not the tag's commit, a tag
+// that does not resolve, and a line with a tag but no hash for it.
+func TestDescriptionChecksReleaseTagPins(t *testing.T) {
+	head, base := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	tagged := strings.Repeat("a", 40)
+	tags := func(repo, tag string) (string, error) {
+		if repo == "inference-sim/blis-substrate" && tag == "v0.13.0" {
+			return tagged, nil
+		}
+		if repo == "inference-sim/blis-vllm" && tag == "v0.32.0-blis.2" {
+			return strings.Repeat("b", 40), nil
+		}
+		return "", fmt.Errorf("no such tag")
 	}
-	none(t, CheckMerge(good))
-	cases := []struct {
-		name string
-		edit func(*MergeInput)
-		want string
-	}{
-		{"check on the head tree", func(m *MergeInput) { m.Verdicts[0].Body = "Tree: " + ht }, "not the tree being merged"},
-		{"no tree", func(m *MergeInput) { m.Verdicts[1].Body = "Looks right." }, "names no tree"},
-		{"required check missing", func(m *MergeInput) { m.Verdicts = m.Verdicts[1:] }, `required check "required" has no successful run`},
-		{"review on an old tree", func(m *MergeInput) { m.Verdicts[1].Body = "Tree: " + strings.Repeat("c", 40) }, "neither the head"},
-		{"merge changes a reviewed path", func(m *MergeInput) { m.ChangedByMerge = []string{"kernel/a.go"} }, `answer "X2" judged the head tree, and merging changes paths it covers`},
-		{"open thread", func(m *MergeInput) { m.Threads[0].Resolved = false }, "is open"},
-		{"resolved without outcome", func(m *MergeInput) { m.Threads[0].Comments = []string{"done"} }, "resolved with no"},
-		{"rejected without reason", func(m *MergeInput) { m.Threads[0].Comments = []string{"Outcome: rejected:"} }, "resolved with no"},
+	check := func(body string) []string {
+		return CheckDescription(DescriptionInput{Body: body, Repo: "inference-sim/x", Head: head, Base: base,
+			Tags: tags, Merges: true,
+			Heads: func(string, int) (string, error) { return "", fmt.Errorf("no such pull request") }})
 	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			m := good
-			m.Verdicts = append([]Verdict{}, good.Verdicts...)
-			m.Threads = []Thread{{URL: "t1", Resolved: true, Comments: append([]string{}, good.Threads[0].Comments...)}}
-			c.edit(&m)
-			has(t, CheckMerge(m), c.want)
-		})
-	}
+	none(t, check("Pins inference-sim/blis-substrate v0.13.0 at "+tagged+".\n"))
+	none(t, check("Pins inference-sim/blis-substrate@v0.13.0, commit "+tagged+".\n"))
+	none(t, check("Pins https://github.com/inference-sim/blis-substrate/releases/tag/v0.13.0 at "+tagged+".\n"))
+	none(t, check("Pins inference-sim/blis-vllm v0.32.0-blis.2 at "+strings.Repeat("b", 40)+".\n"))
+	has(t, check("Pins inference-sim/blis-substrate v0.13.0 at "+strings.Repeat("c", 40)+".\n"), "but the tag points at "+tagged)
+	has(t, check("Pins inference-sim/blis-substrate v9.9.9 at "+tagged+".\n"), "no such tag")
+	has(t, check("Pins inference-sim/blis-substrate v0.13.0 and inference-sim/blis-vllm v0.32.0-blis.2 at "+tagged+".\n"), "2 release tags and 1 hashes")
+	// A tag in prose with no hash needs no check, and a hash with no tag is the head rule.
+	none(t, check("Pins inference-sim/blis-substrate v0.13.0.\n"))
+	has(t, check("Built on "+strings.Repeat("5", 40)+".\n"), "is neither this pull request's head")
+	// A pull request line keeps its own rule even when it mentions a tag.
+	prLine := "inference-sim/blis-vllm#9 at " + strings.Repeat("7", 40) + ", built for v0.32.0\n"
+	other := CheckDescription(DescriptionInput{Body: prLine, Repo: "inference-sim/x", Head: head, Base: base, Tags: tags, Merges: true,
+		Heads: func(string, int) (string, error) { return strings.Repeat("7", 40), nil }})
+	none(t, other)
 }
 
 // X28.
@@ -298,10 +289,20 @@ func TestVersionLiterals(t *testing.T) {
 	if f := VersionFindings("docs/x.md", []byte("<!-- BEGIN GENERATED -->go1.27.2")); len(f) != 0 {
 		t.Errorf("a generated file is exempt: %v", f)
 	}
-	found := []string{"docs/a.md: Go 1.27"}
-	has(t, CheckVersions(found, map[string]bool{}), "is a version literal outside")
-	none(t, CheckVersions(found, map[string]bool{"docs/a.md: Go 1.27": true}))
-	has(t, CheckVersions(nil, map[string]bool{"docs/a.md: Go 1.27": true}), "no longer occurs")
+	// A record under specs/ is exempt (design 13.1); the same text outside it is a finding.
+	if f := VersionFindings("specs/old/plan.md", []byte("Go 1.27")); len(f) != 0 {
+		t.Errorf("a specs/ record is exempt: %v", f)
+	}
+	if f := VersionFindings("docs/plan.md", []byte("Go 1.27")); len(f) != 1 {
+		t.Errorf("the same text outside specs/ is a finding: %v", f)
+	}
+	// A workflow reads the Go version from go.mod, so a literal one is a finding.
+	wf := "      - uses: actions/setup-go@x\n        with:\n          go-version: '1.27'\n"
+	has(t, VersionFindings(".github/workflows/ci.yml", []byte(wf)), "go-version: '1.27")
+	none(t, VersionFindings(".github/workflows/ci.yml", []byte("          go-version-file: go.mod\n")))
+	// No list of known findings hides one.
+	has(t, CheckVersions([]string{"docs/a.md: Go 1.27"}), "is a version literal outside")
+	none(t, CheckVersions(nil))
 }
 
 type fakeTree map[string]int
@@ -320,8 +321,6 @@ func TestDocReferences(t *testing.T) {
 	has(t, DocFindings("docs/a.md", []byte("| x | y |\n|---|---|\n| 1 | 2 |\n| 1 | 2 |\n"), tree, roots), "is repeated")
 	none(t, DocFindings("docs/a.md", []byte("```\n`kernel/old.go`\n```\nprose `config.json`\n"), tree, roots))
 	none(t, DocFindings("docs/a.md", []byte("[m](catalog/reference/models/x.md) [t]([[catalog.tree]]/a.go)\n"), tree, roots))
-	has(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{}, "X26"), "docs/a.md:3: x")
-	none(t, CheckBaseline([]string{"docs/a.md:3: x (X26)"}, map[string]bool{"docs/a.md: x (X26)": true}, "X26"))
 }
 
 // X14: an abbreviated hash is refused in any phrasing, and ordinary hex-looking text is not.
@@ -513,73 +512,28 @@ func TestCommitsAgainstALocalRepository(t *testing.T) {
 	cwd, _ := os.Getwd()
 	defer os.Chdir(cwd)
 	os.Chdir(dir)
-	sig := filepath.Join(dir, "sigs")
-	// Signed according to the API: clean.
-	os.WriteFile(sig, []byte(head+" G\n"), 0o644)
+	// An unsigned commit with a person's sign-off and an Assisted-by line is clean: signing
+	// is encouraged, not checked (X20).
 	var out strings.Builder
-	if err := run([]string{"commits", "-base", base, "-head", head, "-signatures", sig}, &out); err != nil {
+	if err := run([]string{"commits", "-base", base, "-head", head}, &out); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
-	// Known-bad: the same commit unsigned.
-	os.WriteFile(sig, []byte(head+" N\n"), 0o644)
+	if !strings.Contains(out.String(), "1 checked") {
+		t.Errorf("output %q", out.String())
+	}
+	// Known-bad: the same change with a tool as the sign-off.
+	if err := os.WriteFile(filepath.Join(dir, "a"), []byte("c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	g("commit", "-q", "-am", "Change a again\n\nAssisted-by: Claude Code\nSigned-off-by: Claude <noreply@anthropic.com>")
+	bad := g("rev-parse", "HEAD")
 	out.Reset()
-	if err := run([]string{"commits", "-base", base, "-head", head, "-signatures", sig}, &out); !errors.Is(err, errFindings) || !strings.Contains(out.String(), "not signed") {
-		t.Fatalf("an unsigned commit passed: %v\n%s", err, out.String())
+	if err := run([]string{"commits", "-base", head, "-head", bad}, &out); !errors.Is(err, errFindings) || !strings.Contains(out.String(), "is not a person") {
+		t.Fatalf("a tool's sign-off passed: %v\n%s", err, out.String())
 	}
 	// Zero commits is not a pass (X22).
 	if err := run([]string{"commits", "-base", head, "-head", head}, &out); err == nil || errors.Is(err, errFindings) {
 		t.Fatalf("an empty range passed: %v", err)
-	}
-}
-
-// The review-question automation keeps answers and reports open questions.
-func TestMergeQuestions(t *testing.T) {
-	body := "## Summary\n\nx\n\n## Review questions\n\nold text\n\n## Checklist\n\n- [ ] X13\n"
-	qs := "- [ ] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: \n"
-	nb, open := MergeQuestions(body, qs)
-	if len(open) != 1 || !strings.Contains(nb, "- [ ] **X2** Does this hide policy?") || strings.Contains(nb, "old text") || !strings.Contains(nb, "## Checklist\n\n- [ ] X13") {
-		t.Fatalf("first pass: open=%v\n%s", open, nb)
-	}
-	answered := strings.Replace(nb, "- [ ] **X2**", "- [x] **X2**", 1)
-	answered = strings.Replace(answered, "Answer: \n", "Answer: no, the threshold is the chip's datasheet figure\n", 1)
-	// A later push changes the changed-path note; the answer stays.
-	qs2 := strings.Replace(qs, "kernel/a.go", "kernel/b.go", 1)
-	nb2, open2 := MergeQuestions(answered, qs2)
-	if len(open2) != 0 || !strings.Contains(nb2, "- [x] **X2**") || !strings.Contains(nb2, "kernel/b.go") || !strings.Contains(nb2, "Answer: no, the threshold") {
-		t.Fatalf("second pass: open=%v\n%s", open2, nb2)
-	}
-	// Known-bad: ticked without a yes or no.
-	bad := strings.Replace(answered, "Answer: no, the threshold is the chip's datasheet figure", "Answer: looks fine", 1)
-	if _, open3 := MergeQuestions(bad, qs); len(open3) != 1 {
-		t.Fatalf("an answer without yes or no was accepted")
-	}
-	// A body with no section gets one at the end.
-	nb4, _ := MergeQuestions("## Summary\n\nx", qs)
-	if !strings.HasSuffix(nb4, "Answer: \n") || !strings.Contains(nb4, "x\n\n## Review questions") {
-		t.Fatalf("appended section:\n%s", nb4)
-	}
-}
-
-func TestBuildMergeInput(t *testing.T) {
-	trees := map[string]string{"m": strings.Repeat("a", 40), "h": strings.Repeat("b", 40), "old": strings.Repeat("c", 40)}
-	treeOf := func(s string) (string, error) {
-		if t, ok := trees[s]; ok {
-			return t, nil
-		}
-		return "", fmt.Errorf("unknown commit %s", s)
-	}
-	runs := []apiCheckRun{{Name: "blis checks", HeadSHA: "m", Conclusion: "success"}, {Name: "lint", HeadSHA: "m", Conclusion: "failure"}}
-	reviews := []apiReview{{State: "APPROVED", CommitID: "old"}, {State: "COMMENTED", CommitID: "h"}}
-	reviews[0].User.Login = "ada"
-	in, err := BuildMergeInput("m", "h", []string{"blis checks", "lint"}, runs, reviews, nil, nil, []string{"a.go"}, answerSource{}, treeOf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := CheckMerge(in)
-	has(t, got, `required check "lint" has no successful run`)
-	has(t, got, `review "ada" judged tree `+trees["old"])
-	if len(got) != 2 {
-		t.Errorf("want exactly the two findings, got:\n%s", strings.Join(got, "\n"))
 	}
 }
 
@@ -624,19 +578,6 @@ func TestStatusPage(t *testing.T) {
 	if _, err := ParseGates([]byte("- {name: x, workflow: y.yml, paths: []}\n"), reg); err == nil {
 		t.Error("a gate with no trigger paths was accepted")
 	}
-}
-
-// X17: a merge without a successful required check on its tree fails the audit.
-func TestAuditMerges(t *testing.T) {
-	req := map[string][]string{"blis-vllm": {"blis checks", "ci"}}
-	ok := Merge{Repo: "blis-vllm", PR: 1, MergeSHA: strings.Repeat("a", 40), Successes: []string{"ci", "blis checks"}}
-	none(t, AuditMerges([]Merge{ok}, req))
-	bad := ok
-	bad.Successes = []string{"ci"}
-	has(t, AuditMerges([]Merge{bad}, req), "with no successful run of blis checks")
-	other := ok
-	other.Repo = "blis-sglang"
-	has(t, AuditMerges([]Merge{other}, req), "names no required checks")
 }
 
 // X18: every known_bad entry for this repository names a test that exists and passes. The
@@ -686,73 +627,6 @@ func TestLicenceFiles(t *testing.T) {
 	none(t, CheckLicenceFiles("../..", "blis-substrate"))
 }
 
-// X20 deferral: an unsigned commit and a missing sign-off are deferred while the file holds;
-// every other finding fails; an expired or malformed file defers nothing.
-func TestApplyDeferral(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
-	const file = "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: a person signs before merge\n"
-	findings := []string{
-		"abc123abc123: the commit is not signed (X20)",
-		"abc123abc123: no Signed-off-by line; the person who takes responsibility for the commit adds the DCO sign-off (X20)",
-		"abc123abc123: Signed-off-by: Claude <noreply@anthropic.com> is not a person; an agent never signs off (X20)",
-	}
-	fail, deferred := ApplyDeferral([]byte(file), day("2026-11-05"), findings)
-	if len(deferred) != 2 || len(fail) != 1 || !strings.Contains(fail[0], "is not a person") {
-		t.Fatalf("held: fail=%v deferred=%v", fail, deferred)
-	}
-	fail, deferred = ApplyDeferral(nil, day("2026-11-05"), findings)
-	if len(fail) != 3 || len(deferred) != 0 {
-		t.Fatalf("no file: fail=%v deferred=%v", fail, deferred)
-	}
-	// The last day before the expiry date still defers, at any time of day; the date itself
-	// does not, from its first instant.
-	for _, at := range []string{"2026-12-04T00:00:00Z", "2026-12-04T23:59:59Z"} {
-		now, err := time.Parse(time.RFC3339, at)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 2 || len(fail) != 1 {
-			t.Fatalf("%s: fail=%v deferred=%v, want 2 deferred", at, fail, deferred)
-		}
-	}
-	if now, _ := time.Parse(time.RFC3339, "2026-12-05T00:00:01Z"); !now.IsZero() {
-		if fail, deferred = ApplyDeferral([]byte(file), now, findings); len(deferred) != 0 || len(fail) != 4 {
-			t.Fatalf("2026-12-05T00:00:01Z: fail=%v deferred=%v, want expired", fail, deferred)
-		}
-	}
-	if fail, deferred = ApplyDeferral([]byte(file), day("2026-12-04"), findings); len(deferred) != 2 || len(fail) != 1 {
-		t.Fatalf("2026-12-04: fail=%v deferred=%v, want 2 deferred", fail, deferred)
-	}
-	// A deferral file that is missing is no file: nothing is deferred and every finding fails.
-	if fail, deferred = ApplyDeferral([]byte{}, day("2026-11-05"), findings); len(fail) != 3 || len(deferred) != 0 {
-		t.Fatalf("empty file: fail=%v deferred=%v", fail, deferred)
-	}
-	fail, deferred = ApplyDeferral([]byte(file), day("2026-12-05"), findings)
-	if len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "expired on 2026-12-05") {
-		t.Fatalf("expired: fail=%v deferred=%v", fail, deferred)
-	}
-	long := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-06\nreason: x\n"
-	if fail, deferred = ApplyDeferral([]byte(long), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "more than 30 days after added") {
-		t.Fatalf("31 days: fail=%v deferred=%v", fail, deferred)
-	}
-	far := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2099-01-01\nreason: x\n"
-	if fail, deferred = ApplyDeferral([]byte(far), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 {
-		t.Fatalf("2099: fail=%v deferred=%v", fail, deferred)
-	}
-	future := "issue: inference-sim/blis-substrate#12\nadded: 2026-11-06\nexpires: 2026-12-05\nreason: x\n"
-	if fail, deferred = ApplyDeferral([]byte(future), day("2026-11-05"), findings); len(deferred) != 0 || len(fail) != 4 || !strings.Contains(fail[3], "in the future") {
-		t.Fatalf("added in the future: fail=%v deferred=%v", fail, deferred)
-	}
-	fail, _ = ApplyDeferral([]byte("issue: nonsense\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: x\n"), day("2026-11-05"), findings)
-	if len(fail) != 4 || !strings.Contains(fail[3], "owning issue") {
-		t.Fatalf("bad issue: %v", fail)
-	}
-	fail, _ = ApplyDeferral([]byte("issue: inference-sim/blis-substrate#12\nadded: 2026-11-05\nexpires: 2026-12-05\nreason: x\nextra: y\n"), day("2026-11-05"), findings)
-	if len(fail) != 4 || !strings.Contains(fail[3], "x20-deferral.yaml") {
-		t.Fatalf("unknown key: %v", fail)
-	}
-}
-
 // ClosedBy reads every form GitHub acts on and none it does not.
 func TestClosedByForms(t *testing.T) {
 	const repo = "o/r"
@@ -790,123 +664,6 @@ func TestClosedByForms(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-// X22: review-question answers are verdicts on the head tree. An answer removed from the
-// body, or edited after the approving review, fails the merge check.
-func TestAnswersAreVerdictsBoundToTheHead(t *testing.T) {
-	trees := map[string]string{"m": strings.Repeat("a", 40), "h": strings.Repeat("b", 40)}
-	treeOf := func(s string) (string, error) { return trees[s], nil }
-	q := invariants.Question{ID: "X2", Review: invariants.Review{Question: "Is it so?", Reviewer: "r",
-		Trigger: invariants.Trigger{Repos: []string{"blis-substrate"}, Paths: []string{"contracts/**"}}}}
-	body := func(answer string) string {
-		return "## Review questions\n\n- [x] **X2** Is it so? Reviewer: r. (changed: `contracts/a.go`) Answer: " + answer + "\n"
-	}
-	review := []apiReview{{State: "APPROVED", CommitID: "h", SubmittedAt: "2026-11-06T10:00:00Z"}}
-	// The record the pull-request check wrote for the text the reviewer saw.
-	recorded := map[string]string{"X2": AnswerDigest("X2", "yes, it is", trees["h"])}
-	runWith := func(b, edited string, rec map[string]string) []string {
-		ans := answerSource{Body: b, EditedAt: edited, Repo: "blis-substrate", Questions: []invariants.Question{q}, Recorded: rec}
-		in, err := BuildMergeInput("m", "h", nil, nil, review, nil, nil, []string{"contracts/a.go"}, ans, treeOf)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return CheckMerge(in)
-	}
-	run := func(b, edited string) []string { return runWith(b, edited, recorded) }
-	none(t, run(body("yes, it is"), "2026-11-06T09:00:00Z"))
-	// The body's text is not the text recorded at the approval: the timestamp cannot be trusted
-	// to show it (the body's edit time moves on any edit), the digest does.
-	has(t, run(body("yes, certainly"), "2026-11-06T09:00:00Z"), "differs from the answer recorded")
-	has(t, runWith(body("yes, it is"), "2026-11-06T09:00:00Z", nil), "has no record from the pull-request check")
-	has(t, runWith(body("yes, it is"), "2026-11-06T09:00:00Z", map[string]string{"X2": AnswerDigest("X2", "yes, it is", trees["m"])}), "differs from the answer recorded")
-	has(t, run(body("yes, it is"), "2026-11-06T11:00:00Z"), "after the latest approving review")
-	has(t, run("## Summary\n\nx\n", "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
-	has(t, run(body(""), "2026-11-06T09:00:00Z"), "has no answer in the pull-request body")
-	// A question no changed path triggers needs no answer.
-	ans := answerSource{Body: "", Repo: "blis-substrate", Questions: []invariants.Question{q}}
-	in, _ := BuildMergeInput("m", "h", nil, nil, nil, nil, nil, []string{"docs/a.md"}, ans, treeOf)
-	none(t, CheckMerge(in))
-}
-
-// The names the merge check and the nightly audit compare are check-run names. A reusable
-// workflow's job is named "<caller job> / <job name>" and never carries the workflow's name,
-// so "blis / pr / blis checks" matches no run (X17, X22). The merge check's required list is
-// the list the audit reads, plus nothing the merge queue cannot produce.
-func TestRequiredCheckNamesAreCheckRunNames(t *testing.T) {
-	raw, err := os.ReadFile("../../.github/required-checks.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var lists map[string][]string
-	if err := yaml.Unmarshal(raw, &lists); err != nil {
-		t.Fatal(err)
-	}
-	for repo, names := range lists {
-		for _, n := range names {
-			if strings.HasPrefix(n, "blis / ") {
-				t.Errorf("%s: %q is prefixed with the workflow name; a check run is named %q", repo, n, strings.TrimPrefix(n, "blis / "))
-			}
-		}
-	}
-	wf, err := os.ReadFile("../../.github/workflows/blis.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	m := regexp.MustCompile(`required: "([^"]+)"`).FindSubmatch(wf)
-	if m == nil {
-		t.Fatal("blis.yml names no required checks for the merge check")
-	}
-	have := map[string]bool{}
-	for _, n := range lists["blis-substrate"] {
-		have[n] = true
-	}
-	for _, n := range strings.Split(string(m[1]), ",") {
-		if !have[n] {
-			t.Errorf("the merge check requires %q, which required-checks.yaml does not list for blis-substrate", n)
-		}
-	}
-	if !strings.Contains(string(wf), "github.event_name == 'merge_group'") || !strings.Contains(string(wf), "  pr:\n") {
-		t.Error("the job that makes the check run \"pr / blis checks\" does not run on the merge-queue tree")
-	}
-}
-
-// A required check must be one the merge-queue tree can produce: `scan` has a merge_group
-// trigger, the merge check requires exactly what required-checks.yaml lists for the
-// repository, and the always-run aggregator carries the path-filtered gates (X16, X17).
-func TestRequiredChecksAreProducedAndCollectedOnTheMergeQueue(t *testing.T) {
-	read := func(p string) string {
-		t.Helper()
-		b, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
-	}
-	var lists map[string][]string
-	if err := yaml.Unmarshal([]byte(read("../../.github/required-checks.yaml")), &lists); err != nil {
-		t.Fatal(err)
-	}
-	m := regexp.MustCompile(`required: "([^"]+)"`).FindStringSubmatch(read("../../.github/workflows/blis.yml"))
-	if m == nil {
-		t.Fatal("blis.yml names no required checks for the merge check")
-	}
-	got := strings.Split(m[1], ",")
-	want := append([]string(nil), lists["blis-substrate"]...)
-	sort.Strings(got)
-	sort.Strings(want)
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("the merge check requires %v; required-checks.yaml lists %v for blis-substrate", got, want)
-	}
-	for _, n := range lists["blis-substrate"] {
-		if n == "scan" && !regexp.MustCompile(`(?m)^  merge_group:`).MatchString(read("../../.github/workflows/private-names.yml")) {
-			t.Error("`scan` is required but private-names.yml has no merge_group trigger, so the merge-queue tree can never have it")
-		}
-	}
-	ci := read("../../.github/workflows/ci.yml")
-	if !strings.Contains(ci, "prcheck path-gates") || !strings.Contains(ci, "name: required\n    if: always()") {
-		t.Error("the always-run `required` job does not run the path-gate aggregator")
 	}
 }
 
@@ -977,143 +734,43 @@ func TestCheckGates(t *testing.T) {
 	})
 }
 
-// On the merge queue (X17, X22) every gate workflow must have run at the merge-queue commit,
-// whatever the change touches; its heavy jobs may be skipped only when no path changed.
-func TestCheckQueueGates(t *testing.T) {
-	gates := []PathGate{{File: "w/rederive.yml", Paths: []string{"registry/scripts/**"}, Jobs: []string{"rederive changes", "rederive"}}}
-	okRuns := map[string]GateRun{"rederive changes": {true, "success"}, "rederive": {true, "success"}}
-	skipped := map[string]GateRun{"rederive changes": {true, "success"}, "rederive": {true, "skipped"}}
-	none(t, CheckQueueGates(gates, []string{"registry/scripts/a.py"}, okRuns))
-	none(t, CheckQueueGates(gates, []string{"docs/a.md"}, skipped))
-	none(t, CheckQueueGates(gates, []string{"docs/a.md"}, okRuns))
-	t.Run("no run at the queue commit even though no path changed", func(t *testing.T) {
-		has(t, CheckQueueGates(gates, []string{"docs/a.md"}, nil), "no check run")
-	})
-	t.Run("a skipped heavy job where paths changed", func(t *testing.T) {
-		has(t, CheckQueueGates(gates, []string{"registry/scripts/a.py"}, skipped), `"rederive" concluded skipped`)
-	})
-	t.Run("a failed changes job", func(t *testing.T) {
-		runs := map[string]GateRun{"rederive changes": {true, "failure"}, "rederive": {true, "skipped"}}
-		has(t, CheckQueueGates(gates, []string{"docs/a.md"}, runs), "concluded failure")
-	})
-	t.Run("a gate without a changes job", func(t *testing.T) {
-		g := []PathGate{{File: "w/x.yml", Paths: []string{"a/**"}, Jobs: []string{"x"}}}
-		has(t, CheckQueueGates(g, nil, map[string]GateRun{"x": {true, "success"}}), "no job named")
-	})
-	t.Run("a changed base alters the decision", func(t *testing.T) {
-		// The same queue entry judged against two bases: the diff, and with it whether the
-		// heavy job may be skipped, follows the base.
-		repo := t.TempDir()
-		g := func(args ...string) string {
-			t.Helper()
-			cmd := exec.Command("git", append([]string{"-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
-			cmd.Dir = repo
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("git %v: %v\n%s", args, err, out)
+// The runs of a gate are read at their newest attempt (highest id), so a re-run on the same head
+// is not poisoned by an older failure and an older pass does not hide a newer failure. Known-bad
+// input: failure then success (refused before), success then failure, a running newest attempt,
+// and a run that does not exist.
+func TestGateRunsUseTheNewestAttempt(t *testing.T) {
+	gates := []PathGate{{File: "w/rederive.yml", Paths: []string{"registry/**"}, Jobs: []string{"rederive", "candidate"}}}
+	changed := []string{"registry/a.py"}
+	rec := func(id int64, name, status, concl string) gateRunRecord {
+		return gateRunRecord{ID: id, Name: name, Status: status, Conclusion: concl}
+	}
+	cases := []struct {
+		name string
+		recs []gateRunRecord
+		want string // substring of the finding, or "" for none
+	}{
+		{"older failure then newer success passes", []gateRunRecord{rec(5, "rederive", "completed", "failure"), rec(9, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
+		{"line order does not matter", []gateRunRecord{rec(9, "rederive", "completed", "success"), rec(5, "rederive", "completed", "failure"), rec(6, "candidate", "completed", "success")}, ""},
+		{"older success then newer failure is refused", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "failure"), rec(6, "candidate", "completed", "success")}, "concluded failure"},
+		{"a newest attempt still running is no result", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "in_progress", ""), rec(6, "candidate", "completed", "success")}, "has not completed"},
+		{"a missing run is refused", []gateRunRecord{rec(5, "rederive", "completed", "success")}, `no check run "candidate"`},
+		// A workflow's concurrency group cancels the run a newer one replaces. A cancelled run
+		// proves nothing: when a newer run passed it is not the newest and does not matter; when
+		// it is the newest it is a finished run that did not succeed, never a pass.
+		{"an older cancelled run and a newer success passes", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(9, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
+		{"an older success and a newer cancelled run is no pass", []gateRunRecord{rec(5, "rederive", "completed", "success"), rec(9, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
+		{"a cancelled run alone is no pass", []gateRunRecord{rec(5, "rederive", "completed", "cancelled"), rec(6, "candidate", "completed", "success")}, "concluded cancelled"},
+		{"ids compare as numbers", []gateRunRecord{rec(9, "rederive", "completed", "failure"), rec(10, "rederive", "completed", "success"), rec(6, "candidate", "completed", "success")}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := CheckGates(gates, changed, foldGateRuns(c.recs))
+			if c.want == "" {
+				none(t, got)
+			} else {
+				has(t, got, c.want)
 			}
-			return strings.TrimSpace(string(out))
-		}
-		g("init", "-q", "-b", "main")
-		if err := os.MkdirAll(filepath.Join(repo, "registry/scripts"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("1\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		g("add", "-A")
-		g("commit", "-q", "-m", "one")
-		old := g("rev-parse", "HEAD")
-		if err := os.WriteFile(filepath.Join(repo, "registry/scripts/a.py"), []byte("2\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		g("commit", "-q", "-am", "two")
-		newBase := g("rev-parse", "HEAD")
-		if err := os.WriteFile(filepath.Join(repo, "README"), []byte("x\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		g("add", "-A")
-		g("commit", "-q", "-m", "three")
-		head := g("rev-parse", "HEAD")
-		decide := func(base string) []string {
-			out := g("diff", "--name-only", base, head)
-			return CheckQueueGates(gates, strings.Fields(out), skipped)
-		}
-		none(t, decide(newBase))
-		has(t, decide(old), "concluded skipped")
-	})
-}
-
-func TestGateChangedReadsThePathsFromTheWorkflow(t *testing.T) {
-	repo := t.TempDir()
-	g := func(args ...string) string {
-		t.Helper()
-		cmd := exec.Command("git", append([]string{"-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
-		cmd.Dir = repo
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-	g("init", "-q", "-b", "main")
-	wf := filepath.Join(repo, "w.yml")
-	if err := os.WriteFile(wf, []byte("name: w\non:\n  pull_request:\n    paths:\n      - registry/**\n  merge_group:\njobs:\n  w:\n    runs-on: x\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, "a"), []byte("1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	g("add", "-A")
-	g("commit", "-q", "-m", "base")
-	base := g("rev-parse", "HEAD")
-	if err := os.WriteFile(filepath.Join(repo, "a"), []byte("2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	g("commit", "-q", "-am", "docs only")
-	head := g("rev-parse", "HEAD")
-	if err := os.MkdirAll(filepath.Join(repo, "registry"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(repo, "registry/x"), []byte("1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	g("add", "-A")
-	g("commit", "-q", "-m", "registry")
-	head2 := g("rev-parse", "HEAD")
-	cwd, _ := os.Getwd()
-	defer func() {
-		if err := os.Chdir(cwd); err != nil {
-			t.Error(err)
-		}
-	}()
-	if err := os.Chdir(repo); err != nil {
-		t.Fatal(err)
-	}
-	for _, c := range []struct{ head, want string }{{head, "run=false"}, {head2, "run=true"}} {
-		var out strings.Builder
-		if err := run([]string{"gate-changed", "-workflow", wf, "-base", base, "-head", c.head}, &out); err != nil || strings.TrimSpace(out.String()) != c.want {
-			t.Errorf("gate-changed at %s = %q, %v; want %s", short(c.head), out.String(), err, c.want)
-		}
-	}
-}
-
-func TestGateWorkflowsRunOnTheMergeQueue(t *testing.T) {
-	for _, f := range []string{"rederive.yml", "ledger-candidate.yml"} {
-		src, err := os.ReadFile("../../.github/workflows/" + f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !regexp.MustCompile(`(?m)^  merge_group:`).Match(src) {
-			t.Errorf("%s has no merge_group trigger, so it has no run at the merge-queue commit (X17, X22)", f)
-		}
-		g, ok, err := ParsePathGate(f, src)
-		if err != nil || !ok {
-			t.Fatalf("%s: %v %v", f, ok, err)
-		}
-		if !slices.ContainsFunc(g.Jobs, isChangesJob) || !regexp.MustCompile(`needs: changes`).Match(src) {
-			t.Errorf("%s: its heavy job does not wait on a cheap %q job: %v", f, "changes", g.Jobs)
-		}
+		})
 	}
 }
 
@@ -1137,63 +794,81 @@ func TestPathPatterns(t *testing.T) {
 	}
 }
 
-// The record round-trips through the check run's summary, and the record in force at the review
-// is the last one completed at or before it.
-func TestAnswerRecords(t *testing.T) {
-	tree := strings.Repeat("b", 40)
-	d := map[string]string{"X2": AnswerDigest("X2", "yes, fine", tree), "SUB-1": AnswerDigest("SUB-1", "no, because", tree)}
-	got := ParseAnswerRecord(FormatAnswerRecord(tree, d))
-	if len(got) != 2 || got["X2"] != d["X2"] || got["SUB-1"] != d["SUB-1"] {
-		t.Fatalf("round trip: %v", got)
+// X24: a review thread is resolved, and states an outcome.
+func TestCheckThreads(t *testing.T) {
+	good := []Thread{
+		{URL: "t1", Resolved: true, Comments: []string{"nit", "Outcome: fixed in abc"}},
+		{URL: "t2", Resolved: true, Comments: []string{"Outcome: filed inference-sim/blis-substrate#9"}},
+		{URL: "t3", Resolved: true, Comments: []string{"Outcome: rejected: the datasheet states it"}},
 	}
-	if AnswerDigest("X2", "yes, fine", tree) == AnswerDigest("X2", "yes, fine ", strings.Repeat("c", 40)) {
-		t.Error("the digest does not depend on the tree")
-	}
-	if AnswerDigest("X2", "yes", tree) == AnswerDigest("X3", "yes", tree) {
-		t.Error("the digest does not depend on the question")
-	}
-	mk := func(at, text string) apiAnswerRecord {
-		r := apiAnswerRecord{CompletedAt: at}
-		r.Output.Summary = FormatAnswerRecord(tree, map[string]string{"X2": AnswerDigest("X2", text, tree)})
-		return r
-	}
-	recs := []apiAnswerRecord{mk("2026-11-06T08:00:00Z", "yes, first"), mk("2026-11-06T09:30:00Z", "yes, second"), mk("2026-11-06T10:30:00Z", "yes, third")}
-	rec, ok := recordAt(recs, "2026-11-06T10:00:00Z")
-	if !ok || rec["X2"] != AnswerDigest("X2", "yes, second", tree) {
-		t.Errorf("record in force at the review: %v %v", rec, ok)
-	}
-	if _, ok := recordAt(recs, "2026-11-06T07:00:00Z"); ok {
-		t.Error("a record written after the review was taken as in force")
-	}
-	if _, ok := recordAt(recs, ""); ok {
-		t.Error("a review with no time found a record")
+	none(t, CheckThreads(good))
+	none(t, CheckThreads(nil))
+	for _, c := range []struct {
+		name string
+		th   Thread
+		want string
+	}{
+		{"open thread", Thread{URL: "t1", Comments: []string{"Outcome: fixed"}}, "is open"},
+		{"resolved without outcome", Thread{URL: "t1", Resolved: true, Comments: []string{"done"}}, "resolved with no"},
+		{"rejected without reason", Thread{URL: "t1", Resolved: true, Comments: []string{"Outcome: rejected:"}}, "resolved with no"},
+		{"filed without issue", Thread{URL: "t1", Resolved: true, Comments: []string{"Outcome: filed"}}, "resolved with no"},
+		{"outcome not at the start of a line", Thread{URL: "t1", Resolved: true, Comments: []string{"I think Outcome: fixed"}}, "resolved with no"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			has(t, CheckThreads(append([]Thread{good[0]}, c.th)), c.want)
+		})
 	}
 }
 
-// The workflow writes the record the merge check reads.
-func TestThePullRequestCheckWritesTheAnswerRecord(t *testing.T) {
-	raw, err := os.ReadFile("../../.github/workflows/shared-pr-checks.yml")
-	if err != nil {
-		t.Fatal(err)
+func TestThreadsOfKeepsTheFirstCommentURL(t *testing.T) {
+	var api apiThread
+	api.IsResolved = true
+	api.Comments.Nodes = append(api.Comments.Nodes,
+		struct {
+			Body string `json:"body"`
+			URL  string `json:"url"`
+		}{"first", "u1"},
+		struct {
+			Body string `json:"body"`
+			URL  string `json:"url"`
+		}{"Outcome: fixed", "u2"})
+	got := threadsOf([]apiThread{api})
+	if len(got) != 1 || got[0].URL != "u1" || !got[0].Resolved || len(got[0].Comments) != 2 {
+		t.Fatalf("threadsOf = %+v", got)
 	}
-	for _, want := range []string{"prcheck answers-record", `name="` + AnswersCheck + `"`, "checks: write"} {
-		if !strings.Contains(string(raw), want) {
-			t.Errorf("shared-pr-checks.yml does not contain %q", want)
+	none(t, CheckThreads(got))
+}
+
+// The pull-request check runs the three checks that moved out of the merge job, and nothing
+// in the workflows still names a merge queue (X22, X24, X28).
+func TestThePullRequestCheckHoldsTheChecksOfTheRemovedMergeJob(t *testing.T) {
+	read := func(p string) string {
+		t.Helper()
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	pr := read("../../.github/workflows/shared-pr-checks.yml")
+	for _, want := range []string{
+		`prcheck threads -repo "${{ github.repository }}" -pr "$PR"`,
+		`prcheck issues -repo "${{ github.repository }}" -closes "$RUNNER_TEMP/body.md"`,
+	} {
+		if !strings.Contains(pr, want) {
+			t.Errorf("shared-pr-checks.yml does not run %q", want)
 		}
 	}
-}
-
-// A body written before the reviewer wording carries the old automation comment. The parser
-// reads items only, so it keeps the answers and rewrites the comment to the current text.
-func TestMergeQuestionsAcceptsOldComment(t *testing.T) {
-	old := "## Review questions\n\n<!-- Added by the review-question automation (design §13.2). A code owner ticks each item and writes yes or no with a one-line reason after \"Answer:\". -->\n\n" +
-		"- [x] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: no, it is the datasheet figure\n"
-	qs := "- [ ] **X2** Does this hide policy? Reviewer: owners. (changed: `kernel/a.go`) Answer: \n"
-	nb, open := MergeQuestions(old, qs)
-	if len(open) != 0 {
-		t.Fatalf("an answered item under the old comment was reopened: %v\n%s", open, nb)
+	files, err := filepath.Glob("../../.github/workflows/*.yml")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no workflows: %v", err)
 	}
-	if !strings.Contains(nb, "Answer: no, it is the datasheet figure") || strings.Contains(nb, "code owner") || !strings.Contains(nb, "A reviewer ticks each item") {
-		t.Fatalf("the answer was lost or the comment not rewritten:\n%s", nb)
+	for _, f := range files {
+		if strings.Contains(read(f), "merge_group") {
+			t.Errorf("%s has a merge_group trigger or reads a merge-group event; BLIS repositories do not use a merge queue (X22)", filepath.Base(f))
+		}
+	}
+	if _, err := os.Stat("../../.github/workflows/shared-merge-check.yml"); err == nil {
+		t.Error("shared-merge-check.yml still exists")
 	}
 }

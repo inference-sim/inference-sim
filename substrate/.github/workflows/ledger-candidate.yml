@@ -11,12 +11,17 @@ name: ledger candidate
 
 on:
   pull_request:
+    # The full set judges a pull request whose base is main, the pull request that merges. A stacked
+    # layer (any other base) runs ci-light.yml. Retargeting a pull request to main is a change of
+    # its base branch, which GitHub reports as the activity type `edited` (not a default type), so
+    # `edited` is listed: without it the retarget starts no run. ready_for_review is listed so a
+    # draft marked ready is judged too. A new run for the same ref cancels the one in progress.
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
     paths:
       - registry/**
       - kernel/**
       - catalog/**
-  # GitHub applies no paths filter to merge_group; the `changes` job below decides.
-  merge_group:
 
 permissions:
   contents: read
@@ -24,37 +29,14 @@ permissions:
 env:
   GOTOOLCHAIN: local
 
-jobs:
-  # GitHub applies no paths filter to merge_group, so this workflow starts for every queue
-  # entry. This cheap job decides whether the heavy job has anything to check: on a merge
-  # group it compares base_sha..head_sha with this file's own pull_request paths (read from
-  # this file by prcheck, never copied); on every other event it says run. When no path
-  # changed the heavy job is skipped and the workflow concludes success, so the merge check
-  # can require a successful run of it at the merge-queue commit (X17, X22).
-  changes:
-    name: ledger-candidate changes
-    runs-on: ubuntu-latest
-    outputs:
-      run: ${{ steps.decide.outputs.run }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/go-toolchain
-      - id: decide
-        env:
-          EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.merge_group.base_sha }}
-          HEAD: ${{ github.event.merge_group.head_sha }}
-        run: |
-          set -euo pipefail
-          if [ "$EVENT" != "merge_group" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
-          go run ./tools/prcheck gate-changed -workflow .github/workflows/ledger-candidate.yml -base "$BASE" -head "$HEAD" >> "$GITHUB_OUTPUT"
+# One run per head, as in rederive.yml: a newer run for the same pull request replaces the one
+# in progress, and the gate reads the newest attempt.
+concurrency:
+  group: ledger-candidate-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   candidate:
-    needs: changes
-    if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
