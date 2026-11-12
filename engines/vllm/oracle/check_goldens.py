@@ -43,6 +43,7 @@ GOLDEN_DIRS = (
     "core/engine/testdata/golden/",
     "core/engine/testdata/golden-dp/",
     "core/engine/testdata/golden-dp-async/",
+    "core/engine/testdata/golden-dp-nixl/",
     "core/connector/nixl/testdata/golden/",
     "core/connector/offloading/testdata/golden/",
     "core/metrics/testdata/golden/",
