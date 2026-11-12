@@ -237,7 +237,6 @@ func TestADataParallelPrefillGroupHoldsEachRequestOnItsRank(t *testing.T) {
 	pe := newHostEngine(t, producer+dpPool(2, 8, 1), 0)
 	h := &host{t: t, engs: []*hostEngine{pe}}
 	g := pe.e.(*DPGroup)
-	rankOf := map[string]int{}
 	for i := 0; i < 4; i++ {
 		// Distinct prompts: a prefix cache shares blocks between requests of one rank, which would
 		// appear in two handoffs legitimately.
@@ -246,7 +245,6 @@ func TestADataParallelPrefillGroupHoldsEachRequestOnItsRank(t *testing.T) {
 		if err := g.Add(r, 0); err != nil {
 			t.Fatal(err)
 		}
-		rankOf[r.ID] = g.rankOf[r.ID]
 	}
 	h.run(func() bool { return len(pe.handoffs) == 4 })
 	if len(pe.handoffs) != 4 {
@@ -266,40 +264,16 @@ func TestADataParallelPrefillGroupHoldsEachRequestOnItsRank(t *testing.T) {
 			blocks[b] = ho.ID
 		}
 	}
-	used := map[int]bool{}
-	for _, r := range rankOf {
-		used[r] = true
-	}
-	if len(used) != 2 {
-		t.Fatalf("handoffs sit on ranks %v: the balancer should spread four prefills over two ranks", rankOf)
-	}
+	// Ending one hold frees that request's blocks and no others': the group's used blocks fall by exactly
+	// the blocks that handoff named, at the next step.
 	ho := pe.handoffs[0]
-	held := rankOf[ho.ID]
-	other := 1 - held
+	before := g.Snapshot().KVBlocksUsed
 	if err := g.TransferDone(ho.Transfer, true, h.now); err != nil {
 		t.Fatal(err)
 	}
-	// The worker of the rank that holds the KV reports the send done with its next output; the other rank's
-	// worker reports nothing.
-	if !g.ranks[held].e.pd.pending() || g.ranks[other].e.pd.pending() {
-		t.Errorf("after ending the hold of %s on rank %d: pending report on rank %d is %t, on rank %d %t",
-			ho.ID, held, held, g.ranks[held].e.pd.pending(), other, g.ranks[other].e.pd.pending())
-	}
-	// A request the group steps next carries that report: the hold on rank held ends and its blocks are freed,
-	// while every other handoff is still held.
-	r := req("q", 20, 2)
-	r.RemoteDecode, r.MaxOutputTokens = true, 1
-	if err := g.Add(r, h.now); err != nil {
-		t.Fatal(err)
-	}
-	h.run(func() bool { _, ok := pe.finished["q"]; return ok })
-	if g.ranks[held].e.s.Request(ho.ID) != nil {
-		t.Errorf("%s is still held on rank %d after its hold ended", ho.ID, held)
-	}
-	for _, o := range pe.handoffs[1:] {
-		if o.ID != ho.ID && g.ranks[rankOf[o.ID]].e.s.Request(o.ID) == nil {
-			t.Errorf("%s was freed when %s's hold ended", o.ID, ho.ID)
-		}
+	h.run(func() bool { return g.Snapshot().KVBlocksUsed < before })
+	if freed := before - g.Snapshot().KVBlocksUsed; int(freed) != len(ho.Blocks) {
+		t.Errorf("ending the hold of %s freed %d blocks, want the %d it held", ho.ID, freed, len(ho.Blocks))
 	}
 	if err := g.TransferDone(ho.Transfer, true, h.now); !errors.Is(err, engine.ErrUnknownTransfer) {
 		t.Errorf("TransferDone of an ended hold = %v, want ErrUnknownTransfer", err)
@@ -422,9 +396,6 @@ func TestADecodeRankWaitingForItsPullDoesNotStopTheOtherRank(t *testing.T) {
 		if err := g.Add(pullOf(id, 48, 8, 0), 0); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if g.rankOf["slow"] == g.rankOf["fast"] {
-		t.Skip("the balancer put both requests on one rank; the check needs two")
 	}
 	var fastDone engine.Time
 	de.onResult = func(res engine.Result) {

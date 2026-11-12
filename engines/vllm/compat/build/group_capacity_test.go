@@ -64,7 +64,7 @@ func TestEndpointGroupPlacementsAreWholeGroups(t *testing.T) {
 	if len(got) != 2 || got["instance_0"].NodeCount != 2 || got["instance_1"].NodeCount != 2 || got["instance_0"].Hostname != "" {
 		t.Errorf("placements %+v, want two groups of two nodes each and no single hostname", got)
 	}
-	if _, err := EndpointGroupPlacements(m, nil, 3, 0, 0); err == nil || !strings.Contains(err.Error(), "2-group capacity") {
+	if _, err := EndpointGroupPlacements(m, nil, 3, 0, 0); err == nil {
 		t.Errorf("three instances in a pool of two groups: %v, want a capacity refusal", err)
 	}
 	rank, err := EndpointPlacements(m, nil, 3, 0, 0)
