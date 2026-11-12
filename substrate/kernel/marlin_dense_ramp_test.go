@@ -11,7 +11,8 @@ import (
 // On SM90 a dense MXFP8 linear runs vLLM's Marlin W8A16 kernel. The registry carries its ramp as a
 // `transferred` pair moved from the same part's measured Marlin grouped GEMM, beside the `assumed`
 // BF16-envelope pair that is its named upper bound (design VAL-4: the most trusted rank is used).
-// These tests price MiniMax-M3 MXFP8 on the registry as committed and on the same registry with
+// Only h200 selects it: h100 has no held-out unit, so the landing criteria give it no verdict and
+// the bound prices it (docs/kernel/concepts/hopper-dense-mxfp8-ramp.md). These tests price MiniMax-M3 MXFP8 on the registry as committed and on the same registry with
 // the transferred entries removed, which is the bound alone.
 
 func isDenseMarlinMXFP8(e coefficient.Entry) bool {
@@ -48,12 +49,12 @@ func decodeSeconds(k *Kernel, n int) float64 {
 	return k.StepTime(kernel.Batch{DecodeThreshold: 1, Reqs: reqs}).Overlap.Seconds()
 }
 
-func TestHopperDenseMXFP8PricesOnTheTransferredRampNotTheBF16Bound(t *testing.T) {
+func TestH200DenseMXFP8PricesOnTheTransferredRampNotTheBF16Bound(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, chip := range []string{"h100", "h200"} {
+	for _, chip := range []string{"h200"} {
 		in := quantCase(t, d, "minimax-m3-mxfp8", chip)
 		got, bound := mustKernel(t, in), mustKernel(t, withoutTransferredDenseRamp(in))
 		var last float64
@@ -80,6 +81,38 @@ func TestHopperDenseMXFP8PricesOnTheTransferredRampNotTheBF16Bound(t *testing.T)
 	}
 }
 
+// h100 has no withheld series, so its transferred pair has no verdict and is not selected: the
+// released price is the assumed BF16 bound, identical to the registry without any transferred
+// entry, and the provenance says so.
+func TestH100DenseMXFP8PricesOnTheAssumedBoundUntilAHeldOutVerdictExists(t *testing.T) {
+	d, err := load.Embedded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := quantCase(t, d, "minimax-m3-mxfp8", "h100")
+	got, bound := mustKernel(t, in), mustKernel(t, withoutTransferredDenseRamp(in))
+	for _, n := range []int{512, 2048, 8192} {
+		if g, b := prefillSeconds(got, n), prefillSeconds(bound, n); g != b {
+			t.Errorf("h100: a %d-token prefill costs %v s in the released registry and %v s at the assumed bound; h100 is not selected for the transferred ramp, so the two must be equal", n, g, b)
+		}
+	}
+	if g, b := decodeSeconds(got, 4), decodeSeconds(bound, 4); g != b {
+		t.Errorf("h100: a 4-request decode step costs %v s in the released registry and %v s at the assumed bound", g, b)
+	}
+	seen := 0
+	for _, o := range mustKernel(t, in).Provenance() {
+		if o.Name == "gemm_eps_max_w8a16_mxfp8" || o.Name == "gemm_m_half_w8a16_mxfp8" {
+			seen++
+			if o.Method != "assumed" {
+				t.Errorf("h100 %s is reported as %q, want assumed", o.Name, o.Method)
+			}
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("h100: provenance lists %d of the dense ramp's two coefficients", seen)
+	}
+}
+
 func TestBlackwellDenseMXFP8IsPricedExactlyAsBefore(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {
@@ -96,12 +129,12 @@ func TestBlackwellDenseMXFP8IsPricedExactlyAsBefore(t *testing.T) {
 	}
 }
 
-func TestTheProvenanceNamesTheDenseRampAsTransferredAndUnkeyed(t *testing.T) {
+func TestTheProvenanceNamesTheH200DenseRampAsTransferredAndUnkeyed(t *testing.T) {
 	d, err := load.Embedded()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, chip := range []string{"h100", "h200"} {
+	for _, chip := range []string{"h200"} {
 		k := mustKernel(t, quantCase(t, d, "minimax-m3-mxfp8", chip))
 		seen := map[string]kernel.CoefficientOrigin{}
 		for _, o := range k.Provenance() {

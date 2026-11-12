@@ -996,7 +996,7 @@ tags build was diffed, and what the 0.25.0 timing does and does not contain is s
 | `attention_decode_rate_block_index_scores` | h200, deepseek-v4.1-flash | assumed | 3,840,000 B/µs, NVIDIA's empirical HBM rate (BwPeak × `hbm_derate`), not a bound | see below |
 | `gemm_{eps_max,m_half}_w4a16_mxfp4_grouped` | h200, gb300 | measured | 0.245 / 26 (h200), 0.114 / 55 (gb300), of the BF16 peak | vLLM's `MarlinExperts` MXFP4 rows, fitted under the kernel's routed-term composition. On gb300 it applies only where the MoE backend is Marlin W4A16 (the Kimi-K3 preview build FPM measured), not to stock v0.31.0 |
 | `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200 | assumed | the BF16 envelope: an upper bound on the asymptote; the knee is not a bound | no dense Marlin sweep exists on any part |
-| `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200, h100 | transferred | the part's own measured Marlin grouped pair (0.245 / 26 on h200, 0.282 / 15 on h100), which the lookup prefers to the `assumed` bound above (rank 3 against 7) | no dense Marlin sweep exists on any part; unkeyed, see reproducing-coefficients |
+| `gemm_{eps_max,m_half}_w8a16_mxfp8` | h200 | transferred | the part's own measured Marlin grouped pair (0.245 / 26), which the lookup prefers to the `assumed` bound above (rank 3 against 7). h100's pair (0.282 / 15) is a candidate, not in this registry: it has no held-out unit, so the bound prices h100 | no dense Marlin sweep exists on any part; unkeyed, see reproducing-coefficients |
 | `host_gather_rate_uva` | h200 | assumed | 57,764 B/µs: the PCIe 5.0 raw rate × 128/130 line code × 264/288 | no host-gather measurement exists |
 
 **On H100 the same six entries ship, each fitted from H100's own rows.** H100 SXM is the
@@ -1011,7 +1011,7 @@ h100 entry.
 | `attention_decode_floor_block_index_scores` | 4.9 µs | 4.3 | 1.086x, n = 414; 246 floor-dominated points 1.067x; per checkpoint 4.95 / 4.90 |
 | `attention_decode_rate_block_index_scores` | 2,680,000 B/µs, BwPeak × `hbm_derate` (3.35 × 0.8) | 3,840,000 | `assumed`; the sweep's slope is 6.44 TB/s-equivalent, 1.92× H100's peak |
 | `gemm_{eps_max,m_half}_w4a16_mxfp4_grouped` | 0.282 / 15 | 0.245 / 26 | 1.140x, signed 1.039, n = 27; int4 holdout 1.161x, signed 1.068 |
-| `gemm_{eps_max,m_half}_w8a16_mxfp8` | 1.0 / 170, H100's BF16 envelope | 0.992 / 110 | `assumed` |
+| `gemm_{eps_max,m_half}_w8a16_mxfp8` | 1.0 / 170, H100's BF16 envelope | 0.992 / 110 | `assumed` (h200 also carries a `transferred` pair above it; h100's is a non-selected candidate) |
 | `host_gather_rate_uva` | 57,764 B/µs, H100's own `host_link_bandwidth` × 128/130 × 264/288 | 57,764 | `assumed` |
 
 **Neither fitted pair scales with bandwidth, and the rows say so directly.** On the 207

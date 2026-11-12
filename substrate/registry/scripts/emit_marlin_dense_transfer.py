@@ -2,7 +2,7 @@
 """Write the `transferred` ramp of the dense Marlin W8A16 MXFP8 GEMM on Hopper.
 
     python scripts/emit_marlin_dense_transfer.py            # rewrite the entries
-    python scripts/emit_marlin_dense_transfer.py --check    # exit 1 if the file would change
+    python scripts/emit_marlin_dense_transfer.py --check    # exit 1 if a file would change
 
 WHY. On SM90 vLLM v0.31.0 serves every dense MXFP8 linear with MarlinMxfp8LinearKernel
 (W8A16: FP8 weights dequantised in registers, BF16 multiply, mma.sync). The registry carried
@@ -14,8 +14,14 @@ The same MMA core in its grouped (MoE) form IS measured on the same die
 knee of 15 tokens on h100 and 0.245 with 26 on h200.
 
 WHAT. Four entries, an asymptote and a half-max on each of h100 and h200, with method
-`transferred`. The value is the part's own committed grouped pair, moved to the dense kernel by
-a stated rule (below). It is NOT a fit to any end-to-end residual: no dashboard point, TTFT or
+`transferred`. Only the h200 pair is ACTIVE, in coefficients/cost-model-primitives.yaml, where the
+lookup reads it. The h100 pair is a CANDIDATE, written to candidates/ where the
+loader, the embed patterns and the validators do not look: the landing criteria
+(docs/kernel/concepts/hopper-dense-mxfp8-ramp.md) give h100 no held-out unit, so it has no
+verdict and the assumed bound keeps pricing it. To select it, a held-out verdict for h100 must
+exist; then move h100 from CANDIDATE_PARTS to ACTIVE_PARTS and re-run this script.
+
+The value is the part's own committed grouped pair, moved to the dense kernel by a stated rule (below). It is NOT a fit to any end-to-end residual: no dashboard point, TTFT or
 TPOT figure enters this script, which reads only the committed grouped entries.
 
 THE RULE. Same library (vLLM), same kernel family (Marlin), same MMA core and dequantisation
@@ -54,13 +60,27 @@ sys.path.insert(0, str(HERE))
 import coefficient_blocks as cb  # noqa: E402
 
 SET_PATH = HERE.parent / "coefficients" / "cost-model-primitives.yaml"
-PARTS = ("h100", "h200")
+# Not matched by any "coefficients/*.yaml" pattern (the loader's embed, the validators' globs).
+CANDIDATE_PATH = HERE.parent / "candidates" / "dense-marlin-mxfp8-transferred.yaml"
+ACTIVE_PARTS = ("h200",)
+CANDIDATE_PARTS = ("h100",)
 
 # (dense name, grouped source name, units)
 PAIR = (
     ("gemm_eps_max_w8a16_mxfp8", "gemm_eps_max_w4a16_mxfp4_grouped", "dimensionless"),
     ("gemm_m_half_w8a16_mxfp8", "gemm_m_half_w4a16_mxfp4_grouped", "tokens"),
 )
+
+DENSE_NAMES = tuple(d for d, _, _ in PAIR)
+
+CANDIDATE_HEADER = """\
+# CANDIDATE entries, NOT READ by the lookup: this directory is outside the registry's data
+# directories (acceptance, coefficients, routing), so the loader and the validators skip it.
+# The h100 dense Marlin W8A16 MXFP8 ramp is recorded here because it has no held-out unit and
+# so no verdict (docs/kernel/concepts/hopper-dense-mxfp8-ramp.md); the `assumed` bound in cost-model-primitives.yaml keeps pricing h100.
+# WRITTEN by scripts/emit_marlin_dense_transfer.py, which checks it. Do not edit by hand.
+coefficients:
+"""
 
 RULE = (
     "The part's own measured Marlin grouped pair (gemm_eps_max_w4a16_mxfp4_grouped and "
@@ -137,19 +157,52 @@ def entry_lines(chip: str, dense: str, src_name: str, units: str, src: dict,
     ]
 
 
+def candidate_note(chip: str) -> str:
+    return (" CANDIDATE, NOT SELECTED: this part has no held-out unit, so the landing criteria "
+            "give it no verdict; this entry sits outside the registry the lookup reads and the "
+            "assumed bound prices the GEMM." if chip in CANDIDATE_PARTS else "")
+
+
+def entries_for(entries: list[dict], chip: str) -> list[list[str]]:
+    out = []
+    srcs = {g: committed(entries, g, chip) for _, g, _ in PAIR}
+    eps, mh = (srcs[g]["value"] for _, g, _ in PAIR)
+    for dense, g, units in PAIR:
+        lines = entry_lines(chip, dense, g, units, srcs[g], eps, mh)
+        if chip in CANDIDATE_PARTS:
+            lines[-1] = lines[-1].replace("Reproduce with", candidate_note(chip).strip()
+                                          + " Reproduce with")
+        out.append(lines)
+    return out
+
+
+def drop_dense_transferred(blocks: list[list[str]], chips: tuple) -> list[list[str]]:
+    """Remove the transferred dense entries of `chips` (a part moved out of the active set)."""
+    keys = {cb.scope_key(f"{{hardware: [{c}]}}") for c in chips}
+    return [b for b in blocks
+            if not (cb.name_of(b) in DENSE_NAMES and cb.method_of(b) == "transferred"
+                    and cb.scope_of(b) is not None and cb.scope_key(cb.scope_of(b)) in keys)]
+
+
 def render(text: str) -> str:
+    """The active registry file with the ACTIVE_PARTS pairs written and no other part's."""
     entries = yaml.safe_load(text)["coefficients"]
-    blocks = cb.split(text)
-    for chip in PARTS:
-        scope = f"{{hardware: [{chip}]}}"
-        key = cb.scope_key(scope)
-        srcs = {g: committed(entries, g, chip) for _, g, _ in PAIR}
-        for dense, g, units in PAIR:
-            eps, mh = (srcs[g2]["value"] for _, g2, _ in PAIR)
-            cb.upsert(blocks, entry_lines(chip, dense, g, units, srcs[g], eps, mh),
+    blocks = drop_dense_transferred(cb.split(text), CANDIDATE_PARTS)
+    for chip in ACTIVE_PARTS:
+        key = cb.scope_key(f"{{hardware: [{chip}]}}")
+        for (dense, _, _), lines in zip(PAIR, entries_for(entries, chip)):
+            cb.upsert(blocks, lines,
                       after=lambda b, d=dense, k=key: cb.name_of(b) == d
                       and cb.scope_key(cb.scope_of(b) or "{}") == k)
     return cb.join(blocks)
+
+
+def render_candidates(text: str) -> str:
+    """The candidate file: the CANDIDATE_PARTS pairs, derived from the committed grouped entries."""
+    entries = yaml.safe_load(text)["coefficients"]
+    body = [line for chip in CANDIDATE_PARTS for lines in entries_for(entries, chip)
+            for line in lines]
+    return CANDIDATE_HEADER + "\n".join(body) + "\n"
 
 
 def main(argv: list[str]) -> int:
@@ -160,14 +213,21 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv[1:])
     before = SET_PATH.read_text(encoding="utf-8")
     after = render(before)
+    cand_before = CANDIDATE_PATH.read_text(encoding="utf-8") if CANDIDATE_PATH.exists() else None
+    cand_after = render_candidates(before)
     if args.check:
-        if after != before:
-            print(f"{SET_PATH.name} would change", file=sys.stderr)
+        stale = [p.name for p, b, a in ((SET_PATH, before, after), (CANDIDATE_PATH, cand_before, cand_after))
+                 if a != b]
+        if stale:
+            print(f"{', '.join(stale)} would change", file=sys.stderr)
             return 1
-        print(f"{SET_PATH.name} already matches the transfer")
+        print(f"{SET_PATH.name} and {CANDIDATE_PATH.name} already match the transfer")
         return 0
     SET_PATH.write_text(after, encoding="utf-8")
-    print(f"{SET_PATH.name}: dense Marlin MXFP8 transfer written for {', '.join(PARTS)}")
+    CANDIDATE_PATH.parent.mkdir(exist_ok=True)
+    CANDIDATE_PATH.write_text(cand_after, encoding="utf-8")
+    print(f"dense Marlin MXFP8 transfer: active for {', '.join(ACTIVE_PARTS)} in {SET_PATH.name}; "
+          f"candidate for {', '.join(CANDIDATE_PARTS)} in candidates/{CANDIDATE_PATH.name}")
     return 0
 
 

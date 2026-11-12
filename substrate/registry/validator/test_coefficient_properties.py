@@ -358,12 +358,18 @@ def test_the_derived_deepseek_v41_entries_equal_what_they_are_derived_from(hw):
     assert _single("host_gather_rate_uva", hw) == round(64000.0 * 128 / 130 * (256 + 8) / (256 + 32))
 
 
-@pytest.mark.parametrize("hw", ["h200", "h100"])
-def test_the_dense_marlin_mxfp8_ramp_is_the_parts_own_grouped_pair_and_says_it_is_transferred(hw):
+def _candidate_entries() -> list[tuple[str, dict]]:
+    path = REPO / "candidates" / "dense-marlin-mxfp8-transferred.yaml"
+    return [next(iter(e.items())) for e in yaml.safe_load(path.read_text())["coefficients"]]
+
+
+def test_the_dense_marlin_mxfp8_ramp_on_h200_is_the_parts_own_grouped_pair_and_says_it_is_transferred():
     """The dense Marlin W8A16 MXFP8 GEMM has no sweep. Its `transferred` ramp (design 9.2, D5) is
     the SAME part's measured grouped pair, never the other part's, never a number tuned to an
     end-to-end residual; it names its source scope and rule, claims no kernel hash, and sits
-    beside the `assumed` BF16-envelope bound it displaces (VAL-4), which stays."""
+    beside the `assumed` BF16-envelope bound it displaces (VAL-4), which stays. Only h200 is
+    selected: h100 has no held-out unit (see the candidate test below)."""
+    hw = "h200"
     for dense, grouped in (("gemm_eps_max_w8a16_mxfp8", "gemm_eps_max_w4a16_mxfp4_grouped"),
                            ("gemm_m_half_w8a16_mxfp8", "gemm_m_half_w4a16_mxfp4_grouped")):
         bodies = {b["method"]: b for _, n, b in ENTRIES
@@ -376,6 +382,36 @@ def test_the_dense_marlin_mxfp8_ramp_is_the_parts_own_grouped_pair_and_says_it_i
         assert "kernel_impls" not in t and "measured_on" not in t and "ci95" not in t
         assert t["value"] < bodies["assumed"]["value"] or dense.startswith("gemm_m_half")
         assert "TRANSFERRED, NOT MEASURED" in t["rationale"]
+
+
+def test_h100_has_only_the_assumed_dense_marlin_mxfp8_bound_in_the_registry():
+    """h100 has no withheld series, so no verdict: its transferred pair is not selected, and the
+    registry the lookup reads holds only the assumed bound for it."""
+    for dense in ("gemm_eps_max_w8a16_mxfp8", "gemm_m_half_w8a16_mxfp8"):
+        methods = sorted(b["method"] for _, n, b in ENTRIES
+                         if n == dense and (b.get("scope") or {}).get("hardware") == ["h100"])
+        assert methods == ["assumed"], (dense, methods)
+
+
+def test_the_h100_candidate_pair_is_the_parts_own_grouped_pair_and_is_marked_not_selected():
+    """The candidate record keeps the h100 pair reproducible: the same rule, the same part's
+    own measured grouped values, and a statement that it is not selected."""
+    cands = _candidate_entries()
+    assert sorted(n for n, _ in cands) == ["gemm_eps_max_w8a16_mxfp8", "gemm_m_half_w8a16_mxfp8"]
+    for name, body in cands:
+        grouped = name.replace("_w8a16_mxfp8", "_w4a16_mxfp4_grouped")
+        assert body["method"] == "transferred" and body["scope"] == {"hardware": ["h100"]}
+        assert body["value"] == _single(grouped, "h100", method="measured"), name
+        assert "CANDIDATE, NOT SELECTED" in body["rationale"]
+
+
+def test_the_dense_marlin_transfer_writer_reproduces_the_active_and_the_candidate_file():
+    """`emit_marlin_dense_transfer.py --check` exits 0: the active h200 pair and the h100
+    candidate record both equal what the writer derives from the committed grouped entries."""
+    import subprocess, sys
+    r = subprocess.run([sys.executable, str(REPO / "scripts" / "emit_marlin_dense_transfer.py"),
+                        "--check"], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
 
 
 def test_the_v41_host_entries_re_derive_from_their_vendored_measurements():
