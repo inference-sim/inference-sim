@@ -118,8 +118,9 @@ parallelism and engine settings. `--scenarios <dir>` is any directory of scenari
 `examplescenarios/` (speculative ones pin their acceptance, so no `--speculative-*` flag is
 needed): `deepseek-v4.1-flash-h100-tp8-dspark5.yaml` (the quickstart), an MoE
 `gpt-oss-120b-h100-fp4-vllm-tp2.yaml`, a `deepseek-v4-pro-b300-fp4-vllm-tp4-mtp2.yaml`, a P/D
-`glm-5-h200-3p1d-ib.yaml`. Kimi-K3 has none: its linear-attention (KDA) layers have no KV mapping
-in the engine yet, so a Kimi-K3 scenario is refused at startup. See
+`glm-5-h200-3p1d-ib.yaml`. Models with recurrent state (Kimi-K3's KDA layers, Nemotron-3-Ultra's
+Mamba-2 layers) run: the engine maps those layers to vLLM's Mamba cache spec and completes the block
+size itself (`testdata/recurrent/` has two scenarios that do). See
 [`examplescenarios/README.md`](https://github.com/inference-sim/inference-sim/tree/main/examplescenarios)
 for details.
 
