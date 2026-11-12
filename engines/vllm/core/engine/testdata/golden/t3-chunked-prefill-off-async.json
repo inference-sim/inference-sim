@@ -178,7 +178,7 @@
   }
  },
  "provenance": {
-  "blis_vllm_commit": "e77af2257574c66ec0897b0a8b1c6a589eea1942",
+  "blis_vllm_commit": "d855ac9d0501427f819cda43a5fbcde33966b640",
   "engine": {
    "async_scheduling": true,
    "max_concurrent_batches": 2,
@@ -187,7 +187,7 @@
    "use_v2_model_runner": false
   },
   "lockfile_sha256": "8baca0cbd0f28f5455c4d2c1b39a81ac3c424089e4c875e93614794c77932167",
-  "mock_version": "gpu-mock/4+420a44386aa4",
+  "mock_version": "gpu-mock/5+af60be80e293",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
@@ -202,6 +202,7 @@
    "vllm.config.vllm.HAS_TRITON",
    "KV event publisher",
    "tests.v1.core.utils.KVCacheConfig",
+   "tests.v1.core.utils.CacheConfig",
    "vllm.v1.executor.abstract.Executor",
    "EngineCore construction",
    "vllm.platforms.cpu async override",
@@ -219,6 +220,13 @@
   ],
   "model": "facebook/opt-125m",
   "model_revision": "27dcfa74d334bc871f3234de431e71c6eeba5dd6",
+  "oracle_inputs": {
+   "oracle/mocks.json": "29fec19aa8b5bd75e12b37893eea761684d4399a7e3bee1066cb749eac58769c",
+   "oracle/requirements.lock": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",
+   "oracle/run_enginecore.py": "52f5ca457d4f046679d0ca364c599a8015a4c30c8cf197a5eaf0b8829e4e1a71",
+   "oracle/run_scheduler.py": "dd0cbc255201f6d63588c720f4e687276f4b73fec0f490e997afdaacc2a5a127",
+   "oracle/scenarios-t3/t3-chunked-prefill-off-async.json": "750a6a5acd52e107be4f7947dda38dc9c1eb7bd0a3189efeca60f9f70f386dce"
+  },
   "platform": "linux-x86_64",
   "python": "3.12.16",
   "requirements_lock_sha256": "d35d5acc572e88ac802c099f89af8c24460ba1d1727e65c4fca4536a6d59c3bf",

@@ -441,7 +441,7 @@
  "provenance": {
   "blis_vllm_commit": "79a23776cef9065445f3588d720d882c087129ad+dirty",
   "lockfile_sha256": "4d719a16c9f869f71dbb64aef90aede8cc3920b973cc81479e10a67c2d408748",
-  "mock_version": "gpu-mock/4+420a44386aa4",
+  "mock_version": "gpu-mock/5+af60be80e293",
   "mocks": [
    "vllm.v1.outputs.ModelRunnerOutput",
    "tests.v1.core.utils.create_scheduler",
