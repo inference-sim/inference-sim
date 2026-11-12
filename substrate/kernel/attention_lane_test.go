@@ -45,8 +45,6 @@ func quantCase(t *testing.T, d *load.Data, name, chip string) Inputs {
 	return Inputs{}
 }
 
-func flag(b bool) *bool { return &b }
-
 // The registry states no kernel hash for the trtllm-gen prefill (none is published), so its lane
 // is not priced. These tests key the lane to fixture implementations, in test data only: the
 // hashes below are not any real kernel's. The bf16 pair is valid for laneBF16 and the fp8 pair
