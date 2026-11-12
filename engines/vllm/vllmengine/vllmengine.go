@@ -525,7 +525,8 @@ func poolBlock(path string, index int) (yaml.Node, deployment.Parallelism, error
 		if index < 0 || index >= len(doc.Pools) {
 			return yaml.Node{}, deployment.Parallelism{}, fmt.Errorf("vllmengine: %s has %d pools, not a pool %d", path, len(doc.Pools), index)
 		}
-		return doc.Pools[index].Engine, doc.Pools[index].Parallel, nil
+		// A yaml.Node field keeps an alias (`engine: *eng`) or a merge key as the parser left it.
+		return *engineconfig.ResolveAliases(&doc.Pools[index].Engine), doc.Pools[index].Parallel, nil
 	}
 }
 
@@ -548,6 +549,7 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	if block.Kind == 0 {
 		block = p.engine
 	}
+	block = *engineconfig.ResolveAliases(&block)
 	if block.Kind == yaml.DocumentNode && len(block.Content) == 1 {
 		block = *block.Content[0]
 	}

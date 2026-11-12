@@ -79,6 +79,7 @@ var refusedKeys = map[string]func(v *yaml.Node) string{
 // Decode reads. A key written in an earlier name, or a key of a group written at the wrong level,
 // is an error naming the key to use. The input is not changed.
 func FromVLLM(n *yaml.Node) (*yaml.Node, error) {
+	n = resolveAliases(n, 0)
 	if n == nil || n.Kind != yaml.MappingNode {
 		return n, nil
 	}
@@ -353,4 +354,72 @@ func slicesCompact(s []string) []string {
 		}
 	}
 	return out
+}
+
+// ResolveAliases is the engine block n as the YAML loader reads it, for a caller that holds the
+// node of a pool's engine block (a field of type yaml.Node keeps an alias as an alias node).
+func ResolveAliases(n *yaml.Node) *yaml.Node { return resolveAliases(n, 0) }
+
+// resolveAliases returns n with every alias replaced by the node it names and every merge key
+// (<<) expanded, the way the YAML loader reads them, so the translation sees the keys the file
+// states. A block written as `engine: *eng`, or with `<<: *eng`, would otherwise reach the
+// translation as an alias node or a key named "<<". An explicit key wins over a merged one,
+// and in a list of merged maps the earlier wins (YAML merge key type). The input is not
+// changed. A cycle (an alias to its own ancestor) is cut at depth 64 and left as written, which
+// the strict decoder then refuses.
+func resolveAliases(n *yaml.Node, depth int) *yaml.Node {
+	if n == nil || depth > 64 {
+		return n
+	}
+	switch n.Kind {
+	case yaml.AliasNode:
+		return resolveAliases(n.Alias, depth+1)
+	case yaml.SequenceNode:
+		out := *n
+		out.Content = make([]*yaml.Node, len(n.Content))
+		for i, c := range n.Content {
+			out.Content[i] = resolveAliases(c, depth+1)
+		}
+		return &out
+	case yaml.MappingNode:
+		out := *n
+		out.Content = nil
+		stated := map[string]bool{}
+		var merged []*yaml.Node
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			k, v := n.Content[i], n.Content[i+1]
+			if k.Kind == yaml.ScalarNode && k.Tag == "!!merge" {
+				rv := resolveAliases(v, depth+1)
+				switch rv.Kind {
+				case yaml.MappingNode:
+					merged = append(merged, rv)
+				case yaml.SequenceNode:
+					for _, m := range rv.Content {
+						if m.Kind == yaml.MappingNode {
+							merged = append(merged, m)
+						}
+					}
+				}
+				continue
+			}
+			if k.Kind == yaml.ScalarNode {
+				stated[k.Value] = true
+			}
+			out.Content = append(out.Content, resolveAliases(k, depth+1), resolveAliases(v, depth+1))
+		}
+		for _, m := range merged {
+			for i := 0; i+1 < len(m.Content); i += 2 {
+				k := m.Content[i]
+				if k.Kind == yaml.ScalarNode {
+					if stated[k.Value] {
+						continue
+					}
+					stated[k.Value] = true
+				}
+				out.Content = append(out.Content, k, m.Content[i+1])
+			}
+		}
+		return &out
+	}
+	return n
 }
