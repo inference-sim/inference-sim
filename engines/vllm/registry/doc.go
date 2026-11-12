@@ -37,6 +37,8 @@ var models = map[string]model{
 		connectors: []string{"NixlConnector", "NixlPullConnector"}, tier: 4},
 	"offloading-cpu": {pkg: "core/connector/offloading", scenarios: "oracle/scenarios/offloading/offloading-*.json",
 		connectors: []string{"OffloadingConnector"}, tier: 4},
+	"multi-nixl-offload": {pkg: "core/connector/multi", scenarios: "oracle/scenarios/multiconnector/multi-*.json",
+		connectors: []string{"MultiConnector"}, tier: 4},
 }
 
 // Load returns the registry, validated against blis-schemas' connector-registry schema.

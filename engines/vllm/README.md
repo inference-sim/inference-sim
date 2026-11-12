@@ -39,6 +39,7 @@ that interface. The design is
 | `testdata/` | inputs of `compat/kernelmodel`'s tests: inference-sim's scenarios (`testdata/README.md`); the catalog and registry are the pinned blis-substrate's, through its loader |
 | `docs/feature-matrix.md` | every feature our sources use, its v0.32.0 citation, owner, oracle tier and status |
 | `docs/testing.md` | the oracle tiers, the shared GPU mock, provenance, golden-trace policy |
+| `docs/multiconnector.md` | the MultiConnector model: the choice rule, what is saved to which child, how it is tested, what it refuses |
 
 ## The field list (fields.json)
 

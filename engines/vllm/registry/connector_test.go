@@ -243,6 +243,27 @@ func TestLoadServesTheRegisteredConnectors(t *testing.T) {
 	}
 }
 
+// MultiConnector is the composite role and nothing else: it moves no KV of its own, so a
+// deployment cannot name it as the P/D transfer or the offload connector, and the children it
+// composes are not served through it.
+func TestMultiConnectorIsServedAsACompositeOnly(t *testing.T) {
+	r, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !r.Serves("MultiConnector", connector.RoleComposite) {
+		t.Error("MultiConnector is not served as a composite")
+	}
+	for _, role := range []connector.Role{connector.RolePDTransfer, connector.RoleOffload} {
+		if r.Serves("MultiConnector", role) {
+			t.Errorf("MultiConnector is served for %s, a role no diff test checks it in", role)
+		}
+	}
+	if r.Serves("NixlConnector", connector.RoleComposite) || r.Serves("OffloadingConnector", connector.RoleComposite) {
+		t.Error("a child connector is served as a composite")
+	}
+}
+
 // A field the schema does not declare is refused, as blis-schemas' own loaders refuse it,
 // even in a registry that is otherwise valid.
 func TestLoadRefusesUnknownFields(t *testing.T) {

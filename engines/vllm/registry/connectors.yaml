@@ -26,3 +26,14 @@ connectors:
     behaves_like: offloading-cpu
     roles: [offload]
     evidence: "diff-test @ vLLM v0.32.0: core/connector/offloading, 13 scenarios + 3600 fuzz seeds at 0 mismatches (CPU tier, LRU, full attention and sliding-window groups, several workers, async scheduling and PP, DSpark and EAGLE-3 drafters)"
+  # MultiConnector composes an ordered list of children behind one connector
+  # (vllm/distributed/kv_transfer/kv_connector/v1/multi_connector.py:135@5df63a72). The schema's
+  # "composite" role is for it: it names no transfer or offload of its own, so it is served as
+  # neither pd_transfer nor offload. The children modelled are NixlConnector and
+  # OffloadingConnector (docs/multiconnector.md); any other child is refused where the engine
+  # block is built.
+  MultiConnector:
+    upstream: KVConnectorBase_V1
+    behaves_like: multi-nixl-offload
+    roles: [composite]
+    evidence: "diff-test @ vLLM v0.32.0: core/connector/multi, the MultiConnector scenarios (oracle/scenarios/multiconnector) and fuzz seeds at 0 mismatches against vLLM's real MultiConnector over its NIXL and offloading children"
