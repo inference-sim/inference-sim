@@ -10,6 +10,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 	"github.com/inference-sim/blis-substrate/contracts/units"
 
+	"github.com/inference-sim/blis-vllm/core/connector/multi"
 	"github.com/inference-sim/blis-vllm/core/connector/nixl"
 	core "github.com/inference-sim/blis-vllm/core/engine"
 	"github.com/inference-sim/blis-vllm/core/kv"
@@ -57,6 +58,12 @@ type connectorConfig struct {
 	// LoadFailurePolicy is kv_load_failure_policy, "fail" unstated
 	// (vllm/config/kv_transfer.py:88@5df63a72).
 	LoadFailurePolicy string `yaml:"kv_load_failure_policy,omitempty"`
+	// Connectors are, for connector MultiConnector, the children's names in the order vLLM
+	// tries them (kv_connector_extra_config["connectors"], multi_connector.py:226-249@5df63a72):
+	// the first that reports matched tokens loads a request's KV. The children are a NIXL
+	// connector, configured by this block, and the OffloadingConnector, configured by the
+	// engine block's kv_offload (multiconnector.go).
+	Connectors []string `yaml:"connectors,omitempty"`
 }
 
 // nixlNames are the names vLLM's connector factory resolves to the NIXL pull scheduler
@@ -72,7 +79,16 @@ type pd struct {
 	// matched is each request's external tokens, as the connector last reported them to the
 	// scheduler (get_num_new_matched_tokens): what its load moves.
 	matched map[string]int
-	next    engine.TransferID
+	// next is the last transfer ID started; an engine with a KV offload shares it with the
+	// offload side, so the IDs of both are one sequence (newEngine).
+	next *engine.TransferID
+	// notif are the transfers that only tell the prefiller its blocks are no longer wanted,
+	// by transfer, with their request (see started).
+	notif map[engine.TransferID]string
+	// multi is the MultiConnector the NIXL connector is a child of, at index child; nil when it
+	// runs alone.
+	multi *multi.Connector
+	child int
 	// stride and lane make the IDs of a data-parallel group's ranks distinct: rank r of n states
 	// its k-th transfer as (k-1)*n + r + 1, so the group finds the rank of a TransferDone from the
 	// ID alone. An engine alone has stride 1 and lane 0, and its IDs are 1, 2, 3 ...
@@ -97,7 +113,10 @@ type pd struct {
 
 // buildConnector installs the engine block's connector on the scheduler, refusing one it does
 // not model and what vLLM's NIXL worker refuses at start-up for the parallel layout.
-func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.Spec, hybrid bool, at plan.Endpoint) (*pd, error) {
+//
+// install is how the connector reaches the scheduler: SetConnector for an engine that runs it
+// alone, or the MultiConnector's list (multiconnector.go) beside an offload.
+func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.Spec, hybrid bool, at plan.Endpoint, install installer) (*pd, error) {
 	if c == nil {
 		return nil, nil
 	}
@@ -132,13 +151,14 @@ func buildConnector(s *sched.Scheduler, c *connectorConfig, pp int, spec sched.S
 		}
 		cfg.Groups = append(cfg.Groups, grp)
 	}
-	p := &pd{role: c.Role, nixl: nixl.New(cfg), matched: map[string]int{}, pulls: map[engine.TransferID]string{},
+	p := &pd{role: c.Role, nixl: nixl.New(cfg), next: new(engine.TransferID), notif: map[engine.TransferID]string{},
+		matched: map[string]int{}, pulls: map[engine.TransferID]string{},
 		holds: map[engine.TransferID]string{}, pulling: map[string]bool{}, remote: map[string]bool{}, decode: map[string]bool{},
 		at: at, peer: map[string]plan.Endpoint{}, stride: 1}
 	// is_kv_consumer and is_kv_producer (vllm/config/kv_transfer.py:130-136@5df63a72) set
 	// defer_block_free and requires_kv_delivery beside more than one batch in flight
 	// (vllm/v1/core/sched/scheduler.py:184-194@5df63a72).
-	if err := s.SetConnector(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute,
+	if err := install(metered{p.nixl, p.matched}, sched.ConnectorConfig{RecomputeLoadFailures: recompute,
 		Consumer: c.Role.consumer(), Producer: c.Role.producer()}); err != nil {
 		return nil, fmt.Errorf("vllm: %w", err)
 	}
@@ -189,12 +209,18 @@ func (p *pd) transferParams(r engine.Request, blockSize int) (*sched.TransferPar
 
 // newID is the next transfer's ID (stride, lane).
 func (p *pd) newID() engine.TransferID {
-	p.next++
-	return (p.next-1)*engine.TransferID(p.stride) + engine.TransferID(p.lane) + 1
+	*p.next++
+	return (*p.next-1)*engine.TransferID(p.stride) + engine.TransferID(p.lane) + 1
 }
 
 // started reports the loads a schedule began: the remote-prefilled requests that entered
 // WAITING_FOR_REMOTE_KVS, in queue order, each once.
+//
+// Beside an offload (MultiConnector), the child that loads a request is the first that reported
+// tokens. When that is the offload, the request waits for the offload's load, and NIXL, given no
+// external tokens, only tells the prefiller to release its blocks (pull_scheduler.py:157-168,
+// base_worker's notification for a pull of nothing): a pull of no tokens, reported so the
+// simulator can end the prefiller's handoff, which lands no KV and reports no finished_recving.
 func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 	if p == nil || !p.role.consumer() {
 		return nil
@@ -206,16 +232,28 @@ func (p *pd) started(s *sched.Scheduler) []engine.Transfer {
 		}
 		p.pulling[id] = true
 		tid := p.newID()
-		p.pulls[tid] = id
+		tokens, release := p.matched[id], false
+		if p.multi != nil {
+			if c, ok := p.multi.Chosen(id); !ok || c != p.child {
+				tokens, release = 0, true
+			}
+		}
+		if release {
+			p.notif[tid] = id
+		} else {
+			p.pulls[tid] = id
+		}
 		// A pull from a peer: it reads the prefill's node and rack (engine.Request.Peer) and lands on this
 		// engine's, and uses no tier.
 		blocks := 0
-		counts, _ := p.nixl.Pulled(id)
-		for _, n := range counts {
-			blocks += n
+		if !release {
+			counts, _ := p.nixl.Pulled(id)
+			for _, n := range counts {
+				blocks += n
+			}
 		}
-		out = append(out, engine.Transfer{ID: tid, Request: id, Kind: engine.TransferLoad, Tokens: p.matched[id],
-			Blocks: blocks, Move: plan.Transfer{Tokens: units.Tokens(p.matched[id]), From: p.peer[id], To: p.at,
+		out = append(out, engine.Transfer{ID: tid, Request: id, Kind: engine.TransferLoad, Tokens: tokens,
+			Blocks: blocks, Move: plan.Transfer{Tokens: units.Tokens(tokens), From: p.peer[id], To: p.at,
 				Kind: plan.TransferPeer}})
 	}
 	p.nixl.BuildMeta()
@@ -282,6 +320,14 @@ func (p *pd) done(id engine.TransferID, ok bool) error {
 		p.outcome.FinishedSending = append(p.outcome.FinishedSending, rid)
 		return nil
 	}
+	if rid, ok := p.notif[id]; ok {
+		// The prefiller's release notification landed; the offload's load, not this, brings the KV.
+		delete(p.notif, id)
+		delete(p.pulling, rid)
+		delete(p.matched, rid)
+		delete(p.remote, rid)
+		return nil
+	}
 	rid, pulling := p.pulls[id]
 	if !pulling {
 		return engine.ErrUnknownTransfer
@@ -340,7 +386,7 @@ func (g *batchOutput) Transfers(b core.Batch) sched.TransferOutcome {
 		// (finished_recving), offload.go.
 		jobs, recv := g.off.take(b.ID)
 		if len(jobs) > 0 {
-			o.WorkerMeta = jobs
+			o.WorkerMeta = g.off.workerMeta(jobs)
 		}
 		o.FinishedRecving = append(o.FinishedRecving, recv...)
 	}

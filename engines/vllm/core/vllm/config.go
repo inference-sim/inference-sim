@@ -427,10 +427,8 @@ func resolve(c Config) (settings, error) {
 		}
 	}
 	s.placement = c.Placement
-	if s.offload != nil && s.connector != nil {
-		// Both at once is vLLM's MultiConnector, which is not modelled.
-		return settings{}, fmt.Errorf("vllm: kv_transfer and kv_offload together run vLLM's MultiConnector, which is not "+
-			"modelled (%s)", "https://github.com/inference-sim/blis-vllm/issues/15")
+	if err := checkConnectorPair(s.connector, s.offload); err != nil {
+		return settings{}, err
 	}
 	if s.offload != nil && c.DataParallelSize > 1 {
 		// Each rank would run its own offload connector and CPU tier; the group aggregates a P/D

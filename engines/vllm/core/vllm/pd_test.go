@@ -405,12 +405,10 @@ func TestPDHybridHandoffHoldsThePrompt(t *testing.T) {
 	}
 }
 
-// Each refusal of a connector combination names the open issue that covers it (X28): kv_transfer
-// beside kv_offload is MultiConnector (#15), and kv_offload at dp > 1 is the data-parallel connector
-// work (#47).
+// Each refusal of a connector combination names the open issue that covers it (X28): the offload
+// connector at dp > 1 is the data-parallel connector work (#47).
 func TestConnectorCombinationRefusalsNameTheirIssue(t *testing.T) {
 	for _, c := range []struct{ name, extra, issue string }{
-		{"kv_transfer beside kv_offload", producer + cpuTier, "blis-vllm/issues/15"},
 		{"kv_offload at dp 2", cpuTier + "data_parallel_size: 2\n", "blis-vllm/issues/47"},
 	} {
 		_, err := resolve(mustConfig(t, c.extra))

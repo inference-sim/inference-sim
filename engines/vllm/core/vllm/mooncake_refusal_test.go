@@ -17,8 +17,8 @@ import (
 //     NixlConnector and NixlPullConnector and refuses every other name (buildConnector).
 //   - Through the NIXL connector: its backends come from kv_connector_extra_config
 //     (vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py:524-526@5df63a72), which can
-//     name MOONCAKE. The engine block's kv_transfer has three keys (connectorConfig: connector,
-//     kv_role, kv_load_failure_policy) and the block is decoded with KnownFields(true), so the
+//     name MOONCAKE. The engine block's kv_transfer has four keys (connectorConfig: connector,
+//     kv_role, kv_load_failure_policy, connectors, the MultiConnector's child names) and the block is decoded with KnownFields(true), so the
 //     extra-config key cannot be stated.
 //
 // If either test fails because the engine now takes such a deployment, the three proofs no longer

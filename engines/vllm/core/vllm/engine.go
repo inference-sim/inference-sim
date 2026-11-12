@@ -30,6 +30,7 @@ package vllm
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -207,15 +208,8 @@ func newEngine(st settings, pricer Pricer) (*Engine, error) {
 		e.at = st.placement.Endpoint()
 		e.plan = st.placement.Plan(offloadTiers(st.offload))
 	}
-	if e.pd, err = buildConnector(s, st.connector, st.pp, st.sched.Spec, len(st.sched.KVGroups) > 1, e.at); err != nil {
+	if err := e.buildConnectors(s, st); err != nil {
 		return nil, err
-	}
-	e.gpu.pd = e.pd
-	if st.offload != nil {
-		if e.off, err = buildOffload(s, st.offload, st.sched.Spec, st.specMethod, st.sched.EnablePrefixCaching, e.at); err != nil {
-			return nil, err
-		}
-		e.gpu.off = e.off
 	}
 	return e, nil
 }
@@ -257,7 +251,7 @@ func (e *Engine) SetPlacement(p placement.Placement) error {
 
 // startedTransfers reports whether the engine has stated a transfer against its place.
 func (e *Engine) startedTransfers() bool {
-	return (e.pd != nil && e.pd.next > 0) || (e.off != nil && e.off.next > 0)
+	return (e.pd != nil && *e.pd.next > 0) || (e.off != nil && *e.off.next > 0)
 }
 
 var _ placement.Placeable = (*Engine)(nil)
@@ -936,8 +930,10 @@ func (e *Engine) apply(b core.Batch, outcome engine.Outcome, end engine.Time, ta
 // (the engine package's same-instant order), and that step's output carries it.
 func (e *Engine) TransferDone(id engine.TransferID, ok bool, now engine.Time) error {
 	if e.off != nil {
-		// An engine runs one connector (resolve), so the transfer is the offload's.
-		return e.off.done(id, ok)
+		// The offload's and the P/D connector's transfers are one sequence of IDs (newEngine).
+		if err := e.off.done(id, ok); !errors.Is(err, engine.ErrUnknownTransfer) {
+			return err
+		}
 	}
 	return e.pd.done(id, ok)
 }
