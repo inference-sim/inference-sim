@@ -250,6 +250,7 @@ nav:
     - Parallelism: kernel/concepts/parallelism.md
     - Switch groups: kernel/concepts/switch-groups.md
     - The admission queue: kernel/concepts/admission-split.md
+    - The Hopper dense MXFP8 ramp: kernel/concepts/hopper-dense-mxfp8-ramp.md
     - Refuse, assume, override: kernel/concepts/resolution.md
   - Guides:
     - kernel/guides/index.md
