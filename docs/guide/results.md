@@ -56,6 +56,7 @@ Each identifier is a contracts/metrics registry entry in the pinned blis-substra
 | `itl_{mean,p50,p90,p95,p99}_ms` | the client-observed gap between consecutive output tokens, pooled over measured requests completing in the window; tokens of one chunk share its arrival (below) |
 | `step_interval_{mean,p50,p90,p95,p99}_ms` | the engines' per-decode-step interval, over measured requests completing in the window |
 | `interactivity_mean` | mean of `1000 / tpot_ms` over requests |
+| `interactivity_of_mean_tpot` | `1000 / tpot_mean_ms`, the reciprocal of the mean TPOT (InferenceX's `mean_intvty`); not `interactivity_mean`, which is higher whenever TPOT varies across requests |
 | `interactivity_p50`, `interactivity_p90` | `1000 / tpot_p50_ms`, `1000 / tpot_p90_ms` |
 | `output_tok_s` | output tokens over the window |
 | `output_tok_s_per_gpu` | `output_tok_s` over the GPUs the run's instances occupy |
@@ -71,7 +72,7 @@ A latency family is stated only when it has a sample: a run that completed nothi
 latency rather than a zero. The TPOT family needs a request with two or more output tokens;
 `interactivity_p50` and `interactivity_p90` additionally need that percentile of TPOT to be
 positive (they are its reciprocal), and `interactivity_mean` needs a request with a positive
-TPOT. A run can therefore state `interactivity_mean` without the percentiles. Percentiles are
+TPOT. A run can therefore state `interactivity_mean` without the percentiles. `interactivity_of_mean_tpot` needs a positive mean TPOT. Percentiles are
 numpy-linear.
 
 `itl_{mean,p50,p90,p95,p99}_ms` is the registry's `itl`: the gaps between consecutive output
@@ -182,6 +183,7 @@ document, or is listed here as dropped with the reason.
 | `request_itl_mean_ms`, `request_itl_p50_ms`, `request_itl_p90_ms`, `request_itl_p99_ms` | `metrics.tpot_*_ms` |
 | `interactivity_p50`, `interactivity_p90` | `metrics.interactivity_p50`, `metrics.interactivity_p90` |
 | `output_tok_per_user_mean` | `metrics.interactivity_mean` |
+| `request_itl_mean_ms` | `metrics.interactivity_of_mean_tpot` is `1000 /` it |
 | `step_interval_mean_ms`, `step_interval_p90_ms`, `step_interval_p99_ms` | `metrics.step_interval_*_ms` (with `p50`, `p95`) |
 | `output_throughput_tok_s` | `metrics.output_tok_s` |
 | `measured_window_s` | `window.duration_s` |
