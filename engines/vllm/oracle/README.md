@@ -52,6 +52,7 @@ so, when it is unset.
 | T4 NIXL connector | `run_connector.py` | `scenarios/connector/` | `gen_connector_fuzz.py` (seeds 10000+ reach `max_model_len`; 20000+ add hybrid groups and drafters; 30000+ the batch queue) | `./core/connector/nixl` (`BLIS_VLLM_CONNECTOR_FUZZ_DIR`) |
 | T4 OffloadingConnector (CPU tier, LRU) | `run_offloading.py` | `scenarios/offloading/` | `gen_offloading_fuzz.py` (seeds 20000+ add sliding-window groups) | `./core/connector/offloading` (`BLIS_VLLM_OFFLOAD_FUZZ_DIR`) |
 | T2 stated `swa_bounded_replay` (vLLM resolves the layout) | `run_swa_layout.py` | `scenarios/swa/` | | `./core/sched` (`TestSWALayoutScenariosAgainstVLLM`), `./compat/kernelmodel` |
+| T4 MultiConnector over NIXL and the OffloadingConnector, both orders | `run_multiconnector.py` | `scenarios/multiconnector/` | `gen_multiconnector_fuzz.py` (seeds 20000+ add sliding-window groups; 40000+ async scheduling) | `./core/connector/multi` (`BLIS_VLLM_MULTI_FUZZ_DIR`) |
 | T5 metrics | `run_metrics.py` | `scenarios/` (tier-2 scenarios) | `gen_fuzz.py` | `./core/metrics` (`BLIS_VLLM_METRICS_FUZZ_DIR`) |
 
 The guards: `check_mocks.py` (every write a runner makes into vLLM is listed in `mocks.json`),
@@ -61,6 +62,35 @@ produces now), `check_manifest.py` (tier 5's manifest against vLLM's live regist
 `test_checks.py` (each guard fails on what it guards). The mutation sweeps: `mutate.py` (T2),
 `mutate_t3.py`, `mutate_t4.py` (with the registry), `mutate_offloading.py` (the OffloadingConnector), `mutate_e24.py` (the engine interface) and
 `mutate_metrics.py` (T5).
+
+## MultiConnector scenarios
+
+`run_multiconnector.py` runs vLLM's `MultiConnector` (`vllm/distributed/kv_transfer/kv_connector/v1/
+multi_connector.py`) on the real Scheduler over its two children, a `NixlConnector` (the pull
+scheduler) and an `OffloadingConnector` (the CPU tier), in either order. A scenario is an offloading
+scenario (`kv_page`, `kv_groups`, `transfer`, per-request `load_delay` and `store_delay`) whose
+connector names `MultiConnector` itself (vLLM's `kv_offloading_size` would replace the connector), and
+whose requests may carry the NIXL fields of a connector scenario (`remote_prefill`, `recv_delay`,
+`recv_failed`, `invalid_blocks`; `remote_decode`, `max_tokens`, `send_delay`):
+
+```json
+"connector": {"name": "MultiConnector", "kv_role": "kv_both", "kv_load_failure_policy": "fail",
+  "extra_config": {"connectors": [
+    {"kv_connector": "NixlConnector", "kv_role": "kv_consumer"},
+    {"kv_connector": "OffloadingConnector", "kv_role": "kv_both",
+     "kv_connector_extra_config": {"cpu_bytes_to_use": 262144, "offload_prompt_only": false}}]}}
+```
+
+The scheduler-level `kv_role` and `kv_load_failure_policy` are the top-level ones; each child has its
+own. The runner reuses `run_offloading.py` (config, worker mock, CPU-tier record) and
+`run_connector.py` (request parameters, transport mock, connector-visible state) and writes no
+object of vLLM's that `mocks.json` does not already list. A trace holds the offloading runner's
+per-step record, `transport` (the NIXL report), `pending_push` (the MultiConnector's own) and
+`chosen`: request ID to child index, read from the connector's `_requests_to_connector` after the
+step. Beside `provenance`, `steps` and `finished` it holds `requests` (each request's
+`kv_transfer_params` as it was handed in; NIXL rewrites them as it runs) and `children` (the connector
+names in config order). The fuzz generator takes `<out dir> <first seed> <count>`; the Go test reads
+the corpus directory named by `BLIS_VLLM_MULTI_FUZZ_DIR`.
 
 ## Indexer cache dtype oracle
 

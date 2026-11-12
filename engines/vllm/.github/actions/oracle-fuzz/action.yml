@@ -26,6 +26,7 @@ runs:
           echo "FUZZ_DP_SEEDS=1000-500_2000-500"
           echo "FUZZ_OFFLOAD_SEEDS=1-1000_20000-1000_40000-600_60000-1000"
           echo "FUZZ_CONNECTOR_SEEDS=1-1000_10000-300_20000-1000_30000-1000"
+          echo "FUZZ_MULTI_SEEDS=1-1000_20000-1000_40000-1000"
           echo "FUZZ_VLLM_COMMIT=5df63a7203cdb9328d824a27b682e77c7b9928be"
           echo "FUZZ_MODEL_REVISION=27dcfa74d334bc871f3234de431e71c6eeba5dd6"
         } >> "$GITHUB_ENV"
@@ -43,6 +44,7 @@ runs:
         echo "t2=oracle-fuzz-t2-${base}-${FUZZ_T2_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_metrics.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "t3=oracle-fuzz-t3-${base}-${FUZZ_T3_SEEDS}-dp-${FUZZ_DP_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_fuzz.py', 'oracle/gen_fuzz_t3.py', 'oracle/gen_fuzz_dp.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_dp.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "connector=oracle-fuzz-connector-${base}-${FUZZ_CONNECTOR_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_connector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
+        echo "multi=oracle-fuzz-multi-${base}-${FUZZ_MULTI_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_multiconnector_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_connector.py', 'oracle/run_offloading.py', 'oracle/run_multiconnector.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
         echo "offloading=oracle-fuzz-offloading-${base}-${FUZZ_OFFLOAD_SEEDS}-${{ hashFiles('.github/actions/oracle-fuzz/action.yml', 'oracle/gen_offloading_fuzz.py', 'oracle/run_scheduler.py', 'oracle/run_enginecore.py', 'oracle/run_offloading.py', 'oracle/mocks.json', 'oracle/requirements.lock', 'oracle/drafts/**') }}" >> "$GITHUB_OUTPUT"
 
     # Tier 2: 4000 random scenarios through vLLM's Scheduler and its Prometheus logger.
@@ -159,6 +161,34 @@ runs:
         path: oracle/out/fuzz-offloading
         key: ${{ steps.keys.outputs.offloading }}
 
+    # Tier 4: 3000 MultiConnector scenarios (NIXL and the offloading connector, both orders) through
+    # vLLM's Scheduler with the real connector.
+    - id: multi
+      name: restore the multi-connector fuzz corpus and vLLM's traces
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-multi
+        key: ${{ steps.keys.outputs.multi }}
+    - name: generate the multi-connector fuzz corpus and vLLM's traces for it (cache miss)
+      if: steps.multi.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        ORACLE_LOCKFILE: ${{ github.workspace }}/oracle-env.lock
+        ORACLE_MODEL: ${{ github.workspace }}/oracle-model
+        HF_HUB_OFFLINE: "1"
+      run: |
+        export ORACLE_MODEL_REVISION="$FUZZ_MODEL_REVISION"
+        mkdir -p oracle/out/fuzz-multi
+        # Seeds 20000+ add sliding-window KV cache groups; 40000+ async scheduling.
+        for r in ${FUZZ_MULTI_SEEDS//_/ }; do python -I oracle/gen_multiconnector_fuzz.py oracle/out/fuzz-multi "${r%-*}" "${r#*-}"; done
+        python -I oracle/run_multiconnector.py vllm-source oracle/out/fuzz-multi
+    - name: save the multi-connector fuzz corpus and vLLM's traces (cache miss)
+      if: steps.multi.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: oracle/out/fuzz-multi
+        key: ${{ steps.keys.outputs.multi }}
+
     # Provenance for this run's corpora: each corpus's key, whether it came from the cache, and
     # the blis-vllm commit of the run that generated its traces (the traces themselves depend
     # only on what the key hashes). The run's own commit is in oracle/out/provenance.json.
@@ -173,6 +203,8 @@ runs:
         CONNECTOR_HIT: ${{ steps.connector.outputs.cache-hit }}
         OFFLOADING_KEY: ${{ steps.keys.outputs.offloading }}
         OFFLOADING_HIT: ${{ steps.offloading.outputs.cache-hit }}
+        MULTI_KEY: ${{ steps.keys.outputs.multi }}
+        MULTI_HIT: ${{ steps.multi.outputs.cache-hit }}
       run: |
         python3 -I - <<'PY'
         import glob, json, os
@@ -189,7 +221,8 @@ runs:
                "tier2": corpus("T2_KEY", "T2_HIT", "fuzz"),
                "tier3_and_dp": corpus("T3_KEY", "T3_HIT", "fuzz-t3", "fuzz-t3-dp"),
                "connector": corpus("CONNECTOR_KEY", "CONNECTOR_HIT", "fuzz-connector"),
-               "offloading": corpus("OFFLOADING_KEY", "OFFLOADING_HIT", "fuzz-offloading")}
+               "offloading": corpus("OFFLOADING_KEY", "OFFLOADING_HIT", "fuzz-offloading"),
+               "multi": corpus("MULTI_KEY", "MULTI_HIT", "fuzz-multi")}
         json.dump(out, open("oracle/out/fuzz-cache.json", "w"), indent=1)
         print(json.dumps(out, indent=1))
         PY
