@@ -6052,3 +6052,36 @@ def test_the_nightly_fetch_rederives_a_pinned_config(tmp_path):
     (target / "config.json").write_text("{}")
     r = _check(tree)
     assert r.returncode != 0 and "commit one or the other" in r.stderr, r.stderr
+
+
+def test_every_attention_and_grouped_gemm_states_its_typed_role():
+    """SUB-20: the deriver sets holds_engine_kv on every Attention (false only for a
+    block-index indexer's scorer) and shared on every GroupedGEMM (true only for a
+    shared-expert group), and sets neither anywhere else. No label decides either."""
+    import yaml
+
+    def walk(o):
+        if isinstance(o, dict):
+            if "op" in o:
+                yield o
+            for v in o.values():
+                yield from walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                yield from walk(v)
+
+    seen = {"scorer": 0, "main": 0, "shared": 0, "routed": 0}
+    for path in sorted((ROOT / "models").glob("*/graph.yaml")):
+        for n in walk(yaml.safe_load(path.read_text())):
+            if n["op"] == "Attention":
+                assert isinstance(n.get("holds_engine_kv"), bool), (path, n)
+                seen["main" if n["holds_engine_kv"] else "scorer"] += 1
+                assert (not n["holds_engine_kv"]) == (n.get("role") == "block_index_scores"), (path, n)
+            else:
+                assert "holds_engine_kv" not in n, (path, n)
+            if n["op"] == "GroupedGEMM":
+                assert isinstance(n.get("shared"), bool), (path, n)
+                seen["shared" if n["shared"] else "routed"] += 1
+            else:
+                assert "shared" not in n, (path, n)
+    assert all(seen.values()), seen

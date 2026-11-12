@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
 )
 
 // Arrival is one request and the instant it arrives.
@@ -38,6 +39,12 @@ type Options struct {
 	TransferTime func(engine.Transfer) engine.Duration
 	// TransferFails reports a transfer that fails; nil fails none.
 	TransferFails func(engine.Transfer) bool
+	// Boundary takes each transfer an engine starts, with the plan the engine states, across the
+	// simulator's side of the boundary: in practice env.DemandFor against an Environment (see
+	// envtest.Boundary). A non-nil error fails the run. It is separate from the checks below
+	// only because this package imports no Environment; those run on every transfer whether or
+	// not Boundary is set.
+	Boundary func(p plan.PoolPlan, t engine.Transfer) error
 	// Deadlines maps a request to the instant it times out; absent is never.
 	Deadlines map[string]engine.Time
 	// MaxSteps bounds the run; zero means 1,000,000.
@@ -121,6 +128,8 @@ type driver struct {
 	lastID    engine.BatchID
 	haveID    bool
 	pending   map[string]bool
+	reqs      map[string]engine.Request
+	pool      *plan.PoolPlan
 	held      map[string]bool
 	emitted   map[string]int
 	trace     Trace
@@ -152,6 +161,44 @@ func (d *driver) rewake() error {
 	return nil
 }
 
+// checkTransfer takes one started transfer across the boundary (design §6.2): it must agree with
+// its own Move, the engine must state a plan (engine.Planned) that can make the move, a load
+// from a peer must read from the peer the request named, and the simulator's side (Boundary)
+// must turn it into a demand. A transfer the cost model could not price fails here, where the
+// engine can be fixed, and not as a zero price in a run.
+func (d *driver) checkTransfer(tr engine.Transfer) error {
+	if err := tr.Validate(); err != nil {
+		return fmt.Errorf("at %d: %w", d.now, err)
+	}
+	pl, ok := d.e.(engine.Planned)
+	if !ok {
+		return fmt.Errorf("at %d: transfer %d started, and the engine does not implement engine.Planned: the simulator has no plan to price it against", d.now, tr.ID)
+	}
+	p := pl.Plan()
+	if err := p.Validate(); err != nil {
+		return fmt.Errorf("at %d: Plan() is not a valid PoolPlan: %w", d.now, err)
+	}
+	if d.pool == nil {
+		d.pool = &p
+	} else if !reflect.DeepEqual(*d.pool, p) {
+		return fmt.Errorf("at %d: Plan() returned a different plan from an earlier call", d.now)
+	}
+	if err := p.CheckTransfer(tr.Move); err != nil {
+		return fmt.Errorf("at %d: transfer %d: %w", d.now, tr.ID, err)
+	}
+	if r, ok := d.reqs[tr.Request]; ok && tr.Move.Kind == plan.TransferPeer && tr.Kind == engine.TransferLoad {
+		if r.Peer == nil || tr.Move.From != *r.Peer {
+			return fmt.Errorf("at %d: transfer %d pulls request %s from %+v, and the request names peer %v", d.now, tr.ID, tr.Request, tr.Move.From, r.Peer)
+		}
+	}
+	if d.opt.Boundary != nil {
+		if err := d.opt.Boundary(p, tr); err != nil {
+			return fmt.Errorf("at %d: transfer %d across the boundary: %w", d.now, tr.ID, err)
+		}
+	}
+	return nil
+}
+
 // step schedules as many batches as the engine allows at d.now. A batch runs once the
 // one before it ends, as on one device.
 func (d *driver) step() error {
@@ -173,6 +220,9 @@ func (d *driver) step() error {
 		// A batch that runs nothing may still start transfers (an asynchronous load
 		// admitted with no compute this step), and those must be priced like any other.
 		for _, tr := range b.TransfersStarted {
+			if err := d.checkTransfer(tr); err != nil {
+				return err
+			}
 			dt := engine.Duration(1)
 			if d.opt.TransferTime != nil {
 				dt = d.opt.TransferTime(tr)
@@ -357,10 +407,13 @@ func Drive(newEngine func() (engine.Engine, error), arrivals []Arrival, opt Opti
 	if e.InFlightLimit() < 1 {
 		return Trace{}, fmt.Errorf("InFlightLimit() = %d, want at least 1", e.InFlightLimit())
 	}
+	if err := CheckFields(e); err != nil {
+		return Trace{}, err
+	}
 	d := &driver{
 		e: e, opt: opt,
 		started: map[engine.BatchID]engine.Time{}, batches: map[engine.BatchID]engine.Batch{},
-		pending: map[string]bool{}, held: map[string]bool{}, emitted: map[string]int{},
+		pending: map[string]bool{}, reqs: map[string]engine.Request{}, held: map[string]bool{}, emitted: map[string]int{},
 		trace: Trace{Finished: map[string]engine.Finished{}},
 	}
 	maxSteps := opt.MaxSteps
@@ -394,6 +447,7 @@ func Drive(newEngine func() (engine.Engine, error), arrivals []Arrival, opt Opti
 				return Trace{}, fmt.Errorf("at %d: Add(%s): %w", d.now, ev.arrival.Req.ID, err)
 			}
 			d.held[ev.arrival.Req.ID] = true
+			d.reqs[ev.arrival.Req.ID] = ev.arrival.Req
 		case kindTransfer:
 			ok := opt.TransferFails == nil || !opt.TransferFails(ev.transfer)
 			if err := e.TransferDone(ev.transfer.ID, ok, d.now); err != nil {
@@ -451,6 +505,21 @@ func (q *queue) peek() *event {
 		return nil
 	}
 	return (*q)[0]
+}
+
+// CheckFields checks the field list an engine reports (design VLM-3): it validates as a list,
+// it names an engine kind and an upstream release, and a second call returns the same list.
+// The substrate holds no engine's fields, so it cannot check that the list is complete; that
+// is the engine repository's own completeness check.
+func CheckFields(e engine.Engine) error {
+	l := e.Fields()
+	if err := l.Validate(); err != nil {
+		return fmt.Errorf("Fields() is not a valid field list: %w", err)
+	}
+	if again := e.Fields(); !reflect.DeepEqual(l, again) {
+		return fmt.Errorf("Fields() returned a different list on a second call")
+	}
+	return nil
 }
 
 // TestEngine drives arrivals through newEngine twice and fails on any broken law, or if the

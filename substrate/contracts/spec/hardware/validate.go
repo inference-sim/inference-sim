@@ -2,6 +2,11 @@ package hardware
 
 import "github.com/inference-sim/blis-substrate/contracts/check"
 
+// MaxDenseRatio is the largest ratio of one data type's dense peak to the next wider type's on
+// a shipped part. NVIDIA's B300 datasheet gives NVFP4 at 3.11 times FP8; a sparse figure would be
+// at least twice the dense one, so 3.5 admits every dense ratio and refuses a sparse number.
+const MaxDenseRatio = 3.5
+
 // Validate performs field-level validation of a chip: required positives,
 // recognized provenance, and internal consistency between the packaging fields.
 func (c *Chip) Validate() *validate.Problems {
@@ -57,6 +62,23 @@ func (c *Chip) Validate() *validate.Problems {
 		p.Field("TFlopsFP8",
 			"FP8 peak %.1f does not exceed BF16 peak %.1f; check the transcription",
 			c.FP8Peak, c.BF16Peak)
+	}
+	// The peaks are dense figures (design SUB-16). A vendor datasheet quotes a dense and a sparse
+	// figure side by side, and the sparse one is twice the dense one, so a sparse figure entered
+	// as dense doubles the ratio between data types. Each narrower format runs at up to
+	// MaxDenseRatio times the wider one on every shipped part (FP8 over BF16 is 2.0 to 2.03,
+	// NVFP4 over FP8 is 2.0 to 3.11), so a ratio above it is a sparse figure or a slip.
+	if fp8Finite && bf16Finite && c.FP8Peak > 0 && c.FP8Peak/c.BF16Peak > MaxDenseRatio {
+		p.Field("TFlopsFP8", "FP8 peak %.1f is %.2fx the BF16 peak %.1f; dense FP8 is about twice dense BF16, so this looks like the sparse figure (at most %.1fx)",
+			c.FP8Peak, c.FP8Peak/c.BF16Peak, c.BF16Peak, MaxDenseRatio)
+	}
+	if fp8Finite && nvfp4Finite && c.FP8Peak > 0 && c.NVFP4Peak > 0 {
+		if c.NVFP4Peak <= c.FP8Peak {
+			p.Field("TFlopsNVFP4", "NVFP4 peak %.1f does not exceed FP8 peak %.1f; the narrower format buys nothing, which no shipped part shows", c.NVFP4Peak, c.FP8Peak)
+		} else if c.NVFP4Peak/c.FP8Peak > MaxDenseRatio {
+			p.Field("TFlopsNVFP4", "NVFP4 peak %.1f is %.2fx the FP8 peak %.1f; this looks like the sparse figure (at most %.1fx)",
+				c.NVFP4Peak, c.NVFP4Peak/c.FP8Peak, c.FP8Peak, MaxDenseRatio)
+		}
 	}
 	// SMCount is required and positive. The field has no omitempty, so a missing count
 	// decodes to zero and is rejected here alongside a negative one: every chip must

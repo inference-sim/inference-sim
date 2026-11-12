@@ -40,12 +40,14 @@ layer_kinds:
     k: 6144
     weight_dtype: bf16
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: gqa
     n_q: 32
     n_kv: 1
     d_h: 128
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -131,12 +133,14 @@ layer_kinds:
     k: 6144
     weight_dtype: bf16
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: gqa
     n_q: 32
     n_kv: 1
     d_h: 128
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -154,6 +158,7 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2048
     k: 6144

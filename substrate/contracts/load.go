@@ -469,26 +469,7 @@ func decodeStrict(path string, dst any) error {
 // convert exactly to its field, a non-finite number, a repeated key and a recursive alias
 // (validate.CheckNode).
 func decodeStrictBytes(path string, data []byte, dst any) error {
-	if err := validate.CheckSize(path, len(data)); err != nil {
-		return err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return fmt.Errorf("decoding %s: %w", path, err)
-	}
-	if err := validate.CheckNode(&doc, reflect.TypeOf(dst)); err != nil {
-		return fmt.Errorf("decoding %s: %w", path, err)
-	}
-	dec := yaml.NewDecoder(bytes.NewReader(data))
-	dec.KnownFields(true)
-	if err := dec.Decode(dst); err != nil {
-		return fmt.Errorf("decoding %s: %w", path, err)
-	}
-	if err := dec.Decode(&yaml.Node{}); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("decoding %s: the file holds a second YAML document, which would be "+
-			"ignored; a file is one document", path)
-	}
-	return nil
+	return validate.DecodeStrict(path, data, dst)
 }
 
 // loadFile reads path and decodes it with parse.

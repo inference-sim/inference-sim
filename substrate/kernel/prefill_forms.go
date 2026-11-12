@@ -34,8 +34,8 @@ func (k *Kernel) liftPrefillForms(c *resolve.Coefficients, layers []price.Planne
 			kinds[l.AttnKind] = true
 		}
 		for _, a := range l.Attentions {
-			if !a.HoldsKV() && a.Role != "" {
-				roles[a.Role] = true
+			if !a.HoldsKV {
+				roles[scorerKernel] = true
 			}
 		}
 		mhc = mhc || len(l.MHC) > 0

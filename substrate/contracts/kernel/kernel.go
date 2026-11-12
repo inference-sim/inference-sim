@@ -256,6 +256,14 @@ type Batch struct {
 	//
 	// Zero means none. It must not be negative (Validate).
 	PadTokens int
+
+	// DraftPaddedTokens is the token count this rank's drafter launches, after its own graph
+	// bucket and the width its data-parallel group agreed (the drafter coordinates its padding
+	// apart from the target's: vllm/v1/worker/gpu/spec_decode/dflash/speculator.py:455-471). The
+	// drafter's passes run the GEMMs and the MoE paths over that many rows, of which only the
+	// rank's own draft rows are real. Zero means the drafter launches only its own rows; a figure
+	// below them is read the same way. It must not be negative (Validate).
+	DraftPaddedTokens int
 }
 
 // ReqShape is one request's contribution. The three token counts are what an
@@ -412,6 +420,7 @@ func (b Batch) Validate() error {
 	var bad []string
 	for field, v := range map[string]int{
 		"PadTokens": b.PadTokens, "SMBudget": b.SMBudget, "DecodeThreshold": b.DecodeThreshold,
+		"DraftPaddedTokens": b.DraftPaddedTokens,
 	} {
 		if v < 0 {
 			bad = append(bad, fmt.Sprintf("%s %d", field, v))

@@ -9,6 +9,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
+	"github.com/inference-sim/blis-substrate/contracts/units"
 )
 
 // FIFO is a deliberately small engine that is not a model of any real server: first come
@@ -22,6 +25,10 @@ import (
 // "fifo.hold_until" (an instant before which the request may not be admitted, reported
 // through NextWake) and "fifo.load_tokens" (tokens to load before it runs, started as a
 // transfer at its first admission attempt).
+//
+// It is a Planned engine: its one tier is named FIFOTier by its configuration and is the
+// catalog device FIFOTierDevice in its plan, and a request's load is reported as engine.Transfer
+// whose Move says so. That makes FIFO the reference for how an engine states a transfer.
 type FIFO struct {
 	cfg      FIFOConfig
 	waiting  []*fifoReq
@@ -65,6 +72,28 @@ type fifoReq struct {
 
 // FIFOKind is the kind FIFOFactory builds.
 const FIFOKind = "enginetest-fifo"
+
+// FIFOTier is the name FIFO's configuration gives its offload tier, and FIFOTierDevice the
+// catalog device it resolves to in FIFO's plan. They differ on purpose: a tier name is the
+// engine's vocabulary and the plan states the catalog device (design §6.1).
+const (
+	FIFOTier       = "fifo-offload"
+	FIFOTierDevice = "cpu_dram"
+	// FIFOChip is the catalog chip FIFO's plan names. FIFO models no hardware; a test that
+	// prices its plan supplies a chip of this name.
+	FIFOChip = "fifo-chip"
+)
+
+var _ engine.Planned = (*FIFO)(nil)
+
+// Plan implements engine.Planned: one rank on one node with one offload tier.
+func (f *FIFO) Plan() plan.PoolPlan {
+	return plan.PoolPlan{
+		Hardware: FIFOChip,
+		Layout:   plan.Layout{Tensor: 1, RanksPerNode: 1, Nodes: 1},
+		Tiers:    []plan.KVTier{{Device: FIFOTierDevice}},
+	}
+}
 
 // FIFOFactory builds FIFO engines. It is not registered by default; a test registers it.
 type FIFOFactory struct{}
@@ -119,6 +148,9 @@ func NewFIFO(cfg FIFOConfig) (*FIFO, error) {
 
 // Add implements engine.Engine.
 func (f *FIFO) Add(r engine.Request, _ engine.Time) error {
+	if err := r.Validate(); err != nil {
+		return fmt.Errorf("fifo: %w", err)
+	}
 	if len(r.Prompt) == 0 {
 		return fmt.Errorf("fifo: request %s has an empty prompt", r.ID)
 	}
@@ -172,7 +204,8 @@ func (f *FIFO) Schedule(now engine.Time) (engine.Batch, error) {
 			q.loading = true
 			f.xfers[f.nextXfer] = q
 			b.TransfersStarted = append(b.TransfersStarted, engine.Transfer{
-				ID: f.nextXfer, Request: q.r.ID, Kind: engine.TransferLoad, Tokens: q.load,
+				ID: f.nextXfer, Request: q.r.ID, Kind: engine.TransferLoad, Tokens: q.load, Tier: FIFOTier,
+				Move: plan.Transfer{Tokens: units.Tokens(q.load), Kind: plan.TransferFromTier, Tier: FIFOTierDevice},
 			})
 			kept = append(kept, q)
 		default:
@@ -334,6 +367,24 @@ func (f *FIFO) NextWake(now engine.Time) (engine.Time, bool) {
 
 // InFlightLimit implements engine.Engine.
 func (f *FIFO) InFlightLimit() int { return f.cfg.InFlight }
+
+// Fields implements engine.Engine. The test engine reads one field, its in-flight bound,
+// and models it; a real engine returns the list of its whole upstream release.
+func (f *FIFO) Fields() fields.FieldList {
+	return fields.FieldList{
+		Kind:   fields.Kind,
+		Engine: fields.Engine{Kind: "fifo", Version: "0"},
+		Fields: []fields.Field{{
+			Name:   "max_concurrent_batches",
+			Source: fields.SourceConfig,
+			Status: fields.StatusModelled,
+			Evidence: fields.Evidence{
+				Traces: []string{"contracts/conformance/enginetest/enginetest_test.go"},
+			},
+			Estimation: fields.Estimation{Rule: fields.RuleNone},
+		}},
+	}
+}
 
 // Metrics implements engine.Engine.
 func (f *FIFO) Metrics(now engine.Time) engine.Metrics {

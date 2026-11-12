@@ -133,11 +133,12 @@ func specMethod(m string) string {
 // priceDraft prices one step's draft work, adding each resource's time to per, and returns
 // the stage time and the kernels it launches.
 //
-// COVERAGE LIMIT: the draft passes run at the requests' own draft rows, without the
-// data-parallel lockstep pad (Batch.PadTokens). vLLM's drafters coordinate their own
-// padded count across the data-parallel group (coordinate_batch_across_dp, e.g.
-// vllm/v1/spec_decode/dflash.py:230-261 at v0.31.0), which depends on every rank's draft
-// batch, and a batch states only this rank's pad for the target's forward.
+// The draft passes run at the requests' own draft rows plus the pad the engine states for the
+// drafter (Batch.DraftPaddedTokens). vLLM's drafters coordinate their own padded count across the
+// data-parallel group (coordinate_batch_across_dp, e.g. vllm/v1/spec_decode/dflash.py:230-261 at
+// v0.31.0), which depends on every rank's draft batch, so it is the engine's to state and not the
+// target's pad (Batch.PadTokens). A caller that states none prices the draft at its own rows, as
+// before.
 func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 	perResource *[numResources]float64) (float64, int) {
 	d := k.plan.Draft
@@ -172,6 +173,9 @@ func (k *Kernel) priceDraft(b kernel.Batch, s *stepShape,
 		drafting[i].Scheduled = positions
 	}
 	pass := kernel.Batch{Reqs: drafting, DecodeThreshold: positions, SMBudget: b.SMBudget}
+	// The rows the engine launched beyond the draft's own are the group's agreed padding
+	// (Batch.DraftPaddedTokens): they run the GEMMs and the MoE paths, and no attention.
+	pass.PadTokens = max(b.DraftPaddedTokens-len(drafting)*positions, 0)
 	ps := k.shapeOf(pass)
 	one := []layerKV{{}}
 	var per [numResources]float64
@@ -336,26 +340,26 @@ func (k *Kernel) liftStepTerms(c *resolve.Coefficients, g *model.Graph) error {
 	k.attentionByRole = map[string]floorRate{}
 	for _, l := range layers {
 		for _, a := range l.Attentions {
-			if a.HoldsKV() || a.Role == "" {
+			if a.HoldsKV {
 				continue
 			}
-			if _, done := k.attentionByRole[a.Role]; done {
+			if _, done := k.attentionByRole[scorerKernel]; done {
 				continue
 			}
-			rate := k.optional(c, "attention_decode_rate_"+a.Role, true,
-				"no measured decode form for the "+a.Role+" kernel, so it is priced with "+
+			rate := k.optional(c, "attention_decode_rate_"+scorerKernel, true,
+				"no measured decode form for the "+scorerKernel+" kernel, so it is priced with "+
 					"its attention kind's pair")
 			if rate <= 0 {
 				// Recorded once: the absence above is the record.
-				k.attentionByRole[a.Role] = floorRate{}
+				k.attentionByRole[scorerKernel] = floorRate{}
 				continue
 			}
 			floor := k.attentionFloor
-			if f := k.optional(c, "attention_decode_floor_"+a.Role, true,
-				"the "+a.Role+" kernel inherits the part-wide attention floor"); f > 0 {
+			if f := k.optional(c, "attention_decode_floor_"+scorerKernel, true,
+				"the "+scorerKernel+" kernel inherits the part-wide attention floor"); f > 0 {
 				floor = time.Duration(f * float64(time.Microsecond))
 			}
-			k.attentionByRole[a.Role] = floorRate{floor: floor, rate: rate * 1e6}
+			k.attentionByRole[scorerKernel] = floorRate{floor: floor, rate: rate * 1e6}
 		}
 	}
 	for role, fr := range k.attentionByRole {

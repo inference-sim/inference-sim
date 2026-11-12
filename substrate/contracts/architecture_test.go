@@ -22,7 +22,7 @@ func TestSpecDoesNotDependOnRules(t *testing.T) {
 		"./spec/evaluation", "./spec/acceptance", "./spec/routing", "./spec/measurement", "./spec/router",
 		"./spec/connector",
 		"./spec/result", "./spec/trace", "./spec/pointrecord", "./metrics", "./spec/fields",
-		"./vocab", "./check",
+		"./vocab", "./check", "./units", "./engine/plan", "./engine/env",
 	} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {
@@ -82,11 +82,23 @@ func TestRulesPackagesAreVersioned(t *testing.T) {
 	}
 }
 
-// TestEngineIsEngineNeutral: the engine contract names no engine, so it imports nothing
-// from this module. A document type or a rules pack reaching into it would make a second
-// engine edit this module to plug in, which is what the contract exists to rule out.
+// TestEngineIsEngineNeutral: the engine contract names no engine, so it imports nothing from
+// this module beyond the one document type its Fields method returns. A document type or a
+// rules pack reaching into it would make a second engine edit this module to plug in, which is
+// what the contract exists to rule out.
+//
+// The exception is the field list (spec/fields) and the strict-decoding helpers it is built
+// on (check). The list is a document about engines in general: it holds no engine's fields, and
+// each engine repository states its own (design VLM-3, SGL-3). It is allowed because the
+// design makes it a method of engine.Engine, and it is the only one: every other package under
+// contracts/ stays out of engine's dependencies.
+//
+// Package units is the second exception. engine.Transfer carries the move as the cost model
+// prices it (engine/plan.Transfer), and a plan's sizes are typed in units, which depends on
+// nothing in this module (TestPlanPackagesStayInTheirLane).
 func TestEngineIsEngineNeutral(t *testing.T) {
 	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	allowed := map[string]bool{"spec/fields": true, "check": true, "units": true}
 	for _, pkg := range []string{"./engine", "./conformance/enginetest"} {
 		out, err := exec.Command("go", "list", "-deps", pkg).Output()
 		if err != nil {
@@ -94,9 +106,25 @@ func TestEngineIsEngineNeutral(t *testing.T) {
 		}
 		for _, dep := range strings.Split(string(out), "\n") {
 			rel, ok := strings.CutPrefix(dep, mod)
-			if ok && !strings.HasPrefix(rel, "engine") && rel != "conformance/enginetest" {
-				t.Errorf("%s depends on %s; the engine contract must not know any document type or rules pack", pkg, rel)
+			if ok && !strings.HasPrefix(rel, "engine") && rel != "conformance/enginetest" && !allowed[rel] {
+				t.Errorf("%s depends on %s; the engine contract must not know any document type or rules pack beyond spec/fields", pkg, rel)
 			}
+		}
+	}
+}
+
+// X18 for the engine-neutrality rule: spec/fields does not itself reach a rules pack, a
+// scenario, a model or any other document, so allowing it does not let those in behind it.
+func TestTheFieldListImportsNoEngineKnowledge(t *testing.T) {
+	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	out, err := exec.Command("go", "list", "-deps", "./spec/fields").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dep := range strings.Split(string(out), "\n") {
+		rel, ok := strings.CutPrefix(dep, mod)
+		if ok && rel != "spec/fields" && rel != "check" {
+			t.Errorf("spec/fields depends on %s; it may import only check, or the exception in TestEngineIsEngineNeutral would let it in", rel)
 		}
 	}
 }
@@ -149,5 +177,33 @@ func TestInvariantsImportOnlyTheStandardLibraryAndYAML(t *testing.T) {
 			continue
 		}
 		t.Errorf("contracts/invariants depends on %s; it may use only the standard library and gopkg.in/yaml.v3 (SUB-1)", dep)
+	}
+}
+
+// The boundary types import only the units package, so a plan names no document type, no rules
+// pack and no engine (X2, SUB-16); the Environment interface adds only the catalog and cost
+// model types it returns, the engine package for DemandFor (which takes an engine.Transfer),
+// and the reference implementation adds nothing else.
+func TestPlanPackagesStayInTheirLane(t *testing.T) {
+	const mod = "github.com/inference-sim/blis-substrate/contracts/"
+	for pkg, allowed := range map[string][]string{
+		"./units":       {"units"},
+		"./engine/plan": {"units", "engine/plan"},
+		"./engine/env": {"units", "engine", "engine/plan", "engine/env", "kernel", "check", "vocab",
+			"spec/deployment", "spec/model", "spec/hardware", "spec/acceptance", "spec/fields"},
+	} {
+		out, err := exec.Command("go", "list", "-deps", pkg).Output()
+		if err != nil {
+			t.Fatalf("go list -deps %s: %v", pkg, err)
+		}
+		ok := map[string]bool{}
+		for _, a := range allowed {
+			ok[a] = true
+		}
+		for _, dep := range strings.Split(string(out), "\n") {
+			if rel, in := strings.CutPrefix(dep, mod); in && !ok[rel] {
+				t.Errorf("%s depends on %s; it may import only %v", pkg, rel, allowed)
+			}
+		}
 	}
 }

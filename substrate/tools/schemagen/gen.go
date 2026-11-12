@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/metrics"
 	"github.com/inference-sim/blis-substrate/contracts/spec/coefficient"
 	"github.com/inference-sim/blis-substrate/contracts/spec/deployment"
@@ -35,6 +36,10 @@ const modulePath = "github.com/inference-sim/blis-substrate/"
 type document struct {
 	name, file string
 	root       reflect.Type
+	// jsonInfinity is true for a document read by result.UnmarshalStrict, which maps the
+	// string "inf" to +infinity in a field that opts in (check.InfinityTag). A document read
+	// only as YAML has no such spelling.
+	jsonInfinity bool
 	// extra are further types the document defines at its top level, such as a trace's
 	// record, which lives in a CSV rather than under the header.
 	extra       []reflect.Type
@@ -47,7 +52,8 @@ var documents = []document{
 	{name: "deployment", file: "deployment.schema.json", root: reflect.TypeOf(deployment.Deployment{}),
 		description: "A BLIS deployment: the pools, offload and transfer configuration applied to a scenario."},
 	{name: "result", file: "result.schema.json", root: reflect.TypeOf(result.Result{}),
-		description: "A BLIS Result: what one run predicts, with the engine, data, options, frame and fates it records."},
+		jsonInfinity: true,
+		description:  "A BLIS Result: what one run predicts, with the engine, data, options, frame and fates it records."},
 	{name: "point-record", file: "point-record.schema.json", root: reflect.TypeOf(pointrecord.Record{}),
 		description: "The scoring harness's per-point record: identity, grade, substitutions, builds and paired figures."},
 	{name: "workload", file: "workload.schema.json", root: reflect.TypeOf(workload.Spec{}),
@@ -114,9 +120,10 @@ var commentKeys = map[reflect.Type]bool{
 
 // generator builds one document's schema, collecting each named struct as a definition.
 type generator struct {
-	root  string
-	defs  map[string]any
-	enums map[string]map[string][]string // package dir -> type name -> members
+	root         string
+	jsonInfinity bool
+	defs         map[string]any
+	enums        map[string]map[string][]string // package dir -> type name -> members
 	// tables are the reference pages' field tables: for each `<!-- fields: pkg.Type -->`
 	// marker, each key and whether its Required cell is exactly "yes". A key is required in
 	// the schema exactly when the documentation says it is; docs_test keeps each table equal
@@ -132,7 +139,7 @@ func generate(root string) ([]file, error) {
 		if err != nil {
 			return nil, err
 		}
-		g := &generator{root: root, defs: map[string]any{}, enums: map[string]map[string][]string{}, tables: tables}
+		g := &generator{root: root, jsonInfinity: d.jsonInfinity, defs: map[string]any{}, enums: map[string]map[string][]string{}, tables: tables}
 		top, err := g.schemaOf(d.root)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", d.name, err)
@@ -278,9 +285,20 @@ func (g *generator) fields(t reflect.Type, props map[string]any) error {
 		if o, ok := fieldOverrides[defName(t)+"."+name]; ok {
 			s = o(s)
 		}
+		// A float field that opts in to +infinity (check.InfinityTag) also takes the string a
+		// JSON Result spells it with, "inf" (result.JSONInfinity); the YAML spelling, .inf,
+		// is not JSON and a JSON Schema does not describe it.
+		if g.jsonInfinity && validate.AllowsInfinity(f) {
+			s = infinityOr(s)
+		}
 		props[name] = s
 	}
 	return nil
+}
+
+// infinityOr widens a number schema to also accept the string "inf".
+func infinityOr(s any) any {
+	return map[string]any{"anyOf": []any{s, map[string]any{"const": result.JSONInfinity}}}
 }
 
 // withEmpty adds the empty string to a vocabulary whose Valid method accepts it, as an

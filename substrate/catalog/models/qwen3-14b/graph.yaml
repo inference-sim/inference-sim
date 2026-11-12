@@ -20,6 +20,7 @@ layer_kinds:
     n: 7168
     k: 5120
   - op: Attention
+    holds_engine_kv: true
     kind: gqa
     n_q: 40
     n_kv: 8

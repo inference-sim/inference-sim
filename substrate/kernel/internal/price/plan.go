@@ -363,8 +363,15 @@ type PlannedAttention struct {
 	// the window bounds how far back the scan looks, the ratio how many states that
 	// span holds.
 	CompressRatio int
-	// Role is the graph's label for what this kernel does, e.g. "block_index_scores".
-	// Empty on a layer's primary attention.
+	// HoldsKV is the graph's holds_engine_kv: true for the attention that reads the KV
+	// cache the engine sizes, false for a block-index indexer's scorer, which keeps a
+	// narrower cache of its own. A block-index scorer's cache is sized by the model's own
+	// index projections rather than by num_key_value_heads, so it must not contribute to
+	// the geometry that sizes pages. The graph states it; no label decides it.
+	HoldsKV bool
+	// Role is the graph's label for what this kernel does, e.g. "block_index_scores". It
+	// names the kernel only as the key of its measured coefficients
+	// (attention_decode_rate_<role>); nothing is decided by it.
 	Role string
 	// Replicated is a kernel every rank runs over every head (tp: replicated), as
 	// DeepSeek-V4.1's indexer is.
@@ -393,14 +400,6 @@ func cacheRecord(nodes []model.Node, name string, o PlanOptions) int {
 	}
 	return 0
 }
-
-// HoldsKV reports whether this attention reads the KV cache the engine sizes.
-//
-// A block-index scorer keeps its own narrow cache, sized by the model's own index
-// projections rather than by num_key_value_heads, so it must not contribute to the
-// geometry that sizes pages. Decided by role rather than by head count because a
-// small head count is not what makes a cache separate.
-func (a PlannedAttention) HoldsKV() bool { return a.Role == "" }
 
 // GroupAxis names the parallelism group a collective runs across.
 //
@@ -501,7 +500,7 @@ func PiecewiseSegmentsOf(totalLayers int, layers []PlannedLayer) int {
 			continue
 		}
 		for _, a := range l.Attentions {
-			if !a.HoldsKV() {
+			if !a.HoldsKV {
 				splits += l.Count
 				break
 			}
@@ -714,7 +713,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 	// the graph states the All2All and the GroupedGEMM in does not matter.
 	dispatchWidth := hidden
 	for _, n := range nodes {
-		if n.Op == model.OpGroupedGEMM && n.Role != "shared_experts" && n.Experts != 1 &&
+		if !n.IsSharedExpert() && n.Op == model.OpGroupedGEMM &&
 			n.LatentSize > 0 && (n.Emit == model.EmitAlways || em.Emits(n.Emit)) {
 			dispatchWidth = n.LatentSize
 		}
@@ -817,7 +816,7 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			pl.DenseWeightBytes += resident
 		case model.OpGroupedGEMM:
 			ew := o.WeightBytesPerParam(n)
-			if n.Role == "shared_experts" || n.Experts == 1 {
+			if n.IsSharedExpert() {
 				// A shared expert stated as its own node -- the only way the schema can give
 				// it a dtype of its own, as DeepSeek-V4.1's MXFP8 shared expert beside its
 				// MXFP4 routed ones and Nemotron-3-Ultra's FP8 one beside NVFP4 need. It is
@@ -883,14 +882,14 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 			}
 			pl.Attentions = append(pl.Attentions, PlannedAttention{
 				QHeads: n.NumQHeads, KVHeads: n.NumKVHeads, HeadDim: n.HeadDim,
-				Kind: n.AttentionKind, Window: n.Window, Role: n.Role,
+				Kind: n.AttentionKind, Window: n.Window, Role: n.Role, HoldsKV: n.ReadsEngineKV(),
 				CompressRatio: n.CompressRatio, Replicated: n.TP == model.TPReplicated,
 				Caches: caches,
 			})
 			// The primary is the first attention that reads the engine's KV cache, not
 			// the last node seen. An earlier assignment here overwrote, so on a layer
 			// whose indexer precedes its attention the primary was whichever came last.
-			if pl.AttnQHeads == 0 && n.Role == "" {
+			if pl.AttnQHeads == 0 && n.ReadsEngineKV() {
 				pl.AttnQHeads, pl.AttnKVHeads, pl.AttnHeadDim =
 					n.NumQHeads, n.NumKVHeads, n.HeadDim
 				pl.AttnKind, pl.AttnWindow = n.AttentionKind, n.Window
@@ -981,11 +980,11 @@ func planNodes(nodes []model.Node, em Emitter, o PlanOptions,
 		}
 	}
 	// A layer that runs attention must have a primary: the attention that reads the cache
-	// the engine sizes, which the graph marks by leaving its role empty. With none, the
+	// the engine sizes, which the graph marks with holds_engine_kv. With none, the
 	// layer's attention, its caches and its KV would all go unpriced, so it is refused.
 	if len(pl.Attentions) > 0 && pl.AttnQHeads == 0 {
-		return pl, fmt.Errorf("the layer runs attention but no attention node has an empty " +
-			"role, so none reads the engine's cache: label the scorer, not the attention")
+		return pl, fmt.Errorf("the layer runs attention but no attention node states " +
+			"holds_engine_kv true, so none reads the engine's cache")
 	}
 	return pl, nil
 }

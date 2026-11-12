@@ -25,6 +25,10 @@
 //	prcheck skips -results <file> [-python-package <dir>] [-min <n>]
 //	    X16, X22: a skipped test not on the quarantine list fails, and so does a go test
 //	    run with fewer than -min results.
+//	prcheck contracts-apidiff [-prev <tag>] [-accept-break <owner/repo#n>]
+//	    SUB-1: the packages under contracts/ change only compatibly since the last release
+//	    tag, by apidiff at a pinned version run through go run. -accept-break names the issue
+//	    of a contract-change review set (design §12.8) and accepts, and prints, the changes.
 //	prcheck tags [-lock .github/tags.lock]
 //	    LIF-1: every tag resolves to the commit the lock records, and every tag is recorded.
 //	prcheck status [-repo <o/n>] [-gates .github/gates.yaml] [-out page.md]
@@ -109,6 +113,8 @@ func run(args []string, w io.Writer) error {
 	lockFile := fs.String("lock", ".github/tags.lock", "the recorded tags")
 	prNum := fs.Int("pr", 0, "pull request number")
 	outFile := fs.String("out", "", "status: where to write the status page")
+	prevTag := fs.String("prev", "", "contracts-apidiff: the tag to compare with; default the newest release tag reachable from HEAD")
+	acceptBreak := fs.String("accept-break", "", "contracts-apidiff: the issue (owner/repo#n) of the contract-change review set that accepts an incompatible change")
 	results := fs.String("results", "", "go test -json or pytest -rs output")
 	pyPkg := fs.String("python-package", "", "the directory pytest ran in, for its results")
 	minItems := fs.Int("min", 1, "the minimum number of go test results")
@@ -273,6 +279,44 @@ func run(args []string, w io.Writer) error {
 		bad = append(bad, CheckSkips(skips, entries)...)
 		fmt.Fprintf(w, "skips: %d skipped\n", len(skips))
 		return report(w, "skips", bad)
+	case "contracts-apidiff":
+		tags, err := git("tag", "--merged", "HEAD", "--list", "v[0-9]*.[0-9]*.[0-9]*")
+		if err != nil {
+			return err
+		}
+		prev := *prevTag
+		if prev == "" {
+			prev = LastReleaseTag(strings.Fields(tags))
+		}
+		if prev == "" {
+			return fmt.Errorf("no release tag is reachable from HEAD; fetch the tags (the check compares against the last one)")
+		}
+		scratch, err := os.MkdirTemp("", "contracts-api-")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = os.RemoveAll(scratch) }()
+		old := filepath.Join(scratch, "prev")
+		if _, err := git("worktree", "add", "--detach", "--quiet", old, prev); err != nil {
+			return err
+		}
+		defer func() { _, _ = git("worktree", "remove", "--force", old) }()
+		here, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+		findings, err := CheckContractsAPI(goTool{}, old, here, scratch)
+		if err != nil {
+			return err
+		}
+		bad, note, err := JudgeContractsAPI(findings, prev, *acceptBreak)
+		if err != nil {
+			return err
+		}
+		if note != "" {
+			_, _ = fmt.Fprintln(w, note)
+		}
+		return report(w, "contracts-api", bad)
 	case "tags":
 		raw, err := os.ReadFile(*lockFile)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {

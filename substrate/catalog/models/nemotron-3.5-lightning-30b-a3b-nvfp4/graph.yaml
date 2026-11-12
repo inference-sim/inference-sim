@@ -43,6 +43,7 @@ layer_kinds:
   - op: Elementwise
     role: input_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 1856
     k: 2688
@@ -73,6 +74,7 @@ layer_kinds:
     n: 4608
     k: 2688
   - op: Attention
+    holds_engine_kv: true
     kind: gqa
     n_q: 32
     n_kv: 2

@@ -11,7 +11,7 @@ func TestVocabulariesAreClosed(t *testing.T) {
 		want []string
 	}{
 		{"units", AllUnits(), []string{
-			"bytes_per_rank", "bytes_per_us", "dimensionless", "sm_count",
+			"bytes_per_rank", "bytes_per_token", "bytes_per_us", "dimensionless", "sm_count",
 			"tokens", "us_per_hop", "us_per_layer", "us_per_load",
 			"us_per_request", "us_per_step", "us_per_token", "us_per_transfer"}},
 		{"methods", AllMethods(), []string{

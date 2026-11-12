@@ -629,8 +629,8 @@ layer_kinds:
   - id: attn_moe
     nodes:
       - {op: Elementwise, role: input_norm}
-      - {op: Attention, kind: gqa, n_q: 48, n_kv: 8, d_h: 64}
-      - {op: GroupedGEMM, role: experts, n: 1536, k: 3072, experts: 224, top_k: 8, shared_experts: 1}
+      - {op: Attention, holds_engine_kv: true, kind: gqa, n_q: 48, n_kv: 8, d_h: 64}
+      - {op: GroupedGEMM, shared: false, role: experts, n: 1536, k: 3072, experts: 224, top_k: 8, shared_experts: 1}
       - {op: All2All, role: moe, emit: expert_parallel}
     edges: [[0, 1], [1, 2], [2, 3]]
 stack:

@@ -62,3 +62,31 @@ func TestAllBlocksClearedTier(t *testing.T) {
 		t.Error("tier lost")
 	}
 }
+
+// TestBatchEngineDefaultsToVLLM: a batch built before Engine existed names vLLM, and a batch
+// names SGLang only when it says so; a kind the contract does not define is not known.
+func TestBatchEngineDefaultsToVLLM(t *testing.T) {
+	old := KVBatch{Timestamp: time.Unix(1, 0), Events: []KVEvent{BlockStored{Hashes: []uint64{1}}}}
+	if old.Engine != "" || old.EngineOf() != EngineVLLM || !old.Known() {
+		t.Errorf("an old batch: Engine %q, EngineOf %q, Known %v; want \"\", vllm, true", old.Engine, old.EngineOf(), old.Known())
+	}
+	for _, c := range []struct {
+		engine string
+		want   string
+		known  bool
+	}{
+		{"vllm", EngineVLLM, true},
+		{"sglang", EngineSGLang, true},
+		{"", EngineVLLM, true},
+		{"tensorrt", "tensorrt", false},
+		{"VLLM", "VLLM", false}, // kinds are exact: the registry's names are lower case
+	} {
+		b := KVBatch{Engine: c.engine}
+		if b.EngineOf() != c.want || b.Known() != c.known {
+			t.Errorf("Engine %q: EngineOf %q Known %v; want %q %v", c.engine, b.EngineOf(), b.Known(), c.want, c.known)
+		}
+	}
+	if EngineVLLM != "vllm" || EngineSGLang != "sglang" {
+		t.Error("the engine kinds must be the kinds the engine repositories register")
+	}
+}

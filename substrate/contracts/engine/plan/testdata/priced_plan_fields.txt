@@ -1,0 +1,8 @@
+# Fields of PoolPlan, StepShape and Transfer that a test shows change a price (design SUB-11).
+# One line each: Type.Field # the test that moves a price when the field changes, as
+# package: TestName. TestEveryPlanFieldIsPricedOrListed checks that the named test exists in the
+# repository, and that a field is on this list or on unpriced_plan_fields.txt, never both. A field
+# moves here from the unpriced list in the change that prices it.
+StepShape.DecodeQueryLen # kernel: TestTheDecodeThresholdTheEngineStatesMovesTheStepPrice
+DraftPass.Padded # kernel: TestADrafterPaddedByItsGroupIsPricedAsPadded
+DraftShape.Passes # kernel: TestADrafterPassIsReadFromTheRankItBelongsTo

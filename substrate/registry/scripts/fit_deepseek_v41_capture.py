@@ -137,9 +137,11 @@ def fit(anchor: dict) -> dict:
 
 
 def entry(name: str, value: int, rationale: str) -> list[str]:
+    # The two slopes multiply a token count; the floor is a size.
+    units = "bytes_per_token" if "_bytes_per_" in name else "bytes_per_rank"
     return [f"  - {name}:",
             f"      value: {value}",
-            "      units: bytes_per_rank",
+            f"      units: {units}",
             "      method: measured",
             "      fitted: true",
             f"      scope: {SCOPE}",
@@ -179,8 +181,8 @@ def entries(r: dict) -> list[list[str]]:
         f"same SM90 kernels (FLASHMLA_SPARSE_DSV41, Marlin MXFP4 experts, Marlin MXFP8 linears "
         f"in the logs); TP-invariant per rank (TP4 and TP8 log 8.59 / 8.61 GiB at C 512). "
         f"HELD OUT, not used: InferenceX H100 TP8 and H200 TP4, and the H200 calibration runs' "
-        f"boot-time pools. UNITS: bytes_per_rank, with the per-token meaning in the name, "
-        f"because the closed units vocabulary has no bytes_per_token. Reproduce with "
+        f"boot-time pools. UNITS: the floor is bytes_per_rank and the two per-token entries are "
+        f"bytes_per_token, which the closed units vocabulary now has. Reproduce with "
         f"scripts/fit_deepseek_v41_capture.py.")
     return [
         entry(NAMES[0], r["floor"],

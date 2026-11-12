@@ -425,6 +425,12 @@ func (n Node) validate(p *validate.Problems, at string) {
 				d.MinTokensAcrossNodes, d.MaxTokens)
 		}
 	}
+	if n.HoldsEngineKV != nil && n.Op != OpAttention {
+		p.Field(at+".holds_engine_kv", "only an Attention node reads a KV cache")
+	}
+	if n.Shared != nil && n.Op != OpGroupedGEMM {
+		p.Field(at+".shared", "only a GroupedGEMM node is a group of experts")
+	}
 	if n.KVHeadsNotReplicated && n.Op != OpAttention {
 		p.Field(at+".kv_heads_not_replicated", "only an Attention node has KV heads")
 	}
@@ -519,6 +525,9 @@ func (n Node) validate(p *validate.Problems, at string) {
 		requirePositive(p, at, "k", n.K)
 		requirePositive(p, at, "experts", n.Experts)
 		requirePositive(p, at, "top_k", n.TopK)
+		if n.Shared == nil {
+			p.Field(at+".shared", "required: true for a shared expert, false for routed experts")
+		}
 		if n.TopK > n.Experts {
 			p.Field(at+".top_k", "top_k %d exceeds experts %d", n.TopK, n.Experts)
 		}
@@ -537,6 +546,10 @@ func (n Node) validate(p *validate.Problems, at string) {
 		}
 		forbid(p, at, map[string]int{"n_q": n.NumQHeads, "state_size": n.StateSize})
 	case OpAttention:
+		if n.HoldsEngineKV == nil {
+			p.Field(at+".holds_engine_kv",
+				"required: true for the attention that reads the engine's KV cache, false for an indexer's scorer")
+		}
 		if !n.AttentionKind.Valid() {
 			p.Field(at+".kind", "%q is not a recognized attention kind", n.AttentionKind)
 		}

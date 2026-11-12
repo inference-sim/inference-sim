@@ -1,0 +1,15 @@
+# Comparisons of a graph node's Role in the cost model and the model-graph package, found by
+# TestNoPriceDependsOnAFreeTextLabel (design SUB-20). SUB-20 says no price, size or engine
+# decision depends on a free-text label. The cost model's decisions are typed now:
+# holds_engine_kv on an Attention node and shared on a GroupedGEMM node, both set by the
+# model-graph deriver and required by the validator.
+#
+# What is left is the validator resolving references between nodes of one document, which
+# has to name a node by something: an aliases reference ("<layer kind>.<role>") and an
+# architecture override's role (validate_refs.go). They decide no price; a rename that keeps
+# the reference consistent changes nothing, which TestChangingALabelChangesNoPriceOrIsListed
+# shows for every catalog model.
+# The list may only shrink: the test fails on a new comparison and on a listed one that is gone.
+spec/model/validate_refs.go: m.Role == role
+spec/model/validate_refs.go: no.Role != ""
+spec/model/validate_refs.go: no.Role == ""

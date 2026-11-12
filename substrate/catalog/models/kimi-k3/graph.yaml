@@ -82,6 +82,7 @@ layer_kinds:
     n: 3584
     k: 7168
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 3072
     k: 7168
@@ -155,6 +156,7 @@ layer_kinds:
     k: 512
     weight_dtype: bf16
   - op: Attention
+    holds_engine_kv: true
     kind: mla
     n_q: 96
     n_kv: 1
@@ -179,6 +181,7 @@ layer_kinds:
     n: 3584
     k: 7168
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 3072
     k: 7168

@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -870,5 +872,129 @@ func TestThePullRequestCheckHoldsTheChecksOfTheRemovedMergeJob(t *testing.T) {
 	}
 	if _, err := os.Stat("../../.github/workflows/shared-merge-check.yml"); err == nil {
 		t.Error("shared-merge-check.yml still exists")
+	}
+}
+
+// SUB-1: an incompatible change to a package under contracts/ fails unless a contract-change
+// review set names its issue.
+type fakeAPI struct {
+	oldPkgs, newPkgs []string
+	incompatible     map[string]string // by package, keyed through the export file name
+	exported         map[string]string // export file -> package
+}
+
+func (f *fakeAPI) Packages(dir string) ([]string, error) {
+	if dir == "old" {
+		return f.oldPkgs, nil
+	}
+	return f.newPkgs, nil
+}
+
+func (f *fakeAPI) Export(dir, pkg, file string) error {
+	if f.exported == nil {
+		f.exported = map[string]string{}
+	}
+	f.exported[file] = pkg
+	return nil
+}
+
+func (f *fakeAPI) Incompatible(old, new string) (string, error) {
+	return f.incompatible[f.exported[old]], nil
+}
+
+func TestContractsAPI(t *testing.T) {
+	scratch := t.TempDir()
+	clean := &fakeAPI{oldPkgs: []string{"c/a", "c/b"}, newPkgs: []string{"c/a", "c/b", "c/new"}}
+	got, err := CheckContractsAPI(clean, "old", "new", scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	none(t, got)
+
+	broken := &fakeAPI{oldPkgs: []string{"c/a", "c/b"}, newPkgs: []string{"c/a"},
+		incompatible: map[string]string{"c/a": "- T.F: removed\n"}}
+	got, err = CheckContractsAPI(broken, "old", "new", scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	has(t, got, "c/a: - T.F: removed")
+	has(t, got, "c/b: the package was removed")
+
+	// No package at the last tag is a failure, not a pass (X22).
+	if _, err := CheckContractsAPI(&fakeAPI{newPkgs: []string{"c/a"}}, "old", "new", scratch); err == nil {
+		t.Error("an empty old side passed")
+	}
+
+	// The verdict: a finding fails without a review set and is accepted, and printed, with one.
+	bad, note, err := JudgeContractsAPI(got, "v0.13.0", "")
+	if err != nil || len(bad) != len(got) || note != "" {
+		t.Errorf("without a review set: bad=%v note=%q err=%v", bad, note, err)
+	}
+	has(t, bad, "only a contract-change review set may break the contract")
+	bad, note, err = JudgeContractsAPI(got, "v0.13.0", "inference-sim/blis-substrate#27")
+	if err != nil || len(bad) != 0 || !strings.Contains(note, "inference-sim/blis-substrate#27") || !strings.Contains(note, "c/a: - T.F: removed") {
+		t.Errorf("with a review set: bad=%v note=%q err=%v", bad, note, err)
+	}
+	for _, ref := range []string{"27", "#27", "a/b", "a/b#0", "a b#1", "yes"} {
+		if _, _, err := JudgeContractsAPI(got, "v0.13.0", ref); err == nil {
+			t.Errorf("-accept-break %q was taken as an issue", ref)
+		}
+	}
+	// A review set accepts nothing when nothing changed, and says so.
+	bad, note, err = JudgeContractsAPI(nil, "v0.13.0", "")
+	if err != nil || len(bad) != 0 || !strings.Contains(note, "no incompatible change since v0.13.0") {
+		t.Errorf("clean: bad=%v note=%q err=%v", bad, note, err)
+	}
+}
+
+func TestLastReleaseTag(t *testing.T) {
+	cases := []struct {
+		tags []string
+		want string
+	}{
+		{[]string{"v0.9.0", "v0.13.0", "v0.12.0", "v0.2.0"}, "v0.13.0"},
+		{[]string{"v0.13.0", "v0.13.1", "v0.13.1-rc.1", "v1.0.0-blis.1", "latest"}, "v0.13.1"},
+		{[]string{"v1.0.0", "v0.99.9"}, "v1.0.0"},
+		{[]string{"v0.13.0-rc.1", "main"}, ""},
+		{nil, ""},
+	}
+	for _, c := range cases {
+		if got := LastReleaseTag(c.tags); got != c.want {
+			t.Errorf("LastReleaseTag(%v) = %q, want %q", c.tags, got, c.want)
+		}
+	}
+}
+
+// The real tool lists packages under contracts/ and skips internal and main packages, and the
+// pinned apidiff is a step of the check, not a dependency (SUB-1).
+func TestContractsAPIToolIsNotADependency(t *testing.T) {
+	mod, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(mod), "golang.org/x/exp") {
+		t.Error("go.mod requires golang.org/x/exp; apidiff runs through go run and is not a dependency (SUB-1)")
+	}
+	pkgs, err := goTool{}.Packages("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) < 10 {
+		t.Fatalf("listed %d packages under contracts/", len(pkgs))
+	}
+	for _, p := range pkgs {
+		if strings.Contains(p+"/", "/internal/") || !strings.Contains(p, "/contracts") {
+			t.Errorf("unexpected package %s", p)
+		}
+	}
+	if !slices.Contains(pkgs, "github.com/inference-sim/blis-substrate/contracts/engine") {
+		t.Errorf("contracts/engine is not listed: %v", pkgs)
+	}
+	src, err := os.ReadFile("apidiff.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`apidiffRef = "golang.org/x/exp/cmd/apidiff@v0\.0\.0-\d{14}-[0-9a-f]{12}"`).Match(src) {
+		t.Error("apidiff is not pinned to a version and commit")
 	}
 }

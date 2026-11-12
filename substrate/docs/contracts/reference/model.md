@@ -27,7 +27,7 @@ layer_kinds:
   nodes:
   - {op: Elementwise, role: input_norm}
   - {op: GEMM, role: qkv_proj, n: 7168, k: 5120}
-  - {op: Attention, kind: gqa, n_q: 40, n_kv: 8, d_h: 128}
+  - {op: Attention, holds_engine_kv: true, kind: gqa, n_q: 40, n_kv: 8, d_h: 128}
   - {op: GEMM, role: o_proj, n: 5120, k: 5120}
   - {op: AllReduce, role: attn_out, emit: tensor_parallel}
   # ... the MLP: a norm, two GEMMs and a second AllReduce
@@ -158,7 +158,7 @@ Common to every node:
 | Key | Type | Required | Meaning |
 |---|---|---|---|
 | `op` | string | yes | The primitive. |
-| `role` | string | no | A label for readers, such as `qkv_proj`. |
+| `role` | string | no | A label for readers, such as `qkv_proj`. It changes no price, size or engine decision; the typed fields (`holds_engine_kv`, `shared`) carry what a consumer needs to know. A `GEMM` override and an `aliases` reference name a node by it, which is a reference between nodes of one document. |
 | `emit` | string | for collectives | When the node exists. One of the [emit conditions](vocabularies.md#emit-conditions); omitted means always. |
 | `tp` | string | no | How the node divides across tensor-parallel ranks, on a `GEMM`, `Elementwise` or `Attention` node. One of the [layouts](vocabularies.md#tensor-parallel-layouts); omitted leaves it to the cost model's inference. |
 | `under_sequence_parallel` | string | no | How the node divides when the model's own sequence parallelism is on. One of the [splits](vocabularies.md#sequence-parallel-splits); omitted means as `tp` states, over every token the step schedules. Not on a collective. Needs `global.architecture`. |
@@ -182,7 +182,8 @@ Common to every node:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `experts` | integer | yes | Routed experts. |
+| `shared` | boolean | yes | `true` for a shared-expert group, which every token passes through and which is dense; `false` for routed experts. Stated on every `GroupedGEMM` and refused on any other primitive, so a consumer never infers a shared expert from the `role` or from an expert count of one. |
+| `experts` | integer | yes | Experts in the group: the routed experts, or the shared ones where `shared` is `true`. |
 | `top_k` | integer | yes | Experts each token is routed to. At most `experts`. |
 | `shared_experts` | integer | no | Experts every token passes through as well. |
 | `shared_intermediate_size` | integer | no | The shared experts' inner dimension, where it differs from `n`. Needs `shared_experts`. |
@@ -194,6 +195,7 @@ Common to every node:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
+| `holds_engine_kv` | boolean | yes | `true` for the attention that reads the KV cache the engine sizes; `false` for the scorer of a block-index (lightning) indexer, which keeps a narrower cache of its own and does not size the engine's pages. The model-graph deriver sets it from the checkpoint. Stated on every `Attention` and refused on any other primitive; the `role` label decides nothing. |
 | `kind` | string | yes | One of the [attention kinds](vocabularies.md#attention-kinds). |
 | `n_q` | integer | yes | Query heads. |
 | `n_kv` | integer | yes | KV heads, at most `n_q`. Exactly 1 for `mla` and `sparse_mla`, which store one latent vector per token. |
@@ -528,6 +530,8 @@ A node is invalid if
   reads at; on an embedding or head node, any of `caches`, `writes_cache`, `reads_cache`
   or a `per_tokens` above 1 is set;
 - an `aliases` node states its own `weight_dtype` or `weight_scale`;
+- an `Attention` node lacks `holds_engine_kv`, a `GroupedGEMM` lacks `shared`, or either key
+  is set on another primitive;
 - `kv_heads_not_replicated` is set on anything other than an `Attention` node, or on an
   `mla` or `sparse_mla` one;
 - `sharded_at_decode` is set on anything other than a replicated `GEMM`, its

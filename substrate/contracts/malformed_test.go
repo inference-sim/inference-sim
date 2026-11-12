@@ -3,6 +3,7 @@ package contracts
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/inference-sim/blis-substrate/contracts/spec/hardware"
 	"github.com/inference-sim/blis-substrate/contracts/spec/measurement"
 	"github.com/inference-sim/blis-substrate/contracts/spec/model"
+	"github.com/inference-sim/blis-substrate/contracts/spec/pointrecord"
 	"github.com/inference-sim/blis-substrate/contracts/spec/result"
 	"github.com/inference-sim/blis-substrate/contracts/spec/routing"
 	"github.com/inference-sim/blis-substrate/contracts/spec/scenario"
@@ -62,6 +64,12 @@ func TestEveryLoaderRefusesTheMalformedSet(t *testing.T) {
 		{"LoadMeasuredRun", ex("measured-run.yaml"), &measurement.MeasuredRun{}, func(p string) error { return ignore(LoadMeasuredRun(p)) }},
 		{"LoadMeasurementSources", ex("measurement-sources.yaml"), &measurement.Registry{}, func(p string) error { return ignore(LoadMeasurementSources(p)) }},
 		{"LoadResult (YAML)", ex("result.json"), &result.Result{}, func(p string) error { return ignore(LoadResult(p)) }},
+		{"LoadWorkloadSpec", ex("workload-spec.yaml"), &workload.Spec{}, func(p string) error { return ignore(LoadWorkloadSpec(p)) }},
+		{"LoadPointRecord", ex("point-record.json"), &pointrecord.Record{}, func(p string) error { return ignore(LoadPointRecord(p)) }},
+	}
+	covered := map[string]bool{"LoadBundle": true} // LoadBundle's two documents are the scenario's and the deployment's
+	for _, l := range loaders {
+		covered[strings.Fields(l.name)[0]] = true
 	}
 	ran := map[string]bool{}
 	for _, l := range loaders {
@@ -77,6 +85,17 @@ func TestEveryLoaderRefusesTheMalformedSet(t *testing.T) {
 				ran[c] = true
 			}
 		})
+	}
+	// SUB-12 says every loader. A Load function added to load.go without an entry above is a
+	// loader the malformed set never reaches, so it fails here, naming itself.
+	src, err := os.ReadFile("load.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile(`(?m)^func (Load[A-Za-z]+)\(`).FindAllStringSubmatch(string(src), -1) {
+		if !covered[m[1]] {
+			t.Errorf("%s loads a BLIS document but is not in the malformed-set loader list", m[1])
+		}
 	}
 	for _, c := range []string{"unknown key", "repeated key", "fraction in an integer field",
 		"integer a float64 cannot hold", "NaN", "infinity", "recursive alias"} {
@@ -152,6 +171,8 @@ func TestEveryLoaderReadsEveryFieldItsExampleStates(t *testing.T) {
 		{"LoadMeasuredRun", ex("measured-run.yaml"), func(p string) (any, error) { return LoadMeasuredRun(p) }},
 		{"LoadMeasurementSources", ex("measurement-sources.yaml"), func(p string) (any, error) { return LoadMeasurementSources(p) }},
 		{"LoadResult", ex("result.json"), func(p string) (any, error) { return LoadResult(p) }},
+		{"LoadWorkloadSpec", ex("workload-spec.yaml"), func(p string) (any, error) { return LoadWorkloadSpec(p) }},
+		{"LoadPointRecord", ex("point-record.json"), func(p string) (any, error) { return LoadPointRecord(p) }},
 	}
 	for _, l := range loaders {
 		t.Run(l.name, func(t *testing.T) {

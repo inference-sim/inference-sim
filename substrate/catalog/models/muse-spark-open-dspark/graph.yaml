@@ -26,6 +26,7 @@ layer_kinds:
     role: qk_norm_rope
     bytes_per_token: 36864
   - op: Attention
+    holds_engine_kv: true
     kind: swa
     n_q: 128
     n_kv: 16

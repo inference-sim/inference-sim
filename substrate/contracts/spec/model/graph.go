@@ -458,6 +458,19 @@ func (n Node) SequenceParallelField() string {
 	return ""
 }
 
+// ReadsEngineKV reports whether n is an Attention node that reads the KV cache the engine
+// sizes: its holds_engine_kv is stated true. A node that does not state it (validation
+// refuses that) reads as not holding it, never as holding it.
+func (n Node) ReadsEngineKV() bool {
+	return n.Op == OpAttention && n.HoldsEngineKV != nil && *n.HoldsEngineKV
+}
+
+// IsSharedExpert reports whether n is a GroupedGEMM node whose shared is stated true: a
+// dense expert every token passes through, not a routed one.
+func (n Node) IsSharedExpert() bool {
+	return n.Op == OpGroupedGEMM && n.Shared != nil && *n.Shared
+}
+
 // Node is one primitive with the shape parameters it prices. The fields are a
 // union across ops: a GEMM reads N and K, an Attention reads the head counts, a
 // RecurrentUpdate reads the state dimensions. Validation rejects a node carrying
@@ -527,8 +540,16 @@ type Node struct {
 	// about a width the checkpoint states.
 	WeightDType DType `yaml:"weight_dtype,omitempty"`
 	// GroupedGEMM only.
-	Experts int `yaml:"experts,omitempty"`
-	TopK    int `yaml:"top_k,omitempty"`
+	//
+	// Shared says whether this group is a shared expert (true: every token passes through
+	// it, it is dense, it neither scales with nor sets top_k and no rank holds a slice of
+	// it) or routed experts (false). It is required on every GroupedGEMM node and refused on
+	// any other op, so a consumer never infers a shared expert from a label or from an
+	// expert count of one. A pointer, because the zero value of a bool cannot say "not
+	// stated", and a missing value is refused rather than read as false.
+	Shared  *bool `yaml:"shared,omitempty"`
+	Experts int   `yaml:"experts,omitempty"`
+	TopK    int   `yaml:"top_k,omitempty"`
 	// SharedExperts are experts every token passes through, in addition to the
 	// TopK routed ones. They are a distinct cost: their work is dense rather than
 	// routed, so it neither scales with TopK nor contributes to routing imbalance.
@@ -546,6 +567,16 @@ type Node struct {
 	LatentSize int `yaml:"latent_size,omitempty"`
 
 	// Attention.
+	//
+	// HoldsEngineKV says whether this attention reads the KV cache the engine sizes (true)
+	// or is the scorer of a block-index (lightning) indexer, which keeps a narrower cache
+	// of its own that does not size the engine's pages (false). The model-graph deriver sets
+	// it from the structure of the checkpoint: the handler that builds the indexer states
+	// false, every other attention true. It is required on every Attention node and refused
+	// on any other op. A pointer, because the zero value of a bool cannot say "not stated",
+	// and a missing value is refused rather than read as either answer. Role is a label for
+	// people and decides nothing.
+	HoldsEngineKV *bool         `yaml:"holds_engine_kv,omitempty"`
 	AttentionKind AttentionKind `yaml:"kind,omitempty"`
 	NumQHeads     int           `yaml:"n_q,omitempty"`
 	NumKVHeads    int           `yaml:"n_kv,omitempty"`
@@ -646,3 +677,7 @@ type Node struct {
 	// record it writes rather than restating a number an arch override would leave behind.
 	WritesCache string `yaml:"writes_cache,omitempty"`
 }
+
+// Bool returns a pointer to b, for the fields that must be stated either way: HoldsEngineKV
+// and Shared.
+func Bool(b bool) *bool { return &b }

@@ -1,18 +1,15 @@
 package ledger
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/vocab"
 )
 
@@ -328,17 +325,9 @@ func decodeStrictFile(path string, dst any) error {
 	return decodeStrict(path, raw, dst)
 }
 
+// decodeStrict is the ledger's YAML decoder: the contracts' strict one (SUB-12).
 func decodeStrict(name string, raw []byte, dst any) error {
-	dec := yaml.NewDecoder(bytes.NewReader(raw))
-	dec.KnownFields(true)
-	if err := dec.Decode(dst); err != nil {
-		return fmt.Errorf("%s: %w", name, err)
-	}
-	var extra any
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("%s: holds more than one YAML document", name)
-	}
-	return nil
+	return validate.DecodeStrict(name, raw, dst)
 }
 
 // LoadConfig reads and validates ledger.yaml in dir.

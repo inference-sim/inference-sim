@@ -159,9 +159,9 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
   - `new`, nightly: A nightly job in every repository that resolves each cited issue and fails on a closed one (`shared-nightly.yml: prcheck issues -resolve`)
   - `new`, pull_request: A pull-request check that refuses a change closing an issue still cited elsewhere (`shared-pr-checks.yml: prcheck issues -closes`)
   - `new`, nightly: The nightly job also reports an issue closed outside a merge
-- **SUB-1** (partial; target ci by M2) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
+- **SUB-1** (ci; target reached) Packages under contracts/ import only the Go standard library, the YAML parser and each other.
   - `ci`, pull_request: Import test (`contracts: TestKernelImportsOnlySpec`)
-  - `new`, pull_request: API-compatibility check of the contracts/ packages against the last substrate tag
+  - `ci`, pull_request: API-compatibility check of the contracts/ packages against the last substrate tag (`ci.yml job contracts: prcheck contracts-apidiff`)
 - **SUB-2** (ci; target reached) Every new or changed data field ships with its validator, a failing example for each way it can be wrong, and regenerated reference documentation.
   - `ci`, pull_request: Documentation-matches-types test (`contracts: TestDocFieldTablesMatchTypes`)
   - `ci`, pull_request: Strict loaders (`contracts: TestLoadRejectsUnknownFields`)
@@ -191,12 +191,15 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-10** (new; target ci by M2) contracts/conformance includes a set of unusual model shapes: every layer windowed, every layer recurrent, MLA only, a draft layer declared last, a single layer, and no attention at all.
   - `new`, pull_request: The conformance suite, run in blis-substrate, blis-vllm and blis-sglang
 - **SUB-11** (new; target ci by M2) Every field of PoolPlan, StepShape and Transfer, and every coefficient family, changes some price when it is changed, or is listed as not yet priced with an issue.
-  - `new`, pull_request: A perturbation test in kernel/
-  - `new`, pull_request: A ratchet on the not-yet-priced list, which may only shrink
+  - `new`, pull_request: A perturbation test in kernel/ (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
+  - `new`, pull_request: A perturbation test over every field of PoolPlan, StepShape and Transfer (`contracts/engine/plan: TestEveryPlanFieldIsPricedOrListed`)
+  - `new`, pull_request: A ratchet on the not-yet-priced list, which may only shrink (`kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed`)
 - **SUB-12** (partial; target ci by M2) Every loader of a BLIS document refuses unknown keys, duplicate keys, numbers that do not convert exactly, non-finite numbers and recursive aliases.
   - `ci`, pull_request: Each loader refuses unknown keys (`contracts: TestLoadRejectsUnknownFields`)
-  - `new`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader
-  - `new`, pull_request: A test that every declared field is read
+  - `ci`, pull_request: A shared set of malformed documents in contracts/conformance, run against every loader (`contracts: TestEveryLoaderRefusesTheMalformedSet`)
+  - `ci`, pull_request: A test that every declared field is read (`contracts: TestEveryLoaderReadsEveryFieldItsExampleStates`)
+  - `ci`, pull_request: Non-finite numbers are refused in every field, except +infinity in a field that names itself with the infinity tag, and a test names each such field (`contracts/check: TestAFieldThatOptsInHoldsPlusInfinity`)
+  - `ci`, pull_request: A write-then-read test of every field a Result writer can emit, in both encodings, filled from the type so a new field is covered (`contracts/spec/result: TestEveryFieldAWriterCanEmitRoundTripsInBothEncodings`)
 - **SUB-13** (ci; target reached) blis-substrate is one Go module: no go.mod exists below the repository root, and the files in the module zip that Go fetches total under 100 MB uncompressed (Go's limit is 500 MB).
   - `ci`, pull_request: A check that fails on any nested go.mod (`TestNoNestedModule`)
   - `ci`, pull_request: A check of that uncompressed total (`TestModuleZipIsUnder100MB`)
@@ -205,19 +208,19 @@ keeps or introduces; CI refuses an identifier that does not exist (X14).
 - **SUB-15** (new; target ci by M4) A model graph holds only what the checkpoint states: the tensors, their shapes and stored data types, scale tensors, and the layer structure.
   - `new`, pull_request: A test that rederives every graph field from those inputs
   - `new`, pull_request: A check that graph vocabulary has no emit conditions. The deriver records each header's SHA-256 and the revision, under the same licence rule as config.json (X12)
-- **SUB-16** (new; target ci by M2) Quantities carry units as types.
-  - `new`, pull_request: The compiler
-  - `new`, pull_request: A load-time unit check in the cost model
-  - `new`, pull_request: Validator rules that catalog peaks are dense figures and that their ratios between data types match the datasheet. The bounds on rates are SUB-5's
+- **SUB-16** (ci; target reached) Quantities carry units as types.
+  - `ci`, pull_request: The compiler (`contracts/units: TestMixedUnitsDoNotCompile`)
+  - `ci`, pull_request: A load-time unit check in the cost model (`contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused`)
+  - `ci`, pull_request: Validator rules that catalog peaks are dense figures and that their ratios between data types match the datasheet. The bounds on rates are SUB-5's (`contracts/spec/hardware: TestPeaksAreDenseFigures`)
 - **SUB-17** (new; target ci by M3) A transfer or collective names its endpoints by rank, and the cost model prices it over the path between them through the catalog's links: the NVLink domain, the NIC and each switch tier.
   - `new`, pull_request: A property test over random placements, in blis-substrate
 - **SUB-18** (new; target ci by M2) Provenance is recorded per field, not per file.
   - `new`, pull_request: Validator rules on catalog provenance fields
 - **SUB-19** (partial; target ci by M1) Every document that crosses a repository boundary has one definition, in contracts/spec: the scenario, the deployment, the Result, and the per-point record the scoring harness writes.
   - `ci`, pull_request: A generator test in blis-substrate that the published schemas match the Go types (`tools/schemagen: TestPublishedSchemasMatchTheTypes`)
-- **SUB-20** (new; target ci by M2) No price, size or engine decision depends on a free-text label.
-  - `new`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests
-  - `new`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price
+- **SUB-20** (partial; target ci by M2) No price, size or engine decision depends on a free-text label.
+  - `ci`, pull_request: A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on a documentation-only string field outside tests (`contracts: TestNoPriceDependsOnAFreeTextLabel`)
+  - `ci`, pull_request: A perturbation test (SUB-11) that changing such a label changes no price (`kernel: TestChangingALabelChangesNoPriceOrIsListed`)
 - **DEV-8** (new; target ci by M2) Every reported metric names its definition and scope (§8.7), and a comparison is refused unless both sides have the same definition, scope and aggregate.
   - `new`, pull_request: The metric registry in contracts/, which the simulator reads directly and the dashboard and config search read through inference-sim metrics
 - **DEV-12** (new; target ci by M1) Each change is a verification change or a validation change by what it does (§8.9), and is judged as such.

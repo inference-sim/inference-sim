@@ -37,6 +37,12 @@ import (
 	"github.com/inference-sim/blis-substrate/kernel/internal/resolve"
 )
 
+// scorerKernel names the block-index scorer's kernel in the registry's coefficient names
+// (attention_decode_rate_block_index_scores and its siblings). Every attention node that
+// states holds_engine_kv false is that kernel, so the name is a constant of the registry and
+// not read from the node's role label.
+const scorerKernel = "block_index_scores"
+
 // Kernel prices one deployment. Obtain one from New; the zero value is not usable.
 type Kernel struct {
 	// Resolved configuration, frozen at construction.
@@ -93,8 +99,8 @@ type Kernel struct {
 	// it (adaptive.go).
 	adaptive *adaptiveVerify
 
-	// attentionByRole holds a secondary attention kernel's measured form where the registry
-	// carries one under its role, as it does for DeepSeek-V4.1's block_index_scores.
+	// attentionByRole holds a block-index scorer's measured form where the registry carries
+	// one under the kernel's name (scorerKernel), as it does for DeepSeek-V4.1's.
 	attentionByRole map[string]floorRate
 	// attentionPrefillByKind and attentionPrefillByRole hold a measured prefill form for a
 	// primary attention kind and for a secondary kernel's role, where the registry carries
@@ -1427,7 +1433,7 @@ func (k *Kernel) pcpPrefillGathers(l *price.PlannedLayer,
 		gather(float64(l.AttnHeadDim))
 	}
 	for _, a := range l.Attentions {
-		if !a.HoldsKV() && a.KVHeads > 0 && a.HeadDim > 0 {
+		if !a.HoldsKV && a.KVHeads > 0 && a.HeadDim > 0 {
 			gather(float64(a.KVHeads * a.HeadDim)) // the indexer's key
 		}
 	}

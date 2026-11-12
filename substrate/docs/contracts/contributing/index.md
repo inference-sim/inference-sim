@@ -43,7 +43,7 @@ A change that also touches another BLIS repository follows
 | `contracts/embed/` | The contract between a simulator and the router it hosts |
 | `contracts/rules/` | The interface an engine release's rules implement |
 | `contracts/check/` | The problem list and strict decoding every validator shares |
-| `contracts/conformance/` | The suites implementers run: `enginetest`, `kerneltest`, `embedtest` |
+| `contracts/conformance/` | The suites implementers run: `enginetest`, `kerneltest`, `embedtest`, `shapetest` |
 | `contracts/testdata/` | Contract fixtures, such as `connectors/` |
 | `validate/` | The catalog, registry and measurement validators, and their commands under `validate/cmd/` |
 | `tools/docgen/` | The generator for `docs/contracts/generated/` |

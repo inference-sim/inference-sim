@@ -56,7 +56,7 @@ the committed sets use each one, counted when this page was built.
 ### Units
 
 `dimensionless`, `us_per_layer`, `us_per_request`, `us_per_step`, `us_per_hop`,
-`us_per_transfer`, `us_per_load`, `us_per_token`, `bytes_per_us`, `bytes_per_rank`,
+`us_per_transfer`, `us_per_load`, `us_per_token`, `bytes_per_us`, `bytes_per_rank`, `bytes_per_token`,
 `tokens`, `sm_count`. In use:
 
 <!-- registry:usage units -->

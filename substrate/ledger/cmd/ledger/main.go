@@ -48,6 +48,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/ledger"
 	"github.com/inference-sim/blis-substrate/ledger/inferencex"
 )
@@ -528,10 +529,8 @@ func published(dir string) (map[string]bool, error) {
 			return nil, err
 		}
 		var l ledger.Published
-		dec := yaml.NewDecoder(bytes.NewReader(raw))
-		dec.KnownFields(true)
-		if err := dec.Decode(&l); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
+		if err := validate.DecodeStrict(p, raw, &l); err != nil {
+			return nil, err
 		}
 		for _, id := range l.Units {
 			out[id] = true

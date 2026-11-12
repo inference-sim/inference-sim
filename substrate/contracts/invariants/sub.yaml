@@ -24,16 +24,19 @@
     runs: pull_request
     status: ci
     test: 'contracts: TestKernelImportsOnlySpec'
+    known_bad: 'contracts: TestKernelImportsOnlySpec'
   - repo: blis-substrate
     check: >-
       API-compatibility check of the contracts/ packages against the last substrate tag
     runs: pull_request
-    status: new
+    status: ci
+    test: 'ci.yml job contracts: prcheck contracts-apidiff'
+    known_bad: 'tools/prcheck: TestContractsAPI'
   review: null
-  status: partial
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-2
   section: §5
   statement: >-
@@ -303,10 +306,17 @@
     check: A perturbation test in kernel/
     runs: pull_request
     status: new
+    test: 'kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed'
+  - repo: blis-substrate
+    check: A perturbation test over every field of PoolPlan, StepShape and Transfer
+    runs: pull_request
+    status: new
+    test: 'contracts/engine/plan: TestEveryPlanFieldIsPricedOrListed'
   - repo: blis-substrate
     check: A ratchet on the not-yet-priced list, which may only shrink
     runs: pull_request
     status: new
+    test: 'kernel: TestEveryCoefficientFamilyChangesSomePriceOrIsListed'
   review: null
   status: new
   target:
@@ -320,6 +330,8 @@
     never dropped.
   scope:
   - blis-substrate
+  - blis-vllm
+  - inference-sim
   checks:
   - repo: blis-substrate
     check: Each loader refuses unknown keys
@@ -330,9 +342,37 @@
     check: >-
       A shared set of malformed documents in contracts/conformance, run against every loader
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts: TestEveryLoaderRefusesTheMalformedSet'
+    known_bad: 'contracts: TestEveryLoaderRefusesTheMalformedSet'
   - repo: blis-substrate
     check: A test that every declared field is read
+    runs: pull_request
+    status: ci
+    test: 'contracts: TestEveryLoaderReadsEveryFieldItsExampleStates'
+    known_bad: 'contracts: TestEveryLoaderReadsEveryFieldItsExampleStates'
+  - repo: blis-substrate
+    check: >-
+      Non-finite numbers are refused in every field, except +infinity in a field that names itself
+      with the infinity tag, and a test names each such field
+    runs: pull_request
+    status: ci
+    test: 'contracts/check: TestAFieldThatOptsInHoldsPlusInfinity'
+    known_bad: 'contracts/check: TestNoFieldHoldsNaNOrMinusInfinity'
+  - repo: blis-substrate
+    check: >-
+      A write-then-read test of every field a Result writer can emit, in both encodings, filled from
+      the type so a new field is covered
+    runs: pull_request
+    status: ci
+    test: 'contracts/spec/result: TestEveryFieldAWriterCanEmitRoundTripsInBothEncodings'
+    known_bad: 'contracts/spec/result: TestTheFieldsThatHoldInfinityAreNamed'
+  - repo: blis-vllm
+    check: The shared set of malformed documents, run against the repository's loaders
+    runs: pull_request
+    status: new
+  - repo: inference-sim
+    check: The shared set of malformed documents, run against the repository's loaders
     runs: pull_request
     status: new
   review: null
@@ -456,22 +496,28 @@
   - repo: blis-substrate
     check: The compiler
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/units: TestMixedUnitsDoNotCompile'
+    known_bad: 'contracts/units: TestMixedUnitsDoNotCompile'
   - repo: blis-substrate
     check: A load-time unit check in the cost model
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused'
+    known_bad: 'contracts/spec/coefficient: TestAUnitThatTheFormulaDoesNotNeedIsRefused'
   - repo: blis-substrate
     check: >-
       Validator rules that catalog peaks are dense figures and that their ratios between data types
       match the datasheet. The bounds on rates are SUB-5's
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts/spec/hardware: TestPeaksAreDenseFigures'
+    known_bad: 'contracts/spec/hardware: TestPeaksAreDenseFigures'
   review: null
-  status: new
+  status: ci
   target:
     status: ci
-    milestone: 2
+    milestone: null
 - id: SUB-17
   section: §5
   statement: >-
@@ -578,7 +624,9 @@
       A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on
       a documentation-only string field outside tests
     runs: pull_request
-    status: new
+    status: ci
+    test: 'contracts: TestNoPriceDependsOnAFreeTextLabel'
+    known_bad: 'contracts: TestRoleLintFindsItsKnownBadInputs'
   - repo: blis-vllm
     check: >-
       A syntax-tree lint in blis-substrate and each engine repository that refuses a comparison on
@@ -594,9 +642,11 @@
   - repo: blis-substrate
     check: A perturbation test (SUB-11) that changing such a label changes no price
     runs: pull_request
-    status: new
+    status: ci
+    test: 'kernel: TestChangingALabelChangesNoPriceOrIsListed'
+    known_bad: 'kernel: TestFlippingHoldsEngineKVOnAScorerMovesThePrice'
   review: null
-  status: new
+  status: partial
   target:
     status: ci
     milestone: 2

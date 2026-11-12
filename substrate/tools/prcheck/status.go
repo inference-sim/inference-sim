@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	validate "github.com/inference-sim/blis-substrate/contracts/check"
 	"github.com/inference-sim/blis-substrate/contracts/invariants"
 )
 
@@ -48,11 +48,9 @@ const staleAfter = 7 * 24 * time.Hour
 
 // ParseGates reads gates.yaml strictly, and checks every cited invariant exists.
 func ParseGates(src []byte, reg *invariants.Registry) ([]Gate, error) {
-	dec := yaml.NewDecoder(bytes.NewReader(src))
-	dec.KnownFields(true)
 	var gs []Gate
-	if err := dec.Decode(&gs); err != nil {
-		return nil, fmt.Errorf("gates.yaml: %w", err)
+	if err := validate.DecodeStrict("gates.yaml", src, &gs); err != nil {
+		return nil, err
 	}
 	seen := map[string]bool{}
 	for i, g := range gs {

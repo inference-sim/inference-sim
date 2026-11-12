@@ -35,6 +35,8 @@ func TestBatchValidate(t *testing.T) {
 		{"negative pad", Batch{PadTokens: -1}, "PadTokens -1"},
 		{"negative budget", Batch{SMBudget: -2}, "SMBudget -2"},
 		{"negative threshold", Batch{DecodeThreshold: -1}, "DecodeThreshold -1"},
+		{"drafter padded", Batch{DraftPaddedTokens: 128, Reqs: []ReqShape{{Scheduled: 8}}}, ""},
+		{"negative drafter width", Batch{DraftPaddedTokens: -1}, "DraftPaddedTokens -1"},
 		{"negative request count", Batch{Reqs: []ReqShape{{Scheduled: 1}, {Computed: -3}}}, "Reqs[1].Computed -3"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -54,6 +56,7 @@ func TestBatchRoundTrips(t *testing.T) {
 		b := Batch{DecodeThreshold: r.Intn(8), SMBudget: r.Intn(144)}
 		if i%2 == 0 {
 			b.PadTokens = r.Intn(8192)
+			b.DraftPaddedTokens = r.Intn(512)
 		}
 		for n := r.Intn(4); n > 0; n-- {
 			b.Reqs = append(b.Reqs, ReqShape{Scheduled: 1 + r.Intn(6), Computed: r.Intn(1 << 16)})

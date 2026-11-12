@@ -39,6 +39,7 @@ layer_kinds:
   - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
   - {op: GEMM, role: wq_b, n: 32768, k: 1280, tp: column}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -58,7 +59,7 @@ layer_kinds:
   # The MoE runs on the residual stream, so under the mode each rank routes only its own
   # token shard. The nodes above, between the all-gather and the reduce-scatter, see every
   # token, and state no split.
-  - {op: GroupedGEMM, role: experts, n: 2304, k: 5120, experts: 384, top_k: 6,
+  - {op: GroupedGEMM, shared: false, role: experts, n: 2304, k: 5120, experts: 384, top_k: 6,
      weight_dtype: mxfp4, under_sequence_parallel: token_sharded}
   - {op: All2All, role: moe_dispatch_combine, emit: expert_parallel}
   # The MoE's tensor-parallel reduction follows the model's own sequence parallelism, not
@@ -77,6 +78,7 @@ layer_kinds:
      bytes_per_token: 12288}
   - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -101,6 +103,7 @@ layer_kinds:
      tp: replicated}
   - {op: GEMM, role: index_weights_proj, n: 32, k: 5120, tp: replicated, weight_dtype: bf16}
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -112,6 +115,7 @@ layer_kinds:
     - {name: index, kind: index, owned: true, bytes_per_entry: 132, tokens_per_entry: 2,
        page_alignment: 576}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -142,6 +146,7 @@ layer_kinds:
   - {op: AllGather, role: engram_rows, emit: tensor_parallel_unless_sequence_parallel,
      bytes_per_token: 12288}
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -153,6 +158,7 @@ layer_kinds:
     - {name: index, kind: index, owned: true, bytes_per_entry: 132, tokens_per_entry: 2,
        page_alignment: 576}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -171,6 +177,7 @@ layer_kinds:
 - id: csa2_reader
   nodes:
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -188,6 +195,7 @@ layer_kinds:
 - id: csa1_source
   nodes:
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -198,6 +206,7 @@ layer_kinds:
     caches:
     - {name: index, kind: index, owned: true, bytes_per_entry: 132, page_alignment: 576}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -214,6 +223,7 @@ layer_kinds:
 - id: csa1_reader
   nodes:
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -232,6 +242,7 @@ layer_kinds:
 - id: csa1_index
   nodes:
   - op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -246,6 +257,7 @@ layer_kinds:
     tp: replicated
     context: {bytes_per_entry: 4, per: query_token, decode_extent: max_model_len}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -266,6 +278,7 @@ layer_kinds:
   nodes: &dspark_nodes
   - {op: GEMM, role: fused_wqa_wkv, n: 1792, k: 5120, tp: replicated}
   - op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -275,7 +288,7 @@ layer_kinds:
     caches:
     - {name: swa, kind: window, owned: true, bytes_per_entry: 584, window: 128,
        block_size: 32, page_alignment: 576}
-  - {op: GroupedGEMM, role: experts, n: 2304, k: 5120, experts: 128, top_k: 3,
+  - {op: GroupedGEMM, shared: false, role: experts, n: 2304, k: 5120, experts: 128, top_k: 3,
      weight_dtype: mxfp4, under_sequence_parallel: token_sharded}
   - {op: All2All, role: moe_dispatch_combine, emit: expert_parallel}
   edges: &edges4 [[0, 1], [1, 2], [2, 3]]

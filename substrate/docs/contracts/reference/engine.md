@@ -30,6 +30,24 @@ interface in its own repository with no change here or in the simulator.
 | `InFlightLimit() int` | How many batches may be in flight at once (for vLLM, `max_concurrent_batches`); at least one. |
 | `Metrics(now Time) Metrics` | The engine's exported metrics. |
 | `Snapshot() State` | Current state (waiting, running, in-flight, KV capacity), a copy the caller may keep. |
+| `Plan() plan.PoolPlan` (`engine.Planned`, optional) | The pool plan the engine's transfers are priced against; required of an engine that starts a transfer. |
+| `Fields() fields.FieldList` | The field list of the engine release this engine models: every configuration field and environment variable it reads, with its status and estimation rule (design VLM-3, SGL-3). The substrate defines the method and the shape of a list ([the field list](fields.md)) and holds no engine's fields. The same list on every call, valid under `FieldList.Validate`, naming the engine kind and upstream release. `inference-sim fields` prints what the registered engine returns, without reading it. |
+
+## Requests: `engine.Request`
+
+A request carries its identity, prompt, assigned output and scheduling facts. The LoRA fields
+follow vLLM's `LoRARequest`: `Adapter` is its `lora_name` and `AdapterPath` its `lora_path`.
+vLLM puts both, as `("lora", lora_name, lora_path)`, into the hash of every prefix-cache block
+of a LoRA request (`_gen_lora_extra_hash_keys` in `vllm/v1/core/kv_cache_utils.py`, v0.32.0),
+so an engine that models that hash needs the path as well as the name; the integer adapter ID
+does not enter it. Both are empty for the base model. `Request.Validate` refuses a path with no
+adapter name, and `Add` of the reference FIFO engine calls it.
+
+A request that is a disaggregated decode (`RemotePrefill`) also states `Peer`, the node and rack
+of the engine holding its KV. A P/D proxy hands a vLLM decode engine the prefill's address in
+`kv_transfer_params`; a decode engine cannot learn where it pulls from any other way, and the
+links of the pull depend on it. `Request.Validate` refuses a remote prefill with no peer and a
+peer on any other request.
 
 Calls are sequential: a simulator never calls an engine from two goroutines, and an engine
 starts none.
@@ -57,6 +75,53 @@ and stays in flight until `Complete` names it. Any number of batches may be in f
 which is how vLLM's engine core consumes its batch queue: it appends each scheduled batch at
 one end and takes results from the other. A batch that runs nothing (`Empty`) is not in
 flight, but may still start transfers.
+
+## Transfers
+
+An engine reports each asynchronous KV move once, as an `engine.Transfer` among a batch's
+`TransfersStarted`. The simulator asks the Environment what the move demands of the fabric
+(`Environment.TransferDemand`, design section 6.2); it does not derive that from the report.
+
+| Field | Meaning |
+|---|---|
+| `ID`, `Request` | The transfer's life: the simulator reports its end with `TransferDone(ID, ...)`, and `Request` is the request it serves. |
+| `Kind`, `Tokens`, `Blocks`, `Tier` | The engine's own report: load or store, size, and the offload tier as the engine's configuration names it. Empty `Tier` is a move between pools. |
+| `Move` | The same move as the cost model prices it (`plan.Transfer`): the catalog device the tier name stands for, the node and rack that send and receive, and which way the bytes go. |
+
+Only the engine knows what a tier name means or where its ranks sit, so the engine states
+`Move` and the simulator fills nothing in. `Transfer.Validate` refuses a report that disagrees
+with its `Move` (tokens, direction, a tier name on a move between pools or none on a move to a
+tier). An engine that starts a transfer also implements `engine.Planned`, whose `Plan` returns
+the `plan.PoolPlan` the transfer is priced against, and `PoolPlan.CheckTransfer` refuses a move to
+a device the plan does not list or to a node the pool does not have. `env.DemandFor` is the
+simulator's side: it runs both checks and then calls `TransferDemand` with the engine's `Move`.
+
+`enginetest.Drive` runs those checks on every started transfer, and `Options.Boundary` takes
+each one on across the simulator's side (`envtest.Boundary` does it with an Environment). An
+engine whose transfers cannot be demanded fails there, not as a zero price in a run.
+
+### A pull that moves nothing
+
+A remote prefill can find all of its KV already here. Its pull then has `Tokens` 0 and `Blocks` 0,
+and `Transfer.Validate`, `plan.Transfer.Validate` and `env.DemandFor` accept it, for a move
+between pools only. The demand is zero bytes with no link and no floor: no division happens, and
+no handshake is charged, because the design prices none. A load or store to a tier of nothing is
+an engine bug and is refused. A negative size is refused everywhere.
+
+### Limits, deferred to M3
+
+- **A pool that spans nodes** ([inference-sim/blis-substrate#48](https://github.com/inference-sim/blis-substrate/issues/48)).
+  `plan.Transfer` has one `From` and one `To`, but a vLLM offload job runs on every worker, each
+  moving its own shard on its own node. Today an engine states the node that holds the tier
+  (the first node of the pool when each node holds one), and the cost model prices that node's
+  link. The demand is right for a one-node pool and does not fan out across nodes. The choice
+  between one transfer per node and a lead rank with fan-out is open.
+- **A hybrid model's KV groups** ([inference-sim/blis-substrate#49](https://github.com/inference-sim/blis-substrate/issues/49)).
+  vLLM's offload worker copies each KV cache group's blocks over that group's layers only, so
+  a hybrid model moves fewer bytes than its blocks times the pool's stride. `plan.Transfer`
+  has one `Tokens`, so the per-group sizes are lost at the boundary and the demand is sized from
+  `Tokens`. Until a field carries them, the engine's own `TransferTime` and the
+  `TransferPricer` and `GroupTransferPricer` interfaces stay, and are retired when it does.
 
 ## The wake protocol
 

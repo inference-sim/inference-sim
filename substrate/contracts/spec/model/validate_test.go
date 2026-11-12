@@ -24,10 +24,10 @@ func validGraph() *Graph {
 			Nodes: []Node{
 				{Op: OpElementwise, Role: "input_norm"},
 				{Op: OpGEMM, Role: "qkv_proj", N: 4096, K: 3072},
-				{Op: OpAttention, AttentionKind: AttentionGQA, NumQHeads: 48, NumKVHeads: 8, HeadDim: 64},
+				{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionGQA, NumQHeads: 48, NumKVHeads: 8, HeadDim: 64},
 				{Op: OpGEMM, Role: "o_proj", N: 3072, K: 3072},
 				{Op: OpAllReduce, Role: "attn_out", Emit: EmitTensorParallel},
-				{Op: OpGroupedGEMM, Role: "experts", N: 1536, K: 3072, Experts: 224, TopK: 8},
+				{Op: OpGroupedGEMM, Shared: Bool(false), Role: "experts", N: 1536, K: 3072, Experts: 224, TopK: 8},
 				{Op: OpAll2All, Role: "moe", Emit: EmitExpertParallel},
 			},
 			Edges: [][2]int{{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}},
@@ -176,7 +176,7 @@ func TestCompressRatio(t *testing.T) {
 	// A sparse_mla node that already satisfies its kind's other requirements, so each
 	// case below isolates the compress_ratio rule rather than tripping another.
 	sparse := func() Node {
-		return Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+		return Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 			NumQHeads: 128, NumKVHeads: 1, HeadDim: 512, IndexTopK: 1024}
 	}
 	with := func(n Node, r int) Node { n.CompressRatio = r; return n }
@@ -193,21 +193,21 @@ func TestCompressRatio(t *testing.T) {
 		// A sparse_mla layer must do at least one of top-k selection or latent
 		// compression; DeepSeek-V4-Pro ships one layer kind of each.
 		{"compress_ratio alone satisfies a sparse_mla node (csa128_moe)",
-			Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 				NumQHeads: 128, NumKVHeads: 1, HeadDim: 512, CompressRatio: 128}, true},
 		{"index_topk alone satisfies a sparse_mla node (csa4_moe)",
-			Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 				NumQHeads: 128, NumKVHeads: 1, HeadDim: 512, IndexTopK: 1024}, true},
 		{"a sparse_mla node with neither is rejected",
-			Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 				NumQHeads: 128, NumKVHeads: 1, HeadDim: 512}, false},
 		// A positive compress_ratio must not mask a negative index_topk: a negative
 		// count is a mistake, not a compress-only layer.
 		{"a negative index_topk is rejected even with a valid compress_ratio",
-			Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 				NumQHeads: 128, NumKVHeads: 1, HeadDim: 512, IndexTopK: -5, CompressRatio: 4}, false},
 		{"on a non-sparse_mla attention node is rejected",
-			Node{Op: OpAttention, AttentionKind: AttentionGQA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionGQA,
 				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64, CompressRatio: 4}, false},
 		{"a set (nonzero) value on a node whose op does not price it is rejected",
 			Node{Op: OpGEMM, N: 4096, K: 3072, CompressRatio: 4}, false},
@@ -261,10 +261,10 @@ func TestIndexTopKGating(t *testing.T) {
 		ok   bool
 	}{
 		{"index_topk on a sparse_mla node is valid",
-			Node{Op: OpAttention, AttentionKind: AttentionSparseMLA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionSparseMLA,
 				NumQHeads: 128, NumKVHeads: 1, HeadDim: 512, IndexTopK: 1024}, true},
 		{"index_topk on a non-sparse_mla attention node is rejected",
-			Node{Op: OpAttention, AttentionKind: AttentionGQA,
+			Node{Op: OpAttention, HoldsEngineKV: Bool(true), AttentionKind: AttentionGQA,
 				NumQHeads: 48, NumKVHeads: 8, HeadDim: 64, IndexTopK: 1024}, false},
 		{"index_topk on a node whose op does not price it is rejected",
 			Node{Op: OpGEMM, N: 4096, K: 3072, IndexTopK: 1024}, false},
@@ -506,5 +506,35 @@ func TestShardedAtDecodePlacement(t *testing.T) {
 	g.LayerKinds[0].Nodes[2].ShardedAtDecode = ok
 	if p := g.Validate(); p.OK() {
 		t.Error("an Attention node stating sharded_at_decode was accepted")
+	}
+}
+
+// SUB-20: holds_engine_kv is required on every Attention node and shared on every
+// GroupedGEMM node, and each is refused on any other op. A missing value is refused, so an
+// absent field can never silently mean either answer.
+func TestTypedRolesAreRequiredAndPlaced(t *testing.T) {
+	for name, tc := range map[string]struct {
+		mutate func(*Graph)
+		want   string
+	}{
+		"attention without holds_engine_kv": {func(g *Graph) { g.LayerKinds[0].Nodes[2].HoldsEngineKV = nil }, "holds_engine_kv: required"},
+		"grouped gemm without shared":       {func(g *Graph) { g.LayerKinds[0].Nodes[5].Shared = nil }, "shared: required"},
+		"holds_engine_kv on a GEMM":         {func(g *Graph) { g.LayerKinds[0].Nodes[1].HoldsEngineKV = Bool(true) }, "holds_engine_kv: only an Attention"},
+		"shared on a GEMM":                  {func(g *Graph) { g.LayerKinds[0].Nodes[1].Shared = Bool(false) }, "shared: only a GroupedGEMM"},
+		"shared on an Attention":            {func(g *Graph) { g.LayerKinds[0].Nodes[2].Shared = Bool(true) }, "shared: only a GroupedGEMM"},
+		"holds_engine_kv on a GroupedGEMM":  {func(g *Graph) { g.LayerKinds[0].Nodes[5].HoldsEngineKV = Bool(false) }, "holds_engine_kv: only an Attention"},
+	} {
+		g := validGraph()
+		tc.mutate(g)
+		if p := g.Validate(); p.OK() || !strings.Contains(p.Error(), tc.want) {
+			t.Errorf("%s: want a problem containing %q, got %v", name, tc.want, p)
+		}
+	}
+	// Both answers are accepted where the field belongs.
+	g := validGraph()
+	g.LayerKinds[0].Nodes[2].HoldsEngineKV = Bool(false)
+	g.LayerKinds[0].Nodes[5].Shared = Bool(true)
+	if p := g.Validate(); !p.OK() {
+		t.Errorf("false and true are both stated values: %s", p.Error())
 	}
 }

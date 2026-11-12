@@ -288,3 +288,31 @@ func TestChipValidatesComputeCapability(t *testing.T) {
 		}
 	}
 }
+
+// SUB-16: catalog peaks are dense figures, and the ratio between data types is the datasheet's.
+// A sparse figure entered as dense doubles a ratio, and the check refuses it.
+func TestPeaksAreDenseFigures(t *testing.T) {
+	chip := func(bf16, fp8, nvfp4 float64) *Chip {
+		return &Chip{Name: "x", Provenance: vocab.ProvenanceVendorSpec, BF16Peak: bf16, FP8Peak: fp8, NVFP4Peak: nvfp4,
+			MemoryBandwidthTBs: 1, MemoryGiB: 80, IntraNodeBwGBps: 100, SMCount: 100}
+	}
+	// The shipped parts: H100 (989.5, 1979), L40S (362.05, 733), B300 (2250, 4500, 14000).
+	for name, c := range map[string]*Chip{"H100": chip(989.5, 1979, 0), "L40S": chip(362.05, 733, 0), "B300": chip(2250, 4500, 14000), "A100": chip(312, 0, 0)} {
+		if p := c.Validate(); !p.OK() {
+			t.Errorf("%s: %s", name, p.Error())
+		}
+	}
+	for name, c := range map[string]struct {
+		chip *Chip
+		want string
+	}{
+		"sparse FP8 entered as dense":   {chip(989.5, 3958, 0), "looks like the sparse figure"},
+		"sparse NVFP4 entered as dense": {chip(2250, 4500, 30000), "looks like the sparse figure"},
+		"NVFP4 below FP8":               {chip(2250, 4500, 4000), "does not exceed FP8"},
+		"FP8 below BF16":                {chip(2250, 2000, 0), "does not exceed BF16"},
+	} {
+		if p := c.chip.Validate(); p.OK() || !strings.Contains(p.Error(), c.want) {
+			t.Errorf("%s: %v", name, p)
+		}
+	}
+}

@@ -88,7 +88,7 @@ the run's choices:
 
 | Key | Type | Required | Meaning |
 |---|---|---|---|
-| `workload` | string | no | A catalog replay workload under `workloads/`, by file name. Set, the binding may state only `concurrency`, `random_seed`, `benchmark_duration_s`, `grace_period_s`, `max_context_length` and `acceptance`, which override the entry's; `ValidateAgainstCatalog` loads the entry and `ResolveReplay` merges the two. |
+| `workload` | string | no | A catalog replay workload under `workloads/`, by file name. Set, the binding may state only `concurrency`, `random_seed`, `benchmark_duration_s`, `grace_period_s`, `max_context_length`, `acceptance` and `routing`, which override the entry's; `ValidateAgainstCatalog` loads the entry and `ResolveReplay` merges the two. |
 | `concurrency` | integer | yes | Session-tree lanes, at least 1. Subagents run beside their parent without taking a lane. One value: a scenario run is not a sweep. It is the run's choice, so a catalog entry does not state it. |
 
 The other keys are the definition's, below.
@@ -442,7 +442,7 @@ A replay is invalid if
 - `scenario` or `harness_version` is empty or not transcribed, or `concurrency` is less
   than 1;
 - `benchmark_duration_s` is not finite, negative, or below 900;
-- `grace_period_s` is negative or NaN;
+- `grace_period_s` is negative or NaN (`.inf` is allowed: it waits indefinitely);
 - `cache_bust` is other than `first_turn_prefix`, or `system_idle_gap_cap_s` other than 10;
 - a `trajectory_start` bound lies outside [0, 1], or `min_ratio` exceeds `max_ratio`;
 - `warmup.mode` is unknown; a `cache_pressure` warmup does not state exactly one of

@@ -54,6 +54,15 @@ func (g *Graph) resolveAlias(ref string) (Node, string, error) {
 	return pool[hits[0]], fmt.Sprintf("%s[%d]", poolAt, hits[0]), nil
 }
 
+// AliasTarget returns the node an aliases reference names. It is the resolver validation
+// uses, so a consumer reads the weights validation checked. The reference is a name the
+// document gives a node, "<layer kind>.<role>", and is resolved here and nowhere else; a
+// reference that names no single node returns false.
+func (g *Graph) AliasTarget(ref string) (Node, bool) {
+	n, _, err := g.resolveAlias(ref)
+	return n, err == nil
+}
+
 // instances counts how many times each layer kind runs across every stack.
 func (g *Graph) instances() map[string]int {
 	out := map[string]int{}

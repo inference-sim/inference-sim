@@ -83,6 +83,12 @@ func (e Entry) validate(p *validate.Problems, at string) {
 	if !e.Units.Valid() {
 		p.Field(at+".units", "%q is not one of %v", e.Units, vocab.AllUnits())
 	}
+	// The unit must be the one the formula that reads this family requires (SUB-16): a value in
+	// another unit would be multiplied by a size or a count and price wrongly without an error.
+	if f, ok := RequiredUnit(e.Name); ok && e.Units.Valid() && e.Units != f.Unit {
+		p.Field(at+".units", "%q has units %q, but the formula that reads it requires %q (%s)",
+			e.Name, e.Units, f.Unit, f.Why)
+	}
 	if !e.Method.Valid() {
 		p.Field(at+".method", "%q is not one of %v", e.Method, vocab.AllMethods())
 	}

@@ -1,0 +1,97 @@
+# Fields of PoolPlan, StepShape and Transfer that no price depends on yet (design SUB-11).
+# One line each: Type.Field, then why. The list may only shrink: TestEveryPlanFieldIsPricedOrListed
+# fails on a field not listed here and on a listed field that no longer exists. Delete a line in
+# the change that prices the field, with the test that moves a price when the field changes.
+# Never add a line to admit a new field: a new field is priced in the change that adds it.
+#
+# WHY EVERY LINE IS HERE. The boundary types are added to contracts in M2 (design 3.3), and the
+# cost model still prices from kernel.Batch and its own resolution. The equivalence test that
+# prices an emitted plan and compares it with the old path lives in inference-sim, which imports
+# both; the cost model reads a plan when that test passes. Until then the types are validated,
+# serialised and accounted for (plan.Memory, plan.Validate) and priced by nothing.
+Buffer.Basis # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Buffer.Bytes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Buffer.Host # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Buffer.Name # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Collective.Bytes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Collective.CrossesNodes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Collective.Group # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+DraftPass.Launch # not priced: the kernel charges a parallel-block drafter's host launches by its own capture rule (draftHost), not by a launch mode the engine states; pricing it needs a measured host-launch coefficient for an eager or piecewise drafter, which the registry does not hold
+DraftPolicy.Chain # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+DraftPolicy.TreeSteps # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+DraftPolicy.TreeTopK # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+DraftShape.Drafted # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+DraftShape.Verified # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Endpoint.Node # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Endpoint.Rack # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+GraphPolicy.Buckets # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+GraphPolicy.Mode # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+HostPlan.NativeFrontend # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KVGroup.BytesPerPage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KVGroup.TokensPerPage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KVGroup.Window # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KVTier.Bytes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KVTier.Device # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KVTier.Shared # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KernelImpl.CodeHash # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KernelImpl.Library # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KernelImpl.Toolkit # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+KernelImpl.Variant # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.Context # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.Data # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.Expert # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.Nodes # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.Pipeline # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.RanksPerNode # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Layout.Tensor # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+LoweredLayer.Collective # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+LoweredLayer.KernelImpl # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+LoweredLayer.Layer # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+LoweredLayer.Primitive # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+LoweredLayer.Shape # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+LoweredLayer.Stage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PaddedShape.Launch # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PaddedShape.Tokens # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Buffers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.DraftLayers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Drafts # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Fabric # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Graphs # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Hardware # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Host # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.InFlight # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.KV # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.KVBudget # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Layers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Layout # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Tiers # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PoolPlan.Weights # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.Experts # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.Format # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.HeadDim # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.Heads # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.K # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.KVHeads # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.M # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.N # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+PrimitiveShape.Window # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+RankStep.Requests # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+RequestStep.Cached # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+RequestStep.Computed # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+RequestStep.Prompt # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+RequestStep.Scheduled # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+ResidentTensor.Elements # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+ResidentTensor.Format # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+ResidentTensor.Name # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+ResidentTensor.Shared # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+ResidentTensor.Where # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+StepShape.Drafts # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+StepShape.Mode # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+StepShape.Padded # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+StepShape.Ranks # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+StepShape.Stage # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Transfer.From # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Transfer.Kind # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Transfer.Tier # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Transfer.To # not yet priced: the cost model reads a plan in the boundary transition's equivalence step
+Transfer.Tokens # not yet priced: the cost model reads a plan in the boundary transition's equivalence step

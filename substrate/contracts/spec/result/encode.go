@@ -32,7 +32,10 @@ const (
 //
 // The output is a deterministic function of r: struct fields in declaration order, map
 // keys sorted, JSON indented by two spaces, one trailing newline. A non-finite number has
-// no JSON form and is an error; Validate refuses one anyway. In a block held as an opaque
+// no JSON form and is an error; Validate refuses one anyway, except +infinity in a field that
+// opts in to it (check.InfinityTag): grace_period_s, whose .inf waits indefinitely. YAML
+// writes it as .inf and JSON as the string "inf", and the reader maps either back for those
+// fields alone. In a block held as an opaque
 // map (Engine, Router, Kernel, Saturation, Input.Policy), a whole-number float such as
 // 2.0 is written as 2 in either encoding, as yaml.v3 writes it, and reads back an integer.
 func Marshal(r *Result, f Format) ([]byte, error) {
@@ -53,6 +56,13 @@ func Marshal(r *Result, f Format) ([]byte, error) {
 		if err := n.Encode(r); err != nil {
 			return nil, err
 		}
+		// JSON has no infinity: a field that opts in to +infinity is written as the string
+		// "inf", which the reader reads back as .inf for that field and no other.
+		for _, s := range validate.InfinityNodes(&n, reflect.TypeOf(r)) {
+			if s.ShortTag() == "!!float" && strings.EqualFold(strings.TrimLeft(s.Value, "+"), ".inf") {
+				*s = *str(JSONInfinity)
+			}
+		}
 		var buf bytes.Buffer
 		if err := writeJSON(&buf, &n, ""); err != nil {
 			return nil, err
@@ -62,6 +72,9 @@ func Marshal(r *Result, f Format) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("unknown result format %q: %s or %s", f, FormatJSON, FormatYAML)
 }
+
+// JSONInfinity is how a JSON Result spells +infinity in a field that opts in to it.
+const JSONInfinity = "inf"
 
 // Unmarshal reads a Result from data, JSON or YAML, strictly: a key no field declares is
 // an error naming it, in either encoding. A document whose first non-blank byte is `{` is
@@ -79,6 +92,13 @@ func UnmarshalStrict(data []byte, r any) error {
 		n, err := jsonToNode(data)
 		if err != nil {
 			return err
+		}
+		// "inf" in a field that opts in to +infinity is that field's infinity. In any other
+		// field it stays the string it is, and the strict loader refuses it as one.
+		for _, s := range validate.InfinityNodes(n, reflect.TypeOf(r)) {
+			if s.Kind == yaml.ScalarNode && s.Tag == "!!str" && s.Value == JSONInfinity {
+				*s = yaml.Node{Kind: yaml.ScalarNode, Tag: "!!float", Value: ".inf", Line: s.Line}
+			}
 		}
 		// The JSON is re-expressed as YAML (every string quoted, every number tagged by its
 		// JSON form) so that the one strict decoder, and the yaml tags it reads, decide both

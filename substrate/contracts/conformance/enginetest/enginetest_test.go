@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/spec/fields"
 )
 
 func fifoCfg() FIFOConfig {
@@ -122,6 +123,24 @@ func TestProtocolErrors(t *testing.T) {
 	cfg.InFlight, cfg.TokenBudget = 2, 4
 	if err := CheckProtocolErrors(newFIFO(cfg), req("A", 4, 2), req("B", 4, 2)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A request that states an adapter path and no adapter is refused at Add, not run as the base
+// model.
+func TestAddRefusesAnAdapterPathWithoutAnAdapter(t *testing.T) {
+	f, err := NewFIFO(fifoCfg())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := req("A", 4, 2)
+	r.AdapterPath = "/loras/sql-v1"
+	if err := f.Add(r, 0); err == nil || !strings.Contains(err.Error(), "no adapter name") {
+		t.Fatalf("Add of a path with no adapter returned %v, want a refusal", err)
+	}
+	r.Adapter = "sql"
+	if err := f.Add(r, 0); err != nil {
+		t.Fatalf("Add of a named adapter with a path: %v", err)
 	}
 }
 
@@ -369,6 +388,9 @@ func TestTheDriverCatchesBrokenEngines(t *testing.T) {
 		{"a never-added request preempted by an empty batch", func(f *FIFO) engine.Engine { return preemptsAStrangerIdle{f} }, nil, []Arrival{at(0, held)}, "preempts stranger, which was never added"},
 		{"a request run before it arrives", func(f *FIFO) engine.Engine { return schedulesBeforeArrival{f} }, nil, []Arrival{at(0, req("A", 4, 2)), at(100, req("B", 4, 2))}, "runs B, which was never added"},
 		{"a request preempted twice in one batch", func(f *FIFO) engine.Engine { return preemptsTwice{f} }, func(c *FIFOConfig) { c.MaxRunning = 1 }, two, "preempts B twice"},
+		{"an invalid field list", func(f *FIFO) engine.Engine { return badFields{f} }, nil, two, "not a valid field list"},
+		{"a field list with no engine kind", func(f *FIFO) engine.Engine { return anonymousFields{f} }, nil, two, "engine.kind"},
+		{"a field list that changes between calls", func(f *FIFO) engine.Engine { return &driftingFields{FIFO: f} }, nil, two, "different list on a second call"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cfg := fifoCfg()
@@ -513,5 +535,52 @@ func TestARequestFinishedInABatchIsFinished(t *testing.T) {
 	}
 	if _, ok := tr.Finished["b"]; !ok {
 		t.Fatal("b did not finish")
+	}
+}
+
+// badFields reports a field marked modelled with no evidence, which the list's own validator
+// refuses.
+type badFields struct{ *FIFO }
+
+func (e badFields) Fields() fields.FieldList {
+	l := e.FIFO.Fields()
+	l.Fields[0].Evidence = fields.Evidence{}
+	return l
+}
+
+// anonymousFields reports a list that does not say which engine it is for.
+type anonymousFields struct{ *FIFO }
+
+func (e anonymousFields) Fields() fields.FieldList {
+	l := e.FIFO.Fields()
+	l.Engine.Kind = ""
+	return l
+}
+
+// driftingFields reports a different release on every call.
+type driftingFields struct {
+	*FIFO
+	calls int
+}
+
+func (e *driftingFields) Fields() fields.FieldList {
+	e.calls++
+	l := e.FIFO.Fields()
+	l.Engine.Version = fmt.Sprint(e.calls)
+	return l
+}
+
+// The test engine's own list is valid and names the kind it registers.
+func TestTheTestEnginesFieldListIsValid(t *testing.T) {
+	f, err := NewFIFO(fifoCfg())
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := f.Fields()
+	if err := l.Validate(); err != nil {
+		t.Fatalf("the test engine's field list is invalid: %v", err)
+	}
+	if err := CheckFields(f); err != nil {
+		t.Fatal(err)
 	}
 }

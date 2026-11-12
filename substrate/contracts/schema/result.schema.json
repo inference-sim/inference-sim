@@ -2054,7 +2054,14 @@
           "$ref": "#/$defs/workload.Corpus"
         },
         "grace_period_s": {
-          "type": "number"
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "const": "inf"
+            }
+          ]
         },
         "harness_version": {
           "type": "string"

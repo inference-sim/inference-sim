@@ -95,6 +95,7 @@ layer_kinds:
     role: hc_ffn_mix
     bytes_per_token: 114848
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2048
     k: 4096
@@ -283,6 +284,7 @@ layer_kinds:
     bytes_per_token: 512
   - &id022
     op: Attention
+    holds_engine_kv: false
     role: block_index_scores
     kind: sparse_mla
     n_q: 32
@@ -291,6 +293,7 @@ layer_kinds:
     compress_ratio: 4
   - &id023
     op: Attention
+    holds_engine_kv: true
     kind: sparse_mla
     n_q: 64
     n_kv: 1
@@ -317,6 +320,7 @@ layer_kinds:
     role: hc_ffn_mix
     bytes_per_token: 114848
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2048
     k: 4096
@@ -400,6 +404,7 @@ layer_kinds:
   - op: Elementwise
     role: post_attn_norm
   - op: GroupedGEMM
+    shared: false
     role: experts
     n: 2048
     k: 4096

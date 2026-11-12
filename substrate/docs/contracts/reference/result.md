@@ -13,6 +13,11 @@ character is `{` is read as JSON, anything else as YAML. A Result is written wit
 engine block. Given the same input, options and data, the simulator reproduces the document
 byte for byte outside `runtime`, `rerun_of` and `revision_changes`.
 
+A number is finite, with one exception: `grace_period_s`, in the replay definition a Result
+records, may be infinite, and `.inf` waits indefinitely. YAML writes it `.inf` and JSON writes the
+string `"inf"`; either reads back as infinity, in that field only ([Numbers are
+finite](../concepts/contracts.md#numbers-are-finite)).
+
 ```json
 --8<-- "docs/contracts/examples/result.json"
 ```

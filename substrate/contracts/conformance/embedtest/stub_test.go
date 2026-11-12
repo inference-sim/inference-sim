@@ -67,6 +67,7 @@ const (
 	checkStalePool      mutation = "Check sees another Pool"
 	inspectorStale      mutation = "KVBlocks reports removed blocks"
 	addressKept         mutation = "SetEndpoint keeps the old address"
+	unknownEngineKept   mutation = "a batch naming an unknown engine decoded as vLLM's"
 )
 
 var stubCounter int // wallClockSeed's process-wide "randomness"
@@ -445,6 +446,9 @@ func (s *stub) IngestKVEvents(_ context.Context, endpoint, _ string, b embed.KVB
 	e := s.endpointAt(endpoint)
 	if e == nil {
 		return fmt.Errorf("stub: no endpoint %s", endpoint)
+	}
+	if !b.Known() && s.m != unknownEngineKept {
+		return fmt.Errorf("stub: engine %q is not a kind the contract defines", b.Engine)
 	}
 	for _, ev := range b.Events {
 		switch ev := ev.(type) {
