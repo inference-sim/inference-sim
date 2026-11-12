@@ -124,3 +124,28 @@ func TestRouterConfigsSummaryNamesEachFile(t *testing.T) {
 		t.Fatalf("summary:\n%s", out.String())
 	}
 }
+
+// Files in subdirectories (the guide configurations) are keyed by their relative path and
+// --file takes that path.
+func TestRouterConfigsCarriesFilesInSubdirectories(t *testing.T) {
+	fsys := fstest.MapFS{
+		"policies.json": {Data: []byte(`{"policies":[{"name":"g","files":{"colocated":"guides/g.yaml"}}]}`)},
+		"guides/g.yaml": {Data: []byte("a: 1\n")},
+		"top.yaml":      {Data: []byte("b: 2\n")},
+	}
+	var out bytes.Buffer
+	if err := printRouterConfigs(&out, fsys, "vX", true, ""); err != nil {
+		t.Fatal(err)
+	}
+	var got routerConfigsOutput
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Files["guides/g.yaml"].Content != "a: 1\n" || got.Files["top.yaml"].SHA256 == "" || len(got.Files) != 2 {
+		t.Fatalf("files: %v", got.Files)
+	}
+	out.Reset()
+	if err := printRouterConfigs(&out, fsys, "vX", false, "guides/g.yaml"); err != nil || out.String() != "a: 1\n" {
+		t.Fatalf("--file: %v %q", err, out.String())
+	}
+}

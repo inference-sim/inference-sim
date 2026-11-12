@@ -103,21 +103,21 @@ func printRouterConfigs(w io.Writer, fsys fs.FS, version string, asJSON bool, fi
 			}
 		}
 	}
-	entries, err := fs.ReadDir(fsys, ".")
-	if err != nil {
-		return err
-	}
 	files := map[string]routerConfigFile{}
-	for _, e := range entries {
-		if e.IsDir() || e.Name() == "policies.json" {
-			continue
+	err = fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || name == "policies.json" {
+			return err
 		}
-		b, err := fs.ReadFile(fsys, e.Name())
+		b, err := fs.ReadFile(fsys, name)
 		if err != nil {
 			return err
 		}
 		sum := sha256.Sum256(b)
-		files[e.Name()] = routerConfigFile{SHA256: hex.EncodeToString(sum[:]), Content: string(b)}
+		files[name] = routerConfigFile{SHA256: hex.EncodeToString(sum[:]), Content: string(b)}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if asJSON {
 		return writeJSON(w, struct {
