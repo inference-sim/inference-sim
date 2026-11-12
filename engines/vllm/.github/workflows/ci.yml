@@ -14,6 +14,13 @@ on:
     branches: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
+    inputs:
+      base:
+        description: >-
+          The commit goldens-reviewed judges this branch against. Empty: the nearest remote branch
+          that is a strict ancestor of the dispatched one (oracle/check_goldens.py --stack-base).
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -379,9 +386,14 @@ jobs:
           fetch-depth: 0
       - name: every commit changing a golden trace has a golden-reviewed trailer
         env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || inputs.base }}
           HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-        run: python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+        run: |
+          # A run started by hand has neither a pull request nor a previous push: judge the branch against the
+          # layer it stands on, not against the root (which would hold every golden of the stack to the new rules).
+          if [ -z "$BASE" ]; then BASE="$(python3 -I oracle/check_goldens.py --stack-base "$HEAD")"; fi
+          echo "goldens-reviewed: $BASE..$HEAD"
+          python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
       # Each guard must fail on the violation it exists to catch (oracle/test_checks.py).
       - name: the oracle's guards catch what they guard
         run: python3 -I oracle/test_checks.py

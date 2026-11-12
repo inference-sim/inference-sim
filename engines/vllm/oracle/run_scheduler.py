@@ -656,6 +656,28 @@ def committed_lock_sha256() -> str:
         return "unknown"
 
 
+def oracle_inputs(scenario_path) -> dict:
+    """What this run executed or read from the repository, as {path: sha256}: every module of
+    oracle/ loaded into this process (the runner, the helpers it imports), the scenario,
+    oracle/mocks.json and oracle/requirements.lock. A golden records it so that
+    oracle/check_goldens.py can hold it against any later head: the golden stands for that head
+    when every one of these files is byte-identical there, whatever commits lie between."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)
+    files = {os.path.abspath(m.__file__) for m in list(sys.modules.values())
+             if getattr(m, "__file__", None) and os.path.abspath(m.__file__).startswith(here + os.sep)}
+    files |= {os.path.join(here, "mocks.json"), os.path.join(here, "requirements.lock")}
+    if scenario_path:
+        files.add(os.path.abspath(scenario_path))
+    out = {}
+    for path in sorted(files):
+        if not path.startswith(root + os.sep):
+            continue  # a scenario outside the repository: scenario_sha256 covers it
+        with open(path, "rb") as f:
+            out[os.path.relpath(path, root).replace(os.sep, "/")] = hashlib.sha256(f.read()).hexdigest()
+    return out
+
+
 def scenario_seed(scenario_path: str):
     """The seed a generated (fuzz) scenario was made from, or None for a hand-written one."""
     with open(scenario_path) as f:
@@ -700,6 +722,7 @@ def provenance(vllm_root: str, scenario_path: str) -> dict:
         "lockfile_sha256": lock_digest,
         "requirements_lock_sha256": committed_lock_sha256(),
         "blis_vllm_commit": blis_vllm_commit(),
+        "oracle_inputs": oracle_inputs(scenario_path),
         "seed": scenario_seed(scenario_path),
     }
 

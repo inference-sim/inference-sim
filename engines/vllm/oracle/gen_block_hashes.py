@@ -98,7 +98,7 @@ def main() -> None:
 
     here = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, here)
-    from run_scheduler import blis_vllm_commit, committed_lock_sha256  # noqa: E402
+    from run_scheduler import blis_vllm_commit, committed_lock_sha256, oracle_inputs  # noqa: E402
 
     # ORACLE_LOCKFILE names the frozen package list of the environment that ran vLLM, as for
     # every oracle trace (oracle/run_scheduler.py provenance).
@@ -121,6 +121,7 @@ def main() -> None:
             "lockfile_sha256": lock_digest,
             "requirements_lock_sha256": committed_lock_sha256(),
             "blis_vllm_commit": blis_vllm_commit(),
+            "oracle_inputs": oracle_inputs(None),
             "mock_version": None,
             "mocks": [],
         },

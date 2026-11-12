@@ -29,6 +29,13 @@ on:
     branches-ignore: [main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
   workflow_dispatch:
+    inputs:
+      base:
+        description: >-
+          The commit the golden check judges this branch against. Empty: the nearest remote branch that
+          is a strict ancestor of the dispatched one (oracle/check_goldens.py --stack-base).
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -129,8 +136,11 @@ jobs:
           fetch-depth: 0
       - name: every golden added or changed in this layer is on CI's platform and lock, and every change names its reviewer
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-        run: python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ]; then BASE="$(python3 -I oracle/check_goldens.py --stack-base "$HEAD")"; fi
+          echo "golden check: $BASE..$HEAD"
+          python3 -I oracle/check_goldens.py "$BASE" "$HEAD"
       - name: the oracle's guards catch what they guard
         run: python3 -I oracle/test_checks.py

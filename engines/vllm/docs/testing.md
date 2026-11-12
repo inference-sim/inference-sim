@@ -205,7 +205,20 @@ no changed trace, or gives no reason, does not count; a person's name is neither
 `provenance` block, needs no trailer; the check verifies the decisions are unchanged as JSON
 values (parsed and compared, so a reformatted file with the same decisions passes). It also fails a golden whose `blis_vllm_commit` is not a commit in the pushed
 history, so a golden's provenance always names a commit anyone can check out: a refresh takes
-its traces from the `oracle-traces` workflow run on main (`oracle/refresh_provenance.py`). The differential test also refuses a golden whose recorded
+its traces from the `oracle-traces` workflow run on main (`oracle/refresh_provenance.py`).
+A golden also records `oracle_inputs`: each file of `oracle/` its run executed or read (the runner and
+the helpers it imported, `oracle/mocks.json`, `oracle/requirements.lock`) and the scenario, with
+its sha256. A rebase or a reordering of a stack leaves the commit a golden names outside the
+history; the check then accepts the golden when every one of those files is byte-identical at the
+pushed head, because that is what the commit stood for: vLLM's output, produced by the oracle code
+and the scenario the head holds. A record that names a file head lacks or holds differently, that
+the named commit (when it can be read) does not bear out, or that is empty, fails, and so does a
+commit that is not a full commit id. The Go code around the oracle is not part of the record: it
+does not produce the golden, and the `oracle-tier2` job re-derives every golden from vLLM on each
+head. A golden recorded before the field existed is judged by the commit rule alone. A run started by hand
+(`workflow_dispatch`) has no pull request: `goldens-reviewed` and `ci-light` judge it against the
+`base` input, else against the nearest remote branch (not `scratch/*`) that is a strict ancestor of
+the dispatched one (`oracle/check_goldens.py --stack-base`). The differential test also refuses a golden whose recorded
 scenario hash, vLLM version and commit, or mock version does not match the scenario file and the
 pins it runs against, so a trace can only count as evidence for the scenario it came from.
 CI re-runs the pinned vLLM release on every scenario and fails if any committed golden's

@@ -14,14 +14,25 @@ golden file, appending a case), or refreshing only its `provenance` block, needs
 check verifies that such a commit changed nothing else. A golden directory this list does not name fails the check, so a new
 tier's goldens cannot go unguarded. A golden whose provenance names a blis-vllm commit outside
 head's history (one nobody can fetch, a "+dirty" tree or "unknown") fails too: its provenance
-must name a commit anyone can check out. A golden added in the range base..head must
+must name a commit anyone can check out. The one exception is a golden whose run recorded
+`oracle_inputs` (each file of oracle/ the run executed or read, with its sha256): a rebase or a
+reordering of the stack leaves its commit outside head's history, and the golden still stands
+when every one of those files is byte-identical at head, which is the claim the commit stood for
+(vLLM's output, produced by the same oracle code and scenario that head holds). A golden added in the range base..head must
 also have been produced on the platform CI runs (CI_PLATFORM) and from the oracle environment the
 repository commits (its requirements_lock_sha256 is the hash of oracle/requirements.lock at head),
 so a trace recorded elsewhere cannot enter unnoticed; the goldens already committed before this
 check existed are not held to it.
 
 Usage: python3 -I oracle/check_goldens.py <base> <head>
+       python3 -I oracle/check_goldens.py --stack-base <head>
+
+A run started by hand (workflow_dispatch) has no pull request and no previous push, so it has no
+base. --stack-base prints the one to use: the nearest remote branch, other than a scratch
+branch, that is a strict ancestor of head (the branch of the layer this one stands on), else the
+merge-base with origin/main. The range base..head is then what this branch adds to the stack.
 """
+import hashlib
 import json
 import re
 import subprocess
@@ -79,23 +90,60 @@ def unguarded(rev: str) -> list[str]:
     return sorted(d for d in dirs if d not in GOLDEN_DIRS)
 
 
+def blob_sha256(rev: str, path: str):
+    """sha256 of the file at rev, or None when rev has no such file."""
+    r = subprocess.run(["git", "show", f"{rev}:{path}"], capture_output=True)
+    return hashlib.sha256(r.stdout).hexdigest() if r.returncode == 0 else None
+
+
+def inputs_differ(inputs, rev: str) -> list[str]:
+    """The files of a golden's recorded oracle_inputs that are not byte-identical at rev (a missing
+    file counts). An empty or malformed record differs from everything."""
+    if (not isinstance(inputs, dict) or not inputs
+            or not all(isinstance(k, str) and isinstance(v, str) for k, v in inputs.items())):
+        return ["(no oracle_inputs recorded)"]
+    return sorted(p for p, want in inputs.items() if blob_sha256(rev, p) != want)
+
+
 def unreachable_commits(head: str) -> list[str]:
-    """Goldens at head whose provenance names a blis_vllm_commit that is not a full commit id
-    in head's history."""
+    """Goldens at head whose provenance names a blis_vllm_commit that is not a full commit id,
+    or is not in head's history and whose recorded oracle_inputs do not all hold at head.
+
+    A golden that records oracle_inputs is also held to them where it was recorded: when the
+    commit it names can be read here, each recorded file must have the recorded sha256 at that
+    commit, so the record cannot claim inputs the run's own commit did not have."""
     out = []
     reachable: dict[str, bool] = {}
     for path in git("ls-tree", "-r", "--name-only", head).splitlines():
         if not is_golden(path):
             continue
-        commit = json.loads(git("show", f"{head}:{path}")).get("provenance", {}).get("blis_vllm_commit")
+        prov = json.loads(git("show", f"{head}:{path}")).get("provenance", {})
+        commit = prov.get("blis_vllm_commit")
         if commit is None:
             continue
+        well_formed = bool(re.fullmatch(r"[0-9a-f]{40}", commit))
         if commit not in reachable:
-            reachable[commit] = bool(re.fullmatch(r"[0-9a-f]{40}", commit)) and subprocess.run(
+            reachable[commit] = well_formed and subprocess.run(
                 ["git", "merge-base", "--is-ancestor", commit, head], capture_output=True).returncode == 0
-        if not reachable[commit]:
-            out.append(f"{path}: records blis_vllm_commit {commit}, which is not a commit in {head}'s history "
-                       "(refresh it from the oracle-traces workflow run on main)")
+        inputs = prov.get("oracle_inputs")
+        if well_formed and inputs is not None and subprocess.run(
+                ["git", "cat-file", "-e", commit + "^{commit}"], capture_output=True).returncode == 0:
+            wrong = inputs_differ(inputs, commit)
+            if wrong:
+                out.append(f"{path}: records oracle_inputs that {commit} does not have ({', '.join(wrong)})")
+                continue
+        if reachable[commit]:
+            continue
+        if well_formed and "oracle_inputs" in prov:
+            differ = inputs_differ(inputs, head)
+            if not differ:
+                continue
+            out.append(f"{path}: records blis_vllm_commit {commit}, which is not a commit in {head}'s history, and "
+                       f"the oracle files its run used differ at {head}: {', '.join(differ)} "
+                       "(record it again with the oracle-traces workflow at a commit with these files)")
+            continue
+        out.append(f"{path}: records blis_vllm_commit {commit}, which is not a commit in {head}'s history "
+                   "(refresh it from the oracle-traces workflow run on main)")
     return out
 
 
@@ -141,6 +189,26 @@ def foreign_provenance(base: str, head: str) -> list[str]:
     return out
 
 
+def stack_base(head: str) -> str:
+    """The commit a hand-started run judges head against (see the module docstring)."""
+    head = git("rev-parse", head).strip()
+    best, best_n = None, None
+    for ref in git("for-each-ref", "--format=%(refname)", "refs/remotes/origin").split():
+        name = ref[len("refs/remotes/origin/"):]
+        if name == "HEAD" or name.startswith("scratch/"):
+            continue
+        tip = git("rev-parse", ref).strip()
+        if tip == head or subprocess.run(["git", "merge-base", "--is-ancestor", tip, head],
+                                         capture_output=True).returncode != 0:
+            continue
+        n = int(git("rev-list", "--count", f"{tip}..{head}"))
+        if best_n is None or n < best_n:
+            best, best_n = tip, n
+    if best is not None:
+        return best
+    return git("merge-base", "refs/remotes/origin/main", head).strip()
+
+
 def main(base: str, head: str) -> int:
     bad = 0
     for d in unguarded(head):
@@ -181,4 +249,7 @@ def main(base: str, head: str) -> int:
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "--stack-base":
+        print(stack_base(sys.argv[2]))
+        sys.exit(0)
     sys.exit(main(sys.argv[1], sys.argv[2]))
