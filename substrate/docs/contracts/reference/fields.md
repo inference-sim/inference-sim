@@ -226,4 +226,8 @@ the catalog. A fact the consumer cannot supply is left unset, and a clause that 
 hold. `Exact` is false for rule `none`, and true for any value when `valid_when` is absent.
 
 In the example above, `VLLM_FLASHINFER_ALLREDUCE_BACKEND` reads: `auto` is always exact; a stated
-`mnnvl` is exact on one node, and on several nodes only from compute capability 10.0 up.
+`mnnvl` is exact only on several nodes from compute capability 10.0 up. The upstream resolves two things,
+the backend and whether a failed `mnnvl` workspace may fall back to `trtllm`. Left unset on one node it picks
+`mnnvl` and allows the fallback; a stated `mnnvl` never allows it. The two differ on a node without multicast,
+which no clause can state, so a stated `mnnvl` on one node is outside the rule and the point is G5
+`field_not_modelled`. A rule must preserve everything the upstream resolves, not only the name.

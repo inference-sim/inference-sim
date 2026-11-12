@@ -6,6 +6,21 @@ import (
 
 func nodes(n int) *int { return &n }
 
+// allReduce is the worked example: the backend FlashInfer all-reduce picks. The upstream
+// resolves both the backend and whether the trtllm fallback is allowed. Left unset ("auto"), one
+// node gets mnnvl with the fallback allowed, and several nodes on 10.0 and up get mnnvl without
+// it. A stated mnnvl never allows the fallback, so it resolves like "auto" only where "auto"
+// allows none: several nodes on 10.0 and up. On one node a stated mnnvl differs from "auto"
+// whenever the node lacks multicast, a fact the grammar cannot state, so it is not covered.
+const allReduce = `{
+  "rule": "leave_unset",
+  "preserves": "the backend vLLM picks for the tensor-parallel group and whether it may fall back to trtllm",
+  "valid_when": [
+    {"value_in": ["auto"]},
+    {"value_in": ["mnnvl"], "tp_group_nodes": {"gt": 1}, "compute_capability": {"gte": "10.0"}}
+  ]
+}`
+
 func TestARuleReadBackFromItsCanonicalBytesStillDecides(t *testing.T) {
 	l, err := Parse(listWith(allReduce))
 	if err != nil {
@@ -42,8 +57,8 @@ func TestTheAllReduceStandInIsExactOnlyWhereItsClausesHold(t *testing.T) {
 	}{
 		{"auto needs no fact", Facts{Value: "auto"}, true},
 		{"auto in other case and padding", Facts{Value: "  Auto "}, true},
-		{"mnnvl on one node", Facts{Value: "mnnvl", TPGroupNodes: nodes(1)}, true},
-		{"mnnvl on one node of an older part", Facts{Value: "mnnvl", TPGroupNodes: nodes(1), ComputeCapability: "9.0"}, true},
+		{"mnnvl on one node: auto may fall back, mnnvl may not", Facts{Value: "mnnvl", TPGroupNodes: nodes(1), ComputeCapability: "10.0"}, false},
+		{"mnnvl on one node of an older part", Facts{Value: "mnnvl", TPGroupNodes: nodes(1), ComputeCapability: "9.0"}, false},
 		{"mnnvl on two nodes at 10.0", Facts{Value: "mnnvl", TPGroupNodes: nodes(2), ComputeCapability: "10.0"}, true},
 		{"mnnvl on two nodes at 10.3", Facts{Value: "mnnvl", TPGroupNodes: nodes(2), ComputeCapability: "10.3"}, true},
 		{"mnnvl on two nodes at 12.0", Facts{Value: "mnnvl", TPGroupNodes: nodes(2), ComputeCapability: "12.0"}, true},

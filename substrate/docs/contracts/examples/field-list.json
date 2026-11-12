@@ -14,20 +14,12 @@
       },
       "estimation": {
         "rule": "leave_unset",
-        "preserves": "the backend vLLM picks for the tensor-parallel group",
+        "preserves": "the backend vLLM picks for the tensor-parallel group and whether it may fall back to trtllm",
         "valid_when": [
           {
             "value_in": [
               "auto"
             ]
-          },
-          {
-            "value_in": [
-              "mnnvl"
-            ],
-            "tp_group_nodes": {
-              "eq": 1
-            }
           },
           {
             "value_in": [
