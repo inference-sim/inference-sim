@@ -22,6 +22,10 @@ here.
 - `ib-400g` is `literature`: published nccl-tests all_reduce results on H100 hosts with eight
   ConnectX-7 400G InfiniBand NICs each ([NVIDIA/nccl-tests#309](https://github.com/NVIDIA/nccl-tests/issues/309)),
   as a fraction of the 400 GB/s ceiling an NVIDIA maintainer states there.
+- `ib-800g` is `assumed`, equal to `ib-400g`: no public multi-node measurement of ConnectX-8
+  (InfiniBand XDR, 800 Gb/s per GPU) was found. Only its line rate is cited, from NVIDIA's
+  Blackwell Ultra Datasheet. A handoff over `ib-800g` therefore takes half the time of the
+  same handoff over `ib-400g`; a measured 800G efficiency would change that.
 - `roce-200g` and `ethernet-100gbe` are `assumed`. No public multi-node measurement of either
   was found. Each rationale states the range the value could lie in and the one public datum
   that bounds it.
