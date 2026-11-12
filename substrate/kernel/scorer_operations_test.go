@@ -40,7 +40,7 @@ func TestKimiK31ScorerAndPrimaryAreClassedApartOnTheCommittedGraph(t *testing.T)
 		kinds[lk.ID] = lk
 	}
 	var ops []plan.Operation
-	var sparseLayers, scoredLayers, plainLayer []int
+	var scoredLayers, plainLayer []int
 	for i, id := range g.Stack.Expand() {
 		hasScorer, sparse, attends := false, false, false
 		for _, n := range kinds[id].Nodes {
@@ -64,9 +64,6 @@ func TestKimiK31ScorerAndPrimaryAreClassedApartOnTheCommittedGraph(t *testing.T)
 			scoredLayers = append(scoredLayers, len(ops)-1)
 		case !sparse:
 			plainLayer = append(plainLayer, len(ops)-1)
-		}
-		if sparse {
-			sparseLayers = append(sparseLayers, len(ops)-1)
 		}
 	}
 	if len(scoredLayers) == 0 {
