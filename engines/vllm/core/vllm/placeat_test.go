@@ -71,3 +71,28 @@ func TestADataParallelGroupIsPlacedAtTheFirstNode(t *testing.T) {
 		t.Errorf("a group placed at the first node: %v", err)
 	}
 }
+
+// Placing a group at its first node changes the first node's rack only: the racks the pool gave its
+// other nodes stay, so a later rank is still where the pool put it (the endpoint of a transfer and the
+// link it crosses follow from it). Placed again with another rack for node 0, rank 1 keeps rack 1.
+func TestPlacingAGroupKeepsTheRacksOfItsOtherNodes(t *testing.T) {
+	g, err := build(t, "data_parallel_size: 2\nplacement: {hardware: h100, fabric: ib-400g, data: 2, nodes: 2, ranks_per_node: 1, node_racks: [0, 1]}\n")()
+	if err != nil {
+		t.Fatal(err)
+	}
+	grp, ok := g.(*DPGroup)
+	if !ok {
+		t.Fatalf("%T is not a DPGroup", g)
+	}
+	for _, rack := range []int{0, 3} {
+		if err := engine.Place(g, plan.Endpoint{Node: 0, Rack: rack}, 2); err != nil {
+			t.Fatal(err)
+		}
+		if got := grp.ranks[0].e.at; got != (plan.Endpoint{Node: 0, Rack: rack}) {
+			t.Errorf("rank 0 at %+v, want node 0 in rack %d", got, rack)
+		}
+		if got := grp.ranks[1].e.at; got != (plan.Endpoint{Node: 1, Rack: 1}) {
+			t.Errorf("after placing node 0 in rack %d, rank 1 at %+v, want node 1 in rack 1 as the pool stated", rack, got)
+		}
+	}
+}

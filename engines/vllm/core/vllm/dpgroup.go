@@ -43,8 +43,11 @@ import (
 // The iteration's own forward passes are what it prices; the group's all-reduce still ends
 // every iteration, so the contract keeps one iteration in flight.
 type DPGroup struct {
-	dp     *core.DP
-	ranks  []*rankState
+	dp    *core.DP
+	ranks []*rankState
+	// pool is the pool's placement as last stated, with the rack of each of its nodes: a rank's
+	// engine keeps only its own endpoint, so PlaceAt starts from this and not from a rank's.
+	pool   *placement.Placement
 	pricer Pricer
 	rankOf map[string]int
 	// abortedOn are the requests Finish aborted, or that finished, while an iteration in flight
@@ -107,6 +110,11 @@ func newDPGroup(st settings, pricer Pricer) (*DPGroup, error) {
 	n := st.dp.ranks
 	g := &DPGroup{dp: &core.DP{LB: core.NewLoadBalancer(n)}, pricer: pricer, rankOf: map[string]int{}, abortedOn: map[string]int{},
 		queueSize: max(st.queueSize, 1), statsIntervalUs: max(st.dp.statsIntervalUs, 1), epoch: -1}
+	if st.placement != nil {
+		pl := *st.placement
+		pl.NodeRacks = append([]int(nil), pl.NodeRacks...)
+		g.pool = &pl
+	}
 	for i := 0; i < n; i++ {
 		// Each rank is a replica of tensor x pipeline workers, which fill the pool's nodes in order.
 		rst := st
@@ -481,6 +489,9 @@ func (g *DPGroup) SetPlacement(p placement.Placement) error {
 			return err
 		}
 	}
+	pl := p
+	pl.NodeRacks = append([]int(nil), p.NodeRacks...)
+	g.pool = &pl
 	return nil
 }
 
@@ -498,6 +509,10 @@ func (g *DPGroup) PlaceAt(at plan.Endpoint) error {
 		return nil
 	}
 	base := first.placementOf()
+	if g.pool != nil {
+		// Keep the rack of every node the pool was given: At changes only the node asked for.
+		base.NodeRacks = append([]int(nil), g.pool.NodeRacks...)
+	}
 	if base.RanksPerNode > 0 && at.Node != 0 {
 		return fmt.Errorf("vllm: the group's ranks fill the pool's nodes from the first, so it cannot start at node %d", at.Node)
 	}
