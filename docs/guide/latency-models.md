@@ -121,11 +121,17 @@ the [Configuration Reference](../reference/configuration.md).
   KV block budget for each data-parallel rank.
 - **Host overheads.** Per-request queueing (tokenization and preprocessing), per-output-token
   processing, and the fixed per-request completion overhead.
-  The per-request admission overhead runs on the endpoint's API-server render threads,
-  in arrival order (INV-R1): `--renderer-num-workers` threads (vLLM's `renderer_num_workers`,
-  default 1) on each of `--api-server-count` servers (default: vLLM's per-mode count -- dp
-  behind an internal or hybrid DP replica, else 1). Under a burst, requests therefore queue for
-  the tokenizer. blis-schemas does not yet state either setting; the proposed fields are
+  A request's admission time is split by what it holds (INV-R1). The kernel's
+  `AdmissionDemand` gives `Service`, the time the request holds one server of the engine's
+  admission queue (the per-token term), and `Delay`, the time it only waits (the per-request
+  term, 40 ms, `assumed`). The engine states the queue's shape in its plan: for vLLM, the
+  `renderer_num_workers` threads of each of `api_server_count` servers, on which the tokenizer
+  and chat template run. Requests queue for `Service` and then wait `Delay`, so the per-request
+  term does not cap an API server at 25 requests a second; one request alone waits both.
+  Whether the 40 ms is a delay and not server work is an assumption: the registry gives it as a
+  latency of unknown origin. `--renderer-num-workers` and `--api-server-count` are given to the
+  engine, which resolves them; `--renderer-num-workers 0` makes the whole admission time a
+  delay. blis-schemas does not yet state either setting; the proposed fields are
   `engine.renderer_num_workers` and `parallel.api_server_count`.
 - **P/D KV transfer** and **offload tier transfer**, below.
 

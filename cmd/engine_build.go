@@ -305,6 +305,21 @@ func requirePullPricing(p *kernelPools, contention bool) {
 	}
 }
 
+// setEngineFrontend gives the engine --renderer-num-workers and --api-server-count, vLLM's
+// API-server settings (blis-schemas does not carry them yet). The engine resolves them into the
+// admission queue its plan states. An engine that takes no such settings is refused. It lives
+// here because this file is the one place the binary reaches the engine's package.
+func setEngineFrontend(eng engine.Engine, version string) error {
+	fe, ok := eng.(coreengine.Frontender)
+	if !ok {
+		return fmt.Errorf("engine %s does not take API-server settings", version)
+	}
+	if err := fe.SetFrontend(coreengine.Frontend{RendererNumWorkers: rendererNumWorkers, APIServerCount: apiServerCount}); err != nil {
+		return fmt.Errorf("--renderer-num-workers / --api-server-count: %w", err)
+	}
+	return nil
+}
+
 // placeInstance states where instance index sits, through the engine contract (engine.Place): the
 // engine's factory builds every instance of a pool from the same engine block, so each would state
 // the pool's first node for itself, and a pull's near end would be priced there whichever instance
@@ -719,7 +734,7 @@ func engineConfigOfRun(ec build.EngineConfig, horizon, seed int64, latency laten
 // which the engine factory opens again (engineConfigIn).
 func instanceConfigOf(c engineConfig) sim.InstanceConfig {
 	return sim.InstanceConfig{Horizon: c.Horizon, Seed: c.Seed, GPU: c.GPU, TP: c.TP, MaxNumSeqs: c.MaxNumSeqs,
-		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens, Frontend: frontendOf(c.Frontend), Engine: c}
+		Model: c.Model, BlockSizeTokens: c.BlockSizeTokens, Engine: c}
 }
 
 // engineConfigIn is the engine configuration an instance configuration holds, with the host's
@@ -735,17 +750,14 @@ func engineConfigIn(c sim.InstanceConfig) engineConfig {
 }
 
 // hostOverheads sets a driver's host work from the latency model that prices the instance's
-// engine: the post-decode and per-token output overheads, and each request's queueing time,
-// which the kernel prices from the prompt's length alone (its admission overhead).
+// engine: the post-decode and per-token output overheads. A request's admission time is not
+// here: the driver asks the Environment what the request demands of the engine's admission queue.
 func hostOverheads(dcfg *sim.EngineDriverConfig, m latencyModel) {
 	if m == nil {
 		return
 	}
 	dcfg.PostDecodeFixedOverhead = m.PostDecodeFixedOverhead()
 	dcfg.OutputTokenProcessingTime = m.OutputTokenProcessingTime()
-	dcfg.QueueingTime = func(req *sim.Request) int64 {
-		return m.QueueingTime(&cengine.Request{InputTokens: make([]cengine.TokenID, req.InputLen())})
-	}
 }
 
 // streamIntervalOf is the pool's engine.stream_interval, how many tokens the API server holds
@@ -807,11 +819,6 @@ func provenanceOf(p cengine.KernelPoolProvenance) sim.KernelPoolProvenance {
 		out.Routing = &r
 	}
 	return out
-}
-
-// frontendOf is the engine's front-end configuration as the host's render stage takes it.
-func frontendOf(f cengine.FrontendConfig) sim.FrontendConfig {
-	return sim.FrontendConfig{APIServerCount: f.APIServerCount, RendererNumWorkers: f.RendererNumWorkers}
 }
 
 // rolesOf is a disaggregated deployment's per-role instance configurations: each P/D pool's own
@@ -950,17 +957,6 @@ func frontendConfigFromCLI() cengine.FrontendConfig {
 	if err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	return c
-}
-
-// groupFrontendConfigFromCLI is frontendConfigFromCLI for one endpoint whose engine is a whole
-// data-parallel group of dp ranks (a contract-built release): vLLM's internal balancer defaults
-// its API servers to one per rank (api_server_count = data_parallel_size,
-// vllm/entrypoints/cli/serve.py:123-130@5df63a72), as the compatibility path's DP replica
-// renders (sim.ReplicaAPIServers). A stated --api-server-count is kept.
-func groupFrontendConfigFromCLI(dp int) sim.FrontendConfig {
-	c := frontendOf(frontendConfigFromCLI())
-	c.APIServerCount = sim.ReplicaAPIServers(c.APIServerCount, max(dp, 1))
 	return c
 }
 
@@ -1270,14 +1266,15 @@ func (*transferEnvironment) Price(plan.PoolPlan, plan.StepShape) (kernel.StepEst
 	return kernel.StepEstimate{}, errHostEnvironment("a step's price")
 }
 
+// HostDemand implements env.Environment: what a request of promptTokens asks of the admission
+// queue the engine's plan states, from the pool's kernel (Kernel.AdmissionDemand).
+func (e *transferEnvironment) HostDemand(_ plan.PoolPlan, promptTokens int) (kernel.HostDemand, error) {
+	return e.own.Kernel().AdmissionDemand(promptTokens), nil
+}
+
 // Acceptance implements env.Environment; it is not answered here.
 func (*transferEnvironment) Acceptance(string, string, string) (acceptance.Profile, error) {
 	return acceptance.Profile{}, errHostEnvironment("an acceptance profile")
-}
-
-// HostDemand implements env.Environment; it is not answered here.
-func (*transferEnvironment) HostDemand(plan.PoolPlan, int) (kernel.HostDemand, error) {
-	return kernel.HostDemand{}, errHostEnvironment("a request's demand on the admission queue")
 }
 
 // TransferDemand implements env.Environment: what the move t asks of the fabric.

@@ -2,11 +2,18 @@ package sim
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/inference-sim/blis-substrate/contracts/conformance/enginetest"
 	"github.com/inference-sim/blis-substrate/contracts/engine"
+	"github.com/inference-sim/blis-substrate/contracts/engine/env"
+	"github.com/inference-sim/blis-substrate/contracts/engine/plan"
+	"github.com/inference-sim/blis-substrate/contracts/kernel"
+
+	"github.com/inference-sim/inference-sim/sim/internal/testutil"
 )
 
 // newFIFODriver is an EngineDriver over blis-schemas' fake FIFO engine, which prices a step as
@@ -131,22 +138,36 @@ func TestEngineDriver_RefusedRequestIsDropped(t *testing.T) {
 	}
 }
 
-// The host's front end renders a request before the engine sees it (INV-R1), as on the
-// compatibility path: with one render thread, two requests arriving together render one after
-// the other, so the second reaches the engine a render later; with the queue off
-// (RendererNumWorkers 0) or one API server each, both render at once.
-func TestEngineDriver_RendersOnTheFrontEndBeforeTheEngine(t *testing.T) {
-	const render = 1000
-	run := func(f FrontendConfig) (a, b *Request) {
+// plannedEngine is an engine that states a plan, as a Planned engine does; the driver queues
+// requests on the admission queue the plan states.
+type plannedEngine struct {
+	engine.Engine
+	pl plan.PoolPlan
+}
+
+func (p plannedEngine) Plan() plan.PoolPlan { return p.pl }
+
+// hostEnv is an Environment that prices admission: a request holds a server for service
+// microseconds and waits delay besides.
+func hostEnv(service, delay time.Duration) env.Environment {
+	return testutil.PullEnv{Host: func(int) kernel.HostDemand {
+		return kernel.HostDemand{Service: service, Delay: delay}
+	}}
+}
+
+// A request waits in the admission queue its engine's plan states before the engine sees it
+// (INV-R1): with one server, two requests arriving together are served one after the other, so
+// the second reaches the engine a service later; with no queue, or one queue each, both are
+// served at once.
+func TestEngineDriver_QueuesOnTheAdmissionQueueTheEngineStates(t *testing.T) {
+	const service = 1000
+	run := func(q plan.AdmissionQueue) (a, b *Request) {
 		eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 4, TokenBudget: 64, StepBaseUs: 100})
 		if err != nil {
 			t.Fatal(err)
 		}
-		d, err := NewEngineDriverWithFrontend(eng, EngineDriverConfig{Horizon: 1 << 40,
-			QueueingTime: func(*Request) int64 { return render }}, f)
-		if err != nil {
-			t.Fatal(err)
-		}
+		d := NewEngineDriver(plannedEngine{eng, plan.PoolPlan{Host: plan.HostPlan{Admission: q}}},
+			EngineDriverConfig{Horizon: 1 << 40, Environment: hostEnv(service*time.Microsecond, 0)})
 		a = &Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
 		b = &Request{ID: "b", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
 		d.InjectArrival(a)
@@ -157,17 +178,17 @@ func TestEngineDriver_RendersOnTheFrontEndBeforeTheEngine(t *testing.T) {
 		}
 		return a, b
 	}
-	// One thread: a renders 0-1000 and prefills 1000-1100; b renders 1000-2000, then prefills.
-	a, b := run(FrontendConfig{RendererNumWorkers: 1})
-	if a.FirstTokenTime != render+100 || b.FirstTokenTime != 2*render+100 {
-		t.Errorf("one render thread: first tokens at %d and %d, want %d and %d (b renders after a)",
-			a.FirstTokenTime, b.FirstTokenTime, render+100, 2*render+100)
+	// One server: a is served 0-1000 and prefills 1000-1100; b is served 1000-2000, then prefills.
+	a, b := run(plan.AdmissionQueue{WorkersPerServer: 1})
+	if a.FirstTokenTime != service+100 || b.FirstTokenTime != 2*service+100 {
+		t.Errorf("one server: first tokens at %d and %d, want %d and %d (b waits for a)",
+			a.FirstTokenTime, b.FirstTokenTime, service+100, 2*service+100)
 	}
-	for _, f := range []FrontendConfig{{}, {RendererNumWorkers: 1, APIServerCount: 2}} {
-		a, b := run(f)
-		if a.FirstTokenTime != render+100 || b.FirstTokenTime != render+100 {
-			t.Errorf("%+v: first tokens at %d and %d, want both %d (no render contention)",
-				f, a.FirstTokenTime, b.FirstTokenTime, render+100)
+	for _, q := range []plan.AdmissionQueue{{}, {Servers: 2, WorkersPerServer: 1}, {WorkersPerServer: 2}} {
+		a, b := run(q)
+		if a.FirstTokenTime != service+100 || b.FirstTokenTime != service+100 {
+			t.Errorf("%+v: first tokens at %d and %d, want both %d (no contention)",
+				q, a.FirstTokenTime, b.FirstTokenTime, service+100)
 		}
 	}
 }
@@ -781,5 +802,118 @@ func TestEngineMetricsAt_NumbersEachPublicationAtOneInstant(t *testing.T) {
 	}
 	if b.Seq <= a.Seq {
 		t.Errorf("the corrected state has sequence %d, the earlier one %d: want a later number", b.Seq, a.Seq)
+	}
+}
+
+// admissionDriver is a driver over a fast engine whose plan states queue and whose Environment
+// prices a request at service µs on a server plus delay µs of waiting.
+func admissionDriver(t *testing.T, service, delay int64, q plan.AdmissionQueue) *EngineDriver {
+	t.Helper()
+	eng, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 256, TokenBudget: 1 << 20, StepBaseUs: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewEngineDriver(plannedEngine{eng, plan.PoolPlan{Host: plan.HostPlan{Admission: q}}},
+		EngineDriverConfig{Horizon: 1 << 40,
+			Environment: hostEnv(time.Duration(service)*time.Microsecond, time.Duration(delay)*time.Microsecond)})
+}
+
+// closedLoopRate runs `clients` closed-loop clients for `seconds` of simulated time and returns
+// the completed requests per second. A client sends its next request when its last completes.
+func closedLoopRate(d *EngineDriver, clients int, seconds int64) float64 {
+	horizon := seconds * 1_000_000
+	n := 0
+	d.OnRequestDone = func(r *Request, at int64) []*Request {
+		if at >= horizon {
+			return nil
+		}
+		n++
+		return []*Request{{ID: fmt.Sprintf("c%d-%d", r.ArrivalTime, n), InputTokens: tokens(8),
+			OutputTokens: tokens(1), ArrivalTime: at}}
+	}
+	for i := 0; i < clients; i++ {
+		d.InjectArrival(&Request{ID: fmt.Sprintf("s%d", i), InputTokens: tokens(8),
+			OutputTokens: tokens(1), ArrivalTime: 0})
+	}
+	d.Run()
+	return float64(n) / float64(seconds)
+}
+
+// A request's delay holds no server. With one server and 0.36 ms of service in a 40.4 ms
+// admission, a closed loop of clients over a fast engine completes requests at the server's own
+// rate, not at 1 / (the whole admission time) = 24.8 a second.
+func TestEngineDriver_ADelayDoesNotCapTheClosedLoop(t *testing.T) {
+	const service, delay = 360, 40_040
+	capAll := 1e6 / float64(service+delay)
+	capServer := 1e6 / float64(service)
+	rate := closedLoopRate(admissionDriver(t, service, delay, plan.AdmissionQueue{WorkersPerServer: 1}), 1024, 4)
+	if rate < 10*capAll {
+		t.Errorf("1024 clients complete %.0f requests a second, still near the %.1f a second the whole admission time would cap it at", rate, capAll)
+	}
+	if rate > capServer*1.02 {
+		t.Errorf("1024 clients complete %.0f requests a second, above the server's own %.0f", rate, capServer)
+	}
+}
+
+// What a server does still queues: with a 10 ms service two simultaneous requests reach the
+// engine 10 ms apart, whatever the delay.
+func TestEngineDriver_ServiceStillSerialisesOnTheServer(t *testing.T) {
+	d := admissionDriver(t, 10_000, 40_000, plan.AdmissionQueue{WorkersPerServer: 1})
+	a := &Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+	b := &Request{ID: "b", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+	d.InjectArrival(a)
+	d.InjectArrival(b)
+	d.Run()
+	if gap := b.FirstTokenTime - a.FirstTokenTime; gap != 10_000 {
+		t.Errorf("second request's first token came %d us after the first, want 10000", gap)
+	}
+}
+
+// One request alone waits its whole admission time, service plus delay, with a queue of any
+// shape or none.
+func TestEngineDriver_ASingleRequestWaitsItsWholeAdmissionTime(t *testing.T) {
+	var first []int64
+	for _, q := range []plan.AdmissionQueue{{}, {WorkersPerServer: 1}, {Servers: 3, WorkersPerServer: 1}} {
+		d := admissionDriver(t, 360, 40_040, q)
+		r := &Request{ID: "a", InputTokens: tokens(8), OutputTokens: tokens(1), ArrivalTime: 0}
+		d.InjectArrival(r)
+		d.Run()
+		first = append(first, r.FirstTokenTime)
+	}
+	for i, v := range first {
+		if v != first[0] || v < 40_400 {
+			t.Errorf("queue %d: first token at %d, want %d for every shape and not before 40400", i, v, first[0])
+		}
+	}
+}
+
+// The saturated rate scales with the queue's width: each server of a queue and each queue adds
+// one. With a 10 ms service a server starts 100 requests a second.
+func TestEngineDriver_TheSaturatedRateScalesWithTheQueuesWidth(t *testing.T) {
+	const service, delay = 10_000, 40_000
+	base := closedLoopRate(admissionDriver(t, service, delay, plan.AdmissionQueue{WorkersPerServer: 1}), 256, 4)
+	if base < 95 || base > 102 {
+		t.Fatalf("one server: %.1f requests a second, want about 100", base)
+	}
+	for _, q := range []plan.AdmissionQueue{{WorkersPerServer: 2}, {Servers: 2, WorkersPerServer: 1}} {
+		got := closedLoopRate(admissionDriver(t, service, delay, q), 256, 4)
+		if ratio := got / base; ratio < 1.95 || ratio > 2.05 {
+			t.Errorf("%+v: %.1f requests a second is %.2fx one server's, want 2x", q, got, ratio)
+		}
+	}
+}
+
+// The engine's own ranks behind one balancer share one stage.
+func TestShareAdmissionStage_RanksShareTheFirstStage(t *testing.T) {
+	q := plan.AdmissionQueue{WorkersPerServer: 1}
+	ds := []*EngineDriver{admissionDriver(t, 1, 0, q), admissionDriver(t, 1, 0, q)}
+	if err := ShareAdmissionStage(ds); err != nil {
+		t.Fatal(err)
+	}
+	if ds[0].AdmissionStage() == nil || ds[0].AdmissionStage() != ds[1].AdmissionStage() {
+		t.Error("the ranks do not share one stage")
+	}
+	if err := ShareAdmissionStage([]*EngineDriver{admissionDriver(t, 1, 0, q), admissionDriver(t, 1, 0, plan.AdmissionQueue{})}); err == nil {
+		t.Error("a rank with no queue was shared into one")
 	}
 }

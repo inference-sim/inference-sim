@@ -80,7 +80,7 @@ Ordered by ID, since the common use is resolving an ID seen in code.
 | [INV-K11](#inv-k11-each-prompt-block-is-hashed-once-per-engine) Each prompt block is hashed once per engine | Subsystem | KV cache (efficiency) |
 | [INV-L1 … INV-L7](#lora-control-plane) LoRA control plane — *stated in the LoRA design plan; pointer lines here* | Subsystem | LoRA |
 | [INV-P2-1, INV-P2-2](#pools-and-kv-transfer) Pools and KV transfer | Subsystem | pools / KV transfer |
-| [INV-R1](#inv-r1-admission-overhead-runs-on-the-endpoints-render-threads-in-arrival-order) Admission overhead runs on the endpoint's render threads, in arrival order | Subsystem | latency model / front end |
+| [INV-R1](#inv-r1-admission-demand-queues-on-the-shape-the-engine-states-in-arrival-order) Admission demand queues on the shape the engine states, in arrival order | Subsystem | latency model / front end |
 | [INV-PD-1 … INV-PD-9](#pd-disaggregation) PD disaggregation | Subsystem | PD |
 | [INV-W3](#inv-w3-cohort-expansion-purity) Cohort expansion purity | Subsystem | workload generation |
 | [NS-6](#ns-6-catalog-is-authoritative-and-read-only) Catalog is authoritative and read-only | Code-boundary | CLI / model catalog |
@@ -737,17 +737,19 @@ phase starts (the warm-up's last return); profiling requests are sent only in
 
 **Verification:** `TestAcceptancePrecedence`, `TestAcceptanceKSweepPicksTheProfileAtEachK`, `TestAcceptanceRefusals`, `TestAcceptanceIsAbsentWithoutSpeculation`, `TestAcceptanceRunReplayParity` (`cmd`).
 
-#### INV-R1: Admission Overhead Runs on the Endpoint's Render Threads, in Arrival Order
+#### INV-R1: Admission Demand Queues on the Shape the Engine States, in Arrival Order
 
-**Statement:** With the front end on (`FrontendConfig.RendererNumWorkers = W > 0`; the CLI default is vLLM's `renderer_num_workers = 1`), a request's admission overhead (`LatencyModel.QueueingTime`, the kernel's `AdmissionOverhead`: chat template + tokenization) runs on one of its endpoint's render threads. Each endpoint has `api_server_count` API servers (vLLM's per-mode default: dp behind an internal- or hybrid-balancer replica, else 1) of `W` threads each. Arrivals go to the servers round-robin. Within a server a request starts at `max(arrival, earliest thread free)` in arrival order and holds that thread for its overhead, so a server never runs more than `W` renders at once and a request waits only while all `W` are busy (FIFO M/G/W). The request enters the wait queue when its render ends. Every arrival is rendered exactly once. A render that costs nothing, or a stage with a thread per request, gives `arrival + overhead`, which is the inert front end's uncontended delay; with zero overhead the run is byte-identical to the inert one. An internal/hybrid replica's ranks share one stage. An external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not rendered again.
+**Statement:** An engine that states an admission queue in its plan (`plan.HostPlan.Admission`: `Servers` independent queues of `WorkersPerServer` servers; zero workers is no queue) has each request wait in it before the engine sees the request. The cost model gives the request's demand on it (`env.Environment.HostDemand`): `Service`, the time it holds one server, and `Delay`, the time it waits holding none; `Service + Delay` is the kernel's admission overhead. Arrivals join the queues in turn. Within a queue a request starts at `max(arrival, earliest server free)` in arrival order and holds that server for `Service`, so a queue never runs more than `WorkersPerServer` requests at once and a request waits only while all are busy (FIFO M/G/c). The request enters the engine at `end of service + Delay`. Every arrival is admitted exactly once. A stage with a server per request, or no queue, gives `arrival + Service + Delay`; one request alone always waits its whole overhead. The ranks of a replica behind one balancer share one stage (`sim.ShareAdmissionStage`); an external-balancer rank and a P/D pool rank each have their own. A P/D decode sub-request is not admitted again.
 
-vLLM v0.31.0: `BaseRenderer._executor = ThreadPoolExecutor(max_workers=renderer_num_workers)` carries the tokenize step (`vllm/renderers/base.py:117-133`) and the V4 renderer's template step (`vllm/renderers/deepseek_v4.py:32-37`), one pool per API-server process. The API-server count defaults are in `vllm/entrypoints/cli/serve.py:105-127`.
+The host knows nothing of what the servers are. The engine resolves its own settings into the shape: for vLLM v0.32.0, `renderer_num_workers` threads on each of `api_server_count` servers, on which the tokenizer and the chat template run (blis-vllm `docs/admission-split.md`).
 
-**Limitation:** BLIS picks a replica's rank when the request reaches the endpoint, whereas vLLM's balancer picks it after rendering. The cost itself stays in the kernel and registry.
+**Assumption:** The kernel's per-request term (40 ms, method `assumed`, a latency of unknown origin) is charged as `Delay`, not as `Service`. Charging it as `Service` caps a one-server queue at 1 / 40 ms = 25 requests a second; charging none of it as `Service` leaves the cap at the per-token term's rate. The truth lies between if part of it is work a server does.
 
-**Enforced:** `sim.Renderer.Admit` (called from `ArrivalEvent.Execute`); `sim.ShareRenderer` from `cluster.buildDPReplicas`.
+**Limitation:** BLIS picks a replica's rank when the request reaches the endpoint, whereas vLLM's balancer picks it after admission. The cost itself stays in the kernel and registry.
 
-**Verification:** `TestRenderer_EachServerIsAFIFOQueueOfItsThreads` (rapid), `TestRenderer_FreeOrUncontendedRenderIsTheBareOverhead` (rapid, metamorphic), `TestRenderQueue_ABurstWaitsForTheRenderThread`, `TestRenderQueue_FreeRenderIsByteIdenticalToNoRenderStage`, `TestRenderQueue_EveryArrivalIsRenderedOnce` (`sim`); `TestRenderStage_BelongsToTheEndpoint`, `TestRenderStage_AReplicaRendersOnItsDPServers` (`sim/cluster`); `TestFrontendFlagsDefaultToVLLMs` (`cmd`).
+**Enforced:** `sim.AdmissionStage.Admit` (called from the driver's arrival event); `sim.ShareAdmissionStage` from `cluster.buildDPReplicas`.
+
+**Verification:** `TestAdmissionStage_EachServerIsAFIFOQueueOfItsThreads` (rapid), `TestAdmissionStage_FreeOrUncontendedRenderIsTheBareOverhead` (rapid, metamorphic), `TestEngineDriver_QueuesOnTheAdmissionQueueTheEngineStates`, `TestEngineDriver_ADelayDoesNotCapTheClosedLoop`, `TestEngineDriver_ServiceStillSerialisesOnTheServer`, `TestEngineDriver_ASingleRequestWaitsItsWholeAdmissionTime`, `TestEngineDriver_TheSaturatedRateScalesWithTheQueuesWidth` (`sim`); `TestAdmissionStage_BelongsToTheEndpoint`, `TestAdmissionStage_AReplicaAdmitsOnTheQueueItsEngineStates` (`sim/cluster`); `TestFrontendFlagsDefaultToVLLMs` (`cmd`).
 
 #### Retired latency-model invariants
 

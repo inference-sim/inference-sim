@@ -29,23 +29,19 @@ func (d *EngineDriver) JoinGroup(leader *EngineDriver, k int) {
 	}
 }
 
-// ShareRenderStage makes the drivers of one endpoint's ranks render on one stage of apiServers
-// servers of workers threads each: the replica behind vLLM's internal DP balancer, whose API
-// servers render every request before the balancer picks a rank (INV-R1). A no-op when the
-// drivers' front end is inert (each rendered alone, with the run's --renderer-num-workers).
-func ShareRenderStage(drivers []*EngineDriver, apiServers, workers int) error {
-	if len(drivers) == 0 || drivers[0].renderer == nil {
+// ShareAdmissionStage makes the drivers of one endpoint's ranks queue on one admission stage:
+// the stage of the first driver, which every rank's engine states alike. It is for the ranks
+// behind one balancer, whose endpoint admits every request before the balancer picks a rank
+// (INV-R1). A no-op when the engine states no queue.
+func ShareAdmissionStage(drivers []*EngineDriver) error {
+	if len(drivers) == 0 || drivers[0].stage == nil {
 		return nil
 	}
-	r, err := NewRenderer(apiServers, workers)
-	if err != nil {
-		return err
-	}
 	for _, d := range drivers {
-		if d.renderer == nil {
-			return fmt.Errorf("ShareRenderStage: the ranks of one endpoint must all render")
+		if d.stage == nil {
+			return fmt.Errorf("ShareAdmissionStage: the ranks of one endpoint must all state a queue")
 		}
-		d.renderer = r
+		d.stage = drivers[0].stage
 	}
 	return nil
 }
